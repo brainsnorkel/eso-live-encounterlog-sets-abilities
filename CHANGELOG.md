@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.1] - 2025-01-XX
+
+### Fixed
+- Fixed player death tracking to only count actual player deaths, not enemy deaths
+- Enhanced enemy filtering to exclude environmental hazards like 'Water', 'Fire', 'Trap', etc.
+- Improved target selection with better fallback logic from damage tracking to health-based selection
+- Removed unnecessary blank lines in combat report output for cleaner formatting
+
+### Enhanced
+- Added comprehensive filtering for pets, corpses, and non-combat entities
+- Updated gear set database to use LibSets_SetData.xlsm for more accurate set information
+- Enhanced skill line detection and aliases
+- Improved combat encounter tracking and reporting accuracy
+
+### Technical
+- Added cross-platform installers (Windows, macOS, Linux) via GitHub Actions
+- Improved enemy tracking logic with better validation
+- Enhanced error handling and edge case management
+
 ## [0.1.0] - 2025-01-XX
 
 ### Added
