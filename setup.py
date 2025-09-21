@@ -50,7 +50,7 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "": ["setsdb/*.xlsx", "example-log/*.log"],
+        "": ["setsdb/*.xlsm", "example-log/*.log"],
     },
     zip_safe=False,
 )

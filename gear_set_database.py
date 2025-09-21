@@ -1,7 +1,7 @@
 """
 Gear Set Database Module
 
-This module reads the LibSets_SetData.xlsx file to provide comprehensive
+This module reads the LibSets_SetData.xlsm file to provide comprehensive
 gear set information for ESO encounter log analysis.
 """
 
@@ -19,12 +19,12 @@ class GearSetDatabase:
         Initialize the gear set database.
         
         Args:
-            excel_file_path: Path to the LibSets_SetData.xlsx file
+            excel_file_path: Path to the LibSets_SetData.xlsm file
         """
         if excel_file_path is None:
             # Default to the setsdb directory
             current_dir = Path(__file__).parent
-            excel_file_path = current_dir / "setsdb" / "LibSets_SetData.xlsx"
+            excel_file_path = current_dir / "setsdb" / "LibSets_SetData.xlsm"
         
         self.excel_file_path = excel_file_path
         self.item_to_set: Dict[str, str] = {}  # item_id -> set_name
@@ -92,7 +92,7 @@ class GearSetDatabase:
                 
                 if pd.notna(set_id) and pd.notna(set_name_en):
                     set_id_str = str(int(set_id))
-                    set_name = str(set_name_en)
+                    set_name = str(set_name_en).strip().strip('"').replace("\\'", "'")
                     
                     self.set_info[set_name] = {
                         'set_id': set_id_str,

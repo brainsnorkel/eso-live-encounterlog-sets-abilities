@@ -65,6 +65,14 @@ class PlayerInfo:
         self.gear: Dict[str, List[str]] = {}  # gear_slot -> [item_id, trait, quality, enchant_value, enchant_type, ...]
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()  # Track long unit IDs used in combat events
+        
+        # Resource tracking
+        self.health_current: int = 0
+        self.health_max: int = 0
+        self.magicka_current: int = 0
+        self.magicka_max: int = 0
+        self.stamina_current: int = 0
+        self.stamina_max: int = 0
 
 
     def set_equipped_abilities(self, ability_names: Set[str]):
@@ -88,6 +96,25 @@ class PlayerInfo:
         """Add a long unit ID that maps to this player."""
         self.long_unit_ids.add(long_unit_id)
 
+    def set_resources(self, health_curr: int, health_max: int, magicka_curr: int, magicka_max: int, stamina_curr: int, stamina_max: int):
+        """Set the player's resource values."""
+        self.health_current = health_curr
+        self.health_max = health_max
+        self.magicka_current = magicka_curr
+        self.magicka_max = magicka_max
+        self.stamina_current = stamina_curr
+        self.stamina_max = stamina_max
+
+    def get_highest_resource(self) -> Tuple[str, int]:
+        """Get the highest resource type and its maximum value."""
+        resources = {
+            'Health': self.health_max,
+            'Magicka': self.magicka_max,
+            'Stamina': self.stamina_max
+        }
+        highest_resource = max(resources.items(), key=lambda x: x[1])
+        return highest_resource
+
     def has_unit_id(self, unit_id: str) -> bool:
         """Check if this unit ID (short or long) belongs to this player."""
         return unit_id == self.unit_id or unit_id in self.long_unit_ids
@@ -101,6 +128,16 @@ class PlayerInfo:
         else:
             return "anon"
 
+class EnemyInfo:
+    """Stores information about an enemy unit."""
+
+    def __init__(self, unit_id: str, name: str, unit_type: str):
+        self.unit_id = unit_id
+        self.name = name
+        self.unit_type = unit_type
+        self.max_health: int = 0
+        self.current_health: int = 0
+
 class CombatEncounter:
     """Represents a single combat encounter."""
 
@@ -108,12 +145,86 @@ class CombatEncounter:
         self.start_time: int = 0
         self.end_time: int = 0
         self.players: Dict[str, PlayerInfo] = {}  # Keyed by short unit ID
+        self.enemies: Dict[str, EnemyInfo] = {}  # Track enemy units
         self.abilities_used: Dict[str, Set[str]] = defaultdict(set)
+        self.total_damage: int = 0  # Track total damage dealt
+        self.player_damage: Dict[str, int] = {}  # Track damage per player (including pets)
+        self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
+        self.player_deaths: int = 0  # Track player deaths
         self.in_combat = False
 
     def add_player(self, unit_id: str, name: str, handle: str):
         """Add a player to this encounter."""
         self.players[unit_id] = PlayerInfo(unit_id, name, handle)
+
+    def add_enemy(self, unit_id: str, name: str, unit_type: str):
+        """Add an enemy to this encounter."""
+        self.enemies[unit_id] = EnemyInfo(unit_id, name, unit_type)
+
+    def _is_valid_enemy(self, enemy_name: str) -> bool:
+        """Check if an enemy name represents a valid combat target."""
+        # Exclude pet/corpse names, environmental hazards, and other non-combat entities
+        excluded_names = {
+            # Player pets and summons
+            'necromantic corpse', 'skeletal mage', 'skeletal archer', 'skeletal warrior',
+            'atronach', 'clannfear', 'daedroth', 'scamp', 'winged twilight',
+            'storm atronach', 'flame atronach', 'frost atronach', 'flesh atronach',
+            'bone colossus', 'goliath', 'skeletal dragon', 'bone goliath',
+            'corpse', 'skeleton', 'bone', 'golem', 'familiar', 'pet',
+            
+            # Environmental hazards and mechanics
+            'water', 'fire', 'lava', 'poison', 'ice', 'lightning', 'void',
+            'trap', 'spike', 'flame', 'steam', 'gas', 'cloud', 'mist',
+            'beam', 'laser', 'ray', 'orb', 'crystal', 'shard', 'fragment',
+            'portal', 'gate', 'door', 'barrier', 'wall', 'shield',
+            
+            # Generic environmental terms
+            'element', 'energy', 'force', 'field', 'aura', 'zone', 'area',
+            'mechanism', 'device', 'construct', 'apparatus'
+        }
+        
+        enemy_name_lower = enemy_name.lower()
+        return not any(excluded_name in enemy_name_lower for excluded_name in excluded_names)
+
+    def get_highest_health_enemy(self) -> Optional[EnemyInfo]:
+        """Get the enemy with the highest health, excluding pets, corpses, and environmental hazards."""
+        if not self.enemies:
+            return None
+        
+        max_health = 0
+        highest_health_enemy = None
+        
+        for enemy in self.enemies.values():
+            # Skip if not a valid enemy target
+            if not self._is_valid_enemy(enemy.name):
+                continue
+                
+            if enemy.max_health > max_health:
+                max_health = enemy.max_health
+                highest_health_enemy = enemy
+                
+        return highest_health_enemy
+
+    def get_most_damaged_enemy(self) -> Optional[EnemyInfo]:
+        """Get the enemy that took the most damage, excluding pets, corpses, and environmental hazards."""
+        if not self.enemies or not self.enemy_damage:
+            return None
+        
+        max_damage = 0
+        most_damaged_enemy = None
+        
+        for unit_id, damage in self.enemy_damage.items():
+            enemy = self.enemies.get(unit_id)
+            if enemy:
+                # Skip if not a valid enemy target
+                if not self._is_valid_enemy(enemy.name):
+                    continue
+                    
+                if damage > max_damage:
+                    max_damage = damage
+                    most_damaged_enemy = enemy
+                    
+        return most_damaged_enemy
 
     def add_ability_use(self, unit_id: str, ability_name: str):
         """Record an ability use by a player (for tracking purposes only)."""
@@ -133,6 +244,25 @@ class CombatEncounter:
         if short_unit_id in self.players:
             self.players[short_unit_id].add_long_unit_id(long_unit_id)
 
+    def add_damage_to_player(self, unit_id: str, damage: int):
+        """Add damage to a specific player's total (including pets)."""
+        # Find the player this unit belongs to
+        player = self.find_player_by_unit_id(unit_id)
+        if player:
+            if player.unit_id not in self.player_damage:
+                self.player_damage[player.unit_id] = 0
+            self.player_damage[player.unit_id] += damage
+        else:
+            # If it's a pet (unit IDs 1-50), try to find the closest player
+            # For now, we'll distribute pet damage evenly among all players
+            if unit_id.isdigit() and 1 <= int(unit_id) <= 50 and self.players:
+                # Distribute pet damage among all players (simple approach)
+                damage_per_player = damage // len(self.players)
+                for player_id in self.players.keys():
+                    if player_id not in self.player_damage:
+                        self.player_damage[player_id] = 0
+                    self.player_damage[player_id] += damage_per_player
+
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
@@ -141,6 +271,7 @@ class ESOLogAnalyzer:
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
         self.current_zone: Optional[str] = None  # Track current zone name
+        self.zone_deaths: int = 0  # Track total deaths since entering current zone
         self.subclass_analyzer = ESOSubclassAnalyzer()
         self.set_database = ESOSetDatabase()
         
@@ -180,20 +311,43 @@ class ESOLogAnalyzer:
 
 
     def _handle_unit_added(self, entry: ESOLogEntry):
-        """Handle UNIT_ADDED events to track players."""
-        # UNIT_ADDED format: unit_id, PLAYER, F/T, unknown, unknown, F/T, unknown, unknown, "name", "@handle", ...
-        if len(entry.fields) >= 10 and entry.fields[1] == "PLAYER":
+        """Handle UNIT_ADDED events to track players and enemies."""
+        # UNIT_ADDED format: timestamp,UNIT_ADDED,unit_id,unit_type,F/T,unknown,unknown,F/T,unknown,unknown,"name","@handle",...
+        if len(entry.fields) >= 10:
             unit_id = entry.fields[0]
-            name = entry.fields[8] if len(entry.fields) > 8 else ""
-            handle = entry.fields[9] if len(entry.fields) > 9 else ""
+            unit_type = entry.fields[1]
+            
+            # Handle player units
+            if unit_type == "PLAYER":
+                name = entry.fields[8] if len(entry.fields) > 8 else ""
+                handle = entry.fields[9] if len(entry.fields) > 9 else ""
 
-            # Only add players if we have a current encounter (zone has been set)
-            if self.current_encounter:
-                # Clean up name and handle (remove quotes if present)
-                clean_name = name.strip('"') if name else ""
-                clean_handle = handle.strip('"') if handle else ""
+                # Only add players if we have a current encounter (zone has been set)
+                if self.current_encounter:
+                    # Clean up name and handle (remove quotes if present)
+                    clean_name = name.strip('"') if name else ""
+                    clean_handle = handle.strip('"') if handle else ""
 
-                self.current_encounter.add_player(unit_id, clean_name, clean_handle)
+                    self.current_encounter.add_player(unit_id, clean_name, clean_handle)
+            
+            # Handle enemy units (MONSTER, NPC, etc.)
+            elif unit_type in ["MONSTER", "NPC"]:
+                name = entry.fields[8] if len(entry.fields) > 8 else ""
+                health = 0
+                
+                # Extract health from field [4] if available (105634 in the raw line)
+                if len(entry.fields) > 4 and entry.fields[4].isdigit():
+                    health = int(entry.fields[4])
+                
+                # Only add enemies if we have a current encounter and valid name
+                if self.current_encounter and name and name != '0':
+                    clean_name = name.strip('"') if name else ""
+                    
+                    enemy = EnemyInfo(unit_id, clean_name, unit_type)
+                    enemy.max_health = health
+                    enemy.current_health = health
+                    
+                    self.current_encounter.enemies[unit_id] = enemy
 
     def _handle_ability_info(self, entry: ESOLogEntry):
         """Handle ABILITY_INFO events to cache ability names and gear sets."""
@@ -247,6 +401,21 @@ class ESOLogAnalyzer:
                 player.set_gear(player_info.gear_data)
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
+                
+                # Parse and set resource data
+                if len(player_info.additional_data) >= 6:
+                    try:
+                        # ESO resource format: [health_curr, health_max, magicka_curr, magicka_max, stamina_curr, stamina_max]
+                        health_curr = int(player_info.additional_data[0])
+                        health_max = int(player_info.additional_data[1])
+                        magicka_curr = int(player_info.additional_data[2])
+                        magicka_max = int(player_info.additional_data[3])
+                        stamina_curr = int(player_info.additional_data[4])
+                        stamina_max = int(player_info.additional_data[5])
+                        
+                        player.set_resources(health_curr, health_max, magicka_curr, magicka_max, stamina_curr, stamina_max)
+                    except (ValueError, IndexError):
+                        pass  # Skip invalid resource data
 
     def _handle_zone_changed(self, entry: ESOLogEntry):
         """Handle ZONE_CHANGED events to reset all known players."""
@@ -270,6 +439,9 @@ class ESOLogAnalyzer:
             
             # Update current zone after processing previous zone's combat
             self.current_zone = zone_name
+            
+            # Reset death counter for new zone
+            self.zone_deaths = 0
             
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -324,6 +496,7 @@ class ESOLogAnalyzer:
 
     def _handle_combat_event(self, entry: ESOLogEntry):
         """Handle COMBAT_EVENT events."""
+        
         if not self.current_encounter:
             self.current_encounter = CombatEncounter()
             self.current_encounter.start_time = entry.timestamp
@@ -331,6 +504,44 @@ class ESOLogAnalyzer:
         if not self.current_encounter.in_combat:
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
+
+        # Track damage events for DPS calculation (only friendly damage)
+        # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
+        if len(entry.fields) >= 4:
+            event_type = entry.fields[0]  # DAMAGE/CRITICAL_DAMAGE is at index 0
+            
+            # Track death events
+            if event_type == 'DIED_XP':
+                # Check if it's a player death by looking up the dying unit ID in known players
+                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,...,dying_unit_id,...
+                dying_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""
+                if (self.current_encounter and 
+                    self.current_encounter.find_player_by_unit_id(dying_unit_id)):
+                    self.zone_deaths += 1
+            
+            # Track damage events
+            elif event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
+                try:
+                    source_unit_id = entry.fields[2]  # Source unit ID is at index 2
+                    damage_value = int(entry.fields[3])  # Damage value is at index 3
+                    target_unit_id = entry.fields[4] if len(entry.fields) > 4 else ""  # Target unit ID is at index 4
+                    
+                    # Count damage from friendly players and their pets (only if we have an encounter)
+                    if damage_value > 0 and self.current_encounter:
+                        # Check if it's a player or pet (unit IDs 1-50 are typically friendly)
+                        if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
+                            (source_unit_id.isdigit() and 1 <= int(source_unit_id) <= 50)):
+                            self.current_encounter.total_damage += damage_value
+                            # Track damage per player
+                            self.current_encounter.add_damage_to_player(source_unit_id, damage_value)
+                            
+                            # Track damage dealt to enemies
+                            if target_unit_id and target_unit_id in self.current_encounter.enemies:
+                                if target_unit_id not in self.current_encounter.enemy_damage:
+                                    self.current_encounter.enemy_damage[target_unit_id] = 0
+                                self.current_encounter.enemy_damage[target_unit_id] += damage_value
+                except (ValueError, IndexError):
+                    pass  # Skip invalid damage values
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
         """Handle EFFECT_CHANGED events for buffs/debuffs."""
@@ -350,6 +561,27 @@ class ESOLogAnalyzer:
                 ability_id in self.ability_cache):
                 ability_name = self.ability_cache[ability_id]
                 self.current_encounter.add_ability_use(source_unit_id, ability_name)
+
+            # Check if this is a health-related effect (field [7] contains health info)
+            if len(entry.fields) >= 8:
+                health_info = entry.fields[7] if len(entry.fields) > 7 else ""
+                
+                # Look for health information in format "current/max"
+                if '/' in health_info and target_unit_id:
+                    try:
+                        current_health, max_health = health_info.split('/')
+                        current_health = int(current_health)
+                        max_health = int(max_health)
+                        
+                        # Update enemy health if this is an enemy unit
+                        enemy = self.current_encounter.enemies.get(target_unit_id)
+                        if enemy and max_health > 0:
+                            # Update with the highest max health we've seen
+                            if max_health > enemy.max_health:
+                                enemy.max_health = max_health
+                                enemy.current_health = current_health
+                    except (ValueError, IndexError):
+                        pass  # Skip invalid health data
 
             # Only mark combat activity if we're already in combat (after BEGIN_COMBAT)
             # Don't start combat from EFFECT_CHANGED events alone
@@ -379,14 +611,51 @@ class ESOLogAnalyzer:
 
         duration = (self.current_encounter.end_time - self.current_encounter.start_time) / 1000.0
         players_count = len(self.current_encounter.players)
+        
+        # Calculate estimated group DPS
+        estimated_dps = 0
+        if duration > 0 and self.current_encounter.total_damage > 0:
+            estimated_dps = self.current_encounter.total_damage / duration
 
-        # Update the combat ended header with duration and players info
-        if zone_name:
-            print(f"{Fore.RED}=== COMBAT ENDED ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} ==={Style.RESET_ALL}")
+        # Get enemy for display (primary target)
+        # First try most damaged enemy, fallback to highest health enemy
+        most_damaged_enemy = self.current_encounter.get_most_damaged_enemy()
+        enemy_info = ""
+        if most_damaged_enemy:
+            enemy_info = f" | Target: {most_damaged_enemy.name}"
         else:
-            print(f"{Fore.RED}=== COMBAT ENDED | Duration: {duration:.1f}s | Players: {players_count} ==={Style.RESET_ALL}")
+            # Fallback to highest health enemy if no damage tracking available
+            highest_health_enemy = self.current_encounter.get_highest_health_enemy()
+            if highest_health_enemy:
+                enemy_info = f" | Target: {highest_health_enemy.name}"
 
+        # Death counter (total deaths since entering zone)
+        deaths_info = ""
+        if self.zone_deaths > 0:
+            deaths_info = f" | Deaths: {self.zone_deaths}"
+
+        # Update the combat ended header with duration, players info, DPS, deaths, and enemy info
+        if zone_name:
+            if estimated_dps > 0:
+                print(f"{Fore.RED}COMBAT ENDED ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}COMBAT ENDED ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+        else:
+            if estimated_dps > 0:
+                print(f"{Fore.RED}COMBAT ENDED | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}COMBAT ENDED | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+        # Sort players by damage contribution (descending)
+        players_with_damage = []
         for player in self.current_encounter.players.values():
+            player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
+            damage_percentage = (player_damage / self.current_encounter.total_damage * 100) if self.current_encounter.total_damage > 0 else 0
+            players_with_damage.append((player, player_damage, damage_percentage))
+        
+        # Sort by damage (descending)
+        players_with_damage.sort(key=lambda x: x[1], reverse=True)
+        
+        for player, player_damage, damage_percentage in players_with_damage:
             # Use equipped abilities from PLAYER_INFO
             abilities_to_analyze = player.equipped_abilities
             
@@ -395,20 +664,55 @@ class ESOLogAnalyzer:
             if abilities_to_analyze:
                 analysis = self.subclass_analyzer.analyze_subclass(abilities_to_analyze)
             
-            # Create the title line: @playername Skill Lines
+            # Create the title line: @playername {character_name} skill_lines dominant_resource ({damage_percentage:.1f}%)
             title_parts = [player.get_display_name()]
+            
+            # Add character name if available and different from handle
+            character_name = player.name if player.name and player.name not in ['""', '', '0'] else ""
+            if character_name and character_name != player.get_display_name():
+                title_parts.append(character_name)
+            
             if analysis and analysis['confidence'] > 0.1:
                 if analysis['skill_lines']:
-                    # Extract first word of each skill line
-                    first_words = [skill_line.split()[0] for skill_line in analysis['skill_lines']]
-                    skill_lines_str = '/'.join(first_words)
+                    # Use skill line aliases if available, otherwise extract first word
+                    skill_line_aliases = []
+                    for skill_line in analysis['skill_lines']:
+                        # Check if we have an alias for this skill line (partial matching)
+                        alias_found = False
+                        for alias_key, alias_value in self.subclass_analyzer.SKILL_LINE_ALIASES.items():
+                            if alias_key in skill_line:
+                                skill_line_aliases.append(alias_value)
+                                alias_found = True
+                                break
+                        
+                        if not alias_found:
+                            # Fall back to first word
+                            skill_line_aliases.append(skill_line.split()[0])
+                    # Sort skill line aliases before joining
+                    skill_line_aliases.sort()
+                    skill_lines_str = '/'.join(skill_line_aliases)
                     title_parts.append(skill_lines_str)
                 else:
                     title_parts.append("unknown")
             else:
                 title_parts.append("unknown")
             
-            print(f"\n{Fore.GREEN}{' '.join(title_parts)}{Style.RESET_ALL}")
+            # Add dominant resource between skill lines and damage percentage
+            if player.health_max > 0 or player.magicka_max > 0 or player.stamina_max > 0:
+                highest_resource_name, highest_resource_value = player.get_highest_resource()
+                # Convert to short form: Magicka -> Mag, Stamina -> Stam, Health -> Health
+                if highest_resource_name == "Magicka":
+                    resource_short = "Mag"
+                elif highest_resource_name == "Stamina":
+                    resource_short = "Stam"
+                else:
+                    resource_short = "Health"
+                title_parts.append(resource_short)
+            
+            # Add damage percentage
+            title_parts.append(f"({damage_percentage:.1f}%)")
+            
+            print(f"{Fore.GREEN}{' '.join(title_parts)}{Style.RESET_ALL}")
             
             if abilities_to_analyze:
                 # Show front and back bar abilities in order if available
@@ -445,23 +749,31 @@ class ESOLogAnalyzer:
                 # Create equipment summary line
                 equipment_parts = []
                 if player.gear:
-                    # Count gear pieces by set
+                    # Count gear pieces by set ID
                     set_counts = {}
                     for slot, gear_item in player.gear.items():
                         if len(gear_item) > 6:  # Make sure we have enough elements
                             set_id = str(gear_item[6])  # Set ID is at position 6
-                            set_name = gear_set_db.get_set_name_by_set_id(set_id)
-                            if set_name:
-                                set_counts[set_name] = set_counts.get(set_name, 0) + 1
+                            set_counts[set_id] = set_counts.get(set_id, 0) + 1
                     
                     # Format equipment summary
-                    for set_name, count in set_counts.items():
-                        if count >= 5:
-                            equipment_parts.append(f"{count}pc {set_name}")
-                        elif count >= 2:
-                            equipment_parts.append(f"{count}pc {set_name}")
+                    for set_id, count in set_counts.items():
+                        set_name = gear_set_db.get_set_name_by_set_id(set_id)
+                        if set_name:
+                            if count >= 5:
+                                equipment_parts.append(f"{count}pc {set_name}")
+                            elif count >= 2:
+                                equipment_parts.append(f"{count}pc {set_name}")
+                            else:
+                                equipment_parts.append(f"{count}pc {set_name}")
                         else:
-                            equipment_parts.append(f"{count}pc {set_name}")
+                            # Handle unknown sets
+                            if count >= 5:
+                                equipment_parts.append(f"{count}pc Unknown Set ({set_id})")
+                            elif count >= 2:
+                                equipment_parts.append(f"{count}pc Unknown Set ({set_id})")
+                            else:
+                                equipment_parts.append(f"{count}pc Unknown Set ({set_id})")
                 
                 # Add inferred sets
                 if all_identified_sets:

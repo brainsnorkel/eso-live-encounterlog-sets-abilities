@@ -145,7 +145,7 @@ eso-live-encounterlog-sets-abilities/
 ├── example-log/            # Sample ESO encounter log for testing
 │   └── Encounter.log      # Sample log file
 └── setsdb/                 # Gear set database
-    └── LibSets_SetData.xlsx # LibSets gear set data
+    └── LibSets_SetData.xlsm # LibSets gear set data
 ```
 
 ## Testing

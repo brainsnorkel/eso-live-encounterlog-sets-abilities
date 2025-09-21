@@ -11,6 +11,15 @@ from collections import defaultdict, Counter
 class ESOSubclassAnalyzer:
     """Analyzes abilities to infer player subclass/build."""
 
+    SKILL_LINE_ALIASES = { 
+        'Assassination': 'Ass',
+        'Dawn\'s Wrath': 'Dawn',
+        'Herald': 'Herald',
+        'Bone': 'BoneTyrant',
+        'Living': 'LivingDeath',
+        'Winter\'s': 'Winter'
+    }
+
     # Skill line abilities - organized by actual ESO skill lines
     SKILL_LINE_ABILITIES = {
         # Dragonknight Skill Lines
@@ -24,8 +33,8 @@ class ESOSubclassAnalyzer:
         'Storm Calling': ['Streak', 'Lightning Form', 'Critical Surge', 'Hurricane', 'Lightning Splash', 'Overload', 'Mage\'s Fury'],
         
         # Nightblade Skill Lines
-        'Assassination': ['Surprise Attack', 'Killer\'s Blade', 'Death Stroke', 'Mark Target', 'Teleport Strike', 'Blade of Woe', 'Merciless Resolve', 'Incapacitating Strike', 'Assassin\'s Blade', 'Blur'],
-        'Shadow': ['Mirage', 'Dark Cloak', 'Shadow Image', 'Shadowy Disguise', 'Summon Shade', 'Path of Darkness', 'Quick Cloak', 'Shadow Cloak', 'Veiled Strike'],
+        'Assassination': ['Surprise Attack', 'Killer\'s Blade', 'Death Stroke', 'Mark Target', 'Teleport Strike', 'Blade of Woe', 'Merciless Resolve', 'Incapacitating Strike', 'Assassin\'s Blade', 'Blur',  'Veiled Strike'],
+        'Shadow': ['Mirage', 'Dark Cloak', 'Shadow Image', 'Shadowy Disguise', 'Summon Shade', 'Path of Darkness', 'Shadow Cloak'],
         'Siphoning': ['Swallow Soul', 'Crippling Grasp', 'Debilitate', 'Sap Essence', 'Leeching Strikes', 'Relentless Focus', 'Strife', 'Agony', 'Soul Shred'],
         
         # Templar Skill Lines
@@ -41,88 +50,54 @@ class ESOSubclassAnalyzer:
         # Necromancer Skill Lines
         'Bone Tyrant': ['Bone Prison', 'Bone Armor', 'Beckoning Armor', 'Bitter Harvest', 'Pummeling Goliath', 'Renewing Undeath', 'Bone Goliath Transformation'],
         'Grave Lord': ['Flame Skull', 'Blastbones', 'Skeletal Arcanist', 'Skeletal Mage', 'Bone Goliath', 'Skeletal Colossus', 'Boneyard', 'Leashing Soul', 'Ruinous Scythe', 'Necrotic Potency'],
-        'Living Death': ['Life amid Death', 'Render Flesh', 'Restoring Tether', 'Braided Tether', 'Renewing Undeath', 'Spirit Mender', 'Echoing Vigor', 'Expunge', 'Spirit Guardian', 'Soul Shred'],
+        'Living Death': ['Life amid Death', 'Render Flesh', 'Restoring Tether', 'Braided Tether', 'Renewing Undeath', 'Spirit Mender', 'Expunge', 'Spirit Guardian'],
         
         # Arcanist Skill Lines
-        'Herald of the Tome': ['Runeblades', 'Fatecarver', 'Pragmatic Fatecarver', 'Abyssal Impact', 'Tentacular Dread', 'Inspired Scholarship', 'Cephaliarch\'s Flail', 'Exhausting Fatecarver', 'The Unblinking Eye', 'Fulminating Rune', 'Recuperative Treatise'],
+        'Herald of the Tome': ['The Unblinking Eye', 'The Languid Eye', 'The Tide King\'s Gaze', 
+                                'Runeblades', 'Writhing Runeblades', 'Escalating Runeblades', 
+                                'Fatecarver', 'Pragmatic Fatecarver', 'Exhausting Fatecarver', 
+                                'Abyssal Impact', 'Tentacular Dread', 'Cephaliarch\'s Flail', 
+                                'Tome-Bearer\'s Inspiration', 'Inspired Scholarship', 'Recuperative Treatise',
+                                'The Imperfect Ring', 'Rune of Displacement', 'Fulminating Rune'],
         'Curative Runeforms': ['Chakram of Destiny', 'Healing Tether', 'Reconstructive Domain', 'Runemend', 'Curative Surge', 'Remedy Cascade', 'Vitalizing Glyphic', 'Runic Defense'],
-        'Soldier of Apocrypha': ['Beacon of Protection', 'Impervious Runeward', 'Runeguard of Freedom', 'Apocryphal Gate', 'The Unfathomable Darkness', 'Rune of Eldritch Horror', 'Rune of Displacement']
-    }
-
-    # Weapon and guild abilities
-    WEAPON_ABILITIES = {
-        'Two Handed': ['Uppercut', 'Cleave', 'Carve', 'Wrecking Blow', 'Dizzying Swing'],
-        'One Hand and Shield': ['Shield Bash', 'Puncture', 'Shield Wall', 'Shield Charge', 'Power Bash'],
-        'Dual Wield': ['Twin Slashes', 'Flurry', 'Whirlwind', 'Blood Craze', 'Rending Slashes', 'Dual Wield Expert', 'Controlled Fury', 'Twin Blade and Blunt'],
-        'Bow': ['Snipe', 'Volley', 'Poison Arrow', 'Lethal Arrow', 'Focused Aim'],
-        'Destruction Staff': ['Impulse', 'Wall of Elements', 'Destructive Touch', 'Force Pulse', 'Elemental Blockade', 'Blockade of Frost'],
-        'Restoration Staff': ['Grand Healing', 'Healing Springs', 'Regeneration', 'Blessing of Protection']
-    }
-
-    GUILD_ABILITIES = {
-        'Fighters Guild': ['Silver Bolts', 'Circle of Protection', 'Trap Beast', 'Barbed Trap', 'Silver Shards'],
-        'Mages Guild': ['Magelight', 'Entropy', 'Fire Rune', 'Meteor', 'Shooting Star'],
-        'Undaunted': ['Inner Fire', 'Blood Altar', 'Bone Shield', 'Necrotic Orb', 'Energy Orb'],
-        'Thieves Guild': ['Foul Play', 'Clemency'],
-        'Dark Brotherhood': ['Blade of Woe', 'Mark Target'],
-        'Psijic Order': ['Time Stop', 'Undo', 'Borrowed Time', 'Channeled Acceleration']
+        'Soldier of Apocrypha': ['Gibbering Shield', 'Sanctum of the Abyssal Sea', 'Gibbering Shelter',
+                                'Runic Jolt', 'Runic Sunder', 'Runic Embrace',
+                                'Runespite Ward', 'Spiteward of the Lucid Mind', 'Impervious Runeward'
+                                'Fatewoven Armor', 'Cruxweaver Armor', 'Unbreakable Fate',
+                                'Runic Defense', 'Runeguard of Still Waters', 'Runeguard of Freedom',
+                                'Rune of Eldritch Horror', 'Rune of Uncanny Adoration', 'Rune of the Colorless Pool']
     }
 
     def analyze_subclass(self, abilities: Set[str]) -> Dict[str, any]:
-        """Analyze abilities to infer skill lines, role, and build type."""
+        """Analyze abilities to infer skill lines."""
         if not abilities:
-            return {'skill_lines': [], 'role': 'Unknown', 'build_type': 'Unknown', 'confidence': 0.0}
+            return {'skill_lines': [], 'confidence': 0.0}
 
         # Clean ability names for better matching
         clean_abilities = {self._clean_ability_name(ability) for ability in abilities}
 
-        # Score each skill line
-        skill_line_scores = {}
+        # Find skill lines that have at least one matching ability
+        detected_skill_lines = []
         for skill_line, skill_abilities in self.SKILL_LINE_ABILITIES.items():
-            score = sum(1 for ability in skill_abilities 
-                       if any(self._ability_matches(ability, clean_ability) 
-                            for clean_ability in clean_abilities))
-            if score > 0:
-                skill_line_scores[skill_line] = score
+            if any(self._ability_matches(ability, clean_ability) 
+                   for ability in skill_abilities 
+                   for clean_ability in clean_abilities):
+                detected_skill_lines.append(skill_line)
 
-        # Apply priority rules for key abilities
-        priority_skill_lines = set()
-        
-        # If Blazing Spear is present, prioritize Aedric Spear
-        if any(self._ability_matches('Blazing Spear', clean_ability) for clean_ability in clean_abilities):
-            if 'Aedric Spear' in skill_line_scores:
-                priority_skill_lines.add('Aedric Spear')
-        
-        # Sort skill lines by score (highest first) and take top 3
-        # Use skill line name as tie-breaker to ensure consistent ordering
-        sorted_skill_lines = sorted(skill_line_scores.items(), key=lambda x: (-x[1], x[0]))
-        
-        # Build final skill lines list with priorities first, then top scorers
-        top_skill_lines = []
-        
-        # Add priority skill lines first
-        for skill_line in priority_skill_lines:
-            if skill_line not in top_skill_lines and len(top_skill_lines) < 3:
-                top_skill_lines.append(skill_line)
-        
-        # Add remaining skill lines by score
-        for skill_line, score in sorted_skill_lines:
-            if skill_line not in top_skill_lines and len(top_skill_lines) < 3:
-                top_skill_lines.append(skill_line)
+        # Create a list of unique skill lines (preserving order)
+        seen = set()
+        unique_skill_lines = []
+        for skill_line in detected_skill_lines:
+            if skill_line not in seen:
+                unique_skill_lines.append(skill_line)
+                seen.add(skill_line)
+        top_skill_lines = unique_skill_lines
 
-        # Analyze weapons and guilds
-        weapon_info = self._analyze_weapons(clean_abilities)
-        guild_info = self._analyze_guilds(clean_abilities)
-
-        # Calculate confidence based on number of matching abilities
-        total_abilities = len(clean_abilities)
-        total_matches = sum(score for _, score in sorted_skill_lines[:3])
-        confidence = min(total_matches / max(total_abilities, 1), 1.0) if total_matches > 0 else 0.0
+        # Simple confidence: 1.0 if we found skill lines, 0.0 if not
+        confidence = 1.0 if top_skill_lines else 0.0
 
         return {
             'skill_lines': top_skill_lines,
-            'weapons': weapon_info,
-            'guilds': guild_info,
             'confidence': confidence
         }
 
@@ -139,21 +114,6 @@ class ESOSubclassAnalyzer:
         ability_lower = ability.lower()
         return pattern_lower in ability_lower or ability_lower in pattern_lower
 
-    def _analyze_weapons(self, abilities: Set[str]) -> List[str]:
-        """Identify weapons being used based on abilities."""
-        weapons = []
-        for weapon, weapon_abilities in self.WEAPON_ABILITIES.items():
-            if any(self._ability_matches(ability, clean_ability) for ability in weapon_abilities for clean_ability in abilities):
-                weapons.append(weapon)
-        return weapons
-
-    def _analyze_guilds(self, abilities: Set[str]) -> List[str]:
-        """Identify guild skill lines being used."""
-        guilds = []
-        for guild, guild_abilities in self.GUILD_ABILITIES.items():
-            if any(self._ability_matches(ability, clean_ability) for ability in guild_abilities for clean_ability in abilities):
-                guilds.append(guild)
-        return guilds
 
 
 
