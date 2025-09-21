@@ -1,0 +1,200 @@
+name: Build Cross-Platform Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
+        
+    - name: Build Windows executable
+      run: |
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb;setsdb" --add-data="example-log;example-log" --icon=icon.ico eso_analyzer.py
+        
+    - name: Create Windows installer package
+      run: |
+        mkdir dist\installer
+        copy dist\eso-analyzer.exe dist\installer\
+        copy README.md dist\installer\
+        xcopy setsdb dist\installer\setsdb\ /E /I
+        echo @echo off > dist\installer\run.bat
+        echo echo ESO Live Encounter Log Sets ^& Abilities Analyzer >> dist\installer\run.bat
+        echo echo =============================================== >> dist\installer\run.bat
+        echo echo. >> dist\installer\run.bat
+        echo echo Starting analyzer in test mode... >> dist\installer\run.bat
+        echo echo Press Ctrl+C to stop >> dist\installer\run.bat
+        echo echo. >> dist\installer\run.bat
+        echo eso-analyzer.exe --test-mode >> dist\installer\run.bat
+        echo pause >> dist\installer\run.bat
+        
+    - name: Create Windows installer archive
+      run: |
+        cd dist
+        powershell Compress-Archive -Path installer -DestinationPath eso-analyzer-windows-installer.zip
+        
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: eso-analyzer-windows-installer
+        path: dist/eso-analyzer-windows-installer.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
+        
+    - name: Build macOS executable
+      run: |
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" --add-data="example-log:example-log" eso_analyzer.py
+        
+    - name: Create macOS installer package
+      run: |
+        mkdir -p dist/installer
+        cp dist/eso-analyzer dist/installer/
+        cp README.md dist/installer/
+        cp -r setsdb dist/installer/
+        echo '#!/bin/bash' > dist/installer/run.sh
+        echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
+        echo 'echo "================================================="' >> dist/installer/run.sh
+        echo 'echo ""' >> dist/installer/run.sh
+        echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
+        echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
+        echo 'echo ""' >> dist/installer/run.sh
+        echo './eso-analyzer --test-mode' >> dist/installer/run.sh
+        chmod +x dist/installer/run.sh
+        
+    - name: Create macOS installer archive
+      run: |
+        cd dist
+        zip -r eso-analyzer-macos-installer.zip installer/
+        
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: eso-analyzer-macos-installer
+        path: dist/eso-analyzer-macos-installer.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Create icon
+      run: |
+        python create_icon.py
+        
+    - name: Build Linux executable
+      run: |
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" --add-data="example-log:example-log" eso_analyzer.py
+        
+    - name: Create Linux installer package
+      run: |
+        mkdir -p dist/installer
+        cp dist/eso-analyzer dist/installer/
+        cp README.md dist/installer/
+        cp -r setsdb dist/installer/
+        echo '#!/bin/bash' > dist/installer/run.sh
+        echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
+        echo 'echo "================================================="' >> dist/installer/run.sh
+        echo 'echo ""' >> dist/installer/run.sh
+        echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
+        echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
+        echo 'echo ""' >> dist/installer/run.sh
+        echo './eso-analyzer --test-mode' >> dist/installer/run.sh
+        chmod +x dist/installer/run.sh
+        
+    - name: Create Linux installer archive
+      run: |
+        cd dist
+        tar -czf eso-analyzer-linux-installer.tar.gz installer/
+        
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: eso-analyzer-linux-installer
+        path: dist/eso-analyzer-linux-installer.tar.gz
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: eso-analyzer-windows-installer
+        path: ./artifacts/windows
+        
+    - name: Download macOS artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: eso-analyzer-macos-installer
+        path: ./artifacts/macos
+        
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: eso-analyzer-linux-installer
+        path: ./artifacts/linux
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./artifacts/windows/eso-analyzer-windows-installer.zip
+          ./artifacts/macos/eso-analyzer-macos-installer.zip
+          ./artifacts/linux/eso-analyzer-linux-installer.tar.gz
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,9 @@ Setup script for ESO Live Encounter Log Sets & Abilities Analyzer
 from setuptools import setup, find_packages
 import os
 
+# Read version
+exec(open("version.py").read())
+
 # Read the README file
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -16,7 +19,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="eso-live-encounterlog-sets-abilities",
-    version="1.0.0",
+    version=__version__,
     author="Christopher Gentle",
     author_email="christopher.gentle@example.com",
     description="A cross-platform CLI tool for analyzing ESO encounter logs",
