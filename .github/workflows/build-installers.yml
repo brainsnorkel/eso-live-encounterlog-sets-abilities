@@ -41,7 +41,7 @@ jobs:
         copy README.md dist\installer\
         xcopy setsdb dist\installer\setsdb\ /E /I
         echo @echo off > dist\installer\run.bat
-        echo echo ESO Live Encounter Log Sets ^^^& Abilities Analyzer >> dist\installer\run.bat
+        echo echo ESO Live Encounter Log Sets and Abilities Analyzer >> dist\installer\run.bat
         echo echo =============================================== >> dist\installer\run.bat
         echo echo. >> dist\installer\run.bat
         echo echo Starting analyzer in test mode... >> dist\installer\run.bat
