@@ -59,3 +59,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 - Damage/healing number parsing
 - Advanced build analysis
 - Integration with ESO addons
+
+### Acknowledgments
+This project builds upon excellent community resources:
+- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)** by Baertram for gear set database
+- **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais for log parsing insights
+- **UESP** for authoritative skill line information
