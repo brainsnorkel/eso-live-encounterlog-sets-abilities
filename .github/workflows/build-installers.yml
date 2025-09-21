@@ -28,7 +28,7 @@ jobs:
         
     - name: Create icon
       run: |
-        python create_icon.py
+        python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Windows executable
       run: |
@@ -80,7 +80,7 @@ jobs:
         
     - name: Create icon
       run: |
-        python create_icon.py
+        python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build macOS executable
       run: |
@@ -132,7 +132,7 @@ jobs:
         
     - name: Create icon
       run: |
-        python create_icon.py
+        python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Linux executable
       run: |
