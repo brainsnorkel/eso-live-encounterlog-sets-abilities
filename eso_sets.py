@@ -20,54 +20,246 @@ class ESOSubclassAnalyzer:
         'Winter\'s': 'Winter'
     }
 
-    # Skill line abilities - organized by actual ESO skill lines
+ # Complete ESO Class Skill Line Abilities - Updated for 2025
     SKILL_LINE_ABILITIES = {
         # Dragonknight Skill Lines
-        'Ardent Flame': ['Flame Whip', 'Burning Embers', 'Engulfing Flames', 'Molten Whip', 'Power Lash', 'Flame Clench', 'Flames of Oblivion', 'Fiery Grip', 'Searing Strike', 'Fiery Breath'],
-        'Draconic Power': ['Spike Armor', 'Hardened Armor', 'Magma Shell', 'Igneous Shield', 'Choking Talons', 'Dragon Leap', 'Dragonknight Standard', 'Spiked Armor', 'Dragon Blood', 'Reflective Scales'],
-        'Earthen Heart': ['Stonefist', 'Stone Giant', 'Volatile Armor', 'Earthen Heart', 'Corrosive Armor', 'Obsidian Shield', 'Molten Weapons'],
+        'Ardent Flame': [
+            # Ultimate
+            'Dragonknight Standard', 'Shifting Standard', 'Standard of Might',
+            # Active Skills
+            'Lava Whip', 'Molten Whip', 'Flame Lash',
+            'Searing Strike', 'Venomous Claw', 'Burning Embers',
+            'Fiery Breath', 'Noxious Breath', 'Engulfing Flames',
+            'Fiery Grip', 'Empowering Chains', 'Unrelenting Grip',
+            'Inferno', 'Flames of Oblivion', 'Cauterize'
+        ],
+        
+        'Draconic Power': [
+            # Ultimate
+            'Dragon Leap', 'Ferocious Leap', 'Take Flight',
+            # Active Skills
+            'Spiked Armor', 'Hardened Armor', 'Volatile Armor',
+            'Dark Talons', 'Burning Talons', 'Choking Talons',
+            'Dragon Blood', 'Green Dragon Blood', 'Coagulating Blood',
+            'Reflective Scale', 'Dragon Fire Scale', 'Reflective Plate',
+            'Inhale', 'Deep Breath', 'Draw Essence'
+        ],
+        
+        'Earthen Heart': [
+            # Ultimate
+            'Magma Armor', 'Magma Shell', 'Corrosive Armor',
+            # Active Skills
+            'Stonefist', 'Stone Giant', 'Obsidian Shard',
+            'Molten Weapons', 'Igneous Weapons', 'Molten Armaments',
+            'Obsidian Shield', 'Igneous Shield', 'Fragmented Shield',
+            'Petrify', 'Fossilize', 'Shattering Rocks',
+            'Ash Cloud', 'Cinder Storm', 'Eruption'
+        ],
         
         # Sorcerer Skill Lines
-        'Dark Magic': ['Crystal Fragments', 'Dark Exchange', 'Dark Deal', 'Daedric Curse', 'Negate Magic', 'Encase', 'Crystal Shard', 'Rune Prison'],
-        'Daedric Summoning': ['Hardened Ward', 'Conjured Ward', 'Bound Armaments', 'Storm Atronach', 'Summon Winged Twilight', 'Summon Unstable Familiar', 'Bound Armor'],
-        'Storm Calling': ['Streak', 'Lightning Form', 'Critical Surge', 'Hurricane', 'Lightning Splash', 'Overload', 'Mage\'s Fury'],
+        'Dark Magic': [
+            # Ultimate
+            'Negate Magic', 'Suppression Field', 'Absorption Field',
+            # Active Skills
+            'Crystal Shard', 'Crystal Fragments', 'Crystal Weapon',
+            'Encase', 'Shattering Prison', 'Restraining Prison',
+            'Rune Prison', 'Rune Cage', 'Defensive Rune',
+            'Dark Exchange', 'Dark Deal', 'Dark Conversion',
+            'Daedric Mines', 'Daedric Tomb', 'Daedric Minefield'
+        ],
+        
+        'Daedric Summoning': [
+            # Ultimate
+            'Summon Storm Atronach', 'Greater Storm Atronach', 'Summon Charged Atronach',
+            # Active Skills
+            'Summon Unstable Familiar', 'Summon Unstable Clannfear', 'Summon Volatile Familiar',
+            'Daedric Curse', 'Daedric Prey', 'Haunting Curse',
+            'Summon Winged Twilight', 'Summon Twilight Tormentor', 'Summon Twilight Matriarch',
+            'Conjured Ward', 'Hardened Ward', 'Empowered Ward',
+            'Bound Armor', 'Bound Armaments', 'Bound Aegis'
+        ],
+        
+        'Storm Calling': [
+            # Ultimate
+            'Overload', 'Power Overload', 'Energy Overload',
+            # Active Skills
+            'Mages\' Fury', 'Mages\' Wrath', 'Endless Fury',
+            'Lightning Form', 'Hurricane', 'Boundless Storm',
+            'Lightning Splash', 'Liquid Lightning', 'Lightning Flood',
+            'Surge', 'Power Surge', 'Critical Surge',
+            'Bolt Escape', 'Streak', 'Ball of Lightning'
+        ],
         
         # Nightblade Skill Lines
-        'Assassination': ['Surprise Attack', 'Killer\'s Blade', 'Death Stroke', 'Mark Target', 'Teleport Strike', 'Blade of Woe', 'Merciless Resolve', 'Incapacitating Strike', 'Assassin\'s Blade', 'Blur',  'Veiled Strike'],
-        'Shadow': ['Mirage', 'Dark Cloak', 'Shadow Image', 'Shadowy Disguise', 'Summon Shade', 'Path of Darkness', 'Shadow Cloak'],
-        'Siphoning': ['Swallow Soul', 'Crippling Grasp', 'Debilitate', 'Sap Essence', 'Leeching Strikes', 'Relentless Focus', 'Strife', 'Agony', 'Soul Shred'],
+        'Assassination': [
+            # Ultimate
+            'Death Stroke', 'Incapacitating Strike', 'Soul Harvest',
+            # Active Skills
+            'Assassin\'s Blade', 'Killer\'s Blade', 'Impale',
+            'Teleport Strike', 'Ambush', 'Lotus Fan',
+            'Veiled Strike', 'Surprise Attack', 'Concealed Weapon',
+            'Mark Target', 'Piercing Mark', 'Reaper\'s Mark',
+            'Grim Focus', 'Relentless Focus', 'Merciless Resolve'
+        ],
+        
+        'Shadow': [
+            # Ultimate
+            'Consuming Darkness', 'Bolstering Darkness', 'Veil of Blades',
+            # Active Skills
+            'Shadow Cloak', 'Shadowy Disguise', 'Dark Cloak',
+            'Blur', 'Mirage', 'Phantasmal Escape',
+            'Path of Darkness', 'Twisting Path', 'Refreshing Path',
+            'Aspect of Terror', 'Mass Hysteria', 'Manifestation of Terror',
+            'Summon Shade', 'Dark Shade', 'Shadow Image'
+        ],
+        
+        'Siphoning': [
+            # Ultimate
+            'Soul Shred', 'Soul Siphon', 'Soul Tether',
+            # Active Skills
+            'Strife', 'Funnel Health', 'Swallow Soul',
+            'Agony', 'Prolonged Suffering', 'Malefic Wreath',
+            'Cripple', 'Debilitate', 'Crippling Grasp',
+            'Siphoning Strikes', 'Leeching Strikes', 'Siphoning Attacks',
+            'Drain Power', 'Power Extraction', 'Sap Essence'
+        ],
         
         # Templar Skill Lines
-        'Aedric Spear': ['Puncturing Sweeps', 'Biting Jabs', 'Binding Javelin', 'Power of the Light', 'Spear Shards', 'Radial Sweep', 'Puncturing Strikes', 'Piercing Javelin', 'Blazing Spear'],
-        'Dawn\'s Wrath': ['Dark Flare', 'Vampire\'s Bane', 'Radiant Destruction', 'Sun Fire', 'Backlash', 'Solar Barrage', 'Solar Flare'],
-        'Restoring Light': ['Breath of Life', 'Healing Ritual', 'Restoring Light', 'Honor the Dead', 'Healing Springs', 'Ritual of Retribution', 'Rushed Ceremony', 'Restoring Aura', 'Extended Ritual', 'Purifying Light'],
+        'Aedric Spear': [
+            # Ultimate
+            'Radial Sweep', 'Crescent Sweep', 'Empowering Sweep',
+            # Active Skills
+            'Puncturing Strikes', 'Biting Jabs', 'Puncturing Sweep',
+            'Piercing Javelin', 'Aurora Javelin', 'Binding Javelin',
+            'Focused Charge', 'Explosive Charge', 'Toppling Charge',
+            'Spear Shards', 'Luminous Shards', 'Blazing Spear',
+            'Sun Shield', 'Radiant Ward', 'Blazing Shield'
+        ],
+        
+        'Dawn\'s Wrath': [
+            # Ultimate
+            'Nova', 'Solar Prison', 'Solar Disturbance',
+            # Active Skills
+            'Sun Fire', 'Vampire\'s Bane', 'Reflective Light',
+            'Solar Flare', 'Dark Flare', 'Solar Barrage',
+            'Backlash', 'Purifying Light', 'Power of the Light',
+            'Eclipse', 'Total Dark', 'Unstable Core',
+            'Radiant Destruction', 'Radiant Glory', 'Radiant Oppression'
+        ],
+        
+        'Restoring Light': [
+            # Ultimate
+            'Rite of Passage', 'Practiced Incantation', 'Remembrance',
+            # Active Skills
+            'Rushed Ceremony', 'Breath of Life', 'Honor the Dead',
+            'Healing Ritual', 'Ritual of Rebirth', 'Hasty Prayer',
+            'Restoring Aura', 'Radiant Aura', 'Repentance',
+            'Cleansing Ritual', 'Purifying Ritual', 'Extended Ritual',
+            'Rune Focus', 'Channeled Focus', 'Restoring Focus'
+        ],
         
         # Warden Skill Lines
-        'Animal Companions': ['Deep Fissure', 'Cutting Dive', 'Bird of Prey', 'Bull Netch', 'Falcon\'s Swiftness', 'Scorch', 'Dive', 'Swarm'],
-        'Green Balance': ['Healing Seed', 'Living Seed', 'Enchanted Growth', 'Nature\'s Gift', 'Living Vines', 'Budding Seeds', 'Fungal Growth'],
-        'Winter\'s Embrace': ['Arctic Blast', 'Crystallized Shield', 'Frozen Gate', 'Ice Fortress', 'Gripping Shards', 'Permafrost', 'Winter\'s Revenge', 'Northern Storm', 'Frost Cloak', 'Impaling Shards', 'Arctic Wind'],
+        'Animal Companions': [
+            # Ultimate
+            'Feral Guardian', 'Eternal Guardian', 'Wild Guardian',
+            # Active Skills
+            'Dive', 'Cutting Dive', 'Screaming Cliff Racer',
+            'Scorch', 'Subterranean Assault', 'Deep Fissure',
+            'Swarm', 'Fetcher Infection', 'Growing Swarm',
+            'Betty Netch', 'Blue Betty', 'Bull Netch',
+            'Falcon\'s Swiftness', 'Deceptive Predator', 'Bird of Prey'
+        ],
+        
+        'Green Balance': [
+            # Ultimate
+            'Secluded Grove', 'Enchanted Forest', 'Healing Thicket',
+            # Active Skills
+            'Fungal Growth', 'Enchanted Growth', 'Soothing Spores',
+            'Healing Seed', 'Budding Seeds', 'Corrupting Pollen',
+            'Living Vines', 'Leeching Vines', 'Nature\'s Grasp',
+            'Lotus Flower', 'Green Lotus', 'Lotus Blossom',
+            'Nature\'s Gift', 'Nature\'s Embrace', 'Emerald Moss'
+        ],
+        
+        'Winter\'s Embrace': [
+            # Ultimate
+            'Sleet Storm', 'Northern Storm', 'Permafrost',
+            # Active Skills
+            'Frost Cloak', 'Expansive Frost Cloak', 'Ice Cloak',
+            'Impaling Shards', 'Gripping Shards', 'Winter\'s Revenge',
+            'Arctic Wind', 'Arctic Blast', 'Polar Wind',
+            'Crystallized Shield', 'Crystallized Slab', 'Shimmering Shield',
+            'Frozen Gate', 'Frozen Device', 'Frozen Retreat'
+        ],
         
         # Necromancer Skill Lines
-        'Bone Tyrant': ['Bone Prison', 'Bone Armor', 'Beckoning Armor', 'Bitter Harvest', 'Pummeling Goliath', 'Renewing Undeath', 'Bone Goliath Transformation'],
-        'Grave Lord': ['Flame Skull', 'Blastbones', 'Skeletal Arcanist', 'Skeletal Mage', 'Bone Goliath', 'Skeletal Colossus', 'Boneyard', 'Leashing Soul', 'Ruinous Scythe', 'Necrotic Potency'],
-        'Living Death': ['Life amid Death', 'Render Flesh', 'Restoring Tether', 'Braided Tether', 'Renewing Undeath', 'Spirit Mender', 'Expunge', 'Spirit Guardian'],
+        'Grave Lord': [
+            # Ultimate
+            'Frozen Colossus', 'Pestilent Colossus', 'Glacial Colossus',
+            # Active Skills
+            'Flame Skull', 'Ricochet Skull', 'Venom Skull',
+            'Blastbones', 'Blighted Blastbones', 'Stalking Blastbones',
+            'Boneyard', 'Unnerving Boneyard', 'Avid Boneyard',
+            'Skeletal Mage', 'Skeletal Archer', 'Skeletal Arcanist',
+            'Shocking Siphon', 'Detonating Siphon', 'Mystic Siphon'
+        ],
+        
+        'Bone Tyrant': [
+            # Ultimate
+            'Bone Goliath Transformation', 'Pummeling Goliath', 'Ravenous Goliath',
+            # Active Skills
+            'Death Scythe', 'Ruinous Scythe', 'Hungry Scythe',
+            'Bone Armor', 'Beckoning Armor', 'Summoner\'s Armor',
+            'Bitter Harvest', 'Deaden Pain', 'Necrotic Potency',
+            'Bone Totem', 'Remote Totem', 'Agony Totem',
+            'Grave Grasp', 'Ghostly Embrace', 'Empowering Grasp'
+        ],
+        
+        'Living Death': [
+            # Ultimate
+            'Reanimate', 'Renewing Animation', 'Animate Blastbones',
+            # Active Skills
+            'Render Flesh', 'Resistant Flesh', 'Blood Sacrifice',
+            'Life amid Death', 'Enduring Undeath', 'Renewing Undeath',
+            'Spirit Mender', 'Spirit Guardian', 'Intensive Mender',
+            'Restoring Tether', 'Braided Tether', 'Mortal Coil',
+            'Expunge', 'Expunge and Modify', 'Hexproof'
+        ],
         
         # Arcanist Skill Lines
-        'Herald of the Tome': ['The Unblinking Eye', 'The Languid Eye', 'The Tide King\'s Gaze', 
-                                'Runeblades', 'Writhing Runeblades', 'Escalating Runeblades', 
-                                'Fatecarver', 'Pragmatic Fatecarver', 'Exhausting Fatecarver', 
-                                'Abyssal Impact', 'Tentacular Dread', 'Cephaliarch\'s Flail', 
-                                'Tome-Bearer\'s Inspiration', 'Inspired Scholarship', 'Recuperative Treatise',
-                                'The Imperfect Ring', 'Rune of Displacement', 'Fulminating Rune'],
-        'Curative Runeforms': ['Chakram of Destiny', 'Healing Tether', 'Reconstructive Domain', 'Runemend', 'Curative Surge', 'Remedy Cascade', 'Vitalizing Glyphic', 'Runic Defense'],
-        'Soldier of Apocrypha': ['Gibbering Shield', 'Sanctum of the Abyssal Sea', 'Gibbering Shelter',
-                                'Runic Jolt', 'Runic Sunder', 'Runic Embrace',
-                                'Runespite Ward', 'Spiteward of the Lucid Mind', 'Impervious Runeward'
-                                'Fatewoven Armor', 'Cruxweaver Armor', 'Unbreakable Fate',
-                                'Runic Defense', 'Runeguard of Still Waters', 'Runeguard of Freedom',
-                                'Rune of Eldritch Horror', 'Rune of Uncanny Adoration', 'Rune of the Colorless Pool']
-    }
-
+        'Herald of the Tome': [
+            # Ultimate
+            'The Tide King\'s Gaze', 'The Languid Eye', 'The Unblinking Eye',
+            # Active Skills
+            'Runeblades', 'Writhing Runeblades', 'Escalating Runeblades',
+            'Fatecarver', 'Pragmatic Fatecarver', 'Exhausting Fatecarver',
+            'Abyssal Impact', 'Tentacular Dread', 'Cephaliarch\'s Flail',
+            'Tome-Bearer\'s Inspiration', 'Inspired Scholarship', 'Recuperative Treatise',
+            'The Imperfect Ring', 'Rune of Displacement', 'Fulminating Rune'
+        ],
+        
+        'Curative Runeforms': [
+            # Ultimate
+            'Vitalizing Glyphic', 'Glyphic of the Tides', 'Resonating Glyphic',
+            # Active Skills
+            'Runemend', 'Evolving Runemend', 'Audacious Runemend',
+            'Remedy Cascade', 'Cascading Fortune', 'Curative Surge',
+            'Chakram of Destiny', 'Chakram\'s Havoc', 'Kinetic Aegis',
+            'Arcanist\'s Domain', 'Reconstructive Domain', 'Zenas\' Empowering Disc',
+            'Apocryphal Gate', 'Fleet-footed Gate', 'Passage Between Worlds'
+        ],
+        
+        'Soldier of Apocrypha': [
+            # Ultimate
+            'Gibbering Shield', 'Sanctum of the Abyssal Sea', 'Gibbering Shelter',
+            # Active Skills
+            'Runic Jolt', 'Runic Sunder', 'Runic Embrace',
+            'Runespite Ward', 'Spiteward of the Lucid Mind', 'Impervious Runeward',
+            'Fatewoven Armor', 'Cruxweaver Armor', 'Unbreakable Fate',
+            'Runic Defense', 'Runeguard of Still Waters', 'Runeguard of Freedom',
+            'Rune of Eldritch Horror', 'Rune of Uncanny Adoration', 'Rune of the Colorless Pool'
+        ]
+    }   
     def analyze_subclass(self, abilities: Set[str]) -> Dict[str, any]:
         """Analyze abilities to infer skill lines."""
         if not abilities:
