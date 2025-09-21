@@ -16,7 +16,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -56,7 +56,7 @@ jobs:
         powershell Compress-Archive -Path installer -DestinationPath eso-analyzer-windows-installer.zip
         
     - name: Upload Windows artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: eso-analyzer-windows-installer
         path: dist/eso-analyzer-windows-installer.zip
@@ -68,7 +68,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -108,7 +108,7 @@ jobs:
         zip -r eso-analyzer-macos-installer.zip installer/
         
     - name: Upload macOS artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: eso-analyzer-macos-installer
         path: dist/eso-analyzer-macos-installer.zip
@@ -120,7 +120,7 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -160,7 +160,7 @@ jobs:
         tar -czf eso-analyzer-linux-installer.tar.gz installer/
         
     - name: Upload Linux artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: eso-analyzer-linux-installer
         path: dist/eso-analyzer-linux-installer.tar.gz
@@ -171,19 +171,19 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
     - name: Download Windows artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: eso-analyzer-windows-installer
         path: ./artifacts/windows
         
     - name: Download macOS artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: eso-analyzer-macos-installer
         path: ./artifacts/macos
         
     - name: Download Linux artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: eso-analyzer-linux-installer
         path: ./artifacts/linux
