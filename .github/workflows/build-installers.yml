@@ -32,7 +32,7 @@ jobs:
         
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb;setsdb" --add-data="example-log;example-log" --icon=icon.ico eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb;setsdb" --icon=icon.ico eso_analyzer.py
         
     - name: Create Windows installer package
       run: |
@@ -84,7 +84,7 @@ jobs:
         
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" --add-data="example-log:example-log" eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" eso_analyzer.py
         
     - name: Create macOS installer package
       run: |
@@ -136,7 +136,7 @@ jobs:
         
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" --add-data="example-log:example-log" eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" eso_analyzer.py
         
     - name: Create Linux installer package
       run: |
