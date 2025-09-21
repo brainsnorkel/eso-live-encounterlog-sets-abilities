@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.2] - 2025-01-XX
+
+### Enhanced
+- Updated skill line mappings and aliases for improved accuracy
+- Enhanced skill line detection with better subclass analysis logic
+- Improved readability of skill line abbreviations in combat reports
+
+### Technical
+- Refined skill line detection algorithms for better build identification
+- Enhanced ability-to-skill-line mapping accuracy
+
 ## [0.1.1] - 2025-01-XX
 
 ### Fixed
