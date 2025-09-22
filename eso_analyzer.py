@@ -141,6 +141,26 @@ class PlayerInfo:
         self.gear: Dict[str, List[str]] = {}  # gear_slot -> [item_id, trait, quality, enchant_value, enchant_type, ...]
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()  # Track long unit IDs used in combat events
+
+        # Resource tracking (maximum values seen during the encounter)
+        self.max_health: int = 0
+        self.max_magicka: int = 0
+        self.max_stamina: int = 0
+
+    def update_resources(self, health: int = None, magicka: int = None, stamina: int = None):
+        """Update maximum resource values if the new values are higher."""
+        if health is not None and health > self.max_health:
+            self.max_health = health
+        if magicka is not None and magicka > self.max_magicka:
+            self.max_magicka = magicka
+        if stamina is not None and stamina > self.max_stamina:
+            self.max_stamina = stamina
+
+    def reset_resources(self):
+        """Reset resource tracking for a new encounter."""
+        self.max_health = 0
+        self.max_magicka = 0
+        self.max_stamina = 0
         
     def get_class_name(self) -> str:
         """Get the class name from the class ID."""
@@ -954,9 +974,13 @@ class ESOLogAnalyzer:
                 old_players = self.current_encounter.players.copy()
             
             self.current_encounter = CombatEncounter()
-            
+
             # Restore players from previous encounter (they persist across combats in same zone)
             self.current_encounter.players = old_players
+
+            # Reset resource tracking for all players for the new encounter
+            for player in self.current_encounter.players.values():
+                player.reset_resources()
         
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
@@ -1000,14 +1024,53 @@ class ESOLogAnalyzer:
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
 
-        # BEGIN_CAST format: 0, F/T, unit_id, ability_id, target_unit_id, health/health, magicka/magicka, ...
-        if len(entry.fields) >= 4:
-            caster_unit_id = entry.fields[2]  # This is the long unit ID
-            ability_id = entry.fields[3]
+        # BEGIN_CAST format: durationMS, channeled, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>
+        # sourceUnitState: unitId, health/max, magicka/max, stamina/max, ultimate/max, werewolf/max, shield, x, y, heading
+        if len(entry.fields) >= 7:
+            ability_id = entry.fields[3]  # abilityId (corrected based on debug output)
+            caster_unit_id = entry.fields[4]  # sourceUnitState.unitId (corrected based on debug output)
 
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
                 self.current_encounter.add_ability_use(caster_unit_id, ability_name)
+
+            # Parse resource information: health/max, magicka/max, stamina/max in fields 5, 6, 7
+            if len(entry.fields) >= 8:
+                self._parse_and_update_player_resources(caster_unit_id, entry.fields[5:8])
+
+    def _parse_and_update_player_resources(self, unit_id: str, resource_fields: List[str]):
+        """Parse resource information and update the corresponding player's maximum values."""
+        if not self.current_encounter:
+            return
+
+        # Find the player by unit ID (handles both short and long unit IDs)
+        player = self.current_encounter.find_player_by_unit_id(unit_id)
+
+        if not player:
+            return
+
+        # Parse resource fields: [health_current/health_max, magicka_current/magicka_max, stamina_current/stamina_max]
+        try:
+            if len(resource_fields) >= 1 and "/" in resource_fields[0]:
+                # Health format: "current/max" - we want the max (second number)
+                current_health, max_health = resource_fields[0].split("/")
+                max_health = int(max_health)
+                player.update_resources(health=max_health)
+
+            if len(resource_fields) >= 2 and "/" in resource_fields[1]:
+                # Magicka format: "current/max" - we want the max (second number)
+                current_magicka, max_magicka = resource_fields[1].split("/")
+                max_magicka = int(max_magicka)
+                player.update_resources(magicka=max_magicka)
+
+            if len(resource_fields) >= 3 and "/" in resource_fields[2]:
+                # Stamina format: "current/max" - we want the max (second number)
+                current_stamina, max_stamina = resource_fields[2].split("/")
+                max_stamina = int(max_stamina)
+                player.update_resources(stamina=max_stamina)
+
+        except (ValueError, IndexError):
+            pass  # Skip invalid resource data
 
     def _handle_combat_event(self, entry: ESOLogEntry):
         """Handle COMBAT_EVENT events."""
@@ -1296,10 +1359,33 @@ class ESOLogAnalyzer:
                     # Sort skill line aliases before joining
                     skill_line_aliases.sort()
                     skill_lines_str = '/'.join(skill_line_aliases)
-                    # Add class name in parentheses after skill lines
+                    # Add class name and resource information after skill lines
                     class_name = player.get_class_name()
                     if class_name and class_name != "Unknown":
-                        skill_lines_str += f" ({class_name})"
+                        # Format resources with health coloring
+                        resource_str = ""
+                        if player.max_health > 0 or player.max_magicka > 0 or player.max_stamina > 0:
+                            # Round to nearest 0.5k (500)
+                            def round_to_half_k(value):
+                                if value == 0:
+                                    return "0k"
+                                rounded = round(value / 500) * 0.5
+                                if rounded == int(rounded):
+                                    return f"{int(rounded)}k"
+                                else:
+                                    return f"{rounded:.1f}k"
+
+                            health_display = round_to_half_k(player.max_health)
+                            magicka_display = round_to_half_k(player.max_magicka)
+                            stamina_display = round_to_half_k(player.max_stamina)
+
+                            # Color health red if below 19k or above 50k
+                            if player.max_health > 0 and (player.max_health < 19000 or player.max_health > 50000):
+                                health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
+
+                            resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
+
+                        skill_lines_str += f" ({class_name}{resource_str})"
                     title_parts.append(skill_lines_str)
                 else:
                     title_parts.append("unknown")

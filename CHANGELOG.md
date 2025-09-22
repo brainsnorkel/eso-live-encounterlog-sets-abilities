@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.8] - 2025-01-22
+
+### Added
+- **Resource Tracking**: Real-time monitoring of player maximum health, magicka, and stamina values
+- **Resource Display**: Shows resource values in player build information (e.g., "M:25k S:30k H:20k")
+- **Health Anomaly Detection**: Highlights unusual health values (below 19k or above 50k) in red
+- **Resource Reset**: Automatic resource tracking reset between encounters for accurate per-encounter analysis
+
+### Enhanced
+- **Player Information**: More comprehensive player statistics including resource pools
+- **Visual Indicators**: Color-coded health values for quick identification of unusual builds
+- **Combat Analysis**: Better understanding of player builds through resource distribution
+
+### Technical
+- Added `update_resources()` and `reset_resources()` methods to PlayerInfo class
+- Enhanced BEGIN_CAST event parsing to extract resource information from sourceUnitState
+- Added `_parse_and_update_player_resources()` for resource data processing
+- Improved resource display formatting with rounded values (e.g., "25.5k" instead of "25500")
+
 ## [0.1.7] - 2025-01-22
 
 ### Enhanced
