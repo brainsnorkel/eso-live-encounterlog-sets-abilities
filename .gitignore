@@ -68,3 +68,6 @@ icon.png
 # Test outputs
 test_output/
 output/
+
+# Documentation files not for git
+CLAUDE.md
