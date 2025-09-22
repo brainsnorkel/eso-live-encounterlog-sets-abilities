@@ -2,6 +2,27 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.4] - 2025-01-22
+
+### Added
+- **Intelligent Auto-Detection**: Automatically detects most likely ESO log directory based on host OS (Windows, macOS, Linux)
+- **Enhanced Status Messages**: Clear, informative messages about what the tool is doing and where it's looking
+- **Directory Creation**: Automatically creates log directories if they don't exist
+- **Easy Stalking Integration**: Comprehensive documentation and references to Easy Stalking addon for automatic logging
+- **Improved User Experience**: Better guidance for users on enabling encounter logging
+
+### Enhanced
+- **Cross-Platform Detection**: Smart detection of ESO installation paths for Windows, macOS (native/Wine), and Linux (Wine)
+- **Status Reporting**: Real-time feedback on log file detection and monitoring status
+- **Error Handling**: Better error messages and guidance when log files aren't found
+- **Documentation**: Added troubleshooting section with common issues and solutions
+
+### Technical
+- Added `_get_most_likely_log_directory()` for OS-specific path detection
+- Added `_get_host_type_description()` for user-friendly OS identification
+- Enhanced main function with detailed status reporting
+- Improved directory and file existence checking with automatic directory creation
+
 ## [0.1.3] - 2025-01-22
 
 ### Added

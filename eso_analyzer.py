@@ -1069,17 +1069,39 @@ def main(log_file: Optional[str], test_mode: bool, replay_speed: int):
     # Determine log file path
     if log_file:
         log_path = Path(log_file)
+        print(f"{Fore.CYAN}Using specified log file: {log_path}{Style.RESET_ALL}")
     else:
-        # Try to find ESO log file in common locations
+        # Auto-detect based on host OS
+        host_type = _get_host_type_description()
+        print(f"{Fore.CYAN}Auto-detecting ESO log location for {host_type}...{Style.RESET_ALL}")
+        
+        # First try to find existing log file
         log_path = _find_eso_log_file()
-        if not log_path:
-            print(f"{Fore.RED}Error: Could not find ESO encounter log file.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Please specify the log file path with --log-file option.{Style.RESET_ALL}")
+        if log_path:
+            print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
+        else:
+            # Use most likely directory based on host OS
+            likely_directory = _get_most_likely_log_directory()
+            log_path = likely_directory / "Encounter.log"
+            print(f"{Fore.YELLOW}Waiting for Encounter.log to appear in {likely_directory}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Tip: Enable encounter logging in ESO or use the Easy Stalking addon{Style.RESET_ALL}")
+
+    # Check if the directory exists, create it if it doesn't (for monitoring)
+    log_directory = log_path.parent
+    if not log_directory.exists():
+        try:
+            log_directory.mkdir(parents=True, exist_ok=True)
+            print(f"{Fore.YELLOW}Created log directory: {log_directory}{Style.RESET_ALL}")
+        except OSError as e:
+            print(f"{Fore.RED}Error: Cannot create log directory {log_directory}: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
-    if not log_path.exists():
-        print(f"{Fore.RED}Error: Log file does not exist: {log_path}{Style.RESET_ALL}")
-        sys.exit(1)
+    # Check if log file exists
+    if log_path.exists():
+        print(f"{Fore.GREEN}Encounter.log found at {log_path} - waiting for data...{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.YELLOW}Encounter.log not found at {log_path} - waiting for file to appear...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
 
     print(f"{Fore.GREEN}Monitoring: {log_path}{Style.RESET_ALL}")
 
@@ -1124,6 +1146,34 @@ def _find_eso_log_file() -> Optional[Path]:
             return path
 
     return None
+
+def _get_most_likely_log_directory() -> Path:
+    """Get the most likely ESO log directory based on the host OS."""
+    if sys.platform == "win32":
+        # Windows - most common location
+        return Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
+    elif sys.platform == "darwin":
+        # macOS - try native first, then Wine
+        native_path = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
+        wine_path = Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
+        if native_path.exists():
+            return native_path
+        else:
+            return wine_path
+    else:
+        # Linux - Wine is most likely
+        return Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
+
+def _get_host_type_description() -> str:
+    """Get a user-friendly description of the host OS."""
+    if sys.platform == "win32":
+        return "Windows"
+    elif sys.platform == "darwin":
+        return "macOS"
+    elif sys.platform.startswith("linux"):
+        return "Linux"
+    else:
+        return "Unknown"
 
 def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier: int):
     """Replay a log file for testing purposes."""

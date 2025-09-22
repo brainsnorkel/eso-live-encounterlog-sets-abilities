@@ -169,12 +169,56 @@ def test_new_feature(self):
 - Include edge cases and error conditions
 - Test both valid and invalid inputs
 
+## GUI Testing
+
+### Manual GUI Testing Procedures
+
+1. **Launch GUI Mode**
+   ```bash
+   python3 eso_analyzer.py --gui
+   ```
+
+2. **Test Directory Selection**
+   - Verify auto-detection works on startup
+   - Test manual directory browsing
+   - Test with invalid directories
+
+3. **Test Log File Detection**
+   - Click "Auto-detect" button
+   - Verify Encounter.log is found
+   - Test with missing log files
+
+4. **Test Monitoring**
+   - Click "Start Monitoring"
+   - Verify status changes to "Monitoring..."
+   - Test "Stop Monitoring" functionality
+
+5. **Test Output Display**
+   - Use "Test Mode" to generate sample output
+   - Verify output appears in scrollable text area
+   - Test "Clear Output" functionality
+
+6. **Test User Guide**
+   - Click "User Guide" button
+   - Verify guide opens in new window
+   - Test guide content loading
+
+### GUI Error Handling Tests
+- Test with missing log files
+- Test with corrupted log files
+- Test with invalid directory paths
+- Test GUI responsiveness during monitoring
+
 ## Performance Testing
 
 ### Large Log Testing
 ```bash
-# Test with full sample log
+# Test CLI with full sample log
 python3 eso_analyzer.py --test-mode --replay-speed 1000
+
+# Test GUI with sample data
+python3 eso_analyzer.py --gui
+# Then click "Test Mode" button
 ```
 
 ### Memory Usage
