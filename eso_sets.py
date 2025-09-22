@@ -127,7 +127,7 @@ class ESOSubclassAnalyzer:
         # Templar Skill Lines
         'Aedric Spear': [
             # Ultimate
-            'Radial Sweep', 'Crescent Sweep', 'Empowering Sweep',
+            'Radial Sweep', 'Crescent Sweep', 'Everlasting Sweep',
             # Active Skills
             'Puncturing Strikes', 'Biting Jabs', 'Puncturing Sweep',
             'Piercing Javelin', 'Aurora Javelin', 'Binding Javelin',

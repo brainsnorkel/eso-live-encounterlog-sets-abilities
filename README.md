@@ -212,6 +212,12 @@ The tool identifies gear sets by:
 - The analyzer requires ABILITY_INFO events before PLAYER_INFO for complete analysis
 - Anonymous players (no abilities observed) will show as "unknown"
 
+#### Tool started after zone change
+- The analyzer automatically detects when you start monitoring after entering a zone
+- It scans recent log entries to find the last zone change and rewinds to that zone
+- Combat events will be properly associated with the correct zone
+- Look for "Scanning recent log entries for zone changes..." message on startup
+
 ## Project Structure
 
 ```

@@ -2,6 +2,18 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.7] - 2025-01-22
+
+### Enhanced
+- **Improved Log Processing**: Enhanced log file parsing and analysis capabilities
+- **Better Error Handling**: Improved error handling and edge case management
+- **Code Quality**: Refactored and improved code structure for better maintainability
+
+### Technical
+- Significant code improvements across multiple modules
+- Enhanced database integration and set detection
+- Improved analyzer performance and reliability
+
 ## [0.1.6] - 2025-01-22
 
 ### Added
@@ -10,18 +22,30 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 - **Directory Creation**: Automatically creates log directories if they don't exist
 - **Easy Stalking Integration**: Comprehensive documentation and references to Easy Stalking addon for automatic logging
 - **Improved User Experience**: Better guidance for users on enabling encounter logging
+- **Zone Rewind Functionality**: Automatically detects and handles scenarios where the tool starts after a zone change
 
 ### Enhanced
 - **Cross-Platform Detection**: Smart detection of ESO installation paths for Windows, macOS (native/Wine), and Linux (Wine)
 - **Status Reporting**: Real-time feedback on log file detection and monitoring status
 - **Error Handling**: Better error messages and guidance when log files aren't found
 - **Documentation**: Added troubleshooting section with common issues and solutions
+- **Zone Context Recovery**: Automatically recovers zone context when starting monitoring after zone changes
+
+### Removed
+- **Resource Categorization**: Removed magicka/health/stamina resource type categorization from player build displays
+- **Individual Major Courage Uptime**: Removed redundant individual Major Courage uptime calculations after player reports
 
 ### Technical
 - Added `_get_most_likely_log_directory()` for OS-specific path detection
 - Added `_get_host_type_description()` for user-friendly OS identification
 - Enhanced main function with detailed status reporting
 - Improved directory and file existence checking with automatic directory creation
+- Added zone history tracking with `_add_zone_to_history()` and `_rewind_to_last_zone()`
+- Enhanced LogFileHandler with `_initialize_zone_history()` for startup zone detection
+- Added `_process_log_file_from_position()` for efficient log file scanning
+- Removed resource tracking fields and methods from PlayerInfo class
+- Simplified player build display format by removing resource type categorization
+- Removed individual Major Courage uptime display code from player report section
 
 ## [0.1.5] - 2025-01-22
 

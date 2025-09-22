@@ -132,6 +132,15 @@ class GearSetDatabase:
             # '215598': "Unknown Set",    # FEET item - need to verify actual set
             # '175047': "Unknown Set",    # RING items - need to verify actual set
             # '215599': "Unknown Set",    # HAND item - need to verify actual set
+            '166198': "Spectral Cloak",  # Blackrose Dagger
+            '166196': "Spectral Cloak",  # Blackrose Dagger (alternative ID)
+            '87874': "Perfected Slivers of the Null Arca",  # Lightning Staff
+            '194512': "Velothi Ur-Mage's Amulet",  # Mythic amulet
+            '95180': "Slimecraw",  # Monster set
+            '170746': "Unleashed Ritualist",  # Set pieces
+            '170734': "Unleashed Ritualist",  # Set pieces
+            '170751': "Unleashed Ritualist",  # Set pieces
+            '145018': "Spectral Cloak",  # Set pieces
             # '166199': "Unknown Set",    # BACKUP_MAIN item - need to verify actual set
             
             # Example mappings for other sets (these would need to be updated with actual data)
