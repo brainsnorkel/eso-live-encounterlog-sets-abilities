@@ -117,6 +117,28 @@ python3 eso_analyzer.py -v
 python3 eso_analyzer.py --log-file /custom/path/Encounter.log --read-all-then-tail
 ```
 
+### Real-World Usage Examples
+
+**Start monitoring with default behavior (waits for log file):**
+```bash
+python3 eso_analyzer.py
+```
+
+**Read existing log history then continue tailing:**
+```bash
+python3 eso_analyzer.py --read-all-then-tail
+```
+
+**Quick version check:**
+```bash
+python3 eso_analyzer.py -v
+```
+
+**Exit immediately if log file doesn't exist:**
+```bash
+python3 eso_analyzer.py --no-wait
+```
+
 ## Command Line Options
 
 - `--log-file`, `-f`: Path to ESO encounter log file
@@ -155,10 +177,17 @@ Group Buffs: Major Courage: ✅ | Major Force: ❌ | Major Slayer: ✅
   Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 5pc Tide-Born Wildstalker, 3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 1pc Perfected Crushing Wall
   Major Courage Uptime: 95.2%
 
-anon Aedric/Ass/Herald (Templar M:20k S:35k H:45k) (4.3%)
-  Bar 1: Pragmatic Fatecarver, Cephaliarch's Flail, Blazing Spear, Quick Cloak, Shocking Banner, Soul Harvest
-  Bar 2: Barbed Trap, Merciless Resolve, Inspired Scholarship, Elemental Blockade, Shocking Banner, The Languid Eye
-  Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 6pc Order's Wrath, 5pc Tide-Born Wildstalker
+@tankplayer Shield Wall Templar/Ass/Winter (Templar M:15k S:25k H:45k) (8.1%)
+  Bar 1: Defensive Posture, Restoring Tether, Radiant Glory, Living Dark, Magical Banner, Crescent Sweep
+  Bar 2: Bone Surge, Spirit Guardian, Restoring Aura, Radiant Ward, Magical Banner, Aggressive Horn
+  Equipment: 2pc Tremorscale, 5pc Ebon Armory, 5pc Tormentor, 1pc Perfected Crushing Wall
+  Major Courage Uptime: 88.7%
+
+@healerplayer Resto Staff Templar/Ass/Winter (Templar M:30k S:20k H:35k) (4.7%)
+  Bar 1: Combat Prayer, Breath of Life, Radiant Aura, Restoring Tether, Magical Banner, Aggressive Horn
+  Bar 2: Elemental Blockade, Mystic Orb, Radiant Glory, Restoring Aura, Magical Banner, Crescent Sweep
+  Equipment: 2pc Symphony of Blades, 5pc Spell Power Cure, 5pc Master Architect, 1pc Perfected Crushing Wall
+  Major Courage Uptime: 92.3%
 ```
 
 ### Output Components
@@ -168,11 +197,13 @@ anon Aedric/Ass/Herald (Templar M:20k S:35k H:45k) (4.3%)
 - **Player Count & DPS**: Number of players and estimated group DPS
 - **Death Counter**: Total deaths since entering the zone
 - **Target**: Primary enemy that received the most damage events
-- **Group Buffs**: Visual indicators (✅/❌) for critical group buffs in encounters with 3+ players
+- **Group Buffs**: Visual indicators (✅/❌) for critical group buffs (Major Courage, Major Force, Major Slayer)
 - **Player Info**: Character name, skill lines, class, resource values, and damage percentage
-- **Ability Bars**: Front bar and back bar equipped abilities
-- **Equipment**: Gear sets with piece counts and set names
+- **Resource Values**: Maximum health, magicka, stamina with color coding for anomalies (red for unusual health values)
+- **Ability Bars**: Front bar and back bar equipped abilities with proper skill line detection
+- **Equipment**: Gear sets with piece counts and accurate set names from LibSets database
 - **Buff Uptime**: Major Courage uptime percentage for each player
+- **Build Analysis**: Inferred class and skill line combinations for build identification
 
 ## Analysis Features
 
@@ -285,6 +316,12 @@ python3 eso_analyzer.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\
 
 ### Recent Updates
 
+- **Improved Default Behavior**: Tool now waits for log files by default instead of exiting immediately
+- **Version Flag**: Added `-v`/`--version` for quick version information
+- **Resource Tracking**: Real-time monitoring of player health, magicka, and stamina values
+- **Health Anomaly Detection**: Color-coded health values for unusual builds (red for <19k or >50k health)
+- **Enhanced File Handling**: Better log file monitoring with `--read-all-then-tail` option
+- **Automated Releases**: GitHub Actions now automatically creates releases with installers
 - **Combat Timeout Removal**: Eliminated unreliable timeout-based combat detection
 - **Explicit Event Handling**: Uses BEGIN_COMBAT/END_COMBAT events for accurate combat tracking
 - **Enhanced Skill Line Detection**: Comprehensive ability-to-skill-line mappings based on UESP
