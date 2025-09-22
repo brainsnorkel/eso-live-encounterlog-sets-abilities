@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.1.3] - 2025-01-22
+## [0.1.6] - 2025-01-22
 
 ### Added
 - **Unix Timestamp Integration**: Accurate combat start times using Unix timestamps from BEGIN_LOG events
