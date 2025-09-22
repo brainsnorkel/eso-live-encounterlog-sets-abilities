@@ -44,14 +44,34 @@ Download the latest release for your platform:
    chmod +x eso_analyzer.py
    ```
 
+### Enable ESO Encounter Logging
+
+**Important**: ESO encounter logging must be enabled in-game for this tool to work.
+
+#### Automatic Logging (Recommended)
+Install the **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)** addon to automatically start/stop encounter logging based on content type:
+- Automatically logs in Dungeons, Trials, Arenas, Battlegrounds, etc.
+- Visual on-screen indicator when logging is active
+- Configurable for different content types
+- `/ezlog` chat command for manual control
+
+#### Manual Logging
+Alternatively, you can manually enable encounter logging:
+- In-game: `/encounterlog` (toggles logging on/off)
+- Or enable in Settings → Combat → Combat Logging
+
 ## Usage
 
 ### Live Monitoring
 
-**Auto-detect ESO log file:**
+**Auto-detect ESO log file (Recommended):**
 ```bash
 python3 eso_analyzer.py
 ```
+The tool automatically detects the most likely ESO log directory based on your operating system:
+- **Windows**: `%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\`
+- **macOS**: `~/Documents/Elder Scrolls Online/live/Logs/` or Wine location
+- **Linux**: `~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/`
 
 **Specify log file manually:**
 ```bash
@@ -171,6 +191,26 @@ The tool identifies gear sets by:
   - `pandas` - Excel file processing
   - `openpyxl` - Excel file reading
   - `colorama` - Cross-platform colored terminal output
+
+## Troubleshooting
+
+### Common Issues
+
+#### "Encounter.log not found"
+- Ensure ESO encounter logging is enabled in-game
+- Use **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)** addon for automatic logging
+- Check that you're in the correct log directory
+- Verify the log file exists and is accessible
+
+#### "No combat encounters detected"
+- Make sure you're actively fighting in ESO
+- Check that the log file is being updated (file modification time)
+- Try using Test Mode to verify the application is working
+
+#### "Unknown" builds or abilities
+- Some abilities may not be recognized if they're new or rare
+- The analyzer requires ABILITY_INFO events before PLAYER_INFO for complete analysis
+- Anonymous players (no abilities observed) will show as "unknown"
 
 ## Project Structure
 
