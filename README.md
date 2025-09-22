@@ -16,7 +16,7 @@ A cross-platform CLI tool for monitoring Elder Scrolls Online encounter logs in 
 - **Resource Analysis**: Displays maximum resource values (Magicka/Stamina/Health) for each player
 - **Health Anomaly Detection**: Highlights unusual health values in red for quick identification
 - **Zone-based Reporting**: Generates reports for each combat encounter within zones
-- **Cross-platform**: Works on macOS and Windows
+- **Cross-platform**: Works on Windows, macOS, and Linux
 - **Test Mode**: Replay sample logs for development and testing
 
 ## Installation
@@ -24,8 +24,9 @@ A cross-platform CLI tool for monitoring Elder Scrolls Online encounter logs in 
 ### Option 1: Standalone Installers (Recommended)
 
 Download the latest release for your platform:
-- **Windows**: `eso-analyzer-windows-installer.exe`
-- **macOS**: `eso-analyzer-macos-installer.dmg`
+- **Windows**: `eso-analyzer-windows-installer.zip`
+- **macOS**: `eso-analyzer-macos-installer.zip`
+- **Linux**: `eso-analyzer-linux-installer.tar.gz`
 
 ### Option 2: Manual Installation
 
@@ -167,27 +168,28 @@ When a combat encounter ends, the tool displays:
 ```
 === ZONE CHANGED ===
 Zone: Coral Aerie (VETERAN)
+2025-08-21 08:42:06 (Coral Aerie) | Duration: 8.8s | Players: 4 | Est. DPS: 108,755 | Target: Yaghra Spewer (HP: 105,637)
+Group Buffs: Major Courage: ❌ | Major Force: ❌ | Major Slayer: ❌
 
-2025-08-21 08:42:06 (Coral Aerie) | Duration: 8.8s | Players: 4 | Est. DPS: 131,062 | Deaths: 0 | Target: Yaghra Spewer
-Group Buffs: Major Courage: ✅ | Major Force: ❌ | Major Slayer: ✅
+@brainsnorkel Beam Hal Herald/Ass/Winter (Arcanist M:29.5k S:13k H:23k)
+  Cephaliarch's Flail, Exhausting Fatecarver, Quick Cloak, Concealed Weapon, Magical Banner, Incapacitating Strike
+  Blockade of Frost, Winter's Revenge, Arctic Blast, Inspired Scholarship, Magical Banner, Northern Storm
+  3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 2pc Perfected Crushing Wall, 1pc Slimecraw, 5pc Tide-Born Wildstalker, Velothi Ur-Mage's Amulet
 
-@brainsnorkel Beam Hal Herald/Ass/Winter (Arcanist M:25k S:30k H:20k) (87.2%)
-  Bar 1: Cephaliarch's Flail, Exhausting Fatecarver, Quick Cloak, Concealed Weapon, Magical Banner, Incapacitating Strike
-  Bar 2: Blockade of Frost, Winter's Revenge, Arctic Blast, Inspired Scholarship, Magical Banner, Northern Storm
-  Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 5pc Tide-Born Wildstalker, 3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 1pc Perfected Crushing Wall
-  Major Courage Uptime: 95.2%
+anon Aedric/Ass/Herald (Templar M:14.5k S:29.5k H:18.5k)
+  Pragmatic Fatecarver, Cephaliarch's Flail, Blazing Spear, Quick Cloak, Shocking Banner, Soul Harvest
+  Barbed Trap, Merciless Resolve, Inspired Scholarship, Elemental Blockade, Shocking Banner, The Languid Eye
+  7pc Order's Wrath, 1pc Slimecraw, 5pc Tide-Born Wildstalker, Velothi Ur-Mage's Amulet
 
-@tankplayer Shield Wall Templar/Ass/Winter (Templar M:15k S:25k H:45k) (8.1%)
-  Bar 1: Defensive Posture, Restoring Tether, Radiant Glory, Living Dark, Magical Banner, Crescent Sweep
-  Bar 2: Bone Surge, Spirit Guardian, Restoring Aura, Radiant Ward, Magical Banner, Aggressive Horn
-  Equipment: 2pc Tremorscale, 5pc Ebon Armory, 5pc Tormentor, 1pc Perfected Crushing Wall
-  Major Courage Uptime: 88.7%
+anon Dawn/Restoring (Templar M:36k S:18k H:25k)
+  Purifying Light, Illustrious Healing, Combat Prayer, Breath of Life, Radiating Regeneration, Solar Prison
+  Channeled Focus, Extended Ritual, Elemental Blockade, Energy Orb, Echoing Vigor, Aggressive Horn
+  2pc Ozezan the Inferno, 7pc Powerful Assault, 5pc Spell Power Cure
 
-@healerplayer Resto Staff Templar/Ass/Winter (Templar M:30k S:20k H:35k) (4.7%)
-  Bar 1: Combat Prayer, Breath of Life, Radiant Aura, Restoring Tether, Magical Banner, Aggressive Horn
-  Bar 2: Elemental Blockade, Mystic Orb, Radiant Glory, Restoring Aura, Magical Banner, Crescent Sweep
-  Equipment: 2pc Symphony of Blades, 5pc Spell Power Cure, 5pc Master Architect, 1pc Perfected Crushing Wall
-  Major Courage Uptime: 92.3%
+anon BoneTyrant/Winter (Templar M:24.5k S:27k H:41k)
+  Gripping Shards, Goading Throw, Leashing Soul, Ruinous Scythe, Necrotic Potency, Northern Storm
+  Beckoning Armor, Chilling Explosion, Leashing Burst, Razor Caltrops, Chilling Trample, Aggressive Horn
+  5pc Lucent Echoes, 2pc Tremorscale, 7pc Turning Tide
 ```
 
 ### Output Components
@@ -195,14 +197,12 @@ Group Buffs: Major Courage: ✅ | Major Force: ❌ | Major Slayer: ✅
 - **Timestamp**: Accurate local date/time when combat started (using Unix timestamps from log data)
 - **Zone & Duration**: Combat location and duration in seconds
 - **Player Count & DPS**: Number of players and estimated group DPS
-- **Death Counter**: Total deaths since entering the zone
-- **Target**: Primary enemy that received the most damage events
+- **Target**: Primary enemy that received the most damage events with health pool (HP: X,XXX)
 - **Group Buffs**: Visual indicators (✅/❌) for critical group buffs (Major Courage, Major Force, Major Slayer)
-- **Player Info**: Character name, skill lines, class, resource values, and damage percentage
+- **Player Info**: Character name, skill lines, class, and resource values (M:X.Xk S:X.Xk H:X.Xk)
 - **Resource Values**: Maximum health, magicka, stamina with color coding for anomalies (red for unusual health values)
-- **Ability Bars**: Front bar and back bar equipped abilities with proper skill line detection
+- **Ability Bars**: Combined front bar and back bar equipped abilities (no separate bar labels)
 - **Equipment**: Gear sets with piece counts and accurate set names from LibSets database
-- **Buff Uptime**: Major Courage uptime percentage for each player
 - **Build Analysis**: Inferred class and skill line combinations for build identification
 
 ## Analysis Features
