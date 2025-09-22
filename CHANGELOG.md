@@ -2,6 +2,23 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.10] - 2025-01-22
+
+### Fixed
+- **Default Behavior**: Changed default behavior to wait for log file instead of exiting immediately
+- **User Experience**: Tool now waits for encounter log file to appear by default with status updates every minute
+- **Command Line Options**: Replaced `--wait-for-file` with `--no-wait` flag (inverted logic for better UX)
+
+### Enhanced
+- **Intuitive Behavior**: Users no longer need to remember special flags to wait for log files
+- **Better Defaults**: More user-friendly default behavior for new users
+- **Clearer Options**: Simplified command line interface with more intuitive flag names
+
+### Technical
+- Inverted wait-for-file logic to make waiting the default behavior
+- Updated all documentation to reflect new default behavior
+- Improved error messages and user guidance
+
 ## [0.1.9] - 2025-01-22
 
 ### Added
