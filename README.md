@@ -9,6 +9,11 @@ A cross-platform CLI tool for monitoring Elder Scrolls Online encounter logs in 
 - **Skill Line Detection**: Analyzes equipped abilities to infer skill lines (e.g., "Herald/Assassination/Winter's")
 - **Front/Back Bar Abilities**: Distinguishes between front bar and back bar equipped abilities
 - **Gear Set Identification**: Identifies gear sets using LibSets database integration
+- **Accurate Timestamps**: Uses Unix timestamps from log data for precise combat start times
+- **Group Buff Detection**: Monitors critical group buffs (Major Courage, Major Force, Major Slayer)
+- **Individual Buff Uptime**: Tracks Major Courage uptime for each player
+- **Damage Analysis**: Shows damage percentages and sorts players by contribution
+- **Resource Analysis**: Displays dominant resource (Magicka/Stamina/Health) for each player
 - **Zone-based Reporting**: Generates reports for each combat encounter within zones
 - **Cross-platform**: Works on macOS and Windows
 - **Test Mode**: Replay sample logs for development and testing
@@ -89,15 +94,35 @@ When a combat encounter ends, the tool displays:
 
 ```
 === ZONE CHANGED ===
-Zone: Vateshran Hollows (VETERAN)
+Zone: Coral Aerie (VETERAN)
 
-=== COMBAT ENDED (Vateshran Hollows) | Duration: 196.4s | Players: 1 ===
+2025-08-21 08:42:06 (Coral Aerie) | Duration: 8.8s | Players: 4 | Est. DPS: 131,062 | Deaths: 0 | Target: Yaghra Spewer
+Group Buffs: Major Courage: ✅ | Major Force: ❌ | Major Slayer: ✅
 
-@brainsnorkel Herald/Assassination/Winter's
-  Bar 1: Cephaliarch's Flail, Exhausting Fatecarver, Quick Cloak, Concealed Weapon, Merciless Resolve, Incapacitating Strike
-  Bar 2: Blockade of Frost, Arctic Blast, Inspired Scholarship, Elemental Susceptibility, Echoing Vigor, Northern Storm
-  Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 1pc Perfected Crushing Wall
+@brainsnorkel Beam Hal Herald/Ass/Winter Mag (87.2%)
+  Bar 1: Cephaliarch's Flail, Exhausting Fatecarver, Quick Cloak, Concealed Weapon, Magical Banner, Incapacitating Strike
+  Bar 2: Blockade of Frost, Winter's Revenge, Arctic Blast, Inspired Scholarship, Magical Banner, Northern Storm
+  Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 5pc Tide-Born Wildstalker, 3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 1pc Perfected Crushing Wall
+  Major Courage Uptime: 95.2%
+
+anon Aedric/Ass/Herald Stam (4.3%)
+  Bar 1: Pragmatic Fatecarver, Cephaliarch's Flail, Blazing Spear, Quick Cloak, Shocking Banner, Soul Harvest
+  Bar 2: Barbed Trap, Merciless Resolve, Inspired Scholarship, Elemental Blockade, Shocking Banner, The Languid Eye
+  Equipment: 1pc Slimecraw, 1pc Velothi Ur-Mage's Amulet, 6pc Order's Wrath, 5pc Tide-Born Wildstalker
 ```
+
+### Output Components
+
+- **Timestamp**: Accurate local date/time when combat started (using Unix timestamps from log data)
+- **Zone & Duration**: Combat location and duration in seconds
+- **Player Count & DPS**: Number of players and estimated group DPS
+- **Death Counter**: Total deaths since entering the zone
+- **Target**: Primary enemy that received the most damage events
+- **Group Buffs**: Visual indicators (✅/❌) for critical group buffs in encounters with 3+ players
+- **Player Info**: Character name, skill lines, dominant resource, and damage percentage
+- **Ability Bars**: Front bar and back bar equipped abilities
+- **Equipment**: Gear sets with piece counts and set names
+- **Buff Uptime**: Major Courage uptime percentage for each player
 
 ## Analysis Features
 
@@ -115,11 +140,26 @@ The tool identifies gear sets by:
 - **Comprehensive Database**: Includes 634+ gear sets from LibSets
 - **Accurate Detection**: Shows actual equipped gear pieces with set names
 
+### Buff Detection & Analysis
+
+- **Group Buff Monitoring**: Tracks critical group buffs (Major Courage, Major Force, Major Slayer)
+- **Visual Indicators**: Uses ✅/❌ emojis for clear buff status display
+- **Individual Uptime**: Calculates Major Courage uptime percentage for each player
+- **Buff Tracking**: Monitors buff applications and removals throughout encounters
+
+### Damage & Resource Analysis
+
+- **Damage Percentages**: Shows each player's contribution to total damage
+- **Player Sorting**: Displays players in descending order by damage contribution
+- **Resource Detection**: Identifies dominant resource (Magicka/Stamina/Health) for each player
+- **DPS Calculation**: Estimates group DPS based on total damage and combat duration
+
 ### Zone-based Reporting
 
 - **Zone Changes**: Reports when entering new zones
-- **Combat Events**: Tracks BEGIN_COMBAT and END_COMBAT events
+- **Combat Events**: Tracks BEGIN_COMBAT and END_COMBAT events with accurate timestamps
 - **Player Persistence**: Maintains player data across multiple combats within a zone
+- **Death Tracking**: Counts total deaths since entering each zone
 
 ## Requirements
 

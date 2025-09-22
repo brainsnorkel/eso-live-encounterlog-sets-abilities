@@ -152,6 +152,11 @@ class CombatEncounter:
         self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
         self.player_deaths: int = 0  # Track player deaths
         self.in_combat = False
+        self.finalized = False  # Track if encounter has been finalized (ended)
+        
+        # Buff tracking
+        self.player_buffs: Dict[str, Dict[str, List[Tuple[int, int]]]] = defaultdict(lambda: defaultdict(list))  # player_id -> buff_name -> [(start_time, end_time)]
+        self.active_buffs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # player_id -> buff_name -> start_time
 
     def add_player(self, unit_id: str, name: str, handle: str):
         """Add a player to this encounter."""
@@ -263,6 +268,151 @@ class CombatEncounter:
                         self.player_damage[player_id] = 0
                     self.player_damage[player_id] += damage_per_player
 
+    def track_buff(self, player_unit_id: str, buff_name: str, effect_type: str, timestamp: int):
+        """Track buff applications and removals for uptime calculation."""
+        if effect_type == "GAINED":
+            # Start tracking this buff
+            self.active_buffs[player_unit_id][buff_name] = timestamp
+        elif effect_type == "FADED":
+            # End tracking this buff and record the duration
+            if buff_name in self.active_buffs[player_unit_id]:
+                start_time = self.active_buffs[player_unit_id][buff_name]
+                self.player_buffs[player_unit_id][buff_name].append((start_time, timestamp))
+                del self.active_buffs[player_unit_id][buff_name]
+
+    def get_buff_uptime(self, player_unit_id: str, buff_name: str) -> float:
+        """Calculate uptime percentage for a specific buff on a player."""
+        if not self.player_buffs[player_unit_id][buff_name]:
+            return 0.0
+        
+        total_uptime = 0
+        for start_time, end_time in self.player_buffs[player_unit_id][buff_name]:
+            total_uptime += (end_time - start_time)
+        
+        # Add any currently active buff time
+        if buff_name in self.active_buffs[player_unit_id]:
+            current_time = self.end_time if self.end_time > 0 else self.start_time
+            total_uptime += (current_time - self.active_buffs[player_unit_id][buff_name])
+        
+        if self.end_time > self.start_time:
+            duration = self.end_time - self.start_time
+            return (total_uptime / duration) * 100.0
+        return 0.0
+
+    def finalize_buff_tracking(self):
+        """Finalize buff tracking by ending any active buffs at encounter end."""
+        for player_id, active_buffs in self.active_buffs.items():
+            for buff_name, start_time in active_buffs.items():
+                end_time = self.end_time if self.end_time > 0 else self.start_time
+                self.player_buffs[player_id][buff_name].append((start_time, end_time))
+        self.active_buffs.clear()
+
+    def get_combat_start_time_formatted(self, log_file_path: str = None, log_start_unix: int = None) -> str:
+        """Get the combat start time formatted as local date/time."""
+        if not self.start_time:
+            return "Unknown Time"
+        
+        import datetime
+        
+        # Use Unix timestamp from BEGIN_LOG event if available (most accurate)
+        if log_start_unix:
+            try:
+                log_start_dt = datetime.datetime.fromtimestamp(log_start_unix / 1000.0)
+                combat_start_dt = log_start_dt + datetime.timedelta(milliseconds=self.start_time)
+                return combat_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, OSError):
+                pass
+        
+        # Fallback: Use file modification time
+        if log_file_path:
+            import os
+            try:
+                if os.path.exists(log_file_path):
+                    file_mtime = os.path.getmtime(log_file_path)
+                    file_time = datetime.datetime.fromtimestamp(file_mtime)
+                    combat_start_time = file_time - datetime.timedelta(seconds=(self.end_time - self.start_time) / 1000.0)
+                    return combat_start_time.strftime("%Y-%m-%d %H:%M:%S")
+            except (OSError, ValueError):
+                pass
+        
+        # Final fallback: Use current time minus the relative timestamp
+        current_time = datetime.datetime.now()
+        base_time = current_time - datetime.timedelta(seconds=self.start_time / 1000.0)
+        
+        return base_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def get_group_buff_uptime(self, buff_name: str) -> float:
+        """Calculate uptime percentage for a group buff (active on any player)."""
+        # Collect all time intervals when the buff was active on any player
+        active_intervals = []
+        
+        # Check all players for this buff
+        for player_id in self.players.keys():
+            # Add completed buff periods
+            if buff_name in self.player_buffs[player_id]:
+                for start_time, end_time in self.player_buffs[player_id][buff_name]:
+                    # Clamp intervals to encounter bounds
+                    start_clamped = max(start_time, self.start_time)
+                    end_clamped = min(end_time, self.end_time) if self.end_time > 0 else end_time
+                    if start_clamped < end_clamped:
+                        active_intervals.append((start_clamped, end_clamped))
+            
+            # Add currently active buff
+            if buff_name in self.active_buffs[player_id]:
+                start_time = self.active_buffs[player_id][buff_name]
+                end_time = self.end_time if self.end_time > 0 else self.start_time
+                # Clamp to encounter bounds
+                start_clamped = max(start_time, self.start_time)
+                end_clamped = min(end_time, self.end_time) if self.end_time > 0 else end_time
+                if start_clamped < end_clamped:
+                    active_intervals.append((start_clamped, end_clamped))
+        
+        if not active_intervals:
+            return 0.0
+        
+        # Merge overlapping intervals and calculate total active time
+        active_intervals.sort()  # Sort by start time
+        merged_intervals = []
+        
+        for start, end in active_intervals:
+            if not merged_intervals or merged_intervals[-1][1] < start:
+                # No overlap, add new interval
+                merged_intervals.append((start, end))
+            else:
+                # Overlap exists, extend the last interval
+                merged_intervals[-1] = (merged_intervals[-1][0], max(merged_intervals[-1][1], end))
+        
+        # Calculate total active time
+        total_active_time = sum(end - start for start, end in merged_intervals)
+        
+        # Calculate uptime percentage
+        encounter_duration = self.end_time - self.start_time if self.end_time > self.start_time else 0
+        if encounter_duration > 0:
+            uptime_percentage = (total_active_time / encounter_duration) * 100.0
+            # Cap at 100% to prevent display issues
+            return min(uptime_percentage, 100.0)
+        return 0.0
+
+    def get_group_buff_analysis(self) -> Dict[str, bool]:
+        """Analyze which group buffs are present across all players."""
+        group_buffs = ['Major Courage', 'Major Force', 'Major Slayer']
+        buff_analysis = {}
+        
+        for buff_name in group_buffs:
+            # Check if any player had this buff during the encounter
+            has_buff = False
+            for player_id in self.players.keys():
+                if buff_name in self.player_buffs[player_id] and self.player_buffs[player_id][buff_name]:
+                    has_buff = True
+                    break
+                # Also check if buff is currently active
+                if buff_name in self.active_buffs[player_id]:
+                    has_buff = True
+                    break
+            buff_analysis[buff_name] = has_buff
+        
+        return buff_analysis
+
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
@@ -274,6 +424,20 @@ class ESOLogAnalyzer:
         self.zone_deaths: int = 0  # Track total deaths since entering current zone
         self.subclass_analyzer = ESOSubclassAnalyzer()
         self.set_database = ESOSetDatabase()
+        self.current_log_file: Optional[str] = None  # Track current log file path
+        self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
+        
+        # Group buff ability IDs - updated with correct IDs from user
+        self.major_courage_ids = {
+            '61665',  # Major Courage - Increases Weapon and Spell Damage by 430
+        }
+        
+        # Group buff IDs for tracking in encounters with 3+ players
+        self.group_buff_ids = {
+            'Major Courage': self.major_courage_ids,
+            'Major Force': {'40225'},  # Increases Critical Damage by 20%
+            'Major Slayer': {'93120'},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
+        }
         
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -308,6 +472,8 @@ class ESOLogAnalyzer:
             self._handle_begin_combat_event(entry)
         elif entry.event_type == "END_COMBAT":
             self._handle_end_combat_event(entry)
+        elif entry.event_type == "BEGIN_LOG":
+            self._handle_begin_log_event(entry)
 
 
     def _handle_unit_added(self, entry: ESOLogEntry):
@@ -455,10 +621,10 @@ class ESOLogAnalyzer:
         if not self.current_encounter:
             self.current_encounter = CombatEncounter()
         
-        # Mark combat as active and set start time
+        # Mark combat as active and ALWAYS set start time to BEGIN_COMBAT timestamp
+        # This takes priority over any previous start time from BEGIN_CAST events
         self.current_encounter.in_combat = True
-        if not self.current_encounter.start_time:
-            self.current_encounter.start_time = entry.timestamp
+        self.current_encounter.start_time = entry.timestamp
 
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to print player reports."""
@@ -469,19 +635,33 @@ class ESOLogAnalyzer:
             # End current encounter if active and display results
             if self.current_encounter.players:
                 self.current_encounter.end_time = entry.timestamp
+                # Finalize buff tracking before displaying summary
+                self.current_encounter.finalize_buff_tracking()
                 self._display_encounter_summary(self.current_zone)
         
         # Reset combat tracking but keep players for next encounter
         if self.current_encounter:
             self.current_encounter.in_combat = False
+            self.current_encounter.finalized = True
+
+    def _handle_begin_log_event(self, entry: ESOLogEntry):
+        """Handle BEGIN_LOG events to extract Unix timestamp."""
+        # BEGIN_LOG format: timestamp,BEGIN_LOG,unix_timestamp,version,"server","language","build"
+        if len(entry.fields) >= 1:
+            try:
+                unix_timestamp = int(entry.fields[0])
+                self.log_start_unix_timestamp = unix_timestamp
+            except (ValueError, IndexError):
+                pass  # Skip invalid timestamps
 
     def _handle_begin_cast(self, entry: ESOLogEntry):
         """Handle BEGIN_CAST events."""
         if not self.current_encounter:
             self.current_encounter = CombatEncounter()
-            self.current_encounter.start_time = entry.timestamp
 
-        if not self.current_encounter.in_combat:
+        # Only set combat start time if we're not already in combat and not finalized
+        # This prevents BEGIN_CAST from overriding BEGIN_COMBAT timestamps or finalized encounters
+        if not self.current_encounter.in_combat and not self.current_encounter.finalized:
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
 
@@ -555,6 +735,11 @@ class ESOLogAnalyzer:
             # Associate long unit ID with target player if we can find the target
             if target_unit_id in self.current_encounter.players:
                 self.current_encounter.associate_long_unit_id(target_unit_id, source_unit_id)
+
+            # Track group buffs
+            for buff_name, buff_ids in self.group_buff_ids.items():
+                if ability_id in buff_ids and target_unit_id in self.current_encounter.players:
+                    self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
 
             # Only track GAINED effects to avoid spam, and only from valid source units
             if (effect_type == "GAINED" and source_unit_id != "0" and
@@ -634,17 +819,34 @@ class ESOLogAnalyzer:
         if self.zone_deaths > 0:
             deaths_info = f" | Deaths: {self.zone_deaths}"
 
-        # Update the combat ended header with duration, players info, DPS, deaths, and enemy info
+        # Get formatted combat start time
+        combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
+        
+        # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
         if zone_name:
             if estimated_dps > 0:
-                print(f"{Fore.RED}COMBAT ENDED ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}COMBAT ENDED ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{Fore.RED}COMBAT ENDED | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{enemy_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}COMBAT ENDED | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{enemy_info}{Style.RESET_ALL}")
+        
+        # Show group buff analysis for encounters with 3+ players
+        if players_count >= 3:
+            buff_analysis = self.current_encounter.get_group_buff_analysis()
+            buff_status = []
+            for buff_name, is_present in buff_analysis.items():
+                if is_present:
+                    # Calculate group uptime (time buff was active on any player)
+                    group_uptime = self.current_encounter.get_group_buff_uptime(buff_name)
+                    status = f"✅ ({group_uptime:.1f}%)"
+                else:
+                    status = "❌"
+                buff_status.append(f"{buff_name}: {status}")
+            print(f"{Fore.CYAN}Group Buffs: {' | '.join(buff_status)}{Style.RESET_ALL}")
         # Sort players by damage contribution (descending)
         players_with_damage = []
         for player in self.current_encounter.players.values():
@@ -789,6 +991,11 @@ class ESOLogAnalyzer:
                     print(f"  Equipment: {len(player.gear)} items (sets unknown)")
                 else:
                     print(f"  Equipment: No data")
+                
+                # Show Major Courage uptime
+                major_courage_uptime = self.current_encounter.get_buff_uptime(player.unit_id, "Major Courage")
+                if major_courage_uptime > 0:
+                    print(f"  Major Courage Uptime: {major_courage_uptime:.1f}%")
             else:
                 print(f"  Abilities: No PLAYER_INFO data")
                 print(f"  Equipment: No data")
@@ -855,6 +1062,7 @@ def main(log_file: Optional[str], test_mode: bool, replay_speed: int):
             sys.exit(1)
 
         print(f"{Fore.YELLOW}Test mode: Replaying {test_log} at {replay_speed}x speed{Style.RESET_ALL}")
+        analyzer.current_log_file = str(test_log)
         _replay_log_file(analyzer, test_log, replay_speed)
         return
 
@@ -874,6 +1082,9 @@ def main(log_file: Optional[str], test_mode: bool, replay_speed: int):
         sys.exit(1)
 
     print(f"{Fore.GREEN}Monitoring: {log_path}{Style.RESET_ALL}")
+
+    # Set the current log file path for timestamp calculations
+    analyzer.current_log_file = str(log_path)
 
     # Set up file monitoring
     event_handler = LogFileHandler(analyzer, log_path)

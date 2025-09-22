@@ -2,6 +2,26 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.3] - 2025-01-22
+
+### Added
+- **Unix Timestamp Integration**: Accurate combat start times using Unix timestamps from BEGIN_LOG events
+- **Group Buff Detection**: Monitors critical group buffs (Major Courage, Major Force, Major Slayer) with visual indicators
+- **Individual Buff Uptime**: Tracks Major Courage uptime percentage for each player
+- **Enhanced Visual Output**: Uses ✅/❌ emojis for prominent buff status display
+
+### Enhanced
+- **Combat Timing**: Fixed combat start time calculation to prioritize BEGIN_COMBAT events over BEGIN_CAST events
+- **Timestamp Accuracy**: Replaced file modification time estimation with precise Unix timestamp calculations
+- **Buff Tracking**: Comprehensive buff application and removal monitoring throughout encounters
+- **Output Formatting**: Improved combat report layout with better visual hierarchy
+
+### Technical
+- Added `_handle_begin_log_event()` for Unix timestamp extraction
+- Enhanced `get_combat_start_time_formatted()` with Unix timestamp support
+- Implemented buff tracking system with uptime calculations
+- Added encounter finalization protection against post-combat timestamp overrides
+
 ## [0.1.2] - 2025-01-XX
 
 ### Enhanced
