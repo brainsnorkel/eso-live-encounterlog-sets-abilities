@@ -31,7 +31,7 @@ Download the latest release for your platform:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/christophergentle/eso-live-encounterlog-sets-abilities.git
+   git clone https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities.git
    cd eso-live-encounterlog-sets-abilities
    ```
 
