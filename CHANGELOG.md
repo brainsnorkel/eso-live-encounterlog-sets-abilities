@@ -2,6 +2,18 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.11] - 2025-01-22
+
+### Fixed
+- **GitHub Actions**: Fixed automated release creation by enabling proper repository permissions
+- **Release Automation**: GitHub Actions now automatically creates releases with installer artifacts
+- **Workflow Reliability**: Improved workflow stability and error handling
+
+### Technical
+- Enabled "Read and write permissions" for GitHub Actions workflows
+- Automated release creation now works without manual intervention
+- All platform installers are automatically attached to releases
+
 ## [0.1.10] - 2025-01-22
 
 ### Fixed
