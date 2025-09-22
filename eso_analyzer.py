@@ -1731,11 +1731,11 @@ class LogFileHandler(FileSystemEventHandler):
               help='Scan mode: replay the entire log file from the beginning at high speed, then exit')
 @click.option('--read-all-then-tail', '-t', is_flag=True,
               help='Read the entire log file from the beginning, then continue tailing for new data')
-@click.option('--wait-for-file', '-w', is_flag=True,
-              help='Wait for the log file to appear if it does not exist, printing status every minute')
+@click.option('--no-wait', is_flag=True,
+              help='Exit immediately if log file does not exist (default: wait for file to appear)')
 @click.option('--replay-speed', '-r', default=100, type=int,
               help='Replay speed multiplier for scan mode (default: 100x)')
-def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, wait_for_file: bool, replay_speed: int):
+def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
 
     print(f"{Fore.CYAN}ESO Encounter Log Analyzer{Style.RESET_ALL}")
@@ -1747,8 +1747,8 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
         active_options.append("scan-all-then-stop")
     if read_all_then_tail:
         active_options.append("read-all-then-tail")
-    if wait_for_file:
-        active_options.append("wait-for-file")
+    if no_wait:
+        active_options.append("no-wait")
     
     if active_options:
         print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
@@ -1805,15 +1805,18 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
             print(f"{Fore.RED}Error: Cannot create log directory {log_directory}: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
-    # Wait for file if requested and it doesn't exist
-    if not log_path.exists() and wait_for_file:
-        if not _wait_for_file(log_path, wait_for_file):
-            print(f"{Fore.RED}Error: Log file not found and wait-for-file not enabled{Style.RESET_ALL}")
+    # Handle file existence - wait by default, exit only if --no-wait is used
+    if not log_path.exists():
+        if no_wait:
+            print(f"{Fore.YELLOW}Encounter.log not found at {log_path}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Tip: Remove --no-wait flag to wait for the file to appear{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
             sys.exit(1)
-    elif not log_path.exists():
-        print(f"{Fore.YELLOW}Encounter.log not found at {log_path}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Tip: Use --wait-for-file to wait for the file to appear{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
+        else:
+            # Wait for file by default
+            if not _wait_for_file(log_path, True):
+                print(f"{Fore.RED}Error: Could not wait for log file{Style.RESET_ALL}")
+                sys.exit(1)
     else:
         print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
 

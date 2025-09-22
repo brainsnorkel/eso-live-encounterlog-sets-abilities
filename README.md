@@ -93,11 +93,11 @@ python3 eso_analyzer.py --scan-all-then-stop --replay-speed 1000  # 1000x speed
 
 ### Advanced Monitoring Options
 
-**Wait for log file to appear:**
+**Exit immediately if log file doesn't exist:**
 ```bash
-python3 eso_analyzer.py --wait-for-file
+python3 eso_analyzer.py --no-wait
 ```
-This will wait for the Encounter.log file to be created and print status updates every minute.
+By default, the tool will wait for the Encounter.log file to be created and print status updates every minute.
 
 **Read entire log history then tail:**
 ```bash
@@ -107,7 +107,7 @@ This reads the entire existing log file from the beginning, then continues monit
 
 **Combine options:**
 ```bash
-python3 eso_analyzer.py --log-file /custom/path/Encounter.log --wait-for-file --read-all-then-tail
+python3 eso_analyzer.py --log-file /custom/path/Encounter.log --read-all-then-tail
 ```
 
 ## Command Line Options
@@ -115,7 +115,7 @@ python3 eso_analyzer.py --log-file /custom/path/Encounter.log --wait-for-file --
 - `--log-file`, `-f`: Path to ESO encounter log file
 - `--scan-all-then-stop`, `-s`: Scan mode: replay the entire log file from the beginning at high speed, then exit
 - `--read-all-then-tail`, `-t`: Read the entire log file from the beginning, then continue tailing for new data
-- `--wait-for-file`, `-w`: Wait for the log file to appear if it does not exist, printing status every minute
+- `--no-wait`: Exit immediately if log file does not exist (default: wait for file to appear)
 - `--replay-speed`, `-r`: Replay speed multiplier for scan mode (default: 100x)
 
 ## ESO Log File Locations
@@ -222,7 +222,7 @@ The tool identifies gear sets by:
 #### "Encounter.log not found"
 - Ensure ESO encounter logging is enabled in-game
 - Use **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)** addon for automatic logging
-- Use `--wait-for-file` option to wait for the log file to appear with status updates every minute
+- By default, the tool waits for the log file to appear with status updates every minute (use `--no-wait` to exit immediately)
 - Check that you're in the correct log directory
 - Verify the log file exists and is accessible
 
