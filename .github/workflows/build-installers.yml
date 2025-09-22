@@ -196,5 +196,7 @@ jobs:
           ./artifacts/macos/eso-analyzer-macos-installer.zip
           ./artifacts/linux/eso-analyzer-linux-installer.tar.gz
         generate_release_notes: true
+        fail_on_unmatched_files: true
+        make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
