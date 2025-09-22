@@ -105,6 +105,13 @@ python3 eso_analyzer.py --read-all-then-tail
 ```
 This reads the entire existing log file from the beginning, then continues monitoring for new data.
 
+**Check version:**
+```bash
+python3 eso_analyzer.py --version
+# or
+python3 eso_analyzer.py -v
+```
+
 **Combine options:**
 ```bash
 python3 eso_analyzer.py --log-file /custom/path/Encounter.log --read-all-then-tail
@@ -117,6 +124,7 @@ python3 eso_analyzer.py --log-file /custom/path/Encounter.log --read-all-then-ta
 - `--read-all-then-tail`, `-t`: Read the entire log file from the beginning, then continue tailing for new data
 - `--no-wait`: Exit immediately if log file does not exist (default: wait for file to appear)
 - `--replay-speed`, `-r`: Replay speed multiplier for scan mode (default: 100x)
+- `--version`, `-v`: Show version information and exit
 
 ## ESO Log File Locations
 

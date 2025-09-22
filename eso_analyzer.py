@@ -4,6 +4,18 @@ ESO Encounter Log Analyzer
 A CLI tool that continuously monitors ESO encounter logs and analyzes combat encounters.
 """
 
+# Quick version check before any imports
+import sys
+if len(sys.argv) > 1 and sys.argv[1] in ['-v', '--version']:
+    try:
+        from version import __version__
+        print(f"ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}")
+        print(f"Repository: https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities")
+        print(f"License: MIT")
+        sys.exit(0)
+    except ImportError:
+        pass
+
 import os
 import sys
 import time
@@ -21,6 +33,9 @@ from gear_set_database import gear_set_db
 
 # Initialize colorama for cross-platform colored output
 init()
+
+# Import version early for quick version checks
+from version import __version__
 
 # Import our ESO analysis modules
 from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
@@ -1735,10 +1750,19 @@ class LogFileHandler(FileSystemEventHandler):
               help='Exit immediately if log file does not exist (default: wait for file to appear)')
 @click.option('--replay-speed', '-r', default=100, type=int,
               help='Replay speed multiplier for scan mode (default: 100x)')
-def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int):
+@click.option('--version', '-v', is_flag=True,
+              help='Show version information and exit')
+def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
+    
+    # Handle version flag early (before any other processing)
+    if version:
+        print(f"ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}")
+        print(f"Repository: https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities")
+        print(f"License: MIT")
+        sys.exit(0)
 
-    print(f"{Fore.CYAN}ESO Encounter Log Analyzer{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}ESO Encounter Log Analyzer v{__version__}{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}")
     
     # Show active options
