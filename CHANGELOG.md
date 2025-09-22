@@ -2,6 +2,27 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.9] - 2025-01-22
+
+### Added
+- **Wait for File Option**: `--wait-for-file` flag to wait for log file to appear if it doesn't exist
+- **Read All Then Tail Option**: `--read-all-then-tail` flag to read entire log file from beginning then continue tailing
+- **Status Updates**: Print status updates every minute while waiting for log file to appear
+- **Enhanced Log File Handling**: Improved file monitoring with better error handling and user guidance
+
+### Enhanced
+- **Command Line Options**: More flexible monitoring options for different use cases
+- **User Experience**: Better status messages and progress indicators
+- **Documentation**: Updated README with usage examples for new options
+- **Troubleshooting**: Added guidance for common file not found scenarios
+
+### Technical
+- Added `_wait_for_file()` helper function with periodic status updates
+- Enhanced `LogFileHandler` class with `read_all_then_tail` parameter
+- Added `_process_entire_file()` method for reading complete log files
+- Improved file position tracking for seamless tailing after full read
+- Updated command line interface with new flags and help text
+
 ## [0.1.8] - 2025-01-22
 
 ### Added

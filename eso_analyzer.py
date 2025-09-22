@@ -1633,16 +1633,25 @@ class ESOLogAnalyzer:
 class LogFileHandler(FileSystemEventHandler):
     """File system event handler for monitoring log file changes."""
 
-    def __init__(self, analyzer: ESOLogAnalyzer, log_file: Path):
+    def __init__(self, analyzer: ESOLogAnalyzer, log_file: Path, read_all_then_tail: bool = False):
         self.analyzer = analyzer
         self.log_file = log_file
         self.last_position = 0
+        self.read_all_then_tail = read_all_then_tail
+        self.has_read_all = False
 
-        # Initialize position to end of file for live monitoring
+        # Initialize position based on mode
         if self.log_file.exists():
-            # Look back through recent log entries to find zone changes
-            self._initialize_zone_history()
-            self.last_position = self.log_file.stat().st_size
+            if read_all_then_tail:
+                # Start from the beginning to read everything first
+                print(f"{Fore.CYAN}Reading entire log file from the beginning...{Style.RESET_ALL}")
+                self.last_position = 0
+                self._process_entire_file()
+                print(f"{Fore.GREEN}Finished reading existing log data. Now monitoring for new data...{Style.RESET_ALL}")
+            else:
+                # Look back through recent log entries to find zone changes
+                self._initialize_zone_history()
+                self.last_position = self.log_file.stat().st_size
 
     def _initialize_zone_history(self):
         """Look back through recent log entries to find zone changes."""
@@ -1671,6 +1680,24 @@ class LogFileHandler(FileSystemEventHandler):
         if not zone_found:
             print(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
 
+    def _process_entire_file(self):
+        """Process the entire log file from the beginning."""
+        if not self.log_file.exists():
+            return
+        
+        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if line:
+                    entry = ESOLogEntry.parse(line)
+                    if entry:
+                        self.analyzer.process_log_entry(entry)
+                
+                # Update position to end of current line
+                self.last_position = f.tell()
+        
+        self.has_read_all = True
+
     def on_modified(self, event):
         """Handle file modification events."""
         if event.src_path == str(self.log_file):
@@ -1698,17 +1725,34 @@ class LogFileHandler(FileSystemEventHandler):
                     self.analyzer.process_log_entry(entry)
 
 @click.command()
-@click.option('--log-file', '-f', type=click.Path(exists=True),
+@click.option('--log-file', '-f', type=click.Path(),
               help='Path to ESO encounter log file')
 @click.option('--scan-all-then-stop', '-s', is_flag=True,
               help='Scan mode: replay the entire log file from the beginning at high speed, then exit')
+@click.option('--read-all-then-tail', '-t', is_flag=True,
+              help='Read the entire log file from the beginning, then continue tailing for new data')
+@click.option('--wait-for-file', '-w', is_flag=True,
+              help='Wait for the log file to appear if it does not exist, printing status every minute')
 @click.option('--replay-speed', '-r', default=100, type=int,
               help='Replay speed multiplier for scan mode (default: 100x)')
-def main(log_file: Optional[str], scan_all_then_stop: bool, replay_speed: int):
+def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, wait_for_file: bool, replay_speed: int):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
 
     print(f"{Fore.CYAN}ESO Encounter Log Analyzer{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}\n")
+    print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}")
+    
+    # Show active options
+    active_options = []
+    if scan_all_then_stop:
+        active_options.append("scan-all-then-stop")
+    if read_all_then_tail:
+        active_options.append("read-all-then-tail")
+    if wait_for_file:
+        active_options.append("wait-for-file")
+    
+    if active_options:
+        print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
+    print()
 
     analyzer = ESOLogAnalyzer()
 
@@ -1749,8 +1793,7 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, replay_speed: int):
             # Use most likely directory based on host OS
             likely_directory = _get_most_likely_log_directory()
             log_path = likely_directory / "Encounter.log"
-            print(f"{Fore.YELLOW}Waiting for Encounter.log to appear in {likely_directory}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Tip: Enable encounter logging in ESO or use the Easy Stalking addon{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Encounter.log not found, will check in {likely_directory}{Style.RESET_ALL}")
 
     # Check if the directory exists, create it if it doesn't (for monitoring)
     log_directory = log_path.parent
@@ -1762,12 +1805,17 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, replay_speed: int):
             print(f"{Fore.RED}Error: Cannot create log directory {log_directory}: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
-    # Check if log file exists
-    if log_path.exists():
-        print(f"{Fore.GREEN}Encounter.log found at {log_path} - waiting for data...{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.YELLOW}Encounter.log not found at {log_path} - waiting for file to appear...{Style.RESET_ALL}")
+    # Wait for file if requested and it doesn't exist
+    if not log_path.exists() and wait_for_file:
+        if not _wait_for_file(log_path, wait_for_file):
+            print(f"{Fore.RED}Error: Log file not found and wait-for-file not enabled{Style.RESET_ALL}")
+            sys.exit(1)
+    elif not log_path.exists():
+        print(f"{Fore.YELLOW}Encounter.log not found at {log_path}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Tip: Use --wait-for-file to wait for the file to appear{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
 
     print(f"{Fore.GREEN}Monitoring: {log_path}{Style.RESET_ALL}")
 
@@ -1775,7 +1823,7 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, replay_speed: int):
     analyzer.current_log_file = str(log_path)
 
     # Set up file monitoring
-    event_handler = LogFileHandler(analyzer, log_path)
+    event_handler = LogFileHandler(analyzer, log_path, read_all_then_tail)
     observer = Observer()
     observer.schedule(event_handler, str(log_path.parent), recursive=False)
     observer.start()
@@ -1789,6 +1837,35 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, replay_speed: int):
         observer.stop()
 
     observer.join()
+
+def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
+    """Wait for the log file to appear if it doesn't exist."""
+    if log_path.exists():
+        return True
+    
+    if not wait_for_file:
+        return False
+    
+    print(f"{Fore.YELLOW}Waiting for {log_path.name} to appear...{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
+    
+    last_status_time = time.time()
+    status_interval = 60  # Print status every 60 seconds
+    
+    while not log_path.exists():
+        current_time = time.time()
+        
+        # Print status every minute
+        if current_time - last_status_time >= status_interval:
+            elapsed_minutes = int((current_time - last_status_time) / 60)
+            print(f"{Fore.YELLOW}[{elapsed_minutes}m] Still waiting for {log_path.name}...{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Tip: Enable encounter logging in ESO or use the Easy Stalking addon{Style.RESET_ALL}")
+            last_status_time = current_time
+        
+        time.sleep(1)
+    
+    print(f"{Fore.GREEN}{log_path.name} found! Starting monitoring...{Style.RESET_ALL}")
+    return True
 
 def _find_eso_log_file() -> Optional[Path]:
     """Try to find the ESO encounter log file in common locations."""

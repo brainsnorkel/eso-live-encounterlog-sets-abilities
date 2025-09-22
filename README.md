@@ -83,19 +83,40 @@ python3 eso_analyzer.py --log-file "/path/to/ESO/Logs/Encounter.log"
 
 **Replay sample log file:**
 ```bash
-python3 eso_analyzer.py --test-mode
+python3 eso_analyzer.py --scan-all-then-stop
 ```
 
 **Replay at different speeds:**
 ```bash
-python3 eso_analyzer.py --test-mode --replay-speed 1000  # 1000x speed
+python3 eso_analyzer.py --scan-all-then-stop --replay-speed 1000  # 1000x speed
+```
+
+### Advanced Monitoring Options
+
+**Wait for log file to appear:**
+```bash
+python3 eso_analyzer.py --wait-for-file
+```
+This will wait for the Encounter.log file to be created and print status updates every minute.
+
+**Read entire log history then tail:**
+```bash
+python3 eso_analyzer.py --read-all-then-tail
+```
+This reads the entire existing log file from the beginning, then continues monitoring for new data.
+
+**Combine options:**
+```bash
+python3 eso_analyzer.py --log-file /custom/path/Encounter.log --wait-for-file --read-all-then-tail
 ```
 
 ## Command Line Options
 
 - `--log-file`, `-f`: Path to ESO encounter log file
-- `--test-mode`, `-t`: Test mode using sample log file
-- `--replay-speed`, `-s`: Replay speed multiplier for test mode (default: 100x)
+- `--scan-all-then-stop`, `-s`: Scan mode: replay the entire log file from the beginning at high speed, then exit
+- `--read-all-then-tail`, `-t`: Read the entire log file from the beginning, then continue tailing for new data
+- `--wait-for-file`, `-w`: Wait for the log file to appear if it does not exist, printing status every minute
+- `--replay-speed`, `-r`: Replay speed multiplier for scan mode (default: 100x)
 
 ## ESO Log File Locations
 
@@ -201,6 +222,7 @@ The tool identifies gear sets by:
 #### "Encounter.log not found"
 - Ensure ESO encounter logging is enabled in-game
 - Use **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)** addon for automatic logging
+- Use `--wait-for-file` option to wait for the log file to appear with status updates every minute
 - Check that you're in the correct log directory
 - Verify the log file exists and is accessible
 
