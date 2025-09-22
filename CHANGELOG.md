@@ -2,6 +2,24 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.12] - 2025-01-22
+
+### Enhanced
+- **Documentation**: Updated README with real output examples from actual encounter logs
+- **Accuracy**: Fixed installer names to match actual release artifacts (.zip files)
+- **Platform Support**: Added Linux support to cross-platform description
+- **Output Format**: Corrected output components to reflect actual implementation
+
+### Fixed
+- **Installer Names**: Updated from fictional .exe/.dmg to actual .zip installer names
+- **Output Examples**: Replaced fictional examples with real data from Coral Aerie, Selene's Web, and Vateshran Hollows
+- **Feature Descriptions**: Ensured all documented features match actual implementation
+
+### Technical
+- Comprehensive documentation review and consistency verification
+- Real encounter log analysis for accurate example generation
+- Updated output format documentation to match current code behavior
+
 ## [0.1.11] - 2025-01-22
 
 ### Fixed
