@@ -1124,18 +1124,15 @@ class ESOLogAnalyzer:
             
             # Track any monster that appears in combat events as "engaged"
             if self.list_hostiles and self.current_encounter:
-                # Look for unit IDs in various positions depending on event type
                 # COMBAT_EVENT format: timestamp,COMBAT_EVENT,actionResult,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
-                potential_unit_ids = []
+                # After parsing: fields[0]=actionResult, fields[1]=damageType, ..., fields[7]=unitId
                 if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE', 'DIED_XP', 'DIED']:
-                    # Unit ID is at index 9 (the unit affected by the combat event)
-                    if len(entry.fields) > 9:
-                        potential_unit_ids = [entry.fields[9]]
-                
-                # Check if any of these unit IDs correspond to known enemies
-                for unit_id in potential_unit_ids:
-                    if unit_id and unit_id in self.current_encounter.enemies:
-                        self.engaged_monsters.add(unit_id)
+                    # Unit ID is at index 7 (the unit affected by the combat event)
+                    if len(entry.fields) > 7:
+                        unit_id = entry.fields[7]
+                        # Check if this unit ID corresponds to a known enemy
+                        if unit_id and unit_id in self.current_encounter.enemies:
+                            self.engaged_monsters.add(unit_id)
             
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
@@ -1144,7 +1141,8 @@ class ESOLogAnalyzer:
             if combat_event_type == 'DIED_XP':
                 # Check if it's a player death by looking up the dying unit ID in known players
                 # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
-                dying_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""
+                # After parsing: fields[0]=DIED_XP, fields[1]=damageType, ..., fields[7]=unitId
+                dying_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
                 if (self.current_encounter and 
                     self.current_encounter.find_player_by_unit_id(dying_unit_id)):
                     self.zone_deaths += 1
@@ -1164,8 +1162,9 @@ class ESOLogAnalyzer:
             elif combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 try:
                     # COMBAT_EVENT format: timestamp,COMBAT_EVENT,actionResult,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
-                    hit_value = int(entry.fields[5])  # hitValue is at index 5
-                    target_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""  # unitId is at index 9
+                    # After parsing: fields[0]=actionResult, fields[1]=damageType, ..., fields[3]=hitValue, fields[7]=unitId
+                    hit_value = int(entry.fields[3])  # hitValue is at index 3
+                    target_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""  # unitId is at index 7
                     
                     # Count damage from friendly players and their pets
                     if hit_value > 0 and self.current_encounter:
