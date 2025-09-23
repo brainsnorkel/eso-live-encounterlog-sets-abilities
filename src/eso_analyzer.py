@@ -278,6 +278,7 @@ class CombatEncounter:
         
         # Track highest health hostile monster in this fight
         self.highest_health_hostile: Optional[EnemyInfo] = None
+        self.most_damaged_hostile: Optional[EnemyInfo] = None
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None):
         """Add a player to this encounter."""
@@ -318,6 +319,17 @@ class CombatEncounter:
             if (self.highest_health_hostile is None or 
                 enemy.max_health > self.highest_health_hostile.max_health):
                 self.highest_health_hostile = enemy
+    
+    def update_most_damaged_hostile(self, unit_id: str):
+        """Update the most damaged hostile monster based on player damage."""
+        if unit_id in self.enemies:
+            enemy = self.enemies[unit_id]
+            if (hasattr(enemy, 'is_hostile') and enemy.is_hostile and 
+                unit_id in self.enemy_damage):
+                damage = self.enemy_damage[unit_id]
+                if (self.most_damaged_hostile is None or 
+                    damage > self.enemy_damage.get(self.most_damaged_hostile.unit_id, 0)):
+                    self.most_damaged_hostile = enemy
     
     def update_enemy_health(self, unit_id: str, current_health: int, max_health: int):
         """Update an enemy's health values and check if it's now the highest health hostile."""
@@ -1165,6 +1177,8 @@ class ESOLogAnalyzer:
                         # Set a minimum damage amount to indicate it was killed
                         if self.current_encounter.enemy_damage[dying_unit_id] == 0:
                             self.current_encounter.enemy_damage[dying_unit_id] = 1
+                        # Update the most damaged hostile monster
+                        self.current_encounter.update_most_damaged_hostile(dying_unit_id)
             
             
             # Track damage events
@@ -1187,6 +1201,8 @@ class ESOLogAnalyzer:
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
                                     self.current_encounter.enemy_damage[target_unit_id] += hit_value
+                                    # Update the most damaged hostile monster
+                                    self.current_encounter.update_most_damaged_hostile(target_unit_id)
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
             
@@ -1327,11 +1343,12 @@ class ESOLogAnalyzer:
         if self.zone_deaths > 0:
             deaths_info = f" | Deaths: {self.zone_deaths}"
         
-        # Highest health hostile monster info
+        # Most damaged hostile monster info (primary target)
         hostile_info = ""
-        if (self.current_encounter and self.current_encounter.highest_health_hostile):
-            hostile = self.current_encounter.highest_health_hostile
-            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
+        if (self.current_encounter and self.current_encounter.most_damaged_hostile):
+            hostile = self.current_encounter.most_damaged_hostile
+            damage = self.current_encounter.enemy_damage.get(hostile.unit_id, 0)
+            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,}, Damage: {damage:,})"
 
         # Get formatted combat start time
         combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
