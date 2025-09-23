@@ -24,9 +24,9 @@ A cross-platform CLI tool for monitoring Elder Scrolls Online encounter logs in 
 ### Option 1: Standalone Installers (Recommended)
 
 Download the latest release for your platform:
-- **Windows**: `eso-analyzer-windows-installer.zip`
-- **macOS**: `eso-analyzer-macos-installer.zip`
-- **Linux**: `eso-analyzer-linux-installer.tar.gz`
+- **Windows**: `esolog-tail-windows-installer.zip`
+- **macOS**: `esolog-tail-macos-installer.zip`
+- **Linux**: `esolog-tail-linux-installer.tar.gz`
 
 ### Option 2: Manual Installation
 
@@ -43,7 +43,7 @@ Download the latest release for your platform:
 
 3. **Make the script executable (macOS/Linux):**
    ```bash
-   chmod +x eso_analyzer.py
+   chmod +x src/esolog_tail.py
    ```
 
 ### Enable ESO Encounter Logging
@@ -68,7 +68,7 @@ Alternatively, you can manually enable encounter logging:
 
 **Auto-detect ESO log file (Recommended):**
 ```bash
-python3 eso_analyzer.py
+python3 src/esolog_tail.py
 ```
 The tool automatically detects the most likely ESO log directory based on your operating system:
 - **Windows**: `%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\`
@@ -77,67 +77,67 @@ The tool automatically detects the most likely ESO log directory based on your o
 
 **Specify log file manually:**
 ```bash
-python3 eso_analyzer.py --log-file "/path/to/ESO/Logs/Encounter.log"
+python3 src/esolog_tail.py --log-file "/path/to/ESO/Logs/Encounter.log"
 ```
 
 ### Test Mode
 
 **Replay sample log file:**
 ```bash
-python3 eso_analyzer.py --scan-all-then-stop
+python3 src/esolog_tail.py --scan-all-then-stop
 ```
 
 **Replay at different speeds:**
 ```bash
-python3 eso_analyzer.py --scan-all-then-stop --replay-speed 1000  # 1000x speed
+python3 src/esolog_tail.py --scan-all-then-stop --replay-speed 1000  # 1000x speed
 ```
 
 ### Advanced Monitoring Options
 
 **Exit immediately if log file doesn't exist:**
 ```bash
-python3 eso_analyzer.py --no-wait
+python3 src/esolog_tail.py --no-wait
 ```
 By default, the tool will wait for the Encounter.log file to be created and print status updates every minute.
 
 **Read entire log history then tail:**
 ```bash
-python3 eso_analyzer.py --read-all-then-tail
+python3 src/esolog_tail.py --read-all-then-tail
 ```
 This reads the entire existing log file from the beginning, then continues monitoring for new data.
 
 **Check version:**
 ```bash
-python3 eso_analyzer.py --version
+python3 src/esolog_tail.py --version
 # or
-python3 eso_analyzer.py -v
+python3 src/esolog_tail.py -v
 ```
 
 **Combine options:**
 ```bash
-python3 eso_analyzer.py --log-file /custom/path/Encounter.log --read-all-then-tail
+python3 src/esolog_tail.py --log-file /custom/path/Encounter.log --read-all-then-tail
 ```
 
 ### Real-World Usage Examples
 
 **Start monitoring with default behavior (waits for log file):**
 ```bash
-python3 eso_analyzer.py
+python3 src/esolog_tail.py
 ```
 
 **Read existing log history then continue tailing:**
 ```bash
-python3 eso_analyzer.py --read-all-then-tail
+python3 src/esolog_tail.py --read-all-then-tail
 ```
 
 **Quick version check:**
 ```bash
-python3 eso_analyzer.py -v
+python3 src/esolog_tail.py -v
 ```
 
 **Exit immediately if log file doesn't exist:**
 ```bash
-python3 eso_analyzer.py --no-wait
+python3 src/esolog_tail.py --no-wait
 ```
 
 ## Command Line Options
@@ -266,7 +266,7 @@ The tool analyzes equipped abilities to determine skill lines using UESP as the 
 
 The tool identifies gear sets by:
 - **Set ID Mapping**: Uses LibSets database to map set IDs to set names
-- **Comprehensive Database**: Includes 634+ gear sets from LibSets
+- **Comprehensive Database**: Includes 704 gear sets from LibSets
 - **Accurate Detection**: Shows actual equipped gear pieces with set names
 
 ### Buff Detection & Analysis
@@ -334,7 +334,7 @@ The tool identifies gear sets by:
 ```
 eso-live-encounterlog-sets-abilities/
 ├── src/                     # Main application source code
-│   ├── eso_analyzer.py      # Main application entry point
+│   ├── esolog_tail.py       # Main application entry point
 │   ├── eso_log_parser.py    # Robust log parser with comprehensive CSV handling
 │   ├── eso_sets.py          # Skill line mappings and analysis
 │   ├── gear_set_database.py # LibSets database integration
@@ -363,13 +363,13 @@ The project includes comprehensive testing capabilities:
 
 ```bash
 # Test with sample data
-python3 eso_analyzer.py --test-mode
+python3 src/esolog_tail.py --test-mode
 
 # Test at high speed
-python3 eso_analyzer.py --test-mode --replay-speed 1000
+python3 src/esolog_tail.py --test-mode --replay-speed 1000
 
 # Test specific zones (Vateshran, Maelstrom, etc.)
-python3 eso_analyzer.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\|Maelstrom"
+python3 src/esolog_tail.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\|Maelstrom"
 ```
 
 ## Building from Source
@@ -390,7 +390,7 @@ python3 eso_analyzer.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\
 
 2. **Build executable**:
    ```bash
-   pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
+   pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
    ```
 
 ### Gear Set Data Updates
@@ -459,7 +459,7 @@ This project is for educational and research purposes. ESO game data belongs to 
 
 This project builds upon and integrates several excellent community resources:
 
-- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 634+ sets
+- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 704 sets
 - **[ESO Log Tool](https://github.com/sheumais/logs)**: Desktop log file handler for TESO by sheumais, which provided valuable insights into ESO log format parsing and processing techniques
 - **UESP**: Elder Scrolls Online wiki for authoritative skill line information and ability classifications
 - **ESO Community**: For encounter log format documentation and testing feedback

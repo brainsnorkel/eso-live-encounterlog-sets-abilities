@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from eso_analyzer import ESOLogEntry, ESOLogAnalyzer
+from esolog_tail import ESOLogEntry, ESOLogAnalyzer
 from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
 
 def test_log_parsing():
@@ -139,7 +139,7 @@ def main():
 
         print("🎉 All tests passed! ESO Analyzer is ready to use.")
         print("\nTo test with real data, run:")
-        print("  python3 eso_analyzer.py --test-mode")
+        print("  python3 src/esolog_tail.py --test-mode")
 
     except Exception as e:
         print(f"❌ Test failed: {e}")

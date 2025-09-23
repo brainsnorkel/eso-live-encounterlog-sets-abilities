@@ -213,7 +213,7 @@ def test_new_feature(self):
 ### Large Log Testing
 ```bash
 # Test with full sample log
-python3 eso_analyzer.py --test-mode --replay-speed 1000
+python3 src/esolog_tail.py --test-mode --replay-speed 1000
 ```
 
 ### Memory Usage
