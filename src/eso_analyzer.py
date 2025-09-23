@@ -29,16 +29,16 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import requests
 from colorama import init, Fore, Style
-from .gear_set_database import gear_set_db
+from gear_set_database import gear_set_db
 
 # Initialize colorama for cross-platform colored output
 init()
 
 # Import version early for quick version checks
-from .version import __version__
+from version import __version__
 
 # Import our ESO analysis modules
-from .eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
+from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {
@@ -576,7 +576,7 @@ class CombatEncounter:
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
-    def __init__(self):
+    def __init__(self, list_hostiles: bool = False):
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -586,6 +586,10 @@ class ESOLogAnalyzer:
         self.set_database = ESOSetDatabase()
         self.current_log_file: Optional[str] = None  # Track current log file path
         self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
+        
+        # Testing flag for listing hostile monsters
+        self.list_hostiles = list_hostiles
+        self.hostile_monsters: List[Tuple[str, str, str]] = []  # (unit_id, name, unit_type)
         
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
@@ -843,6 +847,10 @@ class ESOLogAnalyzer:
                     # Update highest health hostile monster (only if currently hostile)
                     if is_hostile:
                         self.current_encounter.update_highest_health_hostile(enemy)
+                        
+                        # Track hostile monsters for testing flag
+                        if self.list_hostiles:
+                            self.hostile_monsters.append((unit_id, clean_name, unit_type))
 
     def _handle_unit_changed(self, entry: ESOLogEntry):
         """Handle UNIT_CHANGED events to track when monsters become hostile."""
@@ -862,6 +870,11 @@ class ESOLogAnalyzer:
                 
                 # Update highest health hostile monster now that this enemy is hostile
                 self.current_encounter.update_highest_health_hostile(enemy)
+                
+                # Track hostile monsters for testing flag
+                if self.list_hostiles:
+                    clean_name = name.strip('"') if name else ""
+                    self.hostile_monsters.append((unit_id, clean_name, enemy.unit_type))
 
     def _handle_ability_info(self, entry: ESOLogEntry):
         """Handle ABILITY_INFO events to cache ability names and gear sets."""
@@ -1531,6 +1544,26 @@ class ESOLogAnalyzer:
             else:
                 print(f"  Abilities: No PLAYER_INFO data")
                 print(f"  No data")
+        
+        # Display hostile monsters if testing flag is enabled
+        if self.list_hostiles and self.hostile_monsters:
+            print(f"\n{Fore.YELLOW}=== Hostile Monsters Added to Fight ==={Style.RESET_ALL}")
+            # Remove duplicates while preserving order
+            unique_hostiles = []
+            seen = set()
+            for unit_id, name, unit_type in self.hostile_monsters:
+                key = (unit_id, name)
+                if key not in seen:
+                    seen.add(key)
+                    unique_hostiles.append((unit_id, name, unit_type))
+            
+            for unit_id, name, unit_type in unique_hostiles:
+                print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}){Style.RESET_ALL}")
+            
+            print(f"{Fore.YELLOW}Total hostile monsters: {len(unique_hostiles)}{Style.RESET_ALL}")
+        
+        # Clear the hostile monsters list for the next encounter
+        self.hostile_monsters.clear()
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None):
         """Update or create a player session with their current data."""
@@ -1753,7 +1786,9 @@ class LogFileHandler(FileSystemEventHandler):
               help='Replay speed multiplier for scan mode (default: 100x)')
 @click.option('--version', '-v', is_flag=True,
               help='Show version information and exit')
-def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool):
+@click.option('--list-hostiles', is_flag=True,
+              help='Testing mode: List all hostile monsters added to fights with names and IDs')
+def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -1774,12 +1809,14 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
         active_options.append("read-all-then-tail")
     if no_wait:
         active_options.append("no-wait")
+    if list_hostiles:
+        active_options.append("list-hostiles")
     
     if active_options:
         print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
     print()
 
-    analyzer = ESOLogAnalyzer()
+    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles)
 
     if scan_all_then_stop:
         # Determine which log file to use
