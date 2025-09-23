@@ -1547,20 +1547,21 @@ class ESOLogAnalyzer:
         
         # Display hostile monsters if testing flag is enabled
         if self.list_hostiles and self.hostile_monsters:
-            print(f"\n{Fore.YELLOW}=== Hostile Monsters Added to Fight ==={Style.RESET_ALL}")
-            # Remove duplicates while preserving order
+            print(f"\n{Fore.YELLOW}=== Hostile Monsters Damaged by Players ==={Style.RESET_ALL}")
+            # Remove duplicates while preserving order, and only show those that were damaged
             unique_hostiles = []
             seen = set()
             for unit_id, name, unit_type in self.hostile_monsters:
                 key = (unit_id, name)
-                if key not in seen:
+                if key not in seen and unit_id in self.current_encounter.enemy_damage:
                     seen.add(key)
-                    unique_hostiles.append((unit_id, name, unit_type))
+                    damage = self.current_encounter.enemy_damage[unit_id]
+                    unique_hostiles.append((unit_id, name, unit_type, damage))
             
-            for unit_id, name, unit_type in unique_hostiles:
-                print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}){Style.RESET_ALL}")
+            for unit_id, name, unit_type, damage in unique_hostiles:
+                print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Damage: {damage:,}){Style.RESET_ALL}")
             
-            print(f"{Fore.YELLOW}Total hostile monsters: {len(unique_hostiles)}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Total hostile monsters damaged: {len(unique_hostiles)}{Style.RESET_ALL}")
         
         # Clear the hostile monsters list for the next encounter
         self.hostile_monsters.clear()
