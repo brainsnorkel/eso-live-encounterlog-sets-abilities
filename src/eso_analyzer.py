@@ -2032,14 +2032,18 @@ class LogFileHandler(FileSystemEventHandler):
             return
         
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-            for line_num, line in enumerate(f, 1):
+            while True:
+                line = f.readline()
+                if not line:  # End of file
+                    break
+                    
                 line = line.strip()
                 if line:
                     entry = ESOLogEntry.parse(line)
                     if entry:
                         self.analyzer.process_log_entry(entry)
                 
-                # Update position to end of current line
+                # Update position to current position
                 self.last_position = f.tell()
         
         self.has_read_all = True
