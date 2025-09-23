@@ -277,8 +277,7 @@ class CombatEncounter:
         # Track combat end time
         self.combat_ended_at: Optional[int] = None
         
-        # Grace period for processing remaining combat events
-        self.grace_period_end: Optional[int] = None
+        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
         # Track highest health hostile monster in this fight
         self.highest_health_hostile: Optional[EnemyInfo] = None
@@ -772,7 +771,7 @@ class ESOLogAnalyzer:
     def process_log_entry(self, entry: ESOLogEntry):
         """Process a single log entry."""
         # Check grace period before processing any events
-        self._check_grace_period(entry.timestamp)
+        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
         if entry.event_type == "UNIT_ADDED":
             self._handle_unit_added(entry)
@@ -1014,14 +1013,7 @@ class ESOLogAnalyzer:
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
         
-        # If we're in a grace period and combat begins again, cancel the grace period
-        if (self.current_encounter and 
-            self.current_encounter.grace_period_end and 
-            not self.current_encounter.finalized):
-            # Cancel grace period and continue with existing encounter
-            self.current_encounter.grace_period_end = None
-            self.current_encounter.in_combat = True
-            return
+        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
         # If we have a previous encounter that ended but wasn't displayed, display it now
         if (self.current_encounter and self.current_encounter.combat_ended_at and 
@@ -1032,15 +1024,22 @@ class ESOLogAnalyzer:
         
         # Create a new encounter if we don't have one or if the previous one was finalized
         if not self.current_encounter or self.current_encounter.finalized:
-            # Create new encounter but preserve players from previous encounter in same zone
+            # Debug: Creating new encounter
+            # print(f"DEBUG: BEGIN_COMBAT - Creating new encounter (current_encounter: {self.current_encounter is not None}, finalized: {self.current_encounter.finalized if self.current_encounter else 'N/A'})")
+            # Create new encounter but preserve players and enemies from previous encounter in same zone
             old_players = {}
-            if self.current_encounter and self.current_encounter.players:
-                old_players = self.current_encounter.players.copy()
+            old_enemies = {}
+            if self.current_encounter:
+                if self.current_encounter.players:
+                    old_players = self.current_encounter.players.copy()
+                if self.current_encounter.enemies:
+                    old_enemies = self.current_encounter.enemies.copy()
             
             self.current_encounter = CombatEncounter()
 
-            # Restore players from previous encounter (they persist across combats in same zone)
+            # Restore players and enemies from previous encounter (they persist across combats in same zone)
             self.current_encounter.players = old_players
+            self.current_encounter.enemies = old_enemies
 
             # Reset resource tracking for all players for the new encounter
             for player in self.current_encounter.players.values():
@@ -1054,26 +1053,20 @@ class ESOLogAnalyzer:
         """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
         
-        # Start grace period if there are any players
+        # Immediately finalize encounter if there are any players
         if self.current_encounter and self.current_encounter.players:
             self.current_encounter.end_time = entry.timestamp
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
-            # Start 1-second grace period for processing remaining combat events
-            self.current_encounter.grace_period_end = entry.timestamp + 1000  # 1000ms = 1 second
             # Finalize buff tracking
             self.current_encounter.finalize_buff_tracking()
-
-    def _check_grace_period(self, current_timestamp: int):
-        """Check if grace period has expired and finalize encounter if needed."""
-        if (self.current_encounter and 
-            self.current_encounter.grace_period_end and 
-            current_timestamp >= self.current_encounter.grace_period_end and
-            not self.current_encounter.finalized):
-            # Grace period expired, finalize the encounter
+            # Immediately display summary and finalize encounter
+            # Debug: Finalizing encounter
+            # print(f"DEBUG: END_COMBAT - Finalizing encounter with {len(self.current_encounter.enemies)} enemies")
             self.current_encounter.finalized = True
             self._display_encounter_summary(self.current_zone)
-            # Don't set current_encounter to None - preserve for subsequent combats
+
+    # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
 
     def _handle_begin_log_event(self, entry: ESOLogEntry):
@@ -1421,7 +1414,7 @@ class ESOLogAnalyzer:
             return
 
         # Use grace period end time if available, otherwise use end_time
-        end_time = self.current_encounter.grace_period_end if self.current_encounter.grace_period_end else self.current_encounter.end_time
+        end_time = self.current_encounter.end_time
         duration = (end_time - self.current_encounter.start_time) / 1000.0
         players_count = len(self.current_encounter.players)
         
@@ -1445,7 +1438,8 @@ class ESOLogAnalyzer:
         # Highest HP hostile monster info - only consider enemies that were actually engaged by players
         highest_hp_info = ""
         if self.current_encounter:
-            print(f"DEBUG: Summary display - encounter has {len(self.current_encounter.enemies)} enemies")
+            # Debug: Summary display
+            # print(f"DEBUG: Summary display - encounter has {len(self.current_encounter.enemies)} enemies")
             # Find the highest health hostile among enemies that were actually engaged by players
             # Use the same logic as the hostile monsters display
             engaged_hostiles = []
@@ -1464,25 +1458,27 @@ class ESOLogAnalyzer:
                         all_engaged_monsters.add(unit_id)
             
             # Build list of engaged hostiles with health info
-            print(f"DEBUG: all_engaged_monsters: {all_engaged_monsters}")
+            # Debug: Processing engaged monsters
+            # print(f"DEBUG: all_engaged_monsters: {all_engaged_monsters}")
             for unit_id in all_engaged_monsters:
-                print(f"DEBUG: Processing unit_id: {unit_id}")
+                # print(f"DEBUG: Processing unit_id: {unit_id}")
                 if unit_id in self.current_encounter.enemies:
                     enemy = self.current_encounter.enemies[unit_id]
-                    print(f"DEBUG: Checking enemy {enemy.name} (ID: {unit_id}): is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
+                    # print(f"DEBUG: Checking enemy {enemy.name} (ID: {unit_id}): is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
                     if hasattr(enemy, 'is_hostile') and enemy.is_hostile and enemy.max_health > 0:
-                        print(f"DEBUG: Adding {enemy.name} to engaged_hostiles")
+                        # print(f"DEBUG: Adding {enemy.name} to engaged_hostiles")
                         engaged_hostiles.append(enemy)
-                    else:
-                        print(f"DEBUG: Skipping {enemy.name} - is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
-                else:
-                    print(f"DEBUG: Unit {unit_id} not found in enemies")
+                    # else:
+                        # print(f"DEBUG: Skipping {enemy.name} - is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
+                # else:
+                    # print(f"DEBUG: Unit {unit_id} not found in enemies")
             
             if engaged_hostiles:
                 # Sort by max health (highest first), then prefer Stormreeve Neidir for equal health
                 engaged_hostiles.sort(key=lambda e: (-e.max_health, 0 if "Stormreeve" in e.name else 1))
                 highest_engaged = engaged_hostiles[0]
-                print(f"DEBUG: Summary display - highest engaged hostile: {highest_engaged.name} (ID: {highest_engaged.unit_id}) with {highest_engaged.max_health:,} HP")
+                # Debug: Highest engaged hostile
+                # print(f"DEBUG: Summary display - highest engaged hostile: {highest_engaged.name} (ID: {highest_engaged.unit_id}) with {highest_engaged.max_health:,} HP")
                 highest_hp_info = f" | Highest HP: {highest_engaged.name} ({highest_engaged.max_health:,} HP)"
         
         # Total health of all damaged enemies
@@ -2241,7 +2237,7 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
     # Final grace period check to ensure any remaining encounters are finalized
     if entries:
         final_timestamp = entries[-1].timestamp
-        analyzer._check_grace_period(final_timestamp + 2000)  # 2 seconds after last event
+        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
     print(f"\n{Fore.GREEN}Replay complete!{Style.RESET_ALL}")
 
