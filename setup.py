@@ -26,7 +26,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/christophergentle/eso-live-encounterlog-sets-abilities",
-    packages=find_packages(),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: End Users/Desktop",
@@ -50,7 +51,7 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "": ["gear_set_data.py", "example-log/*.log"],
+        "": ["src/gear_set_data.py", "data/example_logs/*.log"],
     },
     zip_safe=False,
 )

@@ -285,16 +285,28 @@ The tool identifies gear sets by:
 
 ```
 eso-live-encounterlog-sets-abilities/
-├── eso_analyzer.py          # Main CLI application
-├── eso_log_parser.py        # Robust log parser with comprehensive CSV handling
-├── eso_sets.py              # Skill line mappings and analysis
-├── gear_set_database.py     # LibSets database integration
+├── src/                     # Main application source code
+│   ├── eso_analyzer.py      # Main application entry point
+│   ├── eso_log_parser.py    # Robust log parser with comprehensive CSV handling
+│   ├── eso_sets.py          # Skill line mappings and analysis
+│   ├── gear_set_database.py # LibSets database integration
+│   ├── gear_set_data.py     # Generated optimized gear set data
+│   └── version.py           # Version information
+├── tests/                   # Test suites
+│   ├── test_analyzer.py     # Main analyzer tests
+│   ├── test_log_parser.py   # Log parser unit tests
+│   └── test_optimized.py    # Performance comparison tests
+├── scripts/                 # Build and utility scripts
+│   ├── generate_gear_data.py # Pre-build gear data generator
+│   └── create_icon.py       # Icon generation script
+├── data/                    # Data files
+│   ├── gear_sets/           # Gear set database
+│   │   └── LibSets_SetData.xlsm # LibSets gear set data
+│   └── example_logs/        # Sample ESO encounter logs for testing
+│       ├── Encounter.log    # Main sample log file
+│       └── *.log           # Additional test logs
 ├── requirements.txt         # Python dependencies
-├── README.md               # This file
-├── example-log/            # Sample ESO encounter log for testing
-│   └── Encounter.log      # Sample log file
-└── setsdb/                 # Gear set database
-    └── LibSets_SetData.xlsm # LibSets gear set data
+└── README.md               # This file
 ```
 
 ## Testing
@@ -318,27 +330,27 @@ python3 eso_analyzer.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\
 
 1. **Python 3.7+** installed
 2. **Dependencies** installed: `pip install -r requirements.txt`
-3. **LibSets spreadsheet** in `setsdb/LibSets_SetData.xlsm`
+3. **LibSets spreadsheet** in `data/gear_sets/LibSets_SetData.xlsm`
 
 ### Build Process
 
 1. **Generate gear set data** (REQUIRED):
    ```bash
-   python3 generate_gear_data.py
+   python3 scripts/generate_gear_data.py
    ```
    > **Important**: This extracts gear set data from the LibSets spreadsheet and generates optimized Python data structures. **You must run this whenever the LibSets spreadsheet is updated with new gear sets.**
 
 2. **Build executable**:
    ```bash
-   pyinstaller --onefile --name=eso-analyzer eso_analyzer.py
+   pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
    ```
 
 ### Gear Set Data Updates
 
 The application uses pre-generated gear set data for optimal performance. When new gear sets are added to ESO:
 
-1. **Update** the `setsdb/LibSets_SetData.xlsm` file with latest data
-2. **Regenerate** the data: `python3 generate_gear_data.py`
+1. **Update** the `data/gear_sets/LibSets_SetData.xlsm` file with latest data
+2. **Regenerate** the data: `python3 scripts/generate_gear_data.py`
 3. **Rebuild** the application to include the new gear sets
 
 This process eliminates Excel parsing at runtime, resulting in faster startup and smaller installers.

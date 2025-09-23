@@ -29,16 +29,16 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import requests
 from colorama import init, Fore, Style
-from gear_set_database import gear_set_db
+from .gear_set_database import gear_set_db
 
 # Initialize colorama for cross-platform colored output
 init()
 
 # Import version early for quick version checks
-from version import __version__
+from .version import __version__
 
 # Import our ESO analysis modules
-from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
+from .eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {

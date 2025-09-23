@@ -14,8 +14,8 @@ from typing import Dict, List, Set
 
 def extract_gear_data():
     """Extract gear set data from the XLSM file."""
-    current_dir = Path(__file__).parent
-    excel_file_path = current_dir / "setsdb" / "LibSets_SetData.xlsm"
+    current_dir = Path(__file__).parent.parent
+    excel_file_path = current_dir / "data" / "gear_sets" / "LibSets_SetData.xlsm"
     
     if not excel_file_path.exists():
         print(f"Warning: Excel file not found: {excel_file_path}")
@@ -200,7 +200,7 @@ def main():
     python_code = generate_python_module(gear_data)
     
     # Write to file
-    output_file = Path(__file__).parent / "gear_set_data.py"
+    output_file = Path(__file__).parent.parent / "src" / "gear_set_data.py"
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(python_code)
     

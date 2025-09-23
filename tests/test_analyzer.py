@@ -4,6 +4,10 @@ Test script for ESO Analyzer
 Verifies that the analyzer works correctly with sample data.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from eso_analyzer import ESOLogEntry, ESOLogAnalyzer
 from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
 

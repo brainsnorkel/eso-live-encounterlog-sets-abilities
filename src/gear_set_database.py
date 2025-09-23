@@ -22,9 +22,9 @@ class GearSetDatabase:
             excel_file_path: Path to the LibSets_SetData.xlsm file
         """
         if excel_file_path is None:
-            # Default to the setsdb directory
-            current_dir = Path(__file__).parent
-            excel_file_path = current_dir / "setsdb" / "LibSets_SetData.xlsm"
+            # Default to the data/gear_sets directory
+            current_dir = Path(__file__).parent.parent
+            excel_file_path = current_dir / "data" / "gear_sets" / "LibSets_SetData.xlsm"
         
         self.excel_file_path = excel_file_path
         self.item_to_set: Dict[str, str] = {}  # item_id -> set_name

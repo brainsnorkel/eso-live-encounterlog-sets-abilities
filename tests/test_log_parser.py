@@ -5,6 +5,10 @@ Tests all log entry types using real example data from the encounter log.
 """
 
 import unittest
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from eso_log_parser import ESOLogParser, ESOLogEntry
 
 

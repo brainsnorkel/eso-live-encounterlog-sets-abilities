@@ -15,22 +15,22 @@ The project includes comprehensive test suites:
 ### Quick Test Run
 ```bash
 # Run all analyzer tests
-python3 test_analyzer.py
+python3 tests/test_analyzer.py
 
 # Run all log parser tests  
-python3 test_log_parser.py
+python3 tests/test_log_parser.py
 
 # Test gear data generation (if building from source)
-python3 test_optimized.py
+python3 tests/test_optimized.py
 ```
 
 ### Detailed Test Output
 ```bash
 # Run with verbose output
-python3 test_analyzer.py -v
+python3 tests/test_analyzer.py -v
 
 # Run specific test methods
-python3 -m unittest test_log_parser.TestESOLogParser.test_player_info_parsing
+python3 -m unittest tests.test_log_parser.TestESOLogParser.test_player_info_parsing
 ```
 
 ## Test Coverage
@@ -55,7 +55,7 @@ python3 -m unittest test_log_parser.TestESOLogParser.test_player_info_parsing
 ## Test Data
 
 ### Real Example Data
-All tests use actual ESO encounter log data from `example-log/Encounter.log`:
+All tests use actual ESO encounter log data from `data/example_logs/Encounter.log`:
 - **48MB sample log** with real combat encounters
 - **Multiple players** including named and anonymous
 - **Complex gear data** with all 13 available gear slots
@@ -76,7 +76,7 @@ The `test_optimized.py` script compares the original and optimized gear set data
 
 ```bash
 # Run performance comparison
-python3 test_optimized.py
+python3 tests/test_optimized.py
 ```
 
 **Expected Output:**
@@ -87,10 +87,10 @@ python3 test_optimized.py
 ### Testing Gear Data Generation
 ```bash
 # Generate gear data from XLSM
-python3 generate_gear_data.py
+python3 scripts/generate_gear_data.py
 
 # Verify generated data
-python3 -c "from gear_set_data import get_stats; print(get_stats())"
+python3 -c "import sys; sys.path.append('src'); from gear_set_data import get_stats; print(get_stats())"
 ```
 
 **Expected Results:**

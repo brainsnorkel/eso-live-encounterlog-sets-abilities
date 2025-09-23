@@ -28,15 +28,15 @@ jobs:
         
     - name: Generate gear set data
       run: |
-        python generate_gear_data.py
+        python scripts/generate_gear_data.py
         
     - name: Create icon
       run: |
-        python create_icon.py || echo "Icon creation failed, continuing without icon"
+        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --icon=icon.ico eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer --icon=icon.ico src/eso_analyzer.py
         
     - name: Create Windows installer package
       run: |
@@ -83,15 +83,15 @@ jobs:
         
     - name: Generate gear set data
       run: |
-        python generate_gear_data.py
+        python scripts/generate_gear_data.py
         
     - name: Create icon
       run: |
-        python create_icon.py || echo "Icon creation failed, continuing without icon"
+        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer  eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
         
     - name: Create macOS installer package
       run: |
@@ -138,15 +138,15 @@ jobs:
         
     - name: Generate gear set data
       run: |
-        python generate_gear_data.py
+        python scripts/generate_gear_data.py
         
     - name: Create icon
       run: |
-        python create_icon.py || echo "Icon creation failed, continuing without icon"
+        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer  eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
         
     - name: Create Linux installer package
       run: |

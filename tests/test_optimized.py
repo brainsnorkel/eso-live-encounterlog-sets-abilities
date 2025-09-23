@@ -4,8 +4,15 @@ Test script to compare the original vs optimized gear set database approaches.
 """
 
 import time
-from gear_set_database import gear_set_db as original_db
-from gear_set_database_optimized import gear_set_db as optimized_db
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+import gear_set_database
+import gear_set_database_optimized
+
+original_db = gear_set_database.gear_set_db
+optimized_db = gear_set_database_optimized.gear_set_db
 
 def benchmark_lookup(func, test_data, iterations=1000):
     """Benchmark a lookup function."""
@@ -52,9 +59,10 @@ def main():
     
     print(f"\n=== File Size Comparison ===")
     import os
-    original_size = os.path.getsize('gear_set_database.py')
-    optimized_size = os.path.getsize('gear_set_database_optimized.py')
-    data_size = os.path.getsize('gear_set_data.py')
+    src_dir = os.path.join(os.path.dirname(__file__), '..', 'src')
+    original_size = os.path.getsize(os.path.join(src_dir, 'gear_set_database.py'))
+    optimized_size = os.path.getsize(os.path.join(src_dir, 'gear_set_database_optimized.py'))
+    data_size = os.path.getsize(os.path.join(src_dir, 'gear_set_data.py'))
     
     print(f"Original database module: {original_size:,} bytes")
     print(f"Optimized database module: {optimized_size:,} bytes")
