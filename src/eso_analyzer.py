@@ -112,8 +112,9 @@ def has_five_piece_bonus(set_name: str) -> bool:
     if any(keyword in clean_name.lower() for keyword in mythic_keywords):
         return False
 
-    # Known 2-piece monster sets from LibSets database
-    two_piece_monster_sets = [
+    # Known 2-piece sets from LibSets database (monster sets + arena weapon sets)
+    two_piece_sets = [
+        # Monster sets (2-piece)
         "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
         "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
         "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
@@ -123,9 +124,23 @@ def has_five_piece_bonus(set_name: str) -> bool:
         "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
         "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
         "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-        "the blind", "squall of retribution", "orpheon the tactician"
+        "the blind", "squall of retribution", "orpheon the tactician",
+        # Arena weapon sets (2-piece)
+        "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
+        "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
+        "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
+        "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
+        "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
+        "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
+        "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
+        "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
+        "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
+        "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
+        "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
+        "force overflow", "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum",
+        "perfected point-blank snipe", "perfected wrath of elements", "perfected force overflow"
     ]
-    if any(keyword in clean_name.lower() for keyword in two_piece_monster_sets):
+    if any(keyword in clean_name.lower() for keyword in two_piece_sets):
         return False
 
     # Default: assume it has 5pc bonus unless proven otherwise
@@ -1728,8 +1743,9 @@ class ESOLogAnalyzer:
                                 colored_part = f"{Fore.YELLOW}{set_name}{Style.RESET_ALL}"
                             # Check if it's an incomplete 5-piece set (color dark red) - but never highlight monster sets
                             elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
-                                # Explicitly exclude monster sets from red highlighting
-                                monster_set_keywords = [
+                                # Explicitly exclude 2-piece sets (monster sets + arena weapon sets) from red highlighting
+                                two_piece_set_keywords = [
+                                    # Monster sets (2-piece)
                                     "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
                                     "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
                                     "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
@@ -1739,9 +1755,23 @@ class ESOLogAnalyzer:
                                     "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
                                     "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
                                     "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-                                    "the blind", "squall of retribution", "orpheon the tactician"
+                                    "the blind", "squall of retribution", "orpheon the tactician",
+                                    # Arena weapon sets (2-piece)
+                                    "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
+                                    "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
+                                    "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
+                                    "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
+                                    "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
+                                    "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
+                                    "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
+                                    "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
+                                    "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
+                                    "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
+                                    "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
+                                    "force overflow", "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum",
+                                    "perfected point-blank snipe", "perfected wrath of elements", "perfected force overflow"
                                 ]
-                                if not any(keyword in clean_set_name.lower() for keyword in monster_set_keywords):
+                                if not any(keyword in clean_set_name.lower() for keyword in two_piece_set_keywords):
                                     colored_part = f"{Fore.RED}{part}{Style.RESET_ALL}"
                                 else:
                                     colored_part = part
