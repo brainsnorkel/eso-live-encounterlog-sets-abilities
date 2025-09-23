@@ -2,6 +2,23 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.15] - 2025-01-22
+
+### Changed
+- **BREAKING**: Renamed main executable and file from `eso-analyzer` to `esolog-tail`
+- Updated PyInstaller spec file (`eso-analyzer.spec` → `esolog-tail.spec`)
+- Updated all documentation references to use new naming convention
+- Updated GitHub Actions workflow for new executable naming
+- Updated setup.py entry points and test references
+
+### Added
+- Comprehensive CLI testing verification for all options
+- Updated installer names to reflect new executable name
+
+### Fixed
+- All internal references updated to use new naming convention
+- GitHub Actions build pipeline updated for new executable names
+
 ## [0.1.14] - 2025-01-22
 
 ### Enhanced
