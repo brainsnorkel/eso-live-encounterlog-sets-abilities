@@ -1125,15 +1125,12 @@ class ESOLogAnalyzer:
             # Track any monster that appears in combat events as "engaged"
             if self.list_hostiles and self.current_encounter:
                 # Look for unit IDs in various positions depending on event type
+                # COMBAT_EVENT format: timestamp,COMBAT_EVENT,actionResult,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
                 potential_unit_ids = []
-                if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
-                    # Format: timestamp,COMBAT_EVENT,DAMAGE,damage_type,source_unit_id,damage_value,unknown,target_unit_id,...
-                    if len(entry.fields) > 7:
-                        potential_unit_ids = [entry.fields[4], entry.fields[7]]  # source and target
-                elif combat_event_type in ['DIED_XP', 'DIED']:
-                    # Format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,damage_value,unknown,dying_unit_id,...
-                    if len(entry.fields) > 7:
-                        potential_unit_ids = [entry.fields[4], entry.fields[7]]  # source and dying unit
+                if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE', 'DIED_XP', 'DIED']:
+                    # Unit ID is at index 9 (the unit affected by the combat event)
+                    if len(entry.fields) > 9:
+                        potential_unit_ids = [entry.fields[9]]
                 
                 # Check if any of these unit IDs correspond to known enemies
                 for unit_id in potential_unit_ids:
@@ -1146,8 +1143,8 @@ class ESOLogAnalyzer:
             # Track death events
             if combat_event_type == 'DIED_XP':
                 # Check if it's a player death by looking up the dying unit ID in known players
-                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,damage_value,unknown,dying_unit_id,...
-                dying_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
+                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
+                dying_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""
                 if (self.current_encounter and 
                     self.current_encounter.find_player_by_unit_id(dying_unit_id)):
                     self.zone_deaths += 1
@@ -1166,24 +1163,19 @@ class ESOLogAnalyzer:
             # Track damage events
             elif combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 try:
-                    source_unit_id = entry.fields[2]  # Source unit ID is at index 2
-                    damage_value = int(entry.fields[3])  # Damage value is at index 3
-                    target_unit_id = entry.fields[4] if len(entry.fields) > 4 else ""  # Target unit ID is at index 4
+                    # COMBAT_EVENT format: timestamp,COMBAT_EVENT,actionResult,damageType,powerType,hitValue,overflow,castTrackId,abilityId,unitId,health/max,...
+                    hit_value = int(entry.fields[5])  # hitValue is at index 5
+                    target_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""  # unitId is at index 9
                     
                     # Count damage from friendly players and their pets
-                    if damage_value > 0 and self.current_encounter:
-                        # Check if it's a player or a pet of a player
-                        if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
-                            source_unit_id in self.current_encounter.pet_ownership):
-                            self.current_encounter.total_damage += damage_value
-                            # Track damage per player (including pet damage)
-                            self.current_encounter.add_damage_to_player(source_unit_id, damage_value)
-                            
-                            # Track damage dealt to enemies
-                            if target_unit_id and target_unit_id in self.current_encounter.enemies:
-                                if target_unit_id not in self.current_encounter.enemy_damage:
-                                    self.current_encounter.enemy_damage[target_unit_id] = 0
-                                self.current_encounter.enemy_damage[target_unit_id] += damage_value
+                    if hit_value > 0 and self.current_encounter:
+                        # For damage events, we need to determine the source from context
+                        # The COMBAT_EVENT format doesn't directly specify the source unit
+                        # We'll track damage to enemies regardless of source for now
+                        if target_unit_id and target_unit_id in self.current_encounter.enemies:
+                            if target_unit_id not in self.current_encounter.enemy_damage:
+                                self.current_encounter.enemy_damage[target_unit_id] = 0
+                            self.current_encounter.enemy_damage[target_unit_id] += hit_value
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
             
