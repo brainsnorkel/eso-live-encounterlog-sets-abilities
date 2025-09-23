@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.20] - 2025-01-22
+
+### Fixed
+- **Tail Mode File Change Detection**: Fixed path comparison issue in watchdog event handler using Path.resolve()
+- **Diagnostic Logging**: Added comprehensive diagnostic logging for file monitoring with detailed timestamps
+- **Fallback Polling**: Added fallback polling mechanism for reliable change detection when watchdog events fail
+- **Enhanced Debugging**: Added detailed debugging output with file sizes, positions, and line counts
+
+### Enhanced
+- **File Monitoring Reliability**: Improved file change detection robustness with multiple detection methods
+- **Testing Documentation**: Updated TESTING.md with comprehensive tail mode testing procedures
+- **Diagnostic Output**: Enhanced diagnostic mode with real-time file change monitoring information
+
+### Technical
+- Fixed watchdog event handler path comparison using Path.resolve() for absolute vs relative path handling
+- Added fallback polling every 2 seconds to ensure file changes are detected even if watchdog fails
+- Enhanced diagnostic output with timestamps and detailed file change information
+- Improved error handling and edge case management for file monitoring
+
 ## [0.1.19] - 2025-01-22
 
 ### Fixed
