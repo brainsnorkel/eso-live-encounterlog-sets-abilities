@@ -638,7 +638,7 @@ class CombatEncounter:
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
-    def __init__(self, list_hostiles: bool = False):
+    def __init__(self, list_hostiles: bool = False, diagnostic: bool = False):
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -653,6 +653,9 @@ class ESOLogAnalyzer:
         self.list_hostiles = list_hostiles
         self.hostile_monsters: List[Tuple[str, str, str]] = []  # (unit_id, name, unit_type)
         self.engaged_monsters: Set[str] = set()  # Track monsters that appear in combat events
+        
+        # Diagnostic mode for debugging data flow and timing
+        self.diagnostic = diagnostic
         
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
@@ -1982,6 +1985,7 @@ class LogFileHandler(FileSystemEventHandler):
         self.last_position = 0
         self.read_all_then_tail = read_all_then_tail
         self.has_read_all = False
+        self.diagnostic = analyzer.diagnostic
 
         # Initialize position based on mode
         if self.log_file.exists():
@@ -2028,6 +2032,11 @@ class LogFileHandler(FileSystemEventHandler):
         if not self.log_file.exists():
             return
         
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file from beginning{Style.RESET_ALL}")
+        
+        line_count = 0
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             while True:
                 line = f.readline()
@@ -2039,9 +2048,14 @@ class LogFileHandler(FileSystemEventHandler):
                     entry = ESOLogEntry.parse(line)
                     if entry:
                         self.analyzer.process_log_entry(entry)
+                        line_count += 1
                 
                 # Update position to current position
                 self.last_position = f.tell()
+        
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines, now tailing{Style.RESET_ALL}")
         
         self.has_read_all = True
 
@@ -2057,12 +2071,23 @@ class LogFileHandler(FileSystemEventHandler):
 
         current_size = self.log_file.stat().st_size
         if current_size <= self.last_position:
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
             return
+
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             f.seek(self.last_position)
             new_lines = f.readlines()
             self.last_position = f.tell()
+
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines{Style.RESET_ALL}")
 
         for line in new_lines:
             line = line.strip()
@@ -2086,7 +2111,9 @@ class LogFileHandler(FileSystemEventHandler):
               help='Show version information and exit')
 @click.option('--list-hostiles', is_flag=True,
               help='Testing mode: List all hostile monsters added to fights with names and IDs')
-def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool):
+@click.option('--diagnostic', is_flag=True,
+              help='Diagnostic mode: Show detailed timing and data flow information for debugging')
+def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -2109,12 +2136,14 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         active_options.append("no-wait")
     if list_hostiles:
         active_options.append("list-hostiles")
+    if diagnostic:
+        active_options.append("diagnostic")
     
     if active_options:
         print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
     print()
 
-    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles)
+    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic)
 
     if read_all_then_stop:
         # Determine which log file to use
@@ -2194,6 +2223,9 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     try:
         print(f"{Fore.YELLOW}Press Ctrl+C to stop monitoring{Style.RESET_ALL}\n")
         while True:
+            if analyzer.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Waiting for file changes...{Style.RESET_ALL}")
             time.sleep(1)
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
