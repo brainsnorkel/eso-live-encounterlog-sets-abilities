@@ -1628,7 +1628,7 @@ class ESOLogAnalyzer:
                                 damage_percentage = 0
                                 if self.current_encounter.total_damage > 0:
                                     damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
-                                dps_str = f" ({damage_percentage:.1f}%)"
+                                dps_str = f" D:{damage_percentage:.1f}%"
 
                         skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
                     title_parts.append(skill_lines_str)
