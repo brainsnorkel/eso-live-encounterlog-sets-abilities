@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 import os
 
 # Read version
-exec(open("version.py").read())
+exec(open("src/version.py").read())
 
 # Read the README file
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -46,7 +46,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "eso-analyzer=eso_analyzer:main",
+            "esolog-tail=esolog_tail:main",
         ],
     },
     include_package_data=True,

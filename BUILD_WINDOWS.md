@@ -31,13 +31,13 @@ Since the current build environment is macOS, here are instructions for creating
 
 4. **Create Windows executable**:
    ```cmd
-   pyinstaller --onefile --name=eso-analyzer --add-data="data/example_logs;data/example_logs" --icon=icon.ico src/eso_analyzer.py
+   pyinstaller --onefile --name=esolog-tail --add-data="data/example_logs;data/example_logs" --icon=icon.ico src/esolog_tail.py
    ```
 
 5. **Create installer package**:
    ```cmd
    mkdir dist\installer
-   copy dist\eso-analyzer.exe dist\installer\
+   copy dist\esolog-tail.exe dist\installer\
    copy README.md dist\installer\
    copy run.bat dist\installer\
    ```
@@ -45,7 +45,7 @@ Since the current build environment is macOS, here are instructions for creating
 6. **Test the executable**:
    ```cmd
    cd dist\installer
-   eso-analyzer.exe --help
+   esolog-tail.exe --help
    ```
 
 ## Alternative: Use WSL or Docker
@@ -103,10 +103,10 @@ jobs:
       - name: Generate gear set data
         run: python scripts/generate_gear_data.py
       - name: Build executable
-        run: pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
+        run: pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: eso-analyzer-windows
-          path: dist/eso-analyzer.exe
+          name: esolog-tail-windows
+          path: dist/esolog-tail.exe
 ```
