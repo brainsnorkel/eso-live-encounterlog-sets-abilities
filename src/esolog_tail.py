@@ -8,7 +8,10 @@ A CLI tool that continuously monitors ESO encounter logs and analyzes combat enc
 import sys
 if len(sys.argv) > 1 and sys.argv[1] in ['-v', '--version']:
     try:
-        from version import __version__
+        try:
+            from .version import __version__
+        except ImportError:
+            from version import __version__
         print(f"ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}")
         print(f"Repository: https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities")
         print(f"License: MIT")
@@ -29,12 +32,18 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import requests
 from colorama import init, Fore, Style
-from gear_set_database_optimized import gear_set_db
+try:
+    from .gear_set_database_optimized import gear_set_db
+except ImportError:
+    from gear_set_database_optimized import gear_set_db
 
 # Initialize colorama for cross-platform colored output
 init()
 
-from version import __version__
+try:
+    from .version import __version__
+except ImportError:
+    from version import __version__
 
 # Taunt abilities lookup for highlighting
 TAUNT_ABILITIES = {
