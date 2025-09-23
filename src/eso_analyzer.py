@@ -1609,15 +1609,15 @@ class ESOLogAnalyzer:
                             if player.max_health > 0 and (player.max_health < 19000 or player.max_health > 50000):
                                 health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
-                            # Bold the highest resource value
+                            # Bold and underline the highest resource value
                             max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
                             if max_resource_value > 0:
                                 if player.max_health == max_resource_value:
-                                    health_display = f"{Style.BRIGHT}{health_display}{Style.NORMAL}"
+                                    health_display = f"{Style.BRIGHT}\033[4m{health_display}\033[0m{Style.NORMAL}"
                                 elif player.max_magicka == max_resource_value:
-                                    magicka_display = f"{Style.BRIGHT}{magicka_display}{Style.NORMAL}"
+                                    magicka_display = f"{Style.BRIGHT}\033[4m{magicka_display}\033[0m{Style.NORMAL}"
                                 elif player.max_stamina == max_resource_value:
-                                    stamina_display = f"{Style.BRIGHT}{stamina_display}{Style.NORMAL}"
+                                    stamina_display = f"{Style.BRIGHT}\033[4m{stamina_display}\033[0m{Style.NORMAL}"
 
                             resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
                             
