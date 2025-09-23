@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.16] - 2025-01-22
+
+### Changed
+- Removed player count from encounter summary display for cleaner output
+- Updated health highlighting threshold from 44.5k to 49k for upper limit
+- Changed "Est. DPS" to "GrpDPS" in encounter summary
+
+### Fixed
+- Added "Nunatak" to known 2-piece monster sets to prevent incorrect red highlighting
+- Player count no longer shows discrepancy between detected vs displayed players
+
 ## [0.1.15] - 2025-01-22
 
 ### Changed

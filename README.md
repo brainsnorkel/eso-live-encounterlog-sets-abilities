@@ -166,7 +166,7 @@ When a combat encounter ends, the tool displays:
 ```
 === ZONE CHANGED ===
 Zone: Lucent Citadel (VETERAN)
-2025-09-14 09:58:25 (Lucent Citadel) | Duration: 19.1s | Players: 13 | Est. DPS: 361,331 | Target: Darkcaster Slasher (HP: 3,881,030)
+2025-09-14 09:58:25 (Lucent Citadel) | Duration: 19.1s | GrpDPS: 361,331 | Target: Darkcaster Slasher (HP: 3,881,030)
 Group Buffs: Major Courage: ✅ (43.0%) | Major Force: ❌ | Major Slayer: ❌
 
 @brainsnorkel Ok Beamer Herald/Aedric/Ardent (Arcanist M:16.5k S:28.5k H:20.5k D:20.1%)
