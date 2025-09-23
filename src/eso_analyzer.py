@@ -1605,8 +1605,8 @@ class ESOLogAnalyzer:
                             magicka_display = round_to_half_k(player.max_magicka)
                             stamina_display = round_to_half_k(player.max_stamina)
 
-                            # Color health red if below 19k or above 50k
-                            if player.max_health > 0 and (player.max_health < 19000 or player.max_health > 50000):
+                            # Color health red if below 18.5k or above 44.5k
+                            if player.max_health > 0 and (player.max_health < 18500 or player.max_health > 44500):
                                 health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
                             # Bold and underline the highest resource value
