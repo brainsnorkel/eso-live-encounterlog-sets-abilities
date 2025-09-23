@@ -277,6 +277,9 @@ class CombatEncounter:
         # Track combat end time
         self.combat_ended_at: Optional[int] = None
         
+        # Grace period for processing remaining combat events
+        self.grace_period_end: Optional[int] = None
+        
         # Track highest health hostile monster in this fight
         self.highest_health_hostile: Optional[EnemyInfo] = None
         self.most_damaged_hostile: Optional[EnemyInfo] = None
@@ -762,6 +765,9 @@ class ESOLogAnalyzer:
 
     def process_log_entry(self, entry: ESOLogEntry):
         """Process a single log entry."""
+        # Check grace period before processing any events
+        self._check_grace_period(entry.timestamp)
+        
         if entry.event_type == "UNIT_ADDED":
             self._handle_unit_added(entry)
         elif entry.event_type == "UNIT_CHANGED":
@@ -1002,6 +1008,15 @@ class ESOLogAnalyzer:
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
         
+        # If we're in a grace period and combat begins again, cancel the grace period
+        if (self.current_encounter and 
+            self.current_encounter.grace_period_end and 
+            not self.current_encounter.finalized):
+            # Cancel grace period and continue with existing encounter
+            self.current_encounter.grace_period_end = None
+            self.current_encounter.in_combat = True
+            return
+        
         # If we have a previous encounter that ended but wasn't displayed, display it now
         if (self.current_encounter and self.current_encounter.combat_ended_at and 
             not self.current_encounter.finalized and self.current_encounter.players):
@@ -1030,21 +1045,30 @@ class ESOLogAnalyzer:
         self.current_encounter.start_time = entry.timestamp
 
     def _handle_end_combat_event(self, entry: ESOLogEntry):
-        """Handle END_COMBAT events to end combat tracking."""
+        """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
         
-        # Show combat reports if there are any players
+        # Start grace period if there are any players
         if self.current_encounter and self.current_encounter.players:
             self.current_encounter.end_time = entry.timestamp
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
+            # Start 1-second grace period for processing remaining combat events
+            self.current_encounter.grace_period_end = entry.timestamp + 1000  # 1000ms = 1 second
             # Finalize buff tracking
             self.current_encounter.finalize_buff_tracking()
-            
-            # Display the encounter immediately
-            if not self.current_encounter.finalized:
-                self.current_encounter.finalized = True
-                self._display_encounter_summary(self.current_zone)
+
+    def _check_grace_period(self, current_timestamp: int):
+        """Check if grace period has expired and finalize encounter if needed."""
+        if (self.current_encounter and 
+            self.current_encounter.grace_period_end and 
+            current_timestamp >= self.current_encounter.grace_period_end and
+            not self.current_encounter.finalized):
+            # Grace period expired, finalize the encounter
+            self.current_encounter.finalized = True
+            self._display_encounter_summary(self.current_zone)
+            self.current_encounter = None
+
 
     def _handle_begin_log_event(self, entry: ESOLogEntry):
         """Handle BEGIN_LOG events to extract Unix timestamp."""
@@ -1340,7 +1364,9 @@ class ESOLogAnalyzer:
         if not self.current_encounter:
             return
 
-        duration = (self.current_encounter.end_time - self.current_encounter.start_time) / 1000.0
+        # Use grace period end time if available, otherwise use end_time
+        end_time = self.current_encounter.grace_period_end if self.current_encounter.grace_period_end else self.current_encounter.end_time
+        duration = (end_time - self.current_encounter.start_time) / 1000.0
         players_count = len(self.current_encounter.players)
         
         # Calculate estimated group DPS
@@ -2114,6 +2140,11 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
     # Process all entries at full speed without delays
     for entry in entries:
         analyzer.process_log_entry(entry)
+
+    # Final grace period check to ensure any remaining encounters are finalized
+    if entries:
+        final_timestamp = entries[-1].timestamp
+        analyzer._check_grace_period(final_timestamp + 2000)  # 2 seconds after last event
 
     print(f"\n{Fore.GREEN}Replay complete!{Style.RESET_ALL}")
 
