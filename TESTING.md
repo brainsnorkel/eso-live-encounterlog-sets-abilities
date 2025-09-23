@@ -219,6 +219,56 @@ python3 src/esolog_tail.py --test-mode --replay-speed 1000
 ### Memory Usage
 Monitor memory usage during large log processing to ensure efficient parsing.
 
+## Tail Mode Testing
+
+### Testing File Monitoring
+The tail mode functionality can be tested using the log simulator:
+
+```bash
+# Test with low volume (50 lines every 2 seconds)
+python3 scripts/simulate_eso_logging.py data/example_logs/Encounter.log test_output.log 50 2.0
+
+# Test with high volume (10,000 lines every 1 second)  
+python3 scripts/simulate_eso_logging.py data/example_logs/Encounter.log test_output.log 10000 1.0
+
+# Test with very high volume (50,000 lines every 1 second)
+python3 scripts/simulate_eso_logging.py data/example_logs/Encounter.log test_output.log 50000 1.0
+```
+
+### Testing Tail Mode with Diagnostic Output
+```bash
+# Run esolog_tail in diagnostic mode to monitor file changes
+python3 src/esolog_tail.py --log-file test_output.log --diagnostic --no-wait
+```
+
+**Expected Diagnostic Output:**
+```
+[HH:MM:SS] DIAGNOSTIC: File system event detected - /path/to/test_output.log
+[HH:MM:SS] DIAGNOSTIC: Event matches target file, processing new lines
+[HH:MM:SS] DIAGNOSTIC: Reading new data from test_output.log (size: X, pos: Y)
+[HH:MM:SS] DIAGNOSTIC: Read X lines from test_output.log
+[HH:MM:SS] DIAGNOSTIC: FALLBACK - Detected file growth (size: X, pos: Y)
+```
+
+### Tail Mode Validation
+The diagnostic mode should show:
+- ✅ File system events being detected
+- ✅ Path comparison working correctly  
+- ✅ New data being read when files change
+- ✅ Fallback polling mechanism working
+- ✅ Proper handling of high-volume data streams
+
+### Testing Standard Tail Comparison
+```bash
+# Compare with standard tail command
+tail -f test_output.log &
+
+# Run esolog_tail in another terminal
+python3 src/esolog_tail.py --log-file test_output.log --diagnostic
+```
+
+Both should detect changes at the same time, confirming the file monitoring is working correctly.
+
 ## Test Maintenance
 
 ### Updating Tests
