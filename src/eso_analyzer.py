@@ -590,6 +590,7 @@ class ESOLogAnalyzer:
         # Testing flag for listing hostile monsters
         self.list_hostiles = list_hostiles
         self.hostile_monsters: List[Tuple[str, str, str]] = []  # (unit_id, name, unit_type)
+        self.engaged_monsters: Set[str] = set()  # Track monsters that appear in combat events
         
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
@@ -1120,6 +1121,25 @@ class ESOLogAnalyzer:
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
         if len(entry.fields) >= 4:
             combat_event_type = entry.fields[0]  # DAMAGE/CRITICAL_DAMAGE is at index 0
+            
+            # Track any monster that appears in combat events as "engaged"
+            if self.list_hostiles and self.current_encounter:
+                # Look for unit IDs in various positions depending on event type
+                potential_unit_ids = []
+                if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
+                    # Format: timestamp,COMBAT_EVENT,DAMAGE,damage_type,source_unit_id,damage_value,unknown,target_unit_id,...
+                    if len(entry.fields) > 7:
+                        potential_unit_ids = [entry.fields[4], entry.fields[7]]  # source and target
+                elif combat_event_type in ['DIED_XP', 'DIED']:
+                    # Format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,damage_value,unknown,dying_unit_id,...
+                    if len(entry.fields) > 7:
+                        potential_unit_ids = [entry.fields[4], entry.fields[7]]  # source and dying unit
+                
+                # Check if any of these unit IDs correspond to known enemies
+                for unit_id in potential_unit_ids:
+                    if unit_id and unit_id in self.current_encounter.enemies:
+                        self.engaged_monsters.add(unit_id)
+            
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
             
@@ -1556,25 +1576,47 @@ class ESOLogAnalyzer:
                 print(f"  No data")
         
         # Display hostile monsters if testing flag is enabled
-        if self.list_hostiles and self.hostile_monsters:
-            print(f"\n{Fore.YELLOW}=== Hostile Monsters Damaged by Players ==={Style.RESET_ALL}")
-            # Remove duplicates while preserving order, and only show those that were damaged
+        if self.list_hostiles and (self.hostile_monsters or self.engaged_monsters):
+            print(f"\n{Fore.YELLOW}=== Hostile Monsters Engaged by Players ==={Style.RESET_ALL}")
+            
+            # Combine hostile monsters that were tracked and those that appeared in combat events
+            all_engaged_monsters = set()
+            
+            # Add monsters from hostile_monsters list
+            for unit_id, name, unit_type in self.hostile_monsters:
+                if unit_id in self.engaged_monsters or unit_id in self.current_encounter.enemy_damage:
+                    all_engaged_monsters.add((unit_id, name, unit_type))
+            
+            # Add monsters that appeared in combat events but weren't in hostile_monsters list
+            for unit_id in self.engaged_monsters:
+                if unit_id in self.current_encounter.enemies:
+                    enemy = self.current_encounter.enemies[unit_id]
+                    all_engaged_monsters.add((unit_id, enemy.name, enemy.unit_type))
+            
+            # Display all engaged monsters
             unique_hostiles = []
             seen = set()
-            for unit_id, name, unit_type in self.hostile_monsters:
+            for unit_id, name, unit_type in all_engaged_monsters:
                 key = (unit_id, name)
-                if key not in seen and unit_id in self.current_encounter.enemy_damage:
+                if key not in seen:
                     seen.add(key)
-                    damage = self.current_encounter.enemy_damage[unit_id]
+                    damage = self.current_encounter.enemy_damage.get(unit_id, 0)
                     unique_hostiles.append((unit_id, name, unit_type, damage))
             
-            for unit_id, name, unit_type, damage in unique_hostiles:
-                print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Damage: {damage:,}){Style.RESET_ALL}")
+            # Sort by damage (highest first), then by name
+            unique_hostiles.sort(key=lambda x: (x[3], x[1]), reverse=True)
             
-            print(f"{Fore.YELLOW}Total hostile monsters damaged: {len(unique_hostiles)}{Style.RESET_ALL}")
+            for unit_id, name, unit_type, damage in unique_hostiles:
+                if damage > 0:
+                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Damage: {damage:,}){Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Engaged){Style.RESET_ALL}")
+            
+            print(f"{Fore.YELLOW}Total hostile monsters engaged: {len(unique_hostiles)}{Style.RESET_ALL}")
         
-        # Clear the hostile monsters list for the next encounter
+        # Clear the hostile monsters list and engaged monsters set for the next encounter
         self.hostile_monsters.clear()
+        self.engaged_monsters.clear()
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None):
         """Update or create a player session with their current data."""
