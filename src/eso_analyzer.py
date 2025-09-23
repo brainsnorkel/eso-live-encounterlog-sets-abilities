@@ -1201,6 +1201,8 @@ class ESOLogAnalyzer:
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
                                     self.current_encounter.enemy_damage[target_unit_id] += hit_value
+                                    # Update total group damage
+                                    self.current_encounter.total_damage += hit_value
                                     # Update the most damaged hostile monster
                                     self.current_encounter.update_most_damaged_hostile(target_unit_id)
                 except (ValueError, IndexError):
@@ -1349,6 +1351,12 @@ class ESOLogAnalyzer:
             hostile = self.current_encounter.most_damaged_hostile
             damage = self.current_encounter.enemy_damage.get(hostile.unit_id, 0)
             hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,}, Damage: {damage:,})"
+        
+        # Highest HP hostile monster info
+        highest_hp_info = ""
+        if (self.current_encounter and self.current_encounter.highest_health_hostile):
+            hostile = self.current_encounter.highest_health_hostile
+            highest_hp_info = f" | Highest HP: {hostile.name} ({hostile.max_health:,} HP)"
 
         # Get formatted combat start time
         combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
@@ -1356,14 +1364,14 @@ class ESOLogAnalyzer:
         # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
         if zone_name:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
@@ -1392,6 +1400,11 @@ class ESOLogAnalyzer:
         players_with_damage.sort(key=lambda x: x[1], reverse=True)
         
         for player, player_damage in players_with_damage:
+            # Calculate player DPS
+            player_dps = 0
+            if duration > 0 and player_damage > 0:
+                player_dps = player_damage / duration
+            
             # Use equipped abilities from PLAYER_INFO
             abilities_to_analyze = player.equipped_abilities
             
@@ -1463,8 +1476,13 @@ class ESOLogAnalyzer:
                                 health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
                             resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
+                            
+                            # Add DPS information
+                            dps_str = ""
+                            if player_dps > 0:
+                                dps_str = f" DPS:{player_dps:,.0f}"
 
-                        skill_lines_str += f" ({class_name}{resource_str})"
+                        skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
                     title_parts.append(skill_lines_str)
                 else:
                     title_parts.append("unknown")
