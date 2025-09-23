@@ -1126,11 +1126,21 @@ class ESOLogAnalyzer:
             # Track death events
             if combat_event_type == 'DIED_XP':
                 # Check if it's a player death by looking up the dying unit ID in known players
-                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,...,dying_unit_id,...
-                dying_unit_id = entry.fields[9] if len(entry.fields) > 9 else ""
+                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damage_type,source_unit_id,damage_value,unknown,dying_unit_id,...
+                dying_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
                 if (self.current_encounter and 
                     self.current_encounter.find_player_by_unit_id(dying_unit_id)):
                     self.zone_deaths += 1
+                
+                # If it's an enemy death, mark it as damaged by players
+                elif (self.current_encounter and 
+                      dying_unit_id in self.current_encounter.enemies):
+                    # Mark this enemy as damaged (even if we didn't track individual damage events)
+                    if dying_unit_id not in self.current_encounter.enemy_damage:
+                        self.current_encounter.enemy_damage[dying_unit_id] = 0
+                    # Set a minimum damage amount to indicate it was killed
+                    if self.current_encounter.enemy_damage[dying_unit_id] == 0:
+                        self.current_encounter.enemy_damage[dying_unit_id] = 1
             
             
             # Track damage events
