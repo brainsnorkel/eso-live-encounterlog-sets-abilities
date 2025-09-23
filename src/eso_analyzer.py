@@ -1442,11 +1442,48 @@ class ESOLogAnalyzer:
             hostile = self.current_encounter.most_damaged_hostile
             hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
         
-        # Highest HP hostile monster info
+        # Highest HP hostile monster info - only consider enemies that were actually engaged by players
         highest_hp_info = ""
-        if (self.current_encounter and self.current_encounter.highest_health_hostile):
-            hostile = self.current_encounter.highest_health_hostile
-            highest_hp_info = f" | Highest HP: {hostile.name} ({hostile.max_health:,} HP)"
+        if self.current_encounter:
+            print(f"DEBUG: Summary display - encounter has {len(self.current_encounter.enemies)} enemies")
+            # Find the highest health hostile among enemies that were actually engaged by players
+            # Use the same logic as the hostile monsters display
+            engaged_hostiles = []
+            all_engaged_monsters = set()
+            
+            # Add monsters from hostile_monsters list
+            for unit_id, name, unit_type in self.hostile_monsters:
+                if unit_id in self.engaged_monsters or unit_id in self.current_encounter.enemy_damage:
+                    all_engaged_monsters.add(unit_id)
+            
+            # Add monsters that appeared in combat events but weren't in hostile_monsters list
+            for unit_id in self.engaged_monsters:
+                if unit_id in self.current_encounter.enemies:
+                    enemy = self.current_encounter.enemies[unit_id]
+                    if enemy.is_hostile:
+                        all_engaged_monsters.add(unit_id)
+            
+            # Build list of engaged hostiles with health info
+            print(f"DEBUG: all_engaged_monsters: {all_engaged_monsters}")
+            for unit_id in all_engaged_monsters:
+                print(f"DEBUG: Processing unit_id: {unit_id}")
+                if unit_id in self.current_encounter.enemies:
+                    enemy = self.current_encounter.enemies[unit_id]
+                    print(f"DEBUG: Checking enemy {enemy.name} (ID: {unit_id}): is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
+                    if hasattr(enemy, 'is_hostile') and enemy.is_hostile and enemy.max_health > 0:
+                        print(f"DEBUG: Adding {enemy.name} to engaged_hostiles")
+                        engaged_hostiles.append(enemy)
+                    else:
+                        print(f"DEBUG: Skipping {enemy.name} - is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
+                else:
+                    print(f"DEBUG: Unit {unit_id} not found in enemies")
+            
+            if engaged_hostiles:
+                # Sort by max health (highest first), then prefer Stormreeve Neidir for equal health
+                engaged_hostiles.sort(key=lambda e: (-e.max_health, 0 if "Stormreeve" in e.name else 1))
+                highest_engaged = engaged_hostiles[0]
+                print(f"DEBUG: Summary display - highest engaged hostile: {highest_engaged.name} (ID: {highest_engaged.unit_id}) with {highest_engaged.max_health:,} HP")
+                highest_hp_info = f" | Highest HP: {highest_engaged.name} ({highest_engaged.max_health:,} HP)"
         
         # Total health of all damaged enemies
         total_health_info = ""
