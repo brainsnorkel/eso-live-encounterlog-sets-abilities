@@ -15,7 +15,7 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 
 ![ESO Live Encounter Log Analyzer Output](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/raw/main/docs/example-output.png)
 
-*Example output showing a comprehensive combat encounter analysis with 13 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
+*Example output showing a comprehensive combat encounter analysis with 12 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
 
 ## Installation
 
