@@ -167,29 +167,73 @@ When a combat encounter ends, the tool displays:
 
 ```
 === ZONE CHANGED ===
-Zone: Coral Aerie (VETERAN)
-2025-08-21 08:42:06 (Coral Aerie) | Duration: 8.8s | Players: 4 | Est. DPS: 108,755 | Target: Yaghra Spewer (HP: 105,637)
-Group Buffs: Major Courage: ❌ | Major Force: ❌ | Major Slayer: ❌
+Zone: Lucent Citadel (VETERAN)
+2025-09-14 09:58:25 (Lucent Citadel) | Duration: 19.1s | Players: 13 | Est. DPS: 361,331 | Target: Darkcaster Slasher (HP: 3,881,030)
+Group Buffs: Major Courage: ✅ (43.0%) | Major Force: ❌ | Major Slayer: ❌
 
-@brainsnorkel Beam Hal Herald/Ass/Winter (Arcanist M:29.5k S:13k H:23k)
-  Cephaliarch's Flail, Exhausting Fatecarver, Quick Cloak, Concealed Weapon, Magical Banner, Incapacitating Strike
-  Blockade of Frost, Winter's Revenge, Arctic Blast, Inspired Scholarship, Magical Banner, Northern Storm
-  3pc Perfected Bahsei's Mania, 2pc Bahsei's Mania, 2pc Perfected Crushing Wall, 1pc Slimecraw, 5pc Tide-Born Wildstalker, Velothi Ur-Mage's Amulet
+@brainsnorkel Ok Beamer Herald/Aedric/Ardent (Arcanist M:16.5k S:28.5k H:20.5k D:20.1%)
+  Cephaliarch's Flail, Pragmatic Fatecarver, Quick Cloak, Barbed Trap, Camouflaged Hunter, Everlasting Sweep
+  Blockade of Fire, Flames of Oblivion, Engulfing Flames, Inspired Scholarship, Pestilent Trample, Standard of Might
+  5pc Perfected Ansuul's Torment, 2pc Perfected Crushing Wall, 1pc Slimecraw, 5pc Perfected Sul-Xan's Torment, Velothi Ur-Mage's Amulet
 
-anon Aedric/Ass/Herald (Templar M:14.5k S:29.5k H:18.5k)
-  Pragmatic Fatecarver, Cephaliarch's Flail, Blazing Spear, Quick Cloak, Shocking Banner, Soul Harvest
-  Barbed Trap, Merciless Resolve, Inspired Scholarship, Elemental Blockade, Shocking Banner, The Languid Eye
-  7pc Order's Wrath, 1pc Slimecraw, 5pc Tide-Born Wildstalker, Velothi Ur-Mage's Amulet
+@Evil-Dave Whatchu talkin bout Rilis Herald/Ass/Daedric (Arcanist M:17.5k S:35k H:19.5k D:17.1%)
+  Cephaliarch's Flail, Pragmatic Fatecarver, Daedric Prey, Summon Volatile Familiar, Summon Twilight Matriarch, Incapacitating Strike
+  Quick Cloak, Inspired Scholarship, Relentless Focus, Summon Volatile Familiar, Summon Twilight Matriarch, Summon Charged Atronach
+  1pc Slimecraw, 5pc Perfected Slivers of the Null Arca, 2pc Spectral Cloak, 5pc Unleashed Ritualist, Velothi Ur-Mage's Amulet
 
-anon Dawn/Restoring (Templar M:36k S:18k H:25k)
-  Purifying Light, Illustrious Healing, Combat Prayer, Breath of Life, Radiating Regeneration, Solar Prison
-  Channeled Focus, Extended Ritual, Elemental Blockade, Energy Orb, Echoing Vigor, Aggressive Horn
-  2pc Ozezan the Inferno, 7pc Powerful Assault, 5pc Spell Power Cure
+@SevenStrings Seventh Column Aedric/Ardent/Ass (Templar M:14k S:32k H:21k D:16.2%)
+  Biting Jabs, Barbed Trap, Merciless Resolve, Killer's Blade, Shocking Banner, Incapacitating Strike
+  Stampede, Flames of Oblivion, Venomous Claw, Molten Whip, Shocking Banner, Standard of Might
+  2pc Perfected Merciless Charge, 2pc Selene, 5pc Tide-Born Wildstalker, 3pc Perfected Whorl of the Depths, 2pc Whorl of the Depths
 
-anon BoneTyrant/Winter (Templar M:24.5k S:27k H:41k)
-  Gripping Shards, Goading Throw, Leashing Soul, Ruinous Scythe, Necrotic Potency, Northern Storm
-  Beckoning Armor, Chilling Explosion, Leashing Burst, Razor Caltrops, Chilling Trample, Aggressive Horn
-  5pc Lucent Echoes, 2pc Tremorscale, 7pc Turning Tide
+@boilingcrab Skrimp Tahco Herald/Ass/Dawn (Arcanist M:15.5k S:31.5k H:27k D:14.8%)
+  Cephaliarch's Flail, Pragmatic Fatecarver, Quick Cloak, Radiant Glory, Camouflaged Hunter, Soul Harvest
+  Elemental Blockade, Fulminating Rune, Solar Barrage, Inspired Scholarship, Camouflaged Hunter, The Languid Eye
+  5pc Ansuul's Torment, 2pc Perfected Crushing Wall, 5pc Deadly Strike, Velothi Ur-Mage's Amulet, 1pc Zaan
+
+@GlitterGirl25 princessplar Aedric/Ass/Grave (Templar M:14k S:32k H:21k D:12.5%)
+  Blighted Blastbones, Biting Jabs, Detonating Siphon, Merciless Resolve, Shocking Banner, Soul Harvest
+  Stampede, Skeletal Archer, Barbed Trap, Resolving Vigor, Shocking Banner, Ice Comet
+  5pc Aegis Caller, 2pc Perfected Merciless Charge, 5pc Perfect Arms of Relequen, 2pc Selene
+
+@Rowan_Rainbow Rowan Uncia mac Deuce Ass/Aedric/Storm (Nightblade M:15k S:30k H:25k D:9.3%)
+  Quick Cloak, Relentless Focus, Camouflaged Hunter, Necrotic Orb, Biting Jabs, Flawless Dawnbreaker
+  Hurricane, Camouflaged Hunter, Lightning Flood, Blazing Spear, Endless Hail, Incapacitating Strike
+  5pc Deadly Strike, 2pc Orpheon the Tactician, 5pc Slivers of the Null Arca, 2pc Thunderous Volley
+
+@FizzyElfs Fizzyelves Ardent/Aedric/Ass (Dragonknight M:32k S:17k H:29k D:7.0%)
+  Molten Whip, Flames of Oblivion, Engulfing Flames, Blazing Spear, Relentless Focus, Standard of Might
+  Biting Jabs, Aurora Javelin, Explosive Charge, Blazing Spear, Sun Shield, Everlasting Sweep
+  5pc Deadly Strike, Oakensoul Ring, 7pc Sergeant's Mail, 1pc Slimecraw
+
+@Scedos Ráynor Earthen/Soldier/Winter (Dragonknight M:19k S:20k H:46.5k D:0.9%)
+  Revealing Flare, Polar Wind, Impervious Runeward, Leashing Soul, Runic Sunder, Reviving Barrier
+  Expansive Frost Cloak, Runeguard of Freedom, Elemental Blockade, Elemental Susceptibility, Igneous Weapons, Gibbering Shelter
+  5pc Lucent Echoes, 2pc Nazaray, 7pc Xoryn's Masterpiece
+
+@Viburnum Viburnum Opulus Draconic/Grave/Soldier (Dragonknight M:19.5k S:19k H:46.5k D:0.9%)
+  Coagulating Blood, Impervious Runeward, Runic Sunder, Runeguard of Still Waters, Warding Contingency, Glacial Colossus
+  Razor Caltrops, Elemental Blockade, Leashing Soul, Hardened Armor, Overflowing Altar, Aggressive Horn
+  1pc Armor of the Trainee, 1pc Druid's Braid, 5pc Pearlescent Ward, 5pc Powerful Assault, 2pc Tremorscale
+
+@Zinneth Mara Middlewind Green/Restoring/Shadow (Warden M:37.5k S:15k H:28.5k D:0.7%)
+  Combat Prayer, Radiating Regeneration, Illustrious Healing, Budding Seeds, Extended Ritual, Replenishing Barrier
+  Elemental Blockade, Echoing Vigor, Elemental Susceptibility, Refreshing Path, Energy Orb, Aggressive Horn
+  2pc Grand Rejuvenation, 5pc Jorvuld's Guidance, 2pc Ozezan the Inferno, 5pc Roaring Opportunist
+
+@Flame.song Ravellen Siphoning (Templar M:37.5k S:17k H:24k D:0.5%)
+  Charging Maneuver, Funnel Health, Energy Orb, Overflowing Altar, Siphoning Attacks, Aggressive Horn
+  Echoing Vigor, Illustrious Healing, Healthy Offering, Warding Burst, Radiating Regeneration, Soul Siphon
+  2pc Ozezan the Inferno, 7pc Pillager's Profit, 5pc Spell Power Cure
+
+=== Hostile Monsters Engaged by Players ===
+  Darkcaster Slasher (ID: 117, Type: MONSTER, HP: 3,881,030, Damage: 2,930,572)
+  Darkcaster Skirmisher (ID: 115, Type: MONSTER, HP: 3,881,030, Damage: 2,905,353)
+  Dremora Battlemage (ID: 113, Type: MONSTER, HP: 431,227, Damage: 325,530)
+  Dremora Lurker (ID: 114, Type: MONSTER, HP: 431,227, Damage: 281,911)
+  Dremora Lurker (ID: 118, Type: MONSTER, HP: 431,227, Damage: 267,285)
+  Dremora Battlemage (ID: 116, Type: MONSTER, HP: 431,227, Damage: 172,707)
+Total hostile monsters engaged: 6
 ```
 
 ### Output Components
@@ -199,11 +243,15 @@ anon BoneTyrant/Winter (Templar M:24.5k S:27k H:41k)
 - **Player Count & DPS**: Number of players and estimated group DPS
 - **Target**: Primary enemy that received the most damage events with health pool (HP: X,XXX)
 - **Group Buffs**: Visual indicators (✅/❌) for critical group buffs (Major Courage, Major Force, Major Slayer)
-- **Player Info**: Character name, skill lines, class, and resource values (M:X.Xk S:X.Xk H:X.Xk)
+- **Player Info**: Character name, skill lines, class, and resource values (M:X.Xk S:X.Xk H:X.Xk D:X.X%)
 - **Resource Values**: Maximum health, magicka, stamina with color coding for anomalies (red for unusual health values)
-- **Ability Bars**: Combined front bar and back bar equipped abilities (no separate bar labels)
+- **Resource Highlighting**: Bold and underlined highest max resource type for each player
+- **DPS Percentage**: Each player's damage contribution as percentage of total group damage (D:X.X%)
+- **Ability Bars**: Combined front bar and back bar equipped abilities with purple highlighting for taunt abilities
+- **Taunt Detection**: Purple highlighting for 35+ taunt abilities across all classes and weapon lines
 - **Equipment**: Gear sets with piece counts and accurate set names from LibSets database
 - **Build Analysis**: Inferred class and skill line combinations for build identification
+- **Hostile Monsters**: Detailed list of enemies engaged by players with damage amounts and health pools
 
 ## Analysis Features
 
@@ -233,7 +281,7 @@ The tool identifies gear sets by:
 - **Damage Percentages**: Shows each player's contribution to total damage
 - **Player Sorting**: Displays players in descending order by damage contribution
 - **Resource Tracking**: Monitors maximum health, magicka, and stamina values for each player
-- **Health Anomaly Detection**: Highlights unusual health values (below 19k or above 50k) in red
+- **Health Anomaly Detection**: Highlights unusual health values (below 18.5k or above 44.5k) in red
 - **DPS Calculation**: Estimates group DPS based on total damage and combat duration
 
 ### Zone-based Reporting
@@ -362,7 +410,7 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 - **Improved Default Behavior**: Tool now waits for log files by default instead of exiting immediately
 - **Version Flag**: Added `-v`/`--version` for quick version information
 - **Resource Tracking**: Real-time monitoring of player health, magicka, and stamina values
-- **Health Anomaly Detection**: Color-coded health values for unusual builds (red for <19k or >50k health)
+- **Health Anomaly Detection**: Color-coded health values for unusual builds (red for <18.5k or >44.5k health)
 - **Enhanced File Handling**: Better log file monitoring with `--read-all-then-tail` option
 - **Automated Releases**: GitHub Actions now automatically creates releases with installers
 - **Combat Timeout Removal**: Eliminated unreliable timeout-based combat detection
