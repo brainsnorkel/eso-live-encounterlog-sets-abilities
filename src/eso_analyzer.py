@@ -37,6 +37,41 @@ init()
 # Import version early for quick version checks
 from version import __version__
 
+# Taunt abilities lookup for highlighting
+TAUNT_ABILITIES = {
+    # Dragonknight taunts
+    'inner fire', 'inner rage', 'unrelenting grip', 'chain', 'fiery grip',
+    # Nightblade taunts  
+    'leeching strikes', 'siphoning strikes', 'soul siphon',
+    # Sorcerer taunts
+    'bound armaments', 'bound aegis', 'daedric mines',
+    # Templar taunts
+    'spear shards', 'luminous shards', 'sun shield', 'radiant ward',
+    # Warden taunts
+    'frozen gate', 'gripping shards', 'ice fortress',
+    # Necromancer taunts
+    'bone armor', 'bone prison', 'skeletal mage',
+    # Arcanist taunts
+    'cruxweaver armor', 'reconstructive domain', 'runic armor',
+    # Weapon taunts
+    'pierce armor', 'rattle cage', 'taunt', 'tormentor',
+    # Guild taunts
+    'inner beast', 'inner fire', 'rune cage', 'teleport strike',
+    # Other common taunts
+    'mocking blow', 'provoke', 'challenging roar', 'intimidating presence'
+}
+
+def highlight_taunt_abilities(ability_list):
+    """Highlight taunt abilities in purple and return formatted list."""
+    highlighted_abilities = []
+    for ability in ability_list:
+        ability_lower = ability.lower()
+        if any(taunt in ability_lower for taunt in TAUNT_ABILITIES):
+            highlighted_abilities.append(f"{Fore.MAGENTA}{ability}{Fore.GREEN}")
+        else:
+            highlighted_abilities.append(ability)
+    return highlighted_abilities
+
 # Import our ESO analysis modules
 from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
 
@@ -1643,12 +1678,15 @@ class ESOLogAnalyzer:
                 # Show front and back bar abilities in order if available
                 if player.front_bar_abilities or player.back_bar_abilities:
                     if player.front_bar_abilities:
-                        print(f"  {', '.join(player.front_bar_abilities)}")
+                        highlighted_front_bar = highlight_taunt_abilities(player.front_bar_abilities)
+                        print(f"  {', '.join(highlighted_front_bar)}")
                     if player.back_bar_abilities:
-                        print(f"  {', '.join(player.back_bar_abilities)}")
+                        highlighted_back_bar = highlight_taunt_abilities(player.back_bar_abilities)
+                        print(f"  {', '.join(highlighted_back_bar)}")
                 else:
                     abilities_list = sorted(list(abilities_to_analyze))[:10]  # Show top 10 abilities
-                    print(f"  Equipped: {', '.join(abilities_list)}")
+                    highlighted_abilities = highlight_taunt_abilities(abilities_list)
+                    print(f"  Equipped: {', '.join(highlighted_abilities)}")
                     if len(abilities_to_analyze) > 10:
                         print(f"  ... and {len(abilities_to_analyze) - 10} more")
 
