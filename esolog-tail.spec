@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['src/esolog_tail.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[('data/gear_sets/LibSets_SetData.xlsm', 'data/gear_sets')],
-    hiddenimports=['gear_set_database_optimized'],
+    hiddenimports=['src.gear_set_database_optimized', 'src.version'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
