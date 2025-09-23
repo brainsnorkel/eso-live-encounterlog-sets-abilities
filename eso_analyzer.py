@@ -939,6 +939,7 @@ class ESOLogAnalyzer:
             
             print(f"\n{Fore.YELLOW}=== ZONE CHANGED ==={Style.RESET_ALL}")
             print(f"{Fore.YELLOW}Zone: {zone_name} ({difficulty}){Style.RESET_ALL}")
+            print(f"{Fore.CYAN}ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}{Style.RESET_ALL}")
             
             # If there's an active encounter when zone changes, display it if it ended but wasn't shown
             if (self.current_encounter and self.current_encounter.combat_ended_at and 
@@ -1762,7 +1763,7 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
         print(f"License: MIT")
         sys.exit(0)
 
-    print(f"{Fore.CYAN}ESO Encounter Log Analyzer v{__version__}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}")
     
     # Show active options

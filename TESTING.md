@@ -4,10 +4,11 @@ This document explains how to run the automated test cases for the ESO Live Sets
 
 ## Test Suite Overview
 
-The project includes two comprehensive test suites:
+The project includes comprehensive test suites:
 
 1. **`test_analyzer.py`** - Tests the main analyzer functionality
 2. **`test_log_parser.py`** - Tests the robust log parser with real example data
+3. **`test_optimized.py`** - Tests the optimized gear set database performance
 
 ## Running Tests
 
@@ -18,6 +19,9 @@ python3 test_analyzer.py
 
 # Run all log parser tests  
 python3 test_log_parser.py
+
+# Test gear data generation (if building from source)
+python3 test_optimized.py
 ```
 
 ### Detailed Test Output
@@ -64,6 +68,41 @@ The tests include real log entries such as:
 2928,ABILITY_INFO,84734,"Witchfest Food: Max HM, Reg M","/esoui/art/icons/ability_mage_065.dds",T,T
 40604,PLAYER_INFO,1,[142210,142079,84731,...],[[HEAD,95044,T,16,ARMOR_DIVINES,LEGENDARY,...]]
 ```
+
+## Gear Set Database Testing
+
+### Testing Optimized Database
+The `test_optimized.py` script compares the original and optimized gear set databases:
+
+```bash
+# Run performance comparison
+python3 test_optimized.py
+```
+
+**Expected Output:**
+- Both databases return identical results
+- Performance benchmarks show similar lookup speeds
+- File size comparison shows optimization benefits
+
+### Testing Gear Data Generation
+```bash
+# Generate gear data from XLSM
+python3 generate_gear_data.py
+
+# Verify generated data
+python3 -c "from gear_set_data import get_stats; print(get_stats())"
+```
+
+**Expected Results:**
+- 704 gear sets extracted from LibSets database
+- Generated `gear_set_data.py` file (~169KB)
+- All set ID and name mappings working correctly
+
+### When to Regenerate Gear Data
+**Regenerate whenever:**
+- New gear sets are added to ESO
+- LibSets spreadsheet is updated
+- Building from source with latest data
 
 ## Expected Results
 
@@ -169,56 +208,12 @@ def test_new_feature(self):
 - Include edge cases and error conditions
 - Test both valid and invalid inputs
 
-## GUI Testing
-
-### Manual GUI Testing Procedures
-
-1. **Launch GUI Mode**
-   ```bash
-   python3 eso_analyzer.py --gui
-   ```
-
-2. **Test Directory Selection**
-   - Verify auto-detection works on startup
-   - Test manual directory browsing
-   - Test with invalid directories
-
-3. **Test Log File Detection**
-   - Click "Auto-detect" button
-   - Verify Encounter.log is found
-   - Test with missing log files
-
-4. **Test Monitoring**
-   - Click "Start Monitoring"
-   - Verify status changes to "Monitoring..."
-   - Test "Stop Monitoring" functionality
-
-5. **Test Output Display**
-   - Use "Test Mode" to generate sample output
-   - Verify output appears in scrollable text area
-   - Test "Clear Output" functionality
-
-6. **Test User Guide**
-   - Click "User Guide" button
-   - Verify guide opens in new window
-   - Test guide content loading
-
-### GUI Error Handling Tests
-- Test with missing log files
-- Test with corrupted log files
-- Test with invalid directory paths
-- Test GUI responsiveness during monitoring
-
 ## Performance Testing
 
 ### Large Log Testing
 ```bash
-# Test CLI with full sample log
+# Test with full sample log
 python3 eso_analyzer.py --test-mode --replay-speed 1000
-
-# Test GUI with sample data
-python3 eso_analyzer.py --gui
-# Then click "Test Mode" button
 ```
 
 ### Memory Usage

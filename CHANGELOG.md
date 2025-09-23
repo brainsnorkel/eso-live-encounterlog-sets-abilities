@@ -2,6 +2,28 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased] - 2025-01-22
+
+### Major Optimization
+- **Gear Set Database**: Implemented pre-build data generation system for optimal performance
+- **Startup Speed**: ~10x faster startup by eliminating Excel parsing at runtime
+- **Installer Size**: ~1.8MB smaller installers by removing XLSM file dependencies
+- **Reliability**: Eliminated Excel file corruption and missing file issues
+- **Build Process**: Added `generate_gear_data.py` pre-build step to extract gear set data
+
+### Enhanced
+- **Build Documentation**: Updated BUILD_WINDOWS.md with gear data generation requirements
+- **README**: Added comprehensive build instructions and gear set update process
+- **GitHub Actions**: Updated workflow to include gear data generation step
+- **File Cleanup**: Removed unused LibSets_SetData.xlsx file from repository
+
+### Technical
+- **Data Generation**: `generate_gear_data.py` extracts 704 gear sets from XLSM to optimized Python structures
+- **Optimized Database**: `gear_set_database_optimized.py` provides same API with pre-generated data
+- **Generated Module**: `gear_set_data.py` contains optimized dictionaries for fast lookups
+- **Build Integration**: All platforms now generate gear data before building executables
+- **Dependency Reduction**: Removed pandas/Excel runtime dependencies from installers
+
 ## [0.1.12] - 2025-01-22
 
 ### Enhanced

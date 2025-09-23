@@ -312,6 +312,37 @@ python3 eso_analyzer.py --test-mode --replay-speed 1000
 python3 eso_analyzer.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\|Maelstrom"
 ```
 
+## Building from Source
+
+### Prerequisites
+
+1. **Python 3.7+** installed
+2. **Dependencies** installed: `pip install -r requirements.txt`
+3. **LibSets spreadsheet** in `setsdb/LibSets_SetData.xlsm`
+
+### Build Process
+
+1. **Generate gear set data** (REQUIRED):
+   ```bash
+   python3 generate_gear_data.py
+   ```
+   > **Important**: This extracts gear set data from the LibSets spreadsheet and generates optimized Python data structures. **You must run this whenever the LibSets spreadsheet is updated with new gear sets.**
+
+2. **Build executable**:
+   ```bash
+   pyinstaller --onefile --name=eso-analyzer eso_analyzer.py
+   ```
+
+### Gear Set Data Updates
+
+The application uses pre-generated gear set data for optimal performance. When new gear sets are added to ESO:
+
+1. **Update** the `setsdb/LibSets_SetData.xlsm` file with latest data
+2. **Regenerate** the data: `python3 generate_gear_data.py`
+3. **Rebuild** the application to include the new gear sets
+
+This process eliminates Excel parsing at runtime, resulting in faster startup and smaller installers.
+
 ## Key Improvements
 
 ### Recent Updates

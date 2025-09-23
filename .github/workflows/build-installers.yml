@@ -26,20 +26,23 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
+    - name: Generate gear set data
+      run: |
+        python generate_gear_data.py
+        
     - name: Create icon
       run: |
         python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb;setsdb" --icon=icon.ico eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer --icon=icon.ico eso_analyzer.py
         
     - name: Create Windows installer package
       run: |
         mkdir dist\installer
         copy dist\eso-analyzer.exe dist\installer\
         copy README.md dist\installer\
-        xcopy setsdb dist\installer\setsdb\ /E /I
         echo @echo off > dist\installer\run.bat
         echo echo ESO Live Encounter Log Sets and Abilities Analyzer >> dist\installer\run.bat
         echo echo =============================================== >> dist\installer\run.bat
@@ -78,20 +81,23 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
+    - name: Generate gear set data
+      run: |
+        python generate_gear_data.py
+        
     - name: Create icon
       run: |
         python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer  eso_analyzer.py
         
     - name: Create macOS installer package
       run: |
         mkdir -p dist/installer
         cp dist/eso-analyzer dist/installer/
         cp README.md dist/installer/
-        cp -r setsdb dist/installer/
         echo '#!/bin/bash' > dist/installer/run.sh
         echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
         echo 'echo "================================================="' >> dist/installer/run.sh
@@ -130,20 +136,23 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
+    - name: Generate gear set data
+      run: |
+        python generate_gear_data.py
+        
     - name: Create icon
       run: |
         python create_icon.py || echo "Icon creation failed, continuing without icon"
         
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --add-data="setsdb:setsdb" eso_analyzer.py
+        pyinstaller --onefile --name=eso-analyzer  eso_analyzer.py
         
     - name: Create Linux installer package
       run: |
         mkdir -p dist/installer
         cp dist/eso-analyzer dist/installer/
         cp README.md dist/installer/
-        cp -r setsdb dist/installer/
         echo '#!/bin/bash' > dist/installer/run.sh
         echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
         echo 'echo "================================================="' >> dist/installer/run.sh

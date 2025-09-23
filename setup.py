@@ -50,7 +50,7 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "": ["setsdb/*.xlsm", "example-log/*.log"],
+        "": ["gear_set_data.py", "example-log/*.log"],
     },
     zip_safe=False,
 )

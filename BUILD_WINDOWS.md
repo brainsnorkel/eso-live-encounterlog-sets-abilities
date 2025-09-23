@@ -23,21 +23,26 @@ Since the current build environment is macOS, here are instructions for creating
    pip install -r requirements.txt
    ```
 
-3. **Create Windows executable**:
+3. **Generate gear set data** (REQUIRED):
    ```cmd
-   pyinstaller --onefile --name=eso-analyzer --add-data="setsdb;setsdb" --add-data="example-log;example-log" --icon=icon.ico eso_analyzer.py
+   python generate_gear_data.py
+   ```
+   > **Important**: This step extracts gear set data from `setsdb/LibSets_SetData.xlsm` and generates optimized Python data structures. **You must run this step whenever the LibSets spreadsheet is updated with new gear sets.**
+
+4. **Create Windows executable**:
+   ```cmd
+   pyinstaller --onefile --name=eso-analyzer --add-data="example-log;example-log" --icon=icon.ico eso_analyzer.py
    ```
 
-4. **Create installer package**:
+5. **Create installer package**:
    ```cmd
    mkdir dist\installer
    copy dist\eso-analyzer.exe dist\installer\
    copy README.md dist\installer\
-   xcopy setsdb dist\installer\setsdb\ /E /I
    copy run.bat dist\installer\
    ```
 
-5. **Test the executable**:
+6. **Test the executable**:
    ```cmd
    cd dist\installer
    eso-analyzer.exe --help
@@ -50,6 +55,29 @@ If you don't have access to a Windows machine, you can use:
 - **WSL (Windows Subsystem for Linux)** with Wine
 - **Docker** with a Windows container
 - **GitHub Actions** for automated Windows builds
+
+## Gear Set Data Generation
+
+The application uses optimized gear set data that is pre-generated from the LibSets spreadsheet. This process:
+
+1. **Extracts data** from `setsdb/LibSets_SetData.xlsm`
+2. **Generates** `gear_set_data.py` with optimized Python data structures
+3. **Eliminates** Excel parsing at runtime for faster startup
+
+### When to Regenerate
+
+**You MUST regenerate the gear data when:**
+- New gear sets are added to ESO
+- The LibSets spreadsheet is updated
+- You want to include the latest gear set information
+
+### Manual Regeneration
+
+```cmd
+python generate_gear_data.py
+```
+
+This will update `gear_set_data.py` with the latest data from the XLSM file.
 
 ## Automated Builds
 
@@ -72,6 +100,8 @@ jobs:
           python-version: '3.9'
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
+      - name: Generate gear set data
+        run: python generate_gear_data.py
       - name: Build executable
         run: pyinstaller --onefile --name=eso-analyzer eso_analyzer.py
       - name: Upload artifact
