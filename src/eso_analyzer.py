@@ -112,8 +112,19 @@ def has_five_piece_bonus(set_name: str) -> bool:
     if any(keyword in clean_name.lower() for keyword in mythic_keywords):
         return False
 
-    # Known 2-piece monster sets that are missing from database
-    two_piece_monster_sets = ['lord warden', 'slimecraw', 'thunderbug', 'kra\'gh', 'velidreth', 'grundwulf', 'zaan', 'valkyn skoria', 'ilambris', 'stormfist', 'infernal guardian', 'iceheart', 'bloodspawn', 'maw of the infernal', 'mighty chudan', 'engine guardian', 'tremorscale', 'earthgore', 'chokethorn', 'shadowrend', 'molag kena', 'balorgh', 'grothdarr', 'selene', 'domihaus', 'malubeth', 'spawn of mephala', 'monster set']
+    # Known 2-piece monster sets from LibSets database
+    two_piece_monster_sets = [
+        "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
+        "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
+        "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
+        "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
+        "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
+        "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
+        "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
+        "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
+        "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
+        "the blind", "squall of retribution", "orpheon the tactician"
+    ]
     if any(keyword in clean_name.lower() for keyword in two_piece_monster_sets):
         return False
 
@@ -1583,6 +1594,16 @@ class ESOLogAnalyzer:
                             if player.max_health > 0 and (player.max_health < 19000 or player.max_health > 50000):
                                 health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
+                            # Bold the highest resource value
+                            max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
+                            if max_resource_value > 0:
+                                if player.max_health == max_resource_value:
+                                    health_display = f"{Style.BRIGHT}{health_display}{Style.NORMAL}"
+                                elif player.max_magicka == max_resource_value:
+                                    magicka_display = f"{Style.BRIGHT}{magicka_display}{Style.NORMAL}"
+                                elif player.max_stamina == max_resource_value:
+                                    stamina_display = f"{Style.BRIGHT}{stamina_display}{Style.NORMAL}"
+
                             resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
                             
                             # Add DPS information and damage percentage
@@ -1708,7 +1729,18 @@ class ESOLogAnalyzer:
                             # Check if it's an incomplete 5-piece set (color dark red) - but never highlight monster sets
                             elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
                                 # Explicitly exclude monster sets from red highlighting
-                                monster_set_keywords = ['lord warden', 'slimecraw', 'thunderbug', 'kra\'gh', 'velidreth', 'grundwulf', 'zaan', 'valkyn skoria', 'ilambris', 'stormfist', 'infernal guardian', 'iceheart', 'bloodspawn', 'maw of the infernal', 'mighty chudan', 'engine guardian', 'tremorscale', 'earthgore', 'chokethorn', 'shadowrend', 'molag kena', 'balorgh', 'grothdarr', 'selene', 'domihaus', 'malubeth', 'spawn of mephala']
+                                monster_set_keywords = [
+                                    "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
+                                    "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
+                                    "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
+                                    "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
+                                    "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
+                                    "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
+                                    "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
+                                    "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
+                                    "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
+                                    "the blind", "squall of retribution", "orpheon the tactician"
+                                ]
                                 if not any(keyword in clean_set_name.lower() for keyword in monster_set_keywords):
                                     colored_part = f"{Fore.RED}{part}{Style.RESET_ALL}"
                                 else:
