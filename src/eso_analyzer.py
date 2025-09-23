@@ -1257,6 +1257,10 @@ class ESOLogAnalyzer:
                                     self.current_encounter.enemy_damage[target_unit_id] += hit_value
                                     # Update total group damage
                                     self.current_encounter.total_damage += hit_value
+                                    
+                                    # Track individual player damage
+                                    self.current_encounter.add_damage_to_player(source_unit_id, hit_value)
+                                    
                                     # Update the most damaged hostile monster
                                     self.current_encounter.update_most_damaged_hostile(target_unit_id)
                 except (ValueError, IndexError):
@@ -1581,10 +1585,14 @@ class ESOLogAnalyzer:
 
                             resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
                             
-                            # Add DPS information
+                            # Add DPS information and damage percentage
                             dps_str = ""
                             if player_dps > 0:
-                                dps_str = f" DPS:{player_dps:,.0f}"
+                                # Calculate damage percentage of total group damage
+                                damage_percentage = 0
+                                if self.current_encounter.total_damage > 0:
+                                    damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
+                                dps_str = f" DPS:{player_dps:,.0f} ({damage_percentage:.1f}%)"
 
                         skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
                     title_parts.append(skill_lines_str)
