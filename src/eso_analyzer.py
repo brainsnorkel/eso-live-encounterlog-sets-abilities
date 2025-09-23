@@ -1514,16 +1514,17 @@ class ESOLogAnalyzer:
         combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
         
         # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
+        dark_orange = "\033[38;5;208m"  # Dark orange color
         if zone_name:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
