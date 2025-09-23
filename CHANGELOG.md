@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.13] - 2025-01-22
+
+### Enhanced
+- **Taunt Ability Highlighting**: Added purple highlighting for taunt abilities to easily identify tanking abilities
+- **Health Thresholds**: Updated health highlighting thresholds from 19k-50k to 18.5k-44.5k for better health pool identification
+- **DPS Display**: Changed DPS percentage format from `(3.1%)` to `D:3.1%` for consistency with resource indicators
+- **Resource Highlighting**: Bold and underline each player's highest max resource type (health, stamina, or magicka)
+- **Visual Improvements**: Changed encounter summary line color from red to dark orange for better visual distinction
+
+### Fixed
+- **Color Bleeding**: Fixed purple taunt highlighting that was affecting following text color
+- **Variable Scope**: Resolved UnboundLocalError for `dps_str` variable when players had no damage data
+- **Error Handling**: Improved robustness for edge cases in player data processing
+
+### Technical
+- **Taunt Detection**: Comprehensive lookup for 35+ taunt abilities across all classes and weapon lines
+- **ANSI Colors**: Implemented dark orange color using `\033[38;5;208m` for encounter summaries
+- **Resource Styling**: Applied bold and underline styling using ANSI escape codes for highest resources
+
 ## [Unreleased] - 2025-01-22
 
 ### Major Optimization
