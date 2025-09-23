@@ -1104,6 +1104,32 @@ class ESOLogAnalyzer:
             # Parse resource information: health/max, magicka/max, stamina/max in fields 5, 6, 7
             if len(entry.fields) >= 8:
                 self._parse_and_update_player_resources(caster_unit_id, entry.fields[5:8])
+                # Also update enemy health if the caster is an enemy
+                self._parse_and_update_enemy_health(caster_unit_id, entry.fields[5:8])
+
+    def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
+        """Parse health information and update the corresponding enemy's maximum health."""
+        if not self.current_encounter:
+            return
+
+        # Check if this unit is an enemy
+        enemy = self.current_encounter.enemies.get(unit_id)
+        if not enemy:
+            return
+
+        # Parse health field: "current/max" - we want the max (second number)
+        try:
+            if len(resource_fields) >= 1 and "/" in resource_fields[0]:
+                current_health, max_health = resource_fields[0].split("/")
+                max_health = int(max_health)
+                if max_health > 0 and max_health > enemy.max_health:
+                    enemy.max_health = max_health
+                    enemy.current_health = int(current_health)
+                    # Update highest health hostile if this enemy is hostile
+                    if enemy.is_hostile:
+                        self.current_encounter.update_highest_health_hostile(enemy)
+        except (ValueError, IndexError):
+            pass  # Skip invalid health data
 
     def _parse_and_update_player_resources(self, unit_id: str, resource_fields: List[str]):
         """Parse resource information and update the corresponding player's maximum values."""
