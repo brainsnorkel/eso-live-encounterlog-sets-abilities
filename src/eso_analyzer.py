@@ -112,6 +112,11 @@ def has_five_piece_bonus(set_name: str) -> bool:
     if any(keyword in clean_name.lower() for keyword in mythic_keywords):
         return False
 
+    # Known 2-piece monster sets that are missing from database
+    two_piece_monster_sets = ['lord warden', 'slimecraw', 'thunderbug', 'kra\'gh', 'velidreth', 'grundwulf', 'zaan', 'valkyn skoria', 'ilambris', 'stormfist', 'infernal guardian', 'iceheart', 'bloodspawn', 'maw of the infernal', 'mighty chudan', 'engine guardian', 'tremorscale', 'earthgore', 'chokethorn', 'shadowrend', 'molag kena', 'balorgh', 'grothdarr', 'selene', 'domihaus', 'malubeth', 'spawn of mephala', 'monster set']
+    if any(keyword in clean_name.lower() for keyword in two_piece_monster_sets):
+        return False
+
     # Default: assume it has 5pc bonus unless proven otherwise
     return True
 
@@ -1492,14 +1497,14 @@ class ESOLogAnalyzer:
         # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
         if zone_name:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
