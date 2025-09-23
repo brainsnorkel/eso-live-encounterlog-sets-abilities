@@ -1608,6 +1608,7 @@ class ESOLogAnalyzer:
                     if class_name and class_name != "Unknown":
                         # Format resources with health coloring
                         resource_str = ""
+                        dps_str = ""  # Initialize dps_str at this scope to avoid UnboundLocalError
                         if player.max_health > 0 or player.max_magicka > 0 or player.max_stamina > 0:
                             # Round to nearest 0.5k (500)
                             def round_to_half_k(value):
