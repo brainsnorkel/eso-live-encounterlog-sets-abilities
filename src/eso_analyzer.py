@@ -39,26 +39,9 @@ from version import __version__
 
 # Taunt abilities lookup for highlighting
 TAUNT_ABILITIES = {
-    # Dragonknight taunts
-    'inner fire', 'inner rage', 'unrelenting grip', 'chain', 'fiery grip',
-    # Nightblade taunts  
-    'leeching strikes', 'siphoning strikes', 'soul siphon',
-    # Sorcerer taunts
-    'bound armaments', 'bound aegis', 'daedric mines',
-    # Templar taunts
-    'spear shards', 'luminous shards', 'sun shield', 'radiant ward',
-    # Warden taunts
-    'frozen gate', 'gripping shards', 'ice fortress',
-    # Necromancer taunts
-    'bone armor', 'bone prison', 'skeletal mage',
-    # Arcanist taunts
-    'cruxweaver armor', 'reconstructive domain', 'runic armor',
-    # Weapon taunts
-    'pierce armor', 'rattle cage', 'taunt', 'tormentor',
-    # Guild taunts
-    'inner beast', 'inner fire', 'rune cage', 'teleport strike',
-    # Other common taunts
-    'mocking blow', 'provoke', 'challenging roar', 'intimidating presence'
+    'puncture', 'ransack', 'pierce armor', 'inner fire', 'inner rage', 
+    'inner beast', 'frost clench', 'runic jolt', 'runic sunder', 'runic embrace',
+    'focused charge', 'explosive charge', 'toppling charge', 'goading throw', 'goading vault'
 }
 
 def highlight_taunt_abilities(ability_list):
@@ -67,7 +50,7 @@ def highlight_taunt_abilities(ability_list):
     for ability in ability_list:
         ability_lower = ability.lower()
         if any(taunt in ability_lower for taunt in TAUNT_ABILITIES):
-            highlighted_abilities.append(f"{Fore.MAGENTA}{ability}{Fore.GREEN}")
+            highlighted_abilities.append(f"{Fore.MAGENTA}{ability}{Style.RESET_ALL}")
         else:
             highlighted_abilities.append(ability)
     return highlighted_abilities
