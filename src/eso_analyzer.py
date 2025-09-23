@@ -2073,19 +2073,19 @@ class LogFileHandler(FileSystemEventHandler):
 @click.command()
 @click.option('--log-file', '-f', type=click.Path(),
               help='Path to ESO encounter log file')
-@click.option('--scan-all-then-stop', '-s', is_flag=True,
-              help='Scan mode: replay the entire log file from the beginning at high speed, then exit')
+@click.option('--read-all-then-stop', '-s', is_flag=True,
+              help='Read mode: replay the entire log file from the beginning at high speed, then exit')
 @click.option('--read-all-then-tail', '-t', is_flag=True,
               help='Read the entire log file from the beginning, then continue tailing for new data')
 @click.option('--no-wait', is_flag=True,
               help='Exit immediately if log file does not exist (default: wait for file to appear)')
 @click.option('--replay-speed', '-r', default=100, type=int,
-              help='Replay speed multiplier for scan mode (default: 100x)')
+              help='Replay speed multiplier for read mode (default: 100x)')
 @click.option('--version', '-v', is_flag=True,
               help='Show version information and exit')
 @click.option('--list-hostiles', is_flag=True,
               help='Testing mode: List all hostile monsters added to fights with names and IDs')
-def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool):
+def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -2100,8 +2100,8 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
     
     # Show active options
     active_options = []
-    if scan_all_then_stop:
-        active_options.append("scan-all-then-stop")
+    if read_all_then_stop:
+        active_options.append("read-all-then-stop")
     if read_all_then_tail:
         active_options.append("read-all-then-tail")
     if no_wait:
@@ -2115,24 +2115,24 @@ def main(log_file: Optional[str], scan_all_then_stop: bool, read_all_then_tail: 
 
     analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles)
 
-    if scan_all_then_stop:
+    if read_all_then_stop:
         # Determine which log file to use
         if log_file:
-            scan_log = Path(log_file)
+            read_log = Path(log_file)
         else:
             # Use auto-detected log file
-            scan_log = _find_eso_log_file()
-            if not scan_log:
+            read_log = _find_eso_log_file()
+            if not read_log:
                 print(f"{Fore.RED}Error: No log file found and none specified{Style.RESET_ALL}")
                 sys.exit(1)
         
-        if not scan_log.exists():
-            print(f"{Fore.RED}Error: Scan log file not found: {scan_log}{Style.RESET_ALL}")
+        if not read_log.exists():
+            print(f"{Fore.RED}Error: Read log file not found: {read_log}{Style.RESET_ALL}")
             sys.exit(1)
 
-        print(f"{Fore.YELLOW}Scan mode: Processing {scan_log} from the beginning at full speed{Style.RESET_ALL}")
-        analyzer.current_log_file = str(scan_log)
-        _replay_log_file(analyzer, scan_log, replay_speed)
+        print(f"{Fore.YELLOW}Read mode: Processing {read_log} from the beginning at full speed{Style.RESET_ALL}")
+        analyzer.current_log_file = str(read_log)
+        _replay_log_file(analyzer, read_log, replay_speed)
         return
 
     # Determine log file path
