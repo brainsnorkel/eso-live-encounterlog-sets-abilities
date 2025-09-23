@@ -31,6 +31,11 @@ MANIFEST
 dist/
 build/
 
+# Installer archives
+*-installer.zip
+*-installer.tar.gz
+*-installer/
+
 # Virtual environments
 venv/
 env/
