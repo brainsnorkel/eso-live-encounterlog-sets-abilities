@@ -141,7 +141,7 @@ def has_five_piece_bonus(set_name: str) -> bool:
         "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
         "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
         "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-        "the blind", "squall of retribution", "orpheon the tactician",
+        "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing",
         # Arena weapon sets (2-piece)
         "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
         "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
@@ -667,7 +667,7 @@ class ESOLogAnalyzer:
         self.group_buff_ids = {
             'Major Courage': self.major_courage_ids,
             'Major Force': {'40225'},  # Increases Critical Damage by 20%
-            'Major Slayer': {'93120'},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
+            'Major Slayer': {'93120', '931200'},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
         }
         
         # Session tracking for players going offline/online
@@ -1514,14 +1514,14 @@ class ESOLogAnalyzer:
         dark_orange = "\033[38;5;208m"  # Dark orange color
         if zone_name:
             if estimated_dps > 0:
-                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
@@ -1622,8 +1622,8 @@ class ESOLogAnalyzer:
                             magicka_display = round_to_half_k(player.max_magicka)
                             stamina_display = round_to_half_k(player.max_stamina)
 
-                            # Color health red if below 18.5k or above 49k
-                            if player.max_health > 0 and (player.max_health < 18500 or player.max_health > 49000):
+                            # Color health red if below 18.5k or above 44.5k
+                            if player.max_health > 0 and (player.max_health < 18500 or player.max_health > 44500):
                                 health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
                             # Bold and underline the highest resource value
@@ -1775,7 +1775,7 @@ class ESOLogAnalyzer:
                                     "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
                                     "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
                                     "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-                                    "the blind", "squall of retribution", "orpheon the tactician", "nunatak",
+                                    "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing", "nunatak", "nunatak's blessing",
                                     # Arena weapon sets (2-piece)
                                     "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
                                     "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",

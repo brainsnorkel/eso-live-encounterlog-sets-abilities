@@ -36,7 +36,7 @@ jobs:
         
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --name=esolog-tail --icon=icon.ico src/esolog_tail.py
+        pyinstaller esolog-tail.spec
         
     - name: Create Windows installer package
       run: |
@@ -91,7 +91,7 @@ jobs:
         
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
+        pyinstaller esolog-tail.spec
         
     - name: Create macOS installer package
       run: |
@@ -146,7 +146,7 @@ jobs:
         
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
+        pyinstaller esolog-tail.spec
         
     - name: Create Linux installer package
       run: |
