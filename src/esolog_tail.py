@@ -29,12 +29,11 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import requests
 from colorama import init, Fore, Style
-from gear_set_database import gear_set_db
+from gear_set_database_optimized import gear_set_db
 
 # Initialize colorama for cross-platform colored output
 init()
 
-# Import version early for quick version checks
 from version import __version__
 
 # Taunt abilities lookup for highlighting
@@ -198,21 +197,21 @@ class PlayerInfo:
         self.unit_id = unit_id  # Short unit ID from UNIT_ADDED
         self.name = name
         self.handle = handle
-        self.class_id = class_id  # Class ID from UNIT_ADDED (1=Dragonknight, 2=Sorcerer, etc.)
-        self.equipped_abilities: Set[str] = set()  # All abilities from PLAYER_INFO
-        self.front_bar_abilities: List[str] = []  # Front bar abilities in order
-        self.back_bar_abilities: List[str] = []  # Back bar abilities in order
-        self.gear: Dict[str, List[str]] = {}  # gear_slot -> [item_id, trait, quality, enchant_value, enchant_type, ...]
+        self.class_id = class_id
+        self.equipped_abilities: Set[str] = set()
+        self.front_bar_abilities: List[str] = []
+        self.back_bar_abilities: List[str] = []
+        self.gear: Dict[str, List[str]] = {}
         self.last_seen = 0
-        self.long_unit_ids: Set[str] = set()  # Track long unit IDs used in combat events
+        self.long_unit_ids: Set[str] = set()
 
-        # Resource tracking (maximum values seen during the encounter)
+        # Resource tracking (maximum values seen)
         self.max_health: int = 0
         self.max_magicka: int = 0
         self.max_stamina: int = 0
 
     def update_resources(self, health: int = None, magicka: int = None, stamina: int = None):
-        """Update maximum resource values if the new values are higher."""
+        """Update maximum resource values."""
         if health is not None and health > self.max_health:
             self.max_health = health
         if magicka is not None and magicka > self.max_magicka:
@@ -221,13 +220,12 @@ class PlayerInfo:
             self.max_stamina = stamina
 
     def reset_resources(self):
-        """Reset resource tracking for a new encounter."""
+        """Reset resource tracking."""
         self.max_health = 0
         self.max_magicka = 0
         self.max_stamina = 0
-        
+
     def get_class_name(self) -> str:
-        """Get the class name from the class ID."""
         class_mapping = {
             "1": "Dragonknight",
             "2": "Sorcerer", 
@@ -240,7 +238,6 @@ class PlayerInfo:
         return class_mapping.get(self.class_id, "Unknown")
     
     def get_class_skill_lines(self) -> List[str]:
-        """Get the skill lines that belong to this character's class."""
         class_skill_lines = {
             "1": ["Ardent Flame", "Draconic Power", "Earthen Heart"],  # Dragonknight
             "2": ["Dark Magic", "Daedric Summoning", "Storm Calling"],  # Sorcerer

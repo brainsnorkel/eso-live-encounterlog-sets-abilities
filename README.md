@@ -266,7 +266,7 @@ The tool analyzes equipped abilities to determine skill lines using UESP as the 
 
 The tool identifies gear sets by:
 - **Set ID Mapping**: Uses LibSets database to map set IDs to set names
-- **Comprehensive Database**: Includes 634+ gear sets from LibSets
+- **Comprehensive Database**: Includes 704 gear sets from LibSets
 - **Accurate Detection**: Shows actual equipped gear pieces with set names
 
 ### Buff Detection & Analysis
@@ -459,7 +459,7 @@ This project is for educational and research purposes. ESO game data belongs to 
 
 This project builds upon and integrates several excellent community resources:
 
-- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 634+ sets
+- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 704 sets
 - **[ESO Log Tool](https://github.com/sheumais/logs)**: Desktop log file handler for TESO by sheumais, which provided valuable insights into ESO log format parsing and processing techniques
 - **UESP**: Elder Scrolls Online wiki for authoritative skill line information and ability classifications
 - **ESO Community**: For encounter log format documentation and testing feedback

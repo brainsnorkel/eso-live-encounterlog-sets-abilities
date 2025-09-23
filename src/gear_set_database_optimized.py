@@ -31,11 +31,8 @@ class OptimizedGearSetDatabase:
         self.set_name_to_id = SET_NAME_TO_ID.copy()
         self.set_info = SET_INFO.copy()
         
-        # Print statistics
-        stats = get_stats()
-        print(f"Loaded {stats['total_sets']} sets from pre-generated data")
-        print(f"Built {stats['total_known_items']} item mappings")
-        print(f"Built {stats['total_known_abilities']} ability mappings")
+        # Load statistics
+        self.stats = get_stats()
     
     def get_set_name_by_item_id(self, item_id: str) -> Optional[str]:
         """Get the gear set name for a given item ID."""
