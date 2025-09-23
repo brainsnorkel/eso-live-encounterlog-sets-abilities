@@ -1,23 +1,21 @@
-# ESO Live Encounter Log Sets & Abilities Analyzer
+# ESO Live Encounter Log Sets & Abilities Analyzer: ESO Log Tail
 
-A cross-platform CLI tool for monitoring Elder Scrolls Online encounter logs in real-time and analyzing combat encounters to extract player information, abilities, gear sets, and subclass builds.
 
-## Features
+ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you how your group is built. ESO Log Tail uses `/encounterlog` to print summaries of encounters as soon as each combat ends.
 
-- **Real-time Log Monitoring**: Continuously monitors ESO encounter logs using file system watchers
-- **Comprehensive Player Analysis**: Extracts player names, abilities, and gear information
-- **Skill Line Detection**: Analyzes equipped abilities to infer skill lines (e.g., "Herald/Assassination/Winter's")
-- **Front/Back Bar Abilities**: Distinguishes between front bar and back bar equipped abilities
-- **Gear Set Identification**: Identifies gear sets using LibSets database integration
-- **Accurate Timestamps**: Uses Unix timestamps from log data for precise combat start times
-- **Group Buff Detection**: Monitors critical group buffs (Major Courage, Major Force, Major Slayer)
-- **Individual Buff Uptime**: Tracks Major Courage uptime for each player
-- **Damage Analysis**: Shows damage percentages and sorts players by contribution
-- **Resource Analysis**: Displays maximum resource values (Magicka/Stamina/Health) for each player
-- **Health Anomaly Detection**: Highlights unusual health values in red for quick identification
-- **Zone-based Reporting**: Generates reports for each combat encounter within zones
-- **Cross-platform**: Works on Windows, macOS, and Linux
-- **Test Mode**: Replay sample logs for development and testing
+- Encounter Summary
+- Whether some critical buffs were present in a group
+- Subclass build inference
+- Sorts players by their DPS
+- Highlights missing 5pc bonuses
+- Who is wearing a taunt?
+- Opinionated about how much health you should have
+
+## Example Output
+
+![ESO Live Encounter Log Analyzer Output](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/raw/main/docs/example-output.png)
+
+*Example output showing a comprehensive combat encounter analysis with 13 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
 
 ## Installation
 
