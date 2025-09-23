@@ -1130,9 +1130,12 @@ class ESOLogAnalyzer:
                     # Unit ID is at index 7 (the unit affected by the combat event)
                     if len(entry.fields) > 7:
                         unit_id = entry.fields[7]
-                        # Check if this unit ID corresponds to a known enemy
+                        # Only track if this unit ID corresponds to a known HOSTILE enemy
                         if unit_id and unit_id in self.current_encounter.enemies:
-                            self.engaged_monsters.add(unit_id)
+                            enemy = self.current_encounter.enemies[unit_id]
+                            # Only track hostile monsters, not friendly pets or NPCs
+                            if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                                self.engaged_monsters.add(unit_id)
             
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
@@ -1147,15 +1150,18 @@ class ESOLogAnalyzer:
                     self.current_encounter.find_player_by_unit_id(dying_unit_id)):
                     self.zone_deaths += 1
                 
-                # If it's an enemy death, mark it as damaged by players
+                # If it's a hostile enemy death, mark it as damaged by players
                 elif (self.current_encounter and 
                       dying_unit_id in self.current_encounter.enemies):
-                    # Mark this enemy as damaged (even if we didn't track individual damage events)
-                    if dying_unit_id not in self.current_encounter.enemy_damage:
-                        self.current_encounter.enemy_damage[dying_unit_id] = 0
-                    # Set a minimum damage amount to indicate it was killed
-                    if self.current_encounter.enemy_damage[dying_unit_id] == 0:
-                        self.current_encounter.enemy_damage[dying_unit_id] = 1
+                    enemy = self.current_encounter.enemies[dying_unit_id]
+                    # Only track deaths of hostile monsters, not friendly pets or NPCs
+                    if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                        # Mark this enemy as damaged (even if we didn't track individual damage events)
+                        if dying_unit_id not in self.current_encounter.enemy_damage:
+                            self.current_encounter.enemy_damage[dying_unit_id] = 0
+                        # Set a minimum damage amount to indicate it was killed
+                        if self.current_encounter.enemy_damage[dying_unit_id] == 0:
+                            self.current_encounter.enemy_damage[dying_unit_id] = 1
             
             
             # Track damage events
@@ -1170,11 +1176,14 @@ class ESOLogAnalyzer:
                     if hit_value > 0 and self.current_encounter:
                         # For damage events, we need to determine the source from context
                         # The COMBAT_EVENT format doesn't directly specify the source unit
-                        # We'll track damage to enemies regardless of source for now
+                        # We'll track damage to HOSTILE enemies only
                         if target_unit_id and target_unit_id in self.current_encounter.enemies:
-                            if target_unit_id not in self.current_encounter.enemy_damage:
-                                self.current_encounter.enemy_damage[target_unit_id] = 0
-                            self.current_encounter.enemy_damage[target_unit_id] += hit_value
+                            enemy = self.current_encounter.enemies[target_unit_id]
+                            # Only track damage to hostile monsters, not friendly pets or NPCs
+                            if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                                if target_unit_id not in self.current_encounter.enemy_damage:
+                                    self.current_encounter.enemy_damage[target_unit_id] = 0
+                                self.current_encounter.enemy_damage[target_unit_id] += hit_value
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
             
