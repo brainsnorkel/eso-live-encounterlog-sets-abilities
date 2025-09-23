@@ -262,6 +262,7 @@ class CombatEncounter:
         self.total_damage: int = 0  # Track total damage dealt
         self.player_damage: Dict[str, int] = {}  # Track damage per player (including pets)
         self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
+        self.total_health_damaged: int = 0  # Track total health of all damaged enemies
         self.player_deaths: int = 0  # Track player deaths
         self.in_combat = False
         self.finalized = False  # Track if encounter has been finalized (ended)
@@ -1174,6 +1175,9 @@ class ESOLogAnalyzer:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
                         if dying_unit_id not in self.current_encounter.enemy_damage:
                             self.current_encounter.enemy_damage[dying_unit_id] = 0
+                            # Add enemy's max health to total when first damaged
+                            if enemy.max_health > 0:
+                                self.current_encounter.total_health_damaged += enemy.max_health
                         # Set a minimum damage amount to indicate it was killed
                         if self.current_encounter.enemy_damage[dying_unit_id] == 0:
                             self.current_encounter.enemy_damage[dying_unit_id] = 1
@@ -1200,6 +1204,11 @@ class ESOLogAnalyzer:
                                     source_unit_id in self.current_encounter.pet_ownership):
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
+                                        # Add enemy's max health to total when first damaged
+                                        if target_unit_id in self.current_encounter.enemies:
+                                            enemy = self.current_encounter.enemies[target_unit_id]
+                                            if enemy.max_health > 0:
+                                                self.current_encounter.total_health_damaged += enemy.max_health
                                     self.current_encounter.enemy_damage[target_unit_id] += hit_value
                                     # Update total group damage
                                     self.current_encounter.total_damage += hit_value
@@ -1356,6 +1365,11 @@ class ESOLogAnalyzer:
         if (self.current_encounter and self.current_encounter.highest_health_hostile):
             hostile = self.current_encounter.highest_health_hostile
             highest_hp_info = f" | Highest HP: {hostile.name} ({hostile.max_health:,} HP)"
+        
+        # Total health of all damaged enemies
+        total_health_info = ""
+        if (self.current_encounter and self.current_encounter.total_health_damaged > 0):
+            total_health_info = f" | Total Health Pool: {self.current_encounter.total_health_damaged:,} HP"
 
         # Get formatted combat start time
         combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
@@ -1363,14 +1377,14 @@ class ESOLogAnalyzer:
         # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
         if zone_name:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{Style.RESET_ALL}")
+                print(f"{Fore.RED}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{highest_hp_info}{total_health_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
