@@ -2,6 +2,20 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.14] - 2025-01-22
+
+### Enhanced
+- **CLI Consistency**: Renamed `--scan-all-then-stop` to `--read-all-then-stop` for consistency with `--read-all-then-tail`
+- **Help Text**: Updated help descriptions to use "Read mode" instead of "Scan mode" for clarity
+
+### Fixed
+- **File Position Tracking**: Resolved `OSError: telling position disabled by next() call` in `--read-all-then-tail` mode
+- **File Monitoring**: Improved file position tracking compatibility with watchdog file monitoring system
+
+### Technical
+- **File I/O**: Changed from `for line in f:` loop to `while True:` with `f.readline()` for proper position tracking
+- **EOF Handling**: Added proper end-of-file detection for robust file processing
+
 ## [0.1.13] - 2025-01-22
 
 ### Enhanced
