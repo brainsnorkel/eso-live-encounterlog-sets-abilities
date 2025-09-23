@@ -1067,7 +1067,7 @@ class ESOLogAnalyzer:
             # Grace period expired, finalize the encounter
             self.current_encounter.finalized = True
             self._display_encounter_summary(self.current_zone)
-            self.current_encounter = None
+            # Don't set current_encounter to None - preserve for subsequent combats
 
 
     def _handle_begin_log_event(self, entry: ESOLogEntry):
