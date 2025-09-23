@@ -1349,8 +1349,7 @@ class ESOLogAnalyzer:
         hostile_info = ""
         if (self.current_encounter and self.current_encounter.most_damaged_hostile):
             hostile = self.current_encounter.most_damaged_hostile
-            damage = self.current_encounter.enemy_damage.get(hostile.unit_id, 0)
-            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,}, Damage: {damage:,})"
+            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
         
         # Highest HP hostile monster info
         highest_hp_info = ""
