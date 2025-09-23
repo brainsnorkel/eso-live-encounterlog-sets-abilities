@@ -25,7 +25,7 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
+# Note: esolog-tail.spec is needed for builds, so it's not ignored
 
 # Installer builds
 dist/
