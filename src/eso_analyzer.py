@@ -327,7 +327,6 @@ class CombatEncounter:
             if (self.highest_health_hostile is None or 
                 enemy.max_health > self.highest_health_hostile.max_health or
                 (enemy.max_health == self.highest_health_hostile.max_health and "Stormreeve" in enemy.name)):
-                print(f"DEBUG: New highest health hostile: {enemy.name} (ID: {enemy.unit_id}) with {enemy.max_health:,} HP")
                 self.highest_health_hostile = enemy
     
     def update_most_damaged_hostile(self, unit_id: str):
@@ -345,10 +344,6 @@ class CombatEncounter:
         """Update an enemy's health values and check if it's now the highest health hostile."""
         if unit_id in self.enemies:
             enemy = self.enemies[unit_id]
-            # Debug: Track health updates for Stormreeve Neidir and Twister
-            if unit_id in ["866", "881"]:
-                print(f"DEBUG: Health update for {enemy.name} (ID: {unit_id}): {enemy.max_health} -> {max_health}")
-            
             # Update health values
             enemy.current_health = current_health
             enemy.max_health = max_health
@@ -1029,8 +1024,6 @@ class ESOLogAnalyzer:
         
         # Create a new encounter if we don't have one or if the previous one was finalized
         if not self.current_encounter or self.current_encounter.finalized:
-            # Debug: Creating new encounter
-            # print(f"DEBUG: BEGIN_COMBAT - Creating new encounter (current_encounter: {self.current_encounter is not None}, finalized: {self.current_encounter.finalized if self.current_encounter else 'N/A'})")
             # Create new encounter but preserve players and enemies from previous encounter in same zone
             old_players = {}
             old_enemies = {}
@@ -1066,8 +1059,6 @@ class ESOLogAnalyzer:
             # Finalize buff tracking
             self.current_encounter.finalize_buff_tracking()
             # Immediately display summary and finalize encounter
-            # Debug: Finalizing encounter
-            # print(f"DEBUG: END_COMBAT - Finalizing encounter with {len(self.current_encounter.enemies)} enemies")
             self.current_encounter.finalized = True
             self._display_encounter_summary(self.current_zone)
 
@@ -1098,8 +1089,8 @@ class ESOLogAnalyzer:
         # BEGIN_CAST format: durationMS, channeled, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>
         # sourceUnitState: unitId, health/max, magicka/max, stamina/max, ultimate/max, werewolf/max, shield, x, y, heading
         if len(entry.fields) >= 7:
-            ability_id = entry.fields[3]  # abilityId (corrected based on debug output)
-            caster_unit_id = entry.fields[4]  # sourceUnitState.unitId (corrected based on debug output)
+            ability_id = entry.fields[3]  # abilityId
+            caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
 
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
@@ -1338,13 +1329,6 @@ class ESOLogAnalyzer:
                         max_health = int(max_health)
                         
                         if max_health > 0 and max_health > 100:  # Filter out small health values
-                            # Debug: Print when we update Stormreeve Neidir's or Twister's health
-                            if second_target_unit_id in ["866", "881"]:
-                                enemy = self.current_encounter.enemies.get(second_target_unit_id)
-                                enemy_name = enemy.name if enemy else "Unknown"
-                                print(f"DEBUG: Updating {enemy_name} (ID: {second_target_unit_id}) health from EFFECT_CHANGED: {current_health}/{max_health}")
-                                if enemy:
-                                    print(f"DEBUG: {enemy_name} is_hostile: {getattr(enemy, 'is_hostile', 'unknown')}")
                             self.current_encounter.update_enemy_health(second_target_unit_id, current_health, max_health)
                             
                     except (ValueError, IndexError):
@@ -1443,8 +1427,6 @@ class ESOLogAnalyzer:
         # Highest HP hostile monster info - only consider enemies that were actually engaged by players
         highest_hp_info = ""
         if self.current_encounter:
-            # Debug: Summary display
-            # print(f"DEBUG: Summary display - encounter has {len(self.current_encounter.enemies)} enemies")
             # Find the highest health hostile among enemies that were actually engaged by players
             # Use the same logic as the hostile monsters display
             engaged_hostiles = []
@@ -1463,27 +1445,16 @@ class ESOLogAnalyzer:
                         all_engaged_monsters.add(unit_id)
             
             # Build list of engaged hostiles with health info
-            # Debug: Processing engaged monsters
-            # print(f"DEBUG: all_engaged_monsters: {all_engaged_monsters}")
             for unit_id in all_engaged_monsters:
-                # print(f"DEBUG: Processing unit_id: {unit_id}")
                 if unit_id in self.current_encounter.enemies:
                     enemy = self.current_encounter.enemies[unit_id]
-                    # print(f"DEBUG: Checking enemy {enemy.name} (ID: {unit_id}): is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
                     if hasattr(enemy, 'is_hostile') and enemy.is_hostile and enemy.max_health > 0:
-                        # print(f"DEBUG: Adding {enemy.name} to engaged_hostiles")
                         engaged_hostiles.append(enemy)
-                    # else:
-                        # print(f"DEBUG: Skipping {enemy.name} - is_hostile={getattr(enemy, 'is_hostile', 'unknown')}, max_health={enemy.max_health}")
-                # else:
-                    # print(f"DEBUG: Unit {unit_id} not found in enemies")
             
             if engaged_hostiles:
                 # Sort by max health (highest first), then prefer Stormreeve Neidir for equal health
                 engaged_hostiles.sort(key=lambda e: (-e.max_health, 0 if "Stormreeve" in e.name else 1))
                 highest_engaged = engaged_hostiles[0]
-                # Debug: Highest engaged hostile
-                # print(f"DEBUG: Summary display - highest engaged hostile: {highest_engaged.name} (ID: {highest_engaged.unit_id}) with {highest_engaged.max_health:,} HP")
                 highest_hp_info = f" | Highest HP: {highest_engaged.name} ({highest_engaged.max_health:,} HP)"
         
         # Total health of all damaged enemies
