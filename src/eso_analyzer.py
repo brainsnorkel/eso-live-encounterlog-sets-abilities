@@ -1705,9 +1705,14 @@ class ESOLogAnalyzer:
                             # Check if it's a mythic set (color gold and remove "1pc" prefix)
                             if clean_set_name in MYTHIC_SETS:
                                 colored_part = f"{Fore.YELLOW}{set_name}{Style.RESET_ALL}"
-                            # Check if it's an incomplete 5-piece set (color dark red)
+                            # Check if it's an incomplete 5-piece set (color dark red) - but never highlight monster sets
                             elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
-                                colored_part = f"{Fore.RED}{part}{Style.RESET_ALL}"
+                                # Explicitly exclude monster sets from red highlighting
+                                monster_set_keywords = ['lord warden', 'slimecraw', 'thunderbug', 'kra\'gh', 'velidreth', 'grundwulf', 'zaan', 'valkyn skoria', 'ilambris', 'stormfist', 'infernal guardian', 'iceheart', 'bloodspawn', 'maw of the infernal', 'mighty chudan', 'engine guardian', 'tremorscale', 'earthgore', 'chokethorn', 'shadowrend', 'molag kena', 'balorgh', 'grothdarr', 'selene', 'domihaus', 'malubeth', 'spawn of mephala']
+                                if not any(keyword in clean_set_name.lower() for keyword in monster_set_keywords):
+                                    colored_part = f"{Fore.RED}{part}{Style.RESET_ALL}"
+                                else:
+                                    colored_part = part
                             else:
                                 colored_part = part
                         else:
