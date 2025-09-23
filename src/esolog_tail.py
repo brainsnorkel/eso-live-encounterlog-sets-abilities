@@ -2061,8 +2061,23 @@ class LogFileHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         """Handle file modification events."""
-        if event.src_path == str(self.log_file):
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.MAGENTA}[{timestamp}] DIAGNOSTIC: File system event detected - {event.src_path}{Style.RESET_ALL}")
+        
+        # Compare paths using Path.resolve() to handle relative vs absolute paths
+        event_path = Path(event.src_path).resolve()
+        log_file_path = self.log_file.resolve()
+        
+        if event_path == log_file_path:
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Event matches target file, processing new lines{Style.RESET_ALL}")
             self._process_new_lines()
+        else:
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Event for different file - {event_path} != {log_file_path}{Style.RESET_ALL}")
 
     def _process_new_lines(self):
         """Process new lines added to the log file."""
@@ -2222,7 +2237,23 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
 
     try:
         print(f"{Fore.YELLOW}Press Ctrl+C to stop monitoring{Style.RESET_ALL}\n")
+        last_check_time = time.time()
+        check_interval = 2.0  # Check for changes every 2 seconds as fallback
+        
         while True:
+            current_time = time.time()
+            
+            # Fallback: Check for file changes every few seconds in case watchdog fails
+            if current_time - last_check_time >= check_interval:
+                if log_path.exists():
+                    current_size = log_path.stat().st_size
+                    if current_size > event_handler.last_position:
+                        if analyzer.diagnostic:
+                            timestamp = time.strftime("%H:%M:%S", time.localtime())
+                            print(f"{Fore.RED}[{timestamp}] DIAGNOSTIC: FALLBACK - Detected file growth (size: {current_size}, pos: {event_handler.last_position}){Style.RESET_ALL}")
+                        event_handler._process_new_lines()
+                last_check_time = current_time
+            
             if analyzer.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Waiting for file changes on {log_path.name}...{Style.RESET_ALL}")
