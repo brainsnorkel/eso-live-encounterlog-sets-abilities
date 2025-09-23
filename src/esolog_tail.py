@@ -2034,7 +2034,7 @@ class LogFileHandler(FileSystemEventHandler):
         
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file from beginning{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
         
         line_count = 0
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -2055,7 +2055,7 @@ class LogFileHandler(FileSystemEventHandler):
         
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines, now tailing{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
         
         self.has_read_all = True
 
@@ -2073,12 +2073,12 @@ class LogFileHandler(FileSystemEventHandler):
         if current_size <= self.last_position:
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
             return
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             f.seek(self.last_position)
@@ -2087,7 +2087,7 @@ class LogFileHandler(FileSystemEventHandler):
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
         for line in new_lines:
             line = line.strip()
@@ -2225,7 +2225,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         while True:
             if analyzer.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Waiting for file changes...{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Waiting for file changes on {log_path.name}...{Style.RESET_ALL}")
             time.sleep(1)
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
