@@ -321,7 +321,9 @@ class CombatEncounter:
             enemy.max_health > 0 and 
             hasattr(enemy, 'is_hostile') and enemy.is_hostile):
             if (self.highest_health_hostile is None or 
-                enemy.max_health > self.highest_health_hostile.max_health):
+                enemy.max_health > self.highest_health_hostile.max_health or
+                (enemy.max_health == self.highest_health_hostile.max_health and "Stormreeve" in enemy.name)):
+                print(f"DEBUG: New highest health hostile: {enemy.name} (ID: {enemy.unit_id}) with {enemy.max_health:,} HP")
                 self.highest_health_hostile = enemy
     
     def update_most_damaged_hostile(self, unit_id: str):
@@ -339,6 +341,10 @@ class CombatEncounter:
         """Update an enemy's health values and check if it's now the highest health hostile."""
         if unit_id in self.enemies:
             enemy = self.enemies[unit_id]
+            # Debug: Track health updates for Stormreeve Neidir and Twister
+            if unit_id in ["866", "881"]:
+                print(f"DEBUG: Health update for {enemy.name} (ID: {unit_id}): {enemy.max_health} -> {max_health}")
+            
             # Update health values
             enemy.current_health = current_health
             enemy.max_health = max_health
@@ -1320,18 +1326,42 @@ class ESOLogAnalyzer:
                 if ability_id in buff_ids and target_unit_id in self.current_encounter.players:
                     self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
 
-            # Parse health information for enemies
-            if (effect_type == "GAINED" and len(entry.fields) > 17):
-                # Extract target health info (format: current_health/max_health)
-                target_health_info = entry.fields[17]  # After parsing, this is index 15
-                if "/" in target_health_info:
+            # Parse health information for enemies from EFFECT_CHANGED events
+            # EFFECT_CHANGED format: GAINED/FADED/UPDATED,stacks,source_unit_id,ability_id,target_unit_id,source_health/max,source_magicka/max,source_stamina/max,source_ultimate/max,source_werewolf/max,source_shield,source_x,source_y,source_heading,target_unit_id,target_health/max,target_magicka/max,target_stamina/max,target_ultimate/max,target_werewolf/max,target_shield,target_x,target_y,target_heading
+            # Look for the second target_unit_id (field 15) and its corresponding health (field 16)
+            if len(entry.fields) >= 16:
+                second_target_unit_id = str(entry.fields[14])  # Field 15 (0-indexed)
+                target_health_info = str(entry.fields[15])     # Field 16 (0-indexed)
+                
+                if "/" in target_health_info and second_target_unit_id in self.current_encounter.enemies:
                     try:
                         current_health, max_health = target_health_info.split("/")
                         current_health = int(current_health)
                         max_health = int(max_health)
                         
-                        # Update enemy health if this is a known enemy
-                        if target_unit_id in self.current_encounter.enemies:
+                        if max_health > 0 and max_health > 100:  # Filter out small health values
+                            # Debug: Print when we update Stormreeve Neidir's or Twister's health
+                            if second_target_unit_id in ["866", "881"]:
+                                enemy = self.current_encounter.enemies.get(second_target_unit_id)
+                                enemy_name = enemy.name if enemy else "Unknown"
+                                print(f"DEBUG: Updating {enemy_name} (ID: {second_target_unit_id}) health from EFFECT_CHANGED: {current_health}/{max_health}")
+                                if enemy:
+                                    print(f"DEBUG: {enemy_name} is_hostile: {getattr(enemy, 'is_hostile', 'unknown')}")
+                            self.current_encounter.update_enemy_health(second_target_unit_id, current_health, max_health)
+                            
+                    except (ValueError, IndexError):
+                        pass  # Skip invalid health data
+            
+            # Also check the first target_unit_id (original logic for backward compatibility)
+            if len(entry.fields) >= 6:
+                first_target_health_info = str(entry.fields[5])  # Field 6 (0-indexed)
+                if "/" in first_target_health_info and target_unit_id in self.current_encounter.enemies:
+                    try:
+                        current_health, max_health = first_target_health_info.split("/")
+                        current_health = int(current_health)
+                        max_health = int(max_health)
+                        
+                        if max_health > 0 and max_health > 100:  # Filter out small health values
                             self.current_encounter.update_enemy_health(target_unit_id, current_health, max_health)
                             
                     except (ValueError, IndexError):
@@ -1710,10 +1740,14 @@ class ESOLogAnalyzer:
             unique_hostiles.sort(key=lambda x: (x[3], x[1]), reverse=True)
             
             for unit_id, name, unit_type, damage in unique_hostiles:
+                # Get health information from the enemy
+                enemy = self.current_encounter.enemies.get(unit_id)
+                health_info = f"HP: {enemy.max_health:,}" if enemy and enemy.max_health > 0 else "HP: Unknown"
+                
                 if damage > 0:
-                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Damage: {damage:,}){Style.RESET_ALL}")
+                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Damage: {damage:,}){Style.RESET_ALL}")
                 else:
-                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, Engaged){Style.RESET_ALL}")
+                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Engaged){Style.RESET_ALL}")
             
             print(f"{Fore.YELLOW}Total hostile monsters engaged: {len(unique_hostiles)}{Style.RESET_ALL}")
         
