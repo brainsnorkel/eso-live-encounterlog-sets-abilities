@@ -2,6 +2,18 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.17] - 2025-01-22
+
+### Fixed
+- **Major Slayer Tracking**: Added support for both ability IDs (93120 and 931200) to properly track Major Slayer buff
+- **Windows Build Error**: Fixed `ModuleNotFoundError: No module named gear_set_database_optimised` by updating PyInstaller spec file
+- **Nunatak Monster Set**: Added comprehensive Nunatak variations to prevent incorrect red highlighting as incomplete 5-piece set
+
+### Changed
+- Updated PyInstaller spec file to include `gear_set_database_optimized` in hidden imports
+- Updated GitHub Actions workflow to use spec file instead of command-line PyInstaller
+- Added gear set data files to PyInstaller datas configuration
+
 ## [0.1.14] - 2025-01-22
 
 ### Enhanced
