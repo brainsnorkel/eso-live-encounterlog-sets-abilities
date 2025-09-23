@@ -8,7 +8,7 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 - Subclass build inference
 - Sorts players by their DPS
 - Highlights missing 5pc bonuses
-- Who is wearing a taunt?
+- Who has a taunt?
 - Opinionated about how much health you should have
 
 ## Example Output
