@@ -830,8 +830,8 @@ class ESOLogAnalyzer:
                 if len(entry.fields) > 4 and entry.fields[4].isdigit():
                     health = int(entry.fields[4])
                 
-                # Check if this is a HOSTILE, NEUTRAL, or NPC_ALLY monster (field [14] in the example)
-                if len(entry.fields) > 14 and entry.fields[14] in ["HOSTILE", "NEUTRAL", "NPC_ALLY"]:
+                # Check if this is a HOSTILE monster (field [14] in the example)
+                if len(entry.fields) > 14 and entry.fields[14] == "HOSTILE":
                     is_hostile = True
                 
                 # Add ALL monsters (including FRIENDLY) so they can be updated later via UNIT_CHANGED
@@ -1134,7 +1134,7 @@ class ESOLogAnalyzer:
                         if unit_id and unit_id in self.current_encounter.enemies:
                             enemy = self.current_encounter.enemies[unit_id]
                             # Only track hostile monsters, not friendly pets or NPCs
-                            if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                            if enemy.is_hostile:
                                 self.engaged_monsters.add(unit_id)
             
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
@@ -1155,7 +1155,7 @@ class ESOLogAnalyzer:
                       dying_unit_id in self.current_encounter.enemies):
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
-                    if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                    if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
                         if dying_unit_id not in self.current_encounter.enemy_damage:
                             self.current_encounter.enemy_damage[dying_unit_id] = 0
@@ -1180,7 +1180,7 @@ class ESOLogAnalyzer:
                         if target_unit_id and target_unit_id in self.current_encounter.enemies:
                             enemy = self.current_encounter.enemies[target_unit_id]
                             # Only track damage to hostile monsters, not friendly pets or NPCs
-                            if hasattr(enemy, 'reaction') and enemy.reaction == 'HOSTILE':
+                            if enemy.is_hostile:
                                 if target_unit_id not in self.current_encounter.enemy_damage:
                                     self.current_encounter.enemy_damage[target_unit_id] = 0
                                 self.current_encounter.enemy_damage[target_unit_id] += hit_value
