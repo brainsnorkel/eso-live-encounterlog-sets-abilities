@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.19] - 2025-01-22
+
+### Fixed
+- **Windows Import Error**: Fixed PyInstaller spec to properly include src modules in Windows builds
+- **Module Path Issues**: Added 'src' to pathex and updated hiddenimports with full module paths
+- **Build Configuration**: Corrected references to gear_set_database_optimized and version modules
+
+### Changed
+- Updated PyInstaller spec file to include src directory in module search path
+- Fixed hiddenimports to use complete module paths (src.gear_set_database_optimized, src.version)
+
 ## [0.1.18] - 2025-01-22
 
 ### Fixed
