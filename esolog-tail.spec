@@ -5,7 +5,7 @@ a = Analysis(
     ['src/esolog_tail.py'],
     pathex=[],
     binaries=[],
-    datas=[('data/example_logs', 'data/example_logs'), ('data/gear_sets', 'data/gear_sets')],
+    datas=[('data/gear_sets/LibSets_SetData.xlsm', 'data/gear_sets')],
     hiddenimports=['gear_set_database_optimized'],
     hookspath=[],
     hooksconfig={},
