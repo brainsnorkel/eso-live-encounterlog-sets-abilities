@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.18] - 2025-01-22
+
+### Fixed
+- **Import Error**: Resolved `no module named gear_set_database_optimized` error by implementing robust import strategy
+- **Module Loading**: Fixed relative import issues that prevented the module from loading when run directly
+- **Cross-Platform Compatibility**: Improved import handling to work both as package and standalone module
+
+### Changed
+- Updated import statements to use try/except blocks for both relative and absolute imports
+- Enhanced module loading to work in various execution contexts (package vs standalone)
+
 ## [0.1.17] - 2025-01-22
 
 ### Fixed
