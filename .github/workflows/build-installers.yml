@@ -36,12 +36,12 @@ jobs:
         
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer --icon=icon.ico src/eso_analyzer.py
+        pyinstaller --onefile --name=esolog-tail --icon=icon.ico src/esolog_tail.py
         
     - name: Create Windows installer package
       run: |
         mkdir dist\installer
-        copy dist\eso-analyzer.exe dist\installer\
+        copy dist\esolog-tail.exe dist\installer\
         copy README.md dist\installer\
         echo @echo off > dist\installer\run.bat
         echo echo ESO Live Encounter Log Sets and Abilities Analyzer >> dist\installer\run.bat
@@ -50,19 +50,19 @@ jobs:
         echo echo Starting analyzer in test mode... >> dist\installer\run.bat
         echo echo Press Ctrl+C to stop >> dist\installer\run.bat
         echo echo. >> dist\installer\run.bat
-        echo eso-analyzer.exe --test-mode >> dist\installer\run.bat
+        echo esolog-tail.exe --test-mode >> dist\installer\run.bat
         echo pause >> dist\installer\run.bat
         
     - name: Create Windows installer archive
       run: |
         cd dist
-        powershell Compress-Archive -Path installer -DestinationPath eso-analyzer-windows-installer.zip
+        powershell Compress-Archive -Path installer -DestinationPath esolog-tail-windows-installer.zip
         
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
-        name: eso-analyzer-windows-installer
-        path: dist/eso-analyzer-windows-installer.zip
+        name: esolog-tail-windows-installer
+        path: dist/esolog-tail-windows-installer.zip
 
   build-macos:
     runs-on: macos-latest
@@ -91,12 +91,12 @@ jobs:
         
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
+        pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
         
     - name: Create macOS installer package
       run: |
         mkdir -p dist/installer
-        cp dist/eso-analyzer dist/installer/
+        cp dist/esolog-tail dist/installer/
         cp README.md dist/installer/
         echo '#!/bin/bash' > dist/installer/run.sh
         echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
@@ -105,19 +105,19 @@ jobs:
         echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
         echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
         echo 'echo ""' >> dist/installer/run.sh
-        echo './eso-analyzer --test-mode' >> dist/installer/run.sh
+        echo './esolog-tail --test-mode' >> dist/installer/run.sh
         chmod +x dist/installer/run.sh
         
     - name: Create macOS installer archive
       run: |
         cd dist
-        zip -r eso-analyzer-macos-installer.zip installer/
+        zip -r esolog-tail-macos-installer.zip installer/
         
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
-        name: eso-analyzer-macos-installer
-        path: dist/eso-analyzer-macos-installer.zip
+        name: esolog-tail-macos-installer
+        path: dist/esolog-tail-macos-installer.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -146,12 +146,12 @@ jobs:
         
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name=eso-analyzer src/eso_analyzer.py
+        pyinstaller --onefile --name=esolog-tail src/esolog_tail.py
         
     - name: Create Linux installer package
       run: |
         mkdir -p dist/installer
-        cp dist/eso-analyzer dist/installer/
+        cp dist/esolog-tail dist/installer/
         cp README.md dist/installer/
         echo '#!/bin/bash' > dist/installer/run.sh
         echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
@@ -160,19 +160,19 @@ jobs:
         echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
         echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
         echo 'echo ""' >> dist/installer/run.sh
-        echo './eso-analyzer --test-mode' >> dist/installer/run.sh
+        echo './esolog-tail --test-mode' >> dist/installer/run.sh
         chmod +x dist/installer/run.sh
         
     - name: Create Linux installer archive
       run: |
         cd dist
-        tar -czf eso-analyzer-linux-installer.tar.gz installer/
+        tar -czf esolog-tail-linux-installer.tar.gz installer/
         
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: eso-analyzer-linux-installer
-        path: dist/eso-analyzer-linux-installer.tar.gz
+        name: esolog-tail-linux-installer
+        path: dist/esolog-tail-linux-installer.tar.gz
 
   create-release:
     needs: [build-windows, build-macos, build-linux]
@@ -182,28 +182,28 @@ jobs:
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
       with:
-        name: eso-analyzer-windows-installer
+        name: esolog-tail-windows-installer
         path: ./artifacts/windows
         
     - name: Download macOS artifact
       uses: actions/download-artifact@v4
       with:
-        name: eso-analyzer-macos-installer
+        name: esolog-tail-macos-installer
         path: ./artifacts/macos
         
     - name: Download Linux artifact
       uses: actions/download-artifact@v4
       with:
-        name: eso-analyzer-linux-installer
+        name: esolog-tail-linux-installer
         path: ./artifacts/linux
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/eso-analyzer-windows-installer.zip
-          ./artifacts/macos/eso-analyzer-macos-installer.zip
-          ./artifacts/linux/eso-analyzer-linux-installer.tar.gz
+          ./artifacts/windows/esolog-tail-windows-installer.zip
+          ./artifacts/macos/esolog-tail-macos-installer.zip
+          ./artifacts/linux/esolog-tail-linux-installer.tar.gz
         generate_release_notes: true
         fail_on_unmatched_files: true
       env:
