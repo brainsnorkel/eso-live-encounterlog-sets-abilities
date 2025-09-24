@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.1.20] - 2025-01-24
+## [0.1.21] - 2025-01-24
 
 ### Fixed
 - **Critical Concurrency Issues**: Fixed race conditions in file monitoring that caused read-all-then-tail to fail
