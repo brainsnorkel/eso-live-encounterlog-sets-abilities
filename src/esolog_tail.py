@@ -25,6 +25,7 @@ import threading
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Set
+from datetime import datetime
 import click
 import requests
 from colorama import init, Fore, Style
@@ -179,13 +180,14 @@ class ESOLogEntry:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
 
-            if len(fields) < 2:
+            if len(fields) < 3:
                 return None
 
-            timestamp = int(fields[0])
+            # Format: line_number,event_type,timestamp,...
+            timestamp = int(fields[2])
             event_type = fields[1]
 
-            return cls(timestamp, event_type, fields[2:], line)
+            return cls(timestamp, event_type, fields[3:], line)
         except (ValueError, IndexError, StopIteration):
             return None
 
@@ -1975,18 +1977,146 @@ class ESOLogAnalyzer:
                     del self.unit_id_to_handle[old_unit_id]
 
 
+class LogSplitter:
+    """Handles automatic splitting of encounter logs into individual encounter files."""
+    
+    def __init__(self, log_file: Path, diagnostic: bool = False, split_dir: Optional[Path] = None):
+        self.log_file = log_file
+        self.diagnostic = diagnostic
+        self.split_dir = split_dir or log_file.parent  # Use custom dir or same as log file
+        self.current_split_file = None
+        self.current_split_path = None
+        self.current_encounter_info = None
+        self.split_files = []  # Track all created split files
+        self.file_handle = None  # File handle for current split file
+        
+        # Ensure split directory exists
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        
+    def start_encounter(self, begin_log_entry, zone_name: str = "", difficulty: str = ""):
+        """Start a new encounter split file."""
+        # Close any existing split file
+        self.end_encounter()
+        
+        # Create filename based on BEGIN_LOG timestamp
+        timestamp = begin_log_entry.timestamp
+        dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
+        
+        # Format: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log
+        time_str = dt.strftime("%y%m%d%H%M%S")
+        
+        difficulty_suffix = "-vet" if difficulty.upper() == "VETERAN" else ""
+        zone_suffix = zone_name.replace(" ", "-") if zone_name else "Unknown-Zone"
+        
+        filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
+        split_path = self.split_dir / filename
+        
+        try:
+            # Open file for writing (create new file)
+            self.file_handle = open(split_path, 'w', encoding='utf-8')
+            self.current_split_file = split_path
+            self.current_split_path = split_path
+            self.current_encounter_info = {
+                'path': split_path,
+                'start_time': timestamp,
+                'zone_name': zone_name,
+                'difficulty': difficulty
+            }
+            self.split_files.append(split_path)
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Created new split file: {split_path}{Style.RESET_ALL}")
+                
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create split file {split_path}: {e}{Style.RESET_ALL}")
+            self.current_split_file = None
+            self.current_split_path = None
+            self.current_encounter_info = None
+            self.file_handle = None
+    
+    def write_log_line(self, line: str):
+        """Write a log line to the current split file."""
+        if self.file_handle:
+            try:
+                self.file_handle.write(line + '\n')
+                self.file_handle.flush()  # Ensure immediate write
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+    
+    def end_encounter(self):
+        """End the current encounter and close the split file."""
+        if self.file_handle:
+            try:
+                self.file_handle.close()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Closed split file: {self.current_split_path}{Style.RESET_ALL}")
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file {self.current_split_path}: {e}{Style.RESET_ALL}")
+            finally:
+                self.file_handle = None
+                self.current_split_file = None
+                self.current_split_path = None
+                self.current_encounter_info = None
+    
+    def close_for_waiting(self):
+        """Close the current split file when waiting for new events to prevent data loss."""
+        if self.file_handle:
+            try:
+                self.file_handle.close()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Closed split file for waiting: {self.current_split_path}{Style.RESET_ALL}")
+                self.file_handle = None
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file for waiting: {e}{Style.RESET_ALL}")
+    
+    def reopen_for_append(self):
+        """Reopen the current split file for appending when new events arrive."""
+        if self.current_split_path and not self.file_handle:
+            try:
+                self.file_handle = open(self.current_split_path, 'a', encoding='utf-8')
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Reopened split file for append: {self.current_split_path}{Style.RESET_ALL}")
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to reopen split file for append: {e}{Style.RESET_ALL}")
+                self.file_handle = None
+
+    def cleanup(self):
+        """Clean up all split files."""
+        self.end_encounter()
+        # Could add cleanup logic here if needed
+
+
 class LogFileMonitor:
     """Simple file polling monitor for log file changes."""
 
-    def __init__(self, analyzer: ESOLogAnalyzer, log_file: Path, read_all_then_tail: bool = False):
+    def __init__(self, analyzer: ESOLogAnalyzer, log_file: Path, read_all_then_tail: bool = False, tail_and_split: bool = False, split_dir: Optional[Path] = None):
         self.analyzer = analyzer
         self.log_file = log_file
         self.last_position = 0
         self.read_all_then_tail = read_all_then_tail
+        self.tail_and_split = tail_and_split
         self.has_read_all = False
         self.diagnostic = analyzer.diagnostic
         self.file_lock = threading.Lock()  # Prevent concurrent file access
         self.running = False
+        
+        # Initialize log splitter if needed
+        self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
+        self.pending_zone_info = None  # Store zone info until we get it
 
         # Initialize position based on mode
         if self.log_file.exists():
@@ -2049,6 +2179,10 @@ class LogFileMonitor:
                     if line:
                         entry = ESOLogEntry.parse(line)
                         if entry:
+                            # Handle log splitting if enabled
+                            if self.log_splitter:
+                                self._handle_log_splitting(entry, line)
+                            
                             self.analyzer.process_log_entry(entry)
                             line_count += 1
                     
@@ -2058,6 +2192,10 @@ class LogFileMonitor:
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
+            
+            # Close any open split files after processing entire file
+            if self.log_splitter:
+                self.log_splitter.end_encounter()
             
             self.has_read_all = True
 
@@ -2069,14 +2207,23 @@ class LogFileMonitor:
         with self.file_lock:
             current_size = self.log_file.stat().st_size
             if current_size > self.last_position:
+                # Reopen split file for appending when new data arrives
+                if self.log_splitter:
+                    self.log_splitter.reopen_for_append()
+                
                 if self.diagnostic:
                     timestamp = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
                 self._process_new_lines()
                 return True
-            elif self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            else:
+                # Close split file when waiting for new data
+                if self.log_splitter:
+                    self.log_splitter.close_for_waiting()
+                
+                if self.diagnostic:
+                    timestamp = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
         return False
 
     def _process_new_lines(self):
@@ -2110,7 +2257,68 @@ class LogFileMonitor:
                 if line:
                     entry = ESOLogEntry.parse(line)
                     if entry:
+                        # Handle log splitting if enabled
+                        if self.log_splitter:
+                            self._handle_log_splitting(entry, line)
+                        
                         self.analyzer.process_log_entry(entry)
+    
+    def _handle_log_splitting(self, entry, line: str):
+        """Handle log splitting logic based on log entry type."""
+        if not self.log_splitter:
+            return
+            
+        # Handle BEGIN_LOG - start new encounter
+        if entry.event_type == "BEGIN_LOG":
+            # Store the BEGIN_LOG entry and wait for zone info
+            self.pending_zone_info = {
+                'begin_log_entry': entry,
+                'zone_name': "",
+                'difficulty': ""
+            }
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for zone info{Style.RESET_ALL}")
+        
+        # Handle ZONE_CHANGED - extract zone and difficulty info
+        elif entry.event_type == "ZONE_CHANGED" and self.pending_zone_info:
+            # Extract zone name and difficulty from ZONE_CHANGED
+            # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
+            if len(entry.fields) >= 3:
+                zone_name = entry.fields[1].strip('"') if entry.fields[1] else ""
+                difficulty = entry.fields[2].strip('"') if len(entry.fields) > 2 else ""
+                
+                self.pending_zone_info['zone_name'] = zone_name
+                self.pending_zone_info['difficulty'] = difficulty
+                
+                # Start the split file now that we have zone info
+                self.log_splitter.start_encounter(
+                    self.pending_zone_info['begin_log_entry'],
+                    zone_name,
+                    difficulty
+                )
+                
+                # Write the BEGIN_LOG line to the split file
+                self.log_splitter.write_log_line(self.pending_zone_info['begin_log_entry'].original_line)
+                
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone info extracted: {zone_name} ({difficulty}){Style.RESET_ALL}")
+                
+                self.pending_zone_info = None
+        
+        # Handle END_LOG - end current encounter
+        elif entry.event_type == "END_LOG":
+            if self.log_splitter.current_split_file:
+                self.log_splitter.write_log_line(line)
+                self.log_splitter.end_encounter()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+        
+        # Write all other lines to current split file if one is open
+        elif self.log_splitter.current_split_file:
+            self.log_splitter.write_log_line(line)
 
 @click.command()
 @click.option('--log-file', '-f', type=click.Path(),
@@ -2129,7 +2337,11 @@ class LogFileMonitor:
               help='Testing mode: List all hostile monsters added to fights with names and IDs')
 @click.option('--diagnostic', is_flag=True,
               help='Diagnostic mode: Show detailed timing and data flow information for debugging')
-def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool):
+@click.option('--tail-and-split', is_flag=True,
+              help='Auto-split mode: Automatically create individual encounter files while tailing the main log')
+@click.option('--split-dir', type=click.Path(), default=None,
+              help='Directory for split files (default: same directory as source log file)')
+def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, tail_and_split: bool, split_dir: Optional[str]):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -2178,7 +2390,8 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
 
         print(f"{Fore.YELLOW}Read mode: Processing {read_log} from the beginning at full speed{Style.RESET_ALL}")
         analyzer.current_log_file = str(read_log)
-        _replay_log_file(analyzer, read_log, replay_speed)
+        split_dir_path = Path(split_dir) if split_dir else None
+        _replay_log_file(analyzer, read_log, replay_speed, tail_and_split, split_dir_path)
         return
 
     # Determine log file path
@@ -2231,7 +2444,8 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     analyzer.current_log_file = str(log_path)
 
     # Set up file monitoring with simple polling
-    file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail)
+    split_dir_path = Path(split_dir) if split_dir else None
+    file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
     file_monitor.running = True
 
     try:
@@ -2249,6 +2463,12 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
         file_monitor.running = False
+        
+        # Clean up log splitter if it exists
+        if file_monitor.log_splitter:
+            file_monitor.log_splitter.cleanup()
+            if tail_and_split:
+                print(f"{Fore.CYAN}Auto-split cleanup completed{Style.RESET_ALL}")
 
 def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     """Wait for the log file to appear if it doesn't exist."""
@@ -2330,10 +2550,68 @@ def _get_host_type_description() -> str:
     else:
         return "Unknown"
 
-def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier: int):
+def _handle_replay_log_splitting(log_splitter, entry, line: str, pending_zone_info):
+    """Handle log splitting logic for replay mode."""
+    # Handle BEGIN_LOG - start new encounter
+    if entry.event_type == "BEGIN_LOG":
+        # Store the BEGIN_LOG entry and wait for zone info
+        pending_zone_info['begin_log_entry'] = entry
+        pending_zone_info['zone_name'] = ""
+        pending_zone_info['difficulty'] = ""
+        if log_splitter.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for zone info{Style.RESET_ALL}")
+    
+    # Handle ZONE_CHANGED - extract zone and difficulty info
+    elif entry.event_type == "ZONE_CHANGED":
+        if pending_zone_info.get('begin_log_entry'):
+            # Extract zone name and difficulty from ZONE_CHANGED
+            # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
+            if len(entry.fields) >= 2:
+                zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
+                difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+                
+                pending_zone_info['zone_name'] = zone_name
+                pending_zone_info['difficulty'] = difficulty
+                
+                # Start the split file now that we have zone info
+                log_splitter.start_encounter(
+                    pending_zone_info['begin_log_entry'],
+                    zone_name,
+                    difficulty
+                )
+                
+                # Write the BEGIN_LOG line to the split file
+                log_splitter.write_log_line(pending_zone_info['begin_log_entry'].original_line)
+                
+                if log_splitter.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone info extracted: {zone_name} ({difficulty}){Style.RESET_ALL}")
+                
+                # Clear the pending zone info
+                pending_zone_info.clear()
+    
+    # Handle END_LOG - end current encounter
+    elif entry.event_type == "END_LOG":
+        if log_splitter.current_split_file:
+            log_splitter.write_log_line(line)
+            log_splitter.end_encounter()
+            if log_splitter.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+    
+    # Write all other lines to current split file if one is open
+    elif log_splitter.current_split_file:
+        log_splitter.write_log_line(line)
+
+def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier: int, tail_and_split: bool = False, split_dir: Optional[Path] = None):
     """Replay a log file for testing purposes."""
 
     print(f"{Fore.YELLOW}Reading log file...{Style.RESET_ALL}")
+
+    # Initialize log splitter if needed
+    log_splitter = LogSplitter(log_file, diagnostic=analyzer.diagnostic, split_dir=split_dir) if tail_and_split else None
+    pending_zone_info = {}
 
     entries = []
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -2346,6 +2624,10 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
                 entry = ESOLogEntry.parse(line)
                 if entry:
                     entries.append(entry)
+                    
+                    # Handle log splitting if enabled
+                    if log_splitter:
+                        _handle_replay_log_splitting(log_splitter, entry, line, pending_zone_info)
 
     print(f"{Fore.GREEN}Loaded {len(entries)} log entries{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Starting replay at full speed...{Style.RESET_ALL}\n")

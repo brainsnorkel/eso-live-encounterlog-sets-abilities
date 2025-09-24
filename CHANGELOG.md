@@ -2,6 +2,26 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.20] - 2025-01-25
+
+### Added
+- **Auto-Split Logs Feature**: New `--tail-and-split` option to automatically create individual encounter files while tailing
+- **Smart File Naming**: Split files named with format `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log`
+- **Zone Detection**: Automatically extracts zone name and difficulty from ZONE_CHANGED events
+- **Robust File Handling**: Split files are closed when waiting and reopened for appending to prevent data loss
+- **Custom Split Directory**: New `--split-dir` option to specify where split files are created
+
+### Enhanced
+- **All Modes Support**: Auto-split functionality works in tail, read-all-then-stop, and read-all-then-tail modes
+- **Timestamp Accuracy**: Fixed ESOLogEntry parsing to use correct timestamps from log entries
+- **Diagnostic Output**: Enhanced diagnostic mode shows split file creation and management details
+
+### Technical Details
+- Added `LogSplitter` class for managing split file creation, writing, and cleanup
+- Fixed ESOLogEntry parsing to use `fields[2]` as timestamp instead of `fields[0]` (line number)
+- Implemented robust file handling with `close_for_waiting()` and `reopen_for_append()` methods
+- Added support for both LogFileMonitor and replay modes with auto-split functionality
+
 ## [0.1.19] - 2025-01-24
 
 ### Fixed

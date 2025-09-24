@@ -17,6 +17,35 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 
 *Example output showing a comprehensive combat encounter analysis with 12 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
 
+## Command Line Options
+
+```bash
+Usage: esolog_tail.py [OPTIONS]
+
+  ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters.
+
+Options:
+  -f, --log-file PATH         Path to ESO encounter log file
+  -s, --read-all-then-stop    Read mode: replay the entire log file from the
+                              beginning at high speed, then exit
+  -t, --read-all-then-tail    Read the entire log file from the beginning,
+                              then continue tailing for new data
+  --no-wait                   Exit immediately if log file does not exist
+                              (default: wait for file to appear)
+  -r, --replay-speed INTEGER  Replay speed multiplier for read mode (default:
+                              100x)
+  -v, --version               Show version information and exit
+  --list-hostiles             Testing mode: List all hostile monsters added to
+                              fights with names and IDs
+  --diagnostic                Diagnostic mode: Show detailed timing and data
+                              flow information for debugging
+  --tail-and-split            Auto-split mode: Automatically create individual
+                              encounter files while tailing the main log
+  --split-dir PATH            Directory for split files (default: same
+                              directory as source log file)
+  --help                      Show this message and exit.
+```
+
 ## Installation
 
 ### Option 1: Standalone Installers (Recommended)
