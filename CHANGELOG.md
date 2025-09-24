@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.22] - 2025-01-24
+
+### Fixed
+- **Critical Deadlock Fix**: Fixed threading deadlock that caused tailing utility to hang when new data arrived
+- **File Processing Hang**: Resolved issue where `_process_new_lines()` would hang indefinitely due to lock contention
+- **Live Tailing Reliability**: Tailing utility now processes new data continuously without hanging
+
+### Technical Details
+- Removed redundant `threading.Lock()` acquisition in `_process_new_lines()` method
+- `_process_new_lines()` now assumes caller already holds the file lock (called from `check_for_changes()`)
+- Added clear documentation explaining lock ownership assumptions
+- Tested with high-throughput scenarios (1000 lines/second) - works perfectly
+
+### Testing
+- Verified fix with ESO log simulator at 1000 lines every 1 second
+- Confirmed encounter reports generate correctly after each fight
+- No more hanging when file growth is detected
+- Continuous operation without deadlocks
+
 ## [0.1.21] - 2025-01-24
 
 ### Fixed

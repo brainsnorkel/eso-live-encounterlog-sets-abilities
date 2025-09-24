@@ -2089,37 +2089,39 @@ class LogFileMonitor:
         return False
 
     def _process_new_lines(self):
-        """Process new lines added to the log file."""
+        """Process new lines added to the log file.
+        
+        Note: This method assumes the caller already holds the file_lock.
+        """
         if not self.log_file.exists():
             return
 
-        with self.file_lock:  # Prevent concurrent file access
-            current_size = self.log_file.stat().st_size
-            if current_size <= self.last_position:
-                if self.diagnostic:
-                    timestamp = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
-                return
-
+        current_size = self.log_file.stat().st_size
+        if current_size <= self.last_position:
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            return
 
-            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                f.seek(self.last_position)
-                new_lines = f.readlines()
-                self.last_position = f.tell()
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
+        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            f.seek(self.last_position)
+            new_lines = f.readlines()
+            self.last_position = f.tell()
 
-            for line in new_lines:
-                line = line.strip()
-                if line:
-                    entry = ESOLogEntry.parse(line)
-                    if entry:
-                        self.analyzer.process_log_entry(entry)
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
+
+        for line in new_lines:
+            line = line.strip()
+            if line:
+                entry = ESOLogEntry.parse(line)
+                if entry:
+                    self.analyzer.process_log_entry(entry)
 
 @click.command()
 @click.option('--log-file', '-f', type=click.Path(),
