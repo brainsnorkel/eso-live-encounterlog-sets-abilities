@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.1.20] - 2025-01-25
+## [0.1.22] - 2025-01-25
 
 ### Added
 - **Auto-Split Logs Feature**: New `--tail-and-split` option to automatically create individual encounter files while tailing
