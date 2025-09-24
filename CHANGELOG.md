@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.19] - 2025-01-24
+
+### Fixed
+- **Critical Concurrency Issues**: Fixed race conditions in file monitoring that caused read-all-then-tail to fail
+- **File Monitoring Reliability**: Replaced complex watchdog directory monitoring with simple, reliable file polling
+- **Multiple File Confusion**: Eliminated issues where tool was monitoring multiple log files simultaneously
+- **Thread Safety**: Added threading locks to prevent concurrent file access conflicts
+
+### Changed
+- **Simplified Architecture**: Replaced watchdog-based file monitoring with simple 1-second polling
+- **Better Diagnostics**: Improved diagnostic output to clearly show file monitoring status
+- **Removed Dependencies**: Eliminated watchdog library dependency for more reliable operation
+
+### Technical Details
+- Added `threading.Lock()` to prevent race conditions between `_process_entire_file()` and `_process_new_lines()`
+- Replaced `LogFileHandler(FileSystemEventHandler)` with `LogFileMonitor` class
+- Implemented `check_for_changes()` method for reliable file change detection
+- Simplified main monitoring loop to use direct file polling instead of event-driven monitoring
+
 ## [0.1.17] - 2025-01-22
 
 ### Fixed
