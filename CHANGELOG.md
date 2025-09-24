@@ -2,24 +2,24 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.1.20] - 2025-01-22
+## [0.1.20] - 2025-01-24
 
 ### Fixed
-- **Tail Mode File Change Detection**: Fixed path comparison issue in watchdog event handler using Path.resolve()
-- **Diagnostic Logging**: Added comprehensive diagnostic logging for file monitoring with detailed timestamps
-- **Fallback Polling**: Added fallback polling mechanism for reliable change detection when watchdog events fail
-- **Enhanced Debugging**: Added detailed debugging output with file sizes, positions, and line counts
+- **Critical Concurrency Issues**: Fixed race conditions in file monitoring that caused read-all-then-tail to fail
+- **File Monitoring Reliability**: Replaced complex watchdog directory monitoring with simple, reliable file polling
+- **Multiple File Confusion**: Eliminated issues where tool was monitoring multiple log files simultaneously
+- **Thread Safety**: Added threading locks to prevent concurrent file access conflicts
 
-### Enhanced
-- **File Monitoring Reliability**: Improved file change detection robustness with multiple detection methods
-- **Testing Documentation**: Updated TESTING.md with comprehensive tail mode testing procedures
-- **Diagnostic Output**: Enhanced diagnostic mode with real-time file change monitoring information
+### Changed
+- **Simplified Architecture**: Replaced watchdog-based file monitoring with simple 1-second polling
+- **Better Diagnostics**: Improved diagnostic output to clearly show file monitoring status
+- **Removed Dependencies**: Eliminated watchdog library dependency for more reliable operation
 
-### Technical
-- Fixed watchdog event handler path comparison using Path.resolve() for absolute vs relative path handling
-- Added fallback polling every 2 seconds to ensure file changes are detected even if watchdog fails
-- Enhanced diagnostic output with timestamps and detailed file change information
-- Improved error handling and edge case management for file monitoring
+### Technical Details
+- Added `threading.Lock()` to prevent race conditions between `_process_entire_file()` and `_process_new_lines()`
+- Replaced `LogFileHandler(FileSystemEventHandler)` with `LogFileMonitor` class
+- Implemented `check_for_changes()` method for reliable file change detection
+- Simplified main monitoring loop to use direct file polling instead of event-driven monitoring
 
 ## [0.1.19] - 2025-01-22
 
@@ -42,6 +42,26 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Changed
 - Updated import statements to use try/except blocks for both relative and absolute imports
 - Enhanced module loading to work in various execution contexts (package vs standalone)
+=======
+## [0.1.19] - 2025-01-24
+
+### Fixed
+- **Critical Concurrency Issues**: Fixed race conditions in file monitoring that caused read-all-then-tail to fail
+- **File Monitoring Reliability**: Replaced complex watchdog directory monitoring with simple, reliable file polling
+- **Multiple File Confusion**: Eliminated issues where tool was monitoring multiple log files simultaneously
+- **Thread Safety**: Added threading locks to prevent concurrent file access conflicts
+
+### Changed
+- **Simplified Architecture**: Replaced watchdog-based file monitoring with simple 1-second polling
+- **Better Diagnostics**: Improved diagnostic output to clearly show file monitoring status
+- **Removed Dependencies**: Eliminated watchdog library dependency for more reliable operation
+
+### Technical Details
+- Added `threading.Lock()` to prevent race conditions between `_process_entire_file()` and `_process_new_lines()`
+- Replaced `LogFileHandler(FileSystemEventHandler)` with `LogFileMonitor` class
+- Implemented `check_for_changes()` method for reliable file change detection
+- Simplified main monitoring loop to use direct file polling instead of event-driven monitoring
+>>>>>>> develop
 
 ## [0.1.17] - 2025-01-22
 

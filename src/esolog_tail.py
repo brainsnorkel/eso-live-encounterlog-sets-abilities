@@ -24,12 +24,11 @@ import sys
 import time
 import csv
 import io
+import threading
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Set
 import click
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 import requests
 from colorama import init, Fore, Style
 try:
@@ -1985,8 +1984,8 @@ class ESOLogAnalyzer:
                     del self.unit_id_to_handle[old_unit_id]
 
 
-class LogFileHandler(FileSystemEventHandler):
-    """File system event handler for monitoring log file changes."""
+class LogFileMonitor:
+    """Simple file polling monitor for log file changes."""
 
     def __init__(self, analyzer: ESOLogAnalyzer, log_file: Path, read_all_then_tail: bool = False):
         self.analyzer = analyzer
@@ -1995,6 +1994,8 @@ class LogFileHandler(FileSystemEventHandler):
         self.read_all_then_tail = read_all_then_tail
         self.has_read_all = False
         self.diagnostic = analyzer.diagnostic
+        self.file_lock = threading.Lock()  # Prevent concurrent file access
+        self.running = False
 
         # Initialize position based on mode
         if self.log_file.exists():
@@ -2041,84 +2042,84 @@ class LogFileHandler(FileSystemEventHandler):
         if not self.log_file.exists():
             return
         
-        if self.diagnostic:
-            timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
-        
-        line_count = 0
-        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-            while True:
-                line = f.readline()
-                if not line:  # End of file
-                    break
+        with self.file_lock:  # Prevent concurrent file access
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
+            
+            line_count = 0
+            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                while True:
+                    line = f.readline()
+                    if not line:  # End of file
+                        break
+                        
+                    line = line.strip()
+                    if line:
+                        entry = ESOLogEntry.parse(line)
+                        if entry:
+                            self.analyzer.process_log_entry(entry)
+                            line_count += 1
                     
-                line = line.strip()
-                if line:
-                    entry = ESOLogEntry.parse(line)
-                    if entry:
-                        self.analyzer.process_log_entry(entry)
-                        line_count += 1
-                
-                # Update position to current position
-                self.last_position = f.tell()
-        
-        if self.diagnostic:
-            timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
-        
-        self.has_read_all = True
+                    # Update position to current position
+                    self.last_position = f.tell()
+            
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
+            
+            self.has_read_all = True
 
-    def on_modified(self, event):
-        """Handle file modification events."""
-        if self.diagnostic:
-            timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.MAGENTA}[{timestamp}] DIAGNOSTIC: File system event detected - {event.src_path}{Style.RESET_ALL}")
-        
-        # Compare paths using Path.resolve() to handle relative vs absolute paths
-        event_path = Path(event.src_path).resolve()
-        log_file_path = self.log_file.resolve()
-        
-        if event_path == log_file_path:
-            if self.diagnostic:
+    def check_for_changes(self):
+        """Check for file changes and process new lines."""
+        if not self.log_file.exists():
+            return False
+            
+        with self.file_lock:
+            current_size = self.log_file.stat().st_size
+            if current_size > self.last_position:
+                if self.diagnostic:
+                    timestamp = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                self._process_new_lines()
+                return True
+            elif self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Event matches target file, processing new lines{Style.RESET_ALL}")
-            self._process_new_lines()
-        else:
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Event for different file - {event_path} != {log_file_path}{Style.RESET_ALL}")
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+        return False
 
     def _process_new_lines(self):
         """Process new lines added to the log file."""
         if not self.log_file.exists():
             return
 
-        current_size = self.log_file.stat().st_size
-        if current_size <= self.last_position:
+        with self.file_lock:  # Prevent concurrent file access
+            current_size = self.log_file.stat().st_size
+            if current_size <= self.last_position:
+                if self.diagnostic:
+                    timestamp = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                return
+
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
-            return
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
-        if self.diagnostic:
-            timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                f.seek(self.last_position)
+                new_lines = f.readlines()
+                self.last_position = f.tell()
 
-        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-            f.seek(self.last_position)
-            new_lines = f.readlines()
-            self.last_position = f.tell()
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
-        if self.diagnostic:
-            timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
-
-        for line in new_lines:
-            line = line.strip()
-            if line:
-                entry = ESOLogEntry.parse(line)
-                if entry:
-                    self.analyzer.process_log_entry(entry)
+            for line in new_lines:
+                line = line.strip()
+                if line:
+                    entry = ESOLogEntry.parse(line)
+                    if entry:
+                        self.analyzer.process_log_entry(entry)
 
 @click.command()
 @click.option('--log-file', '-f', type=click.Path(),
@@ -2238,40 +2239,25 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     # Set the current log file path for timestamp calculations
     analyzer.current_log_file = str(log_path)
 
-    # Set up file monitoring
-    event_handler = LogFileHandler(analyzer, log_path, read_all_then_tail)
-    observer = Observer()
-    observer.schedule(event_handler, str(log_path.parent), recursive=False)
-    observer.start()
+    # Set up file monitoring with simple polling
+    file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail)
+    file_monitor.running = True
 
     try:
         print(f"{Fore.YELLOW}Press Ctrl+C to stop monitoring{Style.RESET_ALL}\n")
-        last_check_time = time.time()
-        check_interval = 2.0  # Check for changes every 2 seconds as fallback
+        poll_interval = 1.0  # Check for changes every second
         
-        while True:
-            current_time = time.time()
-            
-            # Fallback: Check for file changes every few seconds in case watchdog fails
-            if current_time - last_check_time >= check_interval:
-                if log_path.exists():
-                    current_size = log_path.stat().st_size
-                    if current_size > event_handler.last_position:
-                        if analyzer.diagnostic:
-                            timestamp = time.strftime("%H:%M:%S", time.localtime())
-                            print(f"{Fore.RED}[{timestamp}] DIAGNOSTIC: FALLBACK - Detected file growth (size: {current_size}, pos: {event_handler.last_position}){Style.RESET_ALL}")
-                        event_handler._process_new_lines()
-                last_check_time = current_time
+        while file_monitor.running:
+            file_monitor.check_for_changes()
             
             if analyzer.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Waiting for file changes on {log_path.name}...{Style.RESET_ALL}")
-            time.sleep(1)
+                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Polling {log_path.name} for changes...{Style.RESET_ALL}")
+            
+            time.sleep(poll_interval)
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
-        observer.stop()
-
-    observer.join()
+        file_monitor.running = False
 
 def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     """Wait for the log file to appear if it doesn't exist."""
