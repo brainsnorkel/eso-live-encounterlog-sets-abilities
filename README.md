@@ -176,6 +176,33 @@ Reports are saved with the format `YYMMDDHHMMSS-report.txt` where the timestamp 
 python3 src/esolog_tail.py --save-reports --reports-dir ./reports --tail-and-split --split-dir ./splits
 ```
 
+### Auto-Split Logs
+
+**Automatically create individual encounter files:**
+```bash
+python3 src/esolog_tail.py --tail-and-split
+```
+This creates individual log files for each encounter while tailing the main log.
+
+**Specify custom split directory:**
+```bash
+python3 src/esolog_tail.py --tail-and-split --split-dir /path/to/splits
+```
+
+**Split file naming:**
+Split files are named with the format `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` where:
+- `YYMMDDHHMMSS` is the timestamp when the encounter started
+- `{Zone-Name}` is the name of the first zone encountered during combat (with spaces converted to dashes)
+- `{-vet}` is added for veteran difficulty encounters
+
+**Combat-based zone detection:**
+The tool waits for combat to begin (`BEGIN_COMBAT` event) and then uses the first `ZONE_CHANGED` event that occurs during combat to name the split file. This ensures the file is named after the actual combat zone rather than just the initial zone when logging started.
+
+**Combined with other modes:**
+```bash
+python3 src/esolog_tail.py --read-all-then-stop --tail-and-split --split-dir ./encounters
+```
+
 ## Troubleshooting
 
 **No encounter reports generated:**

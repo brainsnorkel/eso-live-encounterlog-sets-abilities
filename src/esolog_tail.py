@@ -2131,6 +2131,13 @@ class LogSplitter:
         self.split_files = []  # Track all created split files
         self.file_handle = None  # File handle for current split file
         
+        # First zone detection for combat-based naming
+        self.pending_begin_log = None  # Store BEGIN_LOG entry until first combat zone
+        self.first_combat_zone = None  # Track first zone encountered during combat
+        self.first_combat_difficulty = None  # Track difficulty of first combat zone
+        self.combat_started = False  # Track if combat has started
+        self.buffered_lines = []  # Buffer lines until we can create the file with proper name
+        
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
         
@@ -2139,15 +2146,35 @@ class LogSplitter:
         # Close any existing split file
         self.end_encounter()
         
+        # Store BEGIN_LOG entry and initial zone info for delayed file creation
+        self.pending_begin_log = begin_log_entry
+        self.first_combat_zone = zone_name if zone_name else ""
+        self.first_combat_difficulty = difficulty if difficulty else ""
+        self.combat_started = False
+        self.buffered_lines = []
+        
+        # If we have zone info, create the file immediately
+        if zone_name:
+            self._create_split_file()
+        else:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for first combat zone{Style.RESET_ALL}")
+    
+    def _create_split_file(self):
+        """Create the actual split file with current zone information."""
+        if not self.pending_begin_log:
+            return
+            
         # Create filename based on BEGIN_LOG timestamp
-        timestamp = begin_log_entry.timestamp
+        timestamp = self.pending_begin_log.timestamp
         dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
         
         # Format: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log
         time_str = dt.strftime("%y%m%d%H%M%S")
         
-        difficulty_suffix = "-vet" if difficulty.upper() == "VETERAN" else ""
-        zone_suffix = zone_name.replace(" ", "-") if zone_name else "Unknown-Zone"
+        difficulty_suffix = "-vet" if self.first_combat_difficulty.upper() == "VETERAN" else ""
+        zone_suffix = self.first_combat_zone.replace(" ", "-") if self.first_combat_zone else "Unknown-Zone"
         
         filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
         split_path = self.split_dir / filename
@@ -2160,10 +2187,15 @@ class LogSplitter:
             self.current_encounter_info = {
                 'path': split_path,
                 'start_time': timestamp,
-                'zone_name': zone_name,
-                'difficulty': difficulty
+                'zone_name': self.first_combat_zone,
+                'difficulty': self.first_combat_difficulty
             }
             self.split_files.append(split_path)
+            
+            # Write all buffered lines to the file
+            for line in self.buffered_lines:
+                self.file_handle.write(line + '\n')
+            self.file_handle.flush()
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -2188,6 +2220,31 @@ class LogSplitter:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+        elif self.pending_begin_log:
+            # Buffer the line until we can create the file
+            self.buffered_lines.append(line)
+    
+    def start_combat(self):
+        """Mark that combat has started - first zone change after this will be used for naming."""
+        if not self.combat_started:
+            self.combat_started = True
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Combat started, waiting for first zone{Style.RESET_ALL}")
+    
+    def handle_zone_change(self, zone_name: str, difficulty: str):
+        """Handle a zone change during combat - use first zone for naming."""
+        if self.combat_started and not self.first_combat_zone:
+            # This is the first zone encountered during combat
+            self.first_combat_zone = zone_name
+            self.first_combat_difficulty = difficulty
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: First combat zone detected: {zone_name} ({difficulty}){Style.RESET_ALL}")
+            
+            # Create the file now with the first combat zone name
+            self._create_split_file()
     
     def end_encounter(self):
         """End the current encounter and close the split file."""
@@ -2206,6 +2263,11 @@ class LogSplitter:
                 self.current_split_file = None
                 self.current_split_path = None
                 self.current_encounter_info = None
+                self.pending_begin_log = None
+                self.first_combat_zone = None
+                self.first_combat_difficulty = None
+                self.combat_started = False
+                self.buffered_lines = []
     
     def close_for_waiting(self):
         """Close the current split file when waiting for new events to prevent data loss."""
@@ -2257,7 +2319,6 @@ class LogFileMonitor:
         
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
-        self.pending_zone_info = None  # Store zone info until we get it
 
         # Initialize position based on mode
         if self.log_file.exists():
@@ -2411,54 +2472,42 @@ class LogFileMonitor:
             
         # Handle BEGIN_LOG - start new encounter
         if entry.event_type == "BEGIN_LOG":
-            # Store the BEGIN_LOG entry and wait for zone info
-            self.pending_zone_info = {
-                'begin_log_entry': entry,
-                'zone_name': "",
-                'difficulty': ""
-            }
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for zone info{Style.RESET_ALL}")
+            # Start encounter without zone info - will wait for first combat zone
+            self.log_splitter.start_encounter(entry)
+            # Write the BEGIN_LOG line to buffer
+            self.log_splitter.write_log_line(line)
         
-        # Handle ZONE_CHANGED - extract zone and difficulty info
-        elif entry.event_type == "ZONE_CHANGED" and self.pending_zone_info:
+        # Handle BEGIN_COMBAT - mark combat start
+        elif entry.event_type == "BEGIN_COMBAT":
+            self.log_splitter.start_combat()
+            # Write the BEGIN_COMBAT line
+            self.log_splitter.write_log_line(line)
+        
+        # Handle ZONE_CHANGED - check if this is first combat zone
+        elif entry.event_type == "ZONE_CHANGED":
             # Extract zone name and difficulty from ZONE_CHANGED
             # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
-            if len(entry.fields) >= 3:
-                zone_name = entry.fields[1].strip('"') if entry.fields[1] else ""
-                difficulty = entry.fields[2].strip('"') if len(entry.fields) > 2 else ""
+            if len(entry.fields) >= 2:
+                zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
+                difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
                 
-                self.pending_zone_info['zone_name'] = zone_name
-                self.pending_zone_info['difficulty'] = difficulty
+                # Handle zone change for combat-based naming
+                self.log_splitter.handle_zone_change(zone_name, difficulty)
                 
-                # Start the split file now that we have zone info
-                self.log_splitter.start_encounter(
-                    self.pending_zone_info['begin_log_entry'],
-                    zone_name,
-                    difficulty
-                )
-                
-                # Write the BEGIN_LOG line to the split file
-                self.log_splitter.write_log_line(self.pending_zone_info['begin_log_entry'].original_line)
-                
-                if self.diagnostic:
-                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone info extracted: {zone_name} ({difficulty}){Style.RESET_ALL}")
-                
-                self.pending_zone_info = None
+                # Write the ZONE_CHANGED line
+                self.log_splitter.write_log_line(line)
         
         # Handle END_LOG - end current encounter
         elif entry.event_type == "END_LOG":
-            if self.log_splitter.current_split_file:
+            if self.log_splitter.pending_begin_log or self.log_splitter.current_split_file:
                 self.log_splitter.write_log_line(line)
                 self.log_splitter.end_encounter()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
         
-        # Write all other lines to current split file if one is open
-        elif self.log_splitter.current_split_file:
+        # Write all other lines to current split file or buffer
+        else:
             self.log_splitter.write_log_line(line)
 
 @click.command()
@@ -2722,58 +2771,46 @@ def _get_host_type_description() -> str:
     else:
         return "Unknown"
 
-def _handle_replay_log_splitting(log_splitter, entry, line: str, pending_zone_info):
+def _handle_replay_log_splitting(log_splitter, entry, line: str):
     """Handle log splitting logic for replay mode."""
     # Handle BEGIN_LOG - start new encounter
     if entry.event_type == "BEGIN_LOG":
-        # Store the BEGIN_LOG entry and wait for zone info
-        pending_zone_info['begin_log_entry'] = entry
-        pending_zone_info['zone_name'] = ""
-        pending_zone_info['difficulty'] = ""
-        if log_splitter.diagnostic:
-            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for zone info{Style.RESET_ALL}")
+        # Start encounter without zone info - will wait for first combat zone
+        log_splitter.start_encounter(entry)
+        # Write the BEGIN_LOG line to buffer
+        log_splitter.write_log_line(line)
     
-    # Handle ZONE_CHANGED - extract zone and difficulty info
+    # Handle BEGIN_COMBAT - mark combat start
+    elif entry.event_type == "BEGIN_COMBAT":
+        log_splitter.start_combat()
+        # Write the BEGIN_COMBAT line
+        log_splitter.write_log_line(line)
+    
+    # Handle ZONE_CHANGED - check if this is first combat zone
     elif entry.event_type == "ZONE_CHANGED":
-        if pending_zone_info.get('begin_log_entry'):
-            # Extract zone name and difficulty from ZONE_CHANGED
-            # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
-            if len(entry.fields) >= 2:
-                zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
-                difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
-                
-                pending_zone_info['zone_name'] = zone_name
-                pending_zone_info['difficulty'] = difficulty
-                
-                # Start the split file now that we have zone info
-                log_splitter.start_encounter(
-                    pending_zone_info['begin_log_entry'],
-                    zone_name,
-                    difficulty
-                )
-                
-                # Write the BEGIN_LOG line to the split file
-                log_splitter.write_log_line(pending_zone_info['begin_log_entry'].original_line)
-                
-                if log_splitter.diagnostic:
-                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone info extracted: {zone_name} ({difficulty}){Style.RESET_ALL}")
-                
-                # Clear the pending zone info
-                pending_zone_info.clear()
+        # Extract zone name and difficulty from ZONE_CHANGED
+        # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
+        if len(entry.fields) >= 2:
+            zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
+            difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+            
+            # Handle zone change for combat-based naming
+            log_splitter.handle_zone_change(zone_name, difficulty)
+            
+            # Write the ZONE_CHANGED line
+            log_splitter.write_log_line(line)
     
     # Handle END_LOG - end current encounter
     elif entry.event_type == "END_LOG":
-        if log_splitter.current_split_file:
+        if log_splitter.pending_begin_log or log_splitter.current_split_file:
             log_splitter.write_log_line(line)
             log_splitter.end_encounter()
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
     
-    # Write all other lines to current split file if one is open
-    elif log_splitter.current_split_file:
+    # Write all other lines to current split file or buffer
+    else:
         log_splitter.write_log_line(line)
 
 def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier: int, tail_and_split: bool = False, split_dir: Optional[Path] = None):
@@ -2783,7 +2820,6 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
 
     # Initialize log splitter if needed
     log_splitter = LogSplitter(log_file, diagnostic=analyzer.diagnostic, split_dir=split_dir) if tail_and_split else None
-    pending_zone_info = {}
 
     entries = []
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -2799,7 +2835,7 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
                     
                     # Handle log splitting if enabled
                     if log_splitter:
-                        _handle_replay_log_splitting(log_splitter, entry, line, pending_zone_info)
+                        _handle_replay_log_splitting(log_splitter, entry, line)
 
     print(f"{Fore.GREEN}Loaded {len(entries)} log entries{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Starting replay at full speed...{Style.RESET_ALL}\n")
