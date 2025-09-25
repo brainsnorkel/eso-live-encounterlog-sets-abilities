@@ -639,7 +639,7 @@ class CombatEncounter:
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
-    def __init__(self, list_hostiles: bool = False, diagnostic: bool = False):
+    def __init__(self, list_hostiles: bool = False, diagnostic: bool = False, save_reports: bool = False, reports_dir: Optional[Path] = None):
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -657,6 +657,11 @@ class ESOLogAnalyzer:
         
         # Diagnostic mode for debugging data flow and timing
         self.diagnostic = diagnostic
+        
+        # Report saving functionality
+        self.save_reports = save_reports
+        self.reports_dir = reports_dir
+        self.report_buffer = []  # Buffer to collect report output lines
         
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
@@ -1518,14 +1523,14 @@ class ESOLogAnalyzer:
         dark_orange = "\033[38;5;208m"  # Dark orange color
         if zone_name:
             if estimated_dps > 0:
-                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                print(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
@@ -1539,7 +1544,7 @@ class ESOLogAnalyzer:
                 else:
                     status = "❌"
                 buff_status.append(f"{buff_name}: {status}")
-            print(f"{Fore.CYAN}Group Buffs: {' | '.join(buff_status)}{Style.RESET_ALL}")
+            self._print_and_buffer(f"{Fore.CYAN}Group Buffs: {' | '.join(buff_status)}{Style.RESET_ALL}")
         # Sort players by damage contribution (descending)
         # Only include players with PLAYER_INFO data (equipped abilities)
         players_with_damage = []
@@ -1658,23 +1663,23 @@ class ESOLogAnalyzer:
             else:
                 title_parts.append("unknown")
             
-            print(f"{Fore.GREEN}{' '.join(title_parts)}{Style.RESET_ALL}")
+            self._print_and_buffer(f"{Fore.GREEN}{' '.join(title_parts)}{Style.RESET_ALL}")
             
             if abilities_to_analyze:
                 # Show front and back bar abilities in order if available
                 if player.front_bar_abilities or player.back_bar_abilities:
                     if player.front_bar_abilities:
                         highlighted_front_bar = highlight_taunt_abilities(player.front_bar_abilities)
-                        print(f"  {', '.join(highlighted_front_bar)}")
+                        self._print_and_buffer(f"  {', '.join(highlighted_front_bar)}")
                     if player.back_bar_abilities:
                         highlighted_back_bar = highlight_taunt_abilities(player.back_bar_abilities)
-                        print(f"  {', '.join(highlighted_back_bar)}")
+                        self._print_and_buffer(f"  {', '.join(highlighted_back_bar)}")
                 else:
                     abilities_list = sorted(list(abilities_to_analyze))[:10]  # Show top 10 abilities
                     highlighted_abilities = highlight_taunt_abilities(abilities_list)
-                    print(f"  Equipped: {', '.join(highlighted_abilities)}")
+                    self._print_and_buffer(f"  Equipped: {', '.join(highlighted_abilities)}")
                     if len(abilities_to_analyze) > 10:
-                        print(f"  ... and {len(abilities_to_analyze) - 10} more")
+                        self._print_and_buffer(f"  ... and {len(abilities_to_analyze) - 10} more")
 
 
                 # Analyze gear sets (no role-based filtering)
@@ -1806,19 +1811,19 @@ class ESOLogAnalyzer:
 
                         colored_parts.append(colored_part)
 
-                    print(f"  {', '.join(colored_parts)}")
+                    self._print_and_buffer(f"  {', '.join(colored_parts)}")
                 elif player.gear:
-                    print(f"  {len(player.gear)} items (sets unknown)")
+                    self._print_and_buffer(f"  {len(player.gear)} items (sets unknown)")
                 else:
-                    print(f"  No data")
+                    self._print_and_buffer(f"  No data")
                 
             else:
-                print(f"  Abilities: No PLAYER_INFO data")
-                print(f"  No data")
+                self._print_and_buffer(f"  Abilities: No PLAYER_INFO data")
+                self._print_and_buffer(f"  No data")
         
         # Display hostile monsters if testing flag is enabled
         if self.list_hostiles and (self.hostile_monsters or self.engaged_monsters):
-            print(f"\n{Fore.YELLOW}=== Hostile Monsters Engaged by Players ==={Style.RESET_ALL}")
+            self._print_and_buffer(f"\n{Fore.YELLOW}=== Hostile Monsters Engaged by Players ==={Style.RESET_ALL}")
             
             # Combine hostile monsters that were tracked and those that appeared in combat events
             all_engaged_monsters = set()
@@ -1853,15 +1858,93 @@ class ESOLogAnalyzer:
                 health_info = f"HP: {enemy.max_health:,}" if enemy and enemy.max_health > 0 else "HP: Unknown"
                 
                 if damage > 0:
-                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Damage: {damage:,}){Style.RESET_ALL}")
+                    self._print_and_buffer(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Damage: {damage:,}){Style.RESET_ALL}")
                 else:
-                    print(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Engaged){Style.RESET_ALL}")
+                    self._print_and_buffer(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Engaged){Style.RESET_ALL}")
             
-            print(f"{Fore.YELLOW}Total hostile monsters engaged: {len(unique_hostiles)}{Style.RESET_ALL}")
+            self._print_and_buffer(f"{Fore.YELLOW}Total hostile monsters engaged: {len(unique_hostiles)}{Style.RESET_ALL}")
         
         # Clear the hostile monsters list and engaged monsters set for the next encounter
         self.hostile_monsters.clear()
         self.engaged_monsters.clear()
+        
+        # Save report to file if enabled
+        if self.save_reports:
+            self._save_report_to_file()
+
+    def _save_report_to_file(self):
+        """Save the current report buffer to a timestamped file."""
+        if not self.report_buffer or not self.current_encounter:
+            return
+            
+        try:
+            # Create reports directory if it doesn't exist
+            if self.reports_dir:
+                reports_path = Path(self.reports_dir)
+            else:
+                # Default to same directory as log file
+                if self.current_log_file:
+                    reports_path = Path(self.current_log_file).parent
+                else:
+                    reports_path = Path.cwd()
+            
+            # Check if directory exists and is writable, or if we can create it
+            if not reports_path.exists():
+                try:
+                    reports_path.mkdir(parents=True, exist_ok=True)
+                except (PermissionError, OSError) as e:
+                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                    sys.exit(1)
+            elif not reports_path.is_dir():
+                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            elif not os.access(reports_path, os.W_OK):
+                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Generate timestamp-based filename
+            # Use the encounter start time for consistent naming
+            encounter_start_time = self.current_encounter.start_time
+            dt = datetime.fromtimestamp(encounter_start_time / 1000)  # Convert from milliseconds
+            timestamp_str = dt.strftime("%y%m%d%H%M%S")
+            
+            filename = f"{timestamp_str}-report.txt"
+            report_file_path = reports_path / filename
+            
+            # Write report to file (strip ANSI color codes for clean text)
+            with open(report_file_path, 'w', encoding='utf-8') as f:
+                for line in self.report_buffer:
+                    # Remove ANSI color codes for clean text output
+                    clean_line = self._strip_ansi_codes(line)
+                    f.write(clean_line + '\n')
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
+                
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
+        finally:
+            # Clear the buffer for the next report
+            self.report_buffer.clear()
+
+    def _strip_ansi_codes(self, text: str) -> str:
+        """Remove ANSI color codes from text for clean file output."""
+        import re
+        # Remove ANSI escape sequences
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
+
+    def _print_and_buffer(self, text: str):
+        """Print text to stdout and buffer it for report saving."""
+        print(text)
+        if self.save_reports:
+            self.report_buffer.append(text)
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None):
         """Update or create a player session with their current data."""
@@ -2341,7 +2424,11 @@ class LogFileMonitor:
               help='Auto-split mode: Automatically create individual encounter files while tailing the main log')
 @click.option('--split-dir', type=click.Path(), default=None,
               help='Directory for split files (default: same directory as source log file)')
-def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, tail_and_split: bool, split_dir: Optional[str]):
+@click.option('--save-reports', is_flag=True,
+              help='Save encounter reports to files with timestamp-based naming')
+@click.option('--reports-dir', type=click.Path(), default=None,
+              help='Directory for saved reports (default: same directory as source log file)')
+def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, tail_and_split: bool, split_dir: Optional[str], save_reports: bool, reports_dir: Optional[str]):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -2371,7 +2458,34 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
     print()
 
-    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic)
+    # Set up reports directory and validate it early
+    reports_path = None
+    if save_reports:
+        if reports_dir:
+            reports_path = Path(reports_dir)
+        elif log_path:
+            reports_path = Path(log_path).parent
+        else:
+            reports_path = Path.cwd()
+        
+        # Validate reports directory early
+        if not reports_path.exists():
+            try:
+                reports_path.mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError) as e:
+                print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+        elif not reports_path.is_dir():
+            print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+            sys.exit(1)
+        elif not os.access(reports_path, os.W_OK):
+            print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+            sys.exit(1)
+    
+    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic, save_reports=save_reports, reports_dir=reports_path)
 
     if read_all_then_stop:
         # Determine which log file to use

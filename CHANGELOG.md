@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.23] - 2025-01-25
+
+### Added
+- **Report Saving Feature**: New `--save-reports` option to automatically save encounter reports to timestamped files
+- **Custom Reports Directory**: New `--reports-dir` option to specify where report files are created
+- **Timestamped Report Files**: Reports saved with format `YYMMDDHHMMSS-report.txt` based on encounter start time
+- **Clean Text Output**: Report files contain clean text without ANSI color codes for easy reading
+
+### Enhanced
+- **Early Directory Validation**: Tool validates reports directory permissions before starting processing
+- **Graceful Error Handling**: Clear error messages when directory creation fails, with instructions for manual creation
+- **All Modes Support**: Report saving works in tail, read-all-then-stop, and read-all-then-tail modes
+
+### Technical Details
+- Added report buffering system to capture stdout output during encounter display
+- Implemented ANSI color code stripping for clean text file output
+- Added comprehensive directory validation with proper error handling
+- Integrated report saving into existing encounter summary display system
+
 ## [0.1.22] - 2025-01-25
 
 ### Added

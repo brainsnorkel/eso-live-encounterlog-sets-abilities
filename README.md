@@ -43,6 +43,9 @@ Options:
                               encounter files while tailing the main log
   --split-dir PATH            Directory for split files (default: same
                               directory as source log file)
+  --save-reports              Save encounter reports to files with timestamp-based naming
+  --reports-dir PATH          Directory for saved reports (default: same
+                              directory as source log file)
   --help                      Show this message and exit.
 ```
 
@@ -143,6 +146,34 @@ python3 src/esolog_tail.py -v
 **Combine options:**
 ```bash
 python3 src/esolog_tail.py --log-file /custom/path/Encounter.log --read-all-then-tail
+```
+
+### Report Saving
+
+**Save encounter reports to files:**
+```bash
+python3 src/esolog_tail.py --save-reports
+```
+This automatically saves each encounter report to a timestamped file in the same directory as the log file.
+
+**Specify custom reports directory:**
+```bash
+python3 src/esolog_tail.py --save-reports --reports-dir /path/to/reports
+```
+
+**Report file naming:**
+Reports are saved with the format `YYMMDDHHMMSS-report.txt` where the timestamp corresponds to the encounter start time. For example:
+- `250125143022-report.txt` (January 25, 2025 at 14:30:22)
+
+**Directory requirements:**
+- The reports directory must exist and be writable
+- If the directory doesn't exist, the tool will attempt to create it
+- If creation fails due to permissions, the tool will exit with clear error messages
+- You can create the directory manually: `mkdir -p /path/to/reports`
+
+**Combined with other features:**
+```bash
+python3 src/esolog_tail.py --save-reports --reports-dir ./reports --tail-and-split --split-dir ./splits
 ```
 
 ### Real-World Usage Examples
