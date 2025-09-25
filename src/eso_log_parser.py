@@ -30,13 +30,15 @@ class ESOLogEntry:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
 
-            if len(fields) < 2:
+            if len(fields) < 3:
                 return None
 
-            timestamp = int(fields[0])
+            # Format: line_number,event_type,timestamp,...
+            timestamp = int(fields[2])
             event_type = fields[1]
+            
 
-            return cls(timestamp, event_type, fields[2:], line)
+            return cls(timestamp, event_type, fields[3:], line)
         except (ValueError, IndexError, StopIteration):
             return None
 

@@ -2,66 +2,121 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.1.22] - 2025-01-24
+## [0.1.27] - 2025-01-26
 
-### Fixed
-- **Critical Deadlock Fix**: Fixed threading deadlock that caused tailing utility to hang when new data arrived
-- **File Processing Hang**: Resolved issue where `_process_new_lines()` would hang indefinitely due to lock contention
-- **Live Tailing Reliability**: Tailing utility now processes new data continuously without hanging
+### Enhanced
+- **Comprehensive Test Suite**: Added extensive testing for all new features and edge cases
+- **Combat-Based Zone Naming**: Split files now correctly named after zone where combat begins
+- **Zone-Based Report Naming**: Report files use consistent naming with split files
+- **Robust Error Handling**: Improved error handling for missing zones and invalid directories
+- **Edge Case Coverage**: Comprehensive testing of missing zones, invalid paths, and large files
 
 ### Technical Details
-- Removed redundant `threading.Lock()` acquisition in `_process_new_lines()` method
-- `_process_new_lines()` now assumes caller already holds the file lock (called from `check_for_changes()`)
-- Added clear documentation explaining lock ownership assumptions
-- Tested with high-throughput scenarios (1000 lines/second) - works perfectly
+- Enhanced LogSplitter to wait for combat before renaming files
+- Added current_difficulty tracking to ESOLogAnalyzer
+- Implemented zone-based naming for both split files and reports
+- Added comprehensive test scenarios covering all functionality
+- Improved diagnostic output for better debugging
 
 ### Testing
-- Verified fix with ESO log simulator at 1000 lines every 1 second
-- Confirmed encounter reports generate correctly after each fight
-- No more hanging when file growth is detected
-- Continuous operation without deadlocks
+- ✅ Combat-based zone naming for split files
+- ✅ Zone-based report naming with difficulty suffixes
+- ✅ Combined splitting + report saving functionality
+- ✅ Regression tests on existing functionality
+- ✅ Edge cases: missing zones, invalid directories, large files
+- ✅ Error handling and graceful degradation
 
-## [0.1.21] - 2025-01-24
+## [0.1.26] - 2025-01-26
 
-### Fixed
-- **Critical Concurrency Issues**: Fixed race conditions in file monitoring that caused read-all-then-tail to fail
-- **File Monitoring Reliability**: Replaced complex watchdog directory monitoring with simple, reliable file polling
-- **Multiple File Confusion**: Eliminated issues where tool was monitoring multiple log files simultaneously
-- **Thread Safety**: Added threading locks to prevent concurrent file access conflicts
-
-### Changed
-- **Simplified Architecture**: Replaced watchdog-based file monitoring with simple 1-second polling
-- **Better Diagnostics**: Improved diagnostic output to clearly show file monitoring status
-- **Removed Dependencies**: Eliminated watchdog library dependency for more reliable operation
+### Enhanced
+- **Zone-Based Report Naming**: Report files now use the same naming convention as split files
+- **Consistent File Naming**: Reports are named `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt`
+- **Difficulty Tracking**: Added difficulty tracking to ESOLogAnalyzer for accurate report naming
+- **Improved Organization**: Report files are now organized by zone and difficulty, making them easier to identify
 
 ### Technical Details
-- Added `threading.Lock()` to prevent race conditions between `_process_entire_file()` and `_process_new_lines()`
-- Replaced `LogFileHandler(FileSystemEventHandler)` with `LogFileMonitor` class
-- Implemented `check_for_changes()` method for reliable file change detection
-- Simplified main monitoring loop to use direct file polling instead of event-driven monitoring
+- Added `current_difficulty` tracking to ESOLogAnalyzer class
+- Modified `_save_report_to_file()` method to use zone-based naming logic
+- Updated `_handle_zone_changed()` to track both zone name and difficulty
+- Enhanced report filename generation to match split file naming convention
 
-## [0.1.19] - 2025-01-22
+## [0.1.25] - 2025-01-25
+
+### Added
+- **Combat-Based Zone Naming**: Split files are now named after the first zone encountered during combat rather than the initial zone
+- **Improved Split File Accuracy**: Enhanced log splitting logic to wait for combat events before determining zone names
+- **Combat State Tracking**: Added tracking of combat start events to ensure accurate zone detection
+
+### Enhanced
+- **Smart Zone Detection**: Tool now waits for BEGIN_COMBAT event and uses the first subsequent ZONE_CHANGED for naming
+- **Immediate File Creation**: Split files are created immediately as temporary files, then renamed when combat zone is determined
+- **Robust Data Safety**: No data loss risk - files are written immediately and renamed atomically
+- **Better Diagnostic Output**: Enhanced diagnostic messages for combat and zone detection events
+
+### Technical Details
+- Added combat_started flag to LogSplitter to track combat state
+- Implemented immediate temporary file creation with atomic rename operation
+- Modified both live tailing and replay modes to support combat-based zone detection
+- Added start_combat(), handle_zone_change(), _create_temp_file(), and _rename_to_final() methods
+
+## [0.1.24] - 2025-01-25
 
 ### Fixed
-- **Windows Import Error**: Fixed PyInstaller spec to properly include src modules in Windows builds
-- **Module Path Issues**: Added 'src' to pathex and updated hiddenimports with full module paths
-- **Build Configuration**: Corrected references to gear_set_database_optimized and version modules
+- **Critical Parsing Issue**: Fixed ESOLogEntry parsing for events without timestamps (BEGIN_COMBAT, END_COMBAT, UNIT_ADDED, etc.)
+- **Missing Event Routing**: Added missing ZONE_CHANGED event routing in process_log_entry method
+- **Field Indexing**: Corrected field indexing for ZONE_CHANGED events to properly extract zone name and difficulty
+- **Encounter Detection**: Fixed encounter detection and player addition that was preventing report generation
 
-### Changed
-- Updated PyInstaller spec file to include src directory in module search path
-- Fixed hiddenimports to use complete module paths (src.gear_set_database_optimized, src.version)
+### Enhanced
+- **Robust Event Parsing**: Improved parsing logic to handle events with and without timestamps correctly
+- **Better Error Handling**: Enhanced diagnostic output for debugging event processing issues
+- **Report Generation**: Encounter reports now generate correctly in all modes
 
-## [0.1.18] - 2025-01-22
+### Technical Details
+- Modified ESOLogEntry.parse() to distinguish between events with timestamps and those using line numbers
+- Added ZONE_CHANGED case to process_log_entry method routing
+- Fixed field access for ZONE_CHANGED events (zone_name, difficulty)
+- Added comprehensive debug output for event processing flow
 
-### Fixed
-- **Import Error**: Resolved `no module named gear_set_database_optimized` error by implementing robust import strategy
-- **Module Loading**: Fixed relative import issues that prevented the module from loading when run directly
-- **Cross-Platform Compatibility**: Improved import handling to work both as package and standalone module
+## [0.1.23] - 2025-01-25
 
-### Changed
-- Updated import statements to use try/except blocks for both relative and absolute imports
-- Enhanced module loading to work in various execution contexts (package vs standalone)
-=======
+### Added
+- **Report Saving Feature**: New `--save-reports` option to automatically save encounter reports to timestamped files
+- **Custom Reports Directory**: New `--reports-dir` option to specify where report files are created
+- **Timestamped Report Files**: Reports saved with format `YYMMDDHHMMSS-report.txt` based on encounter start time
+- **Clean Text Output**: Report files contain clean text without ANSI color codes for easy reading
+
+### Enhanced
+- **Early Directory Validation**: Tool validates reports directory permissions before starting processing
+- **Graceful Error Handling**: Clear error messages when directory creation fails, with instructions for manual creation
+- **All Modes Support**: Report saving works in tail, read-all-then-stop, and read-all-then-tail modes
+
+### Technical Details
+- Added report buffering system to capture stdout output during encounter display
+- Implemented ANSI color code stripping for clean text file output
+- Added comprehensive directory validation with proper error handling
+- Integrated report saving into existing encounter summary display system
+
+## [0.1.22] - 2025-01-25
+
+### Added
+- **Auto-Split Logs Feature**: New `--tail-and-split` option to automatically create individual encounter files while tailing
+- **Smart File Naming**: Split files named with format `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log`
+- **Zone Detection**: Automatically extracts zone name and difficulty from ZONE_CHANGED events
+- **Robust File Handling**: Split files are closed when waiting and reopened for appending to prevent data loss
+- **Custom Split Directory**: New `--split-dir` option to specify where split files are created
+
+### Enhanced
+- **All Modes Support**: Auto-split functionality works in tail, read-all-then-stop, and read-all-then-tail modes
+- **Timestamp Accuracy**: Fixed ESOLogEntry parsing to use correct timestamps from log entries
+- **Diagnostic Output**: Enhanced diagnostic mode shows split file creation and management details
+
+### Technical Details
+- Added `LogSplitter` class for managing split file creation, writing, and cleanup
+- Fixed ESOLogEntry parsing to use `fields[2]` as timestamp instead of `fields[0]` (line number)
+- Implemented robust file handling with `close_for_waiting()` and `reopen_for_append()` methods
+- Added support for both LogFileMonitor and replay modes with auto-split functionality
+
 ## [0.1.19] - 2025-01-24
 
 ### Fixed
@@ -80,7 +135,6 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 - Replaced `LogFileHandler(FileSystemEventHandler)` with `LogFileMonitor` class
 - Implemented `check_for_changes()` method for reliable file change detection
 - Simplified main monitoring loop to use direct file polling instead of event-driven monitoring
->>>>>>> develop
 
 ## [0.1.17] - 2025-01-22
 

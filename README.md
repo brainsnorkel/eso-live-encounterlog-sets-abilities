@@ -17,6 +17,58 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 
 *Example output showing a comprehensive combat encounter analysis with 12 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
 
+## Command Line Options
+
+```bash
+Usage: esolog_tail.py [OPTIONS]
+
+  ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters.
+
+Options:
+  -f, --log-file PATH         Path to ESO encounter log file
+  -s, --read-all-then-stop    Read mode: replay the entire log file from the
+                              beginning at high speed, then exit
+  -t, --read-all-then-tail    Read the entire log file from the beginning,
+                              then continue tailing for new data
+  --no-wait                   Exit immediately if log file does not exist
+                              (default: wait for file to appear)
+  -r, --replay-speed INTEGER  Replay speed multiplier for read mode (default:
+                              100x)
+  -v, --version               Show version information and exit
+  --list-hostiles             Testing mode: List all hostile monsters added to
+                              fights with names and IDs
+  --diagnostic                Diagnostic mode: Show detailed timing and data
+                              flow information for debugging
+  --tail-and-split            Auto-split mode: Automatically create individual
+                              encounter files while tailing the main log
+  --split-dir PATH            Directory for split files (default: same
+                              directory as source log file)
+  --save-reports              Save encounter reports to files with timestamp-based naming
+  --reports-dir PATH          Directory for saved reports (default: same
+                              directory as source log file)
+  --help                      Show this message and exit.
+```
+
+### Discord Copy Feature
+
+When running in tailing/monitoring mode, you can press the **'c' key** to copy the last fight report to your clipboard in Discord markdown format. This makes it easy to share encounter summaries in Discord channels.
+
+**Features:**
+- Automatically formats reports with Discord markdown (bold, italic, emojis)
+- Copies to clipboard for easy pasting
+- Available during live monitoring and tailing modes (not during replay modes like `--read-all-then-stop`)
+- Requires `pynput` and `pyperclip` packages (included in requirements)
+
+**Usage:**
+1. Start the analyzer in tailing mode: `python3 src/esolog_tail.py` or `python3 src/esolog_tail.py --read-all-then-tail`
+2. Wait for an encounter to complete
+3. Press **'c'** to copy the Discord-formatted report
+4. Paste into Discord or any other application
+
+**Requirements:**
+- The feature requires `pynput>=1.7.6` and `pyperclip>=1.8.2`
+- On some systems, you may need to grant accessibility permissions for keyboard monitoring
+
 ## Installation
 
 ### Option 1: Standalone Installers (Recommended)
@@ -114,6 +166,74 @@ python3 src/esolog_tail.py -v
 **Combine options:**
 ```bash
 python3 src/esolog_tail.py --log-file /custom/path/Encounter.log --read-all-then-tail
+```
+
+### Report Saving
+
+**Save encounter reports to files:**
+```bash
+python3 src/esolog_tail.py --save-reports
+```
+This automatically saves each encounter report to a timestamped file in the same directory as the log file.
+
+**Specify custom reports directory:**
+```bash
+python3 src/esolog_tail.py --save-reports --reports-dir /path/to/reports
+```
+
+**Report file naming:**
+Reports are saved with zone-based naming similar to split files: `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt` where the timestamp corresponds to the encounter start time. For example:
+- `250125143022-Tempest-Island-report.txt` (Normal mode encounter)
+- `250125143022-Coral-Aerie-vet-report.txt` (Veteran mode encounter)
+- `250125143022-Unknown-Zone-report.txt` (When zone information is unavailable)
+
+**Directory requirements:**
+- The reports directory must exist and be writable
+- If the directory doesn't exist, the tool will attempt to create it
+- If creation fails due to permissions, the tool will exit with clear error messages
+- You can create the directory manually: `mkdir -p /path/to/reports`
+
+**Combined with other features:**
+```bash
+python3 src/esolog_tail.py --save-reports --reports-dir ./reports --tail-and-split --split-dir ./splits
+```
+
+### Auto-Split Logs
+
+**Automatically create individual encounter files:**
+```bash
+python3 src/esolog_tail.py --tail-and-split
+```
+This creates individual log files for each encounter while tailing the main log.
+
+**Specify custom split directory:**
+```bash
+python3 src/esolog_tail.py --tail-and-split --split-dir /path/to/splits
+```
+
+**Split file naming:**
+Split files are named with the format `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` where:
+- `YYMMDDHHMMSS` is the timestamp when the encounter started
+- `{Zone-Name}` is the name of the first zone encountered during combat (with spaces converted to dashes)
+- `{-vet}` is added for veteran difficulty encounters
+
+**Combat-based zone detection:**
+The tool creates a temporary file immediately when logging starts, then waits for combat to begin (`BEGIN_COMBAT` event) and uses the first `ZONE_CHANGED` event that occurs during combat to rename the file. This ensures the file is named after the actual combat zone rather than just the initial zone when logging started, while preventing any data loss through immediate file creation.
+
+**Combined with other modes:**
+```bash
+python3 src/esolog_tail.py --read-all-then-stop --tail-and-split --split-dir ./encounters
+```
+
+## Troubleshooting
+
+**No encounter reports generated:**
+If you're not seeing encounter reports, ensure your log file contains complete encounters with `BEGIN_COMBAT` and `END_COMBAT` events. The tool requires these markers to detect and process encounters properly.
+
+**Diagnostic mode:**
+Use `--diagnostic` to see detailed information about event processing:
+```bash
+python3 src/esolog_tail.py --diagnostic --log-file your_log.log
 ```
 
 ### Real-World Usage Examples
