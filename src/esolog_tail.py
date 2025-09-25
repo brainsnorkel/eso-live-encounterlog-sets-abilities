@@ -180,14 +180,23 @@ class ESOLogEntry:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
 
-            if len(fields) < 3:
+            if len(fields) < 2:
                 return None
 
-            # Format: line_number,event_type,timestamp,...
-            timestamp = int(fields[2])
             event_type = fields[1]
-
-            return cls(timestamp, event_type, fields[3:], line)
+            
+            # Check if the third field is a timestamp (numeric)
+            if len(fields) >= 3:
+                try:
+                    timestamp = int(fields[2])
+                    return cls(timestamp, event_type, fields[3:], line)
+                except ValueError:
+                    # Third field is not a timestamp, treat as data field
+                    return cls(0, event_type, fields[2:], line)
+            else:
+                # No timestamp field, use line number as relative timestamp
+                line_number = int(fields[0]) if fields[0].isdigit() else 0
+                return cls(line_number, event_type, fields[2:], line)
         except (ValueError, IndexError, StopIteration):
             return None
 
@@ -2754,10 +2763,8 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
     for entry in entries:
         analyzer.process_log_entry(entry)
 
-    # Final grace period check to ensure any remaining encounters are finalized
-    if entries:
-        final_timestamp = entries[-1].timestamp
-        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
+    # Final check to ensure any remaining encounters are displayed
+    analyzer._check_pending_encounter_display()
 
     print(f"\n{Fore.GREEN}Replay complete!{Style.RESET_ALL}")
 
