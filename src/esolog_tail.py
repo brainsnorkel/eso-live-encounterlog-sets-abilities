@@ -1625,12 +1625,9 @@ class ESOLogAnalyzer:
                 buff_status.append(f"{buff_name}: {status}")
             self._print_and_buffer(f"{Fore.CYAN}Group Buffs: {' | '.join(buff_status)}{Style.RESET_ALL}")
         # Sort players by damage contribution (descending)
-        # Only include players with PLAYER_INFO data (equipped abilities)
+        # Include all players, even those without PLAYER_INFO data
         players_with_damage = []
         for player in self.current_encounter.players.values():
-            # Skip players without PLAYER_INFO data (no equipped abilities)
-            if not player.equipped_abilities:
-                continue
             player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
         
@@ -2098,9 +2095,6 @@ class ESOLogAnalyzer:
         # Sort players by damage contribution (descending)
         players_with_damage = []
         for player in self.current_encounter.players.values():
-            # Skip players without PLAYER_INFO data (no equipped abilities)
-            if not player.equipped_abilities:
-                continue
             player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
         
