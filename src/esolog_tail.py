@@ -31,6 +31,20 @@ import requests
 from colorama import init, Fore, Style
 from gear_set_database_optimized import gear_set_db
 
+# Add keyboard detection and clipboard functionality
+try:
+    import pynput
+    from pynput import keyboard
+    KEYBOARD_AVAILABLE = True
+except ImportError:
+    KEYBOARD_AVAILABLE = False
+
+try:
+    import pyperclip
+    CLIPBOARD_AVAILABLE = True
+except ImportError:
+    CLIPBOARD_AVAILABLE = False
+
 # Initialize colorama for cross-platform colored output
 init()
 
@@ -683,6 +697,11 @@ class ESOLogAnalyzer:
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
         self.max_zone_history = 10  # Keep last 10 zone changes
+        
+        # Add Discord markdown functionality
+        self.last_encounter_report = None
+        self.keyboard_listener = None
+        self.discord_copy_enabled = True
         
         # Group buff ability IDs - updated with correct IDs from user
         self.major_courage_ids = {
@@ -1928,6 +1947,10 @@ class ESOLogAnalyzer:
         self.hostile_monsters.clear()
         self.engaged_monsters.clear()
         
+        # Store the Discord markdown version for copying
+        if self.discord_copy_enabled:
+            self.last_encounter_report = self._format_encounter_for_discord(zone_name)
+        
         # Save report to file if enabled
         if self.save_reports:
             self._save_report_to_file()
@@ -2009,6 +2032,431 @@ class ESOLogAnalyzer:
         print(text)
         if self.save_reports:
             self.report_buffer.append(text)
+
+    def _format_encounter_for_discord(self, zone_name: str = None) -> str:
+        """Format the current encounter as Discord markdown."""
+        if not self.current_encounter:
+            return "No encounter data available."
+
+        # Use grace period end time if available, otherwise use end_time
+        end_time = self.current_encounter.end_time
+        duration = (end_time - self.current_encounter.start_time) / 1000.0
+        players_count = len(self.current_encounter.players)
+        
+        # Calculate estimated group DPS
+        estimated_dps = 0
+        if duration > 0 and self.current_encounter.total_damage > 0:
+            estimated_dps = self.current_encounter.total_damage / duration
+
+        # Death counter (total deaths since entering zone)
+        deaths_info = ""
+        if self.zone_deaths > 0:
+            deaths_info = f" | Deaths: {self.zone_deaths}"
+        
+        # Most damaged hostile monster info (primary target)
+        hostile_info = ""
+        if (self.current_encounter and self.current_encounter.most_damaged_hostile):
+            hostile = self.current_encounter.most_damaged_hostile
+            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
+
+        # Get formatted combat start time
+        combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
+        
+        # Create Discord markdown formatted report
+        report_lines = []
+        
+        # Header with encounter summary
+        if zone_name:
+            if estimated_dps > 0:
+                header = f"**{combat_start_time} ({zone_name})** | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
+            else:
+                header = f"**{combat_start_time} ({zone_name})** | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}"
+        else:
+            if estimated_dps > 0:
+                header = f"**{combat_start_time}** | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
+            else:
+                header = f"**{combat_start_time}** | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}"
+        
+        report_lines.append(header)
+        report_lines.append("")  # Empty line
+        
+        # Group buff analysis for encounters with 3+ players
+        if players_count >= 3:
+            buff_analysis = self.current_encounter.get_group_buff_analysis()
+            buff_status = []
+            for buff_name, is_present in buff_analysis.items():
+                if is_present:
+                    # Calculate group uptime (time buff was active on any player)
+                    group_uptime = self.current_encounter.get_group_buff_uptime(buff_name)
+                    status = f"✅ ({group_uptime:.1f}%)"
+                else:
+                    status = "❌"
+                buff_status.append(f"**{buff_name}**: {status}")
+            report_lines.append("**Group Buffs:** " + " | ".join(buff_status))
+            report_lines.append("")  # Empty line
+        
+        # Sort players by damage contribution (descending)
+        players_with_damage = []
+        for player in self.current_encounter.players.values():
+            # Skip players without PLAYER_INFO data (no equipped abilities)
+            if not player.equipped_abilities:
+                continue
+            player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
+            players_with_damage.append((player, player_damage))
+        
+        # Sort by damage (descending)
+        players_with_damage.sort(key=lambda x: x[1], reverse=True)
+        
+        for player, player_damage in players_with_damage:
+            # Calculate player DPS
+            player_dps = 0
+            if duration > 0 and player_damage > 0:
+                player_dps = player_damage / duration
+            
+            # Use equipped abilities from PLAYER_INFO
+            abilities_to_analyze = player.equipped_abilities
+            
+            # Analyze subclass and build first to create the title line
+            analysis = None
+            if abilities_to_analyze:
+                analysis = self.subclass_analyzer.analyze_subclass(abilities_to_analyze)
+            
+            # Create the title line: @playername {character_name} skill_lines dominant_resource
+            title_parts = [f"**{player.get_display_name()}**"]
+            
+            # Add character name if available and different from handle
+            character_name = player.name if player.name and player.name not in ['""', '', '0'] else ""
+            if character_name and character_name != player.get_display_name():
+                title_parts.append(f"*{character_name}*")
+            
+            if analysis and analysis['confidence'] > 0.1:
+                if analysis['skill_lines']:
+                    # Use skill line aliases if available, otherwise extract first word
+                    skill_line_aliases = []
+                    class_skill_lines = player.get_class_skill_lines()
+
+                    for skill_line in analysis['skill_lines']:
+                        # Check if we have an alias for this skill line (partial matching)
+                        alias_found = False
+                        for alias_key, alias_value in self.subclass_analyzer.SKILL_LINE_ALIASES.items():
+                            if alias_key in skill_line:
+                                # Check if this is a class skill line and make it bold
+                                if any(alias_value in class_skill for class_skill in class_skill_lines):
+                                    skill_line_aliases.append(f"**{alias_value}**")
+                                else:
+                                    skill_line_aliases.append(alias_value)
+                                alias_found = True
+                                break
+                        
+                        if not alias_found:
+                            # Fall back to first word
+                            first_word = skill_line.split()[0]
+                            # Check if this is a class skill line and make it bold
+                            if any(first_word in class_skill for class_skill in class_skill_lines):
+                                skill_line_aliases.append(f"**{first_word}**")
+                            else:
+                                skill_line_aliases.append(first_word)
+                    
+                    # Sort skill line aliases before joining
+                    skill_line_aliases.sort()
+                    skill_lines_str = '/'.join(skill_line_aliases)
+                    
+                    # Add class name and resource information after skill lines
+                    class_name = player.get_class_name()
+                    if class_name and class_name != "Unknown":
+                        # Format resources
+                        resource_str = ""
+                        dps_str = ""
+                        if player.max_health > 0 or player.max_magicka > 0 or player.max_stamina > 0:
+                            # Round to nearest 0.5k (500)
+                            def round_to_half_k(value):
+                                if value == 0:
+                                    return "0k"
+                                rounded = round(value / 500) * 0.5
+                                if rounded == int(rounded):
+                                    return f"{int(rounded)}k"
+                                else:
+                                    return f"{rounded:.1f}k"
+
+                            health_display = round_to_half_k(player.max_health)
+                            magicka_display = round_to_half_k(player.max_magicka)
+                            stamina_display = round_to_half_k(player.max_stamina)
+
+                            # Bold the highest resource value
+                            max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
+                            if max_resource_value > 0:
+                                if player.max_health == max_resource_value:
+                                    health_display = f"**{health_display}**"
+                                elif player.max_magicka == max_resource_value:
+                                    magicka_display = f"**{magicka_display}**"
+                                elif player.max_stamina == max_resource_value:
+                                    stamina_display = f"**{stamina_display}**"
+
+                            resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
+                            
+                            # Add DPS information and damage percentage
+                            if player_dps > 0:
+                                # Calculate damage percentage of total group damage
+                                damage_percentage = 0
+                                if self.current_encounter.total_damage > 0:
+                                    damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
+                                dps_str = f" D:{damage_percentage:.1f}%"
+
+                        skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
+                    title_parts.append(skill_lines_str)
+                else:
+                    title_parts.append("unknown")
+            else:
+                title_parts.append("unknown")
+            
+            report_lines.append(' '.join(title_parts))
+            
+            if abilities_to_analyze:
+                # Show front and back bar abilities in order if available
+                if player.front_bar_abilities or player.back_bar_abilities:
+                    if player.front_bar_abilities:
+                        highlighted_front_bar = highlight_taunt_abilities(player.front_bar_abilities)
+                        # Convert to Discord markdown (bold taunt abilities)
+                        discord_front_bar = []
+                        for ability in highlighted_front_bar:
+                            if ability.startswith(Fore.MAGENTA):  # Taunt ability
+                                clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
+                                discord_front_bar.append(f"**{clean_ability}**")
+                            else:
+                                discord_front_bar.append(ability)
+                        report_lines.append(f"  {', '.join(discord_front_bar)}")
+                    if player.back_bar_abilities:
+                        highlighted_back_bar = highlight_taunt_abilities(player.back_bar_abilities)
+                        # Convert to Discord markdown (bold taunt abilities)
+                        discord_back_bar = []
+                        for ability in highlighted_back_bar:
+                            if ability.startswith(Fore.MAGENTA):  # Taunt ability
+                                clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
+                                discord_back_bar.append(f"**{clean_ability}**")
+                            else:
+                                discord_back_bar.append(ability)
+                        report_lines.append(f"  {', '.join(discord_back_bar)}")
+                else:
+                    abilities_list = sorted(list(abilities_to_analyze))[:10]  # Show top 10 abilities
+                    highlighted_abilities = highlight_taunt_abilities(abilities_list)
+                    # Convert to Discord markdown (bold taunt abilities)
+                    discord_abilities = []
+                    for ability in highlighted_abilities:
+                        if ability.startswith(Fore.MAGENTA):  # Taunt ability
+                            clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
+                            discord_abilities.append(f"**{clean_ability}**")
+                        else:
+                            discord_abilities.append(ability)
+                    report_lines.append(f"  **Equipped:** {', '.join(discord_abilities)}")
+                    if len(abilities_to_analyze) > 10:
+                        report_lines.append(f"  ... and {len(abilities_to_analyze) - 10} more")
+
+                # Analyze gear sets (no role-based filtering)
+                identified_sets = []
+                
+                # Also check for gear sets from equipped abilities
+                gear_set_abilities_found = []
+                # Get the equipped ability IDs from the player info
+                if hasattr(player, '_equipped_ability_ids'):
+                    for ability_id in player._equipped_ability_ids:
+                        if ability_id in self.gear_set_abilities:
+                            gear_set_abilities_found.append({
+                                'name': self.gear_set_abilities[ability_id],
+                                'confidence': 0.9,
+                                'source': 'equipped_ability'
+                            })
+                
+                # Combine identified sets with gear set abilities
+                all_identified_sets = identified_sets + gear_set_abilities_found
+                
+                # Create equipment summary line
+                equipment_parts = []
+                if player.gear:
+                    # Count gear pieces by set name
+                    set_counts = {}
+                    for slot, gear_item in player.gear.items():
+                        if len(gear_item) > 6:  # Make sure we have set ID
+                            set_id = str(gear_item[6])  # Set ID is at position 6
+
+                            # Skip items with no set (set ID 0 or empty)
+                            if set_id == "0" or set_id == "" or set_id == "nan":
+                                continue
+
+                            # Look up set name by set ID
+                            set_name = gear_set_db.get_set_name_by_set_id(set_id)
+                            if not set_name:
+                                set_name = f"Unknown Set ({set_id})"
+
+                            # Check if this is a 2-handed weapon or staff (count as 2 pieces)
+                            piece_count = 1
+                            if slot in ['MAIN_HAND', 'BACKUP_MAIN'] and self._is_two_handed_weapon(gear_item, player.gear):
+                                piece_count = 2
+
+                            set_counts[set_name] = set_counts.get(set_name, 0) + piece_count
+                    
+                    # Format equipment summary
+                    for set_name, count in set_counts.items():
+                        if count >= 5:
+                            equipment_parts.append(f"{count}pc {set_name}")
+                        elif count >= 2:
+                            equipment_parts.append(f"{count}pc {set_name}")
+                        else:
+                            equipment_parts.append(f"{count}pc {set_name}")
+                
+                # Add inferred sets
+                if all_identified_sets:
+                    high_confidence_sets = [s for s in all_identified_sets if s['confidence'] > 0.5]
+                    for set_info in high_confidence_sets:
+                        if set_info['name'] not in [part.split('pc ')[1] for part in equipment_parts]:
+                            equipment_parts.append(f"?pc {set_info['name']} (inferred)")
+                
+                # Show equipment summary
+                if equipment_parts:
+                    # Sort equipment by set name, ignoring "Perfected" prefix
+                    def sort_key(item):
+                        # Extract set name from "Xpc Set Name" format
+                        if 'pc ' in item:
+                            set_name = item.split('pc ', 1)[1]
+                            # Remove "Perfected " prefix for sorting
+                            if set_name.startswith('Perfected '):
+                                set_name = set_name[10:]  # Remove "Perfected "
+                            return set_name.lower()
+                        return item.lower()
+
+                    equipment_parts.sort(key=sort_key)
+
+                    # Apply Discord markdown formatting to equipment parts
+                    discord_equipment_parts = []
+                    for part in equipment_parts:
+                        if 'pc ' in part:
+                            # Extract piece count and set name
+                            pieces_str, set_name = part.split('pc ', 1)
+                            piece_count = int(pieces_str) if pieces_str.isdigit() else 0
+
+                            # Remove any trailing text like "(inferred)"
+                            clean_set_name = set_name.split(' (')[0]
+
+                            # Check if it's a mythic set (make it bold)
+                            if clean_set_name in MYTHIC_SETS:
+                                discord_equipment_parts.append(f"**{set_name}**")
+                            # Check if it's an incomplete 5-piece set (make it bold red) - but never highlight monster sets
+                            elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
+                                # Explicitly exclude 2-piece sets (monster sets + arena weapon sets) from highlighting
+                                two_piece_set_keywords = [
+                                    # Monster sets (2-piece)
+                                    "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
+                                    "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
+                                    "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
+                                    "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
+                                    "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
+                                    "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
+                                    "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
+                                    "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
+                                    "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
+                                    "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing", "nunatak", "nunatak's blessing",
+                                    # Arena weapon sets (2-piece)
+                                    "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
+                                    "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
+                                    "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
+                                    "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
+                                    "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
+                                    "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
+                                    "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
+                                    "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
+                                    "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
+                                    "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
+                                    "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
+                                    "perfect executioner's blade", "perfect void bash", "perfect frenzied momentum", "perfect point-blank snipe", "perfect wrath of elements",
+                                    "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum", "perfected point-blank snipe", "perfected wrath of elements"
+                                ]
+                                if not any(keyword in clean_set_name.lower() for keyword in two_piece_set_keywords):
+                                    discord_equipment_parts.append(f"**{set_name}** ⚠️")
+                                else:
+                                    discord_equipment_parts.append(set_name)
+                            else:
+                                discord_equipment_parts.append(set_name)
+                        else:
+                            discord_equipment_parts.append(part)
+                    
+                    report_lines.append(f"  **Equipment:** {', '.join(discord_equipment_parts)}")
+            
+            report_lines.append("")  # Empty line after each player
+
+        # Show hostile monsters if any
+        if self.current_encounter and self.current_encounter.enemies:
+            unique_hostiles = []
+            seen = set()
+            for unit_id, enemy in self.current_encounter.enemies.items():
+                if enemy.is_hostile:
+                    key = (unit_id, enemy.name)
+                    if key not in seen:
+                        seen.add(key)
+                        unique_hostiles.append((unit_id, enemy.name, enemy.unit_type, enemy.max_health))
+            
+            if unique_hostiles:
+                # Sort by health (descending), then by name
+                unique_hostiles.sort(key=lambda x: (x[3], x[1]), reverse=True)
+                
+                hostile_names = []
+                for unit_id, name, unit_type, max_health in unique_hostiles:
+                    if max_health > 0:
+                        hostile_names.append(f"{name} ({max_health:,} HP)")
+                    else:
+                        hostile_names.append(name)
+                
+                if hostile_names:
+                    report_lines.append(f"**Hostile Monsters:** {', '.join(hostile_names)}")
+                    report_lines.append("")  # Empty line
+
+        return '\n'.join(report_lines)
+
+    def _copy_discord_report_to_clipboard(self):
+        """Copy the last encounter report to clipboard in Discord markdown format."""
+        if not CLIPBOARD_AVAILABLE:
+            print(f"{Fore.RED}Error: pyperclip not available. Install with: pip install pyperclip{Style.RESET_ALL}")
+            return False
+        
+        if not self.last_encounter_report:
+            print(f"{Fore.YELLOW}No encounter report available to copy.{Style.RESET_ALL}")
+            return False
+        
+        try:
+            pyperclip.copy(self.last_encounter_report)
+            print(f"{Fore.GREEN}Discord markdown report copied to clipboard!{Style.RESET_ALL}")
+            return True
+        except Exception as e:
+            print(f"{Fore.RED}Error copying to clipboard: {e}{Style.RESET_ALL}")
+            return False
+
+    def _start_keyboard_listener(self):
+        """Start keyboard listener for 'c' key detection."""
+        if not KEYBOARD_AVAILABLE:
+            print(f"{Fore.YELLOW}Warning: pynput not available. Discord copy feature disabled.{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Install with: pip install pynput{Style.RESET_ALL}")
+            return False
+        
+        def on_press(key):
+            try:
+                if hasattr(key, 'char') and key.char == 'c':
+                    # Only copy if we're not in the middle of typing something
+                    # This is a simple check - in a real implementation you might want more sophisticated detection
+                    self._copy_discord_report_to_clipboard()
+            except AttributeError:
+                pass  # Handle special keys that don't have a 'char' attribute
+        
+        try:
+            self.keyboard_listener = keyboard.Listener(on_press=on_press)
+            self.keyboard_listener.start()
+            return True
+        except Exception as e:
+            print(f"{Fore.RED}Error starting keyboard listener: {e}{Style.RESET_ALL}")
+            return False
+
+    def _stop_keyboard_listener(self):
+        """Stop keyboard listener."""
+        if self.keyboard_listener:
+            self.keyboard_listener.stop()
+            self.keyboard_listener = None
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None):
         """Update or create a player session with their current data."""
@@ -2603,6 +3051,16 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     print(f"{Fore.CYAN}ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}")
     
+    # Check if no arguments were provided and show default behavior explanation
+    if not any([log_file, read_all_then_stop, read_all_then_tail, no_wait, list_hostiles, diagnostic, tail_and_split, save_reports]):
+        print(f"{Fore.CYAN}No arguments provided - using default behavior:{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • Auto-detect ESO log file location based on your operating system{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • Wait patiently for Encounter.log to appear (if not found){Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • Read existing log data, then monitor for new encounters in real-time{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • Generate live combat analysis reports as fights happen{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Tip: Use --help to see all available options{Style.RESET_ALL}")
+        print()
+    
     # Show active options
     active_options = []
     if read_all_then_stop:
@@ -2655,9 +3113,10 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
             read_log = Path(log_file)
         else:
             # Use auto-detected log file
-            read_log = _find_eso_log_file()
+            read_log = _find_eso_log_file(diagnostic=diagnostic)
             if not read_log:
                 print(f"{Fore.RED}Error: No log file found and none specified{Style.RESET_ALL}")
+                _provide_log_file_guidance()
                 sys.exit(1)
         
         if not read_log.exists():
@@ -2680,7 +3139,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         print(f"{Fore.CYAN}Auto-detecting ESO log location for {host_type}...{Style.RESET_ALL}")
         
         # First try to find existing log file
-        log_path = _find_eso_log_file()
+        log_path = _find_eso_log_file(diagnostic=diagnostic)
         if log_path:
             print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
         else:
@@ -2688,6 +3147,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
             likely_directory = _get_most_likely_log_directory()
             log_path = likely_directory / "Encounter.log"
             print(f"{Fore.YELLOW}Encounter.log not found, will check in {likely_directory}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Tip: Use --no-wait to see detailed guidance on enabling encounter logging{Style.RESET_ALL}")
 
     # Check if the directory exists, create it if it doesn't (for monitoring)
     log_directory = log_path.parent
@@ -2703,8 +3163,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     if not log_path.exists():
         if no_wait:
             print(f"{Fore.YELLOW}Encounter.log not found at {log_path}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Tip: Remove --no-wait flag to wait for the file to appear{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
+            _provide_log_file_guidance()
             sys.exit(1)
         else:
             # Wait for file by default
@@ -2723,6 +3182,9 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     split_dir_path = Path(split_dir) if split_dir else None
     file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
     file_monitor.running = True
+
+    # Start keyboard listener for Discord copy feature - ONLY during tailing/monitoring
+    analyzer._start_keyboard_listener()
 
     try:
         print(f"{Fore.YELLOW}Press Ctrl+C to stop monitoring{Style.RESET_ALL}\n")
@@ -2745,6 +3207,9 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
             file_monitor.log_splitter.cleanup()
             if tail_and_split:
                 print(f"{Fore.CYAN}Auto-split cleanup completed{Style.RESET_ALL}")
+        
+        # Stop keyboard listener
+        analyzer._stop_keyboard_listener()
 
 def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     """Wait for the log file to appear if it doesn't exist."""
@@ -2775,28 +3240,249 @@ def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     print(f"{Fore.GREEN}{log_path.name} found! Starting monitoring...{Style.RESET_ALL}")
     return True
 
-def _find_eso_log_file() -> Optional[Path]:
-    """Try to find the ESO encounter log file in common locations."""
+def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
+    """Enhanced Windows-specific ESO log file detection with comprehensive search."""
+    
+    # Windows-specific search locations
+    search_locations = [
+        Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs",
+        Path.home() / "OneDrive" / "Documents" / "Elder Scrolls Online" / "live" / "Logs",
+    ]
+    
+    found_directories = []
+    found_encounter_logs = []
+    
+    if diagnostic:
+        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching Windows locations for ESO log directories{Style.RESET_ALL}")
+    
+    # Check each directory
+    for directory in search_locations:
+        if directory.exists():
+            found_directories.append(directory)
+            encounter_log = directory / "Encounter.log"
+            
+            if diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found directory: {directory}{Style.RESET_ALL}")
+            
+            # Check for Encounter.log in this directory
+            if encounter_log.exists():
+                try:
+                    # Get file modification time
+                    mod_time = encounter_log.stat().st_mtime
+                    mod_datetime = datetime.fromtimestamp(mod_time)
+                    mod_time_str = mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    found_encounter_logs.append({
+                        'path': encounter_log,
+                        'directory': directory,
+                        'mod_time': mod_time,
+                        'mod_time_str': mod_time_str
+                    })
+                    
+                    print(f"{Fore.GREEN}Encounter.log found: {encounter_log}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}Last modified: {mod_time_str} (local time){Style.RESET_ALL}")
+                    
+                except OSError as e:
+                    if diagnostic:
+                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error accessing {encounter_log}: {e}{Style.RESET_ALL}")
+            else:
+                if diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: No Encounter.log in {directory}{Style.RESET_ALL}")
+        else:
+            if diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Directory not found: {directory}{Style.RESET_ALL}")
+    
+    # If no directories found, exit with summary
+    if not found_directories:
+        print(f"{Fore.YELLOW}No ESO log directories found on Windows.{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Searched locations:{Style.RESET_ALL}")
+        for location in search_locations:
+            print(f"{Fore.WHITE}  - {location}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Please ensure ESO is installed and encounter logging is enabled.{Style.RESET_ALL}")
+        return None
+    
+    # Print found directories
+    print(f"{Fore.GREEN}Found {len(found_directories)} ESO log directory(ies):{Style.RESET_ALL}")
+    for directory in found_directories:
+        print(f"{Fore.WHITE}  - {directory}{Style.RESET_ALL}")
+        
+        # Find most recently updated file in directory
+        try:
+            most_recent_file = None
+            most_recent_time = 0
+            
+            for file_path in directory.iterdir():
+                if file_path.is_file():
+                    try:
+                        file_time = file_path.stat().st_mtime
+                        if file_time > most_recent_time:
+                            most_recent_time = file_time
+                            most_recent_file = file_path
+                    except OSError:
+                        continue
+            
+            if most_recent_file:
+                mod_datetime = datetime.fromtimestamp(most_recent_time)
+                mod_time_str = mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                print(f"{Fore.CYAN}    Most recent file: {most_recent_file.name} ({mod_time_str}){Style.RESET_ALL}")
+            else:
+                print(f"{Fore.CYAN}    Directory is empty{Style.RESET_ALL}")
+                
+        except OSError as e:
+            if diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error scanning {directory}: {e}{Style.RESET_ALL}")
+    
+    # If Encounter.log files found, pick the most recent one
+    if found_encounter_logs:
+        # Sort by modification time (most recent first)
+        found_encounter_logs.sort(key=lambda x: x['mod_time'], reverse=True)
+        
+        most_recent_log = found_encounter_logs[0]
+        
+        if len(found_encounter_logs) > 1:
+            print(f"{Fore.GREEN}Selected most recently updated Encounter.log:{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}  {most_recent_log['path']}{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}  Last modified: {most_recent_log['mod_time_str']}{Style.RESET_ALL}")
+        
+        return most_recent_log['path']
+    
+    # If directories found but no Encounter.log files, pick the directory with most recent activity
+    if found_directories:
+        best_directory = None
+        best_time = 0
+        
+        for directory in found_directories:
+            try:
+                # Check directory modification time
+                dir_time = directory.stat().st_mtime
+                
+                # Also check for most recent file in directory
+                most_recent_file_time = 0
+                for file_path in directory.iterdir():
+                    if file_path.is_file():
+                        try:
+                            file_time = file_path.stat().st_mtime
+                            most_recent_file_time = max(most_recent_file_time, file_time)
+                        except OSError:
+                            continue
+                
+                # Use the more recent of directory time or most recent file time
+                effective_time = max(dir_time, most_recent_file_time)
+                
+                if effective_time > best_time:
+                    best_time = effective_time
+                    best_directory = directory
+                    
+            except OSError:
+                continue
+        
+        if best_directory:
+            print(f"{Fore.YELLOW}No Encounter.log files found, but will monitor:{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}  {best_directory / 'Encounter.log'}{Style.RESET_ALL}")
+            return best_directory / "Encounter.log"
+    
+    return None
 
-    # Common ESO log file locations
+def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
+    """Try to find the ESO encounter log file in common locations with enhanced detection."""
+    
+    # Use Windows-specific detection for Windows
     if sys.platform == "win32":
-        # Windows
+        return _find_eso_log_file_windows(diagnostic)
+    
+    # Enhanced ESO log file locations with more comprehensive coverage for other platforms
+    possible_paths = []
+    
+    if sys.platform == "darwin":
+        # macOS - native and Wine installations
         possible_paths = [
+            # Native macOS installations
             Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
             Path.home() / "Documents" / "Elder Scrolls Online" / "Logs" / "Encounter.log",
+            # Wine installations
+            Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            Path.home() / ".wine" / "drive_c" / "users" / os.getenv("USER", "user") / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            # Alternative Wine paths
+            Path.home() / ".wine" / "drive_c" / "Program Files" / "Zenimax Online" / "The Elder Scrolls Online" / "game" / "client" / "Logs" / "Encounter.log",
         ]
     else:
-        # macOS and Linux (through Wine or similar)
+        # Linux - Wine and native installations
         possible_paths = [
-            Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            # Wine installations (most common on Linux)
             Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            Path.home() / ".wine" / "drive_c" / "users" / os.getenv("USER", "user") / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            # Alternative Wine paths
+            Path.home() / ".wine" / "drive_c" / "Program Files" / "Zenimax Online" / "The Elder Scrolls Online" / "game" / "client" / "Logs" / "Encounter.log",
+            Path.home() / ".wine" / "drive_c" / "Program Files (x86)" / "Zenimax Online" / "The Elder Scrolls Online" / "game" / "client" / "Logs" / "Encounter.log",
+            # Native Linux installations (if any)
+            Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            Path.home() / "Documents" / "Elder Scrolls Online" / "Logs" / "Encounter.log",
+            # Steam Deck/SteamOS paths
+            Path.home() / ".steam" / "steam" / "steamapps" / "compatdata" / "306130" / "pfx" / "drive_c" / "users" / "steamuser" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
         ]
 
+    # Show diagnostic information if requested
+    if diagnostic:
+        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching for Encounter.log in {len(possible_paths)} locations{Style.RESET_ALL}")
+        for i, path in enumerate(possible_paths, 1):
+            status = "✓ EXISTS" if path.exists() else "✗ not found"
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: {i:2d}. {path} - {status}{Style.RESET_ALL}")
+
+    # Search for existing files
+    found_paths = []
     for path in possible_paths:
         if path.exists():
-            return path
-
+            found_paths.append(path)
+    
+    # Return the first found path, or None if none found
+    if found_paths:
+        if diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found {len(found_paths)} log file(s), using: {found_paths[0]}{Style.RESET_ALL}")
+        return found_paths[0]
+    
     return None
+
+def _provide_log_file_guidance() -> None:
+    """Provide helpful guidance when no ESO log file is found."""
+    host_type = _get_host_type_description()
+    
+    print(f"{Fore.YELLOW}No ESO Encounter.log file found on {host_type}.{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Here's how to enable encounter logging in ESO:{Style.RESET_ALL}")
+    print()
+    
+    if sys.platform == "win32":
+        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   %USERPROFILE%\\Documents\\Elder Scrolls Online\\live\\Logs\\Encounter.log{Style.RESET_ALL}")
+    elif sys.platform == "darwin":
+        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   ~/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}   or (if using Wine):{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   ~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   ~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}   or (if using Steam Deck):{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}   ~/.steam/steam/steamapps/compatdata/306130/pfx/drive_c/users/steamuser/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
+    
+    print()
+    print(f"{Fore.CYAN}Alternative: Specify the log file path manually:{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}  python3 src/esolog_tail.py --log-file /path/to/your/Encounter.log{Style.RESET_ALL}")
+    print()
+    print(f"{Fore.CYAN}Tip: You can also use --no-wait to exit immediately if the file doesn't exist.{Style.RESET_ALL}")
 
 def _get_most_likely_log_directory() -> Path:
     """Get the most likely ESO log directory based on the host OS."""
