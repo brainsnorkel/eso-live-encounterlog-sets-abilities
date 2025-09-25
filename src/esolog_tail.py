@@ -189,7 +189,14 @@ class ESOLogEntry:
             if len(fields) >= 3:
                 try:
                     timestamp = int(fields[2])
-                    return cls(timestamp, event_type, fields[3:], line)
+                    # For certain events, the third field is not a timestamp
+                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST"]:
+                        # These events don't have timestamps, use line number as timestamp
+                        line_number = int(fields[0]) if fields[0].isdigit() else 0
+                        return cls(line_number, event_type, fields[2:], line)
+                    else:
+                        # These events have timestamps
+                        return cls(timestamp, event_type, fields[3:], line)
                 except ValueError:
                     # Third field is not a timestamp, treat as data field
                     return cls(0, event_type, fields[2:], line)
@@ -832,6 +839,10 @@ class ESOLogAnalyzer:
         # Check grace period before processing any events
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
+        if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "BEGIN_COMBAT", "END_COMBAT"]:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
+        
         if entry.event_type == "UNIT_ADDED":
             self._handle_unit_added(entry)
         elif entry.event_type == "UNIT_CHANGED":
@@ -854,6 +865,8 @@ class ESOLogAnalyzer:
             self._handle_end_combat_event(entry)
         elif entry.event_type == "BEGIN_LOG":
             self._handle_begin_log_event(entry)
+        elif entry.event_type == "ZONE_CHANGED":
+            self._handle_zone_changed(entry)
 
     def _check_pending_encounter_display(self):
         """Check if we have an encounter that ended but hasn't been displayed yet."""
@@ -870,9 +883,18 @@ class ESOLogAnalyzer:
         """Handle UNIT_ADDED events to track players and enemies."""
         # UNIT_ADDED format: timestamp,UNIT_ADDED,unit_id,unit_type,F/T,unknown,unknown,F/T,unknown,unknown,"name","@handle",...
         # After parsing, fields[0] = unit_id, fields[1] = unit_type, etc.
+        
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_unit_added called with {len(entry.fields)} fields{Style.RESET_ALL}")
+        
         if len(entry.fields) >= 10:
             unit_id = entry.fields[0]
             unit_type = entry.fields[1]
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED unit_id={unit_id}, unit_type={unit_type}{Style.RESET_ALL}")
             
             # Handle player units
             if unit_type == "PLAYER":
@@ -882,10 +904,18 @@ class ESOLogAnalyzer:
                 class_id = entry.fields[6] if len(entry.fields) > 6 else ""  # Class ID is in field 7 (index 6)
 
                 # Only add players if we have a current encounter (zone has been set)
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED player {unit_id}, encounter exists: {self.current_encounter is not None}{Style.RESET_ALL}")
+                
                 if self.current_encounter:
                     # Clean up name and handle (remove quotes if present)
                     clean_name = name.strip('"') if name else ""
                     clean_handle = handle.strip('"') if handle else ""
+                    
+                    if self.diagnostic:
+                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Adding player {unit_id} ({clean_name}) to encounter{Style.RESET_ALL}")
 
                     # Check if this is a returning player from session data
                     session_key = f"{clean_handle}+{clean_name}"
@@ -1026,10 +1056,13 @@ class ESOLogAnalyzer:
     def _handle_zone_changed(self, entry: ESOLogEntry):
         """Handle ZONE_CHANGED events to reset all known players."""
         # ZONE_CHANGED format: zone_id, zone_name, difficulty
-        if len(entry.fields) >= 3:
-            zone_id = entry.fields[0]
-            zone_name = entry.fields[1].strip('"')
-            difficulty = entry.fields[2].strip('"')
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_zone_changed called{Style.RESET_ALL}")
+        
+        if len(entry.fields) >= 2:
+            zone_name = entry.fields[0].strip('"')
+            difficulty = entry.fields[1].strip('"')
             
             # Store previous zone name before updating
             previous_zone = self.current_zone if self.current_zone else "Unknown"
@@ -1063,10 +1096,18 @@ class ESOLogAnalyzer:
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
             self.current_encounter.start_time = entry.timestamp
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: ZONE_CHANGED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
 
     def _handle_begin_combat_event(self, entry: ESOLogEntry):
         """Handle BEGIN_COMBAT events to start combat tracking."""
         # BEGIN_COMBAT format: timestamp,BEGIN_COMBAT (no additional data)
+        
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
         # Check if we need to rewind to a previous zone
         if not self.current_zone and self.zone_history:
@@ -1105,10 +1146,18 @@ class ESOLogAnalyzer:
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
 
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
+        
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
         # Immediately finalize encounter if there are any players
         if self.current_encounter and self.current_encounter.players:
