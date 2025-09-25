@@ -660,6 +660,7 @@ class ESOLogAnalyzer:
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
         self.current_zone: Optional[str] = None  # Track current zone name
+        self.current_difficulty: Optional[str] = None  # Track current difficulty
         self.zone_deaths: int = 0  # Track total deaths since entering current zone
         self.subclass_analyzer = ESOSubclassAnalyzer()
         self.set_database = ESOSetDatabase()
@@ -1081,8 +1082,9 @@ class ESOLogAnalyzer:
             if self.current_encounter:
                 self.current_encounter = None
             
-            # Update current zone after processing previous zone's combat
+            # Update current zone and difficulty after processing previous zone's combat
             self.current_zone = zone_name
+            self.current_difficulty = difficulty
             
             # Add this zone change to history for rewind functionality
             self._add_zone_to_history(entry.timestamp, zone_name)
@@ -1963,13 +1965,17 @@ class ESOLogAnalyzer:
                 print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
                 sys.exit(1)
             
-            # Generate timestamp-based filename
+            # Generate zone-based filename similar to split files
             # Use the encounter start time for consistent naming
             encounter_start_time = self.current_encounter.start_time
             dt = datetime.fromtimestamp(encounter_start_time / 1000)  # Convert from milliseconds
             timestamp_str = dt.strftime("%y%m%d%H%M%S")
             
-            filename = f"{timestamp_str}-report.txt"
+            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.txt
+            difficulty_suffix = "-vet" if self.current_difficulty and self.current_difficulty.upper() == "VETERAN" else ""
+            zone_suffix = self.current_zone.replace(" ", "-") if self.current_zone else "Unknown-Zone"
+            
+            filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
             
             # Write report to file (strip ANSI color codes for clean text)

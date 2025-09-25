@@ -162,8 +162,10 @@ python3 src/esolog_tail.py --save-reports --reports-dir /path/to/reports
 ```
 
 **Report file naming:**
-Reports are saved with the format `YYMMDDHHMMSS-report.txt` where the timestamp corresponds to the encounter start time. For example:
-- `250125143022-report.txt` (January 25, 2025 at 14:30:22)
+Reports are saved with zone-based naming similar to split files: `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt` where the timestamp corresponds to the encounter start time. For example:
+- `250125143022-Tempest-Island-report.txt` (Normal mode encounter)
+- `250125143022-Coral-Aerie-vet-report.txt` (Veteran mode encounter)
+- `250125143022-Unknown-Zone-report.txt` (When zone information is unavailable)
 
 **Directory requirements:**
 - The reports directory must exist and be writable

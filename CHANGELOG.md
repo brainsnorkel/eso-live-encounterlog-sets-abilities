@@ -2,6 +2,20 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.26] - 2025-01-26
+
+### Enhanced
+- **Zone-Based Report Naming**: Report files now use the same naming convention as split files
+- **Consistent File Naming**: Reports are named `YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt`
+- **Difficulty Tracking**: Added difficulty tracking to ESOLogAnalyzer for accurate report naming
+- **Improved Organization**: Report files are now organized by zone and difficulty, making them easier to identify
+
+### Technical Details
+- Added `current_difficulty` tracking to ESOLogAnalyzer class
+- Modified `_save_report_to_file()` method to use zone-based naming logic
+- Updated `_handle_zone_changed()` to track both zone name and difficulty
+- Enhanced report filename generation to match split file naming convention
+
 ## [0.1.25] - 2025-01-25
 
 ### Added
