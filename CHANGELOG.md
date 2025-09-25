@@ -11,14 +11,15 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ### Enhanced
 - **Smart Zone Detection**: Tool now waits for BEGIN_COMBAT event and uses the first subsequent ZONE_CHANGED for naming
-- **Buffered Writing**: Split files buffer content until the proper zone name is determined, ensuring no data loss
+- **Immediate File Creation**: Split files are created immediately as temporary files, then renamed when combat zone is determined
+- **Robust Data Safety**: No data loss risk - files are written immediately and renamed atomically
 - **Better Diagnostic Output**: Enhanced diagnostic messages for combat and zone detection events
 
 ### Technical Details
 - Added combat_started flag to LogSplitter to track combat state
-- Implemented buffered line writing until zone name is determined
+- Implemented immediate temporary file creation with atomic rename operation
 - Modified both live tailing and replay modes to support combat-based zone detection
-- Added start_combat() and handle_zone_change() methods to LogSplitter
+- Added start_combat(), handle_zone_change(), _create_temp_file(), and _rename_to_final() methods
 
 ## [0.1.24] - 2025-01-25
 

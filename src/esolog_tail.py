@@ -2136,7 +2136,8 @@ class LogSplitter:
         self.first_combat_zone = None  # Track first zone encountered during combat
         self.first_combat_difficulty = None  # Track difficulty of first combat zone
         self.combat_started = False  # Track if combat has started
-        self.buffered_lines = []  # Buffer lines until we can create the file with proper name
+        self.temp_file_path = None  # Temporary file path before rename
+        self.final_file_path = None  # Final file path after rename
         
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
@@ -2146,27 +2147,81 @@ class LogSplitter:
         # Close any existing split file
         self.end_encounter()
         
-        # Store BEGIN_LOG entry and initial zone info for delayed file creation
+        # Store BEGIN_LOG entry and initial zone info
         self.pending_begin_log = begin_log_entry
         self.first_combat_zone = zone_name if zone_name else ""
         self.first_combat_difficulty = difficulty if difficulty else ""
         self.combat_started = False
-        self.buffered_lines = []
         
-        # If we have zone info, create the file immediately
+        # Create temporary file immediately
+        self._create_temp_file()
+        
+        # If we already have zone info, rename immediately
         if zone_name:
-            self._create_split_file()
+            self._rename_to_final()
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected with zone: {zone_name}{Style.RESET_ALL}")
         else:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for first combat zone{Style.RESET_ALL}")
     
-    def _create_split_file(self):
-        """Create the actual split file with current zone information."""
+    def _create_temp_file(self):
+        """Create a temporary file immediately for writing."""
         if not self.pending_begin_log:
             return
             
-        # Create filename based on BEGIN_LOG timestamp
+        # Create temporary filename based on BEGIN_LOG timestamp
+        timestamp = self.pending_begin_log.timestamp
+        dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
+        
+        # Format: YYMMDDHHMMSS-temp.log
+        time_str = dt.strftime("%y%m%d%H%M%S")
+        temp_filename = f"{time_str}-temp.log"
+        self.temp_file_path = self.split_dir / temp_filename
+        
+        try:
+            # Open file for writing (create new file)
+            self.file_handle = open(self.temp_file_path, 'w', encoding='utf-8')
+            self.current_split_file = self.temp_file_path
+            self.current_split_path = self.temp_file_path
+            self.current_encounter_info = {
+                'path': self.temp_file_path,
+                'start_time': timestamp,
+                'zone_name': self.first_combat_zone,
+                'difficulty': self.first_combat_difficulty
+            }
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Created temporary file: {self.temp_file_path}{Style.RESET_ALL}")
+                
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+            self.current_split_file = None
+            self.current_split_path = None
+            self.current_encounter_info = None
+            self.file_handle = None
+            self.temp_file_path = None
+    
+    def _rename_to_final(self):
+        """Rename the temporary file to the final name based on combat zone."""
+        if not self.temp_file_path or not self.file_handle:
+            return
+            
+        # Close the file handle before renaming
+        try:
+            self.file_handle.close()
+            self.file_handle = None
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close file before rename: {e}{Style.RESET_ALL}")
+        
+        # Create final filename based on BEGIN_LOG timestamp and combat zone
         timestamp = self.pending_begin_log.timestamp
         dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
         
@@ -2176,39 +2231,30 @@ class LogSplitter:
         difficulty_suffix = "-vet" if self.first_combat_difficulty.upper() == "VETERAN" else ""
         zone_suffix = self.first_combat_zone.replace(" ", "-") if self.first_combat_zone else "Unknown-Zone"
         
-        filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
-        split_path = self.split_dir / filename
+        final_filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
+        self.final_file_path = self.split_dir / final_filename
         
         try:
-            # Open file for writing (create new file)
-            self.file_handle = open(split_path, 'w', encoding='utf-8')
-            self.current_split_file = split_path
-            self.current_split_path = split_path
-            self.current_encounter_info = {
-                'path': split_path,
-                'start_time': timestamp,
-                'zone_name': self.first_combat_zone,
-                'difficulty': self.first_combat_difficulty
-            }
-            self.split_files.append(split_path)
+            # Rename the file
+            self.temp_file_path.rename(self.final_file_path)
             
-            # Write all buffered lines to the file
-            for line in self.buffered_lines:
-                self.file_handle.write(line + '\n')
-            self.file_handle.flush()
+            # Update tracking
+            self.current_split_file = self.final_file_path
+            self.current_split_path = self.final_file_path
+            self.current_encounter_info['path'] = self.final_file_path
+            self.split_files.append(self.final_file_path)
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Created new split file: {split_path}{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Renamed to final file: {self.final_file_path}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create split file {split_path}: {e}{Style.RESET_ALL}")
-            self.current_split_file = None
-            self.current_split_path = None
-            self.current_encounter_info = None
-            self.file_handle = None
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to rename file to {self.final_file_path}: {e}{Style.RESET_ALL}")
+            # Keep the temp file if rename fails
+            self.current_split_file = self.temp_file_path
+            self.current_split_path = self.temp_file_path
     
     def write_log_line(self, line: str):
         """Write a log line to the current split file."""
@@ -2220,9 +2266,6 @@ class LogSplitter:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
-        elif self.pending_begin_log:
-            # Buffer the line until we can create the file
-            self.buffered_lines.append(line)
     
     def start_combat(self):
         """Mark that combat has started - first zone change after this will be used for naming."""
@@ -2243,8 +2286,8 @@ class LogSplitter:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: First combat zone detected: {zone_name} ({difficulty}){Style.RESET_ALL}")
             
-            # Create the file now with the first combat zone name
-            self._create_split_file()
+            # Rename the temporary file to the final name
+            self._rename_to_final()
     
     def end_encounter(self):
         """End the current encounter and close the split file."""
@@ -2267,7 +2310,8 @@ class LogSplitter:
                 self.first_combat_zone = None
                 self.first_combat_difficulty = None
                 self.combat_started = False
-                self.buffered_lines = []
+                self.temp_file_path = None
+                self.final_file_path = None
     
     def close_for_waiting(self):
         """Close the current split file when waiting for new events to prevent data loss."""

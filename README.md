@@ -196,7 +196,7 @@ Split files are named with the format `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` where
 - `{-vet}` is added for veteran difficulty encounters
 
 **Combat-based zone detection:**
-The tool waits for combat to begin (`BEGIN_COMBAT` event) and then uses the first `ZONE_CHANGED` event that occurs during combat to name the split file. This ensures the file is named after the actual combat zone rather than just the initial zone when logging started.
+The tool creates a temporary file immediately when logging starts, then waits for combat to begin (`BEGIN_COMBAT` event) and uses the first `ZONE_CHANGED` event that occurs during combat to rename the file. This ensures the file is named after the actual combat zone rather than just the initial zone when logging started, while preventing any data loss through immediate file creation.
 
 **Combined with other modes:**
 ```bash
