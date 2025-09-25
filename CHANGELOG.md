@@ -2,6 +2,30 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.27] - 2025-01-26
+
+### Enhanced
+- **Comprehensive Test Suite**: Added extensive testing for all new features and edge cases
+- **Combat-Based Zone Naming**: Split files now correctly named after zone where combat begins
+- **Zone-Based Report Naming**: Report files use consistent naming with split files
+- **Robust Error Handling**: Improved error handling for missing zones and invalid directories
+- **Edge Case Coverage**: Comprehensive testing of missing zones, invalid paths, and large files
+
+### Technical Details
+- Enhanced LogSplitter to wait for combat before renaming files
+- Added current_difficulty tracking to ESOLogAnalyzer
+- Implemented zone-based naming for both split files and reports
+- Added comprehensive test scenarios covering all functionality
+- Improved diagnostic output for better debugging
+
+### Testing
+- ✅ Combat-based zone naming for split files
+- ✅ Zone-based report naming with difficulty suffixes
+- ✅ Combined splitting + report saving functionality
+- ✅ Regression tests on existing functionality
+- ✅ Edge cases: missing zones, invalid directories, large files
+- ✅ Error handling and graceful degradation
+
 ## [0.1.26] - 2025-01-26
 
 ### Enhanced
