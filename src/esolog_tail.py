@@ -2291,9 +2291,8 @@ class LogSplitter:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone changed to: {zone_name} ({difficulty}){Style.RESET_ALL}")
         
-        # If this is the first zone we've encountered, rename immediately
-        if first_zone and zone_name:
-            self._rename_to_final()
+        # Don't rename here - wait for combat to start
+        # The file will be renamed when combat begins
     
     def end_encounter(self):
         """End the current encounter and close the split file."""
