@@ -176,6 +176,17 @@ Reports are saved with the format `YYMMDDHHMMSS-report.txt` where the timestamp 
 python3 src/esolog_tail.py --save-reports --reports-dir ./reports --tail-and-split --split-dir ./splits
 ```
 
+## Troubleshooting
+
+**No encounter reports generated:**
+If you're not seeing encounter reports, ensure your log file contains complete encounters with `BEGIN_COMBAT` and `END_COMBAT` events. The tool requires these markers to detect and process encounters properly.
+
+**Diagnostic mode:**
+Use `--diagnostic` to see detailed information about event processing:
+```bash
+python3 src/esolog_tail.py --diagnostic --log-file your_log.log
+```
+
 ### Real-World Usage Examples
 
 **Start monitoring with default behavior (waits for log file):**

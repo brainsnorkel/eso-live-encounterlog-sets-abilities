@@ -2,6 +2,25 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.1.24] - 2025-01-25
+
+### Fixed
+- **Critical Parsing Issue**: Fixed ESOLogEntry parsing for events without timestamps (BEGIN_COMBAT, END_COMBAT, UNIT_ADDED, etc.)
+- **Missing Event Routing**: Added missing ZONE_CHANGED event routing in process_log_entry method
+- **Field Indexing**: Corrected field indexing for ZONE_CHANGED events to properly extract zone name and difficulty
+- **Encounter Detection**: Fixed encounter detection and player addition that was preventing report generation
+
+### Enhanced
+- **Robust Event Parsing**: Improved parsing logic to handle events with and without timestamps correctly
+- **Better Error Handling**: Enhanced diagnostic output for debugging event processing issues
+- **Report Generation**: Encounter reports now generate correctly in all modes
+
+### Technical Details
+- Modified ESOLogEntry.parse() to distinguish between events with timestamps and those using line numbers
+- Added ZONE_CHANGED case to process_log_entry method routing
+- Fixed field access for ZONE_CHANGED events (zone_name, difficulty)
+- Added comprehensive debug output for event processing flow
+
 ## [0.1.23] - 2025-01-25
 
 ### Added
