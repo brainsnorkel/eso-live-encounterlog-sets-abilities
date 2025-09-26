@@ -190,10 +190,13 @@ class TestESOLogParser(unittest.TestCase):
 
     def test_equipped_abilities_extraction(self):
         """Test extraction of equipped abilities from PLAYER_INFO."""
-        # First, add some abilities to the cache
-        self.parser.ability_cache["84731"] = "Witchmother's Potent Brew"
-        self.parser.ability_cache["220015"] = "Lucent Echoes"
-        self.parser.ability_cache["142210"] = "Some Ability"
+        # First, add some abilities to the cache using IDs that are actually in the equipped bars
+        # Front bar: [183006,183122,38901,25267,217699,113105]
+        # Back bar: [39028,86169,86156,185842,217699,86113]
+        self.parser.ability_cache["183006"] = "Front Bar Ability 1"
+        self.parser.ability_cache["183122"] = "Front Bar Ability 2"
+        self.parser.ability_cache["39028"] = "Back Bar Ability 1"
+        self.parser.ability_cache["86169"] = "Back Bar Ability 2"
         
         # Parse PLAYER_INFO
         entry = self.parser.parse_line(self.sample_lines['player_info'])
@@ -203,9 +206,10 @@ class TestESOLogParser(unittest.TestCase):
         equipped_abilities = self.parser.get_equipped_abilities(parsed)
         
         # Should contain the abilities we cached
-        self.assertIn("Witchmother's Potent Brew", equipped_abilities)
-        self.assertIn("Lucent Echoes", equipped_abilities)
-        self.assertIn("Some Ability", equipped_abilities)
+        self.assertIn("Front Bar Ability 1", equipped_abilities)
+        self.assertIn("Front Bar Ability 2", equipped_abilities)
+        self.assertIn("Back Bar Ability 1", equipped_abilities)
+        self.assertIn("Back Bar Ability 2", equipped_abilities)
 
     def test_invalid_entries(self):
         """Test handling of invalid entries."""
