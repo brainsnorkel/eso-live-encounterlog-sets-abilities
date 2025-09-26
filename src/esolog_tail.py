@@ -1195,12 +1195,9 @@ class ESOLogAnalyzer:
     def _handle_begin_log_event(self, entry: ESOLogEntry):
         """Handle BEGIN_LOG events to extract Unix timestamp."""
         # BEGIN_LOG format: timestamp,BEGIN_LOG,unix_timestamp,version,"server","language","build"
-        if len(entry.fields) >= 1:
-            try:
-                unix_timestamp = int(entry.fields[0])
-                self.log_start_unix_timestamp = unix_timestamp
-            except (ValueError, IndexError):
-                pass  # Skip invalid timestamps
+        # The Unix timestamp is in the entry.timestamp field (fields[2] from original line)
+        if entry.timestamp > 0:
+            self.log_start_unix_timestamp = entry.timestamp
 
     def _handle_begin_cast(self, entry: ESOLogEntry):
         """Handle BEGIN_CAST events."""
