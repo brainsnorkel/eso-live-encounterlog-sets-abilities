@@ -69,7 +69,7 @@ def highlight_taunt_abilities(ability_list):
     return highlighted_abilities
 
 # Import our ESO analysis modules
-from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
+from eso_sets import ESOSubclassAnalyzer
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {
@@ -677,7 +677,6 @@ class ESOLogAnalyzer:
         self.current_difficulty: Optional[str] = None  # Track current difficulty
         self.zone_deaths: int = 0  # Track total deaths since entering current zone
         self.subclass_analyzer = ESOSubclassAnalyzer()
-        self.set_database = ESOSetDatabase()
         self.current_log_file: Optional[str] = None  # Track current log file path
         self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
         
