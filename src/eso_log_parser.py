@@ -3,8 +3,8 @@
 ESO Log Parser
 A robust parser for ESO encounter log files with comprehensive support for all log entry types.
 
-Phase 2 Migration: Integrating structured parser for critical paths (PLAYER_INFO, UNIT_ADDED)
-while maintaining backward compatibility with existing functionality.
+Phase 3 Migration: Complete replacement with structured parser while maintaining
+backward compatibility with existing functionality.
 """
 
 import re
@@ -13,12 +13,17 @@ import io
 from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass, field
 
-# Import structured parser for Phase 2 migration
+# Import structured parser for Phase 3 complete replacement
 try:
     from eso_log_structures import (
         ESOLogStructureParser, 
         PlayerInfoEntry as StructuredPlayerInfoEntry,
         UnitAddedEntry as StructuredUnitAddedEntry,
+        AbilityInfoEntry as StructuredAbilityInfoEntry,
+        BeginCastEntry as StructuredBeginCastEntry,
+        EndCastEntry as StructuredEndCastEntry,
+        EffectChangedEntry as StructuredEffectChangedEntry,
+        CombatEventEntry as StructuredCombatEventEntry,
         EventType
     )
     STRUCTURED_PARSER_AVAILABLE = True
@@ -139,67 +144,130 @@ class EffectChangedEntry:
 
 
 class ESOLogParser:
-    """Robust parser for ESO encounter log files with Phase 2 structured parser integration."""
+    """Robust parser for ESO encounter log files with Phase 3 structured parser replacement."""
     
     def __init__(self):
         self.ability_cache: Dict[str, str] = {}
         
-        # Initialize structured parser for Phase 2 migration
+        # Initialize structured parser for Phase 3 complete replacement
         if STRUCTURED_PARSER_AVAILABLE:
             self.structured_parser = ESOLogStructureParser()
         else:
-            self.structured_parser = None
+            raise ImportError("Structured parser not available. Please ensure eso_log_structures.py is present.")
         
     def parse_line(self, line: str) -> Optional[ESOLogEntry]:
         """
-        Parse a single log line with Phase 2 structured parser integration.
+        Parse a single log line with Phase 3 structured parser replacement.
         
         This method maintains backward compatibility by always returning
         legacy ESOLogEntry objects, while using structured parsing internally
-        for better error handling.
+        for all event types.
         """
-        # First try to parse as a generic entry
-        entry = ESOLogEntry.parse(line)
-        if not entry:
+        # Use structured parser for all parsing
+        structured_result = self.structured_parser.parse_line(line)
+        if not structured_result:
             return None
             
-        # For specific event types, try specialized parsing
-        if entry.event_type == "PLAYER_INFO":
-            player_info = self.parse_player_info(entry)
-            if player_info:
-                # Return the original ESOLogEntry for backward compatibility
-                return entry
-        elif entry.event_type == "ABILITY_INFO":
-            ability_info = self.parse_ability_info(entry)
-            if ability_info:
-                # Return the original ESOLogEntry for backward compatibility
-                return entry
-                
-        return entry
+        # Convert structured result to legacy ESOLogEntry for backward compatibility
+        return self._convert_structured_to_legacy_entry(structured_result, line)
+    
+    def _convert_structured_to_legacy_entry(self, structured_result: Any, original_line: str) -> ESOLogEntry:
+        """Convert structured parser result to legacy ESOLogEntry format."""
+        # Extract timestamp based on event type
+        timestamp = 0
+        if hasattr(structured_result, '__class__'):
+            class_name = structured_result.__class__.__name__
+            # Use appropriate timestamp for each event type
+            if class_name == 'BeginLogEntry' and hasattr(structured_result, 'unix_timestamp'):
+                timestamp = structured_result.unix_timestamp
+            elif class_name == 'ZoneChangedEntry' and hasattr(structured_result, 'zone_id'):
+                timestamp = structured_result.zone_id
+            elif class_name == 'MapChangedEntry' and hasattr(structured_result, 'map_id'):
+                timestamp = structured_result.map_id
+            elif class_name == 'UnitAddedEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = structured_result.line_number
+            elif class_name == 'AbilityInfoEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = 0  # ABILITY_INFO doesn't have timestamps
+            elif class_name == 'PlayerInfoEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = structured_result.line_number
+            elif class_name == 'BeginCastEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = 0  # BEGIN_CAST doesn't have timestamps
+            elif class_name == 'EndCastEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = 0  # END_CAST doesn't have timestamps
+            elif class_name == 'EffectChangedEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = 0  # EFFECT_CHANGED doesn't have timestamps
+            elif hasattr(structured_result, 'line_number'):
+                timestamp = structured_result.line_number
+        else:
+            timestamp = 0
+            
+        if hasattr(structured_result, '__class__'):
+            class_name = structured_result.__class__.__name__
+            # Map class names to event types
+            if class_name == 'BeginLogEntry':
+                event_type = 'BEGIN_LOG'
+            elif class_name == 'ZoneChangedEntry':
+                event_type = 'ZONE_CHANGED'
+            elif class_name == 'MapChangedEntry':
+                event_type = 'MAP_CHANGED'
+            elif class_name == 'UnitAddedEntry':
+                event_type = 'UNIT_ADDED'
+            elif class_name == 'AbilityInfoEntry':
+                event_type = 'ABILITY_INFO'
+            elif class_name == 'PlayerInfoEntry':
+                event_type = 'PLAYER_INFO'
+            elif class_name == 'BeginCastEntry':
+                event_type = 'BEGIN_CAST'
+            elif class_name == 'EndCastEntry':
+                event_type = 'END_CAST'
+            elif class_name == 'EffectChangedEntry':
+                event_type = 'EFFECT_CHANGED'
+            elif class_name == 'CombatEventEntry':
+                event_type = 'COMBAT_EVENT'
+            else:
+                event_type = class_name.replace('Entry', '').upper()
+        else:
+            event_type = "UNKNOWN"
+            
+        # Parse the original line to get fields for backward compatibility
+        try:
+            reader = csv.reader(io.StringIO(original_line))
+            fields = next(reader)
+            # Remove line number and event type from fields
+            if len(fields) >= 2:
+                fields = fields[2:]
+        except:
+            fields = []
+            
+        # Create ESOLogEntry with proper fields
+        return ESOLogEntry(
+            timestamp=timestamp,
+            event_type=event_type,
+            fields=fields,
+            original_line=original_line
+        )
     
     def parse_unit_added(self, entry: ESOLogEntry) -> Optional[UnitAddedEntry]:
         """
-        Parse UNIT_ADDED entry with Phase 2 structured parser integration.
+        Parse UNIT_ADDED entry with Phase 3 structured parser replacement.
         
-        This method now uses the structured parser for better field parsing
+        This method now uses the structured parser exclusively for better field parsing
         and error handling while maintaining backward compatibility.
         """
-        if entry.event_type != "UNIT_ADDED" or len(entry.fields) < 10:
+        if not entry or entry.event_type != "UNIT_ADDED":
             return None
         
-        # Phase 2: Try structured parser first for better field parsing
-        if self.structured_parser:
-            try:
-                structured_result = self.structured_parser.parse_line(entry.original_line)
-                if isinstance(structured_result, StructuredUnitAddedEntry):
-                    # Convert structured result to legacy format for backward compatibility
-                    return self._convert_structured_to_legacy_unit_added(structured_result)
-            except Exception as e:
-                # Fall back to legacy parsing if structured parsing fails
-                print(f"Structured UNIT_ADDED parsing failed, falling back to legacy: {e}")
+        # Use structured parser for all parsing
+        try:
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredUnitAddedEntry):
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_unit_added(structured_result)
+        except Exception as e:
+            print(f"Structured UNIT_ADDED parsing failed: {e}")
+            return None
         
-        # Legacy parsing as fallback
-        return self._parse_unit_added_legacy(entry)
+        return None
     
     def _convert_structured_to_legacy_unit_added(self, structured: StructuredUnitAddedEntry) -> Optional[UnitAddedEntry]:
         """Convert structured UnitAddedEntry to legacy format for backward compatibility"""
@@ -226,80 +294,62 @@ class ESOLogParser:
             print(f"Failed to convert structured UnitAddedEntry: {e}")
             return None
     
-    def _parse_unit_added_legacy(self, entry: ESOLogEntry) -> Optional[UnitAddedEntry]:
-        """Legacy UNIT_ADDED parsing as fallback"""
-        try:
-            # UNIT_ADDED format: unit_id, unit_type, F/T, unknown, unknown, F/T, unknown, unknown, "name", "@handle", player_id, level, alliance, ...
-            unit_id = entry.fields[0]
-            unit_type = entry.fields[1]
-            flags = entry.fields[2:8]
-            name = entry.fields[8].strip('"') if len(entry.fields) > 8 else ""
-            handle = entry.fields[9].strip('"') if len(entry.fields) > 9 else ""
-            player_id = entry.fields[10] if len(entry.fields) > 10 else ""
-            level = int(entry.fields[11]) if len(entry.fields) > 11 and entry.fields[11].isdigit() else 0
-            alliance = int(entry.fields[12]) if len(entry.fields) > 12 and entry.fields[12].isdigit() else 0
-            
-            return UnitAddedEntry(
-                timestamp=entry.timestamp,
-                unit_id=unit_id,
-                unit_type=unit_type,
-                flags=flags,
-                name=name,
-                handle=handle,
-                player_id=player_id,
-                level=level,
-                alliance=alliance
-            )
-        except (ValueError, IndexError):
-            return None
     
     def parse_ability_info(self, entry: ESOLogEntry) -> Optional[AbilityInfoEntry]:
-        """Parse ABILITY_INFO entry."""
-        if entry.event_type != "ABILITY_INFO" or len(entry.fields) < 3:
+        """Parse ABILITY_INFO entry with Phase 3 structured parser replacement."""
+        if entry.event_type != "ABILITY_INFO":
             return None
-            
+        
+        # Use structured parser for all parsing
         try:
-            ability_id = entry.fields[0]
-            ability_name = entry.fields[1].strip('"')
-            icon_path = entry.fields[2].strip('"')
-            flags = entry.fields[3:] if len(entry.fields) > 3 else []
-            
-            # Cache the ability for later use
-            self.ability_cache[ability_id] = ability_name
-            
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredAbilityInfoEntry):
+                # Cache the ability for later use
+                self.ability_cache[str(structured_result.ability_id)] = structured_result.ability_name
+                
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_ability_info(structured_result)
+        except Exception as e:
+            print(f"Structured ABILITY_INFO parsing failed: {e}")
+            return None
+        
+        return None
+    
+    def _convert_structured_to_legacy_ability_info(self, structured: StructuredAbilityInfoEntry) -> Optional[AbilityInfoEntry]:
+        """Convert structured AbilityInfoEntry to legacy format for backward compatibility"""
+        try:
             return AbilityInfoEntry(
-                timestamp=entry.timestamp,
-                ability_id=ability_id,
-                ability_name=ability_name,
-                icon_path=icon_path,
-                flags=flags
+                timestamp=structured.line_number,
+                ability_id=str(structured.ability_id),
+                ability_name=structured.ability_name,
+                icon_path=structured.icon_path,
+                flags=["T" if structured.is_passive else "F", "T" if structured.is_ultimate else "F"]
             )
-        except (ValueError, IndexError):
+        except Exception as e:
+            print(f"Failed to convert structured AbilityInfoEntry: {e}")
             return None
     
     def parse_player_info(self, entry: ESOLogEntry) -> Optional[PlayerInfoEntry]:
         """
-        Parse PLAYER_INFO entry with Phase 2 structured parser integration.
+        Parse PLAYER_INFO entry with Phase 3 structured parser replacement.
         
-        This method now uses the structured parser for better error handling
+        This method now uses the structured parser exclusively for better error handling
         and robust parsing of complex nested bracket structures.
         """
         if entry.event_type != "PLAYER_INFO":
             return None
         
-        # Phase 2: Try structured parser first for better error handling
-        if self.structured_parser:
-            try:
-                structured_result = self.structured_parser.parse_line(entry.original_line)
-                if isinstance(structured_result, StructuredPlayerInfoEntry):
-                    # Convert structured result to legacy format for backward compatibility
-                    return self._convert_structured_to_legacy_player_info(structured_result, entry.timestamp)
-            except Exception as e:
-                # Fall back to legacy parsing if structured parsing fails
-                print(f"Structured PLAYER_INFO parsing failed, falling back to legacy: {e}")
+        # Use structured parser for all parsing
+        try:
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredPlayerInfoEntry):
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_player_info(structured_result, entry.timestamp)
+        except Exception as e:
+            print(f"Structured PLAYER_INFO parsing failed: {e}")
+            return None
         
-        # Legacy parsing as fallback
-        return self._parse_player_info_legacy(entry)
+        return None
     
     def _convert_structured_to_legacy_player_info(self, structured: StructuredPlayerInfoEntry, timestamp: int) -> Optional[PlayerInfoEntry]:
         """Convert structured PlayerInfoEntry to legacy format for backward compatibility"""
@@ -334,138 +384,92 @@ class ESOLogParser:
             print(f"Failed to convert structured PlayerInfoEntry: {e}")
             return None
     
-    def _parse_player_info_legacy(self, entry: ESOLogEntry) -> Optional[PlayerInfoEntry]:
-        """Legacy PLAYER_INFO parsing as fallback"""
-        # PLAYER_INFO has complex nested arrays that break CSV parsing
-        # We need to parse it manually with regex
-        import re
-        
-        # Pattern: timestamp,PLAYER_INFO,unit_id,[ability_ids],[ability_levels],[[gear_data]],champion_points,additional_data
-        pattern = r'(\d+),PLAYER_INFO,(\d+),\[([^\]]+)\],\[([^\]]+)\],(\[.*\]),(\[.*\]),(\[.*\])'
-        match = re.search(pattern, entry.original_line)
-        
-        if not match:
-            return None
-            
-        try:
-            timestamp = int(match.group(1))
-            unit_id = match.group(2)
-            ability_ids_str = match.group(3)
-            ability_levels_str = match.group(4)
-            gear_data_str = match.group(5)
-            champion_points_str = match.group(6)
-            additional_data_str = match.group(7)
-            
-            # Parse ability IDs
-            ability_ids = [aid.strip() for aid in ability_ids_str.split(',') if aid.strip()]
-            
-            # Parse ability levels
-            ability_levels = [level.strip() for level in ability_levels_str.split(',') if level.strip()]
-            
-            # Parse gear data (complex nested arrays)
-            gear_data = self._parse_gear_data(gear_data_str)
-            
-            # Parse champion points
-            champion_points = [cp.strip() for cp in champion_points_str.strip('[]').split(',') if cp.strip()]
-            
-            # Parse additional data
-            additional_data = [data.strip() for data in additional_data_str.strip('[]').split(',') if data.strip()]
-            
-            return PlayerInfoEntry(
-                timestamp=timestamp,
-                unit_id=unit_id,
-                ability_ids=ability_ids,
-                ability_levels=ability_levels,
-                gear_data=gear_data,
-                champion_points=champion_points,
-                additional_data=additional_data
-            )
-        except (ValueError, IndexError):
-            return None
-    
-    def _parse_gear_data(self, gear_data_str: str) -> List[List[str]]:
-        """Parse the complex gear data array."""
-        # Gear data format: [[slot,item_id,flags...],[slot,item_id,flags...],...]
-        gear_items = []
-        
-        # Remove outer brackets
-        gear_data_str = gear_data_str.strip('[]')
-        
-        # Split on ],[ to separate gear items, but be careful about the first and last items
-        # First, remove the leading [ from the first item and trailing ] from the last item
-        if gear_data_str.startswith('['):
-            gear_data_str = gear_data_str[1:]
-        if gear_data_str.endswith(']'):
-            gear_data_str = gear_data_str[:-1]
-        
-        # Now split on ],[ 
-        gear_item_strings = gear_data_str.split('],[')
-        
-        for gear_item_str in gear_item_strings:
-            gear_item = [item.strip() for item in gear_item_str.split(',')]
-            gear_items.append(gear_item)
-        
-        return gear_items
     
     def parse_begin_cast(self, entry: ESOLogEntry) -> Optional[BeginCastEntry]:
-        """Parse BEGIN_CAST entry."""
-        if entry.event_type != "BEGIN_CAST" or len(entry.fields) < 5:
+        """Parse BEGIN_CAST entry with Phase 3 structured parser replacement."""
+        if entry.event_type != "BEGIN_CAST":
             return None
-            
+        
+        # Use structured parser for all parsing
         try:
-            unknown1 = entry.fields[0]
-            unknown2 = entry.fields[1]
-            caster_unit_id = entry.fields[2]
-            ability_id = entry.fields[3]
-            target_unit_id = entry.fields[4]
-            stats = entry.fields[5:]
-            
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredBeginCastEntry):
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_begin_cast(structured_result, entry.original_line)
+        except Exception as e:
+            print(f"Structured BEGIN_CAST parsing failed: {e}")
+            return None
+        
+        return None
+    
+    def _convert_structured_to_legacy_begin_cast(self, structured: StructuredBeginCastEntry, original_line: str) -> Optional[BeginCastEntry]:
+        """Convert structured BeginCastEntry to legacy format for backward compatibility"""
+        try:
+            # Extract stats from the original line for backward compatibility
+            stats = []
+            try:
+                reader = csv.reader(io.StringIO(original_line))
+                fields = next(reader)
+                if len(fields) > 7:  # Skip line_number, event_type, and first 5 fields
+                    stats = fields[7:]
+            except:
+                pass
+                
             return BeginCastEntry(
-                timestamp=entry.timestamp,
-                unknown1=unknown1,
-                unknown2=unknown2,
-                caster_unit_id=caster_unit_id,
-                ability_id=ability_id,
-                target_unit_id=target_unit_id,
+                timestamp=structured.line_number,
+                unknown1=str(structured.channel_id),
+                unknown2="T" if structured.is_channeled else "F",
+                caster_unit_id=str(structured.caster_unit_id),
+                ability_id=str(structured.ability_id),
+                target_unit_id=str(structured.target_unit_id),
                 stats=stats
             )
-        except (ValueError, IndexError):
+        except Exception as e:
+            print(f"Failed to convert structured BeginCastEntry: {e}")
             return None
     
     def parse_effect_changed(self, entry: ESOLogEntry) -> Optional[EffectChangedEntry]:
-        """Parse EFFECT_CHANGED entry."""
-        if entry.event_type != "EFFECT_CHANGED" or len(entry.fields) < 5:
+        """Parse EFFECT_CHANGED entry with Phase 3 structured parser replacement."""
+        if entry.event_type != "EFFECT_CHANGED":
             return None
-            
+        
+        # Use structured parser for all parsing
         try:
-            effect_type = entry.fields[0]
-            target_unit_id = entry.fields[1]
-            source_unit_id = entry.fields[2]
-            ability_id = entry.fields[3]
-            stacks = entry.fields[4]
-            
-            # The remaining fields are complex - target stats and potentially additional targets
-            remaining_fields = entry.fields[5:]
-            
-            # Parse target stats (first set of stats)
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredEffectChangedEntry):
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_effect_changed(structured_result, entry.original_line)
+        except Exception as e:
+            print(f"Structured EFFECT_CHANGED parsing failed: {e}")
+            return None
+        
+        return None
+    
+    def _convert_structured_to_legacy_effect_changed(self, structured: StructuredEffectChangedEntry, original_line: str) -> Optional[EffectChangedEntry]:
+        """Convert structured EffectChangedEntry to legacy format for backward compatibility"""
+        try:
+            # Extract target_stats from the original line for backward compatibility
             target_stats = []
-            additional_targets = []
-            
-            # This is complex - the format can vary
-            # For now, just collect all remaining fields as target stats
-            target_stats = remaining_fields
-            
+            try:
+                reader = csv.reader(io.StringIO(original_line))
+                fields = next(reader)
+                if len(fields) > 7:  # Skip line_number, event_type, and first 5 fields
+                    target_stats = fields[7:]
+            except:
+                pass
+                
             return EffectChangedEntry(
-                timestamp=entry.timestamp,
-                effect_type=effect_type,
-                target_unit_id=target_unit_id,
-                source_unit_id=source_unit_id,
-                ability_id=ability_id,
-                stacks=stacks,
+                timestamp=0,  # EFFECT_CHANGED doesn't have timestamps
+                effect_type=structured.change_type.value,
+                target_unit_id=str(structured.target_unit_id),
+                source_unit_id=str(structured.source_unit_id),
+                ability_id=str(structured.effect_id),
+                stacks=str(structured.stack_count),
                 target_stats=target_stats,
-                additional_targets=additional_targets
+                additional_targets=[[str(t)] for t in structured.additional_targets]
             )
-        except (ValueError, IndexError):
+        except Exception as e:
+            print(f"Failed to convert structured EffectChangedEntry: {e}")
             return None
     
     def get_ability_name(self, ability_id: str) -> Optional[str]:

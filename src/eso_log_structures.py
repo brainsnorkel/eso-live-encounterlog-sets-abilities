@@ -406,7 +406,7 @@ class MapChangedEntry:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
             
-            if len(fields) < 6 or fields[1] != "MAP_CHANGED":
+            if len(fields) < 5 or fields[1] != "MAP_CHANGED":
                 return None
                 
             return cls(
