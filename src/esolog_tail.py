@@ -204,7 +204,7 @@ class ESOLogEntry:
                 try:
                     timestamp = int(fields[2])
                     # For certain events, the third field is not a timestamp
-                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST"]:
+                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST", "ABILITY_INFO"]:
                         # These events don't have timestamps, use line number as timestamp
                         line_number = int(fields[0]) if fields[0].isdigit() else 0
                         return cls(line_number, event_type, fields[2:], line)

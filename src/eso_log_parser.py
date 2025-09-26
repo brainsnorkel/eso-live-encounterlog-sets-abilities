@@ -34,11 +34,28 @@ class ESOLogEntry:
                 return None
 
             # Format: line_number,event_type,timestamp,...
-            timestamp = int(fields[2])
+            # But some events don't have timestamps (like ABILITY_INFO)
             event_type = fields[1]
             
-
-            return cls(timestamp, event_type, fields[3:], line)
+            # Check if the third field is a timestamp (numeric)
+            if len(fields) >= 3:
+                try:
+                    timestamp = int(fields[2])
+                    # For certain events, the third field is not a timestamp
+                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST", "ABILITY_INFO"]:
+                        # These events don't have timestamps, use line number as timestamp
+                        line_number = int(fields[0]) if fields[0].isdigit() else 0
+                        return cls(line_number, event_type, fields[2:], line)
+                    else:
+                        # These events have timestamps
+                        return cls(timestamp, event_type, fields[3:], line)
+                except ValueError:
+                    # Third field is not a timestamp, treat as data field
+                    return cls(0, event_type, fields[2:], line)
+            else:
+                # No timestamp field, use line number as relative timestamp
+                line_number = int(fields[0]) if fields[0].isdigit() else 0
+                return cls(line_number, event_type, fields[2:], line)
         except (ValueError, IndexError, StopIteration):
             return None
 
