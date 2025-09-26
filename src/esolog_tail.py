@@ -908,8 +908,10 @@ class ESOLogAnalyzer:
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_unit_added called with {len(entry.fields)} fields{Style.RESET_ALL}")
         
         if len(entry.fields) >= 10:
-            unit_id = entry.fields[0]
-            unit_type = entry.fields[1]
+            # The parse method incorrectly skips the unit_id field for UNIT_ADDED events
+            # So we need to adjust the field indices
+            unit_id = entry.fields[2]  # Actual unit_id is in field 2
+            unit_type = entry.fields[0]  # Unit type is in field 0
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -917,12 +919,19 @@ class ESOLogAnalyzer:
             
             # Handle player units
             if unit_type == "PLAYER":
-                name = entry.fields[8] if len(entry.fields) > 8 else ""
-                handle = entry.fields[9] if len(entry.fields) > 9 else ""
-                long_unit_id = entry.fields[10] if len(entry.fields) > 10 else ""
-                class_id = entry.fields[6] if len(entry.fields) > 6 else ""  # Class ID is in field 7 (index 6)
+                name = entry.fields[6] if len(entry.fields) > 6 else ""  # Name is in field 6
+                handle = entry.fields[7] if len(entry.fields) > 7 else ""  # Handle is in field 7
+                long_unit_id = entry.fields[8] if len(entry.fields) > 8 else ""  # Long unit ID is in field 8
+                class_id = entry.fields[5] if len(entry.fields) > 5 else ""  # Class ID is in field 5
 
-                # Only add players if we have a current encounter (zone has been set)
+                # Create encounter if it doesn't exist (UNIT_ADDED can happen before ZONE_CHANGED)
+                if not self.current_encounter:
+                    self.current_encounter = CombatEncounter()
+                    self.current_encounter.start_time = entry.timestamp
+                    if self.diagnostic:
+                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
+                
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED player {unit_id}, encounter exists: {self.current_encounter is not None}{Style.RESET_ALL}")
