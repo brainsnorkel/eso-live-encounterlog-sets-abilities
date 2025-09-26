@@ -939,8 +939,9 @@ class PlayerInfoEntry:
         """
         gear_items = []
         
-        # Remove outer brackets
-        gear_data_str = gear_data_str.strip('[]')
+        # Remove outer brackets if present
+        if gear_data_str.startswith('[[') and gear_data_str.endswith(']]'):
+            gear_data_str = gear_data_str[1:-1]  # Remove one level of brackets
         
         # Use a more robust approach to handle nested brackets
         bracket_count = 0
@@ -958,6 +959,9 @@ class PlayerInfoEntry:
                     # Complete gear item found
                     items.append(current_item.strip())
                     current_item = ""
+            elif bracket_count == 0 and char == ',':
+                # Skip commas between items (when not inside brackets)
+                continue
             else:
                 current_item += char
         

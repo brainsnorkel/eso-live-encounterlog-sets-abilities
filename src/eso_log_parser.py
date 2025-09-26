@@ -151,7 +151,13 @@ class ESOLogParser:
             self.structured_parser = None
         
     def parse_line(self, line: str) -> Optional[ESOLogEntry]:
-        """Parse a single log line."""
+        """
+        Parse a single log line with Phase 2 structured parser integration.
+        
+        This method maintains backward compatibility by always returning
+        legacy ESOLogEntry objects, while using structured parsing internally
+        for better error handling.
+        """
         # First try to parse as a generic entry
         entry = ESOLogEntry.parse(line)
         if not entry:
@@ -161,11 +167,13 @@ class ESOLogParser:
         if entry.event_type == "PLAYER_INFO":
             player_info = self.parse_player_info(entry)
             if player_info:
-                return player_info
+                # Return the original ESOLogEntry for backward compatibility
+                return entry
         elif entry.event_type == "ABILITY_INFO":
             ability_info = self.parse_ability_info(entry)
             if ability_info:
-                return ability_info
+                # Return the original ESOLogEntry for backward compatibility
+                return entry
                 
         return entry
     
@@ -314,13 +322,13 @@ class ESOLogParser:
                 ])
             
             return PlayerInfoEntry(
-                timestamp=timestamp,
-                unit_id=structured.unit_id,
-                ability_ids=structured.ability_ids,
-                ability_levels=structured.ability_levels,
+                timestamp=structured.line_number,  # Use line_number from structured parser, not entry.timestamp
+                unit_id=str(structured.unit_id),  # Convert to string to match legacy format
+                ability_ids=[str(aid) for aid in structured.ability_ids],  # Convert to strings
+                ability_levels=[str(al) for al in structured.ability_levels],  # Convert to strings
                 gear_data=gear_data,
-                champion_points=structured.front_bar_abilities,
-                additional_data=structured.back_bar_abilities
+                champion_points=[str(cp) for cp in structured.front_bar_abilities],  # Convert to strings
+                additional_data=[str(ad) for ad in structured.back_bar_abilities]  # Convert to strings
             )
         except Exception as e:
             print(f"Failed to convert structured PlayerInfoEntry: {e}")
