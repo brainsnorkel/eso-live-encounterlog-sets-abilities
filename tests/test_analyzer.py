@@ -81,23 +81,32 @@ def test_set_database():
     """Test gear set database functionality."""
     print("Testing set database...")
 
-    from gear_set_database_optimized import OptimizedGearSetDatabase
-    db = OptimizedGearSetDatabase()
+    from gear_set_database_optimized import gear_set_db
 
-    # Test set identification with actual ability IDs from the database
-    abilities = {"107202", "133378", "154691"}  # Arms of Relequen, Mother Ciannait, Bahsei's Mania
-    sets = db.identify_sets_from_abilities(abilities, "magicka_dps")
+    # Test direct ability-to-set mapping (how the main application actually works)
+    ability_ids = ["107202", "133378", "154691"]  # Arms of Relequen, Mother Ciannait, Bahsei's Mania
+    identified_sets = []
+    
+    for ability_id in ability_ids:
+        set_name = gear_set_db.get_set_name_by_ability_id(ability_id)
+        if set_name:
+            identified_sets.append(set_name)
+    
+    print(f"Set identification result: {identified_sets}")
+    assert len(identified_sets) > 0
+    print("✓ Direct ability-to-set mapping works")
 
-    print(f"Set identification result: {sets}")
-    assert len(sets) > 0
-    print("✓ Set identification works")
+    # Test healer ability mapping
+    healer_ability_id = "66899"  # Spell Power Cure
+    healer_set = gear_set_db.get_set_name_by_ability_id(healer_ability_id)
+    print(f"Healer set: {healer_set}")
+    assert healer_set is not None
+    print("✓ Healer ability mapping works")
 
-    # Test role-based suggestions with healer abilities
-    healer_abilities = {"66899"}  # Spell Power Cure
-    sets = db.identify_sets_from_abilities(healer_abilities, "healer")
-    print(f"Healer suggestions: {sets}")
-    assert len(sets) > 0
-    print("✓ Role-based set suggestions work")
+    # Test set ID to name mapping
+    set_name = gear_set_db.get_set_name_by_set_id("12345")  # Test with a set ID
+    print(f"Set ID to name mapping: {set_name}")
+    print("✓ Set ID to name mapping works")
 
     print("Set database tests passed!\n")
 

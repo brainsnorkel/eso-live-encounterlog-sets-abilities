@@ -74,37 +74,6 @@ class OptimizedGearSetDatabase:
         """Get all gear set IDs."""
         return list(self.set_id_to_name.keys())
     
-    def identify_sets_from_abilities(self, abilities: set, role: str) -> List[Dict[str, any]]:
-        """
-        Identify gear sets from a set of abilities and role.
-        
-        This method provides backward compatibility with the removed ESOSetDatabase.
-        """
-        identified_sets = []
-        
-        # Look up sets by ability IDs
-        for ability in abilities:
-            set_name = self.get_set_name_by_ability_id(str(ability))
-            if set_name:
-                set_info = self.get_set_info(set_name)
-                if set_info:
-                    identified_sets.append({
-                        'name': set_name,
-                        'set_id': set_info.get('set_id', ''),
-                        'role': role,
-                        'confidence': 0.8  # Default confidence for ability-based identification
-                    })
-        
-        # Remove duplicates
-        seen = set()
-        unique_sets = []
-        for set_data in identified_sets:
-            set_name = set_data['name']
-            if set_name not in seen:
-                seen.add(set_name)
-                unique_sets.append(set_data)
-        
-        return unique_sets
 
 # Global instance for easy access
 gear_set_db = OptimizedGearSetDatabase()
