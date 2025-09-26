@@ -2,6 +2,9 @@
 """
 ESO Log Parser
 A robust parser for ESO encounter log files with comprehensive support for all log entry types.
+
+Phase 2 Migration: Integrating structured parser for critical paths (PLAYER_INFO, UNIT_ADDED)
+while maintaining backward compatibility with existing functionality.
 """
 
 import re
@@ -9,6 +12,18 @@ import csv
 import io
 from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass, field
+
+# Import structured parser for Phase 2 migration
+try:
+    from eso_log_structures import (
+        ESOLogStructureParser, 
+        PlayerInfoEntry as StructuredPlayerInfoEntry,
+        UnitAddedEntry as StructuredUnitAddedEntry,
+        EventType
+    )
+    STRUCTURED_PARSER_AVAILABLE = True
+except ImportError:
+    STRUCTURED_PARSER_AVAILABLE = False
 
 
 @dataclass
@@ -124,10 +139,16 @@ class EffectChangedEntry:
 
 
 class ESOLogParser:
-    """Robust parser for ESO encounter log files."""
+    """Robust parser for ESO encounter log files with Phase 2 structured parser integration."""
     
     def __init__(self):
         self.ability_cache: Dict[str, str] = {}
+        
+        # Initialize structured parser for Phase 2 migration
+        if STRUCTURED_PARSER_AVAILABLE:
+            self.structured_parser = ESOLogStructureParser()
+        else:
+            self.structured_parser = None
         
     def parse_line(self, line: str) -> Optional[ESOLogEntry]:
         """Parse a single log line."""
@@ -149,10 +170,56 @@ class ESOLogParser:
         return entry
     
     def parse_unit_added(self, entry: ESOLogEntry) -> Optional[UnitAddedEntry]:
-        """Parse UNIT_ADDED entry."""
+        """
+        Parse UNIT_ADDED entry with Phase 2 structured parser integration.
+        
+        This method now uses the structured parser for better field parsing
+        and error handling while maintaining backward compatibility.
+        """
         if entry.event_type != "UNIT_ADDED" or len(entry.fields) < 10:
             return None
-            
+        
+        # Phase 2: Try structured parser first for better field parsing
+        if self.structured_parser:
+            try:
+                structured_result = self.structured_parser.parse_line(entry.original_line)
+                if isinstance(structured_result, StructuredUnitAddedEntry):
+                    # Convert structured result to legacy format for backward compatibility
+                    return self._convert_structured_to_legacy_unit_added(structured_result)
+            except Exception as e:
+                # Fall back to legacy parsing if structured parsing fails
+                print(f"Structured UNIT_ADDED parsing failed, falling back to legacy: {e}")
+        
+        # Legacy parsing as fallback
+        return self._parse_unit_added_legacy(entry)
+    
+    def _convert_structured_to_legacy_unit_added(self, structured: StructuredUnitAddedEntry) -> Optional[UnitAddedEntry]:
+        """Convert structured UnitAddedEntry to legacy format for backward compatibility"""
+        try:
+            return UnitAddedEntry(
+                timestamp=structured.line_number,
+                unit_id=structured.unit_id,
+                unit_type=structured.unit_type.value,
+                flags=[
+                    "T" if structured.is_local_player else "F",
+                    str(structured.unknown_1),
+                    str(structured.unknown_2),
+                    "T" if structured.unknown_3 else "F",
+                    str(structured.unknown_4),
+                    str(structured.class_id)
+                ],
+                name=structured.name,
+                handle=structured.handle,
+                player_id=structured.player_id,
+                level=structured.level,
+                alliance=structured.alliance
+            )
+        except Exception as e:
+            print(f"Failed to convert structured UnitAddedEntry: {e}")
+            return None
+    
+    def _parse_unit_added_legacy(self, entry: ESOLogEntry) -> Optional[UnitAddedEntry]:
+        """Legacy UNIT_ADDED parsing as fallback"""
         try:
             # UNIT_ADDED format: unit_id, unit_type, F/T, unknown, unknown, F/T, unknown, unknown, "name", "@handle", player_id, level, alliance, ...
             unit_id = entry.fields[0]
@@ -203,10 +270,64 @@ class ESOLogParser:
             return None
     
     def parse_player_info(self, entry: ESOLogEntry) -> Optional[PlayerInfoEntry]:
-        """Parse PLAYER_INFO entry."""
+        """
+        Parse PLAYER_INFO entry with Phase 2 structured parser integration.
+        
+        This method now uses the structured parser for better error handling
+        and robust parsing of complex nested bracket structures.
+        """
         if entry.event_type != "PLAYER_INFO":
             return None
+        
+        # Phase 2: Try structured parser first for better error handling
+        if self.structured_parser:
+            try:
+                structured_result = self.structured_parser.parse_line(entry.original_line)
+                if isinstance(structured_result, StructuredPlayerInfoEntry):
+                    # Convert structured result to legacy format for backward compatibility
+                    return self._convert_structured_to_legacy_player_info(structured_result, entry.timestamp)
+            except Exception as e:
+                # Fall back to legacy parsing if structured parsing fails
+                print(f"Structured PLAYER_INFO parsing failed, falling back to legacy: {e}")
+        
+        # Legacy parsing as fallback
+        return self._parse_player_info_legacy(entry)
+    
+    def _convert_structured_to_legacy_player_info(self, structured: StructuredPlayerInfoEntry, timestamp: int) -> Optional[PlayerInfoEntry]:
+        """Convert structured PlayerInfoEntry to legacy format for backward compatibility"""
+        try:
+            # Convert gear items to legacy format
+            gear_data = []
+            for gear_item in structured.gear_items:
+                gear_data.append([
+                    gear_item.slot,
+                    str(gear_item.item_id),
+                    gear_item.bind_type,
+                    str(gear_item.level),
+                    gear_item.trait,
+                    gear_item.quality,
+                    str(gear_item.set_id),
+                    gear_item.enchant,
+                    gear_item.enchant_bind_type,
+                    str(gear_item.enchant_level),
+                    gear_item.enchant_quality
+                ])
             
+            return PlayerInfoEntry(
+                timestamp=timestamp,
+                unit_id=structured.unit_id,
+                ability_ids=structured.ability_ids,
+                ability_levels=structured.ability_levels,
+                gear_data=gear_data,
+                champion_points=structured.front_bar_abilities,
+                additional_data=structured.back_bar_abilities
+            )
+        except Exception as e:
+            print(f"Failed to convert structured PlayerInfoEntry: {e}")
+            return None
+    
+    def _parse_player_info_legacy(self, entry: ESOLogEntry) -> Optional[PlayerInfoEntry]:
+        """Legacy PLAYER_INFO parsing as fallback"""
         # PLAYER_INFO has complex nested arrays that break CSV parsing
         # We need to parse it manually with regex
         import re
