@@ -908,10 +908,10 @@ class ESOLogAnalyzer:
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_unit_added called with {len(entry.fields)} fields{Style.RESET_ALL}")
         
         if len(entry.fields) >= 10:
-            # The parse method incorrectly skips the unit_id field for UNIT_ADDED events
-            # So we need to adjust the field indices
-            unit_id = entry.fields[2]  # Actual unit_id is in field 2
-            unit_type = entry.fields[0]  # Unit type is in field 0
+            # Correct field indexing after ESOLogEntry.parse() processing
+            # fields[2:] was used in parsing, so indices are shifted
+            unit_id = entry.fields[0]  # unit_id is in field 0
+            unit_type = entry.fields[1]  # unit_type is in field 1
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -919,10 +919,10 @@ class ESOLogAnalyzer:
             
             # Handle player units
             if unit_type == "PLAYER":
-                name = entry.fields[6] if len(entry.fields) > 6 else ""  # Name is in field 6
-                handle = entry.fields[7] if len(entry.fields) > 7 else ""  # Handle is in field 7
-                long_unit_id = entry.fields[8] if len(entry.fields) > 8 else ""  # Long unit ID is in field 8
-                class_id = entry.fields[5] if len(entry.fields) > 5 else ""  # Class ID is in field 5
+                name = entry.fields[8] if len(entry.fields) > 8 else ""  # Name is in field 8
+                handle = entry.fields[9] if len(entry.fields) > 9 else ""  # Handle is in field 9
+                long_unit_id = entry.fields[10] if len(entry.fields) > 10 else ""  # Long unit ID is in field 10
+                class_id = entry.fields[7] if len(entry.fields) > 7 else ""  # Class ID is in field 7
 
                 # Create encounter if it doesn't exist (UNIT_ADDED can happen before ZONE_CHANGED)
                 if not self.current_encounter:
