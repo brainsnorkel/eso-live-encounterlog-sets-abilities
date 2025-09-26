@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from esolog_tail import ESOLogEntry, ESOLogAnalyzer
-from eso_sets import ESOSubclassAnalyzer, ESOSetDatabase
+from eso_sets import ESOSubclassAnalyzer
 
 def test_log_parsing():
     """Test basic log entry parsing."""
@@ -72,7 +72,7 @@ def test_subclass_analysis():
     result = analyzer.analyze_subclass(sorc_abilities)
     print(f"Sorcerer test: {result}")
     assert 'Dark Magic' in result['skill_lines'] or 'Storm Calling' in result['skill_lines']
-    assert result['role'] == 'magicka'
+    assert result['role'] == 'dps'
     print("✓ Sorcerer magicka DPS detection works")
 
     print("Subclass analysis tests passed!\n")
@@ -81,7 +81,8 @@ def test_set_database():
     """Test gear set database functionality."""
     print("Testing set database...")
 
-    db = ESOSetDatabase()
+    from gear_set_database_optimized import OptimizedGearSetDatabase
+    db = OptimizedGearSetDatabase()
 
     # Test set identification
     abilities = {"False God's Devotion", "Crystal Fragments", "Spell Critical"}

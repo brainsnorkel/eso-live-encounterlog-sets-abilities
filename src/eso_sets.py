@@ -290,8 +290,38 @@ class ESOSubclassAnalyzer:
 
         return {
             'skill_lines': top_skill_lines,
-            'confidence': confidence
+            'confidence': confidence,
+            'role': self._infer_role_from_skill_lines(top_skill_lines, abilities)
         }
+    
+    def _infer_role_from_skill_lines(self, skill_lines: List[str], abilities: Set[str]) -> str:
+        """Infer role from detected skill lines and abilities."""
+        # Role detection based on skill lines and abilities
+        if not skill_lines:
+            return 'unknown'
+        
+        # Check for healing abilities
+        healing_abilities = {'Breath of Life', 'Honor the Dead', 'Healing Ritual', 'Combat Prayer', 'Rapid Regeneration'}
+        if any(ability in abilities for ability in healing_abilities):
+            return 'healer'
+        
+        # Check for tank abilities
+        tank_abilities = {'Pierce Armor', 'Inner Rage', 'Heroic Slash', 'Defensive Posture', 'Absorb Magic'}
+        if any(ability in abilities for ability in tank_abilities):
+            return 'tank'
+        
+        # Check for DPS abilities
+        dps_abilities = {'Crystal Fragments', 'Force Pulse', 'Wrecking Blow', 'Biting Jabs', 'Scorched Earth'}
+        if any(ability in abilities for ability in dps_abilities):
+            return 'dps'
+        
+        # Default role based on skill lines
+        if 'Restoring Light' in skill_lines:
+            return 'healer'
+        elif 'Aedric Spear' in skill_lines or 'Dawn\'s Wrath' in skill_lines:
+            return 'dps'
+        else:
+            return 'dps'  # Default to DPS
 
     def _clean_ability_name(self, ability: str) -> str:
         """Clean ability name for better matching."""
