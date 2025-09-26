@@ -84,16 +84,17 @@ def test_set_database():
     from gear_set_database_optimized import OptimizedGearSetDatabase
     db = OptimizedGearSetDatabase()
 
-    # Test set identification
-    abilities = {"False God's Devotion", "Crystal Fragments", "Spell Critical"}
+    # Test set identification with actual ability IDs from the database
+    abilities = {"107202", "133378", "154691"}  # Arms of Relequen, Mother Ciannait, Bahsei's Mania
     sets = db.identify_sets_from_abilities(abilities, "magicka_dps")
 
     print(f"Set identification result: {sets}")
     assert len(sets) > 0
     print("✓ Set identification works")
 
-    # Test role-based suggestions
-    sets = db.identify_sets_from_abilities(set(), "healer")
+    # Test role-based suggestions with healer abilities
+    healer_abilities = {"66899"}  # Spell Power Cure
+    sets = db.identify_sets_from_abilities(healer_abilities, "healer")
     print(f"Healer suggestions: {sets}")
     assert len(sets) > 0
     print("✓ Role-based set suggestions work")
