@@ -1061,14 +1061,36 @@ class ESOLogAnalyzer:
                 player.set_gear(player_info.gear_data)
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
-                
-                # Update session data with new player info
+            
+            # Always update session data with new player info, regardless of encounter status
+            # This ensures player data is available when they join encounters later
+            # Get player name and handle from unit ID mapping or current encounter
+            player_name = ""
+            player_handle = ""
+            player_class_id = None
+            
+            if self.current_encounter and player_info.unit_id in self.current_encounter.players:
+                player = self.current_encounter.players[player_info.unit_id]
+                player_name = player.name
+                player_handle = player.handle
+                player_class_id = player.class_id
+            elif player_info.unit_id in self.unit_id_to_handle:
+                player_handle = self.unit_id_to_handle[player_info.unit_id]
+                # Try to find player name from existing sessions
+                for session_key, session_data in self.player_sessions.items():
+                    if session_data.get('unit_id') == player_info.unit_id:
+                        player_name = session_data.get('name', '')
+                        player_class_id = session_data.get('class_id')
+                        break
+            
+            if player_handle:  # Only update if we have a handle
                 self._update_player_session(
                     player_info.unit_id, 
-                    player.name, 
-                    player.handle, 
+                    player_name, 
+                    player_handle, 
                     equipped_ability_names, 
-                    player_info.gear_data
+                    player_info.gear_data,
+                    player_class_id
                 )
                 
 
