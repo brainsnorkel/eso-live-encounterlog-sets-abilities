@@ -2949,52 +2949,87 @@ class ESOLogAnalyzer:
         try:
             import threading
             import sys
-            import tty
-            import termios
             
-            def input_handler():
-                """Handle terminal input in a separate thread."""
-                # Save terminal settings
-                old_settings = termios.tcgetattr(sys.stdin)
-                
+            # Check if we're on Windows
+            if sys.platform == "win32":
+                # Windows-specific keyboard handling
                 try:
-                    # Set terminal to raw mode to capture individual keystrokes
-                    tty.setraw(sys.stdin.fileno())
+                    import msvcrt
                     
-                    while True:
-                        try:
-                            # Read one character at a time
-                            char = sys.stdin.read(1)
-                            
-                            # Handle Ctrl+C
-                            if char == '\x03':  # Ctrl+C
+                    def input_handler():
+                        """Handle keyboard input on Windows."""
+                        while True:
+                            try:
+                                if msvcrt.kbhit():
+                                    char = msvcrt.getch().decode('utf-8', errors='ignore').lower()
+                                    if char == 'c':
+                                        # Copy last fight to clipboard
+                                        self._copy_discord_report_to_clipboard()
+                                        print('\r', end='', flush=True)
+                                # Small delay to prevent excessive CPU usage
+                                import time
+                                time.sleep(0.1)
+                            except KeyboardInterrupt:
                                 break
-                            elif char.lower() == 'c':
-                                # Consume the character and copy to clipboard
-                                self._copy_discord_report_to_clipboard()
-                                # Move cursor to beginning of next line
-                                print('\r', end='', flush=True)
-                            elif char == '\r' or char == '\n':
-                                # Handle Enter key normally
-                                print()
-                            else:
-                                # Echo other characters normally
-                                print(char, end='', flush=True)
+                            except Exception:
+                                pass  # Ignore other errors
+                    
+                    # Start input handler in a separate thread
+                    self.input_thread = threading.Thread(target=input_handler, daemon=True)
+                    self.input_thread.start()
+                    return True
+                    
+                except ImportError:
+                    print(f"{Fore.RED}Windows keyboard handling not available{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Discord copy feature disabled{Style.RESET_ALL}")
+                    return False
+            else:
+                # Unix/Linux/macOS keyboard handling
+                import tty
+                import termios
+                
+                def input_handler():
+                    """Handle terminal input in a separate thread."""
+                    # Save terminal settings
+                    old_settings = termios.tcgetattr(sys.stdin)
+                    
+                    try:
+                        # Set terminal to raw mode to capture individual keystrokes
+                        tty.setraw(sys.stdin.fileno())
+                        
+                        while True:
+                            try:
+                                # Read one character at a time
+                                char = sys.stdin.read(1)
                                 
-                        except (EOFError, KeyboardInterrupt):
-                            break
-                        except Exception:
-                            pass  # Ignore other errors
-                            
-                finally:
-                    # Restore terminal settings
-                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-            
-            # Start input handler in a separate thread
-            self.input_thread = threading.Thread(target=input_handler, daemon=True)
-            self.input_thread.start()
-            
-            return True
+                                # Handle Ctrl+C
+                                if char == '\x03':  # Ctrl+C
+                                    break
+                                elif char.lower() == 'c':
+                                    # Consume the character and copy to clipboard
+                                    self._copy_discord_report_to_clipboard()
+                                    # Move cursor to beginning of next line
+                                    print('\r', end='', flush=True)
+                                elif char == '\r' or char == '\n':
+                                    # Handle Enter key normally
+                                    print()
+                                else:
+                                    # Echo other characters normally
+                                    print(char, end='', flush=True)
+                                    
+                            except (EOFError, KeyboardInterrupt):
+                                break
+                            except Exception:
+                                pass  # Ignore other errors
+                                
+                    finally:
+                        # Restore terminal settings
+                        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                
+                # Start input handler in a separate thread
+                self.input_thread = threading.Thread(target=input_handler, daemon=True)
+                self.input_thread.start()
+                return True
             
         except Exception as e:
             print(f"{Fore.RED}Error starting input handler: {e}{Style.RESET_ALL}")
