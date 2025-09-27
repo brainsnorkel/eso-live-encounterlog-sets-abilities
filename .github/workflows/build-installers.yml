@@ -67,7 +67,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: esolog-tail-win-v021
-        path: dist/esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}.zip
+        path: dist/installer/
 
   build-macos:
     runs-on: macos-latest
@@ -127,7 +127,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: esolog-tail-mac-v021
-        path: dist/esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}.zip
+        path: dist/installer/
 
   build-linux:
     runs-on: ubuntu-latest
@@ -187,7 +187,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: esolog-tail-linux-v021
-        path: dist/esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}.tar.gz
+        path: dist/installer/
 
   create-release:
     needs: [build-windows, build-macos, build-linux]
@@ -225,11 +225,20 @@ jobs:
         name: esolog-tail-linux-v021
         path: ./artifacts/linux
         
+    - name: Create final release archives
+      run: |
+        cd artifacts/windows
+        zip -r esolog-tail-windows-installer-0.2.1.zip .
+        cd ../macos
+        zip -r esolog-tail-macos-installer-0.2.1.zip .
+        cd ../linux
+        tar -czf esolog-tail-linux-installer-0.2.1.tar.gz .
+        
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/esolog-tail-windows-installer-.zip
+          ./artifacts/windows/esolog-tail-windows-installer-0.2.1.zip
           ./artifacts/macos/esolog-tail-macos-installer-0.2.1.zip
           ./artifacts/linux/esolog-tail-linux-installer-0.2.1.tar.gz
         generate_release_notes: true
