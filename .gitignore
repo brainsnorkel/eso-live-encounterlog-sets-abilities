@@ -74,5 +74,14 @@ icon.png
 test_output/
 output/
 
+# Test reports and split logs
+test_reports*/
+demo_splits/
+test_auto_cleanup/
+*_reports*/
+*_splits/
+split_logs/
+*report*.txt
+
 # Documentation files not for git
 CLAUDE.md

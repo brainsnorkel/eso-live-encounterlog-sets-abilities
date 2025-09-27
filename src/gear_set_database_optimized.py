@@ -73,6 +73,7 @@ class OptimizedGearSetDatabase:
     def get_all_set_ids(self) -> List[str]:
         """Get all gear set IDs."""
         return list(self.set_id_to_name.keys())
+    
 
 # Global instance for easy access
 gear_set_db = OptimizedGearSetDatabase()

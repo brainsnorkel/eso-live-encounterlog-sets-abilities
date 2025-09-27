@@ -290,8 +290,38 @@ class ESOSubclassAnalyzer:
 
         return {
             'skill_lines': top_skill_lines,
-            'confidence': confidence
+            'confidence': confidence,
+            'role': self._infer_role_from_skill_lines(top_skill_lines, abilities)
         }
+    
+    def _infer_role_from_skill_lines(self, skill_lines: List[str], abilities: Set[str]) -> str:
+        """Infer role from detected skill lines and abilities."""
+        # Role detection based on skill lines and abilities
+        if not skill_lines:
+            return 'unknown'
+        
+        # Check for healing abilities
+        healing_abilities = {'Breath of Life', 'Honor the Dead', 'Healing Ritual', 'Combat Prayer', 'Rapid Regeneration'}
+        if any(ability in abilities for ability in healing_abilities):
+            return 'healer'
+        
+        # Check for tank abilities
+        tank_abilities = {'Pierce Armor', 'Inner Rage', 'Heroic Slash', 'Defensive Posture', 'Absorb Magic'}
+        if any(ability in abilities for ability in tank_abilities):
+            return 'tank'
+        
+        # Check for DPS abilities
+        dps_abilities = {'Crystal Fragments', 'Force Pulse', 'Wrecking Blow', 'Biting Jabs', 'Scorched Earth'}
+        if any(ability in abilities for ability in dps_abilities):
+            return 'dps'
+        
+        # Default role based on skill lines
+        if 'Restoring Light' in skill_lines:
+            return 'healer'
+        elif 'Aedric Spear' in skill_lines or 'Dawn\'s Wrath' in skill_lines:
+            return 'dps'
+        else:
+            return 'dps'  # Default to DPS
 
     def _clean_ability_name(self, ability: str) -> str:
         """Clean ability name for better matching."""
@@ -308,125 +338,3 @@ class ESOSubclassAnalyzer:
 
 
 
-
-class ESOSetDatabase:
-    """Simple ESO set database for gear identification."""
-
-    def __init__(self):
-        # Basic set database - in a real implementation, this would be loaded from LibSets
-        self.sets = {
-            # Popular DPS sets
-            'Mother\'s Sorrow': {
-                'type': 'crafted',
-                'bonuses': ['Spell Critical', 'Maximum Magicka', 'Spell Damage'],
-                'role': 'magicka_dps'
-            },
-            'False God\'s Devotion': {
-                'type': 'trial',
-                'bonuses': ['Spell Damage', 'Maximum Magicka', 'Magicka Recovery'],
-                'role': 'magicka_dps'
-            },
-            'Relequen': {
-                'type': 'trial',
-                'bonuses': ['Weapon Damage', 'Weapon Critical', 'Stamina'],
-                'role': 'stamina_dps'
-            },
-            'Deadly Strike': {
-                'type': 'overland',
-                'bonuses': ['Weapon Damage', 'DoT Damage'],
-                'role': 'dps'
-            },
-
-            # Tank sets
-            'Ebon Armory': {
-                'type': 'dungeon',
-                'bonuses': ['Maximum Health', 'Health Recovery', 'Group Health'],
-                'role': 'tank'
-            },
-            'Yolnahkriin': {
-                'type': 'trial',
-                'bonuses': ['Maximum Health', 'Spell Resistance', 'Group Minor Courage'],
-                'role': 'tank'
-            },
-
-            # Healer sets
-            'Spell Power Cure': {
-                'type': 'dungeon',
-                'bonuses': ['Spell Damage', 'Maximum Magicka', 'Group Spell Damage'],
-                'role': 'healer'
-            },
-            'Olorime': {
-                'type': 'trial',
-                'bonuses': ['Spell Damage', 'Spell Critical', 'Group Major Courage'],
-                'role': 'healer'
-            },
-
-            # Monster sets
-            'Zaan': {
-                'type': 'monster',
-                'bonuses': ['Spell Damage', 'Flame Damage'],
-                'role': 'magicka_dps'
-            },
-            'Stormfist': {
-                'type': 'monster',
-                'bonuses': ['Weapon Damage', 'Shock Damage'],
-                'role': 'stamina_dps'
-            },
-            'Lord Warden': {
-                'type': 'monster',
-                'bonuses': ['Maximum Health', 'Damage Shield'],
-                'role': 'tank'
-            }
-        }
-
-    def identify_sets_from_abilities(self, abilities: Set[str], role: str) -> List[Dict[str, any]]:
-        """Attempt to identify gear sets based on abilities and role."""
-        # This is a simplified version - real implementation would need
-        # to track gear changes from EFFECT_CHANGED events
-        identified_sets = []
-
-        # Look for set-specific ability names or effects
-        for ability in abilities:
-            ability_lower = ability.lower()
-
-            # Check for known set proc names
-            if 'mother\'s sorrow' in ability_lower or 'spell critical' in ability_lower:
-                identified_sets.append({
-                    'name': 'Mother\'s Sorrow',
-                    'confidence': 0.7,
-                    'source': 'ability_name'
-                })
-            elif 'false god' in ability_lower or 'perfected false god' in ability_lower:
-                identified_sets.append({
-                    'name': 'False God\'s Devotion',
-                    'confidence': 0.8,
-                    'source': 'ability_name'
-                })
-            elif 'relequen' in ability_lower or 'poisonous serpent' in ability_lower:
-                identified_sets.append({
-                    'name': 'Relequen',
-                    'confidence': 0.8,
-                    'source': 'ability_name'
-                })
-
-        # If no specific sets identified, suggest common sets for the role
-        if not identified_sets:
-            role_sets = self._get_common_sets_for_role(role)
-            for set_name in role_sets[:2]:  # Top 2 suggestions
-                identified_sets.append({
-                    'name': set_name,
-                    'confidence': 0.3,
-                    'source': 'role_suggestion'
-                })
-
-        return identified_sets
-
-    def _get_common_sets_for_role(self, role: str) -> List[str]:
-        """Get common sets for a given role."""
-        role_mapping = {
-            'magicka_dps': ['Mother\'s Sorrow', 'False God\'s Devotion', 'Zaan'],
-            'stamina_dps': ['Relequen', 'Deadly Strike', 'Stormfist'],
-            'tank': ['Ebon Armory', 'Yolnahkriin', 'Lord Warden'],
-            'healer': ['Spell Power Cure', 'Olorime']
-        }
-        return role_mapping.get(role, [])
