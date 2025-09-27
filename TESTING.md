@@ -4,44 +4,78 @@ This document explains how to run the automated test cases for the ESO Live Sets
 
 ## Test Suite Overview
 
-The project includes comprehensive test suites:
+The project uses a conventional test structure with unit and integration tests:
 
-1. **`test_analyzer.py`** - Tests the main analyzer functionality
+### Unit Tests (`tests/unit/`)
+1. **`test_analyzer.py`** - Tests individual analyzer components and functionality
 2. **`test_log_parser.py`** - Tests the robust log parser with real example data
 3. **`test_optimized.py`** - Tests the optimized gear set database performance
+4. **`test_damage_attribution.py`** - Tests damage attribution to players and pets
+
+### Integration Tests (`tests/integration/`)
+1. **`test_full_workflow.py`** - Tests complete analyzer workflows and multi-component interactions
+
+### Test Infrastructure
+- **`conftest.py`** - Pytest configuration and shared fixtures
+- **`test_runner.py`** - Comprehensive test runner with options
+- **`fixtures/`** - Shared test data and fixtures
+- **`data/`** - Test data files and sample logs
 
 ## Running Tests
 
 ### Quick Test Run
 ```bash
-# Run all analyzer tests
-python3 tests/test_analyzer.py
+# Run all tests using the test runner
+python3 tests/test_runner.py
 
-# Run all log parser tests  
-python3 tests/test_log_parser.py
+# Run only unit tests
+python3 tests/test_runner.py --unit
 
-# Test gear data generation (if building from source)
-python3 tests/test_optimized.py
+# Run only integration tests
+python3 tests/test_runner.py --integration
+
+# Run with verbose output
+python3 tests/test_runner.py --verbose
+```
+
+### Individual Test Files
+```bash
+# Run specific unit tests
+python3 -m unittest tests.unit.test_analyzer
+python3 -m unittest tests.unit.test_log_parser
+python3 -m unittest tests.unit.test_optimized
+python3 -m unittest tests.unit.test_damage_attribution
+
+# Run integration tests
+python3 -m unittest tests.integration.test_full_workflow
+
+# Run with pytest (if installed)
+pytest tests/unit/
+pytest tests/integration/
+pytest tests/
 ```
 
 ### Detailed Test Output
 ```bash
 # Run with verbose output
-python3 tests/test_analyzer.py -v
+python3 tests/test_runner.py --verbose
 
 # Run specific test methods
-python3 -m unittest tests.test_log_parser.TestESOLogParser.test_player_info_parsing
+python3 -m unittest tests.unit.test_log_parser.TestESOLogParser.test_player_info_parsing
+python3 -m unittest tests.unit.test_analyzer.TestESOLogEntry.test_unit_added_parsing
 ```
 
 ## Test Coverage
 
-### Analyzer Tests (`test_analyzer.py`)
+### Unit Tests
+
+#### Analyzer Tests (`test_analyzer.py`)
 - **Log Entry Parsing**: Tests UNIT_ADDED, ABILITY_INFO, BEGIN_CAST parsing
 - **Subclass Analysis**: Tests Templar healer and Sorcerer magicka DPS detection
 - **Set Database**: Tests gear set identification and role-based suggestions
 - **Full Integration**: Tests complete analyzer workflow
 
-### Log Parser Tests (`test_log_parser.py`)
+#### Log Parser Tests (`test_log_parser.py`)
 - **Basic Parsing**: Tests BEGIN_LOG, ZONE_CHANGED, MAP_CHANGED
 - **Unit Added**: Tests player and anonymous player detection
 - **Ability Info**: Tests ability caching and name mapping
@@ -51,6 +85,53 @@ python3 -m unittest tests.test_log_parser.TestESOLogParser.test_player_info_pars
 - **Equipped Abilities**: Tests ability extraction from PLAYER_INFO
 - **Invalid Entries**: Tests error handling for malformed data
 - **Edge Cases**: Tests special characters and empty strings
+
+#### Damage Attribution Tests (`test_damage_attribution.py`)
+- **Basic Attribution**: Tests direct damage attribution to players
+- **Pet Attribution**: Tests damage from pets attributed to their owners
+- **Unit ID Matching**: Tests short/long unit ID matching for players
+- **Combat Event Parsing**: Tests damage parsing from COMBAT_EVENT entries
+- **Multiple Players**: Tests damage attribution with multiple players
+- **Edge Cases**: Tests unknown units and orphaned pets
+- **Real Log Data**: Tests with actual ESO encounter log entries
+
+#### Optimized Database Tests (`test_optimized.py`)
+- **Performance**: Tests database lookup performance
+- **Accuracy**: Tests database accuracy and completeness
+- **Compatibility**: Tests compatibility with existing code
+
+#### Log Splitting Tests (`test_log_splitting.py`)
+- **File Creation**: Tests automatic creation of split files
+- **Zone Detection**: Tests zone-based file naming
+- **File Naming**: Tests naming conventions for different zones and difficulties
+- **File Operations**: Tests writing, closing, and reopening files
+- **Multiple Encounters**: Tests handling multiple encounters
+- **Cleanup**: Tests proper cleanup of file handles and state
+
+#### Report Saving Tests (`test_report_saving.py`)
+- **File Creation**: Tests automatic creation of report files
+- **Zone-based Naming**: Tests report file naming with zone information
+- **Buffer Management**: Tests report buffer handling and clearing
+- **Directory Handling**: Tests automatic directory creation and permissions
+- **Multiple Reports**: Tests saving multiple reports with unique timestamps
+- **Error Handling**: Tests permission errors and edge cases
+
+### Integration Tests
+
+#### Full Workflow Tests (`test_full_workflow.py`)
+- **Complete Encounters**: Tests processing full encounters from start to finish
+- **Multi-Encounter**: Tests handling multiple encounters in sequence
+- **Error Recovery**: Tests recovery from malformed data and errors
+- **Resource Tracking**: Tests resource tracking across different event types
+- **Damage Attribution**: Tests damage attribution in full encounter context
+- **Configuration**: Tests different analyzer configurations and modes
+
+#### Log Splitting Integration Tests (`test_log_splitting_integration.py`)
+- **Complete Workflow**: Tests full encounter processing with both splitting and report saving
+- **Multiple Encounters**: Tests multiple encounters with log splitting
+- **Zone Detection**: Tests encounter processing when zone information is missing
+- **File Handling**: Tests file handling edge cases in integration
+- **Concurrent Operations**: Tests concurrent file operations between splitter and analyzer
 
 ## Test Data
 
@@ -175,7 +256,11 @@ parser = ESOLogParser()
 ### Pre-commit Testing
 Before committing changes, run:
 ```bash
-python3 test_analyzer.py && python3 test_log_parser.py
+# Run all tests
+python3 tests/test_runner.py
+
+# Or run specific test suites
+python3 tests/test_runner.py --unit && python3 tests/test_runner.py --integration
 ```
 
 ### Test Coverage

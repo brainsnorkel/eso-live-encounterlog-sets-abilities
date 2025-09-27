@@ -43,11 +43,22 @@ Options:
                               encounter files while tailing the main log
   --split-dir PATH            Directory for split files (default: same
                               directory as source log file)
-  --save-reports              Save encounter reports to files with timestamp-based naming
+  --save-reports              Save encounter reports to files with timestamp-
+                              based naming
   --reports-dir PATH          Directory for saved reports (default: same
                               directory as source log file)
   --help                      Show this message and exit.
 ```
+
+### Default Behavior
+
+When no command-line arguments are provided, the tool will:
+- **Auto-detect** ESO log file location based on your operating system
+- **Wait patiently** for Encounter.log to appear (if not found)
+- **Read existing** log data, then monitor for new encounters in real-time
+- **Generate live** combat analysis reports as fights happen
+
+Use `--help` to see all available options.
 
 ### Discord Copy Feature
 
@@ -258,14 +269,25 @@ python3 src/esolog_tail.py -v
 python3 src/esolog_tail.py --no-wait
 ```
 
-## Command Line Options
+## Advanced Command Line Options
 
+### Core Options
 - `--log-file`, `-f`: Path to ESO encounter log file
-- `--scan-all-then-stop`, `-s`: Scan mode: replay the entire log file from the beginning at high speed, then exit
+- `--read-all-then-stop`, `-s`: Read mode: replay the entire log file from the beginning at high speed, then exit
 - `--read-all-then-tail`, `-t`: Read the entire log file from the beginning, then continue tailing for new data
 - `--no-wait`: Exit immediately if log file does not exist (default: wait for file to appear)
-- `--replay-speed`, `-r`: Replay speed multiplier for scan mode (default: 100x)
+- `--replay-speed`, `-r`: Replay speed multiplier for read mode (default: 100x)
 - `--version`, `-v`: Show version information and exit
+
+### Analysis Options
+- `--list-hostiles`: Testing mode: List all hostile monsters added to fights with names and IDs
+- `--diagnostic`: Diagnostic mode: Show detailed timing and data flow information for debugging
+
+### File Management Options
+- `--tail-and-split`: Auto-split mode: Automatically create individual encounter files while tailing the main log
+- `--split-dir PATH`: Directory for split files (default: same directory as source log file)
+- `--save-reports`: Save encounter reports to files with timestamp-based naming
+- `--reports-dir PATH`: Directory for saved reports (default: same directory as source log file)
 
 ## ESO Log File Locations
 
@@ -274,10 +296,14 @@ The tool automatically searches for ESO encounter logs in common locations:
 **Windows:**
 - `%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log`
 - `%USERPROFILE%\Documents\Elder Scrolls Online\Logs\Encounter.log`
+- `%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log`
 
 **macOS (via Wine):**
 - `~/Documents/Elder Scrolls Online/live/Logs/Encounter.log`
 - `~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/Encounter.log`
+
+**Enhanced Detection:**
+The tool automatically searches all available locations and selects the most recently updated `Encounter.log` file. If multiple directories are found, it will report all locations and their last modified dates to help you understand which file is being used.
 
 ## Output Format
 
@@ -286,18 +312,18 @@ When a combat encounter ends, the tool displays:
 ```
 === ZONE CHANGED ===
 Zone: Lucent Citadel (VETERAN)
-2025-09-14 09:58:25 (Lucent Citadel) | Duration: 19.1s | GrpDPS: 361,331 | Target: Darkcaster Slasher (HP: 3,881,030)
-Group Buffs: Major Courage: ✅ (43.0%) | Major Force: ❌ | Major Slayer: ❌
+2025-09-14 09:58:25 (Lucent Citadel) | 19s | GrpDPS: 361,331 | Darkcaster Slasher (HP: 3,881,030)
+MCourage: 43.0% MForce: 0.0% Mslayer: 0.0% PA: 0.0% LE: 0.0% PW: 0.0%
 
 @brainsnorkel Ok Beamer Herald/Aedric/Ardent (Arcanist M:16.5k S:28.5k H:20.5k D:20.1%)
   Cephaliarch's Flail, Pragmatic Fatecarver, Quick Cloak, Barbed Trap, Camouflaged Hunter, Everlasting Sweep
   Blockade of Fire, Flames of Oblivion, Engulfing Flames, Inspired Scholarship, Pestilent Trample, Standard of Might
-  5pc Perfected Ansuul's Torment, 2pc Perfected Crushing Wall, 1pc Slimecraw, 5pc Perfected Sul-Xan's Torment, Velothi Ur-Mage's Amulet
+  5xpAnsuul's Torment, 2pc Perfected Crushing Wall, 1pc Slimecraw, 5xpSul-Xan's Torment, Velothi Ur-Mage's Amulet
 
 @Evil-Dave Whatchu talkin bout Rilis Herald/Ass/Daedric (Arcanist M:17.5k S:35k H:19.5k D:17.1%)
   Cephaliarch's Flail, Pragmatic Fatecarver, Daedric Prey, Summon Volatile Familiar, Summon Twilight Matriarch, Incapacitating Strike
   Quick Cloak, Inspired Scholarship, Relentless Focus, Summon Volatile Familiar, Summon Twilight Matriarch, Summon Charged Atronach
-  1pc Slimecraw, 5pc Perfected Slivers of the Null Arca, 2pc Spectral Cloak, 5pc Unleashed Ritualist, Velothi Ur-Mage's Amulet
+  1pc Slimecraw, 5xpSlivers of the Null Arca, 2pc Spectral Cloak, 5pc Unleashed Ritualist, Velothi Ur-Mage's Amulet
 
 @SevenStrings Seventh Column Aedric/Ardent/Ass (Templar M:14k S:32k H:21k D:16.2%)
   Biting Jabs, Barbed Trap, Merciless Resolve, Killer's Blade, Shocking Banner, Incapacitating Strike
@@ -389,10 +415,11 @@ The tool identifies gear sets by:
 
 ### Buff Detection & Analysis
 
-- **Group Buff Monitoring**: Tracks critical group buffs (Major Courage, Major Force, Major Slayer)
-- **Visual Indicators**: Uses ✅/❌ emojis for clear buff status display
-- **Individual Uptime**: Calculates Major Courage uptime percentage for each player
+- **Group Buff Monitoring**: Tracks critical group buffs (MCourage, MForce, Mslayer, PA, LE, PW)
+- **Clean Display**: Shows buff uptime percentages without visual clutter
+- **Individual Uptime**: Calculates buff uptime percentage for each player
 - **Buff Tracking**: Monitors buff applications and removals throughout encounters
+- **New Buffs**: Added Lucent Echoes (LE) and Pearlescent Ward (PW) tracking
 
 ### Damage & Resource Analysis
 
@@ -400,7 +427,8 @@ The tool identifies gear sets by:
 - **Player Sorting**: Displays players in descending order by damage contribution
 - **Resource Tracking**: Monitors maximum health, magicka, and stamina values for each player
 - **Health Anomaly Detection**: Highlights unusual health values (below 18.5k or above 44.5k) in red
-- **DPS Calculation**: Estimates group DPS based on total damage and combat duration
+- **DPS Calculation**: Estimates group DPS (GrpDPS) based on total damage and combat duration
+- **Duration Format**: Displays fight durations in minutes:seconds format, rounded to nearest second
 
 ### Zone-based Reporting
 
@@ -414,11 +442,12 @@ The tool identifies gear sets by:
 - Python 3.7+
 - ESO encounter logging enabled in-game
 - Dependencies listed in `requirements.txt`:
-  - `watchdog` - File system monitoring
   - `click` - Command-line interface
   - `pandas` - Excel file processing
   - `openpyxl` - Excel file reading
   - `colorama` - Cross-platform colored terminal output
+  - `pynput` - Keyboard monitoring for Discord copy feature
+  - `pyperclip` - Clipboard operations for Discord copy feature
 
 ## Troubleshooting
 
@@ -552,6 +581,25 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 - **Set Database**: Limited to sets available in LibSets database
 - **Anonymous Players**: Cannot identify builds for players with no observed abilities
 - **Gear Slots**: ESO logs track 13 gear slots (missing backup off-hand weapon slot)
+
+## Version 0.2.0 Features
+
+### Major New Features
+- **Combat-Based Zone Naming**: Split files and reports named after the zone where combat begins
+- **Zone-Based Report Consolidation**: Reports consolidated per zone for better organization
+- **Enhanced Log File Detection**: Automatic detection in multiple Windows locations including OneDrive
+- **Robust File Handling**: Atomic file operations with proper cleanup for data safety
+
+### Enhanced Analysis
+- **New Buff Tracking**: Added Lucent Echoes (LE) and Pearlescent Ward (PW) monitoring
+- **Clean Buff Display**: Removed visual clutter, shows clean percentage uptimes
+- **Improved Duration Format**: Minutes:seconds display, rounded to nearest second
+- **Discord Formatting**: Equipment display uses "5x" and "p" for better Discord compatibility
+
+### File Management
+- **Auto-Split Logs**: Automatically create individual encounter files while tailing
+- **Report Saving**: Save encounter reports with timestamp-based naming
+- **Enhanced Diagnostics**: Comprehensive diagnostic output for troubleshooting
 
 ## Future Enhancements
 

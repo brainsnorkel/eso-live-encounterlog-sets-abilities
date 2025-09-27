@@ -2,6 +2,100 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.0] - 2025-01-27
+
+### Major Features
+- **Combat-Based Zone Naming**: Split files and reports are now named after the zone where combat begins, not the initial zone
+- **Zone-Based Report Consolidation**: Reports are consolidated per zone instead of per encounter for better organization
+- **Enhanced Log File Detection**: Automatic detection of ESO log files in multiple Windows locations including OneDrive
+- **Robust File Handling**: Atomic file operations with temporary files and proper cleanup for data safety
+
+### Added
+- **New Buff Tracking**: Added Lucent Echoes (LE) and Pearlescent Ward (PW) buff tracking
+- **Report Saving**: Save encounter reports to files with zone-based naming
+- **Auto-Split Logs**: Automatically split encounter logs into zone-specific files
+- **Enhanced Diagnostics**: Comprehensive diagnostic output for troubleshooting
+- **Default Behavior Explanation**: Clear explanation when no command-line arguments are provided
+
+### Changed
+- **Buff Display Format**: Removed ticks/crosses, parentheses, and pipe separators from buff status
+- **Buff Labels**: Shortened to Mslayer, MForce, MCourage, PA, LE, PW
+- **Duration Format**: Display fight durations in minutes:seconds format, rounded to nearest second
+- **Fight Summary**: Removed "Duration:", changed "Est. DPS" to "GrpDPS", removed "Target:"
+- **Discord Formatting**: Equipment display uses "5x" instead of "5pc" and "p" instead of "Perfected "
+- **Vitality Display**: Always show vitality bonus without % or + symbols
+- **Timestamp Handling**: Correct conversion from relative milliseconds to absolute Unix timestamps
+
+### Fixed
+- **Critical Parsing Issues**: Fixed timestamp extraction and field indexing in log entry parsing
+- **Event Routing**: Added missing ZONE_CHANGED event routing to proper handlers
+- **Field Indexing**: Corrected field access for UNIT_ADDED, ZONE_CHANGED, and other events
+- **Combat Zone Detection**: Fixed logic to properly detect and name files after combat zone
+- **File Handle Management**: Proper file closing and reopening for robust data handling
+- **Race Conditions**: Added threading locks to prevent concurrent file access issues
+- **Deadlock Prevention**: Fixed polling-based tailing deadlock issues
+
+### Testing
+- ✅ 76 comprehensive tests covering all functionality
+- ✅ Log splitting with combat-based zone naming
+- ✅ Report saving with zone-based consolidation
+- ✅ Buff tracking and display formatting
+- ✅ File operations and error handling
+- ✅ Integration tests for complete workflows
+- ✅ Regression tests for existing functionality
+
+### Documentation
+- ✅ Updated README.md with new command-line options and features
+- ✅ Added comprehensive help output integration
+- ✅ Updated TESTING.md with new test coverage
+- ✅ Enhanced troubleshooting and usage examples
+
+## [0.1.29] - 2025-01-26
+
+### Added
+- **Log Splitting Tests**: Comprehensive test suite for log splitting functionality (`test_log_splitting.py`)
+- **Report Saving Tests**: Complete test coverage for report saving functionality (`test_report_saving.py`)
+- **Integration Tests**: Full integration tests for log splitting and report saving (`test_log_splitting_integration.py`)
+
+### Fixed
+- **LogSplitter File Handling**: Fixed issue where file handles were not properly reopened after renaming
+- **End Encounter Cleanup**: Fixed cleanup logic to always clear encounter state regardless of file handle status
+- **Report Buffer Management**: Fixed report buffer clearing behavior in tests
+
+### Testing
+- ✅ 75 new tests covering log splitting and report saving functionality
+- ✅ File operations: creation, naming, writing, closing, and cleanup
+- ✅ Zone detection: zone-based file naming and difficulty handling
+- ✅ Error handling: permission errors, directory creation, and edge cases
+- ✅ Integration: complete workflows combining splitting and report saving
+- ✅ All tests pass successfully
+
+### Documentation
+- ✅ Updated TESTING.md with new log splitting and report saving test documentation
+- ✅ Added test coverage details and integration test scenarios
+
+## [0.1.28] - 2025-01-26
+
+### Verified
+- **Damage Attribution**: Verified that damage attribution to players is working correctly
+- **Pet Ownership Tracking**: Confirmed pet damage is properly attributed to their owners
+- **Unit ID Matching**: Validated short/long unit ID matching for player identification
+- **Combat Event Processing**: Verified damage parsing from COMBAT_EVENT entries
+
+### Testing
+- ✅ Added comprehensive damage attribution test suite (`test_damage_attribution.py`)
+- ✅ Basic damage attribution to players
+- ✅ Pet damage attribution to owners
+- ✅ Unit ID matching between short and long formats
+- ✅ Combat event damage parsing
+- ✅ Multiple players damage attribution
+- ✅ Edge cases: unknown units, orphaned pets
+- ✅ Real log data processing validation
+
+### Documentation
+- Updated TESTING.md with damage attribution test documentation
+- Added test coverage for damage attribution verification
+
 ## [0.1.27] - 2025-01-26
 
 ### Enhanced

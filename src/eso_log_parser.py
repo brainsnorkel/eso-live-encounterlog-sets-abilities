@@ -19,11 +19,17 @@ try:
         ESOLogStructureParser, 
         PlayerInfoEntry as StructuredPlayerInfoEntry,
         UnitAddedEntry as StructuredUnitAddedEntry,
+        UnitChangedEntry as StructuredUnitChangedEntry,
         AbilityInfoEntry as StructuredAbilityInfoEntry,
         BeginCastEntry as StructuredBeginCastEntry,
         EndCastEntry as StructuredEndCastEntry,
         EffectChangedEntry as StructuredEffectChangedEntry,
         CombatEventEntry as StructuredCombatEventEntry,
+        BeginCombatEntry as StructuredBeginCombatEntry,
+        EndCombatEntry as StructuredEndCombatEntry,
+        TrialInitEntry as StructuredTrialInitEntry,
+        BeginTrialEntry as StructuredBeginTrialEntry,
+        EndTrialEntry as StructuredEndTrialEntry,
         EventType
     )
     STRUCTURED_PARSER_AVAILABLE = True
@@ -62,7 +68,7 @@ class ESOLogEntry:
                 try:
                     timestamp = int(fields[2])
                     # For certain events, the third field is not a timestamp
-                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST", "ABILITY_INFO"]:
+                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "BEGIN_CAST", "END_CAST", "ABILITY_INFO", "PLAYER_INFO"]:
                         # These events don't have timestamps, use line number as timestamp
                         line_number = int(fields[0]) if fields[0].isdigit() else 0
                         return cls(line_number, event_type, fields[2:], line)
@@ -186,6 +192,8 @@ class ESOLogParser:
                 timestamp = structured_result.map_id
             elif class_name == 'UnitAddedEntry' and hasattr(structured_result, 'line_number'):
                 timestamp = structured_result.line_number
+            elif class_name == 'UnitChangedEntry' and hasattr(structured_result, 'line_number'):
+                timestamp = structured_result.line_number
             elif class_name == 'AbilityInfoEntry' and hasattr(structured_result, 'line_number'):
                 timestamp = 0  # ABILITY_INFO doesn't have timestamps
             elif class_name == 'PlayerInfoEntry' and hasattr(structured_result, 'line_number'):
@@ -195,7 +203,7 @@ class ESOLogParser:
             elif class_name == 'EndCastEntry' and hasattr(structured_result, 'line_number'):
                 timestamp = 0  # END_CAST doesn't have timestamps
             elif class_name == 'EffectChangedEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = 0  # EFFECT_CHANGED doesn't have timestamps
+                timestamp = structured_result.line_number  # EFFECT_CHANGED uses line_number as timestamp
             elif hasattr(structured_result, 'line_number'):
                 timestamp = structured_result.line_number
         else:
@@ -212,6 +220,8 @@ class ESOLogParser:
                 event_type = 'MAP_CHANGED'
             elif class_name == 'UnitAddedEntry':
                 event_type = 'UNIT_ADDED'
+            elif class_name == 'UnitChangedEntry':
+                event_type = 'UNIT_CHANGED'
             elif class_name == 'AbilityInfoEntry':
                 event_type = 'ABILITY_INFO'
             elif class_name == 'PlayerInfoEntry':
@@ -224,11 +234,29 @@ class ESOLogParser:
                 event_type = 'EFFECT_CHANGED'
             elif class_name == 'CombatEventEntry':
                 event_type = 'COMBAT_EVENT'
+            elif class_name == 'BeginCombatEntry':
+                event_type = 'BEGIN_COMBAT'
+            elif class_name == 'EndCombatEntry':
+                event_type = 'END_COMBAT'
+            elif class_name == 'TrialInitEntry':
+                event_type = 'TRIAL_INIT'
+            elif class_name == 'BeginTrialEntry':
+                event_type = 'BEGIN_TRIAL'
+            elif class_name == 'EndTrialEntry':
+                event_type = 'END_TRIAL'
             else:
                 event_type = class_name.replace('Entry', '').upper()
         else:
             event_type = "UNKNOWN"
             
+        # Use specific conversion methods for trial events
+        if class_name == 'TrialInitEntry':
+            return self._convert_structured_to_legacy_trial_init(structured_result)
+        elif class_name == 'BeginTrialEntry':
+            return self._convert_structured_to_legacy_begin_trial(structured_result)
+        elif class_name == 'EndTrialEntry':
+            return self._convert_structured_to_legacy_end_trial(structured_result)
+        
         # Parse the original line to get fields for backward compatibility
         try:
             reader = csv.reader(io.StringIO(original_line))
@@ -239,6 +267,7 @@ class ESOLogParser:
         except:
             fields = []
             
+        
         # Create ESOLogEntry with proper fields
         return ESOLogEntry(
             timestamp=timestamp,
@@ -278,22 +307,59 @@ class ESOLogParser:
                 unit_type=structured.unit_type.value,
                 flags=[
                     "T" if structured.is_local_player else "F",
-                    str(structured.unknown_1),
-                    str(structured.unknown_2),
-                    "T" if structured.unknown_3 else "F",
-                    str(structured.unknown_4),
-                    str(structured.class_id)
+                    str(structured.player_per_session_id),
+                    str(structured.monster_id),
+                    "T" if structured.is_boss else "F",
+                    str(structured.class_id),
+                    str(structured.race_id)
                 ],
                 name=structured.name,
-                handle=structured.handle,
-                player_id=structured.player_id,
+                handle=structured.display_name,
+                player_id=structured.character_id,
                 level=structured.level,
-                alliance=structured.alliance
+                alliance=structured.champion_points  # Map champion_points to alliance for backward compatibility
             )
         except Exception as e:
             print(f"Failed to convert structured UnitAddedEntry: {e}")
             return None
     
+    def parse_unit_changed(self, entry: ESOLogEntry) -> Optional[ESOLogEntry]:
+        """Parse UNIT_CHANGED entry with structured parser."""
+        if not entry or entry.event_type != "UNIT_CHANGED":
+            return None
+        
+        # Use structured parser for all parsing
+        try:
+            structured_result = self.structured_parser.parse_line(entry.original_line)
+            if isinstance(structured_result, StructuredUnitChangedEntry):
+                # Convert structured result to legacy format for backward compatibility
+                return self._convert_structured_to_legacy_unit_changed(structured_result)
+        except Exception as e:
+            print(f"Structured UNIT_CHANGED parsing failed: {e}")
+            return None
+        
+        return None
+    
+    def _convert_structured_to_legacy_unit_changed(self, structured: StructuredUnitChangedEntry) -> Optional[ESOLogEntry]:
+        """Convert structured UnitChangedEntry to legacy format for backward compatibility"""
+        try:
+            # Create a simple ESOLogEntry with the fields array
+            fields = [
+                structured.unit_id,
+                str(structured.class_id),
+                str(structured.race_id),
+                structured.name,
+                structured.display_name,
+                str(structured.character_id),
+                str(structured.level),
+                str(structured.champion_points),
+                str(structured.owner_unit_id),
+                structured.reaction
+            ]
+            return ESOLogEntry(structured.line_number, "UNIT_CHANGED", fields, "")
+        except Exception as e:
+            print(f"Failed to convert structured UnitChangedEntry: {e}")
+            return None
     
     def parse_ability_info(self, entry: ESOLogEntry) -> Optional[AbilityInfoEntry]:
         """Parse ABILITY_INFO entry with Phase 3 structured parser replacement."""
@@ -459,7 +525,7 @@ class ESOLogParser:
                 pass
                 
             return EffectChangedEntry(
-                timestamp=0,  # EFFECT_CHANGED doesn't have timestamps
+                timestamp=structured.line_number,  # EFFECT_CHANGED uses line_number as timestamp
                 effect_type=structured.change_type.value,
                 target_unit_id=str(structured.target_unit_id),
                 source_unit_id=str(structured.source_unit_id),
@@ -514,3 +580,38 @@ class ESOLogParser:
             if ability_name:
                 back_bar_abilities.append(ability_name)
         return back_bar_abilities
+
+    def _convert_structured_to_legacy_trial_init(self, structured: StructuredTrialInitEntry) -> ESOLogEntry:
+        """Convert TrialInitEntry to legacy ESOLogEntry format."""
+        # TRIAL_INIT format: timestamp,TRIAL_INIT,id,inProgress,completed,startTimeMS,durationMS,success,finalScore
+        fields = [
+            str(structured.trial_id),
+            str(structured.in_progress),
+            str(structured.completed),
+            str(structured.start_time_ms),
+            str(structured.duration_ms),
+            str(structured.success),
+            str(structured.final_score)
+        ]
+        return ESOLogEntry(structured.line_number, "TRIAL_INIT", fields, "")
+
+    def _convert_structured_to_legacy_begin_trial(self, structured: StructuredBeginTrialEntry) -> ESOLogEntry:
+        """Convert BeginTrialEntry to legacy ESOLogEntry format."""
+        # BEGIN_TRIAL format: timestamp,BEGIN_TRIAL,id,startTimeMS
+        fields = [
+            str(structured.trial_id),
+            str(structured.start_time_ms)
+        ]
+        return ESOLogEntry(structured.line_number, "BEGIN_TRIAL", fields, "")
+
+    def _convert_structured_to_legacy_end_trial(self, structured: StructuredEndTrialEntry) -> ESOLogEntry:
+        """Convert EndTrialEntry to legacy ESOLogEntry format."""
+        # END_TRIAL format: timestamp,END_TRIAL,id,durationMS,success,finalScore,finalVitalityBonus
+        fields = [
+            str(structured.trial_id),
+            str(structured.duration_ms),
+            str(structured.success),
+            str(structured.final_score),
+            str(structured.vitality_bonus)
+        ]
+        return ESOLogEntry(structured.line_number, "END_TRIAL", fields, "")

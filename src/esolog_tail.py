@@ -32,12 +32,8 @@ from colorama import init, Fore, Style
 from gear_set_database_optimized import gear_set_db
 
 # Add keyboard detection and clipboard functionality
-try:
-    import pynput
-    from pynput import keyboard
-    KEYBOARD_AVAILABLE = True
-except ImportError:
-    KEYBOARD_AVAILABLE = False
+# No external dependencies needed for terminal input handling
+KEYBOARD_AVAILABLE = True
 
 try:
     import pyperclip
@@ -55,6 +51,36 @@ TAUNT_ABILITIES = {
     'puncture', 'ransack', 'pierce armor', 'inner fire', 'inner rage', 
     'inner beast', 'frost clench', 'runic jolt', 'runic sunder', 'runic embrace',
     'focused charge', 'explosive charge', 'toppling charge', 'goading throw', 'goading vault'
+}
+
+# Buff ability IDs from BuffTheGroup addon
+BUFF_ABILITY_IDS = {
+    'powerful_assault': '61771',
+    'major_slayer': '93109', 
+    'major_courage': '109966',
+    'major_force': '61747',
+    'major_berserk': '62195',
+    'minor_berserk': '61744',
+    'minor_courage': '147417',
+    'major_sorcery': '61687',
+    'minor_sorcery': '61685',
+    'major_brutality': '61665',
+    'minor_prophecy': '61691',
+    'major_resolve': '61694',
+    'minor_resolve': '61693',
+    'minor_intellect': '61706',
+    'empower': '61737',
+    'major_heroism': '61709',
+    'radiating_regeneration': '40079',
+    'major_expedition': '61736',
+    'spalder_of_ruin': '163401',
+    'minor_toughness': '88490',
+    'minor_endurance': '61704',
+    'minor_savagery': '61666',
+    'minor_expedition': '61735',
+    'pillagers_profit_cooldown': '172056',
+    'lucent_echoes': '220015',
+    'pearlescent_ward': '172621',
 }
 
 def highlight_taunt_abilities(ability_list):
@@ -198,7 +224,7 @@ class ESOLogEntry:
                 return None
 
             event_type = fields[1]
-            
+
             # Check if the third field is a timestamp (numeric)
             if len(fields) >= 3:
                 try:
@@ -240,6 +266,9 @@ class PlayerInfo:
         self.max_health: int = 0
         self.max_magicka: int = 0
         self.max_stamina: int = 0
+        
+        # Champion Points
+        self.champion_points: int = 0
 
     def update_resources(self, health: int = None, magicka: int = None, stamina: int = None):
         """Update maximum resource values."""
@@ -360,12 +389,17 @@ class CombatEncounter:
         self.highest_health_hostile: Optional[EnemyInfo] = None
         self.most_damaged_hostile: Optional[EnemyInfo] = None
 
-    def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None):
+        # Trial completion tracking
+        self.trial_info: Optional[Dict] = None  # Store trial completion information
+
+    def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
         # Skip offline players
         if name == "Offline":
             return
-        self.players[unit_id] = PlayerInfo(unit_id, name, handle, class_id)
+        player = PlayerInfo(unit_id, name, handle, class_id)
+        player.champion_points = champion_points
+        self.players[unit_id] = player
 
     def add_enemy(self, unit_id: str, name: str, unit_type: str):
         """Add an enemy to this encounter."""
@@ -565,34 +599,29 @@ class CombatEncounter:
         if not self.start_time:
             return "Unknown Time"
         
-        import datetime
+        # Use the analyzer's absolute timestamp conversion method if available
+        if hasattr(self, 'analyzer') and self.analyzer:
+            return self.analyzer.get_absolute_timestamp_formatted(self.start_time)
         
-        # Use Unix timestamp from BEGIN_LOG event if available (most accurate)
-        if log_start_unix:
+        # Fallback: if we have log_start_unix, use it to convert relative timestamp to absolute
+        if log_start_unix and self.start_time > 0:
             try:
-                log_start_dt = datetime.datetime.fromtimestamp(log_start_unix / 1000.0)
-                combat_start_dt = log_start_dt + datetime.timedelta(milliseconds=self.start_time)
-                return combat_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+                import datetime
+                # log_start_unix is in seconds, self.start_time is relative milliseconds
+                absolute_timestamp = log_start_unix + (self.start_time / 1000)
+                dt = datetime.datetime.fromtimestamp(absolute_timestamp)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
             except (ValueError, OSError):
                 pass
         
-        # Fallback: Use file modification time
-        if log_file_path:
-            import os
-            try:
-                if os.path.exists(log_file_path):
-                    file_mtime = os.path.getmtime(log_file_path)
-                    file_time = datetime.datetime.fromtimestamp(file_mtime)
-                    combat_start_time = file_time - datetime.timedelta(seconds=(self.end_time - self.start_time) / 1000.0)
-                    return combat_start_time.strftime("%Y-%m-%d %H:%M:%S")
-            except (OSError, ValueError):
-                pass
-        
-        # Final fallback: Use current time minus the relative timestamp
-        current_time = datetime.datetime.now()
-        base_time = current_time - datetime.timedelta(seconds=self.start_time / 1000.0)
-        
-        return base_time.strftime("%Y-%m-%d %H:%M:%S")
+        # Final fallback: treat as absolute timestamp (for backward compatibility)
+        try:
+            import datetime
+            # Convert milliseconds to seconds and create datetime
+            dt = datetime.datetime.fromtimestamp(self.start_time / 1000)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError):
+            return "Unknown Time"
 
     def get_group_buff_uptime(self, buff_name: str) -> float:
         """Calculate uptime percentage for a group buff (active on any player)."""
@@ -648,7 +677,7 @@ class CombatEncounter:
 
     def get_group_buff_analysis(self) -> Dict[str, bool]:
         """Analyze which group buffs are present across all players."""
-        group_buffs = ['Major Courage', 'Major Force', 'Major Slayer']
+        group_buffs = ['MCourage', 'MForce', 'Mslayer', 'PA', 'LE', 'PW']
         buff_analysis = {}
         
         for buff_name in group_buffs:
@@ -669,6 +698,32 @@ class CombatEncounter:
 class ESOLogAnalyzer:
     """Main analyzer class for processing ESO encounter logs."""
 
+    # Trial ID to name mapping
+    TRIAL_NAMES = {
+        1: "Aetherian Archive",
+        2: "Hel Ra Citadel", 
+        3: "Sanctum Ophidia",
+        4: "Maw of Lorkhaj",
+        5: "Halls of Fabrication",
+        6: "Asylum Sanctorium",
+        7: "Cloudrest",
+        8: "Sunspire",
+        9: "Kyne's Aegis",
+        10: "Rockgrove",
+        11: "Dread Sail Reef",
+        12: "Red Petal Bastion",
+        13: "Dreadsail Reef",
+        14: "Graven Deep",
+        15: "Sanity's Edge",
+        16: "Bal Sunnar",
+        17: "Oaxiltso",
+        18: "Lucent Citadel",
+        19: "Sanity's Edge",
+        20: "Bal Sunnar",
+        21: "Oaxiltso",
+        22: "Lucent Citadel"
+    }
+
     def __init__(self, list_hostiles: bool = False, diagnostic: bool = False, save_reports: bool = False, reports_dir: Optional[Path] = None):
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
@@ -679,6 +734,10 @@ class ESOLogAnalyzer:
         self.subclass_analyzer = ESOSubclassAnalyzer()
         self.current_log_file: Optional[str] = None  # Track current log file path
         self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
+        
+        # Zone-based report tracking
+        self.zone_reports: Dict[str, List[str]] = {}  # zone_name -> list of report lines
+        self.zone_start_time: Optional[int] = None  # Start time for current zone
         
         # Testing flag for listing hostile monsters
         self.list_hostiles = list_hostiles
@@ -699,24 +758,35 @@ class ESOLogAnalyzer:
         
         # Add Discord markdown functionality
         self.last_encounter_report = None
-        self.keyboard_listener = None
+        self.input_thread = None
         self.discord_copy_enabled = True
         
-        # Group buff ability IDs - updated with correct IDs from user
+        # Group buff ability IDs - using constants from BuffTheGroup addon
         self.major_courage_ids = {
-            '61665',  # Major Courage - Increases Weapon and Spell Damage by 430
+            BUFF_ABILITY_IDS['major_courage'],  # Major Courage - Increases Weapon and Spell Damage by 430
         }
         
         # Group buff IDs for tracking in encounters with 3+ players
         self.group_buff_ids = {
-            'Major Courage': self.major_courage_ids,
-            'Major Force': {'40225'},  # Increases Critical Damage by 20%
-            'Major Slayer': {'93120', '931200'},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
+            'MCourage': self.major_courage_ids,
+            'MForce': {BUFF_ABILITY_IDS['major_force']},  # Increases Critical Damage by 20%
+            'Mslayer': {BUFF_ABILITY_IDS['major_slayer']},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
+            'PA': {BUFF_ABILITY_IDS['powerful_assault']},  # Powerful Assault - Increases Weapon and Spell Damage
+            'LE': {BUFF_ABILITY_IDS['lucent_echoes']},  # Lucent Echoes - Increases Weapon and Spell Damage
+            'PW': {BUFF_ABILITY_IDS['pearlescent_ward']},  # Pearlescent Ward - Increases Weapon and Spell Damage
         }
         
         # Session tracking for players going offline/online
         self.player_sessions: Dict[str, Dict] = {}  # handle+name -> {unit_id, name, equipped_abilities, gear_data, last_seen}
         self.unit_id_to_handle: Dict[str, str] = {}  # unit_id -> handle
+        
+        # Global buff tracking for buffs applied before combat starts
+        self.global_player_buffs: Dict[str, Dict[str, List[Tuple[int, int]]]] = defaultdict(lambda: defaultdict(list))  # unit_id -> buff_name -> [(start_time, end_time)]
+        self.global_active_buffs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # unit_id -> buff_name -> start_time
+        
+        # Diagnostic buff tracking
+        self.buff_events_log: List[Dict] = []  # List of buff events for debugging
+        self.player_buff_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # timestamp -> buff_name -> count
         
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -724,6 +794,135 @@ class ESOLogAnalyzer:
         
         # Initialize gear set mapping database
         self._initialize_gear_database()
+
+    def _track_global_buff(self, unit_id: str, buff_name: str, effect_type: str, timestamp: int):
+        """Track buff applications and removals globally, even when no encounter is active."""
+        if effect_type == "GAINED":
+            # Start tracking this buff globally
+            self.global_active_buffs[unit_id][buff_name] = timestamp
+            # Log buff event for diagnostics
+            self._log_buff_event(unit_id, buff_name, effect_type, timestamp)
+        elif effect_type == "FADED":
+            # End tracking this buff and record the duration globally
+            if buff_name in self.global_active_buffs[unit_id]:
+                start_time = self.global_active_buffs[unit_id][buff_name]
+                self.global_player_buffs[unit_id][buff_name].append((start_time, timestamp))
+                del self.global_active_buffs[unit_id][buff_name]
+                # Log buff event for diagnostics
+                self._log_buff_event(unit_id, buff_name, effect_type, timestamp)
+
+    def _log_buff_event(self, unit_id: str, buff_name: str, effect_type: str, timestamp: int):
+        """Log buff events for diagnostic purposes."""
+        if not self.diagnostic:
+            return
+            
+        # Get player name if available
+        player_name = "Unknown"
+        if self.current_encounter and unit_id in self.current_encounter.players:
+            player_name = self.current_encounter.players[unit_id].name
+        elif unit_id in self.player_sessions:
+            player_name = self.player_sessions[unit_id].get('name', 'Unknown')
+        
+        # Count active players with this buff
+        active_count = 0
+        for pid in self.global_active_buffs:
+            if buff_name in self.global_active_buffs[pid]:
+                active_count += 1
+        
+        # Log the event
+        event = {
+            'timestamp': timestamp,
+            'unit_id': unit_id,
+            'player_name': player_name,
+            'buff_name': buff_name,
+            'effect_type': effect_type,
+            'active_count': active_count,
+            'has_encounter': self.current_encounter is not None,
+            'encounter_active': self.current_encounter.in_combat if self.current_encounter else False
+        }
+        self.buff_events_log.append(event)
+        
+        # Update player count tracking
+        timestamp_str = str(timestamp)
+        if effect_type == "GAINED":
+            self.player_buff_counts[timestamp_str][buff_name] = active_count
+        elif effect_type == "FADED":
+            self.player_buff_counts[timestamp_str][buff_name] = active_count
+        
+        # Print diagnostic output
+        import time
+        timestamp_str_display = time.strftime("%H:%M:%S", time.localtime(timestamp / 1000)) if timestamp > 1000000000 else str(timestamp)
+        print(f"{Fore.CYAN}[BUFF-DIAG] {timestamp_str_display} {effect_type} {buff_name} on {player_name} (ID:{unit_id}) - Active: {active_count} players{Style.RESET_ALL}")
+
+    def _print_buff_diagnostic_summary(self):
+        """Print a diagnostic summary of buff events for the encounter."""
+        if not self.diagnostic or not self.current_encounter:
+            return
+            
+        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}BUFF DIAGNOSTIC SUMMARY{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+        
+        # Filter buff events for this encounter's timeframe
+        encounter_start = self.current_encounter.start_time
+        encounter_end = self.current_encounter.end_time if self.current_encounter.end_time > 0 else encounter_start + 1000
+        
+        relevant_events = [e for e in self.buff_events_log 
+                          if encounter_start <= e['timestamp'] <= encounter_end]
+        
+        # Group events by buff name
+        buff_events_by_name = {}
+        for event in relevant_events:
+            buff_name = event['buff_name']
+            if buff_name not in buff_events_by_name:
+                buff_events_by_name[buff_name] = []
+            buff_events_by_name[buff_name].append(event)
+        
+        # Print summary for each buff
+        for buff_name, events in buff_events_by_name.items():
+            print(f"{Fore.CYAN}\\n{buff_name}:{Style.RESET_ALL}")
+            gained_count = sum(1 for e in events if e['effect_type'] == 'GAINED')
+            faded_count = sum(1 for e in events if e['effect_type'] == 'FADED')
+            unique_players = set(e['player_name'] for e in events)
+            
+            print(f"  Events: {len(events)} total ({gained_count} gained, {faded_count} faded)")
+            print(f"  Players: {len(unique_players)} unique players affected")
+            
+            # Show max concurrent players
+            max_concurrent = max(e['active_count'] for e in events) if events else 0
+            print(f"  Max Concurrent: {max_concurrent} players")
+            
+            # Show first and last events
+            if events:
+                first_event = min(events, key=lambda e: e['timestamp'])
+                last_event = max(events, key=lambda e: e['timestamp'])
+                import time
+                first_time = time.strftime("%H:%M:%S", time.localtime(first_event['timestamp'] / 1000)) if first_event['timestamp'] > 1000000000 else str(first_event['timestamp'])
+                last_time = time.strftime("%H:%M:%S", time.localtime(last_event['timestamp'] / 1000)) if last_event['timestamp'] > 1000000000 else str(last_event['timestamp'])
+                print(f"  First Event: {first_time} ({first_event['effect_type']} on {first_event['player_name']})")
+                print(f"  Last Event: {last_time} ({last_event['effect_type']} on {last_event['player_name']})")
+        
+        # Show encounter timing info
+        print(f"{Fore.CYAN}\\nEncounter Timing:{Style.RESET_ALL}")
+        import time
+        start_time = time.strftime("%H:%M:%S", time.localtime(encounter_start / 1000)) if encounter_start > 1000000000 else str(encounter_start)
+        end_time = time.strftime("%H:%M:%S", time.localtime(encounter_end / 1000)) if encounter_end > 1000000000 else str(encounter_end)
+        print(f"  Start: {start_time}")
+        print(f"  End: {end_time}")
+        print(f"  Duration: {(encounter_end - encounter_start) / 1000:.1f}s")
+        
+        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+
+    def get_trial_name(self, trial_id: int) -> str:
+        """Get trial name from trial ID."""
+        return self.TRIAL_NAMES.get(trial_id, f"Unknown Trial (ID: {trial_id})")
+    
+    def format_duration_minutes_seconds(self, duration_ms: int) -> str:
+        """Format duration in milliseconds to minutes:seconds format."""
+        duration_sec = duration_ms / 1000.0
+        minutes = int(duration_sec // 60)
+        seconds = int(duration_sec % 60)
+        return f"{minutes}m {seconds}s"
 
     def _add_zone_to_history(self, timestamp: int, zone_name: str):
         """Add a zone change to the history for rewind functionality."""
@@ -766,7 +965,7 @@ class ESOLogAnalyzer:
                         
                     line = line.strip()
                     if line:
-                        entry = ESOLogEntry.parse(line)
+                        entry = self.analyzer.log_parser.parse_line(line)
                         if entry:
                             entries.append(entry)
         except (IOError, UnicodeDecodeError) as e:
@@ -855,10 +1054,14 @@ class ESOLogAnalyzer:
 
     def process_log_entry(self, entry: ESOLogEntry):
         """Process a single log entry."""
+        # Skip None entries (failed to parse)
+        if entry is None:
+            return
+            
         # Check grace period before processing any events
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
-        if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "BEGIN_COMBAT", "END_COMBAT"]:
+        if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "UNIT_CHANGED", "BEGIN_COMBAT", "END_COMBAT", "PLAYER_INFO", "COMBAT_EVENT", "EFFECT_CHANGED"]:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
         
@@ -884,8 +1087,14 @@ class ESOLogAnalyzer:
             self._handle_end_combat_event(entry)
         elif entry.event_type == "BEGIN_LOG":
             self._handle_begin_log_event(entry)
-        elif entry.event_type == "ZONE_CHANGED":
-            self._handle_zone_changed(entry)
+        elif entry.event_type == "TRIAL_INIT":
+            self._handle_trial_init(entry)
+        elif entry.event_type == "BEGIN_TRIAL":
+            self._handle_begin_trial(entry)
+        elif entry.event_type == "END_TRIAL":
+            self._handle_end_trial(entry)
+        elif entry.event_type == "END_LOG":
+            self._handle_end_log_event(entry)
 
     def _check_pending_encounter_display(self):
         """Check if we have an encounter that ended but hasn't been displayed yet."""
@@ -922,7 +1131,8 @@ class ESOLogAnalyzer:
                 name = entry.fields[8] if len(entry.fields) > 8 else ""  # Name is in field 8
                 handle = entry.fields[9] if len(entry.fields) > 9 else ""  # Handle is in field 9
                 long_unit_id = entry.fields[10] if len(entry.fields) > 10 else ""  # Long unit ID is in field 10
-                class_id = entry.fields[7] if len(entry.fields) > 7 else ""  # Class ID is in field 7
+                class_id = entry.fields[6] if len(entry.fields) > 6 else ""  # Class ID is in field 6
+                champion_points = int(entry.fields[12]) if len(entry.fields) > 12 and entry.fields[12].isdigit() else 0  # Champion Points is in field 12
 
                 # Create encounter if it doesn't exist (UNIT_ADDED can happen before ZONE_CHANGED)
                 if not self.current_encounter:
@@ -951,11 +1161,11 @@ class ESOLogAnalyzer:
                         # Restore player from session data
                         self._restore_player_from_session(unit_id, clean_name, clean_handle)
                     else:
-                        # New player - add normally with class ID
-                        self.current_encounter.add_player(unit_id, clean_name, clean_handle, class_id)
+                        # New player - add normally with class ID and champion points
+                        self.current_encounter.add_player(unit_id, clean_name, clean_handle, class_id, champion_points)
                     
                     # Update session data
-                    self._update_player_session(unit_id, clean_name, clean_handle, class_id=class_id)
+                    self._update_player_session(unit_id, clean_name, clean_handle, class_id=class_id, champion_points=champion_points)
                     
                     # Associate the long unit ID with the player
                     if long_unit_id and long_unit_id != "0":
@@ -979,6 +1189,7 @@ class ESOLogAnalyzer:
                 if self.current_encounter and name and name != '0':
                     clean_name = name.strip('"') if name else ""
                     
+                    
                     enemy = EnemyInfo(unit_id, clean_name, unit_type)
                     enemy.max_health = health
                     enemy.current_health = health
@@ -996,8 +1207,8 @@ class ESOLogAnalyzer:
 
     def _handle_unit_changed(self, entry: ESOLogEntry):
         """Handle UNIT_CHANGED events to track when monsters become hostile."""
-        # UNIT_CHANGED format: timestamp,UNIT_CHANGED,unit_id,unknown,unknown,"name","",unknown,unknown,unknown,unknown,new_state,unknown
-        # After parsing: fields[0]=unit_id, fields[3]=name, fields[9]=new_state
+        # UNIT_CHANGED format: timestamp,UNIT_CHANGED,unit_id,class_id,race_id,name,display_name,character_id,level,champion_points,owner_unit_id,reaction,is_grouped_with_local_player
+        # After parsing: fields[0]=unit_id, fields[3]=name, fields[9]=reaction
         if self.current_encounter and len(entry.fields) >= 10:
             unit_id = entry.fields[0]
             name = entry.fields[3] if len(entry.fields) > 3 else ""
@@ -1010,12 +1221,15 @@ class ESOLogAnalyzer:
                 enemy = self.current_encounter.enemies[unit_id]
                 enemy.is_hostile = True
                 
+                # Update the enemy name to the new name from UNIT_CHANGED
+                clean_name = name.strip('"') if name else ""
+                enemy.name = clean_name
+                
                 # Update highest health hostile monster now that this enemy is hostile
                 self.current_encounter.update_highest_health_hostile(enemy)
                 
                 # Track hostile monsters for testing flag
                 if self.list_hostiles:
-                    clean_name = name.strip('"') if name else ""
                     self.hostile_monsters.append((unit_id, clean_name, enemy.unit_type))
 
     def _handle_ability_info(self, entry: ESOLogEntry):
@@ -1042,20 +1256,23 @@ class ESOLogAnalyzer:
 
     def _handle_player_info(self, entry: ESOLogEntry):
         """Handle PLAYER_INFO events to get equipped abilities and gear."""
+        if self.diagnostic:
+            print(f"{Fore.MAGENTA}[DIAGNOSTIC] _handle_player_info called for unit_id: {entry.fields[0] if entry.fields else 'unknown'}{Style.RESET_ALL}")
+        
         # Use the shared robust parser to handle the complex PLAYER_INFO format
         # Ensure caches are synchronized (both directions)
         self.log_parser.ability_cache = self.ability_cache  # Sync analyzer -> parser
         self.ability_cache.update(self.log_parser.ability_cache)  # Sync parser -> analyzer
         
-        # Check if entry is already a PlayerInfoEntry
-        if hasattr(entry, 'unit_id') and hasattr(entry, 'ability_ids'):
-            # Entry is already parsed as PlayerInfoEntry
-            player_info = entry
-        else:
-            # Entry needs to be parsed
-            player_info = self.log_parser.parse_player_info(entry)
+        
+        # Always use the parser to ensure we get the legacy format
+        # The structured parser returns structured objects, but we need legacy format for compatibility
+        player_info = self.log_parser.parse_player_info(entry)
             
         if player_info:
+            if self.diagnostic:
+                print(f"{Fore.MAGENTA}[DIAGNOSTIC] player_info found for unit_id: {player_info.unit_id}{Style.RESET_ALL}")
+            
             # Get equipped ability names (all abilities)
             equipped_ability_names = self.log_parser.get_equipped_abilities(player_info)
             # Get front and back bar abilities separately
@@ -1065,11 +1282,16 @@ class ESOLogAnalyzer:
             # Find the player and set their equipped abilities and gear
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:
                 player = self.current_encounter.players[player_info.unit_id]
+                if self.diagnostic:
+                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] Found player {player.name} in current encounter, setting abilities{Style.RESET_ALL}")
                 player.set_equipped_abilities(equipped_ability_names)
                 player.set_front_back_bar_abilities(front_bar_abilities, back_bar_abilities)
                 player.set_gear(player_info.gear_data)
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
+            else:
+                if self.diagnostic:
+                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] No current encounter or player {player_info.unit_id} not in encounter{Style.RESET_ALL}")
             
             # Always update session data with new player info, regardless of encounter status
             # This ensures player data is available when they join encounters later
@@ -1110,9 +1332,10 @@ class ESOLogAnalyzer:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_zone_changed called{Style.RESET_ALL}")
         
-        if len(entry.fields) >= 2:
-            zone_name = entry.fields[0].strip('"')
-            difficulty = entry.fields[1].strip('"')
+        if len(entry.fields) >= 3:
+            zone_id = entry.fields[0].strip('"')
+            zone_name = entry.fields[1].strip('"')
+            difficulty = entry.fields[2].strip('"')
             
             # Store previous zone name before updating
             previous_zone = self.current_zone if self.current_zone else "Unknown"
@@ -1125,6 +1348,10 @@ class ESOLogAnalyzer:
                 not self.current_encounter.finalized and self.current_encounter.players):
                 self.current_encounter.finalized = True
                 self._display_encounter_summary(self.current_zone)
+            
+            # Save the previous zone's report if it exists
+            if self.save_reports and previous_zone and previous_zone != "Unknown" and previous_zone in self.zone_reports:
+                self._save_zone_report(previous_zone)
             
             # Reset any existing encounter
             if self.current_encounter:
@@ -1197,6 +1424,17 @@ class ESOLogAnalyzer:
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
         
+        # Transfer any globally tracked buffs that are active when combat starts
+        for player_id in self.current_encounter.players.keys():
+            # Transfer completed buff periods from global tracking
+            for buff_name, buff_periods in self.global_player_buffs[player_id].items():
+                self.current_encounter.player_buffs[player_id][buff_name].extend(buff_periods)
+            
+            # Transfer currently active buffs from global tracking
+            for buff_name, start_time in self.global_active_buffs[player_id].items():
+                if buff_name not in self.current_encounter.active_buffs[player_id]:
+                    self.current_encounter.active_buffs[player_id][buff_name] = start_time
+        
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
@@ -1223,12 +1461,110 @@ class ESOLogAnalyzer:
     # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
 
+    def get_absolute_timestamp(self, relative_timestamp_ms: int) -> Optional[int]:
+        """Convert a relative timestamp (milliseconds since logging began) to absolute Unix timestamp."""
+        if self.log_start_unix_timestamp and relative_timestamp_ms > 0:
+            # log_start_unix_timestamp is in seconds, relative_timestamp_ms is in milliseconds
+            return self.log_start_unix_timestamp + (relative_timestamp_ms / 1000)
+        return None
+
+    def get_absolute_timestamp_formatted(self, relative_timestamp_ms: int) -> str:
+        """Convert a relative timestamp to formatted absolute time string."""
+        absolute_timestamp = self.get_absolute_timestamp(relative_timestamp_ms)
+        if absolute_timestamp:
+            try:
+                import datetime
+                dt = datetime.datetime.fromtimestamp(absolute_timestamp)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, OSError):
+                pass
+        return "Unknown Time"
+
     def _handle_begin_log_event(self, entry: ESOLogEntry):
         """Handle BEGIN_LOG events to extract Unix timestamp."""
         # BEGIN_LOG format: timestamp,BEGIN_LOG,unix_timestamp,version,"server","language","build"
         # The Unix timestamp is in the entry.timestamp field (fields[2] from original line)
+        # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
         if entry.timestamp > 0:
-            self.log_start_unix_timestamp = entry.timestamp
+            self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
+
+    def _handle_trial_init(self, entry: ESOLogEntry):
+        """Handle TRIAL_INIT events to track trial initialization."""
+        # TRIAL_INIT format: timestamp,TRIAL_INIT,id,inProgress,completed,startTimeMS,durationMS,success,finalScore
+        if len(entry.fields) >= 8:
+            trial_info = {
+                'trial_id': entry.fields[0],
+                'in_progress': entry.fields[1] == 'T',
+                'completed': entry.fields[2] == 'T',
+                'start_time_ms': int(entry.fields[3]) if entry.fields[3].isdigit() else 0,
+                'duration_ms': int(entry.fields[4]) if entry.fields[4].isdigit() else 0,
+                'success': entry.fields[5] == 'T',
+                'final_score': int(entry.fields[6]) if entry.fields[6].isdigit() else 0
+            }
+            
+            if self.current_encounter:
+                self.current_encounter.trial_info = trial_info
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: TRIAL_INIT - ID: {trial_info['trial_id']}, Completed: {trial_info['completed']}, Success: {trial_info['success']}, Score: {trial_info['final_score']}{Style.RESET_ALL}")
+
+    def _handle_begin_trial(self, entry: ESOLogEntry):
+        """Handle BEGIN_TRIAL events to track trial start."""
+        # BEGIN_TRIAL format: timestamp,BEGIN_TRIAL,id,startTimeMS
+        if len(entry.fields) >= 3:
+            trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
+            trial_name = self.get_trial_name(trial_id)
+            start_time_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
+            
+            if self.current_encounter:
+                if not self.current_encounter.trial_info:
+                    self.current_encounter.trial_info = {}
+                self.current_encounter.trial_info['trial_id'] = trial_id
+                self.current_encounter.trial_info['trial_name'] = trial_name
+                self.current_encounter.trial_info['start_time_ms'] = start_time_ms
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_TRIAL - {trial_name} (ID: {trial_id}), Start: {start_time_ms}{Style.RESET_ALL}")
+
+    def _handle_end_trial(self, entry: ESOLogEntry):
+        """Handle END_TRIAL events to track trial completion."""
+        # END_TRIAL format: timestamp,END_TRIAL,id,durationMS,success,finalScore,finalVitalityBonus
+        if len(entry.fields) >= 5:
+            trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
+            trial_name = self.get_trial_name(trial_id)
+            duration_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
+            success = entry.fields[2] == 'T'
+            final_score = int(entry.fields[3]) if entry.fields[3].isdigit() else 0
+            vitality_bonus = int(entry.fields[4]) if entry.fields[4].isdigit() else 0
+            
+            if self.current_encounter:
+                if not self.current_encounter.trial_info:
+                    self.current_encounter.trial_info = {}
+                self.current_encounter.trial_info.update({
+                    'trial_id': trial_id,
+                    'trial_name': trial_name,
+                    'duration_ms': duration_ms,
+                    'success': success,
+                    'final_score': final_score,
+                    'vitality_bonus': vitality_bonus,
+                    'completed': True
+                })
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - {trial_name} (ID: {trial_id}), Success: {success}, Score: {final_score}, Vitality: {vitality_bonus}{Style.RESET_ALL}")
+
+    def _handle_end_log_event(self, entry: ESOLogEntry):
+        """Handle END_LOG events to save final zone report."""
+        # Save the current zone's report if it exists
+        if self.save_reports and self.current_zone and self.current_zone in self.zone_reports:
+            self._save_zone_report(self.current_zone)
+            
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, saving final zone report{Style.RESET_ALL}")
 
     def _handle_begin_cast(self, entry: ESOLogEntry):
         """Handle BEGIN_CAST events."""
@@ -1246,6 +1582,9 @@ class ESOLogAnalyzer:
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
+            
+            if self.diagnostic and caster_unit_id == "31":
+                print(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
 
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
@@ -1256,6 +1595,7 @@ class ESOLogAnalyzer:
                 self._parse_and_update_player_resources(caster_unit_id, entry.fields[5:8])
                 # Also update enemy health if the caster is an enemy
                 self._parse_and_update_enemy_health(caster_unit_id, entry.fields[5:8])
+
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -1304,13 +1644,17 @@ class ESOLogAnalyzer:
                 # Magicka format: "current/max" - we want the max (second number)
                 current_magicka, max_magicka = resource_fields[1].split("/")
                 max_magicka = int(max_magicka)
-                player.update_resources(magicka=max_magicka)
+                # Only update if max is not 0 (0/0 means empty resource, not max=0)
+                if max_magicka > 0:
+                    player.update_resources(magicka=max_magicka)
 
             if len(resource_fields) >= 3 and "/" in resource_fields[2]:
                 # Stamina format: "current/max" - we want the max (second number)
                 current_stamina, max_stamina = resource_fields[2].split("/")
                 max_stamina = int(max_stamina)
-                player.update_resources(stamina=max_stamina)
+                # Only update if max is not 0 (0/0 means empty resource, not max=0)
+                if max_stamina > 0:
+                    player.update_resources(stamina=max_stamina)
 
         except (ValueError, IndexError):
             pass  # Skip invalid resource data
@@ -1334,6 +1678,11 @@ class ESOLogAnalyzer:
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
         if len(entry.fields) >= 4:
             combat_event_type = entry.fields[0]  # DAMAGE/CRITICAL_DAMAGE is at index 0
+            
+            if self.diagnostic and len(entry.fields) >= 10:
+                unit_id = entry.fields[0]
+                if unit_id == "31":
+                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] COMBAT_EVENT for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
             
             # Track any monster that appears in combat events as "engaged"
             if self.list_hostiles and self.current_encounter:
@@ -1451,16 +1800,51 @@ class ESOLogAnalyzer:
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
         """Handle EFFECT_CHANGED events for buffs/debuffs."""
-        # EFFECT_CHANGED format: GAINED/FADED/UPDATED, target_unit_id, source_unit_id, ability_id, stacks, ...
-        if self.current_encounter and len(entry.fields) >= 4:
-            effect_type = entry.fields[0]
-            target_unit_id = entry.fields[1]  # Short unit ID
-            source_unit_id = entry.fields[2]  # Long unit ID
-            ability_id = entry.fields[3]
+        # EFFECT_CHANGED format: changeType, stackCount, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>, playerInitiatedRemoveCastTrackId:optional
+        # Where <targetUnitState> is replaced with * if the target unit is the same as the source unit (self-cast)
+        # Note: entry.fields starts after line_number and event_type, so indices are shifted
+        if len(entry.fields) >= 4:
+            effect_type = entry.fields[0]  # changeType (GAINED/FADED/UPDATED)
+            stack_count = entry.fields[1]  # stackCount
+            cast_track_id = entry.fields[2]  # castTrackId
+            ability_id = entry.fields[3]  # abilityId
+            
+            # Extract source unit ID from sourceUnitState (first field after abilityId)
+            source_unit_id = entry.fields[4] if len(entry.fields) > 4 else "0"
+            
+            # Determine target unit ID
+            # If targetUnitState is "*", then target is same as source
+            # Otherwise, target unit ID is in the targetUnitState (first field of targetUnitState)
+            target_unit_id = source_unit_id  # Default to source
+            if len(entry.fields) > 10:
+                # Check if targetUnitState is "*" (same as source)
+                if entry.fields[-1] == "*":
+                    target_unit_id = source_unit_id
+                else:
+                    # Extract target unit ID from targetUnitState
+                    # targetUnitState starts after sourceUnitState (which has 6 fields: unitId, health, magicka, stamina, ultimate, werewolf)
+                    target_unit_id = entry.fields[10] if len(entry.fields) > 10 else source_unit_id
+            
+            if self.diagnostic and target_unit_id == "31":
+                print(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
 
-            # Associate long unit ID with target player if we can find the target
-            if target_unit_id in self.current_encounter.players:
-                self.current_encounter.associate_long_unit_id(target_unit_id, source_unit_id)
+            # Always track group buffs globally, regardless of encounter state
+            for buff_name, buff_ids in self.group_buff_ids.items():
+                if ability_id in buff_ids:
+                    # Track buff globally
+                    self._track_global_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
+                    
+                    # Also track in current encounter if it exists and player is in encounter
+                    if (self.current_encounter and 
+                        target_unit_id in self.current_encounter.players):
+                        self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
+                        # Note: Buff event already logged by _track_global_buff, no need to log again
+
+            # Only process other encounter-specific logic if we have an active encounter
+            if self.current_encounter:
+                # Associate long unit ID with target player if we can find the target
+                if target_unit_id in self.current_encounter.players:
+                    self.current_encounter.associate_long_unit_id(target_unit_id, source_unit_id)
             
             # Track pet ownership: if source is a player and target is not a player, target might be a pet
             if (source_unit_id in self.current_encounter.players and 
@@ -1469,29 +1853,27 @@ class ESOLogAnalyzer:
                 if target_unit_id not in self.current_encounter.enemies:
                     self.current_encounter.track_pet_ownership(target_unit_id, source_unit_id)
 
-            # Track group buffs
-            for buff_name, buff_ids in self.group_buff_ids.items():
-                if ability_id in buff_ids and target_unit_id in self.current_encounter.players:
-                    self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
-
-            # Parse health information for enemies from EFFECT_CHANGED events
+            # Parse health information for enemies and players from EFFECT_CHANGED events
             # EFFECT_CHANGED format: GAINED/FADED/UPDATED,stacks,source_unit_id,ability_id,target_unit_id,source_health/max,source_magicka/max,source_stamina/max,source_ultimate/max,source_werewolf/max,source_shield,source_x,source_y,source_heading,target_unit_id,target_health/max,target_magicka/max,target_stamina/max,target_ultimate/max,target_werewolf/max,target_shield,target_x,target_y,target_heading
-            # Look for the second target_unit_id (field 15) and its corresponding health (field 16)
-            if len(entry.fields) >= 16:
-                second_target_unit_id = str(entry.fields[14])  # Field 15 (0-indexed)
-                target_health_info = str(entry.fields[15])     # Field 16 (0-indexed)
-                
-                if "/" in target_health_info and second_target_unit_id in self.current_encounter.enemies:
-                    try:
-                        current_health, max_health = target_health_info.split("/")
-                        current_health = int(current_health)
-                        max_health = int(max_health)
-                        
-                        if max_health > 0 and max_health > 100:  # Filter out small health values
-                            self.current_encounter.update_enemy_health(second_target_unit_id, current_health, max_health)
+            
+            # Only process health parsing if we have an active encounter
+            if self.current_encounter:
+                # Look for the second target_unit_id (field 15) and its corresponding health (field 16)
+                if len(entry.fields) >= 16:
+                    second_target_unit_id = str(entry.fields[14])  # Field 15 (0-indexed)
+                    target_health_info = str(entry.fields[15])     # Field 16 (0-indexed)
+                    
+                    if "/" in target_health_info and second_target_unit_id in self.current_encounter.enemies:
+                        try:
+                            current_health, max_health = target_health_info.split("/")
+                            current_health = int(current_health)
+                            max_health = int(max_health)
                             
-                    except (ValueError, IndexError):
-                        pass  # Skip invalid health data
+                            if max_health > 0 and max_health > 100:  # Filter out small health values
+                                self.current_encounter.update_enemy_health(second_target_unit_id, current_health, max_health)
+                                
+                        except (ValueError, IndexError):
+                            pass  # Skip invalid health data
             
             # Also check the first target_unit_id (original logic for backward compatibility)
             if len(entry.fields) >= 6:
@@ -1556,6 +1938,20 @@ class ESOLogAnalyzer:
 
         self.current_encounter = None
 
+    def _format_duration(self, duration_seconds: float) -> str:
+        """Format duration in seconds to minutes:seconds format, rounded to nearest second."""
+        # Round to nearest second
+        duration_seconds = round(duration_seconds)
+        
+        if duration_seconds < 60:
+            # Less than a minute, show only seconds
+            return f"{duration_seconds}s"
+        else:
+            # One minute or more, show minutes:seconds
+            minutes = int(duration_seconds // 60)
+            seconds = duration_seconds % 60
+            return f"{minutes}m {seconds}s"
+
     def _display_encounter_summary(self, zone_name: str = None):
         """Display a summary of the completed encounter."""
         if not self.current_encounter:
@@ -1581,7 +1977,7 @@ class ESOLogAnalyzer:
         hostile_info = ""
         if (self.current_encounter and self.current_encounter.most_damaged_hostile):
             hostile = self.current_encounter.most_damaged_hostile
-            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
+            hostile_info = f" | {hostile.name} (HP: {hostile.max_health:,})"
         
         # Highest HP hostile monster info - only consider enemies that were actually engaged by players
         highest_hp_info = ""
@@ -1628,14 +2024,14 @@ class ESOLogAnalyzer:
         dark_orange = "\033[38;5;208m"  # Dark orange color
         if zone_name:
             if estimated_dps > 0:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | {self._format_duration(duration)}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         else:
             if estimated_dps > 0:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
             else:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}{Style.RESET_ALL}")
+                self._print_and_buffer(f"{dark_orange}{combat_start_time} | {self._format_duration(duration)}{deaths_info}{hostile_info}{Style.RESET_ALL}")
         
         # Show group buff analysis for encounters with 3+ players
         if players_count >= 3:
@@ -1645,15 +2041,41 @@ class ESOLogAnalyzer:
                 if is_present:
                     # Calculate group uptime (time buff was active on any player)
                     group_uptime = self.current_encounter.get_group_buff_uptime(buff_name)
-                    status = f"✅ ({group_uptime:.1f}%)"
+                    status = f"{group_uptime:.1f}%"
                 else:
-                    status = "❌"
+                    status = "0.0%"
                 buff_status.append(f"{buff_name}: {status}")
-            self._print_and_buffer(f"{Fore.CYAN}Group Buffs: {' | '.join(buff_status)}{Style.RESET_ALL}")
+            self._print_and_buffer(f"{Fore.CYAN}{' '.join(buff_status)}{Style.RESET_ALL}")
+            
+            # Print buff diagnostic summary if in diagnostic mode
+            if self.diagnostic:
+                self._print_buff_diagnostic_summary()
+        
+        # Show trial completion information if available
+        if self.current_encounter.trial_info and self.current_encounter.trial_info.get('completed'):
+            trial = self.current_encounter.trial_info
+            trial_name = trial.get('trial_name', f"Trial ID {trial.get('trial_id', 'Unknown')}")
+            duration_ms = trial.get('duration_ms', 0)
+            score = trial.get('final_score', 0)
+            vitality = trial.get('vitality_bonus', 0)
+            
+            trial_info_parts = [trial_name]
+            if duration_ms > 0:
+                duration_formatted = self.format_duration_minutes_seconds(duration_ms)
+                trial_info_parts.append(f"Duration: {duration_formatted}")
+            if score > 0:
+                trial_info_parts.append(f"Score: {score:,}")
+            trial_info_parts.append(f"Vitality: {vitality}")
+            
+            self._print_and_buffer(f"{Fore.YELLOW}Trial Completion: {' | '.join(trial_info_parts)}{Style.RESET_ALL}")
+        
         # Sort players by damage contribution (descending)
-        # Include all players, even those without PLAYER_INFO data
+        # Only include players with PLAYER_INFO data (equipped abilities)
         players_with_damage = []
         for player in self.current_encounter.players.values():
+            # Skip players without PLAYER_INFO data (no equipped abilities)
+            if not player.equipped_abilities:
+                continue
             player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
         
@@ -1718,45 +2140,47 @@ class ESOLogAnalyzer:
                         # Format resources with health coloring
                         resource_str = ""
                         dps_str = ""  # Initialize dps_str at this scope to avoid UnboundLocalError
-                        if player.max_health > 0 or player.max_magicka > 0 or player.max_stamina > 0:
-                            # Round to nearest 0.5k (500)
-                            def round_to_half_k(value):
-                                if value == 0:
-                                    return "0k"
-                                rounded = round(value / 500) * 0.5
-                                if rounded == int(rounded):
-                                    return f"{int(rounded)}k"
-                                else:
-                                    return f"{rounded:.1f}k"
+                        
+                        # Always show resource stats, even if values are 0
+                        # Round to nearest 0.5k (500)
+                        def round_to_half_k(value):
+                            if value == 0:
+                                return "0k"
+                            rounded = round(value / 500) * 0.5
+                            if rounded == int(rounded):
+                                return f"{int(rounded)}k"
+                            else:
+                                return f"{rounded:.1f}k"
 
-                            health_display = round_to_half_k(player.max_health)
-                            magicka_display = round_to_half_k(player.max_magicka)
-                            stamina_display = round_to_half_k(player.max_stamina)
+                        health_display = round_to_half_k(player.max_health)
+                        magicka_display = round_to_half_k(player.max_magicka)
+                        stamina_display = round_to_half_k(player.max_stamina)
 
-                            # Color health red if below 18.5k or above 44.5k
-                            if player.max_health > 0 and (player.max_health < 18500 or player.max_health > 44500):
-                                health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
+                        # Color health red if above 49k
+                        if player.max_health > 0 and player.max_health > 49000:
+                            health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
 
-                            # Bold and underline the highest resource value
-                            max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
-                            if max_resource_value > 0:
-                                if player.max_health == max_resource_value:
-                                    health_display = f"{Style.BRIGHT}\033[4m{health_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
-                                elif player.max_magicka == max_resource_value:
-                                    magicka_display = f"{Style.BRIGHT}\033[4m{magicka_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
-                                elif player.max_stamina == max_resource_value:
-                                    stamina_display = f"{Style.BRIGHT}\033[4m{stamina_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
+                        # Bold and underline the highest resource value
+                        max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
+                        if max_resource_value > 0:
+                            if player.max_health == max_resource_value:
+                                health_display = f"{Style.BRIGHT}\033[4m{health_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
+                            elif player.max_magicka == max_resource_value:
+                                magicka_display = f"{Style.BRIGHT}\033[4m{magicka_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
+                            elif player.max_stamina == max_resource_value:
+                                stamina_display = f"{Style.BRIGHT}\033[4m{stamina_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
 
-                            resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
-                            
-                            # Add DPS information and damage percentage
-                            dps_str = ""
-                            if player_dps > 0:
-                                # Calculate damage percentage of total group damage
-                                damage_percentage = 0
-                                if self.current_encounter.total_damage > 0:
-                                    damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
-                                dps_str = f" D:{damage_percentage:.1f}%"
+                        # Add Champion Points to resource string
+                        cp_display = f"{player.champion_points}" if player.champion_points > 0 else "0"
+                        resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display} CP:{cp_display}"
+                        # Add DPS information and damage percentage
+                        dps_str = ""
+                        if player_dps > 0:
+                            # Calculate damage percentage of total group damage
+                            damage_percentage = 0
+                            if self.current_encounter.total_damage > 0:
+                                damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
+                            dps_str = f" D:{damage_percentage:.1f}%"
 
                         skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
                     title_parts.append(skill_lines_str)
@@ -1969,17 +2393,21 @@ class ESOLogAnalyzer:
         # Clear the hostile monsters list and engaged monsters set for the next encounter
         self.hostile_monsters.clear()
         self.engaged_monsters.clear()
-        
+
         # Store the Discord markdown version for copying
         if self.discord_copy_enabled:
             self.last_encounter_report = self._format_encounter_for_discord(zone_name)
         
-        # Save report to file if enabled
+        # Add report to zone-based collection if enabled
         if self.save_reports:
-            self._save_report_to_file()
+            self._add_report_to_zone()
+            # Individual report files are saved per-zone, not per-encounter
+        
+        # Add newline after encounter summary for clean formatting
+        self._print_and_buffer("")
 
     def _save_report_to_file(self):
-        """Save the current report buffer to a timestamped file."""
+        """Save the current report buffer to a file."""
         if not self.report_buffer or not self.current_encounter:
             return
             
@@ -2013,21 +2441,29 @@ class ESOLogAnalyzer:
             
             # Generate zone-based filename similar to split files
             # Use the encounter start time for consistent naming
-            encounter_start_time = self.current_encounter.start_time
-            dt = datetime.fromtimestamp(encounter_start_time / 1000)  # Convert from milliseconds
-            timestamp_str = dt.strftime("%y%m%d%H%M%S")
+            if self.current_encounter.start_time:
+                # Use the analyzer's absolute timestamp conversion method
+                absolute_timestamp = self.get_absolute_timestamp(self.current_encounter.start_time)
+                if absolute_timestamp:
+                    dt = datetime.fromtimestamp(absolute_timestamp)
+                    timestamp_str = dt.strftime("%y%m%d%H%M%S")
+                else:
+                    # Fallback to current time if conversion fails
+                    timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
+            else:
+                # Fallback to current time if encounter start time not available
+                timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
             
-            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.txt
+            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt
             difficulty_suffix = "-vet" if self.current_difficulty and self.current_difficulty.upper() == "VETERAN" else ""
             zone_suffix = self.current_zone.replace(" ", "-") if self.current_zone else "Unknown-Zone"
             
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
             
-            # Write report to file (strip ANSI color codes for clean text)
+            # Write report to file
             with open(report_file_path, 'w', encoding='utf-8') as f:
                 for line in self.report_buffer:
-                    # Remove ANSI color codes for clean text output
                     clean_line = self._strip_ansi_codes(line)
                     f.write(clean_line + '\n')
             
@@ -2040,8 +2476,103 @@ class ESOLogAnalyzer:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
         finally:
-            # Clear the buffer for the next report
+            # Clear the report buffer after saving
             self.report_buffer.clear()
+
+    def _add_report_to_zone(self):
+        """Add the current report to the zone-based collection."""
+        if not self.report_buffer or not self.current_encounter or not self.current_zone:
+            return
+            
+        # Initialize zone report if it doesn't exist
+        if self.current_zone not in self.zone_reports:
+            self.zone_reports[self.current_zone] = []
+            # Use the same timestamp as split logs (BEGIN_LOG timestamp)
+            if hasattr(self, 'log_start_unix_timestamp') and self.log_start_unix_timestamp:
+                self.zone_start_time = self.log_start_unix_timestamp * 1000  # Convert to milliseconds
+            else:
+                self.zone_start_time = self.current_encounter.start_time
+        
+        # Add report lines to zone collection (strip ANSI color codes)
+        for line in self.report_buffer:
+            clean_line = self._strip_ansi_codes(line)
+            self.zone_reports[self.current_zone].append(clean_line)
+        
+        # Add separator between encounters
+        self.zone_reports[self.current_zone].append("")
+    
+    def _save_zone_report(self, zone_name: str):
+        """Save the accumulated report for a zone to a file."""
+        if zone_name not in self.zone_reports or not self.zone_reports[zone_name]:
+            return
+            
+        try:
+            # Create reports directory if it doesn't exist
+            if self.reports_dir:
+                reports_path = Path(self.reports_dir)
+            else:
+                # Default to same directory as log file
+                if self.current_log_file:
+                    reports_path = Path(self.current_log_file).parent
+                else:
+                    reports_path = Path.cwd()
+            
+            # Check if directory exists and is writable, or if we can create it
+            if not reports_path.exists():
+                try:
+                    reports_path.mkdir(parents=True, exist_ok=True)
+                except (PermissionError, OSError) as e:
+                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                    sys.exit(1)
+            elif not reports_path.is_dir():
+                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            elif not os.access(reports_path, os.W_OK):
+                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Generate zone-based filename similar to split files
+            # Use the zone start time for consistent naming
+            if self.zone_start_time:
+                # Use the analyzer's absolute timestamp conversion method
+                absolute_timestamp = self.get_absolute_timestamp(self.zone_start_time)
+                if absolute_timestamp:
+                    dt = datetime.fromtimestamp(absolute_timestamp)
+                    timestamp_str = dt.strftime("%y%m%d%H%M%S")
+                else:
+                    # Fallback to current time if conversion fails
+                    timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
+            else:
+                # Fallback to current time if zone start time not available
+                timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
+            
+            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt
+            difficulty_suffix = "-vet" if self.current_difficulty and self.current_difficulty.upper() == "VETERAN" else ""
+            zone_suffix = zone_name.replace(" ", "-") if zone_name else "Unknown-Zone"
+            
+            filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
+            report_file_path = reports_path / filename
+            
+            # Write report to file
+            with open(report_file_path, 'w', encoding='utf-8') as f:
+                for line in self.zone_reports[zone_name]:
+                    f.write(line + '\n')
+            
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved zone report to {report_file_path}{Style.RESET_ALL}")
+                
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save zone report: {e}{Style.RESET_ALL}")
+        finally:
+            # Clear the zone report after saving
+            if zone_name in self.zone_reports:
+                del self.zone_reports[zone_name]
 
     def _strip_ansi_codes(self, text: str) -> str:
         """Remove ANSI color codes from text for clean file output."""
@@ -2080,10 +2611,21 @@ class ESOLogAnalyzer:
         hostile_info = ""
         if (self.current_encounter and self.current_encounter.most_damaged_hostile):
             hostile = self.current_encounter.most_damaged_hostile
-            hostile_info = f" | Target: {hostile.name} (HP: {hostile.max_health:,})"
+            hostile_info = f" | {hostile.name} (HP: {hostile.max_health:,})"
 
-        # Get formatted combat start time
+        # Get formatted combat start time and convert to Discord timestamp
         combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
+        
+        # Convert to Discord timestamp format <t:timestamp:f>
+        if self.log_start_unix_timestamp:
+            # Calculate the actual Unix timestamp for the combat start using the new helper
+            combat_unix_timestamp = self.get_absolute_timestamp(self.current_encounter.start_time)
+            if combat_unix_timestamp:
+                discord_timestamp = f"<t:{int(combat_unix_timestamp)}:f>"
+            else:
+                discord_timestamp = combat_start_time
+        else:
+            discord_timestamp = combat_start_time
         
         # Create Discord markdown formatted report
         report_lines = []
@@ -2091,14 +2633,14 @@ class ESOLogAnalyzer:
         # Header with encounter summary
         if zone_name:
             if estimated_dps > 0:
-                header = f"**{combat_start_time} ({zone_name})** | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
+                header = f"**{discord_timestamp} ({zone_name})** | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
             else:
-                header = f"**{combat_start_time} ({zone_name})** | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}"
+                header = f"**{discord_timestamp} ({zone_name})** | {self._format_duration(duration)}{deaths_info}{hostile_info}"
         else:
             if estimated_dps > 0:
-                header = f"**{combat_start_time}** | Duration: {duration:.1f}s | Players: {players_count} | Est. DPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
+                header = f"**{discord_timestamp}** | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}"
             else:
-                header = f"**{combat_start_time}** | Duration: {duration:.1f}s | Players: {players_count}{deaths_info}{hostile_info}"
+                header = f"**{discord_timestamp}** | {self._format_duration(duration)}{deaths_info}{hostile_info}"
         
         report_lines.append(header)
         report_lines.append("")  # Empty line
@@ -2111,16 +2653,39 @@ class ESOLogAnalyzer:
                 if is_present:
                     # Calculate group uptime (time buff was active on any player)
                     group_uptime = self.current_encounter.get_group_buff_uptime(buff_name)
-                    status = f"✅ ({group_uptime:.1f}%)"
+                    status = f"{group_uptime:.1f}%"
                 else:
-                    status = "❌"
-                buff_status.append(f"**{buff_name}**: {status}")
-            report_lines.append("**Group Buffs:** " + " | ".join(buff_status))
+                    status = "0.0%"
+                buff_status.append(f"{buff_name}: {status}")
+            report_lines.append(" ".join(buff_status))
+            report_lines.append("")  # Empty line
+        
+        # Add trial completion information if available
+        if self.current_encounter.trial_info and self.current_encounter.trial_info.get('completed'):
+            trial = self.current_encounter.trial_info
+            trial_name = trial.get('trial_name', f"Trial ID {trial.get('trial_id', 'Unknown')}")
+            duration_ms = trial.get('duration_ms', 0)
+            score = trial.get('final_score', 0)
+            vitality = trial.get('vitality_bonus', 0)
+            
+            trial_info_parts = [trial_name]
+            if duration_ms > 0:
+                duration_formatted = self.format_duration_minutes_seconds(duration_ms)
+                trial_info_parts.append(f"Duration: {duration_formatted}")
+            if score > 0:
+                trial_info_parts.append(f"Score: {score:,}")
+            trial_info_parts.append(f"Vitality: {vitality}")
+            
+            report_lines.append(f"Trial Completion: {' | '.join(trial_info_parts)}")
             report_lines.append("")  # Empty line
         
         # Sort players by damage contribution (descending)
+        # Only include players with PLAYER_INFO data (equipped abilities)
         players_with_damage = []
         for player in self.current_encounter.players.values():
+            # Skip players without PLAYER_INFO data (no equipped abilities)
+            if not player.equipped_abilities:
+                continue
             player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
         
@@ -2141,13 +2706,13 @@ class ESOLogAnalyzer:
             if abilities_to_analyze:
                 analysis = self.subclass_analyzer.analyze_subclass(abilities_to_analyze)
             
-            # Create the title line: @playername {character_name} skill_lines dominant_resource
-            title_parts = [f"**{player.get_display_name()}**"]
+            # Create the title line: `@playername` {character_name} skill_lines dominant_resource
+            title_parts = [f"`{player.get_display_name()}`"]
             
             # Add character name if available and different from handle
             character_name = player.name if player.name and player.name not in ['""', '', '0'] else ""
             if character_name and character_name != player.get_display_name():
-                title_parts.append(f"*{character_name}*")
+                title_parts.append(character_name)
             
             if analysis and analysis['confidence'] > 0.1:
                 if analysis['skill_lines']:
@@ -2160,22 +2725,16 @@ class ESOLogAnalyzer:
                         alias_found = False
                         for alias_key, alias_value in self.subclass_analyzer.SKILL_LINE_ALIASES.items():
                             if alias_key in skill_line:
-                                # Check if this is a class skill line and make it bold
-                                if any(alias_value in class_skill for class_skill in class_skill_lines):
-                                    skill_line_aliases.append(f"**{alias_value}**")
-                                else:
-                                    skill_line_aliases.append(alias_value)
+                                # Add skill line alias (no bolding)
+                                skill_line_aliases.append(alias_value)
                                 alias_found = True
                                 break
                         
                         if not alias_found:
                             # Fall back to first word
                             first_word = skill_line.split()[0]
-                            # Check if this is a class skill line and make it bold
-                            if any(first_word in class_skill for class_skill in class_skill_lines):
-                                skill_line_aliases.append(f"**{first_word}**")
-                            else:
-                                skill_line_aliases.append(first_word)
+                            # Add first word (no bolding)
+                            skill_line_aliases.append(first_word)
                     
                     # Sort skill line aliases before joining
                     skill_line_aliases.sort()
@@ -2204,15 +2763,11 @@ class ESOLogAnalyzer:
 
                             # Bold the highest resource value
                             max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
-                            if max_resource_value > 0:
-                                if player.max_health == max_resource_value:
-                                    health_display = f"**{health_display}**"
-                                elif player.max_magicka == max_resource_value:
-                                    magicka_display = f"**{magicka_display}**"
-                                elif player.max_stamina == max_resource_value:
-                                    stamina_display = f"**{stamina_display}**"
+                            # No bolding for primary resource
 
-                            resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display}"
+                            # Add Champion Points to resource string
+                            cp_display = f"{player.champion_points}" if player.champion_points > 0 else "0"
+                            resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display} CP:{cp_display}"
                             
                             # Add DPS information and damage percentage
                             if player_dps > 0:
@@ -2241,7 +2796,7 @@ class ESOLogAnalyzer:
                         for ability in highlighted_front_bar:
                             if ability.startswith(Fore.MAGENTA):  # Taunt ability
                                 clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
-                                discord_front_bar.append(f"**{clean_ability}**")
+                                discord_front_bar.append(clean_ability)
                             else:
                                 discord_front_bar.append(ability)
                         report_lines.append(f"  {', '.join(discord_front_bar)}")
@@ -2252,7 +2807,7 @@ class ESOLogAnalyzer:
                         for ability in highlighted_back_bar:
                             if ability.startswith(Fore.MAGENTA):  # Taunt ability
                                 clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
-                                discord_back_bar.append(f"**{clean_ability}**")
+                                discord_back_bar.append(clean_ability)
                             else:
                                 discord_back_bar.append(ability)
                         report_lines.append(f"  {', '.join(discord_back_bar)}")
@@ -2264,10 +2819,10 @@ class ESOLogAnalyzer:
                     for ability in highlighted_abilities:
                         if ability.startswith(Fore.MAGENTA):  # Taunt ability
                             clean_ability = ability.replace(Fore.MAGENTA, '').replace(Style.RESET_ALL, '')
-                            discord_abilities.append(f"**{clean_ability}**")
+                            discord_abilities.append(clean_ability)
                         else:
                             discord_abilities.append(ability)
-                    report_lines.append(f"  **Equipped:** {', '.join(discord_abilities)}")
+                    report_lines.append(f"  Equipped: {', '.join(discord_abilities)}")
                     if len(abilities_to_analyze) > 10:
                         report_lines.append(f"  ... and {len(abilities_to_analyze) - 10} more")
 
@@ -2345,88 +2900,29 @@ class ESOLogAnalyzer:
 
                     equipment_parts.sort(key=sort_key)
 
-                    # Apply Discord markdown formatting to equipment parts
-                    discord_equipment_parts = []
+                    # Apply plain formatting to equipment parts (no bolding or warning symbols)
+                    plain_equipment_parts = []
                     for part in equipment_parts:
                         if 'pc ' in part:
                             # Extract piece count and set name
                             pieces_str, set_name = part.split('pc ', 1)
-                            piece_count = int(pieces_str) if pieces_str.isdigit() else 0
-
-                            # Remove any trailing text like "(inferred)"
+                            # Remove any trailing text like "(inferred)" and just keep the clean set name
                             clean_set_name = set_name.split(' (')[0]
-
-                            # Check if it's a mythic set (make it bold)
-                            if clean_set_name in MYTHIC_SETS:
-                                discord_equipment_parts.append(f"**{set_name}**")
-                            # Check if it's an incomplete 5-piece set (make it bold red) - but never highlight monster sets
-                            elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
-                                # Explicitly exclude 2-piece sets (monster sets + arena weapon sets) from highlighting
-                                two_piece_set_keywords = [
-                                    # Monster sets (2-piece)
-                                    "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
-                                    "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
-                                    "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
-                                    "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
-                                    "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
-                                    "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
-                                    "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
-                                    "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
-                                    "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-                                    "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing", "nunatak", "nunatak's blessing",
-                                    # Arena weapon sets (2-piece)
-                                    "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
-                                    "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
-                                    "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
-                                    "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
-                                    "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
-                                    "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
-                                    "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
-                                    "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
-                                    "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
-                                    "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
-                                    "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
-                                    "perfect executioner's blade", "perfect void bash", "perfect frenzied momentum", "perfect point-blank snipe", "perfect wrath of elements",
-                                    "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum", "perfected point-blank snipe", "perfected wrath of elements"
-                                ]
-                                if not any(keyword in clean_set_name.lower() for keyword in two_piece_set_keywords):
-                                    discord_equipment_parts.append(f"**{set_name}** ⚠️")
-                                else:
-                                    discord_equipment_parts.append(set_name)
-                            else:
-                                discord_equipment_parts.append(set_name)
+                            
+                            # Replace "Perfected " with "p" for Discord formatting
+                            if clean_set_name.startswith('Perfected '):
+                                clean_set_name = 'p' + clean_set_name[10:]  # Replace "Perfected " with "p"
+                            
+                            # Replace "pc" with "x" for Discord formatting
+                            plain_equipment_parts.append(f"{pieces_str}x{clean_set_name}")
                         else:
-                            discord_equipment_parts.append(part)
+                            plain_equipment_parts.append(part)
                     
-                    report_lines.append(f"  **Equipment:** {', '.join(discord_equipment_parts)}")
+                    report_lines.append(f"  Equipment: {', '.join(plain_equipment_parts)}")
             
             report_lines.append("")  # Empty line after each player
 
-        # Show hostile monsters if any
-        if self.current_encounter and self.current_encounter.enemies:
-            unique_hostiles = []
-            seen = set()
-            for unit_id, enemy in self.current_encounter.enemies.items():
-                if enemy.is_hostile:
-                    key = (unit_id, enemy.name)
-                    if key not in seen:
-                        seen.add(key)
-                        unique_hostiles.append((unit_id, enemy.name, enemy.unit_type, enemy.max_health))
-            
-            if unique_hostiles:
-                # Sort by health (descending), then by name
-                unique_hostiles.sort(key=lambda x: (x[3], x[1]), reverse=True)
-                
-                hostile_names = []
-                for unit_id, name, unit_type, max_health in unique_hostiles:
-                    if max_health > 0:
-                        hostile_names.append(f"{name} ({max_health:,} HP)")
-                    else:
-                        hostile_names.append(name)
-                
-                if hostile_names:
-                    report_lines.append(f"**Hostile Monsters:** {', '.join(hostile_names)}")
-                    report_lines.append("")  # Empty line
+        # Hostile monsters section removed from Discord report per user request
 
         return '\n'.join(report_lines)
 
@@ -2442,43 +2938,76 @@ class ESOLogAnalyzer:
         
         try:
             pyperclip.copy(self.last_encounter_report)
-            print(f"{Fore.GREEN}Discord markdown report copied to clipboard!{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Report copied to clipboard in discord text format.{Style.RESET_ALL}")
             return True
         except Exception as e:
             print(f"{Fore.RED}Error copying to clipboard: {e}{Style.RESET_ALL}")
             return False
 
     def _start_keyboard_listener(self):
-        """Start keyboard listener for 'c' key detection."""
-        if not KEYBOARD_AVAILABLE:
-            print(f"{Fore.YELLOW}Warning: pynput not available. Discord copy feature disabled.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Install with: pip install pynput{Style.RESET_ALL}")
-            return False
-        
-        def on_press(key):
-            try:
-                if hasattr(key, 'char') and key.char == 'c':
-                    # Only copy if we're not in the middle of typing something
-                    # This is a simple check - in a real implementation you might want more sophisticated detection
-                    self._copy_discord_report_to_clipboard()
-            except AttributeError:
-                pass  # Handle special keys that don't have a 'char' attribute
-        
+        """Start terminal input handler for 'c' key detection."""
         try:
-            self.keyboard_listener = keyboard.Listener(on_press=on_press)
-            self.keyboard_listener.start()
+            import threading
+            import sys
+            import tty
+            import termios
+            
+            def input_handler():
+                """Handle terminal input in a separate thread."""
+                # Save terminal settings
+                old_settings = termios.tcgetattr(sys.stdin)
+                
+                try:
+                    # Set terminal to raw mode to capture individual keystrokes
+                    tty.setraw(sys.stdin.fileno())
+                    
+                    while True:
+                        try:
+                            # Read one character at a time
+                            char = sys.stdin.read(1)
+                            
+                            # Handle Ctrl+C
+                            if char == '\x03':  # Ctrl+C
+                                break
+                            elif char.lower() == 'c':
+                                # Consume the character and copy to clipboard
+                                self._copy_discord_report_to_clipboard()
+                                # Move cursor to beginning of next line
+                                print('\r', end='', flush=True)
+                            elif char == '\r' or char == '\n':
+                                # Handle Enter key normally
+                                print()
+                            else:
+                                # Echo other characters normally
+                                print(char, end='', flush=True)
+                                
+                        except (EOFError, KeyboardInterrupt):
+                            break
+                        except Exception:
+                            pass  # Ignore other errors
+                            
+                finally:
+                    # Restore terminal settings
+                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            
+            # Start input handler in a separate thread
+            self.input_thread = threading.Thread(target=input_handler, daemon=True)
+            self.input_thread.start()
+            
             return True
+            
         except Exception as e:
-            print(f"{Fore.RED}Error starting keyboard listener: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error starting input handler: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Discord copy feature disabled{Style.RESET_ALL}")
             return False
-
+    
     def _stop_keyboard_listener(self):
-        """Stop keyboard listener."""
-        if self.keyboard_listener:
-            self.keyboard_listener.stop()
-            self.keyboard_listener = None
+        """Stop input handler."""
+        # The input thread is a daemon thread, so it will stop when the main thread exits
+        # No explicit cleanup needed
+        pass
 
-    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None):
+    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0):
         """Update or create a player session with their current data."""
         if not handle or handle == "" or not name or name == "":
             return
@@ -2501,6 +3030,7 @@ class ESOLogAnalyzer:
                 'unit_id': unit_id,
                 'name': clean_name,
                 'class_id': class_id,
+                'champion_points': champion_points,
                 'equipped_abilities': equipped_abilities or [],
                 'gear_data': gear_data or [],
                 'last_seen': 0
@@ -2511,6 +3041,8 @@ class ESOLogAnalyzer:
             self.player_sessions[session_key]['name'] = clean_name
             if class_id:
                 self.player_sessions[session_key]['class_id'] = class_id
+            if champion_points > 0:
+                self.player_sessions[session_key]['champion_points'] = champion_points
             if equipped_abilities:
                 self.player_sessions[session_key]['equipped_abilities'] = equipped_abilities
             if gear_data:
@@ -2538,6 +3070,7 @@ class ESOLogAnalyzer:
         
         # Create PlayerInfo from session data
         player = PlayerInfo(unit_id, clean_name, clean_handle, session_data.get('class_id'))
+        player.champion_points = session_data.get('champion_points', 0)
         player.equipped_abilities = session_data['equipped_abilities']
         player.gear_data = session_data['gear_data']
         
@@ -2613,6 +3146,9 @@ class LogSplitter:
         self.temp_file_path = None  # Temporary file path before rename
         self.final_file_path = None  # Final file path after rename
         
+        # Combat tracking for auto-cleanup
+        self.combat_event_count = 0  # Count of combat events in current encounter
+        
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
         
@@ -2626,6 +3162,7 @@ class LogSplitter:
         self.current_zone = zone_name if zone_name else ""
         self.current_difficulty = difficulty if difficulty else ""
         self.combat_started = False
+        self.combat_event_count = 0  # Reset combat event counter
         
         # Create temporary file immediately
         self._create_temp_file()
@@ -2718,6 +3255,9 @@ class LogSplitter:
             self.current_encounter_info['path'] = self.final_file_path
             self.split_files.append(self.final_file_path)
             
+            # Reopen the file for continued writing
+            self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
+            
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Renamed to final file: {self.final_file_path}{Style.RESET_ALL}")
@@ -2752,6 +3292,10 @@ class LogSplitter:
             # Rename the file to reflect the current zone when combat started
             self._rename_to_final()
     
+    def increment_combat_events(self):
+        """Increment the combat event counter for the current encounter."""
+        self.combat_event_count += 1
+    
     def handle_zone_change(self, zone_name: str, difficulty: str):
         """Handle a zone change - update current zone tracking."""
         # Check if this is the first zone we've encountered
@@ -2770,6 +3314,14 @@ class LogSplitter:
     
     def end_encounter(self):
         """End the current encounter and close the split file."""
+        # Check if we should delete temp files with no combat
+        should_delete_temp = False
+        if self.temp_file_path and self.temp_file_path.exists() and self.combat_event_count == 0:
+            should_delete_temp = True
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: No combat events detected, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+        
         if self.file_handle:
             try:
                 self.file_handle.close()
@@ -2780,17 +3332,31 @@ class LogSplitter:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file {self.current_split_path}: {e}{Style.RESET_ALL}")
-            finally:
-                self.file_handle = None
-                self.current_split_file = None
-                self.current_split_path = None
-                self.current_encounter_info = None
-                self.pending_begin_log = None
-                self.current_zone = None
-                self.current_difficulty = None
-                self.combat_started = False
-                self.temp_file_path = None
-                self.final_file_path = None
+        
+        # Delete temp file if no combat occurred
+        if should_delete_temp:
+            try:
+                self.temp_file_path.unlink()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Deleted temp file with no combat: {self.temp_file_path}{Style.RESET_ALL}")
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+        
+        # Always clear encounter state, regardless of file handle status
+        self.file_handle = None
+        self.current_split_file = None
+        self.current_split_path = None
+        self.current_encounter_info = None
+        self.pending_begin_log = None
+        self.current_zone = None
+        self.current_difficulty = None
+        self.combat_started = False
+        self.temp_file_path = None
+        self.final_file_path = None
+        self.combat_event_count = 0
     
     def close_for_waiting(self):
         """Close the current split file when waiting for new events to prevent data loss."""
@@ -2850,7 +3416,7 @@ class LogFileMonitor:
                 print(f"{Fore.CYAN}Reading entire log file from the beginning...{Style.RESET_ALL}")
                 self.last_position = 0
                 self._process_entire_file()
-                print(f"{Fore.GREEN}Finished reading existing log data. Now monitoring for new data...{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}Monitoring for new data. Ctrl-C to stop. Press 'c' to copy last fight to clipboard...{Style.RESET_ALL}\n")
             else:
                 # Look back through recent log entries to find zone changes
                 self._initialize_zone_history()
@@ -2874,7 +3440,9 @@ class LogFileMonitor:
         # Process entries in chronological order to find the most recent zone change
         for entry in entries:
             if entry.event_type == "ZONE_CHANGED" and len(entry.fields) >= 3:
+                zone_id = entry.fields[0].strip('"')
                 zone_name = entry.fields[1].strip('"')
+                difficulty = entry.fields[2].strip('"')
                 self.analyzer._add_zone_to_history(entry.timestamp, zone_name)
                 if not zone_found:
                     print(f"{Fore.GREEN}Found recent zone: {zone_name}{Style.RESET_ALL}")
@@ -2892,7 +3460,6 @@ class LogFileMonitor:
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
-            
             line_count = 0
             with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
                 while True:
@@ -2902,27 +3469,27 @@ class LogFileMonitor:
                         
                     line = line.strip()
                     if line:
-                        entry = ESOLogEntry.parse(line)
+                        entry = self.analyzer.log_parser.parse_line(line)
                         if entry:
                             # Handle log splitting if enabled
                             if self.log_splitter:
                                 self._handle_log_splitting(entry, line)
                             
-                            self.analyzer.process_log_entry(entry)
-                            line_count += 1
-                    
-                    # Update position to current position
-                    self.last_position = f.tell()
-            
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
-            
+                        self.analyzer.process_log_entry(entry)
+                        line_count += 1
+                
+                # Update position to current position
+                self.last_position = f.tell()
+        
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
+        
             # Close any open split files after processing entire file
             if self.log_splitter:
                 self.log_splitter.end_encounter()
             
-            self.has_read_all = True
+        self.has_read_all = True
 
     def check_for_changes(self):
         """Check for file changes and process new lines."""
@@ -2964,29 +3531,29 @@ class LogFileMonitor:
                     print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
                 return
 
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
-            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                f.seek(self.last_position)
-                new_lines = f.readlines()
-                self.last_position = f.tell()
+        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            f.seek(self.last_position)
+            new_lines = f.readlines()
+            self.last_position = f.tell()
 
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
-            for line in new_lines:
-                line = line.strip()
-                if line:
-                    entry = ESOLogEntry.parse(line)
-                    if entry:
-                        # Handle log splitting if enabled
-                        if self.log_splitter:
-                            self._handle_log_splitting(entry, line)
+        for line in new_lines:
+            line = line.strip()
+            if line:
+                entry = self.analyzer.log_parser.parse_line(line)
+            if entry:
+                # Handle log splitting if enabled
+                if self.log_splitter:
+                    self._handle_log_splitting(entry, line)
                         
-                        self.analyzer.process_log_entry(entry)
+                self.analyzer.process_log_entry(entry)
     
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
@@ -3004,9 +3571,10 @@ class LogFileMonitor:
         elif entry.event_type == "ZONE_CHANGED":
             # Extract zone name and difficulty from ZONE_CHANGED
             # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
-            if len(entry.fields) >= 2:
-                zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
-                difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+            if len(entry.fields) >= 3:
+                zone_id = entry.fields[0].strip('"') if entry.fields[0] else ""
+                zone_name = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+                difficulty = entry.fields[2].strip('"') if len(entry.fields) > 2 else ""
                 
                 # Update current zone tracking
                 self.log_splitter.handle_zone_change(zone_name, difficulty)
@@ -3018,6 +3586,12 @@ class LogFileMonitor:
         elif entry.event_type == "BEGIN_COMBAT":
             self.log_splitter.start_combat()
             # Write the BEGIN_COMBAT line
+            self.log_splitter.write_log_line(line)
+        
+        # Handle COMBAT_EVENT - increment combat counter
+        elif entry.event_type == "COMBAT_EVENT":
+            self.log_splitter.increment_combat_events()
+            # Write the COMBAT_EVENT line
             self.log_splitter.write_log_line(line)
         
         # Handle END_LOG - end current encounter
@@ -3098,34 +3672,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
     print()
 
-    # Set up reports directory and validate it early
-    reports_path = None
-    if save_reports:
-        if reports_dir:
-            reports_path = Path(reports_dir)
-        elif log_path:
-            reports_path = Path(log_path).parent
-        else:
-            reports_path = Path.cwd()
-        
-        # Validate reports directory early
-        if not reports_path.exists():
-            try:
-                reports_path.mkdir(parents=True, exist_ok=True)
-            except (PermissionError, OSError) as e:
-                print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-        elif not reports_path.is_dir():
-            print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
-            sys.exit(1)
-        elif not os.access(reports_path, os.W_OK):
-            print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-            print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-            sys.exit(1)
-    
-    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic, save_reports=save_reports, reports_dir=reports_path)
+    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic, save_reports=save_reports)
 
     if read_all_then_stop:
         # Determine which log file to use
@@ -3145,6 +3692,32 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
 
         print(f"{Fore.YELLOW}Read mode: Processing {read_log} from the beginning at full speed{Style.RESET_ALL}")
         analyzer.current_log_file = str(read_log)
+        
+        # Set up reports directory for read mode
+        if save_reports:
+            if reports_dir:
+                reports_path = Path(reports_dir)
+            else:
+                reports_path = Path(read_log).parent
+            
+            # Validate reports directory
+            if not reports_path.exists():
+                try:
+                    reports_path.mkdir(parents=True, exist_ok=True)
+                except (PermissionError, OSError) as e:
+                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    sys.exit(1)
+            elif not reports_path.is_dir():
+                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            elif not os.access(reports_path, os.W_OK):
+                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Update analyzer with reports directory
+            analyzer.reports_dir = reports_path
+        
         split_dir_path = Path(split_dir) if split_dir else None
         _replay_log_file(analyzer, read_log, replay_speed, tail_and_split, split_dir_path)
         return
@@ -3195,6 +3768,33 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
 
     print(f"{Fore.GREEN}Monitoring: {log_path}{Style.RESET_ALL}")
 
+    # Set up reports directory now that we have the log path
+    if save_reports:
+        if reports_dir:
+            reports_path = Path(reports_dir)
+        else:
+            reports_path = Path(log_path).parent
+        
+        # Validate reports directory
+        if not reports_path.exists():
+            try:
+                reports_path.mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError) as e:
+                print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                sys.exit(1)
+        elif not reports_path.is_dir():
+            print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+            sys.exit(1)
+        elif not os.access(reports_path, os.W_OK):
+            print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+            sys.exit(1)
+        
+        # Update analyzer with reports directory
+        analyzer.reports_dir = reports_path
+
     # Set the current log file path for timestamp calculations
     analyzer.current_log_file = str(log_path)
 
@@ -3207,7 +3807,6 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     analyzer._start_keyboard_listener()
 
     try:
-        print(f"{Fore.YELLOW}Press Ctrl+C to stop monitoring{Style.RESET_ALL}\n")
         poll_interval = 1.0  # Check for changes every second
         
         while file_monitor.running:
@@ -3467,7 +4066,7 @@ def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found {len(found_paths)} log file(s), using: {found_paths[0]}{Style.RESET_ALL}")
         return found_paths[0]
-    
+
     return None
 
 def _provide_log_file_guidance() -> None:
@@ -3545,9 +4144,10 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
     elif entry.event_type == "ZONE_CHANGED":
         # Extract zone name and difficulty from ZONE_CHANGED
         # Format: ZONE_CHANGED,zone_id,"Zone Name",difficulty
-        if len(entry.fields) >= 2:
-            zone_name = entry.fields[0].strip('"') if entry.fields[0] else ""
-            difficulty = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+        if len(entry.fields) >= 3:
+            zone_id = entry.fields[0].strip('"') if entry.fields[0] else ""
+            zone_name = entry.fields[1].strip('"') if len(entry.fields) > 1 else ""
+            difficulty = entry.fields[2].strip('"') if len(entry.fields) > 2 else ""
             
             # Update current zone tracking
             log_splitter.handle_zone_change(zone_name, difficulty)
@@ -3559,6 +4159,12 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
     elif entry.event_type == "BEGIN_COMBAT":
         log_splitter.start_combat()
         # Write the BEGIN_COMBAT line
+        log_splitter.write_log_line(line)
+    
+    # Handle COMBAT_EVENT - increment combat counter
+    elif entry.event_type == "COMBAT_EVENT":
+        log_splitter.increment_combat_events()
+        # Write the COMBAT_EVENT line
         log_splitter.write_log_line(line)
     
     # Handle END_LOG - end current encounter
@@ -3590,7 +4196,7 @@ def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier:
 
             line = line.strip()
             if line:
-                entry = ESOLogEntry.parse(line)
+                entry = analyzer.log_parser.parse_line(line)
                 if entry:
                     entries.append(entry)
                     

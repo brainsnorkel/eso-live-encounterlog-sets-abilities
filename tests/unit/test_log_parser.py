@@ -120,7 +120,7 @@ class TestESOLogParser(unittest.TestCase):
         parsed = self.parser.parse_effect_changed(entry)
         
         self.assertIsNotNone(parsed)
-        self.assertEqual(parsed.timestamp, 0)
+        self.assertEqual(parsed.timestamp, 2928)
         self.assertEqual(parsed.effect_type, "GAINED")
         self.assertEqual(parsed.target_unit_id, "1")
         self.assertEqual(parsed.source_unit_id, "4021667")

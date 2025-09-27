@@ -39,8 +39,8 @@ class EventType(Enum):
     PLAYER_INFO = "PLAYER_INFO"
     # Trial events (missing from current parser)
     TRIAL_INIT = "TRIAL_INIT"
-    TRIAL_BEGIN = "TRIAL_BEGIN"
-    TRIAL_END = "TRIAL_END"
+    BEGIN_TRIAL = "BEGIN_TRIAL"
+    END_TRIAL = "END_TRIAL"
     # Endless dungeon events (missing from current parser)
     ENDLESS_DUNGEON_START = "ENDLESS_DUNGEON_START"
     ENDLESS_DUNGEON_END = "ENDLESS_DUNGEON_END"
@@ -250,25 +250,27 @@ class UnitAddedEntry:
     """
     UNIT_ADDED event - when units (players/enemies) are added to the encounter
     
+    Format: UNIT_ADDED, unitId, unitType, isLocalPlayer, playerPerSessionId, monsterId, isBoss, classId, raceId, name, displayName, characterId, level, championPoints, ownerUnitId, reaction, isGroupedWithLocalPlayer
+    
     Example: 5,UNIT_ADDED,1,PLAYER,T,1,0,F,117,7,"Beam Hal","@brainsnorkel",17085246191555785013,50,3084,0,PLAYER_ALLY,T
     """
     line_number: int
     unit_id: str
     unit_type: UnitType
     is_local_player: bool  # T/F
-    unknown_1: int
-    unknown_2: int
-    unknown_3: bool  # F/T
-    unknown_4: int
+    player_per_session_id: int
+    monster_id: int
+    is_boss: bool  # F/T
     class_id: int  # For players: 1=DK, 2=Sorc, 3=NB, 4=Templar, 5=Warden, 6=Necro, 7=Arcanist
+    race_id: int
     name: str
-    handle: str  # Player handle (e.g., @brainsnorkel)
-    player_id: int  # Long player ID
+    display_name: str  # Player handle (e.g., @brainsnorkel)
+    character_id: int  # Long player ID
     level: int
-    alliance: int  # 0=None, 1=AD, 2=DC, 3=EP
-    unknown_5: int
-    faction: str  # PLAYER_ALLY, HOSTILE, etc.
-    unknown_6: bool
+    champion_points: int
+    owner_unit_id: int
+    reaction: str  # PLAYER_ALLY, HOSTILE, etc.
+    is_grouped_with_local_player: bool
 
     @classmethod
     def parse(cls, line: str) -> Optional['UnitAddedEntry']:
@@ -276,7 +278,7 @@ class UnitAddedEntry:
         try:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
-            
+
             if len(fields) < 18 or fields[1] != "UNIT_ADDED":
                 return None
                 
@@ -285,19 +287,19 @@ class UnitAddedEntry:
                 unit_id=fields[2],
                 unit_type=UnitType(fields[3]),
                 is_local_player=fields[4] == "T",
-                unknown_1=int(fields[5]),
-                unknown_2=int(fields[6]),
-                unknown_3=fields[7] == "T",
-                unknown_4=int(fields[8]),
-                class_id=int(fields[9]),
+                player_per_session_id=int(fields[5]),
+                monster_id=int(fields[6]),
+                is_boss=fields[7] == "T",
+                class_id=int(fields[8]),
+                race_id=int(fields[9]),
                 name=fields[10].strip('"'),
-                handle=fields[11].strip('"'),
-                player_id=int(fields[12]) if fields[12].isdigit() else 0,
+                display_name=fields[11].strip('"'),
+                character_id=int(fields[12]) if fields[12].isdigit() else 0,
                 level=int(fields[13]),
-                alliance=int(fields[14]),
-                unknown_5=int(fields[15]),
-                faction=fields[16],
-                unknown_6=fields[17] == "T"
+                champion_points=int(fields[14]),
+                owner_unit_id=int(fields[15]),
+                reaction=fields[16],
+                is_grouped_with_local_player=fields[17] == "T"
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -308,20 +310,22 @@ class UnitChangedEntry:
     """
     UNIT_CHANGED event - when unit properties change
     
+    Format: UNIT_CHANGED, unitId, classId, raceId, name, displayName, characterId, level, championPoints, ownerUnitId, reaction, isGroupedWithLocalPlayer
+    
     Example: 83373,UNIT_CHANGED,125,0,0,"Coral Crab","",0,50,160,0,HOSTILE,F
     """
     line_number: int
     unit_id: str
-    unknown_1: int
-    unknown_2: int
+    class_id: int
+    race_id: int
     name: str
-    handle: str
-    player_id: int
+    display_name: str
+    character_id: int
     level: int
-    unknown_3: int
-    unknown_4: int
-    faction: str
-    unknown_5: bool
+    champion_points: int
+    owner_unit_id: int
+    reaction: str
+    is_grouped_with_local_player: bool
 
     @classmethod
     def parse(cls, line: str) -> Optional['UnitChangedEntry']:
@@ -336,16 +340,16 @@ class UnitChangedEntry:
             return cls(
                 line_number=int(fields[0]),
                 unit_id=fields[2],
-                unknown_1=int(fields[3]),
-                unknown_2=int(fields[4]),
+                class_id=int(fields[3]),
+                race_id=int(fields[4]),
                 name=fields[5].strip('"'),
-                handle=fields[6].strip('"'),
-                player_id=int(fields[7]) if fields[7].isdigit() else 0,
+                display_name=fields[6].strip('"'),
+                character_id=int(fields[7]) if fields[7].isdigit() else 0,
                 level=int(fields[8]),
-                unknown_3=int(fields[9]),
-                unknown_4=int(fields[10]),
-                faction=fields[11],
-                unknown_5=fields[12] == "T"
+                champion_points=int(fields[9]),
+                owner_unit_id=int(fields[10]),
+                reaction=fields[11],
+                is_grouped_with_local_player=fields[12] == "T"
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -715,12 +719,16 @@ class TrialInitEntry:
     """
     TRIAL_INIT event - trial initialization
     
-    Example: 1000,TRIAL_INIT,1234,"Cloudrest",VETERAN
+    Example: 5,TRIAL_INIT,18,F,F,0,0,F,0
     """
     line_number: int
     trial_id: int
-    trial_name: str
-    difficulty: Difficulty
+    in_progress: bool
+    completed: bool
+    start_time_ms: int
+    duration_ms: int
+    success: bool
+    final_score: int
 
     @classmethod
     def parse(cls, line: str) -> Optional['TrialInitEntry']:
@@ -729,72 +737,84 @@ class TrialInitEntry:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
             
-            if len(fields) < 5 or fields[1] != "TRIAL_INIT":
+            if len(fields) < 9 or fields[1] != "TRIAL_INIT":
                 return None
                 
             return cls(
                 line_number=int(fields[0]),
                 trial_id=int(fields[2]),
-                trial_name=fields[3].strip('"'),
-                difficulty=Difficulty(fields[4]) if fields[4] in [d.value for d in Difficulty] else Difficulty.NONE
+                in_progress=fields[3] == 'T',
+                completed=fields[4] == 'T',
+                start_time_ms=int(fields[5]),
+                duration_ms=int(fields[6]),
+                success=fields[7] == 'T',
+                final_score=int(fields[8])
             )
         except (ValueError, IndexError, StopIteration):
             return None
 
 
 @dataclass
-class TrialBeginEntry:
+class BeginTrialEntry:
     """
-    TRIAL_BEGIN event - trial starts
+    BEGIN_TRIAL event - trial starts
     
-    Example: 2000,TRIAL_BEGIN,1234
+    Example: 2000,BEGIN_TRIAL,1234,1757807878937
     """
     line_number: int
     trial_id: int
+    start_time_ms: int
 
     @classmethod
-    def parse(cls, line: str) -> Optional['TrialBeginEntry']:
-        """Parse TRIAL_BEGIN entry from CSV line"""
+    def parse(cls, line: str) -> Optional['BeginTrialEntry']:
+        """Parse BEGIN_TRIAL entry from CSV line"""
         try:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
             
-            if len(fields) < 3 or fields[1] != "TRIAL_BEGIN":
+            if len(fields) < 4 or fields[1] != "BEGIN_TRIAL":
                 return None
                 
             return cls(
                 line_number=int(fields[0]),
-                trial_id=int(fields[2])
+                trial_id=int(fields[2]),
+                start_time_ms=int(fields[3])
             )
         except (ValueError, IndexError, StopIteration):
             return None
 
 
 @dataclass
-class TrialEndEntry:
+class EndTrialEntry:
     """
-    TRIAL_END event - trial ends
+    END_TRIAL event - trial ends
     
-    Example: 30000,TRIAL_END,1234,SUCCESS
+    Example: 30000,END_TRIAL,1234,5260938,T,54193,0
     """
     line_number: int
     trial_id: int
-    result: str  # SUCCESS, FAILURE, etc.
+    duration_ms: int
+    success: bool
+    final_score: int
+    vitality_bonus: int
 
     @classmethod
-    def parse(cls, line: str) -> Optional['TrialEndEntry']:
-        """Parse TRIAL_END entry from CSV line"""
+    def parse(cls, line: str) -> Optional['EndTrialEntry']:
+        """Parse END_TRIAL entry from CSV line"""
         try:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
             
-            if len(fields) < 4 or fields[1] != "TRIAL_END":
+            if len(fields) < 7 or fields[1] != "END_TRIAL":
                 return None
                 
             return cls(
                 line_number=int(fields[0]),
                 trial_id=int(fields[2]),
-                result=fields[3]
+                duration_ms=int(fields[3]),
+                success=fields[4] == 'T',
+                final_score=int(fields[5]),
+                vitality_bonus=int(fields[6])
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -891,9 +911,12 @@ class PlayerInfoEntry:
         if not match:
             return None
             
+        unit_id = int(match.group(2))
+            
         try:
             line_number = int(match.group(1))
             unit_id = int(match.group(2))
+            
             
             # Parse ability IDs
             ability_ids_str = match.group(3)
@@ -915,7 +938,7 @@ class PlayerInfoEntry:
             back_bar_str = match.group(7).strip('[]')
             back_bar_abilities = [int(x.strip()) for x in back_bar_str.split(',') if x.strip()]
             
-            return cls(
+            result = cls(
                 line_number=line_number,
                 unit_id=unit_id,
                 ability_ids=ability_ids,
@@ -924,6 +947,9 @@ class PlayerInfoEntry:
                 front_bar_abilities=front_bar_abilities,
                 back_bar_abilities=back_bar_abilities
             )
+            
+            
+            return result
         except (ValueError, IndexError):
             return None
 
@@ -1013,8 +1039,8 @@ class ESOLogStructureParser:
         EventType.PLAYER_INFO: PlayerInfoEntry.parse,
         # New event types
         EventType.TRIAL_INIT: TrialInitEntry.parse,
-        EventType.TRIAL_BEGIN: TrialBeginEntry.parse,
-        EventType.TRIAL_END: TrialEndEntry.parse,
+        EventType.BEGIN_TRIAL: BeginTrialEntry.parse,
+        EventType.END_TRIAL: EndTrialEntry.parse,
         EventType.ENDLESS_DUNGEON_START: EndlessDungeonStartEntry.parse,
         EventType.ENDLESS_DUNGEON_END: EndlessDungeonEndEntry.parse,
     }
