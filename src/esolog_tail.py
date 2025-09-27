@@ -1463,7 +1463,7 @@ class ESOLogAnalyzer:
 
     def get_absolute_timestamp(self, relative_timestamp_ms: int) -> Optional[int]:
         """Convert a relative timestamp (milliseconds since logging began) to absolute Unix timestamp."""
-        if self.log_start_unix_timestamp and relative_timestamp_ms > 0:
+        if self.log_start_unix_timestamp and relative_timestamp_ms >= 0:
             # log_start_unix_timestamp is in seconds, relative_timestamp_ms is in milliseconds
             return self.log_start_unix_timestamp + (relative_timestamp_ms / 1000)
         return None
@@ -2461,15 +2461,31 @@ class ESOLogAnalyzer:
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
             
-            # Write report to file
-            with open(report_file_path, 'w', encoding='utf-8') as f:
+            # Write report to temporary file first
+            temp_filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report-temp.txt"
+            temp_report_path = reports_path / temp_filename
+            
+            with open(temp_report_path, 'w', encoding='utf-8') as f:
                 for line in self.report_buffer:
                     clean_line = self._strip_ansi_codes(line)
                     f.write(clean_line + '\n')
             
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
+            # Try to rename temp file to final name, handling conflicts
+            try:
+                temp_report_path.rename(report_file_path)
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
+            except Exception as e:
+                # Handle rename conflict
+                if self._handle_rename_conflict(temp_report_path, report_file_path):
+                    if self.diagnostic:
+                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report with conflict resolution{Style.RESET_ALL}")
+                else:
+                    if self.diagnostic:
+                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
@@ -2478,6 +2494,66 @@ class ESOLogAnalyzer:
         finally:
             # Clear the report buffer after saving
             self.report_buffer.clear()
+
+    def _handle_rename_conflict(self, temp_file_path, target_file_path):
+        """Handle rename conflicts by comparing content and using suffixes if needed.
+        
+        Args:
+            temp_file_path: Path to the temporary file
+            target_file_path: Path to the target file
+            
+        Returns:
+            bool: True if conflict was resolved successfully, False otherwise
+        """
+        import hashlib
+        
+        try:
+            # Check if target file exists
+            if not target_file_path.exists():
+                # No conflict, just rename
+                temp_file_path.rename(target_file_path)
+                return True
+            
+            # Compare file contents using MD5 hash
+            temp_hash = self._get_file_hash(temp_file_path)
+            target_hash = self._get_file_hash(target_file_path)
+            
+            if temp_hash == target_hash:
+                # Same content - delete temp file, keep existing target
+                temp_file_path.unlink()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp report: {temp_file_path}{Style.RESET_ALL}")
+                return True
+            else:
+                # Different content - find available suffix
+                suffix = 1
+                while True:
+                    # Create suffixed filename
+                    stem = target_file_path.stem
+                    suffix_file_path = target_file_path.parent / f"{stem}-{suffix}{target_file_path.suffix}"
+                    
+                    if not suffix_file_path.exists():
+                        # Found available name, rename temp file
+                        temp_file_path.rename(suffix_file_path)
+                        if self.diagnostic:
+                            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed report to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
+                        return True
+                    
+                    suffix += 1
+                    
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle report rename conflict: {e}{Style.RESET_ALL}")
+            return False
+    
+    def _get_file_hash(self, file_path):
+        """Get MD5 hash of file content."""
+        import hashlib
+        with open(file_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
 
     def _add_report_to_zone(self):
         """Add the current report to the zone-based collection."""
@@ -2489,9 +2565,13 @@ class ESOLogAnalyzer:
             self.zone_reports[self.current_zone] = []
             # Use the same timestamp as split logs (BEGIN_LOG timestamp)
             if hasattr(self, 'log_start_unix_timestamp') and self.log_start_unix_timestamp:
-                self.zone_start_time = self.log_start_unix_timestamp * 1000  # Convert to milliseconds
+                # zone_start_time should be relative timestamp in milliseconds, not absolute
+                # Preserve existing zone_start_time if it's already set, otherwise use encounter start_time
+                if not hasattr(self, 'zone_start_time') or self.zone_start_time is None:
+                    self.zone_start_time = getattr(self.current_encounter, 'start_time', 0)
             else:
-                self.zone_start_time = self.current_encounter.start_time
+                if not hasattr(self, 'zone_start_time') or self.zone_start_time is None:
+                    self.zone_start_time = self.current_encounter.start_time
         
         # Add report lines to zone collection (strip ANSI color codes)
         for line in self.report_buffer:
@@ -2536,7 +2616,7 @@ class ESOLogAnalyzer:
             
             # Generate zone-based filename similar to split files
             # Use the zone start time for consistent naming
-            if self.zone_start_time:
+            if self.zone_start_time is not None:
                 # Use the analyzer's absolute timestamp conversion method
                 absolute_timestamp = self.get_absolute_timestamp(self.zone_start_time)
                 if absolute_timestamp:
@@ -3301,9 +3381,83 @@ class LogSplitter:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to rename file to {self.final_file_path}: {e}{Style.RESET_ALL}")
-            # Keep the temp file if rename fails
-            self.current_split_file = self.temp_file_path
-            self.current_split_path = self.temp_file_path
+            
+            # Try to handle rename conflict
+            if self._handle_rename_conflict(self.temp_file_path, self.final_file_path):
+                # Successfully handled conflict, update tracking
+                self.current_split_file = self.final_file_path
+                self.current_split_path = self.final_file_path
+                self.current_encounter_info['path'] = self.final_file_path
+                self.split_files.append(self.final_file_path)
+                
+                # Reopen the file for continued writing
+                self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
+            else:
+                # Keep the temp file if conflict resolution fails
+                self.current_split_file = self.temp_file_path
+                self.current_split_path = self.temp_file_path
+    
+    def _handle_rename_conflict(self, temp_file_path, target_file_path):
+        """Handle rename conflicts by comparing content and using suffixes if needed.
+        
+        Args:
+            temp_file_path: Path to the temporary file
+            target_file_path: Path to the target file
+            
+        Returns:
+            bool: True if conflict was resolved successfully, False otherwise
+        """
+        import hashlib
+        
+        try:
+            # Check if target file exists
+            if not target_file_path.exists():
+                # No conflict, just rename
+                temp_file_path.rename(target_file_path)
+                return True
+            
+            # Compare file contents using MD5 hash
+            temp_hash = self._get_file_hash(temp_file_path)
+            target_hash = self._get_file_hash(target_file_path)
+            
+            if temp_hash == target_hash:
+                # Same content - delete temp file, keep existing target
+                temp_file_path.unlink()
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp file: {temp_file_path}{Style.RESET_ALL}")
+                return True
+            else:
+                # Different content - find available suffix
+                suffix = 1
+                while True:
+                    # Create suffixed filename
+                    stem = target_file_path.stem
+                    suffix_file_path = target_file_path.parent / f"{stem}-{suffix}{target_file_path.suffix}"
+                    
+                    if not suffix_file_path.exists():
+                        # Found available name, rename temp file
+                        temp_file_path.rename(suffix_file_path)
+                        # Update final_file_path to the suffixed version
+                        self.final_file_path = suffix_file_path
+                        if self.diagnostic:
+                            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
+                        return True
+                    
+                    suffix += 1
+                    
+        except Exception as e:
+            if self.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle rename conflict: {e}{Style.RESET_ALL}")
+            return False
+    
+    def _get_file_hash(self, file_path):
+        """Get MD5 hash of file content."""
+        import hashlib
+        with open(file_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
     
     def write_log_line(self, line: str):
         """Write a log line to the current split file."""

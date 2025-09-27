@@ -89,6 +89,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
                 elif entry.event_type == "BEGIN_COMBAT":
                     log_splitter.start_combat()
                 elif entry.event_type == "END_LOG":
+                    log_splitter.write_log_line(line)
                     log_splitter.end_encounter()
                 
                 # Write line to splitter
@@ -171,6 +172,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
                 elif entry.event_type == "BEGIN_COMBAT":
                     log_splitter.start_combat()
                 elif entry.event_type == "END_LOG":
+                    log_splitter.write_log_line(line)
                     log_splitter.end_encounter()
                 
                 log_splitter.write_log_line(line)
@@ -190,6 +192,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
                 elif entry.event_type == "BEGIN_COMBAT":
                     log_splitter.start_combat()
                 elif entry.event_type == "END_LOG":
+                    log_splitter.write_log_line(line)
                     log_splitter.end_encounter()
                 
                 log_splitter.write_log_line(line)
@@ -234,6 +237,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
                 elif entry.event_type == "BEGIN_COMBAT":
                     log_splitter.start_combat()
                 elif entry.event_type == "END_LOG":
+                    log_splitter.write_log_line(line)
                     log_splitter.end_encounter()
                 
                 log_splitter.write_log_line(line)
@@ -285,6 +289,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
                 elif entry.event_type == "BEGIN_COMBAT":
                     log_splitter.start_combat()
                 elif entry.event_type == "END_LOG":
+                    log_splitter.write_log_line(line)
                     log_splitter.end_encounter()
                 
                 log_splitter.write_log_line(line)
