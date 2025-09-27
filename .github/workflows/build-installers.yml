@@ -66,7 +66,7 @@ jobs:
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-win-${{ steps.version.outputs.VERSION }}
         path: dist/esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}.zip
 
   build-macos:
@@ -126,7 +126,7 @@ jobs:
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-mac-${{ steps.version.outputs.VERSION }}
         path: dist/esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}.zip
 
   build-linux:
@@ -186,7 +186,7 @@ jobs:
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-linux-${{ steps.version.outputs.VERSION }}
         path: dist/esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}.tar.gz
 
   create-release:
@@ -210,19 +210,19 @@ jobs:
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-win-${{ steps.version.outputs.VERSION }}
         path: ./artifacts/windows
         
     - name: Download macOS artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-mac-${{ steps.version.outputs.VERSION }}
         path: ./artifacts/macos
         
     - name: Download Linux artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}
+        name: esolog-tail-linux-${{ steps.version.outputs.VERSION }}
         path: ./artifacts/linux
         
     - name: Create Release
