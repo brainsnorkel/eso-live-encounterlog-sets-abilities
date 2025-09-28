@@ -66,7 +66,7 @@ Options:
 
 Then when you click on the ESOLOG-TAIL.BAT file, you will see the tool creating fight reports before waiting on more log output. 
 
-![The tool at work tailing and reporting](docs/screencaps/ReportOutput.png)
+![The tool at work tailing and reporting](docs/screencaps/Windows-Tail-Output.png)
 
 While this is happening, the `--tail-and-split` and `--save-reports` options will create split logs and report files for the encounters in the log, and that appear in the Encounter.log as you play. 
 
