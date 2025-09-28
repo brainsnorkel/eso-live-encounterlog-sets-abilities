@@ -53,16 +53,21 @@ jobs:
         echo esolog-tail.exe --test-mode >> dist\installer\run.bat
         echo pause >> dist\installer\run.bat
         
+    - name: Get version
+      id: version
+      run: |
+        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+        
     - name: Create Windows installer archive
       run: |
         cd dist
-        powershell Compress-Archive -Path installer -DestinationPath esolog-tail-windows-installer.zip
+        powershell Compress-Archive -Path installer -DestinationPath esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}.zip
         
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-windows-installer
-        path: dist/esolog-tail-windows-installer.zip
+        name: esolog-tail-win-v021
+        path: dist/installer/
 
   build-macos:
     runs-on: macos-latest
@@ -108,16 +113,21 @@ jobs:
         echo './esolog-tail --test-mode' >> dist/installer/run.sh
         chmod +x dist/installer/run.sh
         
+    - name: Get version
+      id: version
+      run: |
+        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+        
     - name: Create macOS installer archive
       run: |
         cd dist
-        zip -r esolog-tail-macos-installer.zip installer/
+        zip -r esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}.zip installer/
         
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-macos-installer
-        path: dist/esolog-tail-macos-installer.zip
+        name: esolog-tail-mac-v021
+        path: dist/installer/
 
   build-linux:
     runs-on: ubuntu-latest
@@ -163,48 +173,89 @@ jobs:
         echo './esolog-tail --test-mode' >> dist/installer/run.sh
         chmod +x dist/installer/run.sh
         
+    - name: Get version
+      id: version
+      run: |
+        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+        
     - name: Create Linux installer archive
       run: |
         cd dist
-        tar -czf esolog-tail-linux-installer.tar.gz installer/
+        tar -czf esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}.tar.gz installer/
         
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-linux-installer
-        path: dist/esolog-tail-linux-installer.tar.gz
+        name: esolog-tail-linux-v021
+        path: dist/installer/
 
   create-release:
     needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Get version
+      id: version
+      run: |
+        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+        
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-windows-installer
+        name: esolog-tail-win-v021
         path: ./artifacts/windows
         
     - name: Download macOS artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-macos-installer
+        name: esolog-tail-mac-v021
         path: ./artifacts/macos
         
     - name: Download Linux artifact
       uses: actions/download-artifact@v4
       with:
-        name: esolog-tail-linux-installer
+        name: esolog-tail-linux-v021
         path: ./artifacts/linux
+        
+    - name: Create final release archives
+      run: |
+        # Create release directory
+        mkdir -p artifacts/release
+        
+        # Create Windows archive
+        cd artifacts/windows
+        zip -r ../../artifacts/release/esolog-tail-windows-installer-0.2.1.zip *
+        cd ../..
+        
+        # Create macOS archive  
+        cd artifacts/macos
+        zip -r ../../artifacts/release/esolog-tail-macos-installer-0.2.1.zip *
+        cd ../..
+        
+        # Create Linux archive
+        cd artifacts/linux
+        tar -czf ../../artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz *
+        cd ../..
+        
+        # Verify archives were created
+        ls -la artifacts/release/
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/esolog-tail-windows-installer.zip
-          ./artifacts/macos/esolog-tail-macos-installer.zip
-          ./artifacts/linux/esolog-tail-linux-installer.tar.gz
+          ./artifacts/release/esolog-tail-windows-installer-0.2.1.zip
+          ./artifacts/release/esolog-tail-macos-installer-0.2.1.zip
+          ./artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz
         generate_release_notes: true
-        fail_on_unmatched_files: true
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

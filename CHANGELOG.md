@@ -2,6 +2,18 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.1] - 2025-01-29
+
+### Fixed
+- **Timestamp Format Bug**: Fixed incorrect timestamp generation for report filenames that was causing fallback to current time
+- **Zero Timestamp Handling**: Correctly handle zero timestamps (log start) in timestamp conversion
+- **Zone Start Time Preservation**: Fixed bug where zone start time was being overwritten during report generation
+
+### Technical Improvements
+- Enhanced timestamp conversion logic to properly handle edge cases
+- Improved file naming conflict resolution for split logs and reports
+- Added comprehensive test coverage for timestamp format validation
+
 ## [0.2.0] - 2025-01-27
 
 ### Major Features

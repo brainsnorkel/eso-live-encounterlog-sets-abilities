@@ -50,6 +50,28 @@ Options:
   --help                      Show this message and exit.
 ```
 
+
+## Example Setup 
+
+- Download and extract esolog-tail.exe to somewhere convenient like an esolog-tail directory on your desktop or documents folder. 
+- Open the esolog-tail.exe and select the option to "run anyway" if windows doesn't know the provenance of the application.
+- Create a ESOLOG-TAIL.BAT file that looks a bit like this (but modify your BAT file to select the options and locations you prefer)
+
+```
+"C:\Users\Nebula PC\OneDrive\Documents\eso-analyzer-windows-installer\installer\esolog-tail.exe" --read-all-then-tail ^
+--tail-and-split --split-dir "d:\esologs\splits" ^
+--save-reports --reports-dir "d:\esologs\reports" ^
+-f "C:\Users\Nebula PC\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
+``` 
+
+Then when you click on the ESOLOG-TAIL.BAT file, you will see the tool creating fight reports before waiting on more log output. 
+
+![The tool at work tailing and reporting](docs/screencaps/ReportOutput.png)
+
+While this is happening, the `--tail-and-split` and `--save-reports` options will create split logs and report files for the encounters in the log, and that appear in the Encounter.log as you play. 
+
+
+
 ### Default Behavior
 
 When no command-line arguments are provided, the tool will:
