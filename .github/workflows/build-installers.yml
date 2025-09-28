@@ -227,20 +227,34 @@ jobs:
         
     - name: Create final release archives
       run: |
+        # Create release directory
+        mkdir -p artifacts/release
+        
+        # Create Windows archive
         cd artifacts/windows
-        zip -r esolog-tail-windows-installer-0.2.1.zip .
-        cd ../macos
-        zip -r esolog-tail-macos-installer-0.2.1.zip .
-        cd ../linux
-        tar -czf esolog-tail-linux-installer-0.2.1.tar.gz .
+        zip -r ../../artifacts/release/esolog-tail-windows-installer-0.2.1.zip *
+        cd ../..
+        
+        # Create macOS archive  
+        cd artifacts/macos
+        zip -r ../../artifacts/release/esolog-tail-macos-installer-0.2.1.zip *
+        cd ../..
+        
+        # Create Linux archive
+        cd artifacts/linux
+        tar -czf ../../artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz *
+        cd ../..
+        
+        # Verify archives were created
+        ls -la artifacts/release/
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/esolog-tail-windows-installer-0.2.1.zip
-          ./artifacts/macos/esolog-tail-macos-installer-0.2.1.zip
-          ./artifacts/linux/esolog-tail-linux-installer-0.2.1.tar.gz
+          ./artifacts/release/esolog-tail-windows-installer-0.2.1.zip
+          ./artifacts/release/esolog-tail-macos-installer-0.2.1.zip
+          ./artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz
         generate_release_notes: true
         fail_on_unmatched_files: false
       env:
