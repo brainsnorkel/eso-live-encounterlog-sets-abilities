@@ -39,12 +39,16 @@ The test suite is comprehensive and all tests are currently passing, validating:
 - **Timestamp Format**: Consistent timestamp handling and edge cases
 - **Report Splitting**: Zone-based report generation and content isolation
 - **Integration Workflows**: Complete end-to-end functionality
+- **File Locking Removal**: Validated high-frequency monitoring without interference
+- **Gear Set Classification**: Accurate mythic vs 5-piece set identification
+- **Temp File Cleanup**: Proper handling of orphaned temporary files
 
 ### Test Categories
 - **Unit Tests**: 89 tests covering individual components
 - **Integration Tests**: 12 tests covering complete workflows
 - **File Operations**: Tests for split logs, reports, and conflict resolution
 - **Data Integrity**: Tests for proper data handling and edge cases
+- **Performance Tests**: High-frequency monitoring validation
 
 ## Running Tests
 

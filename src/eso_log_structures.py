@@ -23,6 +23,7 @@ import io
 class EventType(Enum):
     """ESO log event types"""
     BEGIN_LOG = "BEGIN_LOG"
+    END_LOG = "END_LOG"
     ZONE_CHANGED = "ZONE_CHANGED"
     UNIT_ADDED = "UNIT_ADDED"
     UNIT_CHANGED = "UNIT_CHANGED"
@@ -34,6 +35,7 @@ class EventType(Enum):
     EFFECT_INFO = "EFFECT_INFO"
     EFFECT_CHANGED = "EFFECT_CHANGED"
     COMBAT_EVENT = "COMBAT_EVENT"
+    HEALTH_REGEN = "HEALTH_REGEN"
     BEGIN_COMBAT = "BEGIN_COMBAT"
     END_COMBAT = "END_COMBAT"
     PLAYER_INFO = "PLAYER_INFO"
@@ -42,7 +44,10 @@ class EventType(Enum):
     BEGIN_TRIAL = "BEGIN_TRIAL"
     END_TRIAL = "END_TRIAL"
     # Endless dungeon events (missing from current parser)
-    ENDLESS_DUNGEON_START = "ENDLESS_DUNGEON_START"
+    ENDLESS_DUNGEON_BEGIN = "ENDLESS_DUNGEON_BEGIN"
+    ENDLESS_DUNGEON_STAGE_END = "ENDLESS_DUNGEON_STAGE_END"
+    ENDLESS_DUNGEON_BUFF_ADDED = "ENDLESS_DUNGEON_BUFF_ADDED"
+    ENDLESS_DUNGEON_BUFF_REMOVED = "ENDLESS_DUNGEON_BUFF_REMOVED"
     ENDLESS_DUNGEON_END = "ENDLESS_DUNGEON_END"
 
 
@@ -208,6 +213,90 @@ class BeginLogEntry:
                 server_name=fields[4].strip('"'),
                 language=fields[5].strip('"'),
                 game_version=fields[6].strip('"')
+            )
+        except (ValueError, IndexError, StopIteration):
+            return None
+
+
+@dataclass
+class EndLogEntry:
+    """
+    END_LOG event - ends a log session
+    
+    Example: 50000,END_LOG
+    """
+    line_number: int
+
+    @classmethod
+    def parse(cls, line: str) -> Optional['EndLogEntry']:
+        """Parse END_LOG entry from CSV line"""
+        try:
+            reader = csv.reader(io.StringIO(line))
+            fields = next(reader)
+            
+            if len(fields) < 2 or fields[1] != "END_LOG":
+                return None
+                
+            return cls(
+                line_number=int(fields[0])
+            )
+        except (ValueError, IndexError, StopIteration):
+            return None
+
+
+@dataclass
+class HealthRegenEntry:
+    """
+    HEALTH_REGEN event - health regeneration
+    
+    Example: 252431,HEALTH_REGEN,898,72,19576/19576,14844/15729,32560/33221,500/500,1000/1000,0,0.6681,0.9093,5.7946
+    """
+    line_number: int
+    effective_regen: int
+    unit_id: int
+    health_current: int
+    health_max: int
+    magicka_current: int
+    magicka_max: int
+    stamina_current: int
+    stamina_max: int
+    ultimate_current: int
+    ultimate_max: int
+    werewolf_current: int
+    werewolf_max: int
+    shield: int
+    map_normalized_x: float
+    map_normalized_y: float
+    heading_radians: float
+
+    @classmethod
+    def parse(cls, line: str) -> Optional['HealthRegenEntry']:
+        """Parse HEALTH_REGEN entry from CSV line"""
+        try:
+            reader = csv.reader(io.StringIO(line))
+            fields = next(reader)
+            
+            if len(fields) < 13 or fields[1] != "HEALTH_REGEN":
+                return None
+                
+            return cls(
+                line_number=int(fields[0]),
+                effective_regen=int(fields[2]),
+                unit_id=int(fields[3]),
+                health_current=int(fields[4].split('/')[0]),
+                health_max=int(fields[4].split('/')[1]),
+                magicka_current=int(fields[5].split('/')[0]),
+                magicka_max=int(fields[5].split('/')[1]),
+                stamina_current=int(fields[6].split('/')[0]),
+                stamina_max=int(fields[6].split('/')[1]),
+                ultimate_current=int(fields[7].split('/')[0]),
+                ultimate_max=int(fields[7].split('/')[1]),
+                werewolf_current=int(fields[8].split('/')[0]),
+                werewolf_max=int(fields[8].split('/')[1]),
+                shield=int(fields[9]),
+                map_normalized_x=float(fields[10]),
+                map_normalized_y=float(fields[11]),
+                heading_radians=float(fields[12])
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -821,32 +910,62 @@ class EndTrialEntry:
 
 
 @dataclass
-class EndlessDungeonStartEntry:
+class EndlessDungeonBeginEntry:
     """
-    ENDLESS_DUNGEON_START event - endless dungeon begins
+    ENDLESS_DUNGEON_BEGIN event - endless dungeon begins
     
-    Example: 1000,ENDLESS_DUNGEON_START,5678,"Maelstrom Arena",VETERAN
+    Example: 11147,ENDLESS_DUNGEON_BEGIN,1,1758511859000,T
     """
     line_number: int
     dungeon_id: int
-    dungeon_name: str
-    difficulty: Difficulty
+    start_time_ms: int
+    unknown_boolean: bool
 
     @classmethod
-    def parse(cls, line: str) -> Optional['EndlessDungeonStartEntry']:
-        """Parse ENDLESS_DUNGEON_START entry from CSV line"""
+    def parse(cls, line: str) -> Optional['EndlessDungeonBeginEntry']:
+        """Parse ENDLESS_DUNGEON_BEGIN entry from CSV line"""
         try:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
             
-            if len(fields) < 5 or fields[1] != "ENDLESS_DUNGEON_START":
+            if len(fields) < 5 or fields[1] != "ENDLESS_DUNGEON_BEGIN":
                 return None
                 
             return cls(
                 line_number=int(fields[0]),
                 dungeon_id=int(fields[2]),
-                dungeon_name=fields[3].strip('"'),
-                difficulty=Difficulty(fields[4]) if fields[4] in [d.value for d in Difficulty] else Difficulty.NONE
+                start_time_ms=int(fields[3]),
+                unknown_boolean=fields[4] == "T"
+            )
+        except (ValueError, IndexError, StopIteration):
+            return None
+
+
+@dataclass
+class EndlessDungeonStageEndEntry:
+    """
+    ENDLESS_DUNGEON_STAGE_END event - endless dungeon stage ends
+    
+    Example: 53960,ENDLESS_DUNGEON_STAGE_END,1,1758511859000
+    """
+    line_number: int
+    dungeon_id: int
+    dungeon_begin_start_time_ms: int
+
+    @classmethod
+    def parse(cls, line: str) -> Optional['EndlessDungeonStageEndEntry']:
+        """Parse ENDLESS_DUNGEON_STAGE_END entry from CSV line"""
+        try:
+            reader = csv.reader(io.StringIO(line))
+            fields = next(reader)
+            
+            if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_STAGE_END":
+                return None
+                
+            return cls(
+                line_number=int(fields[0]),
+                dungeon_id=int(fields[2]),
+                dungeon_begin_start_time_ms=int(fields[3])
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -879,6 +998,66 @@ class EndlessDungeonEndEntry:
                 dungeon_id=int(fields[2]),
                 result=fields[3],
                 rounds_completed=int(fields[4])
+            )
+        except (ValueError, IndexError, StopIteration):
+            return None
+
+
+@dataclass
+class EndlessDungeonBuffAddedEntry:
+    """
+    ENDLESS_DUNGEON_BUFF_ADDED event - buff added in endless dungeon
+    
+    Example: 66452,ENDLESS_DUNGEON_BUFF_ADDED,1,200018
+    """
+    line_number: int
+    dungeon_id: int
+    ability_id: int
+
+    @classmethod
+    def parse(cls, line: str) -> Optional['EndlessDungeonBuffAddedEntry']:
+        """Parse ENDLESS_DUNGEON_BUFF_ADDED entry from CSV line"""
+        try:
+            reader = csv.reader(io.StringIO(line))
+            fields = next(reader)
+            
+            if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_BUFF_ADDED":
+                return None
+                
+            return cls(
+                line_number=int(fields[0]),
+                dungeon_id=int(fields[2]),
+                ability_id=int(fields[3])
+            )
+        except (ValueError, IndexError, StopIteration):
+            return None
+
+
+@dataclass
+class EndlessDungeonBuffRemovedEntry:
+    """
+    ENDLESS_DUNGEON_BUFF_REMOVED event - buff removed in endless dungeon
+    
+    Example: 146276,ENDLESS_DUNGEON_BUFF_REMOVED,1,200020
+    """
+    line_number: int
+    dungeon_id: int
+    ability_id: int
+
+    @classmethod
+    def parse(cls, line: str) -> Optional['EndlessDungeonBuffRemovedEntry']:
+        """Parse ENDLESS_DUNGEON_BUFF_REMOVED entry from CSV line"""
+        try:
+            reader = csv.reader(io.StringIO(line))
+            fields = next(reader)
+            
+            if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_BUFF_REMOVED":
+                return None
+                
+            return cls(
+                line_number=int(fields[0]),
+                dungeon_id=int(fields[2]),
+                ability_id=int(fields[3])
             )
         except (ValueError, IndexError, StopIteration):
             return None
@@ -1023,6 +1202,7 @@ class ESOLogStructureParser:
     
     PARSERS = {
         EventType.BEGIN_LOG: BeginLogEntry.parse,
+        EventType.END_LOG: EndLogEntry.parse,
         EventType.ZONE_CHANGED: ZoneChangedEntry.parse,
         EventType.UNIT_ADDED: UnitAddedEntry.parse,
         EventType.UNIT_CHANGED: UnitChangedEntry.parse,
@@ -1034,14 +1214,19 @@ class ESOLogStructureParser:
         EventType.EFFECT_INFO: EffectInfoEntry.parse,
         EventType.EFFECT_CHANGED: EffectChangedEntry.parse,
         EventType.COMBAT_EVENT: CombatEventEntry.parse,
+        EventType.HEALTH_REGEN: HealthRegenEntry.parse,
         EventType.BEGIN_COMBAT: BeginCombatEntry.parse,
         EventType.END_COMBAT: EndCombatEntry.parse,
         EventType.PLAYER_INFO: PlayerInfoEntry.parse,
-        # New event types
+        # Trial events
         EventType.TRIAL_INIT: TrialInitEntry.parse,
         EventType.BEGIN_TRIAL: BeginTrialEntry.parse,
         EventType.END_TRIAL: EndTrialEntry.parse,
-        EventType.ENDLESS_DUNGEON_START: EndlessDungeonStartEntry.parse,
+        # Endless dungeon events
+        EventType.ENDLESS_DUNGEON_BEGIN: EndlessDungeonBeginEntry.parse,
+        EventType.ENDLESS_DUNGEON_STAGE_END: EndlessDungeonStageEndEntry.parse,
+        EventType.ENDLESS_DUNGEON_BUFF_ADDED: EndlessDungeonBuffAddedEntry.parse,
+        EventType.ENDLESS_DUNGEON_BUFF_REMOVED: EndlessDungeonBuffRemovedEntry.parse,
         EventType.ENDLESS_DUNGEON_END: EndlessDungeonEndEntry.parse,
     }
     

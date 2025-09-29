@@ -219,7 +219,7 @@ class ESOLogEntry:
                 try:
                     timestamp = int(fields[2])
                     # For certain events, the third field is not a timestamp
-                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST", "ABILITY_INFO"]:
+                    if event_type in ["UNIT_ADDED", "UNIT_CHANGED", "COMBAT_EVENT", "EFFECT_CHANGED", "BEGIN_CAST", "END_CAST", "ABILITY_INFO", "HEALTH_REGEN", "ENDLESS_DUNGEON_BEGIN", "ENDLESS_DUNGEON_STAGE_END", "ENDLESS_DUNGEON_BUFF_ADDED", "ENDLESS_DUNGEON_BUFF_REMOVED"]:
                         # These events don't have timestamps, use line number as timestamp
                         line_number = int(fields[0]) if fields[0].isdigit() else 0
                         return cls(line_number, event_type, fields[2:], line)
@@ -950,7 +950,7 @@ class ESOLogAnalyzer:
                         
                     line = line.strip()
                     if line:
-                        entry = self.analyzer.log_parser.parse_line(line)
+                        entry = self.log_parser.parse_line(line)
                         if entry:
                             entries.append(entry)
         except (IOError, UnicodeDecodeError) as e:
@@ -1046,7 +1046,7 @@ class ESOLogAnalyzer:
         # Check grace period before processing any events
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
         
-        if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "UNIT_CHANGED", "BEGIN_COMBAT", "END_COMBAT", "PLAYER_INFO", "COMBAT_EVENT", "EFFECT_CHANGED"]:
+        if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "UNIT_CHANGED", "BEGIN_COMBAT", "END_COMBAT", "PLAYER_INFO", "COMBAT_EVENT", "EFFECT_CHANGED", "HEALTH_REGEN", "ENDLESS_DUNGEON_BEGIN", "ENDLESS_DUNGEON_STAGE_END", "ENDLESS_DUNGEON_BUFF_ADDED", "ENDLESS_DUNGEON_BUFF_REMOVED"]:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
         
@@ -1080,6 +1080,16 @@ class ESOLogAnalyzer:
             self._handle_end_trial(entry)
         elif entry.event_type == "END_LOG":
             self._handle_end_log_event(entry)
+        elif entry.event_type == "HEALTH_REGEN":
+            self._handle_health_regen(entry)
+        elif entry.event_type == "ENDLESS_DUNGEON_BEGIN":
+            self._handle_endless_dungeon_begin(entry)
+        elif entry.event_type == "ENDLESS_DUNGEON_STAGE_END":
+            self._handle_endless_dungeon_stage_end(entry)
+        elif entry.event_type == "ENDLESS_DUNGEON_BUFF_ADDED":
+            self._handle_endless_dungeon_buff_added(entry)
+        elif entry.event_type == "ENDLESS_DUNGEON_BUFF_REMOVED":
+            self._handle_endless_dungeon_buff_removed(entry)
 
     def _check_pending_encounter_display(self):
         """Check if we have an encounter that ended but hasn't been displayed yet."""
@@ -2771,6 +2781,36 @@ class ESOLogAnalyzer:
                 if old_unit_id in self.unit_id_to_handle:
                     del self.unit_id_to_handle[old_unit_id]
 
+    def _handle_health_regen(self, entry: ESOLogEntry):
+        """Handle HEALTH_REGEN events."""
+        # For now, just log that we're processing health regen events
+        # In the future, this could track health regeneration patterns
+        pass
+
+    def _handle_endless_dungeon_begin(self, entry: ESOLogEntry):
+        """Handle ENDLESS_DUNGEON_BEGIN events."""
+        # For now, just log that we're processing endless dungeon begin events
+        # In the future, this could track endless dungeon progress
+        pass
+
+    def _handle_endless_dungeon_stage_end(self, entry: ESOLogEntry):
+        """Handle ENDLESS_DUNGEON_STAGE_END events."""
+        # For now, just log that we're processing endless dungeon stage end events
+        # In the future, this could track stage completion
+        pass
+
+    def _handle_endless_dungeon_buff_added(self, entry: ESOLogEntry):
+        """Handle ENDLESS_DUNGEON_BUFF_ADDED events."""
+        # For now, just log that we're processing endless dungeon buff added events
+        # In the future, this could track buff management
+        pass
+
+    def _handle_endless_dungeon_buff_removed(self, entry: ESOLogEntry):
+        """Handle ENDLESS_DUNGEON_BUFF_REMOVED events."""
+        # For now, just log that we're processing endless dungeon buff removed events
+        # In the future, this could track buff management
+        pass
+
 
 class LogSplitter:
     """Handles automatic splitting of encounter logs into individual encounter files."""
@@ -3327,12 +3367,27 @@ class LogFileMonitor:
         
         # Handle END_LOG - end current encounter
         elif entry.event_type == "END_LOG":
-            if self.log_splitter.pending_begin_log or self.log_splitter.current_split_file:
+            # Always write END_LOG to split file if we have an active split file
+            if self.log_splitter.file_handle:
                 self.log_splitter.write_log_line(line)
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
+            else:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
+            
+            # End the encounter and close the split file
+            if self.log_splitter.pending_begin_log or self.log_splitter.current_split_file:
                 self.log_splitter.end_encounter()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+            else:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
         
         # Write all other lines to current split file
         else:
@@ -3896,12 +3951,27 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
     
     # Handle END_LOG - end current encounter
     elif entry.event_type == "END_LOG":
-        if log_splitter.pending_begin_log or log_splitter.current_split_file:
+        # Always write END_LOG to split file if we have an active split file
+        if log_splitter.file_handle:
             log_splitter.write_log_line(line)
+            if log_splitter.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
+        else:
+            if log_splitter.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
+        
+        # End the encounter and close the split file
+        if log_splitter.pending_begin_log or log_splitter.current_split_file:
             log_splitter.end_encounter()
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+        else:
+            if log_splitter.diagnostic:
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
     
     # Write all other lines to current split file
     else:
