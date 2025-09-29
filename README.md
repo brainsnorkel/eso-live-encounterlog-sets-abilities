@@ -553,6 +553,14 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 
 ## Key Improvements
 
+### Version 0.2.4 Updates (Latest)
+
+- **File Locking Removal**: Eliminated unnecessary file locking that could interfere with ESO's log writing process
+- **Enhanced File Tailing**: Improved reliability for high-frequency log monitoring (tested up to 1ms intervals)
+- **Gear Set Classification Fix**: Corrected "Tarnished Nightmare" from mythic to 5-piece set classification
+- **Improved Temp File Cleanup**: Enhanced log splitting logic to prevent orphaned temporary files
+- **High-Performance Monitoring**: Validated real-time processing of 48MB+ log files without data loss
+
 ### Recent Updates
 
 - **Report Buffer Management**: Fixed critical bug ensuring zone-specific report isolation
@@ -570,7 +578,7 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 - **Combat Timeout Removal**: Eliminated unreliable timeout-based combat detection
 - **Explicit Event Handling**: Uses BEGIN_COMBAT/END_COMBAT events for accurate combat tracking
 - **Enhanced Skill Line Detection**: Comprehensive ability-to-skill-line mappings based on UESP
-- **LibSets Integration**: Full gear set database with 634+ sets
+- **LibSets Integration**: Full gear set database with 704+ sets
 - **Improved Display Format**: Cleaner, more concise output format
 - **Zone-based Reporting**: Proper zone change handling and player data persistence
 

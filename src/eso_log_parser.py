@@ -30,6 +30,13 @@ try:
         TrialInitEntry as StructuredTrialInitEntry,
         BeginTrialEntry as StructuredBeginTrialEntry,
         EndTrialEntry as StructuredEndTrialEntry,
+        EndLogEntry as StructuredEndLogEntry,
+        HealthRegenEntry as StructuredHealthRegenEntry,
+        EndlessDungeonBeginEntry as StructuredEndlessDungeonBeginEntry,
+        EndlessDungeonStageEndEntry as StructuredEndlessDungeonStageEndEntry,
+        EndlessDungeonBuffAddedEntry as StructuredEndlessDungeonBuffAddedEntry,
+        EndlessDungeonBuffRemovedEntry as StructuredEndlessDungeonBuffRemovedEntry,
+        EndlessDungeonEndEntry as StructuredEndlessDungeonEndEntry,
         EventType
     )
     STRUCTURED_PARSER_AVAILABLE = True
@@ -244,6 +251,16 @@ class ESOLogParser:
                 event_type = 'BEGIN_TRIAL'
             elif class_name == 'EndTrialEntry':
                 event_type = 'END_TRIAL'
+            elif class_name == 'HealthRegenEntry':
+                event_type = 'HEALTH_REGEN'
+            elif class_name == 'EndlessDungeonBeginEntry':
+                event_type = 'ENDLESS_DUNGEON_BEGIN'
+            elif class_name == 'EndlessDungeonStageEndEntry':
+                event_type = 'ENDLESS_DUNGEON_STAGE_END'
+            elif class_name == 'EndlessDungeonBuffAddedEntry':
+                event_type = 'ENDLESS_DUNGEON_BUFF_ADDED'
+            elif class_name == 'EndlessDungeonBuffRemovedEntry':
+                event_type = 'ENDLESS_DUNGEON_BUFF_REMOVED'
             else:
                 event_type = class_name.replace('Entry', '').upper()
         else:
