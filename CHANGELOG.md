@@ -2,6 +2,27 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.3] - 2025-01-29
+
+### Fixed
+- **Report Buffer Management**: Fixed critical bug where all zone reports were starting with the same encounters
+- **Zone-Specific Report Isolation**: Each zone report now contains only encounters from that specific zone
+- **File Naming Conflicts**: Enhanced conflict resolution with content-based deduplication using MD5 hashing
+- **END_LOG Inclusion**: Ensured split log files properly include END_LOG entries for complete log structure
+- **Timestamp Format Consistency**: Fixed edge cases in timestamp conversion and zone start time handling
+
+### Technical Improvements
+- **Content-Based Deduplication**: Implemented MD5 hash comparison for file conflict resolution
+- **Automatic Suffix Numbering**: Files with different content get automatic -1, -2, etc. suffixes
+- **Report Buffer Clearing**: Proper buffer management prevents cross-zone contamination
+- **Enhanced Test Coverage**: Added comprehensive tests for file naming conflicts, END_LOG inclusion, and report isolation
+- **Simulator Enhancement**: Improved ESO logging simulator to better simulate real-world file I/O behavior
+
+### Quality Assurance
+- **Comprehensive Testing**: All 101 tests passing with robust validation of new features
+- **Edge Case Handling**: Proper handling of zero timestamps, missing values, and file conflicts
+- **Data Integrity**: Atomic file operations ensure data safety during concurrent access
+
 ## [0.2.2] - 2025-01-29
 
 ### Removed

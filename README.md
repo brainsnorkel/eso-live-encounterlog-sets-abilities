@@ -449,8 +449,6 @@ The tool identifies gear sets by:
   - `pandas` - Excel file processing
   - `openpyxl` - Excel file reading
   - `colorama` - Cross-platform colored terminal output
-  - `pynput` - Keyboard monitoring for Discord copy feature
-  - `pyperclip` - Clipboard operations for Discord copy feature
 
 ## Troubleshooting
 
@@ -557,6 +555,12 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 
 ### Recent Updates
 
+- **Report Buffer Management**: Fixed critical bug ensuring zone-specific report isolation
+- **File Naming Conflicts**: Enhanced conflict resolution with content-based deduplication using MD5 hashing
+- **END_LOG Inclusion**: Ensured split log files properly include END_LOG entries for complete log structure
+- **Timestamp Format Consistency**: Fixed edge cases in timestamp conversion and zone start time handling
+- **Content-Based Deduplication**: Files with different content get automatic -1, -2, etc. suffixes
+- **Comprehensive Testing**: All 101 tests passing with robust validation of new features
 - **Improved Default Behavior**: Tool now waits for log files by default instead of exiting immediately
 - **Version Flag**: Added `-v`/`--version` for quick version information
 - **Resource Tracking**: Real-time monitoring of player health, magicka, and stamina values
@@ -597,7 +601,6 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 - **New Buff Tracking**: Added Lucent Echoes (LE) and Pearlescent Ward (PW) monitoring
 - **Clean Buff Display**: Removed visual clutter, shows clean percentage uptimes
 - **Improved Duration Format**: Minutes:seconds display, rounded to nearest second
-- **Discord Formatting**: Equipment display uses "5x" and "p" for better Discord compatibility
 
 ### File Management
 - **Auto-Split Logs**: Automatically create individual encounter files while tailing
