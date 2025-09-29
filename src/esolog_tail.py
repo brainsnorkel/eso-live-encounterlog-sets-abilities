@@ -21,7 +21,6 @@ import sys
 import time
 import csv
 import io
-import threading
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Set
@@ -3139,7 +3138,6 @@ class LogFileMonitor:
         self.tail_and_split = tail_and_split
         self.has_read_all = False
         self.diagnostic = analyzer.diagnostic
-        self.file_lock = threading.Lock()  # Prevent concurrent file access
         self.running = False
         
         # Initialize log splitter if needed
@@ -3192,7 +3190,6 @@ class LogFileMonitor:
         if not self.log_file.exists():
             return
         
-        with self.file_lock:  # Prevent concurrent file access
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
@@ -3232,26 +3229,25 @@ class LogFileMonitor:
         if not self.log_file.exists():
             return False
             
-        with self.file_lock:
-            current_size = self.log_file.stat().st_size
-            if current_size > self.last_position:
-                # Reopen split file for appending when new data arrives
-                if self.log_splitter:
-                    self.log_splitter.reopen_for_append()
-                
-                if self.diagnostic:
-                    timestamp = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
-                self._process_new_lines()
-                return True
-            else:
-                # Close split file when waiting for new data
-                if self.log_splitter:
-                    self.log_splitter.close_for_waiting()
-                
-                if self.diagnostic:
-                    timestamp = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+        current_size = self.log_file.stat().st_size
+        if current_size > self.last_position:
+            # Reopen split file for appending when new data arrives
+            if self.log_splitter:
+                self.log_splitter.reopen_for_append()
+            
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            self._process_new_lines()
+            return True
+        else:
+            # Close split file when waiting for new data
+            if self.log_splitter:
+                self.log_splitter.close_for_waiting()
+            
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
         return False
 
     def _process_new_lines(self):
@@ -3259,13 +3255,12 @@ class LogFileMonitor:
         if not self.log_file.exists():
             return
 
-        with self.file_lock:  # Prevent concurrent file access
-            current_size = self.log_file.stat().st_size
-            if current_size <= self.last_position:
-                if self.diagnostic:
-                    timestamp = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
-                return
+        current_size = self.log_file.stat().st_size
+        if current_size <= self.last_position:
+            if self.diagnostic:
+                timestamp = time.strftime("%H:%M:%S", time.localtime())
+                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            return
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
