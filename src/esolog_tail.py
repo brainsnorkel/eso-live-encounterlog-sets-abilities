@@ -2564,6 +2564,9 @@ class ESOLogAnalyzer:
         
         # Add separator between encounters
         self.zone_reports[self.current_zone].append("")
+        
+        # Clear the report buffer after adding to zone collection
+        self.report_buffer.clear()
     
     def _save_zone_report(self, zone_name: str):
         """Save the accumulated report for a zone to a file."""
