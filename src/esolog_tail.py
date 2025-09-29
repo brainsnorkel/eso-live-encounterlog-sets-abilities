@@ -107,7 +107,6 @@ MYTHIC_SETS = {
     "Pearls of Ehlnofey",
     "Sea-Serpent's Coil",
     "Shapeshifter's Chain",
-    "Tarnished Nightmare",
     "Torc of Tonal Constancy",
 }
 
