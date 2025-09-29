@@ -3037,13 +3037,27 @@ class LogSplitter:
     
     def end_encounter(self):
         """End the current encounter and close the split file."""
-        # Check if we should delete temp files with no combat
+        # Check if we should delete temp files with no combat or minimal combat
         should_delete_temp = False
-        if self.temp_file_path and self.temp_file_path.exists() and self.combat_event_count == 0:
-            should_delete_temp = True
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: No combat events detected, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+        if self.temp_file_path and self.temp_file_path.exists():
+            # Delete temp files with no combat or very few combat events (likely incomplete encounters)
+            if self.combat_event_count == 0:
+                should_delete_temp = True
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: No combat events detected, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+            elif self.combat_event_count < 5 and not self.combat_started:
+                # Delete temp files with very few combat events that never had proper combat start
+                should_delete_temp = True
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Minimal combat events ({self.combat_event_count}) and no combat start, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+            elif self.temp_file_path.name.endswith('-temp.log') and not self.final_file_path:
+                # Delete temp files that were never properly renamed (orphaned temp files)
+                should_delete_temp = True
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Orphaned temp file never renamed, will delete: {self.temp_file_path}{Style.RESET_ALL}")
         
         if self.file_handle:
             try:
@@ -3056,13 +3070,13 @@ class LogSplitter:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file {self.current_split_path}: {e}{Style.RESET_ALL}")
         
-        # Delete temp file if no combat occurred
+        # Delete temp file if it should be cleaned up
         if should_delete_temp:
             try:
                 self.temp_file_path.unlink()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Deleted temp file with no combat: {self.temp_file_path}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Deleted temp file: {self.temp_file_path}{Style.RESET_ALL}")
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
