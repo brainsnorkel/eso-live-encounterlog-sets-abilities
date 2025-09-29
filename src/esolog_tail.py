@@ -3136,7 +3136,7 @@ class LogFileMonitor:
                 print(f"{Fore.CYAN}Reading entire log file from the beginning...{Style.RESET_ALL}")
                 self.last_position = 0
                 self._process_entire_file()
-                print(f"{Fore.GREEN}Monitoring for new data. Ctrl-C to stop. Press 'c' to copy last fight to clipboard...{Style.RESET_ALL}\n")
+                print(f"{Fore.GREEN}Monitoring for new data. Ctrl-C to stop...{Style.RESET_ALL}\n")
             else:
                 # Look back through recent log entries to find zone changes
                 self._initialize_zone_history()
@@ -3523,8 +3523,6 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
     file_monitor.running = True
 
-    # Start keyboard listener for Discord copy feature - ONLY during tailing/monitoring
-    analyzer._start_keyboard_listener()
 
     try:
         poll_interval = 1.0  # Check for changes every second
@@ -3547,8 +3545,6 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
             if tail_and_split:
                 print(f"{Fore.CYAN}Auto-split cleanup completed{Style.RESET_ALL}")
         
-        # Stop keyboard listener
-        analyzer._stop_keyboard_listener()
 
 def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     """Wait for the log file to appear if it doesn't exist."""
