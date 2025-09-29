@@ -247,10 +247,23 @@ class TestReportSplitting(unittest.TestCase):
         report_files = list(self.reports_dir.glob("*.txt"))
         self.assertEqual(len(report_files), 2, "Should create two reports for different content")
         
-        # Verify both reports contain Test Zone content
+        # Verify each report contains only its own zone content
+        test_zone_report = None
+        different_zone_report = None
+        
         for report_file in report_files:
             content = report_file.read_text()
-            self.assertIn("Test Zone", content)
+            if "Test Zone" in content:
+                test_zone_report = report_file
+                self.assertIn("@test TestPlayer", content, "Test Zone report should contain TestPlayer")
+                self.assertNotIn("@diff DifferentPlayer", content, "Test Zone report should not contain DifferentPlayer")
+            elif "Different Zone" in content:
+                different_zone_report = report_file
+                self.assertIn("@diff DifferentPlayer", content, "Different Zone report should contain DifferentPlayer")
+                self.assertNotIn("@test TestPlayer", content, "Different Zone report should not contain TestPlayer")
+        
+        self.assertIsNotNone(test_zone_report, "Should have a Test Zone report")
+        self.assertIsNotNone(different_zone_report, "Should have a Different Zone report")
 
     def test_report_timestamp_format(self):
         """Test that report filenames use correct YYMMDDHHMMSS timestamp format."""
