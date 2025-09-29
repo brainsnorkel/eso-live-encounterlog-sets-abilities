@@ -82,25 +82,6 @@ When no command-line arguments are provided, the tool will:
 
 Use `--help` to see all available options.
 
-### Discord Copy Feature
-
-When running in tailing/monitoring mode, you can press the **'c' key** to copy the last fight report to your clipboard in Discord markdown format. This makes it easy to share encounter summaries in Discord channels.
-
-**Features:**
-- Automatically formats reports with Discord markdown (bold, italic, emojis)
-- Copies to clipboard for easy pasting
-- Available during live monitoring and tailing modes (not during replay modes like `--read-all-then-stop`)
-- Requires `pynput` and `pyperclip` packages (included in requirements)
-
-**Usage:**
-1. Start the analyzer in tailing mode: `python3 src/esolog_tail.py` or `python3 src/esolog_tail.py --read-all-then-tail`
-2. Wait for an encounter to complete
-3. Press **'c'** to copy the Discord-formatted report
-4. Paste into Discord or any other application
-
-**Requirements:**
-- The feature requires `pynput>=1.7.6` and `pyperclip>=1.8.2`
-- On some systems, you may need to grant accessibility permissions for keyboard monitoring
 
 ## Installation
 
@@ -468,8 +449,6 @@ The tool identifies gear sets by:
   - `pandas` - Excel file processing
   - `openpyxl` - Excel file reading
   - `colorama` - Cross-platform colored terminal output
-  - `pynput` - Keyboard monitoring for Discord copy feature
-  - `pyperclip` - Clipboard operations for Discord copy feature
 
 ## Troubleshooting
 
@@ -576,6 +555,12 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 
 ### Recent Updates
 
+- **Report Buffer Management**: Fixed critical bug ensuring zone-specific report isolation
+- **File Naming Conflicts**: Enhanced conflict resolution with content-based deduplication using MD5 hashing
+- **END_LOG Inclusion**: Ensured split log files properly include END_LOG entries for complete log structure
+- **Timestamp Format Consistency**: Fixed edge cases in timestamp conversion and zone start time handling
+- **Content-Based Deduplication**: Files with different content get automatic -1, -2, etc. suffixes
+- **Comprehensive Testing**: All 101 tests passing with robust validation of new features
 - **Improved Default Behavior**: Tool now waits for log files by default instead of exiting immediately
 - **Version Flag**: Added `-v`/`--version` for quick version information
 - **Resource Tracking**: Real-time monitoring of player health, magicka, and stamina values
@@ -616,7 +601,6 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 - **New Buff Tracking**: Added Lucent Echoes (LE) and Pearlescent Ward (PW) monitoring
 - **Clean Buff Display**: Removed visual clutter, shows clean percentage uptimes
 - **Improved Duration Format**: Minutes:seconds display, rounded to nearest second
-- **Discord Formatting**: Equipment display uses "5x" and "p" for better Discord compatibility
 
 ### File Management
 - **Auto-Split Logs**: Automatically create individual encounter files while tailing

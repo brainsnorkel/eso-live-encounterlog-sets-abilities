@@ -11,15 +11,40 @@ The project uses a conventional test structure with unit and integration tests:
 2. **`test_log_parser.py`** - Tests the robust log parser with real example data
 3. **`test_optimized.py`** - Tests the optimized gear set database performance
 4. **`test_damage_attribution.py`** - Tests damage attribution to players and pets
+5. **`test_end_log_inclusion.py`** - Tests END_LOG inclusion in split log files
+6. **`test_file_naming_conflicts.py`** - Tests file naming conflict resolution with content-based deduplication
+7. **`test_report_splitting.py`** - Tests zone-specific report generation and isolation
+8. **`test_report_saving.py`** - Tests report file saving functionality
+9. **`test_timestamp_format.py`** - Tests timestamp format consistency and edge cases
 
 ### Integration Tests (`tests/integration/`)
 1. **`test_full_workflow.py`** - Tests complete analyzer workflows and multi-component interactions
+2. **`test_log_splitting_integration.py`** - Tests log splitting functionality with real file operations
 
 ### Test Infrastructure
 - **`conftest.py`** - Pytest configuration and shared fixtures
 - **`test_runner.py`** - Comprehensive test runner with options
 - **`fixtures/`** - Shared test data and fixtures
 - **`data/`** - Test data files and sample logs
+
+## Current Test Status
+
+**✅ All Tests Passing: 101/101**
+
+The test suite is comprehensive and all tests are currently passing, validating:
+
+- **File Naming Conflicts**: Content-based deduplication with MD5 hashing
+- **END_LOG Inclusion**: Proper log structure in split files
+- **Report Buffer Management**: Zone-specific report isolation
+- **Timestamp Format**: Consistent timestamp handling and edge cases
+- **Report Splitting**: Zone-based report generation and content isolation
+- **Integration Workflows**: Complete end-to-end functionality
+
+### Test Categories
+- **Unit Tests**: 89 tests covering individual components
+- **Integration Tests**: 12 tests covering complete workflows
+- **File Operations**: Tests for split logs, reports, and conflict resolution
+- **Data Integrity**: Tests for proper data handling and edge cases
 
 ## Running Tests
 

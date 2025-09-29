@@ -77,11 +77,12 @@ def simulate_logging(source_file: Path, dest_file: Path, lines_per_interval: int
             remaining_lines = total_lines - lines_written
             lines_to_write = min(lines_per_interval, remaining_lines)
             
-            # Write lines to destination file
-            with open(dest_file, 'a', encoding='utf-8') as f:
-                for i in range(lines_to_write):
-                    line_index = lines_written + i
+            # Write lines to destination file (close and reopen between writes)
+            for i in range(lines_to_write):
+                line_index = lines_written + i
+                with open(dest_file, 'a', encoding='utf-8') as f:
                     f.write(all_lines[line_index])
+                    f.flush()  # Ensure data is written to disk
             
             lines_written += lines_to_write
             

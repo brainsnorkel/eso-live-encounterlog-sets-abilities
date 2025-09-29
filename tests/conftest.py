@@ -54,3 +54,5 @@ def sample_abilities():
             "Hardened Ward", "Daedric Curse"
         }
     }
+
+
