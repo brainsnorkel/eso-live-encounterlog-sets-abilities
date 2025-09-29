@@ -82,25 +82,6 @@ When no command-line arguments are provided, the tool will:
 
 Use `--help` to see all available options.
 
-### Discord Copy Feature
-
-When running in tailing/monitoring mode, you can press the **'c' key** to copy the last fight report to your clipboard in Discord markdown format. This makes it easy to share encounter summaries in Discord channels.
-
-**Features:**
-- Automatically formats reports with Discord markdown (bold, italic, emojis)
-- Copies to clipboard for easy pasting
-- Available during live monitoring and tailing modes (not during replay modes like `--read-all-then-stop`)
-- Requires `pynput` and `pyperclip` packages (included in requirements)
-
-**Usage:**
-1. Start the analyzer in tailing mode: `python3 src/esolog_tail.py` or `python3 src/esolog_tail.py --read-all-then-tail`
-2. Wait for an encounter to complete
-3. Press **'c'** to copy the Discord-formatted report
-4. Paste into Discord or any other application
-
-**Requirements:**
-- The feature requires `pynput>=1.7.6` and `pyperclip>=1.8.2`
-- On some systems, you may need to grant accessibility permissions for keyboard monitoring
 
 ## Installation
 

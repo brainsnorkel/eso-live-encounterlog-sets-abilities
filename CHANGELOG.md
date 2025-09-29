@@ -2,6 +2,20 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.2] - 2025-01-29
+
+### Removed
+- **Discord Copy Feature**: Removed keyboard 'c' press functionality for copying reports to clipboard with Discord formatting
+- **Keyboard Input Handling**: Removed all keyboard input detection and terminal input handling
+- **Clipboard Integration**: Removed pyperclip dependency and clipboard copy functionality
+- **Discord Markdown Formatting**: Removed Discord-specific report formatting methods
+
+### Technical Changes
+- Removed `pynput>=1.7.6` and `pyperclip>=1.8.2` dependencies from requirements.txt
+- Cleaned up Discord-related instance variables and imports
+- Simplified codebase by removing unused keyboard and clipboard functionality
+- Updated documentation to remove Discord copy feature references
+
 ## [0.2.1] - 2025-01-29
 
 ### Fixed
