@@ -2,6 +2,20 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.5] - 2025-01-29
+
+### Added
+- **First Damage Dealer Tracking**: New feature to identify and mark the first player to deal damage in each encounter
+- **Asterisk Prefix Display**: First damage dealer's line in encounter reports now shows with an asterisk (*) prefix
+- **Pet Damage Attribution**: Pet damage is properly attributed to pet owners for first damage tracking
+- **Per-Encounter Reset**: First damage tracking resets correctly between encounters
+
+### Technical Details
+- Added `first_damage_dealer` and `first_damage_timestamp` fields to CombatEncounter class
+- Implemented first damage detection in `_handle_combat_event()` method
+- Enhanced `_display_encounter_summary()` to display asterisk prefix for first damage dealer
+- Proper pet ownership attribution ensures pet damage credits the owner
+
 ## [0.2.4] - 2025-01-29
 
 ### Fixed
