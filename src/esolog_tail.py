@@ -380,6 +380,10 @@ class CombatEncounter:
 
         # Trial completion tracking
         self.trial_info: Optional[Dict] = None  # Store trial completion information
+        
+        # Track first damage dealer
+        self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
+        self.first_damage_timestamp: Optional[int] = None  # Timestamp of first damage
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
@@ -1746,6 +1750,21 @@ class ESOLogAnalyzer:
                                 # Check if source is a player or player's pet
                                 if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
                                     source_unit_id in self.current_encounter.pet_ownership):
+                                    
+                                    # Track first damage dealer
+                                    if self.current_encounter.first_damage_dealer is None:
+                                        # Attribute to owner if it's a pet
+                                        if source_unit_id in self.current_encounter.pet_ownership:
+                                            owner_id = self.current_encounter.pet_ownership[source_unit_id]
+                                            owner_player = self.current_encounter.find_player_by_unit_id(owner_id)
+                                            if owner_player:
+                                                self.current_encounter.first_damage_dealer = owner_player.unit_id
+                                        else:
+                                            player = self.current_encounter.find_player_by_unit_id(source_unit_id)
+                                            if player:
+                                                self.current_encounter.first_damage_dealer = player.unit_id
+                                        self.current_encounter.first_damage_timestamp = entry.timestamp
+                                    
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
                                         # Add enemy's max health to total when first damaged
@@ -2184,7 +2203,13 @@ class ESOLogAnalyzer:
             else:
                 title_parts.append("unknown")
             
-            self._print_and_buffer(f"{Fore.GREEN}{' '.join(title_parts)}{Style.RESET_ALL}")
+            # Add asterisk prefix for first damage dealer
+            prefix = ""
+            if (self.current_encounter.first_damage_dealer and 
+                player.unit_id == self.current_encounter.first_damage_dealer):
+                prefix = "* "
+            
+            self._print_and_buffer(f"{Fore.GREEN}{prefix}{' '.join(title_parts)}{Style.RESET_ALL}")
             
             if abilities_to_analyze:
                 # Show front and back bar abilities in order if available
