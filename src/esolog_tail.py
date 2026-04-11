@@ -108,6 +108,7 @@ MYTHIC_SETS = {
     "Shapeshifter's Chain",
     "Torc of Tonal Constancy",
     "Huntsman's Warmask",
+    "Pearls of Ehlnofey",
 }
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
@@ -461,6 +462,7 @@ class TuiDisplay:
         self.stdscr = None
         self.active = False
         self.detail_mode = False  # Toggle for expanded detail view
+        self.detail_scroll = 0    # Scroll offset for detail/compact views
 
     def start(self):
         """Initialize curses."""
@@ -506,47 +508,52 @@ class TuiDisplay:
 
     # Set name abbreviations: substring match (case-insensitive) → short form
     SET_ABBREVIATIONS = [
-        ("Spell Power Cure", "SPC"),
-        ("Roaring Opportunist", "RO"),
-        ("Jorvuld", "JO"),
-        ("Oakensoul", "Oakensoul"),
-        ("Velothi", "Velothi"),
-        ("Ansuul", "Ansuul's"),
-        ("Deadly Strike", "Deadly"),
-        ("Null Arca", "NullArca"),
         ("Aegis Caller", "AegisCaller"),
-        ("Berserking Warrior", "AY"),
-        ("Pillager", "Pillagers"),
-        ("Tide-Born", "Tide-born"),
-        ("Azureblight", "AB"),
         ("Alkosh", "Alkosh"),
-        ("Z'en", "Z'ens"),
-        ("Huntsman's Warmask", "Warmask"),
-        ("Harpooner", "Kilt"),
-        ("Highland Sentinel", "HS"),
-        ("Elf Bane", "ElfBane"),
-        ("Mechanical Acuity", "Acuity"),
-        ("Sul-Xan", "SulXan"),
-        ("Whorl of the Depths", "Depths"),
-        ("Pillar of Nirn", "PoN"),
-        ("War Machine", "WM"),
-        ("Master Architect", "MArchitect"),
-        ("Powerful Assault", "PA"),
-        ("Pearlescent Ward", "Pearlescent"),
-        ("Lucent Echoes", "LE"),
-        ("Saxhleel", "Saxhleel"),
-        ("Yolnahkriin", "Yoln"),
-        ("Elemental Catalyst", "EC"),
-        ("Crimson Twilight", "Crimson"),
-        ("Turning Tide", "TT"),
-        ("Olorime", "Olo"),
-        ("Drake's Rush", "Drakes"),
-        ("Sergeant", "Sergeants"),
+        ("Ansuul", "Ansuul"),
+        ("Archdruid", "Archdruid"),
+        ("Azureblight", "AB"),
+        ("Berserking Warrior", "AY"),
         ("Coral Riptide", "Coral"),
         ("Corpseburster", "Corpseburster"),
-        ("Kazpian", "Kazpians"),
+        ("Crimson Twilight", "Crimson"),
+        ("Deadly Strike", "Deadly"),
+        ("Drake's Rush", "Drakes"),
+        ("Elemental Catalyst", "EC"),
+        ("Elf Bane", "ElfBane"),
+        ("Harpooner", "Kilt"),
+        ("Highland Sentinel", "Highland"),
+        ("Huntsman's Warmask", "Warmask"),
+        ("Jorvuld", "JO"),
+        ("Kazpian", "Kazpian"),
+        ("Lucent Echoes", "LE"),
+        ("Master Architect", "MArchitect"),
+        ("Mechanical Acuity", "Acuity"),
+        ("Null Arca", "NullArca"),
+        ("Noble Duelist", "NobleDuel"),
+        ("Oakensoul", "Oakensoul"),
+        ("Olorime", "Olo"),
+        ("Order's Wrath", "OW"),
+        ("Pearlescent Ward", "Pearlescent"),
+        ("Pearls of Ehlnofey", "Ehlnofey"),
+        ("Pillar of Nirn", "PoN"),
+        ("Pillager", "Pillagers"),
+        ("Powerful Assault", "PA"),
         ("Relequen", "Relequen"),
+        ("Roaring Opportunist", "RO"),
+        ("Saxhleel", "Saxhleel"),
+        ("Sergeant", "Sergeants"),
         ("Siroria", "Siroria"),
+        ("Spell Power Cure", "SPC"),
+        ("Sul-Xan", "SulXan"),
+        ("Tide-Born", "Tide-born"),
+        ("Turning Tide", "TT"),
+        ("Velothi", "Velothi"),
+        ("War Machine", "WM"),
+        ("Whorl of the Depths", "Depths"),
+        ("Yolnahkriin", "Yoln"),
+        ("Xoryn's Masterpiece", "Xoryn"),
+        ("Z'en", "Z'ens"),
     ]
 
     def _abbreviate_set_name(self, name):
@@ -616,37 +623,60 @@ class TuiDisplay:
         self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
         row += 1
 
+        # Build content lines, then render with scroll offset
+        content_lines = []
         if self.detail_mode:
-            row = self._render_detail_view(entry, history, row, max_y, max_x, curses)
+            content_lines = self._build_detail_lines(entry, max_x, curses)
         else:
-            row = self._render_compact_view(entry, history, row, max_y, max_x, curses)
+            content_lines = self._build_compact_lines(entry, max_x, curses)
 
-        # Buff summary
-        if entry.buff_summary and row < max_y - 2:
-            self._safe_addstr(row, 0, f" Buffs: {entry.buff_summary}"[:max_x - 1], curses.color_pair(1))
+        # Add buff/trial lines to content
+        if entry.buff_summary:
+            content_lines.append((f" Buffs: {entry.buff_summary}", curses.color_pair(1)))
+        if entry.trial_info:
+            content_lines.append((f" Trial: {entry.trial_info}", curses.color_pair(2)))
+
+        # Available rows for scrollable content (reserve 1 for status bar)
+        avail = max_y - row - 1
+        total_lines = len(content_lines)
+
+        # Clamp scroll offset
+        max_scroll = max(0, total_lines - avail)
+        self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
+
+        # Render visible slice
+        visible = content_lines[self.detail_scroll:self.detail_scroll + avail]
+        for text, attr in visible:
+            self._safe_addstr(row, 0, text[:max_x - 1], attr)
             row += 1
 
-        # Trial info
-        if entry.trial_info and row < max_y - 2:
-            self._safe_addstr(row, 0, f" Trial: {entry.trial_info}"[:max_x - 1], curses.color_pair(2))
-            row += 1
+        # Scroll indicator in status bar
+        scroll_indicator = ""
+        if total_lines > avail:
+            scroll_indicator = f" [{self.detail_scroll + 1}-{min(self.detail_scroll + avail, total_lines)}/{total_lines}]"
 
         # Status bar
         live_indicator = " [LIVE]" if history.is_live else ""
         mode_indicator = " [DETAIL]" if self.detail_mode else ""
-        status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}  \u2191\u2193/jk:scroll  d:detail  c:copy  G:latest  q:quit"
+        status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}{scroll_indicator}  \u2191\u2193/jk:fights  PgUp/Dn:scroll  d:detail  c:copy  G:latest  q:quit"
         self._safe_addstr(max_y - 1, 0, status[:max_x - 1], curses.color_pair(2) | curses.A_REVERSE)
         self.stdscr.refresh()
 
-    def _render_compact_view(self, entry, history, row, max_y, max_x, curses):
-        """Render compact one-line-per-player view with sets."""
+    def scroll_detail_up(self, amount=1):
+        """Scroll content up by amount lines."""
+        self.detail_scroll = max(0, self.detail_scroll - amount)
+
+    def scroll_detail_down(self, amount=1):
+        """Scroll content down by amount lines."""
+        self.detail_scroll += amount  # clamped during render
+
+    def _build_compact_lines(self, entry, max_x, curses):
+        """Build compact view lines as (text, attr) tuples."""
+        lines = []
         col_header = f" R  {'Player':<20s} {'Class':<7s} {'DPS':>8s} {'Dmg%':>6s}  {'H/M/S':<15s} Sets"
-        self._safe_addstr(row, 0, col_header[:max_x - 1], curses.color_pair(2))
-        row += 1
+        lines.append((col_header, curses.color_pair(2)))
 
         for p in entry.players:
-            if row >= max_y - 4:
-                break
             prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
             role = p.get('role', 'D')
             name = p.get('name', 'unknown')[:20]
@@ -662,21 +692,15 @@ class TuiDisplay:
                 color = curses.color_pair(5)
             elif role == 'H':
                 color = curses.color_pair(1)
-            self._safe_addstr(row, 0, line[:max_x - 1], color)
-            row += 1
+            lines.append((line, color))
 
-        if row < max_y - 3:
-            self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
-            row += 1
+        lines.append(("\u2500" * min(max_x - 1, 78), curses.color_pair(1)))
+        return lines
 
-        return row
-
-    def _render_detail_view(self, entry, history, row, max_y, max_x, curses):
-        """Render expanded detail view with skill lines, abilities, and all gear."""
+    def _build_detail_lines(self, entry, max_x, curses):
+        """Build expanded detail view lines as (text, attr) tuples."""
+        lines = []
         for p in entry.players:
-            if row >= max_y - 4:
-                break
-
             prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
             role = p.get('role', 'D')
             name = p.get('name', 'unknown')
@@ -687,38 +711,40 @@ class TuiDisplay:
             cp = p.get('cp', 0)
             cp_str = f" CP:{cp}" if cp else ""
 
+            # Role heuristic info: show healing done and skill-line role if relevant
+            healing = p.get('healing', 0)
+            heal_str = f" Heal:{self._format_number(healing)}" if healing > 0 else ""
+            skill_role = p.get('skill_line_role', '')
+            sr_str = f" [{skill_role}]" if skill_role and skill_role != 'dps' else ""
+
             # Player header line
-            header_line = f"{prefix}{role}  {name} ({class_name} {resources}{cp_str}) DPS:{dps} D:{dmg_pct}"
+            header_line = f"{prefix}{role}  {name} ({class_name} {resources}{cp_str}{heal_str}{sr_str}) DPS:{dps} D:{dmg_pct}"
             color = curses.color_pair(3)
             if role == 'T':
                 color = curses.color_pair(5)
             elif role == 'H':
                 color = curses.color_pair(1)
-            self._safe_addstr(row, 0, header_line[:max_x - 1], color | curses.A_BOLD)
-            row += 1
+            lines.append((header_line, color | curses.A_BOLD))
 
             # Skill lines
             skill_lines = p.get('skill_lines', [])
-            if skill_lines and row < max_y - 4:
+            if skill_lines:
                 sl_str = f"     Skills: {', '.join(skill_lines)}"
-                self._safe_addstr(row, 0, sl_str[:max_x - 1], curses.color_pair(3))
-                row += 1
+                lines.append((sl_str, curses.color_pair(3)))
 
             # Front/back bar
             front_bar = p.get('front_bar', [])
             back_bar = p.get('back_bar', [])
-            if front_bar and row < max_y - 4:
+            if front_bar:
                 fb_str = f"     Front: {', '.join(front_bar)}"
-                self._safe_addstr(row, 0, fb_str[:max_x - 1], curses.color_pair(3))
-                row += 1
-            if back_bar and row < max_y - 4:
+                lines.append((fb_str, curses.color_pair(3)))
+            if back_bar:
                 bb_str = f"     Back:  {', '.join(back_bar)}"
-                self._safe_addstr(row, 0, bb_str[:max_x - 1], curses.color_pair(3))
-                row += 1
+                lines.append((bb_str, curses.color_pair(3)))
 
             # All gear sets
             all_sets = p.get('all_sets', [])
-            if all_sets and row < max_y - 4:
+            if all_sets:
                 set_parts = []
                 for cnt, sn in all_sets:
                     if sn in MYTHIC_SETS:
@@ -726,18 +752,13 @@ class TuiDisplay:
                     else:
                         set_parts.append(f"{cnt}pc {sn}")
                 sets_str = f"     Sets: {', '.join(set_parts)}"
-                self._safe_addstr(row, 0, sets_str[:max_x - 1], curses.color_pair(2))
-                row += 1
+                lines.append((sets_str, curses.color_pair(2)))
 
             # Blank line between players
-            if row < max_y - 4:
-                row += 1
+            lines.append(("", 0))
 
-        if row < max_y - 3:
-            self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
-            row += 1
-
-        return row
+        lines.append(("\u2500" * min(max_x - 1, 78), curses.color_pair(1)))
+        return lines
 
     def copy_fight_to_clipboard(self, history: FightHistory):
         """Copy current fight's player/set summary to clipboard."""
@@ -745,12 +766,24 @@ class TuiDisplay:
         entry = history.current()
         if not entry:
             return
-        lines = []
+        # Group players by role (T, H, D), each group sorted by DPS descending
+        groups = {'T': [], 'H': [], 'D': []}
         for p in entry.players:
+            role = p.get('role', 'D')
             name = p.get('name', 'unknown')
             sets_str = self._format_sets_compact(p.get('sets', []))
-            lines.append(f"{name}={sets_str}" if sets_str else name)
-        text = ', '.join(lines)
+            player_str = f"{name}={sets_str}" if sets_str else name
+            groups.get(role, groups['D']).append((p.get('dps', 0), player_str))
+
+        parts = []
+        for role_key, label in [('T', 'T'), ('H', 'H'), ('D', 'D')]:
+            players = groups[role_key]
+            if not players:
+                continue
+            players.sort(key=lambda x: x[0], reverse=True)
+            player_strs = ', '.join(s for _, s in players)
+            parts.append(f"{label}: {player_strs}")
+        text = ' | '.join(parts)
         try:
             if sys.platform == 'win32':
                 proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
@@ -828,6 +861,7 @@ class CombatEncounter:
         self.abilities_used: Dict[str, Set[str]] = defaultdict(set)
         self.total_damage: int = 0  # Track total damage dealt
         self.player_damage: Dict[str, int] = {}  # Track damage per player (including pets)
+        self.player_healing: Dict[str, int] = {}  # Track healing done to OTHER players
         self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
         self.total_health_damaged: int = 0  # Track total health of all damaged enemies
         self.player_deaths: int = 0  # Track player deaths
@@ -1019,6 +1053,24 @@ class CombatEncounter:
                     if owner_player.unit_id not in self.player_damage:
                         self.player_damage[owner_player.unit_id] = 0
                     self.player_damage[owner_player.unit_id] += damage
+
+    def add_healing_to_player(self, source_unit_id: str, target_unit_id: str, heal_value: int):
+        """Track healing done by source player to a DIFFERENT player."""
+        source_player = self.find_player_by_unit_id(source_unit_id)
+        if not source_player:
+            # Check pet ownership
+            if source_unit_id in self.pet_ownership:
+                owner_id = self.pet_ownership[source_unit_id]
+                source_player = self.find_player_by_unit_id(owner_id)
+        if not source_player:
+            return
+        # Only count healing to other players (not self-heals)
+        target_player = self.find_player_by_unit_id(target_unit_id)
+        if not target_player or target_player.unit_id == source_player.unit_id:
+            return
+        if source_player.unit_id not in self.player_healing:
+            self.player_healing[source_player.unit_id] = 0
+        self.player_healing[source_player.unit_id] += heal_value
 
     def track_buff(self, player_unit_id: str, buff_name: str, effect_type: str, timestamp: int):
         """Track buff applications and removals for uptime calculation."""
@@ -2255,7 +2307,18 @@ class ESOLogAnalyzer:
                                     self.current_encounter.update_most_damaged_hostile(target_unit_id)
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
-            
+
+            # Track healing events for role heuristic
+            elif combat_event_type in ['HEALED', 'CRITICAL_HEAL', 'HOT_TICK', 'HOT_TICK_CRITICAL']:
+                try:
+                    hit_value = int(entry.fields[3])
+                    source_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
+                    target_unit_id = entry.fields[17] if len(entry.fields) > 17 else ""
+                    if hit_value > 0 and self.current_encounter and source_unit_id and target_unit_id:
+                        self.current_encounter.add_healing_to_player(source_unit_id, target_unit_id, hit_value)
+                except (ValueError, IndexError):
+                    pass
+
             # Parse health information from COMBAT_EVENT (similar to EFFECT_CHANGED)
             # COMBAT_EVENT format can include health info in various positions depending on event type
             if len(entry.fields) > 17:  # Check if we have enough fields for health info
@@ -3230,7 +3293,20 @@ class ESOLogAnalyzer:
         for player, player_damage in players_with_damage:
             player_dps = player_damage / duration if duration > 0 else 0
             dmg_pct = (player_damage / enc.total_damage * 100) if enc.total_damage > 0 else 0
-            role = infer_player_role(player, player_damage=player_damage, player_healing=0)
+            player_healing = enc.player_healing.get(player.unit_id, 0)
+
+            # Extract skill lines and ability-based role for fallback
+            analysis = self.subclass_analyzer.analyze_subclass(player.equipped_abilities) if player.equipped_abilities else None
+            skill_lines = []
+            skill_line_role = None
+            if analysis:
+                if analysis.get('skill_lines'):
+                    skill_lines = list(analysis['skill_lines'])
+                skill_line_role = analysis.get('role')
+
+            role = infer_player_role(player, player_damage=player_damage,
+                                     player_healing=player_healing,
+                                     skill_line_role=skill_line_role)
 
             # Extract gear sets: mythic and 5-piece sets for compact display
             player_sets = []  # list of (count, name, is_mythic)
@@ -3250,17 +3326,10 @@ class ESOLogAnalyzer:
                             pc = 2
                         set_counts[set_name] = set_counts.get(set_name, 0) + pc
                 for sn, cnt in sorted(set_counts.items(), key=lambda x: -x[1]):
-                    # Mythic detection: in MYTHIC_SETS, or a 1-piece set (mythics are always 1pc)
-                    is_mythic = sn in MYTHIC_SETS or cnt == 1
+                    is_mythic = sn in MYTHIC_SETS
                     all_sets.append((cnt, sn))
                     if is_mythic or (has_five_piece_bonus(sn) and cnt >= 5):
                         player_sets.append((cnt, sn, is_mythic))
-
-            # Extract skill lines for detail view
-            analysis = self.subclass_analyzer.analyze_subclass(player.equipped_abilities) if player.equipped_abilities else None
-            skill_lines = []
-            if analysis and analysis.get('skill_lines'):
-                skill_lines = list(analysis['skill_lines'])
 
             entry.players.append({
                 'role': role,
@@ -3271,6 +3340,8 @@ class ESOLogAnalyzer:
                 'h': player.max_health,
                 'm': player.max_magicka,
                 's': player.max_stamina,
+                'healing': player_healing,
+                'skill_line_role': skill_line_role or '',
                 'unit_id': player.unit_id,
                 'sets': player_sets,
                 'all_sets': all_sets,
@@ -3600,24 +3671,6 @@ class LogSplitter:
         final_filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
         self.final_file_path = self.split_dir / final_filename
 
-        # Dedup check: skip if identical encounter already exists on disk
-        prefix = f"{time_str}-{zone_suffix}{difficulty_suffix}"
-        if prefix in self.existing_splits:
-            try:
-                temp_size = self.temp_file_path.stat().st_size
-                if temp_size in self.existing_splits[prefix]:
-                    self.skip_current = True
-                    try:
-                        self.temp_file_path.unlink()
-                    except OSError:
-                        pass
-                    if self.diagnostic:
-                        ts = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {temp_size}){Style.RESET_ALL}")
-                    return
-            except OSError:
-                pass
-
         try:
             # Rename the file
             self.temp_file_path.rename(self.final_file_path)
@@ -3808,8 +3861,27 @@ class LogSplitter:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
         
-        # Add newly created file to dedup index
+        # Dedup check: now that the file is complete, compare against existing splits
         import re as _re
+        if self.final_file_path and not should_delete_temp and not self.skip_current:
+            try:
+                if self.final_file_path.exists():
+                    stem = self.final_file_path.stem
+                    prefix = _re.sub(r'-\d+$', '', stem)
+                    final_size = self.final_file_path.stat().st_size
+                    if prefix in self.existing_splits and final_size in self.existing_splits[prefix]:
+                        self.skip_current = True
+                        try:
+                            self.final_file_path.unlink()
+                        except OSError:
+                            pass
+                        if self.diagnostic:
+                            ts = time.strftime("%H:%M:%S", time.localtime())
+                            print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {final_size}){Style.RESET_ALL}")
+            except OSError:
+                pass
+
+        # Add newly created file to dedup index
         if self.final_file_path and not self.skip_current:
             try:
                 if self.final_file_path.exists():
@@ -4324,18 +4396,28 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
                     break
                 elif key == _curses.KEY_UP or key == ord('k'):
                     fight_history.scroll_up()
+                    tui.detail_scroll = 0
                     tui.render_fight(fight_history)
                 elif key == _curses.KEY_DOWN or key == ord('j'):
                     fight_history.scroll_down()
+                    tui.detail_scroll = 0
+                    tui.render_fight(fight_history)
+                elif key == _curses.KEY_PPAGE:  # Page Up
+                    tui.scroll_detail_up(10)
+                    tui.render_fight(fight_history)
+                elif key == _curses.KEY_NPAGE:  # Page Down
+                    tui.scroll_detail_down(10)
                     tui.render_fight(fight_history)
                 elif key == ord('c'):
                     tui.copy_fight_to_clipboard(fight_history)
                 elif key == ord('d') or key == 10:  # d or Enter
                     tui.detail_mode = not tui.detail_mode
+                    tui.detail_scroll = 0
                     tui.render_fight(fight_history)
                 elif key == 27:  # Escape - back to compact
                     if tui.detail_mode:
                         tui.detail_mode = False
+                        tui.detail_scroll = 0
                         tui.render_fight(fight_history)
                 elif key == ord('G') or key == _curses.KEY_END:
                     fight_history.snap_to_latest()
