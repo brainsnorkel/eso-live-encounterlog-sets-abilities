@@ -107,6 +107,7 @@ MYTHIC_SETS = {
     "Sea-Serpent's Coil",
     "Shapeshifter's Chain",
     "Torc of Tonal Constancy",
+    "Huntsman's Warmask",
 }
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
@@ -333,6 +334,477 @@ class PlayerInfo:
             return self.name
         else:
             return "anon"
+
+def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing: int = 0, skill_line_role: str = None) -> str:
+    """Infer player role (T/H/D) from resources and healing heuristics.
+
+    Args:
+        player: PlayerInfo with max_health, max_magicka, max_stamina
+        player_damage: Total damage dealt by this player
+        player_healing: Total healing done to OTHER players
+        skill_line_role: Role from ability-based inference (fallback)
+
+    Returns:
+        'T' for tank, 'H' for healer, 'D' for DPS
+    """
+    h, m, s = player.max_health, player.max_magicka, player.max_stamina
+    max_val = max(h, m, s)
+
+    if max_val == 0:
+        return skill_line_role[0].upper() if skill_line_role else 'D'
+
+    # Check if top two resources are within 10% — use ability fallback
+    sorted_resources = sorted([h, m, s], reverse=True)
+    if sorted_resources[0] > 0 and sorted_resources[1] > 0:
+        ratio = sorted_resources[1] / sorted_resources[0]
+        if ratio >= 0.9:
+            if skill_line_role:
+                role_map = {'tank': 'T', 'healer': 'H', 'dps': 'D'}
+                return role_map.get(skill_line_role.lower(), 'D')
+            return 'D'
+
+    if h == max_val:
+        return 'T'
+    if s == max_val:
+        return 'D'
+    if m == max_val:
+        if player_healing > player_damage and player_healing > 0:
+            return 'H'
+        return 'D'
+    return 'D'
+
+
+class FightHistoryEntry:
+    """Compact summary of a completed fight for TUI display."""
+    __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
+                 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
+                 'trial_info', 'ended_at', 'boss_name']
+
+    def __init__(self):
+        self.timestamp = ""
+        self.ended_at = 0.0  # time.time() when fight ended, for elapsed timer
+        self.zone_name = ""
+        self.is_vet = False
+        self.duration_s = 0.0
+        self.group_dps = 0.0
+        self.deaths = 0
+        self.players = []  # dicts with keys: role, name, class_abbr, dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar
+        self.buff_summary = ""
+        self.first_damage_dealer = None
+        self.trial_info = None
+        self.boss_name = ""
+
+
+class FightHistory:
+    """Capped ring buffer of completed fight summaries."""
+
+    def __init__(self, max_size=100):
+        self.fights = []
+        self.max_size = max_size
+        self.cursor = -1  # -1 means "live mode" (show latest)
+
+    def append(self, entry: FightHistoryEntry):
+        self.fights.append(entry)
+        if len(self.fights) > self.max_size:
+            self.fights.pop(0)
+            if self.cursor > 0:
+                self.cursor -= 1
+        if self.cursor == -1 or self.cursor == len(self.fights) - 2:
+            self.cursor = -1
+
+    def current(self):
+        if not self.fights:
+            return None
+        idx = self.cursor if self.cursor >= 0 else len(self.fights) - 1
+        return self.fights[idx]
+
+    def scroll_up(self):
+        if not self.fights:
+            return
+        if self.cursor == -1:
+            self.cursor = len(self.fights) - 2
+        elif self.cursor > 0:
+            self.cursor -= 1
+
+    def scroll_down(self):
+        if not self.fights:
+            return
+        if self.cursor == -1:
+            return
+        if self.cursor < len(self.fights) - 1:
+            self.cursor += 1
+        if self.cursor == len(self.fights) - 1:
+            self.cursor = -1
+
+    def snap_to_latest(self):
+        self.cursor = -1
+
+    @property
+    def is_live(self):
+        return self.cursor == -1
+
+    @property
+    def display_index(self):
+        if self.cursor == -1:
+            return len(self.fights)
+        return self.cursor + 1
+
+    @property
+    def total(self):
+        return len(self.fights)
+
+
+class TuiDisplay:
+    """Full-screen curses TUI for displaying fight summaries."""
+
+    def __init__(self):
+        self.stdscr = None
+        self.active = False
+        self.detail_mode = False  # Toggle for expanded detail view
+
+    def start(self):
+        """Initialize curses."""
+        try:
+            import curses
+            self.stdscr = curses.initscr()
+            curses.noecho()
+            curses.cbreak()
+            self.stdscr.keypad(True)
+            self.stdscr.nodelay(True)
+            curses.start_color()
+            curses.use_default_colors()
+            curses.init_pair(1, curses.COLOR_CYAN, -1)
+            curses.init_pair(2, curses.COLOR_YELLOW, -1)
+            curses.init_pair(3, curses.COLOR_GREEN, -1)
+            curses.init_pair(4, curses.COLOR_RED, -1)
+            curses.init_pair(5, curses.COLOR_MAGENTA, -1)
+            self.active = True
+        except Exception:
+            self.active = False
+
+    def stop(self):
+        """Restore terminal."""
+        if self.stdscr:
+            try:
+                import curses
+                self.stdscr.keypad(False)
+                curses.nocbreak()
+                curses.echo()
+                curses.endwin()
+            except Exception:
+                pass
+            self.active = False
+
+    def get_key(self):
+        """Non-blocking key read. Returns key or -1."""
+        if not self.stdscr:
+            return -1
+        try:
+            return self.stdscr.getch()
+        except Exception:
+            return -1
+
+    # Set name abbreviations: substring match (case-insensitive) → short form
+    SET_ABBREVIATIONS = [
+        ("Spell Power Cure", "SPC"),
+        ("Roaring Opportunist", "RO"),
+        ("Jorvuld", "JO"),
+        ("Oakensoul", "Oakensoul"),
+        ("Velothi", "Velothi"),
+        ("Ansuul", "Ansuul's"),
+        ("Deadly Strike", "Deadly"),
+        ("Null Arca", "NullArca"),
+        ("Aegis Caller", "AegisCaller"),
+        ("Berserking Warrior", "AY"),
+        ("Pillager", "Pillagers"),
+        ("Tide-Born", "Tide-born"),
+        ("Azureblight", "AB"),
+        ("Alkosh", "Alkosh"),
+        ("Z'en", "Z'ens"),
+        ("Huntsman's Warmask", "Warmask"),
+        ("Harpooner", "Kilt"),
+        ("Highland Sentinel", "HS"),
+        ("Elf Bane", "ElfBane"),
+        ("Mechanical Acuity", "Acuity"),
+        ("Sul-Xan", "SulXan"),
+        ("Whorl of the Depths", "Depths"),
+        ("Pillar of Nirn", "PoN"),
+        ("War Machine", "WM"),
+        ("Master Architect", "MArchitect"),
+        ("Powerful Assault", "PA"),
+        ("Pearlescent Ward", "Pearlescent"),
+        ("Lucent Echoes", "LE"),
+        ("Saxhleel", "Saxhleel"),
+        ("Yolnahkriin", "Yoln"),
+        ("Elemental Catalyst", "EC"),
+        ("Crimson Twilight", "Crimson"),
+        ("Turning Tide", "TT"),
+        ("Olorime", "Olo"),
+        ("Drake's Rush", "Drakes"),
+        ("Sergeant", "Sergeants"),
+        ("Coral Riptide", "Coral"),
+        ("Corpseburster", "Corpseburster"),
+        ("Kazpian", "Kazpians"),
+        ("Relequen", "Relequen"),
+        ("Siroria", "Siroria"),
+    ]
+
+    def _abbreviate_set_name(self, name):
+        """Abbreviate a set name using known abbreviations, falling back to truncation."""
+        name_lower = name.lower()
+        for substring, abbrev in self.SET_ABBREVIATIONS:
+            if substring.lower() in name_lower:
+                return abbrev
+        # Fallback: first 2 words, cap at 12 chars
+        words = name.split()
+        short = ' '.join(words[:2]) if len(words) > 2 else name
+        if len(short) > 12:
+            short = short[:11] + '.'
+        return short
+
+    def _format_sets_compact(self, sets_list):
+        """Format sets for compact display: mythics first, then complete sets, separated by /."""
+        mythics = []
+        others = []
+        for cnt, name, is_mythic in sets_list:
+            short = self._abbreviate_set_name(name)
+            if is_mythic:
+                mythics.append(short)
+            else:
+                others.append(short)
+        return '/'.join(mythics + others) if (mythics or others) else ''
+
+    def render_fight(self, history: FightHistory):
+        """Render the current fight from history."""
+        if not self.active or not self.stdscr:
+            return
+        import curses
+
+        entry = history.current()
+        self.stdscr.clear()
+        max_y, max_x = self.stdscr.getmaxyx()
+
+        if not entry:
+            self._safe_addstr(0, 0, "Waiting for first fight...", curses.color_pair(1))
+            self._safe_addstr(max_y - 1, 0, " q:quit", curses.color_pair(2))
+            self.stdscr.refresh()
+            return
+
+        row = 0
+
+        # Header line with elapsed timer
+        vet_str = " (vet)" if entry.is_vet else ""
+        duration_str = self._format_duration(entry.duration_s)
+        elapsed_str = ""
+        if entry.ended_at > 0:
+            elapsed_secs = time.time() - entry.ended_at
+            if elapsed_secs < 60:
+                elapsed_str = f" ({int(elapsed_secs)}s ago)"
+            elif elapsed_secs < 3600:
+                elapsed_str = f" ({int(elapsed_secs // 60)}m {int(elapsed_secs % 60)}s ago)"
+            else:
+                elapsed_str = f" ({int(elapsed_secs // 3600)}h {int((elapsed_secs % 3600) // 60)}m ago)"
+        boss_str = f" vs {entry.boss_name}" if entry.boss_name else ""
+        header = f"[{entry.timestamp}] {entry.zone_name}{vet_str}{boss_str} | {duration_str}{elapsed_str}"
+        if entry.group_dps > 0:
+            header += f" | GrpDPS: {self._format_number(entry.group_dps)}"
+        if entry.deaths > 0:
+            header += f" | Deaths: {entry.deaths}"
+        self._safe_addstr(row, 0, header[:max_x - 1], curses.color_pair(1) | curses.A_BOLD)
+        row += 1
+
+        self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
+        row += 1
+
+        if self.detail_mode:
+            row = self._render_detail_view(entry, history, row, max_y, max_x, curses)
+        else:
+            row = self._render_compact_view(entry, history, row, max_y, max_x, curses)
+
+        # Buff summary
+        if entry.buff_summary and row < max_y - 2:
+            self._safe_addstr(row, 0, f" Buffs: {entry.buff_summary}"[:max_x - 1], curses.color_pair(1))
+            row += 1
+
+        # Trial info
+        if entry.trial_info and row < max_y - 2:
+            self._safe_addstr(row, 0, f" Trial: {entry.trial_info}"[:max_x - 1], curses.color_pair(2))
+            row += 1
+
+        # Status bar
+        live_indicator = " [LIVE]" if history.is_live else ""
+        mode_indicator = " [DETAIL]" if self.detail_mode else ""
+        status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}  \u2191\u2193/jk:scroll  d:detail  c:copy  G:latest  q:quit"
+        self._safe_addstr(max_y - 1, 0, status[:max_x - 1], curses.color_pair(2) | curses.A_REVERSE)
+        self.stdscr.refresh()
+
+    def _render_compact_view(self, entry, history, row, max_y, max_x, curses):
+        """Render compact one-line-per-player view with sets."""
+        col_header = f" R  {'Player':<20s} {'Class':<7s} {'DPS':>8s} {'Dmg%':>6s}  {'H/M/S':<15s} Sets"
+        self._safe_addstr(row, 0, col_header[:max_x - 1], curses.color_pair(2))
+        row += 1
+
+        for p in entry.players:
+            if row >= max_y - 4:
+                break
+            prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
+            role = p.get('role', 'D')
+            name = p.get('name', 'unknown')[:20]
+            class_abbr = p.get('class_abbr', '?')[:7]
+            dps = self._format_number(p.get('dps', 0))
+            dmg_pct = f"{p.get('dmg_pct', 0):.1f}%"
+            resources = f"{self._format_k(p.get('h', 0))}/{self._format_k(p.get('m', 0))}/{self._format_k(p.get('s', 0))}"
+            sets_str = self._format_sets_compact(p.get('sets', []))
+            line = f"{prefix}{role}  {name:<20s} {class_abbr:<7s} {dps:>8s} {dmg_pct:>6s}  {resources:<15s} {sets_str}"
+
+            color = curses.color_pair(3)
+            if role == 'T':
+                color = curses.color_pair(5)
+            elif role == 'H':
+                color = curses.color_pair(1)
+            self._safe_addstr(row, 0, line[:max_x - 1], color)
+            row += 1
+
+        if row < max_y - 3:
+            self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
+            row += 1
+
+        return row
+
+    def _render_detail_view(self, entry, history, row, max_y, max_x, curses):
+        """Render expanded detail view with skill lines, abilities, and all gear."""
+        for p in entry.players:
+            if row >= max_y - 4:
+                break
+
+            prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
+            role = p.get('role', 'D')
+            name = p.get('name', 'unknown')
+            class_name = p.get('class_name', '?')
+            dps = self._format_number(p.get('dps', 0))
+            dmg_pct = f"{p.get('dmg_pct', 0):.1f}%"
+            resources = f"H:{self._format_k(p.get('h', 0))} M:{self._format_k(p.get('m', 0))} S:{self._format_k(p.get('s', 0))}"
+            cp = p.get('cp', 0)
+            cp_str = f" CP:{cp}" if cp else ""
+
+            # Player header line
+            header_line = f"{prefix}{role}  {name} ({class_name} {resources}{cp_str}) DPS:{dps} D:{dmg_pct}"
+            color = curses.color_pair(3)
+            if role == 'T':
+                color = curses.color_pair(5)
+            elif role == 'H':
+                color = curses.color_pair(1)
+            self._safe_addstr(row, 0, header_line[:max_x - 1], color | curses.A_BOLD)
+            row += 1
+
+            # Skill lines
+            skill_lines = p.get('skill_lines', [])
+            if skill_lines and row < max_y - 4:
+                sl_str = f"     Skills: {', '.join(skill_lines)}"
+                self._safe_addstr(row, 0, sl_str[:max_x - 1], curses.color_pair(3))
+                row += 1
+
+            # Front/back bar
+            front_bar = p.get('front_bar', [])
+            back_bar = p.get('back_bar', [])
+            if front_bar and row < max_y - 4:
+                fb_str = f"     Front: {', '.join(front_bar)}"
+                self._safe_addstr(row, 0, fb_str[:max_x - 1], curses.color_pair(3))
+                row += 1
+            if back_bar and row < max_y - 4:
+                bb_str = f"     Back:  {', '.join(back_bar)}"
+                self._safe_addstr(row, 0, bb_str[:max_x - 1], curses.color_pair(3))
+                row += 1
+
+            # All gear sets
+            all_sets = p.get('all_sets', [])
+            if all_sets and row < max_y - 4:
+                set_parts = []
+                for cnt, sn in all_sets:
+                    if sn in MYTHIC_SETS:
+                        set_parts.append(f"[M]{sn}")
+                    else:
+                        set_parts.append(f"{cnt}pc {sn}")
+                sets_str = f"     Sets: {', '.join(set_parts)}"
+                self._safe_addstr(row, 0, sets_str[:max_x - 1], curses.color_pair(2))
+                row += 1
+
+            # Blank line between players
+            if row < max_y - 4:
+                row += 1
+
+        if row < max_y - 3:
+            self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
+            row += 1
+
+        return row
+
+    def copy_fight_to_clipboard(self, history: FightHistory):
+        """Copy current fight's player/set summary to clipboard."""
+        import subprocess
+        entry = history.current()
+        if not entry:
+            return
+        lines = []
+        for p in entry.players:
+            name = p.get('name', 'unknown')
+            sets_str = self._format_sets_compact(p.get('sets', []))
+            lines.append(f"{name}={sets_str}" if sets_str else name)
+        text = ', '.join(lines)
+        try:
+            if sys.platform == 'win32':
+                proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
+                proc.communicate(text.encode('utf-8'))
+            elif sys.platform == 'darwin':
+                proc = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+                proc.communicate(text.encode('utf-8'))
+            else:
+                proc = subprocess.Popen(['xclip', '-selection', 'clipboard'], stdin=subprocess.PIPE)
+                proc.communicate(text.encode('utf-8'))
+            self._show_flash("Copied to clipboard!")
+        except Exception:
+            self._show_flash("Copy failed")
+
+    def _show_flash(self, message):
+        """Show a brief flash message on the status bar."""
+        if not self.stdscr:
+            return
+        import curses
+        max_y, max_x = self.stdscr.getmaxyx()
+        self._safe_addstr(max_y - 1, 0, f" {message}".ljust(max_x - 1), curses.color_pair(2) | curses.A_REVERSE)
+        self.stdscr.refresh()
+
+    def _safe_addstr(self, y, x, text, attr=0):
+        try:
+            self.stdscr.addstr(y, x, text, attr)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _format_duration(seconds):
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        m = int(seconds // 60)
+        s = seconds % 60
+        return f"{m}m {s:.0f}s"
+
+    @staticmethod
+    def _format_number(n):
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        if n >= 1_000:
+            return f"{n / 1_000:.1f}k"
+        return f"{n:.0f}"
+
+    @staticmethod
+    def _format_k(n):
+        if n >= 1000:
+            k = n / 1000
+            if k == int(k):
+                return f"{int(k)}k"
+            return f"{k:.1f}k"
+        return str(n)
+
 
 class EnemyInfo:
     """Stores information about an enemy unit."""
@@ -2420,6 +2892,14 @@ class ESOLogAnalyzer:
             self._add_report_to_zone()
             # Individual report files are saved per-zone, not per-encounter
         
+        # Build fight entry and update TUI
+        if hasattr(self, 'fight_history') and self.fight_history is not None:
+            fight_entry = self._build_fight_entry(zone_name)
+            if fight_entry:
+                self.fight_history.append(fight_entry)
+                if hasattr(self, 'tui') and self.tui and self.tui.active and self.fight_history.is_live:
+                    self.tui.render_fight(self.fight_history)
+
         # Add newline after encounter summary for clean formatting
         self._print_and_buffer("")
 
@@ -2477,7 +2957,16 @@ class ESOLogAnalyzer:
             
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
-            
+
+            # Dedup check: skip if a report with this base name already exists
+            base_stem = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report"
+            if list(reports_path.glob(f"{base_stem}*")):
+                if self.diagnostic:
+                    ts = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate report: {filename}{Style.RESET_ALL}")
+                self.report_buffer.clear()
+                return
+
             # Write report to temporary file first
             temp_filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report-temp.txt"
             temp_report_path = reports_path / temp_filename
@@ -2655,7 +3144,17 @@ class ESOLogAnalyzer:
             
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
-            
+
+            # Dedup check: skip if a report with this base name already exists
+            base_stem = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report"
+            if list(reports_path.glob(f"{base_stem}*")):
+                if self.diagnostic:
+                    ts = time.strftime("%H:%M:%S", time.localtime())
+                    print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate zone report: {filename}{Style.RESET_ALL}")
+                if zone_name in self.zone_reports:
+                    del self.zone_reports[zone_name]
+                return
+
             # Write report to file
             with open(report_file_path, 'w', encoding='utf-8') as f:
                 for line in self.zone_reports[zone_name]:
@@ -2683,10 +3182,125 @@ class ESOLogAnalyzer:
 
     def _print_and_buffer(self, text: str):
         """Print text to stdout and buffer it for report saving."""
-        print(text)
+        # Skip stdout printing when TUI is active (TUI renders its own display)
+        if not (hasattr(self, 'tui') and self.tui and self.tui.active):
+            print(text)
         if self.save_reports:
             self.report_buffer.append(text)
 
+    def _build_fight_entry(self, zone_name: str = None):
+        """Build a FightHistoryEntry from the current encounter."""
+        if not self.current_encounter:
+            return None
+
+        entry = FightHistoryEntry()
+        enc = self.current_encounter
+
+        entry.ended_at = time.time()
+        entry.timestamp = enc.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
+        entry.zone_name = zone_name or self.current_zone or "Unknown"
+        entry.is_vet = bool(self.current_difficulty and self.current_difficulty.upper() == "VETERAN")
+
+        duration = (enc.end_time - enc.start_time) / 1000.0
+        entry.duration_s = duration
+        entry.group_dps = enc.total_damage / duration if duration > 0 and enc.total_damage > 0 else 0
+        entry.deaths = self.zone_deaths
+        entry.first_damage_dealer = enc.first_damage_dealer
+
+        # Boss name: prefer most damaged hostile, fall back to highest health
+        if enc.most_damaged_hostile and enc.most_damaged_hostile.name:
+            entry.boss_name = enc.most_damaged_hostile.name
+        elif enc.highest_health_hostile and enc.highest_health_hostile.name:
+            entry.boss_name = enc.highest_health_hostile.name
+
+        CLASS_ABBR = {
+            "1": "DK", "2": "Sorc", "3": "NB", "4": "Warden",
+            "5": "Necro", "6": "Templar", "117": "Arcanist"
+        }
+
+        players_with_damage = []
+        for player in enc.players.values():
+            if not player.equipped_abilities:
+                continue
+            player_damage = enc.player_damage.get(player.unit_id, 0)
+            players_with_damage.append((player, player_damage))
+
+        players_with_damage.sort(key=lambda x: x[1], reverse=True)
+
+        for player, player_damage in players_with_damage:
+            player_dps = player_damage / duration if duration > 0 else 0
+            dmg_pct = (player_damage / enc.total_damage * 100) if enc.total_damage > 0 else 0
+            role = infer_player_role(player, player_damage=player_damage, player_healing=0)
+
+            # Extract gear sets: mythic and 5-piece sets for compact display
+            player_sets = []  # list of (count, name, is_mythic)
+            all_sets = []     # list of (count, name) for detail view
+            if player.gear:
+                set_counts = {}
+                for slot, gear_item in player.gear.items():
+                    if len(gear_item) > 6:
+                        set_id = str(gear_item[6])
+                        if set_id in ("0", "", "nan"):
+                            continue
+                        set_name = gear_set_db.get_set_name_by_set_id(set_id)
+                        if not set_name:
+                            set_name = f"Set#{set_id}"
+                        pc = 1
+                        if slot in ('MAIN_HAND', 'BACKUP_MAIN') and self._is_two_handed_weapon(gear_item, player.gear):
+                            pc = 2
+                        set_counts[set_name] = set_counts.get(set_name, 0) + pc
+                for sn, cnt in sorted(set_counts.items(), key=lambda x: -x[1]):
+                    # Mythic detection: in MYTHIC_SETS, or a 1-piece set (mythics are always 1pc)
+                    is_mythic = sn in MYTHIC_SETS or cnt == 1
+                    all_sets.append((cnt, sn))
+                    if is_mythic or (has_five_piece_bonus(sn) and cnt >= 5):
+                        player_sets.append((cnt, sn, is_mythic))
+
+            # Extract skill lines for detail view
+            analysis = self.subclass_analyzer.analyze_subclass(player.equipped_abilities) if player.equipped_abilities else None
+            skill_lines = []
+            if analysis and analysis.get('skill_lines'):
+                skill_lines = list(analysis['skill_lines'])
+
+            entry.players.append({
+                'role': role,
+                'name': player.get_display_name(),
+                'class_abbr': CLASS_ABBR.get(player.class_id, '?'),
+                'dps': player_dps,
+                'dmg_pct': dmg_pct,
+                'h': player.max_health,
+                'm': player.max_magicka,
+                's': player.max_stamina,
+                'unit_id': player.unit_id,
+                'sets': player_sets,
+                'all_sets': all_sets,
+                'skill_lines': skill_lines,
+                'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
+                'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
+                'class_name': player.get_class_name(),
+                'cp': player.champion_points,
+            })
+
+        if len(enc.players) >= 3:
+            buff_parts = []
+            buff_analysis = enc.get_group_buff_analysis()
+            for buff_name, is_present in buff_analysis.items():
+                if is_present:
+                    uptime = enc.get_group_buff_uptime(buff_name)
+                    buff_parts.append(f"{buff_name}:{uptime:.0f}%")
+            entry.buff_summary = " ".join(buff_parts)
+
+        if enc.trial_info and enc.trial_info.get('completed'):
+            trial = enc.trial_info
+            trial_name = trial.get('trial_name', 'Unknown')
+            parts = [trial_name]
+            if trial.get('duration_ms', 0) > 0:
+                parts.append(f"Duration: {self.format_duration_minutes_seconds(trial['duration_ms'])}")
+            if trial.get('final_score', 0) > 0:
+                parts.append(f"Score: {trial['final_score']:,}")
+            entry.trial_info = " | ".join(parts)
+
+        return entry
 
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0):
@@ -2860,14 +3474,43 @@ class LogSplitter:
         
         # Combat tracking for auto-cleanup
         self.combat_event_count = 0  # Count of combat events in current encounter
-        
+
+        # Deduplication: skip flag for encounters already on disk
+        self.skip_current = False
+        # Index of existing split files: prefix → set of file sizes
+        self.existing_splits = {}
+
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
+
+        # Scan existing splits for deduplication
+        self._scan_existing_splits()
         
+    def _scan_existing_splits(self):
+        """Scan split directory for existing files and build dedup index."""
+        import re
+        try:
+            for filename in os.listdir(self.split_dir):
+                if filename.endswith('.log') and not filename.endswith('-temp.log'):
+                    filepath = self.split_dir / filename
+                    # Extract base prefix: strip trailing -N numeric suffix
+                    stem = Path(filename).stem
+                    prefix = re.sub(r'-\d+$', '', stem)
+                    try:
+                        size = filepath.stat().st_size
+                    except OSError:
+                        continue
+                    if prefix not in self.existing_splits:
+                        self.existing_splits[prefix] = set()
+                    self.existing_splits[prefix].add(size)
+        except OSError:
+            pass
+
     def start_encounter(self, begin_log_entry, zone_name: str = "", difficulty: str = ""):
         """Start a new encounter split file."""
         # Close any existing split file
         self.end_encounter()
+        self.skip_current = False
         
         # Store BEGIN_LOG entry and initialize zone tracking
         self.pending_begin_log = begin_log_entry
@@ -2956,7 +3599,25 @@ class LogSplitter:
         
         final_filename = f"{time_str}-{zone_suffix}{difficulty_suffix}.log"
         self.final_file_path = self.split_dir / final_filename
-        
+
+        # Dedup check: skip if identical encounter already exists on disk
+        prefix = f"{time_str}-{zone_suffix}{difficulty_suffix}"
+        if prefix in self.existing_splits:
+            try:
+                temp_size = self.temp_file_path.stat().st_size
+                if temp_size in self.existing_splits[prefix]:
+                    self.skip_current = True
+                    try:
+                        self.temp_file_path.unlink()
+                    except OSError:
+                        pass
+                    if self.diagnostic:
+                        ts = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {temp_size}){Style.RESET_ALL}")
+                    return
+            except OSError:
+                pass
+
         try:
             # Rename the file
             self.temp_file_path.rename(self.final_file_path)
@@ -3058,6 +3719,8 @@ class LogSplitter:
     
     def write_log_line(self, line: str):
         """Write a log line to the current split file."""
+        if self.skip_current:
+            return
         if self.file_handle:
             try:
                 self.file_handle.write(line + '\n')
@@ -3145,7 +3808,22 @@ class LogSplitter:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
         
+        # Add newly created file to dedup index
+        import re as _re
+        if self.final_file_path and not self.skip_current:
+            try:
+                if self.final_file_path.exists():
+                    stem = self.final_file_path.stem
+                    prefix = _re.sub(r'-\d+$', '', stem)
+                    size = self.final_file_path.stat().st_size
+                    if prefix not in self.existing_splits:
+                        self.existing_splits[prefix] = set()
+                    self.existing_splits[prefix].add(size)
+            except OSError:
+                pass
+
         # Always clear encounter state, regardless of file handle status
+        self.skip_current = False
         self.file_handle = None
         self.current_split_file = None
         self.current_split_path = None
@@ -3435,6 +4113,8 @@ class LogFileMonitor:
               help='Testing mode: List all hostile monsters added to fights with names and IDs')
 @click.option('--diagnostic', is_flag=True,
               help='Diagnostic mode: Show detailed timing and data flow information for debugging')
+@click.option('--no-tui', is_flag=True,
+              help='Disable TUI display and use traditional scrolling output')
 @click.option('--tail-and-split', is_flag=True,
               help='Auto-split mode: Automatically create individual encounter files while tailing the main log')
 @click.option('--split-dir', type=click.Path(), default=None,
@@ -3443,7 +4123,7 @@ class LogFileMonitor:
               help='Save encounter reports to files with timestamp-based naming')
 @click.option('--reports-dir', type=click.Path(), default=None,
               help='Directory for saved reports (default: same directory as source log file)')
-def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, tail_and_split: bool, split_dir: Optional[str], save_reports: bool, reports_dir: Optional[str]):
+def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, no_tui: bool, tail_and_split: bool, split_dir: Optional[str], save_reports: bool, reports_dir: Optional[str]):
     """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
     
     # Handle version flag early (before any other processing)
@@ -3614,28 +4294,78 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
     file_monitor.running = True
 
+    # Initialize TUI if appropriate
+    tui = None
+    fight_history = FightHistory()
+    use_tui = not no_tui and sys.stdout.isatty()
+
+    if use_tui:
+        tui = TuiDisplay()
+        tui.start()
+        if not tui.active:
+            tui = None  # Fall back to print mode
+
+    # Store references on analyzer for access during encounter processing
+    analyzer.fight_history = fight_history
+    analyzer.tui = tui
 
     try:
         poll_interval = 1.0  # Check for changes every second
-        
+
         while file_monitor.running:
             file_monitor.check_for_changes()
-            
-            if analyzer.diagnostic:
+
+            # Handle TUI input
+            if tui and tui.active:
+                import curses as _curses
+                key = tui.get_key()
+                if key == ord('q'):
+                    file_monitor.running = False
+                    break
+                elif key == _curses.KEY_UP or key == ord('k'):
+                    fight_history.scroll_up()
+                    tui.render_fight(fight_history)
+                elif key == _curses.KEY_DOWN or key == ord('j'):
+                    fight_history.scroll_down()
+                    tui.render_fight(fight_history)
+                elif key == ord('c'):
+                    tui.copy_fight_to_clipboard(fight_history)
+                elif key == ord('d') or key == 10:  # d or Enter
+                    tui.detail_mode = not tui.detail_mode
+                    tui.render_fight(fight_history)
+                elif key == 27:  # Escape - back to compact
+                    if tui.detail_mode:
+                        tui.detail_mode = False
+                        tui.render_fight(fight_history)
+                elif key == ord('G') or key == _curses.KEY_END:
+                    fight_history.snap_to_latest()
+                    tui.render_fight(fight_history)
+                elif key == _curses.KEY_RESIZE:
+                    tui.render_fight(fight_history)
+
+            # Refresh TUI every cycle to update elapsed timer
+            if tui and tui.active and fight_history.total > 0:
+                tui.render_fight(fight_history)
+
+            if analyzer.diagnostic and not (tui and tui.active):
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Polling {log_path.name} for changes...{Style.RESET_ALL}")
-            
+
             time.sleep(poll_interval)
     except KeyboardInterrupt:
+        pass
+    finally:
+        if tui:
+            tui.stop()
         print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
         file_monitor.running = False
-        
+
         # Clean up log splitter if it exists
         if file_monitor.log_splitter:
             file_monitor.log_splitter.cleanup()
             if tail_and_split:
                 print(f"{Fore.CYAN}Auto-split cleanup completed{Style.RESET_ALL}")
-        
+
 
 def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
     """Wait for the log file to appear if it doesn't exist."""

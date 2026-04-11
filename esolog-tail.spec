@@ -6,7 +6,7 @@ a = Analysis(
     pathex=['src'],
     binaries=[],
     datas=[('data/gear_sets/LibSets_SetData.xlsm', 'data/gear_sets')],
-    hiddenimports=['gear_set_database_optimized', 'version', 'gear_set_data'],
+    hiddenimports=['gear_set_database_optimized', 'version', 'gear_set_data', 'windows_curses'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.png'],
+    icon=[],
 )

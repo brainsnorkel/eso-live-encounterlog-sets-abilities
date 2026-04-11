@@ -85,3 +85,8 @@ split_logs/
 
 # Documentation files not for git
 CLAUDE.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

@@ -138,7 +138,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "24": "Footman's Fortune",
     "240": "Kvatch Gladiator",
     "241": "Varen's Legacy",
-    "242": "Pelinal's Aptitude",
+    "242": "Pelinal's Wrath",
     "243": "Hide of Morihaus",
     "244": "Flanking Strategist",
     "245": "Sithis' Touch",
@@ -255,13 +255,13 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "354": "Mad Tinkerer",
     "355": "Unfathomable Darkness",
     "356": "Livewire",
-    "357": "Disciplined Slash (Perfected)",
-    "358": "Defensive Position (Perfected)",
-    "359": "Chaotic Whirlwind (Perfected)",
+    "357": "Perfected Disciplined Slash",
+    "358": "Perfected Defensive Position",
+    "359": "Perfected Chaotic Whirlwind",
     "36": "Armor of the Veiled Heritance",
-    "360": "Piercing Spray (Perfected)",
-    "361": "Concentrated Force (Perfected)",
-    "362": "Timeless Blessing (Perfected)",
+    "360": "Perfected Piercing Spray",
+    "361": "Perfected Concentrated Force",
+    "362": "Perfected Timeless Blessing",
     "363": "Disciplined Slash",
     "364": "Defensive Position",
     "365": "Chaotic Whirlwind",
@@ -697,9 +697,27 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "82": "Alessia's Bulwark",
     "820": "Perfected Kazpian's Cruel Signet",
     "821": "Perfected Harmony in Chaos",
+    "822": "Lustrous Soulwell",
+    "823": "Vykand's Soulfury",
+    "824": "Black Foundry Steel",
+    "825": "Xanmeer Spellweaver",
+    "826": "Tools of the Trapmaster",
+    "827": "Stonehulk Domination",
+    "828": "Black Gem Monstrosity",
+    "829": "Bar-Sakka",
     "83": "Elf Bane",
+    "830": "Spellshredder",
+    "831": "Coup De Grâce",
+    "832": "Unflinching Ultimate",
     "84": "Orgnum's Scales",
+    "845": "Huntsman's Warmask",
+    "846": "Xanmeer Genesis",
+    "848": "Shattered Paths Signet",
+    "849": "Glittering Goad",
     "85": "Almalexia's Mercy",
+    "850": "Thousand Eyes",
+    "851": "The Ruckus",
+    "855": "Gorethief",
     "86": "Queen's Elegance",
     "87": "Eyes of Mara",
     "88": "Robes of Destruction Mastery",
@@ -763,6 +781,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Bahsei's Mania": "587",
     "Balorgh": "397",
     "Bani's Torment": "473",
+    "Bar-Sakka": "829",
     "Barkskin": "28",
     "Baron Thirsk": "636",
     "Baron Zaudrus": "578",
@@ -776,6 +795,8 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Beekeeper's Gear": "288",
     "Belharza's Band": "626",
     "Berserking Warrior": "137",
+    "Black Foundry Steel": "824",
+    "Black Gem Monstrosity": "828",
     "Black Rose": "179",
     "Black-Grove Grounding": "732",
     "Blackfeather Flight": "804",
@@ -804,7 +825,6 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Caustic Arrow": "316",
     "Champion of the Hist": "407",
     "Chaotic Whirlwind": "365",
-    "Chaotic Whirlwind (Perfected)": "359",
     "Chimera's Rebuke": "677",
     "Chokethorn": "269",
     "Cinders of Anthelmir": "730",
@@ -815,9 +835,9 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Colovian Highlands General": "713",
     "Combat Physician": "194",
     "Concentrated Force": "367",
-    "Concentrated Force (Perfected)": "361",
     "Coral Riptide": "647",
     "Corpseburster": "777",
+    "Coup De Grâce": "831",
     "Coward's Gear": "327",
     "Crafty Alfiq": "440",
     "Crest of Cyrodiil": "113",
@@ -846,14 +866,12 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Deeproot Zeal": "660",
     "Defending Warrior": "138",
     "Defensive Position": "364",
-    "Defensive Position (Perfected)": "358",
     "Defiler": "321",
     "Desert Rose": "25",
     "Destructive Impact": "317",
     "Destructive Mage": "140",
     "Diamond's Victory": "584",
     "Disciplined Slash": "363",
-    "Disciplined Slash (Perfected)": "357",
     "Dolorous Arena": "816",
     "Domihaus": "342",
     "Dov-rha Sabatons": "655",
@@ -916,8 +934,10 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Gaze of Sithis": "593",
     "Giant Spider": "264",
     "Glacial Guardian": "621",
+    "Glittering Goad": "849",
     "Glorgoloch the Destroyer": "600",
     "Glorious Defender": "213",
+    "Gorethief": "855",
     "Gossamer": "261",
     "Grace of Gloom": "382",
     "Grace of the Ancients": "126",
@@ -958,6 +978,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Hrothgar's Chill": "618",
     "Hunding's Rage": "80",
     "Hunt Leader": "216",
+    "Huntsman's Warmask": "845",
     "Iceheart": "274",
     "Icy Conjuror": "431",
     "Ilambris": "273",
@@ -1011,6 +1032,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Lucent Echoes": "768",
     "Lucilla's Windshield": "796",
     "Lunar Bastion": "231",
+    "Lustrous Soulwell": "822",
     "Maarselok": "459",
     "Macabre Vintage": "758",
     "Mad God's Dancing Shoes": "811",
@@ -1086,7 +1108,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Peace and Serenity": "701",
     "Pearlescent Ward": "648",
     "Pearls of Ehlnofey": "576",
-    "Pelinal's Aptitude": "242",
+    "Pelinal's Wrath": "242",
     "Perfect Aegis of Galenwe": "392",
     "Perfect Arms of Relequen": "393",
     "Perfect Gallant Charge": "423",
@@ -1100,11 +1122,15 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected Ansuul's Torment": "707",
     "Perfected Bahsei's Mania": "591",
     "Perfected Caustic Arrow": "531",
+    "Perfected Chaotic Whirlwind": "359",
     "Perfected Claw of Yolnakhriin": "451",
+    "Perfected Concentrated Force": "361",
     "Perfected Coral Riptide": "652",
     "Perfected Cruel Flurry": "524",
     "Perfected Crushing Wall": "526",
+    "Perfected Defensive Position": "358",
     "Perfected Destructive Impact": "532",
+    "Perfected Disciplined Slash": "357",
     "Perfected Dolorous Arena": "819",
     "Perfected Executioner's Blade": "563",
     "Perfected Eye of Nahviintaas": "448",
@@ -1120,6 +1146,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected Mora Scribe's Thesis": "773",
     "Perfected Peace and Serenity": "708",
     "Perfected Pearlescent Ward": "651",
+    "Perfected Piercing Spray": "360",
     "Perfected Pillager's Profit": "650",
     "Perfected Point-Blank Snipe": "566",
     "Perfected Precise Regeneration": "527",
@@ -1134,6 +1161,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected Sul-Xan's Torment": "590",
     "Perfected Test of Resolve": "706",
     "Perfected Thunderous Volley": "525",
+    "Perfected Timeless Blessing": "362",
     "Perfected Titanic Cleave": "528",
     "Perfected Tooth of Lokkestiiz": "450",
     "Perfected Transformative Hope": "705",
@@ -1149,7 +1177,6 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Phoenix Moth Theurge": "672",
     "Phylactery's Grasp": "665",
     "Piercing Spray": "366",
-    "Piercing Spray (Perfected)": "360",
     "Pillager's Profit": "649",
     "Pillar of Nirn": "336",
     "Pirate Skeleton": "277",
@@ -1231,6 +1258,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Shared Burden": "808",
     "Shared Pain": "783",
     "Shattered Fate": "695",
+    "Shattered Paths Signet": "848",
     "Sheer Venom": "195",
     "Shell Splitter": "689",
     "Shield Breaker": "199",
@@ -1260,6 +1288,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Spell Parasite": "506",
     "Spell Power Cure": "185",
     "Spell Strategist": "418",
+    "Spellshredder": "830",
     "Spelunker": "296",
     "Spider Cultist Cowl": "297",
     "Spinner's Garments": "289",
@@ -1273,6 +1302,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Stone Husk": "534",
     "Stone's Accord": "661",
     "Stone-Talker's Oath": "588",
+    "Stonehulk Domination": "827",
     "Stonekeeper": "432",
     "Storm Knight's Plate": "93",
     "Storm Master": "188",
@@ -1315,11 +1345,13 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "The Ice Furnace": "53",
     "The Juggernaut": "63",
     "The Morag Tong": "50",
+    "The Ruckus": "851",
     "The Saint and the Seducer": "762",
     "The Shadow Queen's Cowl": "761",
     "The Troll King": "278",
     "The Worm's Raiment": "124",
     "Thews of the Harbinger": "248",
+    "Thousand Eyes": "850",
     "Thrassian Stranglers": "501",
     "Threads of War": "765",
     "Three Queens Wellspring": "805",
@@ -1329,9 +1361,9 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Thurvokun": "349",
     "Tide-Born Wildstalker": "809",
     "Timeless Blessing": "368",
-    "Timeless Blessing (Perfected)": "362",
     "Titanborn Strength": "472",
     "Titanic Cleave": "313",
+    "Tools of the Trapmaster": "826",
     "Tooth of Lokkestiiz": "445",
     "Toothrow": "299",
     "Torc of Tonal Constancy": "505",
@@ -1361,6 +1393,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Undaunted Infiltrator": "156",
     "Undaunted Unweaver": "157",
     "Unfathomable Darkness": "355",
+    "Unflinching Ultimate": "832",
     "Unleashed Ritualist": "572",
     "Unleashed Terror": "514",
     "Valkyn Skoria": "169",
@@ -1387,6 +1420,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Void Bash": "558",
     "Voidcaller": "537",
     "Vrol's Command": "494",
+    "Vykand's Soulfury": "823",
     "Vykosa": "398",
     "War Machine": "331",
     "War Maiden": "320",
@@ -1416,6 +1450,8 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Wrathsun": "728",
     "Wretched Vitality": "610",
     "Wyrd Tree's Blessing": "107",
+    "Xanmeer Genesis": "846",
+    "Xanmeer Spellweaver": "825",
     "Xoryn's Masterpiece": "769",
     "Yandir's Might": "498",
     "Ysgramor's Birthright": "294",
@@ -1741,6 +1777,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Bar-Sakka": {
+        "set_id": "829",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Barkskin": {
         "set_id": "28",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -1828,6 +1871,20 @@ SET_INFO: Dict[str, Dict] = {
     "Berserking Warrior": {
         "set_id": "137",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Black Foundry Steel": {
+        "set_id": "824",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Black Gem Monstrosity": {
+        "set_id": "828",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
         "comment": "",
         "items": [],
         "abilities": []
@@ -2028,13 +2085,6 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Chaotic Whirlwind (Perfected)": {
-        "set_id": "359",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Chimera's Rebuke": {
         "set_id": "677",
         "set_type": "LIBSETS_SETTYPE_CRAFTED",
@@ -2105,13 +2155,6 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Concentrated Force (Perfected)": {
-        "set_id": "361",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Coral Riptide": {
         "set_id": "647",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
@@ -2123,6 +2166,13 @@ SET_INFO: Dict[str, Dict] = {
         "set_id": "777",
         "set_type": "LIBSETS_SETTYPE_CLASS",
         "comment": "Necromancer",
+        "items": [],
+        "abilities": []
+    },
+    "Coup De Grâce": {
+        "set_id": "831",
+        "set_type": "LIBSETS_SETTYPE_CYRODIIL",
+        "comment": "",
         "items": [],
         "abilities": []
     },
@@ -2322,13 +2372,6 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Defensive Position (Perfected)": {
-        "set_id": "358",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Defiler": {
         "set_id": "321",
         "set_type": "LIBSETS_SETTYPE_OVERLAND",
@@ -2366,13 +2409,6 @@ SET_INFO: Dict[str, Dict] = {
     },
     "Disciplined Slash": {
         "set_id": "363",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Disciplined Slash (Perfected)": {
-        "set_id": "357",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
@@ -2812,6 +2848,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Glittering Goad": {
+        "set_id": "849",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Glorgoloch the Destroyer": {
         "set_id": "600",
         "set_type": "LIBSETS_SETTYPE_IMPERIALCITY_MONSTER",
@@ -2822,6 +2865,13 @@ SET_INFO: Dict[str, Dict] = {
     "Glorious Defender": {
         "set_id": "213",
         "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Gorethief": {
+        "set_id": "855",
+        "set_type": "LIBSETS_SETTYPE_CYRODIIL",
         "comment": "",
         "items": [],
         "abilities": []
@@ -3102,6 +3152,13 @@ SET_INFO: Dict[str, Dict] = {
     "Hunt Leader": {
         "set_id": "216",
         "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Huntsman's Warmask": {
+        "set_id": "845",
+        "set_type": "LIBSETS_SETTYPE_MYTHIC",
         "comment": "",
         "items": [],
         "abilities": []
@@ -3473,6 +3530,13 @@ SET_INFO: Dict[str, Dict] = {
     "Lunar Bastion": {
         "set_id": "231",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Lustrous Soulwell": {
+        "set_id": "822",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
         "items": [],
         "abilities": []
@@ -4002,7 +4066,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Pelinal's Aptitude": {
+    "Pelinal's Wrath": {
         "set_id": "242",
         "set_type": "LIBSETS_SETTYPE_CRAFTED",
         "comment": "",
@@ -4100,8 +4164,22 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Chaotic Whirlwind": {
+        "set_id": "359",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Claw of Yolnakhriin": {
         "set_id": "451",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Concentrated Force": {
+        "set_id": "361",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
@@ -4128,9 +4206,23 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Defensive Position": {
+        "set_id": "358",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Destructive Impact": {
         "set_id": "532",
         "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Disciplined Slash": {
+        "set_id": "357",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
         "abilities": []
@@ -4240,6 +4332,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Piercing Spray": {
+        "set_id": "360",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Pillager's Profit": {
         "set_id": "650",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
@@ -4334,6 +4433,13 @@ SET_INFO: Dict[str, Dict] = {
     "Perfected Thunderous Volley": {
         "set_id": "525",
         "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Timeless Blessing": {
+        "set_id": "362",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
         "abilities": []
@@ -4438,13 +4544,6 @@ SET_INFO: Dict[str, Dict] = {
     },
     "Piercing Spray": {
         "set_id": "366",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Piercing Spray (Perfected)": {
-        "set_id": "360",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
@@ -5017,6 +5116,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Shattered Paths Signet": {
+        "set_id": "848",
+        "set_type": "LIBSETS_SETTYPE_MYTHIC",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Sheer Venom": {
         "set_id": "195",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -5220,6 +5326,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Spellshredder": {
+        "set_id": "830",
+        "set_type": "LIBSETS_SETTYPE_CYRODIIL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Spelunker": {
         "set_id": "296",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -5307,6 +5420,13 @@ SET_INFO: Dict[str, Dict] = {
     "Stone-Talker's Oath": {
         "set_id": "588",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Stonehulk Domination": {
+        "set_id": "827",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
         "items": [],
         "abilities": []
@@ -5605,6 +5725,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "The Ruckus": {
+        "set_id": "851",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "The Saint and the Seducer": {
         "set_id": "762",
         "set_type": "LIBSETS_SETTYPE_MYTHIC",
@@ -5636,6 +5763,13 @@ SET_INFO: Dict[str, Dict] = {
     "Thews of the Harbinger": {
         "set_id": "248",
         "set_type": "LIBSETS_SETTYPE_IMPERIALCITY",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Thousand Eyes": {
+        "set_id": "850",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
         "comment": "",
         "items": [],
         "abilities": []
@@ -5703,13 +5837,6 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Timeless Blessing (Perfected)": {
-        "set_id": "362",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Titanborn Strength": {
         "set_id": "472",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -5720,6 +5847,13 @@ SET_INFO: Dict[str, Dict] = {
     "Titanic Cleave": {
         "set_id": "313",
         "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Tools of the Trapmaster": {
+        "set_id": "826",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
         "items": [],
         "abilities": []
@@ -5927,6 +6061,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Unflinching Ultimate": {
+        "set_id": "832",
+        "set_type": "LIBSETS_SETTYPE_CYRODIIL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Unleashed Ritualist": {
         "set_id": "572",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -6105,6 +6246,13 @@ SET_INFO: Dict[str, Dict] = {
     "Vrol's Command": {
         "set_id": "494",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Vykand's Soulfury": {
+        "set_id": "823",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
         "items": [],
         "abilities": []
@@ -6308,6 +6456,20 @@ SET_INFO: Dict[str, Dict] = {
     "Wyrd Tree's Blessing": {
         "set_id": "107",
         "set_type": "LIBSETS_SETTYPE_OVERLAND",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Xanmeer Genesis": {
+        "set_id": "846",
+        "set_type": "LIBSETS_SETTYPE_OVERLAND",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Xanmeer Spellweaver": {
+        "set_id": "825",
+        "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
         "items": [],
         "abilities": []

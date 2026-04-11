@@ -24,7 +24,9 @@ def extract_gear_data():
     try:
         # Read the Excel file
         excel_file = pd.ExcelFile(excel_file_path)
-        df = pd.read_excel(excel_file, sheet_name='Sets data', header=1)
+        # Try both old and new sheet names for compatibility
+        sheet_name = 'Sets (lua data)' if 'Sets (lua data)' in excel_file.sheet_names else 'Sets data'
+        df = pd.read_excel(excel_file, sheet_name=sheet_name, header=1)
         
         print(f"Extracted {len(df)} gear sets from {excel_file_path}")
         
