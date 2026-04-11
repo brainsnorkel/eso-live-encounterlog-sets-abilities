@@ -11,6 +11,12 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 - Who has a taunt?
 - Opinionated about how much health you should have
 
+## TUI Display
+
+![TUI Fight Display](docs/screencaps/tui-ss.png)
+
+*Full-screen TUI showing a fight summary with role-colored players (T/H/D), gear set abbreviations, elapsed timer, and group DPS. Use arrow keys to scroll through fight history, Tab to toggle detail view, and 'c' to copy to clipboard.*
+
 ## Example Output
 
 ![ESO Live Encounter Log Analyzer Output](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/raw/main/docs/example-output.png)
@@ -413,7 +419,7 @@ The tool analyzes equipped abilities to determine skill lines using UESP as the 
 
 The tool identifies gear sets by:
 - **Set ID Mapping**: Uses LibSets database to map set IDs to set names
-- **Comprehensive Database**: Includes 704 gear sets from LibSets
+- **Comprehensive Database**: Includes 722 gear sets from LibSets
 - **Accurate Detection**: Shows actual equipped gear pieces with set names
 
 ### Buff Detection & Analysis
@@ -553,7 +559,17 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 
 ## Key Improvements
 
-### Version 0.2.4 Updates (Latest)
+### Version 0.2.6 Updates (Latest)
+
+- **Full-Screen TUI Display**: New curses-based terminal UI with color-coded roles, elapsed timers, and boss names
+- **Fight History Scrolling**: Browse up to 100 past fights with Up/Down arrow keys; Home snaps back to live
+- **Compact & Detail Views**: Toggle between one-line-per-player compact view and expanded detail view with Tab
+- **Role Inference**: Automatic Tank/Healer/DPS classification from resource pools and healing output
+- **Clipboard Copy**: Press 'c' in the TUI to copy the current fight summary to clipboard
+- **LibSets Database Expanded**: 722 gear sets (up from 704), including Huntsman's Warmask and Pearls of Ehlnofey
+- **Improved Healer Detection**: Magicka-primary players only classified as healers when healing exceeds damage
+
+### Version 0.2.4 Updates
 
 - **File Locking Removal**: Eliminated unnecessary file locking that could interfere with ESO's log writing process
 - **Enhanced File Tailing**: Improved reliability for high-frequency log monitoring (tested up to 1ms intervals)
@@ -639,7 +655,7 @@ This project is for educational and research purposes. ESO game data belongs to 
 
 This project builds upon and integrates several excellent community resources:
 
-- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 704 sets
+- **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)**: Comprehensive gear set database by Baertram, providing the foundation for accurate gear set identification with 722 sets
 - **[ESO Log Tool](https://github.com/sheumais/logs)**: Desktop log file handler for TESO by sheumais, which provided valuable insights into ESO log format parsing and processing techniques
 - **UESP**: Elder Scrolls Online wiki for authoritative skill line information and ability classifications
 - **ESO Community**: For encounter log format documentation and testing feedback

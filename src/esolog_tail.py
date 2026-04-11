@@ -673,7 +673,7 @@ class TuiDisplay:
     def _build_compact_lines(self, entry, max_x, curses):
         """Build compact view lines as (text, attr) tuples."""
         lines = []
-        col_header = f" R  {'Player':<20s} {'Class':<7s} {'DPS':>8s} {'Dmg%':>6s}  {'H/M/S':<15s} Sets"
+        col_header = f" R  {'Player':<20s} {'Class':<7s} {'DPSk':>8s} {'Dmg%':>6s}  {'H/M/S k':<15s} Sets"
         lines.append((col_header, curses.color_pair(2)))
 
         for p in entry.players:
@@ -681,9 +681,9 @@ class TuiDisplay:
             role = p.get('role', 'D')
             name = p.get('name', 'unknown')[:20]
             class_abbr = p.get('class_abbr', '?')[:7]
-            dps = self._format_number(p.get('dps', 0))
+            dps = self._format_number_no_suffix(p.get('dps', 0))
             dmg_pct = f"{p.get('dmg_pct', 0):.1f}%"
-            resources = f"{self._format_k(p.get('h', 0))}/{self._format_k(p.get('m', 0))}/{self._format_k(p.get('s', 0))}"
+            resources = f"{self._format_k_no_suffix(p.get('h', 0))}/{self._format_k_no_suffix(p.get('m', 0))}/{self._format_k_no_suffix(p.get('s', 0))}"
             sets_str = self._format_sets_compact(p.get('sets', []))
             line = f"{prefix}{role}  {name:<20s} {class_abbr:<7s} {dps:>8s} {dmg_pct:>6s}  {resources:<15s} {sets_str}"
 
@@ -836,6 +836,25 @@ class TuiDisplay:
             if k == int(k):
                 return f"{int(k)}k"
             return f"{k:.1f}k"
+        return str(n)
+
+    @staticmethod
+    def _format_number_no_suffix(n):
+        """Format number divided by 1k without suffix (column header shows units)."""
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        if n >= 1_000:
+            return f"{n / 1_000:.1f}"
+        return f"{n:.0f}"
+
+    @staticmethod
+    def _format_k_no_suffix(n):
+        """Format resource value divided by 1k without 'k' suffix."""
+        if n >= 1000:
+            k = n / 1000
+            if k == int(k):
+                return f"{int(k)}"
+            return f"{k:.1f}"
         return str(n)
 
 

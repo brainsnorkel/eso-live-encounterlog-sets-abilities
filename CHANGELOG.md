@@ -2,6 +2,29 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.2.6] - 2026-04-12
+
+### Added
+- **Full-Screen TUI Display**: New curses-based terminal UI renders fight summaries in a compact, full-screen layout with color-coded roles, elapsed timers, and boss names
+- **Fight History with Scrolling**: Ring buffer stores up to 100 past fights; scroll through history with Up/Down arrow keys and snap back to live with Home
+- **Compact & Detail Views**: Toggle between compact one-line-per-player view and expanded detail view showing skill lines, ability bars, and full gear sets (Tab to toggle)
+- **Role Inference Heuristic**: Automatic Tank/Healer/DPS classification based on max resource pools and healing-vs-damage output, with ability-based fallback
+- **Clipboard Copy from TUI**: Press 'c' to copy the current fight summary to clipboard, formatted with role-grouped players sorted by DPS
+- **Set Name Abbreviations**: Compact display of gear set names in TUI using community-standard abbreviations (e.g., Ansuul, RO, SPC, Alkosh)
+- **Elapsed Timer**: Each fight header shows how long ago it ended (e.g., "35s ago", "2m 10s ago")
+- **New Mythic Items**: Added Huntsman's Warmask and Pearls of Ehlnofey to mythic set list
+
+### Changed
+- **LibSets Database Updated**: Expanded gear set database from 704 to 722 sets
+- **Healer Identification**: Improved healer detection — magicka-primary players are only classified as healers when their healing output exceeds their damage output
+
+### Technical Details
+- Added `TuiDisplay` class with curses initialization, color pairs, non-blocking key input, and safe addstr rendering
+- Added `FightHistory` ring buffer with cursor-based scrolling (live mode at cursor=-1)
+- Added `FightHistoryEntry` dataclass with `__slots__` for memory-efficient fight storage
+- Added `infer_player_role()` function with resource ratio tie-breaking and skill-line fallback
+- TUI renders scrollable content with clamped offsets and scroll position indicators
+
 ## [0.2.5] - 2025-01-29
 
 ### Added
