@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "eso_live_encounterlog_sets_abilities",
+  "project_id": "5a06cbbc-78a5-4179-aeb0-cfb2b42445b7"
+}
