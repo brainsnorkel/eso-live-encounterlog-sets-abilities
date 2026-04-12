@@ -343,27 +343,32 @@ class FightHistory:
     def __init__(self, max_size=100):
         self.fights = []
         self.max_size = max_size
-        self.cursor = -1  # -1 means "live mode" (show latest)
+        self.cursor = 0
+        self._live = True
 
     def append(self, entry: FightHistoryEntry):
         self.fights.append(entry)
         if len(self.fights) > self.max_size:
             self.fights.pop(0)
-            if self.cursor > 0:
+            if not self._live:
                 self.cursor -= 1
-        if self.cursor == -1 or self.cursor == len(self.fights) - 2:
-            self.cursor = -1
+                if self.cursor < 0:
+                    self.cursor = 0
+        if self._live:
+            self.cursor = len(self.fights) - 1
 
     def current(self):
         if not self.fights:
             return None
-        idx = self.cursor if self.cursor >= 0 else len(self.fights) - 1
-        return self.fights[idx]
+        if self._live:
+            return self.fights[-1]
+        return self.fights[self.cursor]
 
     def scroll_up(self):
         if not self.fights:
             return
-        if self.cursor == -1:
+        if self._live:
+            self._live = False
             self.cursor = len(self.fights) - 2
         elif self.cursor > 0:
             self.cursor -= 1
@@ -371,19 +376,21 @@ class FightHistory:
     def scroll_down(self):
         if not self.fights:
             return
-        if self.cursor == -1:
+        if self._live:
             return
         if self.cursor < len(self.fights) - 1:
             self.cursor += 1
         if self.cursor == len(self.fights) - 1:
-            self.cursor = -1
+            self._live = True
 
     def snap_to_latest(self):
-        self.cursor = -1
+        self._live = True
+        if self.fights:
+            self.cursor = len(self.fights) - 1
 
     @property
     def is_live(self):
-        return self.cursor == -1
+        return self._live
 
     @property
     def display_index(self):
@@ -3655,14 +3662,18 @@ class LogSplitter:
             
             # Try to handle rename conflict
             if self._handle_rename_conflict(self.temp_file_path, self.final_file_path):
-                # Successfully handled conflict, update tracking
-                self.current_split_file = self.final_file_path
-                self.current_split_path = self.final_file_path
-                self.current_encounter_info['path'] = self.final_file_path
-                self.split_files.append(self.final_file_path)
-                
-                # Reopen the file for continued writing
-                self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
+                if self.skip_current:
+                    # Same content detected — don't reopen existing file
+                    self.file_handle = None
+                else:
+                    # Successfully handled conflict, update tracking
+                    self.current_split_file = self.final_file_path
+                    self.current_split_path = self.final_file_path
+                    self.current_encounter_info['path'] = self.final_file_path
+                    self.split_files.append(self.final_file_path)
+
+                    # Reopen the file for continued writing
+                    self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
             else:
                 # Keep the temp file if conflict resolution fails
                 self.current_split_file = self.temp_file_path
@@ -3692,8 +3703,9 @@ class LogSplitter:
             target_hash = self._get_file_hash(target_file_path)
             
             if temp_hash == target_hash:
-                # Same content - delete temp file, keep existing target
+                # Same content - delete temp file, keep existing target, skip further writes
                 temp_file_path.unlink()
+                self.skip_current = True
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp file: {temp_file_path}{Style.RESET_ALL}")
@@ -4348,6 +4360,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
             file_monitor.check_for_changes()
 
             # Handle TUI input
+            rendered_this_cycle = False
             if tui and tui.active:
                 import curses as _curses
                 key = tui.get_key()
@@ -4358,35 +4371,43 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
                     fight_history.scroll_up()
                     tui.detail_scroll = 0
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == _curses.KEY_DOWN or key == ord('j'):
                     fight_history.scroll_down()
                     tui.detail_scroll = 0
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == _curses.KEY_PPAGE:  # Page Up
                     tui.scroll_detail_up(10)
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == _curses.KEY_NPAGE:  # Page Down
                     tui.scroll_detail_down(10)
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == ord('c'):
                     tui.copy_fight_to_clipboard(fight_history)
                 elif key == ord('d') or key == 10:  # d or Enter
                     tui.detail_mode = not tui.detail_mode
                     tui.detail_scroll = 0
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == 27:  # Escape - back to compact
                     if tui.detail_mode:
                         tui.detail_mode = False
                         tui.detail_scroll = 0
                         tui.render_fight(fight_history)
+                        rendered_this_cycle = True
                 elif key == ord('G') or key == _curses.KEY_END:
                     fight_history.snap_to_latest()
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
                 elif key == _curses.KEY_RESIZE:
                     tui.render_fight(fight_history)
+                    rendered_this_cycle = True
 
-            # Refresh TUI every cycle to update elapsed timer
-            if tui and tui.active and fight_history.total > 0:
+            # Refresh TUI every cycle to update elapsed timer (skip if already rendered)
+            if not rendered_this_cycle and tui and tui.active and fight_history.total > 0:
                 tui.render_fight(fight_history)
 
             if analyzer.diagnostic and not (tui and tui.active):
