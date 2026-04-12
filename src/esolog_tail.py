@@ -118,78 +118,19 @@ NO_FIVE_PIECE_SET_TYPES = {
     "LIBSETS_SETTYPE_ARENA",       # Usually 2 pieces (weapon sets)
 }
 
-# Cache for set types to avoid repeatedly reading Excel file
-_set_type_cache = {}
-
 def has_five_piece_bonus(set_name: str) -> bool:
     """Check if a set has a 5-piece bonus using the gear set database."""
+    from gear_set_data import SET_INFO
+
     # Remove "Perfected " prefix for lookup
     clean_name = set_name
     if clean_name.startswith('Perfected '):
         clean_name = clean_name[10:]
 
-    # Check cache first
-    if clean_name in _set_type_cache:
-        set_type = _set_type_cache[clean_name]
-        return set_type not in NO_FIVE_PIECE_SET_TYPES
-
-    # Load set types into cache if not already done
-    if not _set_type_cache:
-        try:
-            import pandas as pd
-            excel_file = pd.ExcelFile('/Users/christophergentle/2025-development/eso/live-sets-abilities/setsdb/LibSets_SetData.xlsm')
-            df = pd.read_excel(excel_file, sheet_name='Sets data', header=1)
-
-            # Build cache of set name -> set type
-            for _, row in df.iterrows():
-                name = row.get('Name EN', '')
-                set_type = row.get('Set Type', '')
-                if name and set_type:
-                    _set_type_cache[name] = set_type
-        except Exception:
-            pass  # If we can't load the database, fall back to defaults
-
-    # Check if set is in cache now
-    if clean_name in _set_type_cache:
-        set_type = _set_type_cache[clean_name]
-        return set_type not in NO_FIVE_PIECE_SET_TYPES
-
-    # If not in database, make an educated guess based on name patterns
-    # Most sets have 5pc bonuses except mythics, monster sets, and weapon sets
-    mythic_keywords = ['ring', 'amulet', 'kilt', 'treaders', 'gaze', 'stranglers', 'eye', 'band', 'spaulder', 'sabatons', 'belt', 'whispers', 'oakensoul', 'pearls', 'coil', 'chain', 'nightmare', 'torc']
-    if any(keyword in clean_name.lower() for keyword in mythic_keywords):
-        return False
-
-    # Known 2-piece sets from LibSets database (monster sets + arena weapon sets)
-    two_piece_sets = [
-        # Monster sets (2-piece)
-        "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
-        "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
-        "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
-        "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
-        "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
-        "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
-        "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
-        "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
-        "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-        "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing",
-        # Arena weapon sets (2-piece)
-        "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
-        "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
-        "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
-        "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
-        "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
-        "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
-        "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
-        "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
-        "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
-        "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
-        "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
-        "force overflow", "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum",
-        "perfected point-blank snipe", "perfected wrath of elements", "perfected force overflow"
-    ]
-    if any(keyword in clean_name.lower() for keyword in two_piece_sets):
-        return False
+    # Look up set type from the pre-generated database
+    info = SET_INFO.get(clean_name) or SET_INFO.get(set_name)
+    if info:
+        return info.get('set_type', '') not in NO_FIVE_PIECE_SET_TYPES
 
     # Default: assume it has 5pc bonus unless proven otherwise
     return True
@@ -634,7 +575,7 @@ class TuiDisplay:
         if entry.buff_summary:
             content_lines.append((f" Buffs: {entry.buff_summary}", curses.color_pair(1)))
         if entry.trial_info:
-            content_lines.append((f" Trial: {entry.trial_info}", curses.color_pair(2)))
+            content_lines.append((f" Trial: {entry.trial_info} | v{__version__}", curses.color_pair(2)))
 
         # Available rows for scrollable content (reserve 1 for status bar)
         avail = max_y - row - 1
@@ -2056,9 +1997,9 @@ class ESOLogAnalyzer:
         # BEGIN_TRIAL format: timestamp,BEGIN_TRIAL,id,startTimeMS
         if len(entry.fields) >= 3:
             trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
-            trial_name = self.get_trial_name(trial_id)
+            trial_name = self.current_zone or self.get_trial_name(trial_id)
             start_time_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
-            
+
             if self.current_encounter:
                 if not self.current_encounter.trial_info:
                     self.current_encounter.trial_info = {}
@@ -2075,7 +2016,7 @@ class ESOLogAnalyzer:
         # END_TRIAL format: timestamp,END_TRIAL,id,durationMS,success,finalScore,finalVitalityBonus
         if len(entry.fields) >= 5:
             trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
-            trial_name = self.get_trial_name(trial_id)
+            trial_name = self.current_zone or self.get_trial_name(trial_id)
             duration_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
             success = entry.fields[2] == 'T'
             final_score = int(entry.fields[3]) if entry.fields[3].isdigit() else 0
