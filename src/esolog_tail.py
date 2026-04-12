@@ -21,6 +21,9 @@ import sys
 import time
 import csv
 import io
+import re
+import hashlib
+import subprocess
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Set
@@ -295,15 +298,17 @@ def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing
     if max_val == 0:
         return skill_line_role[0].upper() if skill_line_role else 'D'
 
-    # Check if top two resources are within 10% — use ability fallback
+    # Check if ALL three resources are within 10% of the max — only then fall back
+    # to ability-based role. Two-way near-ties fall through to the dominant-resource
+    # checks below (e.g. h=30k, m=29.5k, s=5k should still read as tank).
     sorted_resources = sorted([h, m, s], reverse=True)
-    if sorted_resources[0] > 0 and sorted_resources[1] > 0:
-        ratio = sorted_resources[1] / sorted_resources[0]
-        if ratio >= 0.9:
-            if skill_line_role:
-                role_map = {'tank': 'T', 'healer': 'H', 'dps': 'D'}
-                return role_map.get(skill_line_role.lower(), 'D')
-            return 'D'
+    if (sorted_resources[0] > 0
+            and sorted_resources[1] / sorted_resources[0] >= 0.9
+            and sorted_resources[2] / sorted_resources[0] >= 0.9):
+        if skill_line_role:
+            role_map = {'tank': 'T', 'healer': 'H', 'dps': 'D'}
+            return role_map.get(skill_line_role.lower(), 'D')
+        return 'D'
 
     if h == max_val:
         return 'T'
@@ -367,6 +372,9 @@ class FightHistory:
     def scroll_up(self):
         if not self.fights:
             return
+        # Single-entry history: nothing to scroll to, stay live
+        if len(self.fights) <= 1:
+            return
         if self._live:
             self._live = False
             self.cursor = len(self.fights) - 2
@@ -411,6 +419,8 @@ class TuiDisplay:
         self.active = False
         self.detail_mode = False  # Toggle for expanded detail view
         self.detail_scroll = 0    # Scroll offset for detail/compact views
+        self.flash_message = ""   # Transient message shown on the status bar
+        self.flash_until = 0.0    # Monotonic deadline after which flash clears
 
     def start(self):
         """Initialize curses."""
@@ -603,10 +613,16 @@ class TuiDisplay:
         if total_lines > avail:
             scroll_indicator = f" [{self.detail_scroll + 1}-{min(self.detail_scroll + avail, total_lines)}/{total_lines}]"
 
-        # Status bar
-        live_indicator = " [LIVE]" if history.is_live else ""
-        mode_indicator = " [DETAIL]" if self.detail_mode else ""
-        status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}{scroll_indicator}  \u2191\u2193/jk:fights  PgUp/Dn:scroll  d:detail  c:copy  G:latest  q:quit"
+        # Status bar — if a flash message is still active, show it instead
+        if self.flash_message and time.time() < self.flash_until:
+            status = f" {self.flash_message}".ljust(max_x - 1)
+        else:
+            if self.flash_message:
+                self.flash_message = ""
+                self.flash_until = 0.0
+            live_indicator = " [LIVE]" if history.is_live else ""
+            mode_indicator = " [DETAIL]" if self.detail_mode else ""
+            status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}{scroll_indicator}  \u2191\u2193/jk:fights  PgUp/Dn:scroll  d:detail  c:copy  G:latest  q:quit"
         self._safe_addstr(max_y - 1, 0, status[:max_x - 1], curses.color_pair(2) | curses.A_REVERSE)
         self.stdscr.refresh()
 
@@ -710,7 +726,6 @@ class TuiDisplay:
 
     def copy_fight_to_clipboard(self, history: FightHistory):
         """Copy current fight's player/set summary to clipboard."""
-        import subprocess
         entry = history.current()
         if not entry:
             return
@@ -734,31 +749,45 @@ class TuiDisplay:
         text = ' | '.join(parts)
         try:
             if sys.platform == 'win32':
-                proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE)
-                proc.communicate(text.encode('utf-8'))
+                cmd = ['clip']
             elif sys.platform == 'darwin':
-                proc = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
-                proc.communicate(text.encode('utf-8'))
+                cmd = ['pbcopy']
             else:
-                proc = subprocess.Popen(['xclip', '-selection', 'clipboard'], stdin=subprocess.PIPE)
-                proc.communicate(text.encode('utf-8'))
+                cmd = ['xclip', '-selection', 'clipboard']
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            try:
+                proc.communicate(text.encode('utf-8'), timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                self._show_flash("Copy timed out")
+                return
             self._show_flash("Copied to clipboard!")
         except Exception:
             self._show_flash("Copy failed")
 
-    def _show_flash(self, message):
-        """Show a brief flash message on the status bar."""
+    def _show_flash(self, message, duration=2.0):
+        """Show a brief flash message on the status bar.
+
+        The message is also stashed so that subsequent render_fight() calls
+        keep drawing the flash until ``duration`` seconds have elapsed, rather
+        than immediately overwriting it with the normal status bar.
+        """
         if not self.stdscr:
             return
         import curses
+        self.flash_message = message
+        self.flash_until = time.time() + duration
         max_y, max_x = self.stdscr.getmaxyx()
         self._safe_addstr(max_y - 1, 0, f" {message}".ljust(max_x - 1), curses.color_pair(2) | curses.A_REVERSE)
         self.stdscr.refresh()
 
     def _safe_addstr(self, y, x, text, attr=0):
+        import curses
         try:
             self.stdscr.addstr(y, x, text, attr)
-        except Exception:
+        except curses.error:
+            # Expected: writing to the bottom-right cell raises curses.error.
             pass
 
     @staticmethod
@@ -2988,9 +3017,9 @@ class ESOLogAnalyzer:
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
 
-            # Dedup check: skip if a report with this base name already exists
-            base_stem = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report"
-            if list(reports_path.glob(f"{base_stem}*")):
+            # Dedup check: skip only if the exact-named report already exists.
+            # A glob would falsely match suffixed/-temp files from prior crashes.
+            if report_file_path.exists():
                 if self.diagnostic:
                     ts = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate report: {filename}{Style.RESET_ALL}")
@@ -3041,8 +3070,6 @@ class ESOLogAnalyzer:
         Returns:
             bool: True if conflict was resolved successfully, False otherwise
         """
-        import hashlib
-        
         try:
             # Check if target file exists
             if not target_file_path.exists():
@@ -3086,10 +3113,12 @@ class ESOLogAnalyzer:
             return False
     
     def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content."""
-        import hashlib
+        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
+        h = hashlib.md5()
         with open(file_path, 'rb') as f:
-            return hashlib.md5(f.read()).hexdigest()
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
 
     def _add_report_to_zone(self):
         """Add the current report to the zone-based collection."""
@@ -3175,9 +3204,9 @@ class ESOLogAnalyzer:
             filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
             report_file_path = reports_path / filename
 
-            # Dedup check: skip if a report with this base name already exists
-            base_stem = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report"
-            if list(reports_path.glob(f"{base_stem}*")):
+            # Dedup check: skip only if the exact-named report already exists.
+            # A glob would falsely match suffixed/-temp files from prior crashes.
+            if report_file_path.exists():
                 if self.diagnostic:
                     ts = time.strftime("%H:%M:%S", time.localtime())
                     print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate zone report: {filename}{Style.RESET_ALL}")
@@ -3205,7 +3234,6 @@ class ESOLogAnalyzer:
 
     def _strip_ansi_codes(self, text: str) -> str:
         """Remove ANSI color codes from text for clean file output."""
-        import re
         # Remove ANSI escape sequences
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         return ansi_escape.sub('', text)
@@ -3524,18 +3552,25 @@ class LogSplitter:
         # Scan existing splits for deduplication
         self._scan_existing_splits()
         
+    @staticmethod
+    def _strip_numeric_suffix(stem: str) -> str:
+        """Strip a trailing ``-N`` numeric suffix from a filename stem."""
+        return re.sub(r'-\d+$', '', stem)
+
     def _scan_existing_splits(self):
         """Scan split directory for existing files and build dedup index."""
-        import re
         try:
-            for filename in os.listdir(self.split_dir):
-                if filename.endswith('.log') and not filename.endswith('-temp.log'):
-                    filepath = self.split_dir / filename
-                    # Extract base prefix: strip trailing -N numeric suffix
+            with os.scandir(self.split_dir) as it:
+                for entry in it:
+                    filename = entry.name
+                    if not (filename.endswith('.log') and not filename.endswith('-temp.log')):
+                        continue
+                    if not entry.is_file():
+                        continue
                     stem = Path(filename).stem
-                    prefix = re.sub(r'-\d+$', '', stem)
+                    prefix = self._strip_numeric_suffix(stem)
                     try:
-                        size = filepath.stat().st_size
+                        size = entry.stat().st_size
                     except OSError:
                         continue
                     if prefix not in self.existing_splits:
@@ -3689,19 +3724,17 @@ class LogSplitter:
         Returns:
             bool: True if conflict was resolved successfully, False otherwise
         """
-        import hashlib
-        
         try:
             # Check if target file exists
             if not target_file_path.exists():
                 # No conflict, just rename
                 temp_file_path.rename(target_file_path)
                 return True
-            
+
             # Compare file contents using MD5 hash
             temp_hash = self._get_file_hash(temp_file_path)
             target_hash = self._get_file_hash(target_file_path)
-            
+
             if temp_hash == target_hash:
                 # Same content - delete temp file, keep existing target, skip further writes
                 temp_file_path.unlink()
@@ -3737,11 +3770,13 @@ class LogSplitter:
             return False
     
     def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content."""
-        import hashlib
+        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
+        h = hashlib.md5()
         with open(file_path, 'rb') as f:
-            return hashlib.md5(f.read()).hexdigest()
-    
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
     def write_log_line(self, line: str):
         """Write a log line to the current split file."""
         if self.skip_current:
@@ -3834,12 +3869,11 @@ class LogSplitter:
                     print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
         
         # Dedup check: now that the file is complete, compare against existing splits
-        import re as _re
         if self.final_file_path and not should_delete_temp and not self.skip_current:
             try:
                 if self.final_file_path.exists():
                     stem = self.final_file_path.stem
-                    prefix = _re.sub(r'-\d+$', '', stem)
+                    prefix = self._strip_numeric_suffix(stem)
                     final_size = self.final_file_path.stat().st_size
                     if prefix in self.existing_splits and final_size in self.existing_splits[prefix]:
                         self.skip_current = True
@@ -3858,7 +3892,7 @@ class LogSplitter:
             try:
                 if self.final_file_path.exists():
                     stem = self.final_file_path.stem
-                    prefix = _re.sub(r'-\d+$', '', stem)
+                    prefix = self._strip_numeric_suffix(stem)
                     size = self.final_file_path.stat().st_size
                     if prefix not in self.existing_splits:
                         self.existing_splits[prefix] = set()
@@ -4011,21 +4045,26 @@ class LogFileMonitor:
             
         self.has_read_all = True
 
-    def check_for_changes(self):
-        """Check for file changes and process new lines."""
+    def check_for_changes(self, cancel_check=None):
+        """Check for file changes and process new lines.
+
+        Args:
+            cancel_check: Optional callable returning True to abort processing early
+                (used to keep 'q' responsive during catch-up on large backlogs).
+        """
         if not self.log_file.exists():
             return False
-            
+
         current_size = self.log_file.stat().st_size
         if current_size > self.last_position:
             # Reopen split file for appending when new data arrives
             if self.log_splitter:
                 self.log_splitter.reopen_for_append()
-            
+
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
                 print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
-            self._process_new_lines()
+            self._process_new_lines(cancel_check=cancel_check)
             return True
         else:
             # Close split file when waiting for new data
@@ -4037,8 +4076,14 @@ class LogFileMonitor:
                 print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
         return False
 
-    def _process_new_lines(self):
-        """Process new lines added to the log file."""
+    def _process_new_lines(self, cancel_check=None):
+        """Process new lines added to the log file.
+
+        Args:
+            cancel_check: Optional callable returning True to abort the processing
+                loop early (polled every 500 lines to keep 'q' responsive during
+                catch-up on large backlogs).
+        """
         if not self.log_file.exists():
             return
 
@@ -4056,13 +4101,25 @@ class LogFileMonitor:
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             f.seek(self.last_position)
             new_lines = f.readlines()
-            self.last_position = f.tell()
+            new_end_position = f.tell()
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
-        for line in new_lines:
+        CANCEL_POLL_INTERVAL = 500
+        for idx, line in enumerate(new_lines):
+            # Periodic cancel check during large catch-up batches
+            if cancel_check is not None and idx % CANCEL_POLL_INTERVAL == 0 and idx > 0:
+                if cancel_check():
+                    # Advance last_position by the bytes consumed so far so resume
+                    # doesn't re-process already-handled lines.
+                    self.last_position += sum(len(l) for l in new_lines[:idx])
+                    if self.diagnostic:
+                        timestamp = time.strftime("%H:%M:%S", time.localtime())
+                        print(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
+                    return
+
             line = line.strip()
             if line:
                 entry = self.analyzer.log_parser.parse_line(line)
@@ -4070,8 +4127,10 @@ class LogFileMonitor:
                 # Handle log splitting if enabled
                 if self.log_splitter:
                     self._handle_log_splitting(entry, line)
-                        
+
                 self.analyzer.process_log_entry(entry)
+
+        self.last_position = new_end_position
     
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
@@ -4356,14 +4415,41 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     try:
         poll_interval = 1.0  # Check for changes every second
 
+        # Mutable box so the cancel_check closure can both stash a pending key
+        # and signal the outer loop without losing keypresses.
+        _pending_key = [None]
+
+        def _cancel_during_catchup():
+            """Poll the TUI for 'q' during long catch-up batches."""
+            if not (tui and tui.active):
+                return False
+            k = tui.get_key()
+            if k == -1:
+                return False
+            if k == ord('q'):
+                file_monitor.running = False
+                return True
+            # Not a quit key — stash it so the main loop handles it next iteration
+            _pending_key[0] = k
+            return False
+
         while file_monitor.running:
-            file_monitor.check_for_changes()
+            file_monitor.check_for_changes(
+                cancel_check=_cancel_during_catchup if (tui and tui.active) else None
+            )
+
+            if not file_monitor.running:
+                break
 
             # Handle TUI input
             rendered_this_cycle = False
             if tui and tui.active:
                 import curses as _curses
-                key = tui.get_key()
+                if _pending_key[0] is not None:
+                    key = _pending_key[0]
+                    _pending_key[0] = None
+                else:
+                    key = tui.get_key()
                 if key == ord('q'):
                     file_monitor.running = False
                     break
@@ -4403,6 +4489,12 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
                     tui.render_fight(fight_history)
                     rendered_this_cycle = True
                 elif key == _curses.KEY_RESIZE:
+                    # On Windows/PDCurses, getmaxyx() returns stale dimensions
+                    # until resize_term(0, 0) is called explicitly.
+                    try:
+                        _curses.resize_term(0, 0)
+                    except _curses.error:
+                        pass
                     tui.render_fight(fight_history)
                     rendered_this_cycle = True
 

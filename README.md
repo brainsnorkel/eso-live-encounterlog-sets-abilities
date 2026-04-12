@@ -4,7 +4,7 @@
 ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you how your group is built. ESO Log Tail uses `/encounterlog` to print summaries of encounters as soon as each combat ends.
 
 - Encounter Summary
-- Whether some critical buffs were present in a group
+- Whether some important buffs were present in combat
 - Subclass build inference
 - Sorts players by their DPS
 - Highlights missing 5pc bonuses
@@ -17,11 +17,6 @@ ESO Log Tail: Live monitoring of Elder Scrolls Online encounter logs to show you
 
 *Full-screen TUI showing a fight summary with role-colored players (T/H/D), gear set abbreviations, elapsed timer, and group DPS. Use arrow keys to scroll through fight history, Tab to toggle detail view, and 'c' to copy to clipboard.*
 
-## Example Output
-
-![ESO Live Encounter Log Analyzer Output](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/raw/main/docs/example-output.png)
-
-*Example output showing a comprehensive combat encounter analysis with 12 players, including detailed player information, abilities, gear sets, DPS contributions, and group buff tracking.*
 
 ## Command Line Options
 
@@ -45,6 +40,8 @@ Options:
                               fights with names and IDs
   --diagnostic                Diagnostic mode: Show detailed timing and data
                               flow information for debugging
+  --no-tui                    Disable the full-screen TUI and fall back to
+                              plain stdout output
   --tail-and-split            Auto-split mode: Automatically create individual
                               encounter files while tailing the main log
   --split-dir PATH            Directory for split files (default: same
@@ -154,12 +151,12 @@ python3 src/esolog_tail.py --log-file "/path/to/ESO/Logs/Encounter.log"
 
 **Replay sample log file:**
 ```bash
-python3 src/esolog_tail.py --scan-all-then-stop
+python3 src/esolog_tail.py --read-all-then-stop
 ```
 
 **Replay at different speeds:**
 ```bash
-python3 src/esolog_tail.py --scan-all-then-stop --replay-speed 1000  # 1000x speed
+python3 src/esolog_tail.py --read-all-then-stop --replay-speed 1000  # 1000x speed
 ```
 
 ### Advanced Monitoring Options
@@ -517,13 +514,13 @@ The project includes comprehensive testing capabilities:
 
 ```bash
 # Test with sample data
-python3 src/esolog_tail.py --test-mode
+python3 src/esolog_tail.py --read-all-then-stop
 
 # Test at high speed
-python3 src/esolog_tail.py --test-mode --replay-speed 1000
+python3 src/esolog_tail.py --read-all-then-stop --replay-speed 1000
 
 # Test specific zones (Vateshran, Maelstrom, etc.)
-python3 src/esolog_tail.py --test-mode --replay-speed 1000 | grep -A 10 "Vateshran\|Maelstrom"
+python3 src/esolog_tail.py --read-all-then-stop --replay-speed 1000 | grep -A 10 "Vateshran\|Maelstrom"
 ```
 
 ## Building from Source
@@ -559,7 +556,7 @@ This process eliminates Excel parsing at runtime, resulting in faster startup an
 
 ## Key Improvements
 
-### Version 0.2.6 Updates (Latest)
+### Version 0.2.7 Updates (Latest)
 
 - **Full-Screen TUI Display**: New curses-based terminal UI with color-coded roles, elapsed timers, and boss names
 - **Fight History Scrolling**: Browse up to 100 past fights with Up/Down arrow keys; Home snaps back to live
