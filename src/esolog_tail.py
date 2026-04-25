@@ -343,22 +343,15 @@ class FightHistoryEntry:
 
 
 class FightHistory:
-    """Capped ring buffer of completed fight summaries."""
+    """Unbounded list of completed fight summaries."""
 
-    def __init__(self, max_size=100):
+    def __init__(self):
         self.fights = []
-        self.max_size = max_size
         self.cursor = 0
         self._live = True
 
     def append(self, entry: FightHistoryEntry):
         self.fights.append(entry)
-        if len(self.fights) > self.max_size:
-            self.fights.pop(0)
-            if not self._live:
-                self.cursor -= 1
-                if self.cursor < 0:
-                    self.cursor = 0
         if self._live:
             self.cursor = len(self.fights) - 1
 
@@ -1585,11 +1578,13 @@ class ESOLogAnalyzer:
         elif entry.event_type == "ZONE_CHANGED":
             self._handle_zone_changed(entry)
         elif entry.event_type == "BEGIN_CAST":
-            self._handle_begin_cast(entry)
+            if self.current_encounter:
+                self._handle_begin_cast(entry)
         elif entry.event_type == "EFFECT_CHANGED":
             self._handle_effect_changed(entry)
         elif entry.event_type == "COMBAT_EVENT":
-            self._handle_combat_event(entry)
+            if self.current_encounter:
+                self._handle_combat_event(entry)
         elif entry.event_type == "BEGIN_COMBAT":
             self._handle_begin_combat_event(entry)
         elif entry.event_type == "END_COMBAT":
@@ -2390,13 +2385,13 @@ class ESOLogAnalyzer:
                 # Associate long unit ID with target player if we can find the target
                 if target_unit_id in self.current_encounter.players:
                     self.current_encounter.associate_long_unit_id(target_unit_id, source_unit_id)
-            
-            # Track pet ownership: if source is a player and target is not a player, target might be a pet
-            if (source_unit_id in self.current_encounter.players and 
-                target_unit_id not in self.current_encounter.players):
-                # Check if target is likely a pet (not a known enemy)
-                if target_unit_id not in self.current_encounter.enemies:
-                    self.current_encounter.track_pet_ownership(target_unit_id, source_unit_id)
+
+                # Track pet ownership: if source is a player and target is not a player, target might be a pet
+                if (source_unit_id in self.current_encounter.players and
+                    target_unit_id not in self.current_encounter.players):
+                    # Check if target is likely a pet (not a known enemy)
+                    if target_unit_id not in self.current_encounter.enemies:
+                        self.current_encounter.track_pet_ownership(target_unit_id, source_unit_id)
 
             # Parse health information for enemies and players from EFFECT_CHANGED events
             # EFFECT_CHANGED format: GAINED/FADED/UPDATED,stacks,source_unit_id,ability_id,target_unit_id,source_health/max,source_magicka/max,source_stamina/max,source_ultimate/max,source_werewolf/max,source_shield,source_x,source_y,source_heading,target_unit_id,target_health/max,target_magicka/max,target_stamina/max,target_ultimate/max,target_werewolf/max,target_shield,target_x,target_y,target_heading
@@ -2421,37 +2416,37 @@ class ESOLogAnalyzer:
                             pass  # Skip invalid health data
             
             # Also check the first target_unit_id (original logic for backward compatibility)
-            if len(entry.fields) >= 6:
+            if self.current_encounter and len(entry.fields) >= 6:
                 first_target_health_info = str(entry.fields[5])  # Field 6 (0-indexed)
                 if "/" in first_target_health_info and target_unit_id in self.current_encounter.enemies:
                     try:
                         current_health, max_health = first_target_health_info.split("/")
                         current_health = int(current_health)
                         max_health = int(max_health)
-                        
+
                         if max_health > 0 and max_health > 100:  # Filter out small health values
                             self.current_encounter.update_enemy_health(target_unit_id, current_health, max_health)
-                            
+
                     except (ValueError, IndexError):
                         pass  # Skip invalid health data
 
             # Only track GAINED effects to avoid spam, and only from valid source units
-            if (effect_type == "GAINED" and source_unit_id != "0" and
+            if (self.current_encounter and effect_type == "GAINED" and source_unit_id != "0" and
                 ability_id in self.ability_cache):
                 ability_name = self.ability_cache[ability_id]
                 self.current_encounter.add_ability_use(source_unit_id, ability_name)
 
             # Check if this is a health-related effect (field [7] contains health info)
-            if len(entry.fields) >= 8:
+            if self.current_encounter and len(entry.fields) >= 8:
                 health_info = entry.fields[7] if len(entry.fields) > 7 else ""
-                
+
                 # Look for health information in format "current/max"
                 if '/' in health_info and target_unit_id:
                     try:
                         current_health, max_health = health_info.split('/')
                         current_health = int(current_health)
                         max_health = int(max_health)
-                        
+
                         # Update enemy health if this is an enemy unit
                         enemy = self.current_encounter.enemies.get(target_unit_id)
                         if enemy and max_health > 0:
@@ -4006,43 +4001,99 @@ class LogFileMonitor:
         if not zone_found:
             print(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
 
+    def _find_catchup_start(self, file_size, max_fights=20):
+        """Scan backward through the file for BEGIN_COMBAT markers.
+
+        Returns a byte offset just before the *max_fights*-th BEGIN_COMBAT
+        from the end so that catch-up only processes recent fights.
+        Returns 0 if the file is small or doesn't contain enough fights.
+        """
+        CHUNK = 1_000_000  # 1 MB per read
+        marker = b',BEGIN_COMBAT'
+        found = 0
+        offset = file_size
+
+        with open(self.log_file, 'rb') as f:
+            while offset > 0:
+                read_start = max(0, offset - CHUNK)
+                f.seek(read_start)
+                data = f.read(offset - read_start)
+
+                search_end = len(data)
+                while True:
+                    idx = data.rfind(marker, 0, search_end)
+                    if idx == -1:
+                        break
+                    found += 1
+                    if found >= max_fights:
+                        # Back up to the start of this line
+                        nl = data.rfind(b'\n', 0, idx)
+                        if nl >= 0:
+                            return read_start + nl + 1
+                        return read_start
+                    search_end = idx
+
+                offset = read_start
+
+        return 0  # not enough fights — read from beginning
+
     def _process_entire_file(self):
-        """Process the entire log file from the beginning."""
+        """Process the log file, jumping ahead in large files.
+
+        For files larger than 2 MB the method scans backward for
+        BEGIN_COMBAT markers and only processes the last ~20 fights,
+        which makes catch-up near-instant on multi-GB logs.
+        """
         if not self.log_file.exists():
             return
-        
-            if self.diagnostic:
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing entire file {self.log_file.name} from beginning{Style.RESET_ALL}")
-            line_count = 0
-            with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                while True:
-                    line = f.readline()
-                    if not line:  # End of file
-                        break
-                        
-                    line = line.strip()
-                    if line:
-                        entry = self.analyzer.log_parser.parse_line(line)
-                        if entry:
-                            # Handle log splitting if enabled
-                            if self.log_splitter:
-                                self._handle_log_splitting(entry, line)
-                            
-                        self.analyzer.process_log_entry(entry)
-                        line_count += 1
-                
-                # Update position to current position
-                self.last_position = f.tell()
-        
+
+        file_size = self.log_file.stat().st_size
+        start_position = 0
+
+        # For large files, jump ahead to only scan the last ~20 fights
+        if file_size > 2_000_000:
+            start_position = self._find_catchup_start(file_size, max_fights=20)
+            if start_position > 0:
+                mb_skipped = start_position / 1_000_000
+                print(f"{Fore.CYAN}Large log ({file_size / 1_000_000:.1f} MB) "
+                      f"— skipping to last ~20 fights ({mb_skipped:.1f} MB ahead){Style.RESET_ALL}")
+
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines from {self.log_file.name}, now tailing{Style.RESET_ALL}")
-        
-            # Close any open split files after processing entire file
-            if self.log_splitter:
-                self.log_splitter.end_encounter()
-            
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing {self.log_file.name} "
+                  f"from position {start_position}{Style.RESET_ALL}")
+
+        line_count = 0
+        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            if start_position > 0:
+                f.seek(start_position)
+                f.readline()  # skip partial line at boundary
+
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+
+                line = line.strip()
+                if line:
+                    entry = self.analyzer.log_parser.parse_line(line)
+                    if entry:
+                        if self.log_splitter:
+                            self._handle_log_splitting(entry, line)
+                        self.analyzer.process_log_entry(entry)
+                    line_count += 1
+
+            self.last_position = f.tell()
+
+        if self.diagnostic:
+            timestamp = time.strftime("%H:%M:%S", time.localtime())
+            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines "
+                  f"from {self.log_file.name}, now tailing{Style.RESET_ALL}")
+
+        # Close any open split files after processing
+        if self.log_splitter:
+            self.log_splitter.end_encounter()
+
         self.has_read_all = True
 
     def check_for_changes(self, cancel_check=None):
@@ -4392,6 +4443,10 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
     # Set the current log file path for timestamp calculations
     analyzer.current_log_file = str(log_path)
 
+    # Create fight history early so catch-up processing can populate it
+    fight_history = FightHistory()
+    analyzer.fight_history = fight_history
+
     # Set up file monitoring with simple polling
     split_dir_path = Path(split_dir) if split_dir else None
     file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
@@ -4399,7 +4454,6 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
 
     # Initialize TUI if appropriate
     tui = None
-    fight_history = FightHistory()
     use_tui = not no_tui and sys.stdout.isatty()
 
     if use_tui:
@@ -4408,8 +4462,7 @@ def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: 
         if not tui.active:
             tui = None  # Fall back to print mode
 
-    # Store references on analyzer for access during encounter processing
-    analyzer.fight_history = fight_history
+    # Store TUI reference on analyzer for access during encounter processing
     analyzer.tui = tui
 
     try:

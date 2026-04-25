@@ -13,7 +13,7 @@ def _make_entry(zone="Test Zone"):
 
 
 def test_append_and_current():
-    h = FightHistory(max_size=5)
+    h = FightHistory()
     h.append(_make_entry("Zone1"))
     assert h.current().zone_name == "Zone1"
     assert h.is_live
@@ -44,12 +44,13 @@ def test_snap_to_latest():
     assert h.is_live
 
 
-def test_cap_at_max():
-    h = FightHistory(max_size=3)
-    for i in range(5):
+def test_unbounded_growth():
+    h = FightHistory()
+    for i in range(200):
         h.append(_make_entry(f"Zone{i}"))
-    assert h.total == 3
-    assert h.fights[0].zone_name == "Zone2"
+    assert h.total == 200
+    assert h.fights[0].zone_name == "Zone0"
+    assert h.fights[-1].zone_name == "Zone199"
 
 
 def test_auto_advance_in_live():
@@ -89,38 +90,26 @@ def test_empty_history():
     h.scroll_down()
 
 
-def test_overflow_while_scrolled_preserves_view():
-    """Regression: when buffer evicts entries while cursor is non-live,
-    the viewed entry should not silently shift (bead 47e)."""
-    h = FightHistory(max_size=3)
-    for i in range(3):
+def test_append_while_scrolled_preserves_view():
+    """When new fights arrive while scrolled back, the viewed entry
+    should not shift."""
+    h = FightHistory()
+    for i in range(5):
         h.append(_make_entry(f"Zone{i}"))
-    # Buffer: [Zone0, Zone1, Zone2], cursor live at Zone2
-    h.scroll_up()  # Viewing Zone1
-    assert h.current().zone_name == "Zone1"
+    h.scroll_up()  # Viewing Zone3
+    assert h.current().zone_name == "Zone3"
     assert not h.is_live
 
-    # Overflow: append Zone3 -> evicts Zone0
-    # Buffer becomes [Zone1, Zone2, Zone3], cursor should still point at Zone1
-    h.append(_make_entry("Zone3"))
-    assert h.current().zone_name == "Zone1", (
-        f"Expected still viewing Zone1 after overflow, got {h.current().zone_name}"
-    )
+    h.append(_make_entry("Zone5"))
+    assert h.current().zone_name == "Zone3"
     assert not h.is_live
 
-    # Overflow again: evicts Zone1 (what we were viewing)
-    # Buffer becomes [Zone2, Zone3, Zone4], cursor should clamp, not wrap to live
-    h.append(_make_entry("Zone4"))
-    assert not h.is_live, "Should not silently return to live mode after eviction"
-    # Cursor clamped to 0 (oldest remaining entry)
-    assert h.current().zone_name == "Zone2"
 
-
-def test_overflow_during_live_mode_stays_live():
-    """Live mode should remain live through buffer overflow."""
-    h = FightHistory(max_size=3)
-    for i in range(10):
+def test_live_mode_stays_live_through_many_appends():
+    """Live mode should remain live through many appends."""
+    h = FightHistory()
+    for i in range(200):
         h.append(_make_entry(f"Zone{i}"))
     assert h.is_live
-    assert h.current().zone_name == "Zone9"
-    assert h.total == 3
+    assert h.current().zone_name == "Zone199"
+    assert h.total == 200
