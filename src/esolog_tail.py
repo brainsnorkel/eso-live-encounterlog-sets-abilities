@@ -745,6 +745,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.current_zone: Optional[str] = None  # Track current zone name
         self.current_difficulty: Optional[str] = None  # Track current difficulty
         self.zone_deaths: int = 0  # Track total deaths since entering current zone
+        self.fight_deaths: int = 0  # Player deaths in the current fight (reset at BEGIN_COMBAT)
         self.subclass_analyzer = ESOSubclassAnalyzer()
         self.current_log_file: Optional[str] = None  # Track current log file path
         self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
@@ -1395,8 +1396,9 @@ class ESOLogAnalyzer(ListenerMixin):
             # Clean up offline players
             self._cleanup_offline_players()
             
-            # Reset death counter for new zone
+            # Reset death counters for new zone
             self.zone_deaths = 0
+            self.fight_deaths = 0
             
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -1417,11 +1419,14 @@ class ESOLogAnalyzer(ListenerMixin):
         # Check if we need to rewind to a previous zone
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
-        
+
+        # Per-fight death counter starts fresh with each combat
+        self.fight_deaths = 0
+
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
-        
+
         # If we have a previous encounter that ended but wasn't displayed, display it now
-        if (self.current_encounter and self.current_encounter.combat_ended_at and 
+        if (self.current_encounter and self.current_encounter.combat_ended_at and
             not self.current_encounter.finalized and self.current_encounter.players):
             self.current_encounter.finalized = True
             self._display_encounter_summary(self.current_zone)
@@ -1735,18 +1740,26 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
             
-            # Track death events
-            if combat_event_type == 'DIED_XP':
-                # Check if it's a player death by looking up the dying unit ID in known players
-                # DIED_XP format: timestamp,COMBAT_EVENT,DIED_XP,damageType,powerType,hitValue,overflow,castTrackId,abilityId,sourceUnitState,targetUnitState
-                # After parsing: fields[0]=DIED_XP, fields[1]=damageType, ..., fields[7]=sourceUnitId, fields[17]=dyingUnitId
-                dying_unit_id = entry.fields[17] if len(entry.fields) > 17 else ""
-                if (self.current_encounter and 
-                    self.current_encounter.find_player_by_unit_id(dying_unit_id)):
+            # Track death events.
+            # Player deaths arrive as DIED; DIED_XP is an enemy death that
+            # grants XP (its dying unit is the monster, never a player).
+            if combat_event_type in ('DIED', 'DIED_XP'):
+                # Dying unit is the target unit-state block (fields[17]);
+                # a '*' target means self-inflicted: dying unit is the
+                # source (fields[7]).
+                if len(entry.fields) > 17 and entry.fields[-1] != '*':
+                    dying_unit_id = str(entry.fields[17])
+                elif len(entry.fields) > 7:
+                    dying_unit_id = str(entry.fields[7])
+                else:
+                    dying_unit_id = ""
+                if (combat_event_type == 'DIED' and self.current_encounter and
+                        self.current_encounter.find_player_by_unit_id(dying_unit_id)):
                     self.zone_deaths += 1
-                
+                    self.fight_deaths += 1
+
                 # If it's a hostile enemy death, mark it as damaged by players
-                elif (self.current_encounter and 
+                elif (self.current_encounter and
                       dying_unit_id in self.current_encounter.enemies):
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
@@ -2798,7 +2811,7 @@ class ESOLogAnalyzer(ListenerMixin):
         duration = (enc.end_time - enc.start_time) / 1000.0
         entry.duration_s = duration
         entry.group_dps = enc.total_damage / duration if duration > 0 and enc.total_damage > 0 else 0
-        entry.deaths = self.zone_deaths
+        entry.deaths = self.fight_deaths  # this fight's player deaths
         entry.first_damage_dealer = enc.first_damage_dealer
 
         # EXPERIMENTAL buff/debuff timeline (None whenever the gate is off)

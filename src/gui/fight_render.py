@@ -95,7 +95,11 @@ def render_html(entry, detailed: bool, dark: bool = False) -> str:
         f" &nbsp;·&nbsp; Group DPS {_fmt_dps(entry.group_dps)}"
         f" &nbsp;·&nbsp; Deaths {entry.deaths}</p>",
     ]
-    if entry.buff_summary:
+    # Text uptime line only when there is no timeline strip to show it
+    # (the graph carries the uptimes when the experiment is on)
+    has_timeline = bool(getattr(entry, "buff_timeline", None)
+                        and entry.buff_timeline.get("effects"))
+    if entry.buff_summary and not has_timeline:
         parts.append(f"<p style='margin:2px 0'>{e(_join(entry.buff_summary))}</p>")
 
     parts.append("<table cellpadding='3' cellspacing='0' width='100%'>")

@@ -22,6 +22,7 @@ TRACKED_TIMELINE_EFFECTS: Dict[str, set] = {
     # 61745 is the primary aura in live logs; 263306/36973 are alternate
     # applicators; 62195 kept for older logs
     "Major Berserk": {"61745", "263306", "36973", "62195"},
+    "Powerful Assault": {"61771"},
     "Major Vulnerability": {"106754", "122389", "167061"},
 }
 

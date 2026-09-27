@@ -68,7 +68,7 @@ At startup the app checks GitHub for a newer release (Settings → Updates to di
 
 ### Experimental: buff timeline
 
-Settings → Experimental → *Buff timeline* (off by default) adds a very compact strip above each fight summary: one thin colored line per tracked effect — Major Slayer, Major Force, Major Courage, Major Berserk, and Major Vulnerability — filled where the effect was active, with time tick marks. Hover a segment to see who cast it and who received it. Rows for effects that never occurred are omitted, and the strip disappears entirely when there's nothing to show, so it stays out of the way of the fight summary. Being experimental, its look and behavior may change or it may be removed.
+Settings → Experimental → *Buff timeline* (off by default) adds a very compact strip above each fight summary: one thin colored line per tracked effect — Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, and Major Vulnerability — filled where the effect was active, with the effect's uptime % in its label and time tick marks. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. When the strip is shown it replaces the text uptime line on the fight header; rows for effects that never occurred are omitted, and the strip disappears entirely when there's nothing to show. Being experimental, its look and behavior may change or it may be removed.
 
 ## Automatic log archiving
 

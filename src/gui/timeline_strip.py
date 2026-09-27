@@ -1,31 +1,51 @@
 """
 EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
 
-One thin colored row per tracked effect across the fight duration, with time
-tick marks and hover tooltips naming caster and receiver. Deliberately tiny:
-it must never crowd the fight summary. Hidden entirely when the displayed
-fight carries no timeline data (experiment off, or nothing tracked).
+One thin colored row per tracked effect across the fight duration, with the
+effect's uptime % in its label, time tick marks, and hover tooltips naming
+caster and receiver. A group buff that only ever reached one or two
+receivers renders dotted rather than solid (Major Vulnerability is exempt:
+it targets the boss, so a single receiver is its normal case).
+
+Deliberately tiny: it must never crowd the fight summary. Hidden entirely
+when the displayed fight carries no timeline data.
 """
 
 from PySide6.QtCore import QEvent, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
-                "Major Berserk", "Major Vulnerability"]
+                "Major Berserk", "Powerful Assault", "Major Vulnerability"]
 
 EFFECT_COLORS = {
     "Major Slayer": QColor("#e57373"),
     "Major Force": QColor("#64b5f6"),
     "Major Courage": QColor("#ffd54f"),
     "Major Berserk": QColor("#ba68c8"),
+    "Powerful Assault": QColor("#ff8a65"),
     "Major Vulnerability": QColor("#4db6ac"),
 }
+
+EFFECT_SHORT = {
+    "Major Slayer": "M.Slayer",
+    "Major Force": "M.Force",
+    "Major Courage": "M.Courage",
+    "Major Berserk": "M.Berserk",
+    "Powerful Assault": "PA",
+    "Major Vulnerability": "M.Vuln",
+}
+
+# Effects whose normal case is a single receiver (never rendered dotted)
+SINGLE_TARGET_EFFECTS = {"Major Vulnerability"}
+
+# A group buff reaching at most this many distinct receivers renders dotted
+SPARSE_RECEIVER_LIMIT = 2
 
 ROW_HEIGHT = 10
 ROW_GAP = 2
 AXIS_HEIGHT = 14
-LABEL_WIDTH = 92
+LABEL_WIDTH = 120
 MARGIN = 4
 
 
@@ -46,13 +66,31 @@ def _fmt_tick(ms: int) -> str:
     return f"{total}s"
 
 
+def uptime_pct(intervals, duration_ms: int) -> int:
+    """Union coverage of intervals as a whole percentage of the fight."""
+    if duration_ms <= 0 or not intervals:
+        return 0
+    spans = sorted((iv["start_ms"], iv["end_ms"]) for iv in intervals)
+    covered = 0
+    cur_start, cur_end = spans[0]
+    for start, end in spans[1:]:
+        if start <= cur_end:
+            cur_end = max(cur_end, end)
+        else:
+            covered += cur_end - cur_start
+            cur_start, cur_end = start, end
+    covered += cur_end - cur_start
+    return min(100, round(100 * covered / duration_ms))
+
+
 class TimelineStrip(QWidget):
     """Paints the per-fight effect timeline; hover shows attribution."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._timeline = None
-        self._rows = []  # ordered effect names present in the timeline
+        self._rows = []       # ordered effect names present in the timeline
+        self._row_info = {}   # effect -> {'uptime_pct': int, 'dotted': bool}
         self.setVisible(False)
 
     # ---- data ----
@@ -64,6 +102,17 @@ class TimelineStrip(QWidget):
         self._timeline = timeline if valid else None
         self._rows = ([e for e in EFFECT_ORDER if e in timeline["effects"]]
                       if valid else [])
+        self._row_info = {}
+        if valid:
+            duration = timeline["duration_ms"]
+            for effect in self._rows:
+                intervals = timeline["effects"][effect]
+                receivers = {iv.get("target") for iv in intervals}
+                self._row_info[effect] = {
+                    "uptime_pct": uptime_pct(intervals, duration),
+                    "dotted": (effect not in SINGLE_TARGET_EFFECTS
+                               and len(receivers) <= SPARSE_RECEIVER_LIMIT),
+                }
         self.setVisible(bool(self._rows))
         self.updateGeometry()
         self.update()
@@ -131,22 +180,33 @@ class TimelineStrip(QWidget):
 
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
-            # Label
+            info = self._row_info.get(effect, {})
+            # Label with uptime %
             painter.setPen(dim)
+            label = (f"{EFFECT_SHORT.get(effect, effect)} "
+                     f"{info.get('uptime_pct', 0)}%")
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
-                             Qt.AlignRight | Qt.AlignVCenter,
-                             effect.replace("Major ", "M."))
+                             Qt.AlignRight | Qt.AlignVCenter, label)
             # Track background
             painter.fillRect(rect, track_bg)
-            # Fill segments
+            # Fill segments (dotted when the buff reached <=2 receivers)
             color = EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
+            dotted = info.get("dotted", False)
             for interval in effects[effect]:
                 x0 = self._x_for_ms(interval["start_ms"])
                 x1 = self._x_for_ms(interval["end_ms"])
-                painter.fillRect(QRectF(x0, rect.top(),
-                                        max(1.0, x1 - x0), rect.height()),
-                                 color)
+                if dotted:
+                    pen = QPen(color, max(2.0, ROW_HEIGHT - 4.0),
+                               Qt.DotLine, Qt.FlatCap)
+                    painter.setPen(pen)
+                    mid_y = rect.center().y()
+                    painter.drawLine(int(x0), int(mid_y),
+                                     int(max(x0 + 1, x1)), int(mid_y))
+                else:
+                    painter.fillRect(QRectF(x0, rect.top(),
+                                            max(1.0, x1 - x0), rect.height()),
+                                     color)
 
         # Axis with tick marks
         track = self._track_rect()
@@ -172,7 +232,7 @@ class TimelineStrip(QWidget):
     # ---- hover attribution ----
 
     def _intervals_at(self, pos):
-        """(effect, [intervals active at pos's time]) or None."""
+        """(effect, ms, [intervals active at pos's time]) or None."""
         if not self._timeline:
             return None
         for row, effect in enumerate(self._rows):
@@ -192,7 +252,9 @@ class TimelineStrip(QWidget):
             if found:
                 effect, ms, hits = found
                 if hits:
-                    lines = [f"<b>{effect}</b> @ {_fmt_tick(ms)}"]
+                    info = self._row_info.get(effect, {})
+                    lines = [f"<b>{effect}</b> @ {_fmt_tick(ms)}"
+                             f" &nbsp;·&nbsp; uptime {info.get('uptime_pct', 0)}%"]
                     for iv in hits:
                         lines.append(
                             f"{_fmt_tick(iv['start_ms'])}–{_fmt_tick(iv['end_ms'])}"

@@ -167,6 +167,20 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertIn('@brainsnorkel', text_out)
         self.assertNotIn("['", text_out)
 
+    def test_buff_summary_text_suppressed_when_timeline_present(self):
+        from fight_history import FightHistoryEntry
+        from gui.fight_render import render_html
+        entry = FightHistoryEntry()
+        entry.zone_name = 'Coral Aerie'
+        entry.buff_summary = 'MCourage:87% Mslayer:48%'
+        # No timeline: text uptimes shown as fallback
+        self.assertIn('MCourage:87%', render_html(entry, detailed=False))
+        # Timeline present: the graph replaces the text line
+        entry.buff_timeline = {'duration_ms': 60_000, 'effects': {
+            'Major Courage': [{'start_ms': 0, 'end_ms': 1000,
+                               'source': 'a', 'target': 'b'}]}}
+        self.assertNotIn('MCourage:87%', render_html(entry, detailed=False))
+
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
 class TestMainWindowStates(GuiTestCase):

@@ -80,6 +80,12 @@ class TestRecorder(unittest.TestCase):
         snap = self.rec.snapshot_fight(0, 60_000, _names)
         self.assertEqual(len(snap['effects']['Major Force']), 2)
 
+    def test_powerful_assault_tracked(self):
+        self.rec.record('GAINED', '61771', '1', '2', 10_000)
+        self.rec.record('FADED', '61771', '1', '2', 20_000)
+        snap = self.rec.snapshot_fight(0, 60_000, _names)
+        self.assertIn('Powerful Assault', snap['effects'])
+
     def test_multiple_ability_ids_map_to_one_effect(self):
         for ability_id in ('106754', '122389', '167061'):
             self.rec.record('GAINED', ability_id, '1', '70', 10_000)

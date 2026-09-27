@@ -70,14 +70,43 @@ class TestTimelineStrip(unittest.TestCase):
                          ["Major Force", "Major Vulnerability"])
 
     def test_compact_height_bound(self):
-        """Spec: strip stays compact even with all five effects active."""
+        """Spec: strip stays compact even with all six effects active."""
         timeline = _sample_timeline()
-        for effect in ("Major Slayer", "Major Courage", "Major Berserk"):
+        for effect in ("Major Slayer", "Major Courage", "Major Berserk",
+                       "Powerful Assault"):
             timeline["effects"][effect] = [
                 {"start_ms": 0, "end_ms": 1_000, "source": "a", "target": "b"}]
         self.strip.set_timeline(timeline)
-        self.assertEqual(len(self.strip._rows), 5)
-        self.assertLessEqual(self.strip.sizeHint().height(), 90)
+        self.assertEqual(len(self.strip._rows), 6)
+        self.assertLessEqual(self.strip.sizeHint().height(), 100)
+
+    def test_uptime_percentages(self):
+        from gui.timeline_strip import uptime_pct
+        # Two overlapping intervals 10-20s and 15-30s = 20s union of 60s
+        self.strip.set_timeline(_sample_timeline())
+        self.assertEqual(self.strip._row_info["Major Force"]["uptime_pct"], 33)
+        # Vulnerability covers 5-60s = 55/60
+        self.assertEqual(
+            self.strip._row_info["Major Vulnerability"]["uptime_pct"], 92)
+        # Direct function checks
+        self.assertEqual(uptime_pct([], 60_000), 0)
+        self.assertEqual(uptime_pct(
+            [{"start_ms": 0, "end_ms": 60_000}], 60_000), 100)
+
+    def test_dotted_for_sparse_receivers(self):
+        timeline = _sample_timeline()
+        # Force reaches 2 distinct receivers -> dotted
+        self.strip.set_timeline(timeline)
+        self.assertTrue(self.strip._row_info["Major Force"]["dotted"])
+        # Vulnerability is single-target by nature -> never dotted
+        self.assertFalse(
+            self.strip._row_info["Major Vulnerability"]["dotted"])
+        # A buff reaching 3+ receivers renders solid
+        timeline["effects"]["Major Courage"] = [
+            {"start_ms": 0, "end_ms": 10_000, "source": "@h", "target": f"@p{i}"}
+            for i in range(4)]
+        self.strip.set_timeline(timeline)
+        self.assertFalse(self.strip._row_info["Major Courage"]["dotted"])
 
     def test_paint_smoke(self):
         from PySide6.QtGui import QPixmap
