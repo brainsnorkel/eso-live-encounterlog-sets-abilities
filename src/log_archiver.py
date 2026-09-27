@@ -205,15 +205,20 @@ class LogArchiver(ListenerMixin):
             return None
 
         archive_path = None
+        partial_path = None
         try:
             total = log_path.stat().st_size
             archive_path = planned_target
+            # Write to a .partial name and rename only after verification:
+            # an interrupted run (app killed mid-zip) must never leave a
+            # plausible-looking .zip behind.
+            partial_path = archive_path.with_name(archive_path.name + ".partial")
             self._notify('on_archive_event', ArchiveEvent(
                 kind="started", log_path=log_path, archive_path=archive_path,
                 total_bytes=total))
 
             done = 0
-            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED,
+            with zipfile.ZipFile(partial_path, "w", zipfile.ZIP_DEFLATED,
                                  allowZip64=True) as zf:
                 info = zipfile.ZipInfo(log_path.name,
                                        date_time=time.localtime()[:6])
@@ -231,15 +236,19 @@ class LogArchiver(ListenerMixin):
                             done_bytes=done, total_bytes=total))
 
             # Verify: zip integrity plus exact size match against the source
-            if not self._verify(archive_path, log_path.name, total):
+            if not self._verify(partial_path, log_path.name, total):
                 try:
-                    archive_path.unlink()
+                    partial_path.unlink()
                 except OSError:
                     pass
                 self._notify('on_archive_event', ArchiveEvent(
                     kind="failed", log_path=log_path, archive_path=archive_path,
                     reason="archive verification failed; original kept"))
                 return None
+
+            # Verified: give the archive its final name
+            partial_path.replace(archive_path)
+            partial_path = None
 
             # Original file: kept unless deletion was opted in. Deletion goes
             # through the exclusive handle (delete-on-close): no other process
@@ -258,9 +267,9 @@ class LogArchiver(ListenerMixin):
             return archive_path
 
         except Exception as exc:
-            if archive_path is not None:
+            if partial_path is not None:
                 try:
-                    archive_path.unlink()
+                    partial_path.unlink()
                 except OSError:
                     pass
             self._notify('on_archive_event', ArchiveEvent(
