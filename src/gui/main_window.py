@@ -133,10 +133,12 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.freshness_label)
         self.zone_label = QLabel("")
         self.statusBar().addWidget(self.zone_label)
-        self.archive_progress = QProgressBar()
-        self.archive_progress.setMaximumWidth(220)
-        self.archive_progress.setVisible(False)
-        self.statusBar().addPermanentWidget(self.archive_progress)
+        # Shared work-progress bar (archiving, review parsing, catch-up);
+        # the worker thread serializes these, so one bar can't be contended
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumWidth(220)
+        self.progress_bar.setVisible(False)
+        self.statusBar().addPermanentWidget(self.progress_bar)
 
         self._ticker = QTimer(self)
         self._ticker.setInterval(1000)
@@ -158,6 +160,7 @@ class MainWindow(QMainWindow):
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.review_loaded.connect(self._on_review_loaded)
+        self.worker.parse_progress.connect(self._on_parse_progress)
 
         self.request_archive.connect(self.worker.archive_now)
         self.request_restart.connect(self.worker.restart_monitoring)
@@ -211,22 +214,45 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def _on_archive_event(self, event):
         if event.kind == "started":
-            self.archive_progress.setVisible(True)
-            self.archive_progress.setRange(0, 1000)
-            self.archive_progress.setValue(0)
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 1000)
+            self.progress_bar.setValue(0)
             self.statusBar().showMessage("Archiving Encounter.log…")
         elif event.kind == "progress":
             if event.total_bytes:
-                self.archive_progress.setValue(
+                self.progress_bar.setValue(
                     int(1000 * event.done_bytes / event.total_bytes))
         elif event.kind == "completed":
-            self.archive_progress.setVisible(False)
+            self.progress_bar.setVisible(False)
             deleted = " — original deleted" if event.original_deleted else ""
             self.statusBar().showMessage(
                 f"Archived to {event.archive_path}{deleted}", 15000)
         elif event.kind in ("skipped", "failed"):
-            self.archive_progress.setVisible(False)
+            self.progress_bar.setVisible(False)
             self.statusBar().showMessage(f"Archive {event.kind}: {event.reason}", 15000)
+
+    @Slot(str, int, int)
+    def _on_parse_progress(self, label, done, total):
+        """Progress for review parsing and live catch-up work.
+
+        total == 0 -> indeterminate busy marquee; done >= total > 0 -> done.
+        """
+        if total > 0 and done >= total:
+            self.progress_bar.setVisible(False)
+            # Only clear our own label: a completion message (e.g. "Loaded
+            # N fights") may already have replaced it
+            if label and self.statusBar().currentMessage().startswith(label):
+                self.statusBar().clearMessage()
+            return
+        self.progress_bar.setVisible(True)
+        if total <= 0:
+            self.progress_bar.setRange(0, 0)  # busy animation
+        else:
+            self.progress_bar.setRange(0, 1000)
+            self.progress_bar.setValue(int(1000 * done / total))
+        if label:
+            pct = f"  {100 * done // total}%" if total > 0 else ""
+            self.statusBar().showMessage(f"{label}{pct}")
 
     @Slot(str)
     def _on_diagnostic(self, message):

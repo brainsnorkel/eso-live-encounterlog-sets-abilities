@@ -57,6 +57,9 @@ class EngineWorker(QObject):
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
     review_loaded = Signal(str, list)  # path, [FightHistoryEntry]
+    # Parsing/import progress: (label, done_bytes, total_bytes).
+    # total == 0 -> indeterminate busy; done >= total > 0 -> finished (hide).
+    parse_progress = Signal(str, int, int)
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -139,9 +142,14 @@ class EngineWorker(QObject):
 
     # ---- timers ----
 
+    # Backlogs above this show a busy indicator while catching up
+    CATCHUP_BUSY_BYTES = 8 * 1024 * 1024
+    _CATCHUP_LABEL = "Catching up on new log data…"
+
     def _poll(self):
         if self.monitor is None:
             return
+        busy = False
         try:
             if not self.monitor.log_file.exists():
                 # Log vanished (rotated/deleted): fall back to waiting
@@ -152,9 +160,15 @@ class EngineWorker(QObject):
             if size < self.monitor.last_position:
                 # Truncated/replaced: start over from the beginning
                 self.monitor.last_position = 0
+            if size - self.monitor.last_position > self.CATCHUP_BUSY_BYTES:
+                busy = True
+                self.parse_progress.emit(self._CATCHUP_LABEL, 0, 0)
             self.monitor._process_new_lines()
         except Exception as exc:
             self.diagnostic.emit(f"poll error: {exc}")
+        finally:
+            if busy:
+                self.parse_progress.emit(self._CATCHUP_LABEL, 1, 1)  # hide
 
     def _check_log_appeared(self):
         self._log_path = resolve_log_path(self.config)
@@ -192,12 +206,26 @@ class EngineWorker(QObject):
     def open_review(self, path: str):
         """Replay an arbitrary log file and hand its fights to the UI."""
         review_path = Path(path)
+        label = f"Parsing {review_path.name}"
         try:
+            total = review_path.stat().st_size
+            # Emit at most ~200 updates (and no more than one per MB)
+            step = max(1024 * 1024, total // 200)
+            done = 0
+            last_emit = 0
+            self.parse_progress.emit(label, 0, total)
+
             analyzer = build_analyzer(self.config, [])
             analyzer.save_reports = False
             analyzer.current_log_file = str(review_path)
             with open(review_path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
+                    # Char length approximates byte length for these logs;
+                    # progress is clamped to total either way
+                    done += len(line)
+                    if done - last_emit >= step:
+                        last_emit = done
+                        self.parse_progress.emit(label, min(done, total), total)
                     line = line.strip()
                     if not line:
                         continue
@@ -209,3 +237,5 @@ class EngineWorker(QObject):
         except Exception as exc:
             self.diagnostic.emit(f"Review failed for {review_path}: {exc}")
             self.review_loaded.emit(str(review_path), [])
+        finally:
+            self.parse_progress.emit(label, 1, 1)  # hide

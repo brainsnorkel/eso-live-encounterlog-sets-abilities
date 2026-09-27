@@ -258,16 +258,60 @@ class TestMainWindowStates(GuiTestCase):
         win = self._window()
         try:
             win._on_archive_event(ArchiveEvent(kind='started', total_bytes=100))
-            self.assertTrue(win.archive_progress.isVisibleTo(win))
+            self.assertTrue(win.progress_bar.isVisibleTo(win))
             win._on_archive_event(ArchiveEvent(kind='progress', done_bytes=50,
                                                total_bytes=100))
-            self.assertEqual(win.archive_progress.value(), 500)
+            self.assertEqual(win.progress_bar.value(), 500)
             win._on_archive_event(ArchiveEvent(kind='completed',
                                                archive_path=Path('x.zip'),
                                                done_bytes=100, total_bytes=100))
-            self.assertFalse(win.archive_progress.isVisibleTo(win))
+            self.assertFalse(win.progress_bar.isVisibleTo(win))
         finally:
             win.close()
+
+    def test_parse_progress_drives_progress_bar(self):
+        win = self._window()
+        try:
+            # Determinate parsing progress
+            win._on_parse_progress('Parsing x.log', 0, 1000)
+            self.assertTrue(win.progress_bar.isVisibleTo(win))
+            win._on_parse_progress('Parsing x.log', 500, 1000)
+            self.assertEqual(win.progress_bar.value(), 500)
+            self.assertIn('50%', win.statusBar().currentMessage())
+            # Completion hides the bar and clears only the parsing label
+            win._on_parse_progress('Parsing x.log', 1000, 1000)
+            self.assertFalse(win.progress_bar.isVisibleTo(win))
+            self.assertEqual(win.statusBar().currentMessage(), '')
+            # A later completion message survives the hide event
+            win.statusBar().showMessage('Loaded 10 fights from x.log', 8000)
+            win._on_parse_progress('Parsing x.log', 1000, 1000)
+            self.assertEqual(win.statusBar().currentMessage(),
+                             'Loaded 10 fights from x.log')
+            # Indeterminate busy (catch-up)
+            win._on_parse_progress('Catching up…', 0, 0)
+            self.assertTrue(win.progress_bar.isVisibleTo(win))
+            self.assertEqual(win.progress_bar.maximum(), 0)  # marquee mode
+            win._on_parse_progress('Catching up…', 1, 1)
+            self.assertFalse(win.progress_bar.isVisibleTo(win))
+        finally:
+            win.close()
+
+    def test_review_emits_parse_progress(self):
+        worker = self._worker()
+        events = []
+        worker.parse_progress.connect(lambda l, d, t: events.append((l, d, t)))
+        loaded = {}
+        worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
+        worker.open_review(str(FIXTURE_LOG))
+        _app.processEvents()
+        self.assertTrue(loaded['fights'])
+        self.assertGreaterEqual(len(events), 2)
+        first_label, first_done, first_total = events[0]
+        self.assertIn('golden_fight.log', first_label)
+        self.assertEqual(first_done, 0)
+        self.assertEqual(first_total, FIXTURE_LOG.stat().st_size)
+        last_label, last_done, last_total = events[-1]
+        self.assertGreaterEqual(last_done, last_total)  # hide event
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
