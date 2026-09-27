@@ -35,7 +35,7 @@
 - [x] 5.1 Replace the onefile CLI target in `esolog-tail.spec` with an `esolog-gui` onedir windowed target (icon, Qt module exclusions); verify a local build launches from `dist/`
 - [x] 5.2 Write `installer/esolog-gui.iss` (per-user install, Start Menu + optional Desktop shortcut, uninstaller, stable AppId, version from `src/version.py`); verify `iscc` compiles it and the setup exe installs, launches, and uninstalls
 - [x] 5.3 Verify in-place upgrade: build two installer versions, install N then N+1, confirm replacement install with working shortcuts and preserved JSON config
-- [ ] 5.4 Rework `.github/workflows/build-installers.yml`: Windows job builds GUI target, compiles installer, zips a portable build, attaches both to releases; remove macOS/Linux jobs; verify via workflow_dispatch run that artifacts match the installer-packaging spec
+- [x] 5.4 Rework `.github/workflows/build-installers.yml`: Windows job builds GUI target, compiles installer, zips a portable build, attaches both to releases; remove macOS/Linux jobs; verify via workflow_dispatch run that artifacts match the installer-packaging spec
 
 ## 6. Cleanup, Docs & Final Integration
 
