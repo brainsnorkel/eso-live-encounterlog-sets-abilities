@@ -267,6 +267,43 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_live_theme_switch_rerenders_with_dark_colors(self):
+        """System dark-mode switches mid-session must re-render content."""
+        from datetime import datetime, timedelta
+        from PySide6.QtGui import QColor, QPalette
+        from engine_events import LogStatus
+        from gui.fight_render import muted_color
+        from gui.main_window import state_style
+        win = self._window()
+        try:
+            self.assertFalse(win._dark)  # offscreen default palette is light
+            win._show_placeholder('theme test')
+            win._on_log_status(LogStatus(
+                log_path=self.log, size_bytes=1,
+                latest_entry_time=datetime.now() - timedelta(minutes=45),
+                source='exact'))
+
+            palette = QPalette()
+            for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+                palette.setColor(group, QPalette.Window, QColor('#1e1e1e'))
+                palette.setColor(group, QPalette.WindowText, QColor('#eeeeee'))
+            win.setPalette(palette)
+            win._on_theme_maybe_changed()
+
+            self.assertTrue(win._dark)
+            # Placeholder re-rendered with the dark-theme muted color
+            self.assertIn(muted_color(True), win.fight_view.toHtml())
+            # Freshness state color switched to the dark-theme variant
+            self.assertEqual(win.freshness_label.styleSheet(),
+                             state_style('stale', True))
+            # Flipping back re-renders light again
+            win.setPalette(QPalette())
+            win._on_theme_maybe_changed()
+            self.assertFalse(win._dark)
+            self.assertIn(muted_color(False), win.fight_view.toHtml())
+        finally:
+            win.close()
+
     def test_archive_events_drive_progress_bar(self):
         from engine_events import ArchiveEvent
         win = self._window()

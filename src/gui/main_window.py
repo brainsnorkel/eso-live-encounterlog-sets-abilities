@@ -58,11 +58,42 @@ class MainWindow(QMainWindow):
         self._detailed = True
         self._last_status = None
         self._follow_live = True
+        self._last_placeholder = ""
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
         self._build_ui()
         self._build_worker()
+
+        # Follow live theme switches (e.g. Windows auto dark mode after
+        # sunset): rendered HTML embeds theme colors, so it must re-render
+        try:
+            QGuiApplication.styleHints().colorSchemeChanged.connect(
+                lambda *_: self._on_theme_maybe_changed())
+        except AttributeError:
+            pass  # older Qt: changeEvent still covers palette changes
+
+    def changeEvent(self, event):
+        from PySide6.QtCore import QEvent
+        if event.type() in (QEvent.PaletteChange, QEvent.ThemeChange,
+                            QEvent.ApplicationPaletteChange):
+            self._on_theme_maybe_changed()
+        super().changeEvent(event)
+
+    def _on_theme_maybe_changed(self):
+        dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        if dark == self._dark:
+            return
+        self._dark = dark
+        # Re-render everything that bakes theme colors into its output
+        self._refresh_freshness_label()
+        self.timeline_strip.update()
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if 0 <= row < len(fights):
+            self._show_fight(row)
+        elif self._last_placeholder:
+            self._show_placeholder(self._last_placeholder)
 
     # ---- UI construction ----
 
@@ -406,6 +437,7 @@ class MainWindow(QMainWindow):
                                             dark=self._dark))
 
     def _show_placeholder(self, html_text):
+        self._last_placeholder = html_text
         self.timeline_strip.set_timeline(None)
         self.fight_view.setHtml(
             f"<div style='color:{muted_color(self._dark)};padding:16px'>"
