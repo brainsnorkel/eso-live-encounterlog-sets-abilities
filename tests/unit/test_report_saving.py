@@ -384,13 +384,15 @@ class TestReportSaving(unittest.TestCase):
                 # Save report
                 self.analyzer._save_report_to_file()
             
-            # Find the report file
+            # A report named for this zone/difficulty must now exist.
+            # (Do NOT pick "the latest" by mtime: Windows file-time
+            # granularity makes rapid successive writes tie, and the
+            # tiebreak then lands on an alphabetically earlier file.)
             report_files = list(self.reports_dir.glob("*.txt"))
-            self.assertGreater(len(report_files), 0)
-            
-            # Check the most recent file
-            latest_file = max(report_files, key=lambda f: f.stat().st_mtime)
-            self.assertIn(expected_name, latest_file.name)
+            self.assertTrue(
+                any(expected_name in f.name for f in report_files),
+                f"no report matching {expected_name!r} among "
+                f"{[f.name for f in report_files]}")
     
     def test_report_buffer_clearing(self):
         """Test that report buffer is properly managed."""
