@@ -255,12 +255,16 @@ class MainWindow(QMainWindow):
 
     @Slot(str, list)
     def _on_review_loaded(self, path, fights):
+        self.statusBar().clearMessage()  # replaces the persistent "Loading…"
         if not fights:
             QMessageBox.information(self, "Review",
                                     f"No completed fights found in\n{path}")
             return
         self._review_fights = fights
         self._review_path = path
+        self.statusBar().showMessage(
+            f"Loaded {len(fights)} fight{'s' if len(fights) != 1 else ''} "
+            f"from {path}", 8000)
         self.banner.setText(f"Reviewing {path} — live monitoring continues in "
                             f"the background")
         self.banner.setVisible(True)
