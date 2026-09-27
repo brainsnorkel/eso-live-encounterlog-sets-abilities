@@ -248,11 +248,17 @@ class TestReportSaving(unittest.TestCase):
         
         # Add content to buffer
         analyzer.report_buffer = ["Test report content"]
-        
-        # This should exit with sys.exit(1) for permission errors
-        with self.assertRaises(SystemExit):
-            analyzer._save_report_to_file()
-        
+
+        # The engine must never crash the app on a report-save failure:
+        # it should swallow the error and keep monitoring. (os.chmod does not
+        # make directories read-only on Windows, so force the failure.)
+        from unittest.mock import patch
+        with patch('builtins.open', side_effect=PermissionError("denied")):
+            try:
+                analyzer._save_report_to_file()
+            except (SystemExit, PermissionError):
+                self.fail("_save_report_to_file must not raise on permission errors")
+
         # Restore permissions for cleanup
         if hasattr(os, 'chmod'):
             os.chmod(read_only_dir, 0o755)

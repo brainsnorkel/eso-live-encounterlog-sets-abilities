@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 """
-ESO Encounter Log Analyzer
-A CLI tool that continuously monitors ESO encounter logs and analyzes combat encounters.
+ESO Encounter Log Analyzer engine.
+
+Monitors ESO encounter logs and analyzes combat encounters. This module is
+presentation-free: results are emitted through the AnalyzerListener interface
+(see engine_events.py) for the GUI frontend and tests to consume.
 """
 
-# Quick version check before any imports
-import sys
-if len(sys.argv) > 1 and sys.argv[1] in ['-v', '--version']:
-    try:
-        from version import __version__
-        print(f"ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}")
-        print(f"Repository: https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities")
-        print(f"License: MIT")
-        sys.exit(0)
-    except ImportError:
-        pass
 
 import os
 import sys
@@ -23,19 +15,41 @@ import csv
 import io
 import re
 import hashlib
-import subprocess
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime
-import click
-import requests
-from colorama import init, Fore, Style
 from gear_set_database_optimized import gear_set_db
+from fight_history import FightHistory, FightHistoryEntry
+from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
+from log_freshness import parse_relative_ms, status_from_tracking
+from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 
 
-# Initialize colorama for cross-platform colored output
-init()
+class _PlainAnsi:
+    """No-op stand-in for colorama: every attribute is an empty string.
+
+    Legacy format strings reference Fore/Style heavily; with no terminal
+    frontend the codes are dead weight, and reports were already saved
+    ANSI-stripped.
+    """
+    def __getattr__(self, name):
+        return ''
+
+
+Fore = _PlainAnsi()
+Style = _PlainAnsi()
+
+
+def _console(*args, **kwargs):
+    """Best-effort console output for diagnostics.
+
+    Safe in windowed (no-console) builds where stdout may be unusable.
+    """
+    try:
+        print(*args, **kwargs)
+    except Exception:
+        pass
 
 from version import __version__
 
@@ -319,513 +333,6 @@ def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing
             return 'H'
         return 'D'
     return 'D'
-
-
-class FightHistoryEntry:
-    """Compact summary of a completed fight for TUI display."""
-    __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
-                 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
-                 'trial_info', 'ended_at', 'boss_name']
-
-    def __init__(self):
-        self.timestamp = ""
-        self.ended_at = 0.0  # time.time() when fight ended, for elapsed timer
-        self.zone_name = ""
-        self.is_vet = False
-        self.duration_s = 0.0
-        self.group_dps = 0.0
-        self.deaths = 0
-        self.players = []  # dicts with keys: role, name, class_abbr, dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar
-        self.buff_summary = ""
-        self.first_damage_dealer = None
-        self.trial_info = None
-        self.boss_name = ""
-
-
-class FightHistory:
-    """Unbounded list of completed fight summaries."""
-
-    def __init__(self):
-        self.fights = []
-        self.cursor = 0
-        self._live = True
-
-    def append(self, entry: FightHistoryEntry):
-        self.fights.append(entry)
-        if self._live:
-            self.cursor = len(self.fights) - 1
-
-    def current(self):
-        if not self.fights:
-            return None
-        if self._live:
-            return self.fights[-1]
-        return self.fights[self.cursor]
-
-    def scroll_up(self):
-        if not self.fights:
-            return
-        # Single-entry history: nothing to scroll to, stay live
-        if len(self.fights) <= 1:
-            return
-        if self._live:
-            self._live = False
-            self.cursor = len(self.fights) - 2
-        elif self.cursor > 0:
-            self.cursor -= 1
-
-    def scroll_down(self):
-        if not self.fights:
-            return
-        if self._live:
-            return
-        if self.cursor < len(self.fights) - 1:
-            self.cursor += 1
-        if self.cursor == len(self.fights) - 1:
-            self._live = True
-
-    def snap_to_latest(self):
-        self._live = True
-        if self.fights:
-            self.cursor = len(self.fights) - 1
-
-    @property
-    def is_live(self):
-        return self._live
-
-    @property
-    def display_index(self):
-        if self.cursor == -1:
-            return len(self.fights)
-        return self.cursor + 1
-
-    @property
-    def total(self):
-        return len(self.fights)
-
-
-class TuiDisplay:
-    """Full-screen curses TUI for displaying fight summaries."""
-
-    def __init__(self):
-        self.stdscr = None
-        self.active = False
-        self.detail_mode = False  # Toggle for expanded detail view
-        self.detail_scroll = 0    # Scroll offset for detail/compact views
-        self.flash_message = ""   # Transient message shown on the status bar
-        self.flash_until = 0.0    # Monotonic deadline after which flash clears
-
-    def start(self):
-        """Initialize curses."""
-        try:
-            import curses
-            self.stdscr = curses.initscr()
-            curses.noecho()
-            curses.cbreak()
-            self.stdscr.keypad(True)
-            self.stdscr.nodelay(True)
-            curses.start_color()
-            curses.use_default_colors()
-            curses.init_pair(1, curses.COLOR_CYAN, -1)
-            curses.init_pair(2, curses.COLOR_YELLOW, -1)
-            curses.init_pair(3, curses.COLOR_GREEN, -1)
-            curses.init_pair(4, curses.COLOR_RED, -1)
-            curses.init_pair(5, curses.COLOR_MAGENTA, -1)
-            self.active = True
-        except Exception:
-            self.active = False
-
-    def stop(self):
-        """Restore terminal."""
-        if self.stdscr:
-            try:
-                import curses
-                self.stdscr.keypad(False)
-                curses.nocbreak()
-                curses.echo()
-                curses.endwin()
-            except Exception:
-                pass
-            self.active = False
-
-    def get_key(self):
-        """Non-blocking key read. Returns key or -1."""
-        if not self.stdscr:
-            return -1
-        try:
-            return self.stdscr.getch()
-        except Exception:
-            return -1
-
-    # Set name abbreviations: substring match (case-insensitive) → short form
-    SET_ABBREVIATIONS = [
-        ("Aegis Caller", "AegisCaller"),
-        ("Alkosh", "Alkosh"),
-        ("Ansuul", "Ansuul"),
-        ("Archdruid", "Archdruid"),
-        ("Azureblight", "AB"),
-        ("Berserking Warrior", "AY"),
-        ("Coral Riptide", "Coral"),
-        ("Corpseburster", "Corpseburster"),
-        ("Crimson Twilight", "Crimson"),
-        ("Deadly Strike", "Deadly"),
-        ("Drake's Rush", "Drakes"),
-        ("Elemental Catalyst", "EC"),
-        ("Elf Bane", "ElfBane"),
-        ("Harpooner", "Kilt"),
-        ("Highland Sentinel", "Highland"),
-        ("Huntsman's Warmask", "Warmask"),
-        ("Jorvuld", "JO"),
-        ("Kazpian", "Kazpian"),
-        ("Lucent Echoes", "LE"),
-        ("Master Architect", "MArchitect"),
-        ("Mechanical Acuity", "Acuity"),
-        ("Null Arca", "NullArca"),
-        ("Noble Duelist", "NobleDuel"),
-        ("Oakensoul", "Oakensoul"),
-        ("Olorime", "Olo"),
-        ("Order's Wrath", "OW"),
-        ("Pearlescent Ward", "Pearlescent"),
-        ("Pearls of Ehlnofey", "Ehlnofey"),
-        ("Pillar of Nirn", "PoN"),
-        ("Pillager", "Pillagers"),
-        ("Powerful Assault", "PA"),
-        ("Relequen", "Relequen"),
-        ("Roaring Opportunist", "RO"),
-        ("Saxhleel", "Saxhleel"),
-        ("Sergeant", "Sergeants"),
-        ("Siroria", "Siroria"),
-        ("Spell Power Cure", "SPC"),
-        ("Sul-Xan", "SulXan"),
-        ("Tide-Born", "Tide-born"),
-        ("Turning Tide", "TT"),
-        ("Velothi", "Velothi"),
-        ("War Machine", "WM"),
-        ("Whorl of the Depths", "Depths"),
-        ("Yolnahkriin", "Yoln"),
-        ("Xoryn's Masterpiece", "Xoryn"),
-        ("Z'en", "Z'ens"),
-    ]
-
-    def _abbreviate_set_name(self, name):
-        """Abbreviate a set name using known abbreviations, falling back to truncation."""
-        name_lower = name.lower()
-        for substring, abbrev in self.SET_ABBREVIATIONS:
-            if substring.lower() in name_lower:
-                return abbrev
-        # Fallback: first 2 words, cap at 12 chars
-        words = name.split()
-        short = ' '.join(words[:2]) if len(words) > 2 else name
-        if len(short) > 12:
-            short = short[:11] + '.'
-        return short
-
-    def _format_sets_compact(self, sets_list):
-        """Format sets for compact display: mythics first, then complete sets, separated by /."""
-        mythics = []
-        others = []
-        for cnt, name, is_mythic in sets_list:
-            short = self._abbreviate_set_name(name)
-            if is_mythic:
-                mythics.append(short)
-            else:
-                others.append(short)
-        return '/'.join(mythics + others) if (mythics or others) else ''
-
-    def render_fight(self, history: FightHistory):
-        """Render the current fight from history."""
-        if not self.active or not self.stdscr:
-            return
-        import curses
-
-        entry = history.current()
-        self.stdscr.clear()
-        max_y, max_x = self.stdscr.getmaxyx()
-
-        if not entry:
-            self._safe_addstr(0, 0, "Waiting for first fight...", curses.color_pair(1))
-            self._safe_addstr(max_y - 1, 0, " q:quit", curses.color_pair(2))
-            self.stdscr.refresh()
-            return
-
-        row = 0
-
-        # Header line with elapsed timer
-        vet_str = " (vet)" if entry.is_vet else ""
-        duration_str = self._format_duration(entry.duration_s)
-        elapsed_str = ""
-        if entry.ended_at > 0:
-            elapsed_secs = time.time() - entry.ended_at
-            if elapsed_secs < 60:
-                elapsed_str = f" ({int(elapsed_secs)}s ago)"
-            elif elapsed_secs < 3600:
-                elapsed_str = f" ({int(elapsed_secs // 60)}m {int(elapsed_secs % 60)}s ago)"
-            else:
-                elapsed_str = f" ({int(elapsed_secs // 3600)}h {int((elapsed_secs % 3600) // 60)}m ago)"
-        boss_str = f" vs {entry.boss_name}" if entry.boss_name else ""
-        header = f"[{entry.timestamp}] {entry.zone_name}{vet_str}{boss_str} | {duration_str}{elapsed_str}"
-        if entry.group_dps > 0:
-            header += f" | GrpDPS: {self._format_number(entry.group_dps)}"
-        if entry.deaths > 0:
-            header += f" | Deaths: {entry.deaths}"
-        self._safe_addstr(row, 0, header[:max_x - 1], curses.color_pair(1) | curses.A_BOLD)
-        row += 1
-
-        self._safe_addstr(row, 0, "\u2500" * min(max_x - 1, 78), curses.color_pair(1))
-        row += 1
-
-        # Build content lines, then render with scroll offset
-        content_lines = []
-        if self.detail_mode:
-            content_lines = self._build_detail_lines(entry, max_x, curses)
-        else:
-            content_lines = self._build_compact_lines(entry, max_x, curses)
-
-        # Add buff/trial lines to content
-        if entry.buff_summary:
-            content_lines.append((f" Buffs: {entry.buff_summary}", curses.color_pair(1)))
-        if entry.trial_info:
-            content_lines.append((f" Trial: {entry.trial_info} | v{__version__}", curses.color_pair(2)))
-
-        # Available rows for scrollable content (reserve 1 for status bar)
-        avail = max_y - row - 1
-        total_lines = len(content_lines)
-
-        # Clamp scroll offset
-        max_scroll = max(0, total_lines - avail)
-        self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
-
-        # Render visible slice
-        visible = content_lines[self.detail_scroll:self.detail_scroll + avail]
-        for text, attr in visible:
-            self._safe_addstr(row, 0, text[:max_x - 1], attr)
-            row += 1
-
-        # Scroll indicator in status bar
-        scroll_indicator = ""
-        if total_lines > avail:
-            scroll_indicator = f" [{self.detail_scroll + 1}-{min(self.detail_scroll + avail, total_lines)}/{total_lines}]"
-
-        # Status bar — if a flash message is still active, show it instead
-        if self.flash_message and time.time() < self.flash_until:
-            status = f" {self.flash_message}".ljust(max_x - 1)
-        else:
-            if self.flash_message:
-                self.flash_message = ""
-                self.flash_until = 0.0
-            live_indicator = " [LIVE]" if history.is_live else ""
-            mode_indicator = " [DETAIL]" if self.detail_mode else ""
-            status = f" [Fight {history.display_index}/{history.total}]{live_indicator}{mode_indicator}{scroll_indicator}  \u2191\u2193/jk:fights  PgUp/Dn:scroll  d:detail  c:copy  G:latest  q:quit"
-        self._safe_addstr(max_y - 1, 0, status[:max_x - 1], curses.color_pair(2) | curses.A_REVERSE)
-        self.stdscr.refresh()
-
-    def scroll_detail_up(self, amount=1):
-        """Scroll content up by amount lines."""
-        self.detail_scroll = max(0, self.detail_scroll - amount)
-
-    def scroll_detail_down(self, amount=1):
-        """Scroll content down by amount lines."""
-        self.detail_scroll += amount  # clamped during render
-
-    def _build_compact_lines(self, entry, max_x, curses):
-        """Build compact view lines as (text, attr) tuples."""
-        lines = []
-        col_header = f" R  {'Player':<20s} {'Class':<7s} {'DPSk':>8s} {'Dmg%':>6s}  {'H/M/S k':<15s} Sets"
-        lines.append((col_header, curses.color_pair(2)))
-
-        for p in entry.players:
-            prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
-            role = p.get('role', 'D')
-            name = p.get('name', 'unknown')[:20]
-            class_abbr = p.get('class_abbr', '?')[:7]
-            dps = self._format_number_no_suffix(p.get('dps', 0))
-            dmg_pct = f"{p.get('dmg_pct', 0):.1f}%"
-            resources = f"{self._format_k_no_suffix(p.get('h', 0))}/{self._format_k_no_suffix(p.get('m', 0))}/{self._format_k_no_suffix(p.get('s', 0))}"
-            sets_str = self._format_sets_compact(p.get('sets', []))
-            line = f"{prefix}{role}  {name:<20s} {class_abbr:<7s} {dps:>8s} {dmg_pct:>6s}  {resources:<15s} {sets_str}"
-
-            color = curses.color_pair(3)
-            if role == 'T':
-                color = curses.color_pair(5)
-            elif role == 'H':
-                color = curses.color_pair(1)
-            lines.append((line, color))
-
-        lines.append(("\u2500" * min(max_x - 1, 78), curses.color_pair(1)))
-        return lines
-
-    def _build_detail_lines(self, entry, max_x, curses):
-        """Build expanded detail view lines as (text, attr) tuples."""
-        lines = []
-        for p in entry.players:
-            prefix = "*" if entry.first_damage_dealer and p.get('unit_id') == entry.first_damage_dealer else " "
-            role = p.get('role', 'D')
-            name = p.get('name', 'unknown')
-            class_name = p.get('class_name', '?')
-            dps = self._format_number(p.get('dps', 0))
-            dmg_pct = f"{p.get('dmg_pct', 0):.1f}%"
-            resources = f"H:{self._format_k(p.get('h', 0))} M:{self._format_k(p.get('m', 0))} S:{self._format_k(p.get('s', 0))}"
-            cp = p.get('cp', 0)
-            cp_str = f" CP:{cp}" if cp else ""
-
-            # Role heuristic info: show healing done and skill-line role if relevant
-            healing = p.get('healing', 0)
-            heal_str = f" Heal:{self._format_number(healing)}" if healing > 0 else ""
-            skill_role = p.get('skill_line_role', '')
-            sr_str = f" [{skill_role}]" if skill_role and skill_role != 'dps' else ""
-
-            # Player header line
-            header_line = f"{prefix}{role}  {name} ({class_name} {resources}{cp_str}{heal_str}{sr_str}) DPS:{dps} D:{dmg_pct}"
-            color = curses.color_pair(3)
-            if role == 'T':
-                color = curses.color_pair(5)
-            elif role == 'H':
-                color = curses.color_pair(1)
-            lines.append((header_line, color | curses.A_BOLD))
-
-            # Skill lines
-            skill_lines = p.get('skill_lines', [])
-            if skill_lines:
-                sl_str = f"     Skills: {', '.join(skill_lines)}"
-                lines.append((sl_str, curses.color_pair(3)))
-
-            # Front/back bar
-            front_bar = p.get('front_bar', [])
-            back_bar = p.get('back_bar', [])
-            if front_bar:
-                fb_str = f"     Front: {', '.join(front_bar)}"
-                lines.append((fb_str, curses.color_pair(3)))
-            if back_bar:
-                bb_str = f"     Back:  {', '.join(back_bar)}"
-                lines.append((bb_str, curses.color_pair(3)))
-
-            # All gear sets
-            all_sets = p.get('all_sets', [])
-            if all_sets:
-                set_parts = []
-                for cnt, sn in all_sets:
-                    if sn in MYTHIC_SETS:
-                        set_parts.append(f"[M]{sn}")
-                    else:
-                        set_parts.append(f"{cnt}pc {sn}")
-                sets_str = f"     Sets: {', '.join(set_parts)}"
-                lines.append((sets_str, curses.color_pair(2)))
-
-            # Blank line between players
-            lines.append(("", 0))
-
-        lines.append(("\u2500" * min(max_x - 1, 78), curses.color_pair(1)))
-        return lines
-
-    def copy_fight_to_clipboard(self, history: FightHistory):
-        """Copy current fight's player/set summary to clipboard."""
-        entry = history.current()
-        if not entry:
-            return
-        # Group players by role (T, H, D), each group sorted by DPS descending
-        groups = {'T': [], 'H': [], 'D': []}
-        for p in entry.players:
-            role = p.get('role', 'D')
-            name = p.get('name', 'unknown')
-            sets_str = self._format_sets_compact(p.get('sets', []))
-            player_str = f"{name}={sets_str}" if sets_str else name
-            groups.get(role, groups['D']).append((p.get('dps', 0), player_str))
-
-        parts = []
-        for role_key, label in [('T', 'T'), ('H', 'H'), ('D', 'D')]:
-            players = groups[role_key]
-            if not players:
-                continue
-            players.sort(key=lambda x: x[0], reverse=True)
-            player_strs = ', '.join(s for _, s in players)
-            parts.append(f"{label}: {player_strs}")
-        text = ' | '.join(parts)
-        try:
-            if sys.platform == 'win32':
-                cmd = ['clip']
-            elif sys.platform == 'darwin':
-                cmd = ['pbcopy']
-            else:
-                cmd = ['xclip', '-selection', 'clipboard']
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-            try:
-                proc.communicate(text.encode('utf-8'), timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                self._show_flash("Copy timed out")
-                return
-            self._show_flash("Copied to clipboard!")
-        except Exception:
-            self._show_flash("Copy failed")
-
-    def _show_flash(self, message, duration=2.0):
-        """Show a brief flash message on the status bar.
-
-        The message is also stashed so that subsequent render_fight() calls
-        keep drawing the flash until ``duration`` seconds have elapsed, rather
-        than immediately overwriting it with the normal status bar.
-        """
-        if not self.stdscr:
-            return
-        import curses
-        self.flash_message = message
-        self.flash_until = time.time() + duration
-        max_y, max_x = self.stdscr.getmaxyx()
-        self._safe_addstr(max_y - 1, 0, f" {message}".ljust(max_x - 1), curses.color_pair(2) | curses.A_REVERSE)
-        self.stdscr.refresh()
-
-    def _safe_addstr(self, y, x, text, attr=0):
-        import curses
-        try:
-            self.stdscr.addstr(y, x, text, attr)
-        except curses.error:
-            # Expected: writing to the bottom-right cell raises curses.error.
-            pass
-
-    @staticmethod
-    def _format_duration(seconds):
-        if seconds < 60:
-            return f"{seconds:.0f}s"
-        m = int(seconds // 60)
-        s = seconds % 60
-        return f"{m}m {s:.0f}s"
-
-    @staticmethod
-    def _format_number(n):
-        if n >= 1_000_000:
-            return f"{n / 1_000_000:.1f}M"
-        if n >= 1_000:
-            return f"{n / 1_000:.1f}k"
-        return f"{n:.0f}"
-
-    @staticmethod
-    def _format_k(n):
-        if n >= 1000:
-            k = n / 1000
-            if k == int(k):
-                return f"{int(k)}k"
-            return f"{k:.1f}k"
-        return str(n)
-
-    @staticmethod
-    def _format_number_no_suffix(n):
-        """Format number divided by 1k without suffix (column header shows units)."""
-        if n >= 1_000_000:
-            return f"{n / 1_000_000:.1f}M"
-        if n >= 1_000:
-            return f"{n / 1_000:.1f}"
-        return f"{n:.0f}"
-
-    @staticmethod
-    def _format_k_no_suffix(n):
-        """Format resource value divided by 1k without 'k' suffix."""
-        if n >= 1000:
-            k = n / 1000
-            if k == int(k):
-                return f"{int(k)}"
-            return f"{k:.1f}"
-        return str(n)
 
 
 class EnemyInfo:
@@ -1201,7 +708,7 @@ class CombatEncounter:
         
         return buff_analysis
 
-class ESOLogAnalyzer:
+class ESOLogAnalyzer(ListenerMixin):
     """Main analyzer class for processing ESO encounter logs."""
 
     # Trial ID to name mapping
@@ -1231,6 +738,7 @@ class ESOLogAnalyzer:
     }
 
     def __init__(self, list_hostiles: bool = False, diagnostic: bool = False, save_reports: bool = False, reports_dir: Optional[Path] = None):
+        ListenerMixin.__init__(self)
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -1289,6 +797,11 @@ class ESOLogAnalyzer:
         # Diagnostic buff tracking
         self.buff_events_log: List[Dict] = []  # List of buff events for debugging
         self.player_buff_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # timestamp -> buff_name -> count
+
+        # EXPERIMENTAL: per-fight buff/debuff timeline (buff-timeline spec).
+        # Gated by experimental.buff_timeline; nothing is recorded when off.
+        self.track_buff_timeline = False
+        self.buff_timeline_recorder = BuffTimelineRecorder()
         
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1354,16 +867,16 @@ class ESOLogAnalyzer:
         # Print diagnostic output
         import time
         timestamp_str_display = time.strftime("%H:%M:%S", time.localtime(timestamp / 1000)) if timestamp > 1000000000 else str(timestamp)
-        print(f"{Fore.CYAN}[BUFF-DIAG] {timestamp_str_display} {effect_type} {buff_name} on {player_name} (ID:{unit_id}) - Active: {active_count} players{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}[BUFF-DIAG] {timestamp_str_display} {effect_type} {buff_name} on {player_name} (ID:{unit_id}) - Active: {active_count} players{Style.RESET_ALL}")
 
     def _print_buff_diagnostic_summary(self):
         """Print a diagnostic summary of buff events for the encounter."""
         if not self.diagnostic or not self.current_encounter:
             return
             
-        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}BUFF DIAGNOSTIC SUMMARY{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}BUFF DIAGNOSTIC SUMMARY{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
         
         # Filter buff events for this encounter's timeframe
         encounter_start = self.current_encounter.start_time
@@ -1382,17 +895,17 @@ class ESOLogAnalyzer:
         
         # Print summary for each buff
         for buff_name, events in buff_events_by_name.items():
-            print(f"{Fore.CYAN}\\n{buff_name}:{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}\\n{buff_name}:{Style.RESET_ALL}")
             gained_count = sum(1 for e in events if e['effect_type'] == 'GAINED')
             faded_count = sum(1 for e in events if e['effect_type'] == 'FADED')
             unique_players = set(e['player_name'] for e in events)
             
-            print(f"  Events: {len(events)} total ({gained_count} gained, {faded_count} faded)")
-            print(f"  Players: {len(unique_players)} unique players affected")
+            _console(f"  Events: {len(events)} total ({gained_count} gained, {faded_count} faded)")
+            _console(f"  Players: {len(unique_players)} unique players affected")
             
             # Show max concurrent players
             max_concurrent = max(e['active_count'] for e in events) if events else 0
-            print(f"  Max Concurrent: {max_concurrent} players")
+            _console(f"  Max Concurrent: {max_concurrent} players")
             
             # Show first and last events
             if events:
@@ -1401,19 +914,19 @@ class ESOLogAnalyzer:
                 import time
                 first_time = time.strftime("%H:%M:%S", time.localtime(first_event['timestamp'] / 1000)) if first_event['timestamp'] > 1000000000 else str(first_event['timestamp'])
                 last_time = time.strftime("%H:%M:%S", time.localtime(last_event['timestamp'] / 1000)) if last_event['timestamp'] > 1000000000 else str(last_event['timestamp'])
-                print(f"  First Event: {first_time} ({first_event['effect_type']} on {first_event['player_name']})")
-                print(f"  Last Event: {last_time} ({last_event['effect_type']} on {last_event['player_name']})")
+                _console(f"  First Event: {first_time} ({first_event['effect_type']} on {first_event['player_name']})")
+                _console(f"  Last Event: {last_time} ({last_event['effect_type']} on {last_event['player_name']})")
         
         # Show encounter timing info
-        print(f"{Fore.CYAN}\\nEncounter Timing:{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}\\nEncounter Timing:{Style.RESET_ALL}")
         import time
         start_time = time.strftime("%H:%M:%S", time.localtime(encounter_start / 1000)) if encounter_start > 1000000000 else str(encounter_start)
         end_time = time.strftime("%H:%M:%S", time.localtime(encounter_end / 1000)) if encounter_end > 1000000000 else str(encounter_end)
-        print(f"  Start: {start_time}")
-        print(f"  End: {end_time}")
-        print(f"  Duration: {(encounter_end - encounter_start) / 1000:.1f}s")
+        _console(f"  Start: {start_time}")
+        _console(f"  End: {end_time}")
+        _console(f"  Duration: {(encounter_end - encounter_start) / 1000:.1f}s")
         
-        print(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
 
     def get_trial_name(self, trial_id: int) -> str:
         """Get trial name from trial ID."""
@@ -1441,7 +954,7 @@ class ESOLogAnalyzer:
         # Get the most recent zone
         last_timestamp, last_zone = self.zone_history[-1]
         
-        print(f"{Fore.YELLOW}No current zone detected. Rewinding to last zone: {last_zone}{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}No current zone detected. Rewinding to last zone: {last_zone}{Style.RESET_ALL}")
         
         # Set the current zone to the last known zone
         self.current_zone = last_zone
@@ -1471,7 +984,7 @@ class ESOLogAnalyzer:
                         if entry:
                             entries.append(entry)
         except (IOError, UnicodeDecodeError) as e:
-            print(f"{Fore.RED}Error reading log file for rewind: {e}{Style.RESET_ALL}")
+            _console(f"{Fore.RED}Error reading log file for rewind: {e}{Style.RESET_ALL}")
         
         return entries
 
@@ -1565,7 +1078,7 @@ class ESOLogAnalyzer:
         
         if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "UNIT_CHANGED", "BEGIN_COMBAT", "END_COMBAT", "PLAYER_INFO", "COMBAT_EVENT", "EFFECT_CHANGED", "HEALTH_REGEN", "ENDLESS_DUNGEON_BEGIN", "ENDLESS_DUNGEON_STAGE_END", "ENDLESS_DUNGEON_BUFF_ADDED", "ENDLESS_DUNGEON_BUFF_REMOVED"]:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
         
         if entry.event_type == "UNIT_ADDED":
             self._handle_unit_added(entry)
@@ -1628,7 +1141,7 @@ class ESOLogAnalyzer:
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_unit_added called with {len(entry.fields)} fields{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_unit_added called with {len(entry.fields)} fields{Style.RESET_ALL}")
         
         if len(entry.fields) >= 10:
             # Correct field indexing after ESOLogEntry.parse() processing
@@ -1638,7 +1151,7 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED unit_id={unit_id}, unit_type={unit_type}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED unit_id={unit_id}, unit_type={unit_type}{Style.RESET_ALL}")
             
             # Handle player units
             if unit_type == "PLAYER":
@@ -1654,11 +1167,11 @@ class ESOLogAnalyzer:
                     self.current_encounter.start_time = entry.timestamp
                     if self.diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
+                        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
                 
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED player {unit_id}, encounter exists: {self.current_encounter is not None}{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED player {unit_id}, encounter exists: {self.current_encounter is not None}{Style.RESET_ALL}")
                 
                 if self.current_encounter:
                     # Clean up name and handle (remove quotes if present)
@@ -1667,7 +1180,7 @@ class ESOLogAnalyzer:
                     
                     if self.diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Adding player {unit_id} ({clean_name}) to encounter{Style.RESET_ALL}")
+                        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Adding player {unit_id} ({clean_name}) to encounter{Style.RESET_ALL}")
 
                     # Check if this is a returning player from session data
                     session_key = f"{clean_handle}+{clean_name}"
@@ -1771,7 +1284,7 @@ class ESOLogAnalyzer:
     def _handle_player_info(self, entry: ESOLogEntry):
         """Handle PLAYER_INFO events to get equipped abilities and gear."""
         if self.diagnostic:
-            print(f"{Fore.MAGENTA}[DIAGNOSTIC] _handle_player_info called for unit_id: {entry.fields[0] if entry.fields else 'unknown'}{Style.RESET_ALL}")
+            _console(f"{Fore.MAGENTA}[DIAGNOSTIC] _handle_player_info called for unit_id: {entry.fields[0] if entry.fields else 'unknown'}{Style.RESET_ALL}")
         
         # Use the shared robust parser to handle the complex PLAYER_INFO format
         # Ensure caches are synchronized (both directions)
@@ -1785,7 +1298,7 @@ class ESOLogAnalyzer:
             
         if player_info:
             if self.diagnostic:
-                print(f"{Fore.MAGENTA}[DIAGNOSTIC] player_info found for unit_id: {player_info.unit_id}{Style.RESET_ALL}")
+                _console(f"{Fore.MAGENTA}[DIAGNOSTIC] player_info found for unit_id: {player_info.unit_id}{Style.RESET_ALL}")
             
             # Get equipped ability names (all abilities)
             equipped_ability_names = self.log_parser.get_equipped_abilities(player_info)
@@ -1797,7 +1310,7 @@ class ESOLogAnalyzer:
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:
                 player = self.current_encounter.players[player_info.unit_id]
                 if self.diagnostic:
-                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] Found player {player.name} in current encounter, setting abilities{Style.RESET_ALL}")
+                    _console(f"{Fore.MAGENTA}[DIAGNOSTIC] Found player {player.name} in current encounter, setting abilities{Style.RESET_ALL}")
                 player.set_equipped_abilities(equipped_ability_names)
                 player.set_front_back_bar_abilities(front_bar_abilities, back_bar_abilities)
                 player.set_gear(player_info.gear_data)
@@ -1805,7 +1318,7 @@ class ESOLogAnalyzer:
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
             else:
                 if self.diagnostic:
-                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] No current encounter or player {player_info.unit_id} not in encounter{Style.RESET_ALL}")
+                    _console(f"{Fore.MAGENTA}[DIAGNOSTIC] No current encounter or player {player_info.unit_id} not in encounter{Style.RESET_ALL}")
             
             # Always update session data with new player info, regardless of encounter status
             # This ensures player data is available when they join encounters later
@@ -1844,7 +1357,7 @@ class ESOLogAnalyzer:
         # ZONE_CHANGED format: zone_id, zone_name, difficulty
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_zone_changed called{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: _handle_zone_changed called{Style.RESET_ALL}")
         
         if len(entry.fields) >= 3:
             zone_id = entry.fields[0].strip('"')
@@ -1854,8 +1367,8 @@ class ESOLogAnalyzer:
             # Store previous zone name before updating
             previous_zone = self.current_zone if self.current_zone else "Unknown"
             
-            print(f"\n{Fore.YELLOW}=== ZONE CHANGED ==={Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Zone: {zone_name} ({difficulty}){Style.RESET_ALL}")
+            _console(f"\n{Fore.YELLOW}=== ZONE CHANGED ==={Style.RESET_ALL}")
+            _console(f"{Fore.YELLOW}Zone: {zone_name} ({difficulty}){Style.RESET_ALL}")
             
             # If there's an active encounter when zone changes, display it if it ended but wasn't shown
             if (self.current_encounter and self.current_encounter.combat_ended_at and 
@@ -1874,6 +1387,7 @@ class ESOLogAnalyzer:
             # Update current zone and difficulty after processing previous zone's combat
             self.current_zone = zone_name
             self.current_difficulty = difficulty
+            self._notify('on_zone_changed', zone_name, difficulty)
             
             # Add this zone change to history for rewind functionality
             self._add_zone_to_history(entry.timestamp, zone_name)
@@ -1890,7 +1404,7 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: ZONE_CHANGED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: ZONE_CHANGED created new encounter at {entry.timestamp}{Style.RESET_ALL}")
 
     def _handle_begin_combat_event(self, entry: ESOLogEntry):
         """Handle BEGIN_COMBAT events to start combat tracking."""
@@ -1898,7 +1412,7 @@ class ESOLogAnalyzer:
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
         # Check if we need to rewind to a previous zone
         if not self.current_zone and self.zone_history:
@@ -1951,7 +1465,7 @@ class ESOLogAnalyzer:
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
 
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to start grace period for combat tracking."""
@@ -1959,7 +1473,7 @@ class ESOLogAnalyzer:
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
         # Immediately finalize encounter if there are any players
         if self.current_encounter and self.current_encounter.players:
@@ -2001,6 +1515,8 @@ class ESOLogAnalyzer:
         # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
         if entry.timestamp > 0:
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
+        # Relative-ms offsets restart with each BEGIN_LOG session
+        self.buff_timeline_recorder.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -2021,7 +1537,7 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: TRIAL_INIT - ID: {trial_info['trial_id']}, Completed: {trial_info['completed']}, Success: {trial_info['success']}, Score: {trial_info['final_score']}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: TRIAL_INIT - ID: {trial_info['trial_id']}, Completed: {trial_info['completed']}, Success: {trial_info['success']}, Score: {trial_info['final_score']}{Style.RESET_ALL}")
 
     def _handle_begin_trial(self, entry: ESOLogEntry):
         """Handle BEGIN_TRIAL events to track trial start."""
@@ -2040,7 +1556,7 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_TRIAL - {trial_name} (ID: {trial_id}), Start: {start_time_ms}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_TRIAL - {trial_name} (ID: {trial_id}), Start: {start_time_ms}{Style.RESET_ALL}")
 
     def _handle_end_trial(self, entry: ESOLogEntry):
         """Handle END_TRIAL events to track trial completion."""
@@ -2068,7 +1584,7 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - {trial_name} (ID: {trial_id}), Success: {success}, Score: {final_score}, Vitality: {vitality_bonus}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - {trial_name} (ID: {trial_id}), Success: {success}, Score: {final_score}, Vitality: {vitality_bonus}{Style.RESET_ALL}")
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
         """Handle END_LOG events to save final zone report."""
@@ -2078,7 +1594,7 @@ class ESOLogAnalyzer:
             
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, saving final zone report{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, saving final zone report{Style.RESET_ALL}")
 
     def _handle_begin_cast(self, entry: ESOLogEntry):
         """Handle BEGIN_CAST events."""
@@ -2098,7 +1614,7 @@ class ESOLogAnalyzer:
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
             
             if self.diagnostic and caster_unit_id == "31":
-                print(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
+                _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
 
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
@@ -2196,7 +1712,7 @@ class ESOLogAnalyzer:
             if self.diagnostic and len(entry.fields) >= 10:
                 unit_id = entry.fields[0]
                 if unit_id == "31":
-                    print(f"{Fore.MAGENTA}[DIAGNOSTIC] COMBAT_EVENT for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
+                    _console(f"{Fore.MAGENTA}[DIAGNOSTIC] COMBAT_EVENT for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
             
             # Track any monster that appears in combat events as "engaged"
             if self.list_hostiles and self.current_encounter:
@@ -2366,7 +1882,17 @@ class ESOLogAnalyzer:
                     target_unit_id = entry.fields[10] if len(entry.fields) > 10 else source_unit_id
             
             if self.diagnostic and target_unit_id == "31":
-                print(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
+                _console(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
+
+            # EXPERIMENTAL timeline capture. Extracts source/target itself:
+            # the unit-state blocks are 10 fields wide, so an explicit target
+            # id sits at fields[14] (see extract_effect_fields).
+            if self.track_buff_timeline:
+                extracted = extract_effect_fields(entry.fields)
+                if extracted is not None:
+                    self.buff_timeline_recorder.record(
+                        extracted[0], extracted[1], extracted[2], extracted[3],
+                        entry.timestamp)
 
             # Always track group buffs globally, regardless of encounter state
             for buff_name, buff_ids in self.group_buff_ids.items():
@@ -2946,13 +2472,12 @@ class ESOLogAnalyzer:
             self._add_report_to_zone()
             # Individual report files are saved per-zone, not per-encounter
         
-        # Build fight entry and update TUI
+        # Build fight entry and notify frontends
         if hasattr(self, 'fight_history') and self.fight_history is not None:
             fight_entry = self._build_fight_entry(zone_name)
             if fight_entry:
                 self.fight_history.append(fight_entry)
-                if hasattr(self, 'tui') and self.tui and self.tui.active and self.fight_history.is_live:
-                    self.tui.render_fight(self.fight_history)
+                self._notify('on_fight_completed', fight_entry)
 
         # Add newline after encounter summary for clean formatting
         self._print_and_buffer("")
@@ -2978,16 +2503,16 @@ class ESOLogAnalyzer:
                 try:
                     reports_path.mkdir(parents=True, exist_ok=True)
                 except (PermissionError, OSError) as e:
-                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                    print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
                     sys.exit(1)
             elif not reports_path.is_dir():
-                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
                 sys.exit(1)
             elif not os.access(reports_path, os.W_OK):
-                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
                 sys.exit(1)
             
             # Generate zone-based filename similar to split files
@@ -3017,7 +2542,7 @@ class ESOLogAnalyzer:
             if report_file_path.exists():
                 if self.diagnostic:
                     ts = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate report: {filename}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate report: {filename}{Style.RESET_ALL}")
                 self.report_buffer.clear()
                 return
 
@@ -3035,22 +2560,22 @@ class ESOLogAnalyzer:
                 temp_report_path.rename(report_file_path)
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
             except Exception as e:
                 # Handle rename conflict
                 if self._handle_rename_conflict(temp_report_path, report_file_path):
                     if self.diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report with conflict resolution{Style.RESET_ALL}")
+                        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report with conflict resolution{Style.RESET_ALL}")
                 else:
                     if self.diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
+                        _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
         finally:
             # Clear the report buffer after saving
             self.report_buffer.clear()
@@ -3081,7 +2606,7 @@ class ESOLogAnalyzer:
                 temp_file_path.unlink()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp report: {temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp report: {temp_file_path}{Style.RESET_ALL}")
                 return True
             else:
                 # Different content - find available suffix
@@ -3096,7 +2621,7 @@ class ESOLogAnalyzer:
                         temp_file_path.rename(suffix_file_path)
                         if self.diagnostic:
                             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed report to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
+                            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed report to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
                         return True
                     
                     suffix += 1
@@ -3104,7 +2629,7 @@ class ESOLogAnalyzer:
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle report rename conflict: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle report rename conflict: {e}{Style.RESET_ALL}")
             return False
     
     def _get_file_hash(self, file_path):
@@ -3165,16 +2690,16 @@ class ESOLogAnalyzer:
                 try:
                     reports_path.mkdir(parents=True, exist_ok=True)
                 except (PermissionError, OSError) as e:
-                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                    print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
                     sys.exit(1)
             elif not reports_path.is_dir():
-                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
                 sys.exit(1)
             elif not os.access(reports_path, os.W_OK):
-                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
                 sys.exit(1)
             
             # Generate zone-based filename similar to split files
@@ -3204,7 +2729,7 @@ class ESOLogAnalyzer:
             if report_file_path.exists():
                 if self.diagnostic:
                     ts = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate zone report: {filename}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate zone report: {filename}{Style.RESET_ALL}")
                 if zone_name in self.zone_reports:
                     del self.zone_reports[zone_name]
                 return
@@ -3216,12 +2741,12 @@ class ESOLogAnalyzer:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved zone report to {report_file_path}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved zone report to {report_file_path}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save zone report: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save zone report: {e}{Style.RESET_ALL}")
         finally:
             # Clear the zone report after saving
             if zone_name in self.zone_reports:
@@ -3234,12 +2759,28 @@ class ESOLogAnalyzer:
         return ansi_escape.sub('', text)
 
     def _print_and_buffer(self, text: str):
-        """Print text to stdout and buffer it for report saving."""
-        # Skip stdout printing when TUI is active (TUI renders its own display)
-        if not (hasattr(self, 'tui') and self.tui and self.tui.active):
-            print(text)
+        """Buffer a summary line for report saving.
+
+        Fight data reaches frontends structured via on_fight_completed; the
+        rendered text lines exist only for the saved-reports feature.
+        """
         if self.save_reports:
             self.report_buffer.append(text)
+
+    def _resolve_timeline_name(self, unit_id: str) -> str:
+        """Display name for a timeline unit: player handle, enemy name, or id."""
+        if unit_id == "0":
+            # Environment/untracked source (e.g. set procs logged without a unit)
+            return "unknown"
+        enc = self.current_encounter
+        if enc is not None:
+            player = enc.players.get(unit_id)
+            if player is not None:
+                return player.get_display_name()
+            enemy = enc.enemies.get(unit_id)
+            if enemy is not None and getattr(enemy, 'name', None):
+                return enemy.name
+        return f"unit {unit_id}"
 
     def _build_fight_entry(self, zone_name: str = None):
         """Build a FightHistoryEntry from the current encounter."""
@@ -3259,6 +2800,12 @@ class ESOLogAnalyzer:
         entry.group_dps = enc.total_damage / duration if duration > 0 and enc.total_damage > 0 else 0
         entry.deaths = self.zone_deaths
         entry.first_damage_dealer = enc.first_damage_dealer
+
+        # EXPERIMENTAL buff/debuff timeline (None whenever the gate is off)
+        if self.track_buff_timeline:
+            entry.buff_timeline = self.buff_timeline_recorder.snapshot_fight(
+                enc.start_time, enc.end_time, self._resolve_timeline_name)
+            self.buff_timeline_recorder.prune_before(enc.end_time)
 
         # Boss name: prefer most damaged hostile, fall back to highest health
         if enc.most_damaged_hostile and enc.most_damaged_hostile.name:
@@ -3595,11 +3142,11 @@ class LogSplitter:
             self._rename_to_final()
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected with zone: {zone_name}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected with zone: {zone_name}{Style.RESET_ALL}")
         else:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for first zone{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_LOG detected, waiting for first zone{Style.RESET_ALL}")
     
     def _create_temp_file(self):
         """Create a temporary file immediately for writing."""
@@ -3629,12 +3176,12 @@ class LogSplitter:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Created temporary file: {self.temp_file_path}{Style.RESET_ALL}")
+                _console(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Created temporary file: {self.temp_file_path}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
             self.current_split_file = None
             self.current_split_path = None
             self.current_encounter_info = None
@@ -3653,7 +3200,7 @@ class LogSplitter:
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close file before rename: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close file before rename: {e}{Style.RESET_ALL}")
         
         # Create final filename based on BEGIN_LOG timestamp and combat zone
         timestamp = self.pending_begin_log.timestamp
@@ -3683,12 +3230,12 @@ class LogSplitter:
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Renamed to final file: {self.final_file_path}{Style.RESET_ALL}")
+                _console(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Renamed to final file: {self.final_file_path}{Style.RESET_ALL}")
                 
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to rename file to {self.final_file_path}: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to rename file to {self.final_file_path}: {e}{Style.RESET_ALL}")
             
             # Try to handle rename conflict
             if self._handle_rename_conflict(self.temp_file_path, self.final_file_path):
@@ -3736,7 +3283,7 @@ class LogSplitter:
                 self.skip_current = True
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp file: {temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp file: {temp_file_path}{Style.RESET_ALL}")
                 return True
             else:
                 # Different content - find available suffix
@@ -3753,7 +3300,7 @@ class LogSplitter:
                         self.final_file_path = suffix_file_path
                         if self.diagnostic:
                             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
+                            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
                         return True
                     
                     suffix += 1
@@ -3761,7 +3308,7 @@ class LogSplitter:
         except Exception as e:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle rename conflict: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle rename conflict: {e}{Style.RESET_ALL}")
             return False
     
     def _get_file_hash(self, file_path):
@@ -3783,7 +3330,7 @@ class LogSplitter:
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
     
     def start_combat(self):
         """Mark that combat has started - rename file to current zone."""
@@ -3791,7 +3338,7 @@ class LogSplitter:
             self.combat_started = True
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Combat started in zone: {self.current_zone} ({self.current_difficulty}){Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Combat started in zone: {self.current_zone} ({self.current_difficulty}){Style.RESET_ALL}")
             
             # Rename the file to reflect the current zone when combat started
             self._rename_to_final()
@@ -3811,7 +3358,7 @@ class LogSplitter:
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone changed to: {zone_name} ({difficulty}){Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Zone changed to: {zone_name} ({difficulty}){Style.RESET_ALL}")
         
         # Don't rename here - wait for combat to start
         # The file will be renamed when combat begins
@@ -3826,30 +3373,30 @@ class LogSplitter:
                 should_delete_temp = True
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: No combat events detected, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: No combat events detected, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
             elif self.combat_event_count < 5 and not self.combat_started:
                 # Delete temp files with very few combat events that never had proper combat start
                 should_delete_temp = True
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Minimal combat events ({self.combat_event_count}) and no combat start, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Minimal combat events ({self.combat_event_count}) and no combat start, will delete temp file: {self.temp_file_path}{Style.RESET_ALL}")
             elif self.temp_file_path.name.endswith('-temp.log') and not self.final_file_path:
                 # Delete temp files that were never properly renamed (orphaned temp files)
                 should_delete_temp = True
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Orphaned temp file never renamed, will delete: {self.temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Orphaned temp file never renamed, will delete: {self.temp_file_path}{Style.RESET_ALL}")
         
         if self.file_handle:
             try:
                 self.file_handle.close()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Closed split file: {self.current_split_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Closed split file: {self.current_split_path}{Style.RESET_ALL}")
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file {self.current_split_path}: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file {self.current_split_path}: {e}{Style.RESET_ALL}")
         
         # Delete temp file if it should be cleaned up
         if should_delete_temp:
@@ -3857,11 +3404,11 @@ class LogSplitter:
                 self.temp_file_path.unlink()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Deleted temp file: {self.temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.GREEN}[{timestamp_str}] DIAGNOSTIC: Deleted temp file: {self.temp_file_path}{Style.RESET_ALL}")
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
         
         # Dedup check: now that the file is complete, compare against existing splits
         if self.final_file_path and not should_delete_temp and not self.skip_current:
@@ -3878,7 +3425,7 @@ class LogSplitter:
                             pass
                         if self.diagnostic:
                             ts = time.strftime("%H:%M:%S", time.localtime())
-                            print(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {final_size}){Style.RESET_ALL}")
+                            _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {final_size}){Style.RESET_ALL}")
             except OSError:
                 pass
 
@@ -3916,12 +3463,12 @@ class LogSplitter:
                 self.file_handle.close()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Closed split file for waiting: {self.current_split_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Closed split file for waiting: {self.current_split_path}{Style.RESET_ALL}")
                 self.file_handle = None
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file for waiting: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to close split file for waiting: {e}{Style.RESET_ALL}")
     
     def reopen_for_append(self):
         """Reopen the current split file for appending when new events arrive."""
@@ -3930,11 +3477,11 @@ class LogSplitter:
                 self.file_handle = open(self.current_split_path, 'a', encoding='utf-8')
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Reopened split file for append: {self.current_split_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Reopened split file for append: {self.current_split_path}{Style.RESET_ALL}")
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to reopen split file for append: {e}{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to reopen split file for append: {e}{Style.RESET_ALL}")
                 self.file_handle = None
 
     def cleanup(self):
@@ -3955,7 +3502,8 @@ class LogFileMonitor:
         self.has_read_all = False
         self.diagnostic = analyzer.diagnostic
         self.running = False
-        
+        self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
+
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
 
@@ -3963,14 +3511,31 @@ class LogFileMonitor:
         if self.log_file.exists():
             if read_all_then_tail:
                 # Start from the beginning to read everything first
-                print(f"{Fore.CYAN}Reading entire log file from the beginning...{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}Reading entire log file from the beginning...{Style.RESET_ALL}")
                 self.last_position = 0
                 self._process_entire_file()
-                print(f"{Fore.GREEN}Monitoring for new data. Ctrl-C to stop...{Style.RESET_ALL}\n")
+                _console(f"{Fore.GREEN}Monitoring for new data. Ctrl-C to stop...{Style.RESET_ALL}\n")
             else:
                 # Look back through recent log entries to find zone changes
                 self._initialize_zone_history()
                 self.last_position = self.log_file.stat().st_size
+            # Initial freshness snapshot (content-derived; falls back to mtime)
+            self._emit_initial_log_status()
+
+    def _emit_initial_log_status(self):
+        """Emit a startup freshness snapshot derived from the file itself."""
+        from log_freshness import derive_log_freshness, derive_session_epoch_ms
+        try:
+            status = derive_log_freshness(self.log_file)
+        except Exception:
+            return
+        # Seed the session epoch when attaching mid-file (tail-only mode) so
+        # per-batch freshness stays exact without re-scanning the file.
+        if self.analyzer.log_start_unix_timestamp is None and status.source == 'exact':
+            epoch_ms = derive_session_epoch_ms(self.log_file)
+            if epoch_ms is not None:
+                self.analyzer.log_start_unix_timestamp = epoch_ms // 1000
+        self.analyzer._notify('on_log_status', status)
 
     def _initialize_zone_history(self):
         """Look back through recent log entries to find zone changes."""
@@ -3982,11 +3547,12 @@ class LogFileMonitor:
         lookback_size = min(50000, file_size)
         start_position = max(0, file_size - lookback_size)
         
-        print(f"{Fore.CYAN}Scanning recent log entries for zone changes...{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}Scanning recent log entries for zone changes...{Style.RESET_ALL}")
         
         entries = self.analyzer._process_log_file_from_position(self.log_file, start_position)
         zone_found = False
-        
+        latest_zone = None
+
         # Process entries in chronological order to find the most recent zone change
         for entry in entries:
             if entry.event_type == "ZONE_CHANGED" and len(entry.fields) >= 3:
@@ -3994,12 +3560,17 @@ class LogFileMonitor:
                 zone_name = entry.fields[1].strip('"')
                 difficulty = entry.fields[2].strip('"')
                 self.analyzer._add_zone_to_history(entry.timestamp, zone_name)
+                latest_zone = (zone_name, difficulty)
                 if not zone_found:
-                    print(f"{Fore.GREEN}Found recent zone: {zone_name}{Style.RESET_ALL}")
+                    _console(f"{Fore.GREEN}Found recent zone: {zone_name}{Style.RESET_ALL}")
                     zone_found = True
-        
-        if not zone_found:
-            print(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
+
+        if latest_zone is not None:
+            # Seed current zone from the lookback and tell frontends
+            self.analyzer.current_zone, self.analyzer.current_difficulty = latest_zone
+            self.analyzer._notify('on_zone_changed', *latest_zone)
+        else:
+            _console(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
 
     def _find_catchup_start(self, file_size, max_fights=20):
         """Scan backward through the file for BEGIN_COMBAT markers.
@@ -4055,12 +3626,12 @@ class LogFileMonitor:
             start_position = self._find_catchup_start(file_size, max_fights=20)
             if start_position > 0:
                 mb_skipped = start_position / 1_000_000
-                print(f"{Fore.CYAN}Large log ({file_size / 1_000_000:.1f} MB) "
+                _console(f"{Fore.CYAN}Large log ({file_size / 1_000_000:.1f} MB) "
                       f"— skipping to last ~20 fights ({mb_skipped:.1f} MB ahead){Style.RESET_ALL}")
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing {self.log_file.name} "
+            _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processing {self.log_file.name} "
                   f"from position {start_position}{Style.RESET_ALL}")
 
         line_count = 0
@@ -4087,7 +3658,7 @@ class LogFileMonitor:
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines "
+            _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Processed {line_count} lines "
                   f"from {self.log_file.name}, now tailing{Style.RESET_ALL}")
 
         # Close any open split files after processing
@@ -4114,7 +3685,7 @@ class LogFileMonitor:
 
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: File growth detected in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
             self._process_new_lines(cancel_check=cancel_check)
             return True
         else:
@@ -4124,7 +3695,7 @@ class LogFileMonitor:
             
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                _console(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No changes in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
         return False
 
     def _process_new_lines(self, cancel_check=None):
@@ -4142,12 +3713,12 @@ class LogFileMonitor:
         if current_size <= self.last_position:
             if self.diagnostic:
                 timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+                _console(f"{Fore.BLUE}[{timestamp}] DIAGNOSTIC: No new data in {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
             return
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
+            _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             f.seek(self.last_position)
@@ -4156,7 +3727,7 @@ class LogFileMonitor:
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
+            _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
         CANCEL_POLL_INTERVAL = 500
         for idx, line in enumerate(new_lines):
@@ -4168,12 +3739,15 @@ class LogFileMonitor:
                     self.last_position += sum(len(l) for l in new_lines[:idx])
                     if self.diagnostic:
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
+                        _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
                     return
 
             line = line.strip()
             if line:
                 entry = self.analyzer.log_parser.parse_line(line)
+                offset_ms = parse_relative_ms(line)
+                if offset_ms is not None:
+                    self.last_entry_offset_ms = offset_ms
             if entry:
                 # Handle log splitting if enabled
                 if self.log_splitter:
@@ -4182,6 +3756,17 @@ class LogFileMonitor:
                 self.analyzer.process_log_entry(entry)
 
         self.last_position = new_end_position
+        if new_lines:
+            self._emit_log_status(new_end_position)
+
+    def _emit_log_status(self, size_bytes: int):
+        """Notify listeners of the log's current freshness."""
+        status = status_from_tracking(
+            self.log_file, size_bytes,
+            self.analyzer.log_start_unix_timestamp,
+            self.last_entry_offset_ms,
+        )
+        self.analyzer._notify('on_log_status', status)
     
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
@@ -4229,380 +3814,26 @@ class LogFileMonitor:
                 self.log_splitter.write_log_line(line)
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
             else:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
             
             # End the encounter and close the split file
             if self.log_splitter.pending_begin_log or self.log_splitter.current_split_file:
                 self.log_splitter.end_encounter()
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
             else:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
         
         # Write all other lines to current split file
         else:
             self.log_splitter.write_log_line(line)
-
-@click.command()
-@click.option('--log-file', '-f', type=click.Path(),
-              help='Path to ESO encounter log file')
-@click.option('--read-all-then-stop', '-s', is_flag=True,
-              help='Read mode: replay the entire log file from the beginning at high speed, then exit')
-@click.option('--read-all-then-tail', '-t', is_flag=True,
-              help='Read the entire log file from the beginning, then continue tailing for new data')
-@click.option('--no-wait', is_flag=True,
-              help='Exit immediately if log file does not exist (default: wait for file to appear)')
-@click.option('--replay-speed', '-r', default=100, type=int,
-              help='Replay speed multiplier for read mode (default: 100x)')
-@click.option('--version', '-v', is_flag=True,
-              help='Show version information and exit')
-@click.option('--list-hostiles', is_flag=True,
-              help='Testing mode: List all hostile monsters added to fights with names and IDs')
-@click.option('--diagnostic', is_flag=True,
-              help='Diagnostic mode: Show detailed timing and data flow information for debugging')
-@click.option('--no-tui', is_flag=True,
-              help='Disable TUI display and use traditional scrolling output')
-@click.option('--tail-and-split', is_flag=True,
-              help='Auto-split mode: Automatically create individual encounter files while tailing the main log')
-@click.option('--split-dir', type=click.Path(), default=None,
-              help='Directory for split files (default: same directory as source log file)')
-@click.option('--save-reports', is_flag=True,
-              help='Save encounter reports to files with timestamp-based naming')
-@click.option('--reports-dir', type=click.Path(), default=None,
-              help='Directory for saved reports (default: same directory as source log file)')
-def main(log_file: Optional[str], read_all_then_stop: bool, read_all_then_tail: bool, no_wait: bool, replay_speed: int, version: bool, list_hostiles: bool, diagnostic: bool, no_tui: bool, tail_and_split: bool, split_dir: Optional[str], save_reports: bool, reports_dir: Optional[str]):
-    """ESO Encounter Log Analyzer - Monitor and analyze ESO combat encounters."""
-    
-    # Handle version flag early (before any other processing)
-    if version:
-        print(f"ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}")
-        print(f"Repository: https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities")
-        print(f"License: MIT")
-        sys.exit(0)
-
-    print(f"{Fore.CYAN}ESO Live Encounter Log Sets & Abilities Analyzer v{__version__}{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}Monitoring ESO encounter logs for combat analysis...{Style.RESET_ALL}")
-    
-    # Check if no arguments were provided and show default behavior explanation
-    if not any([log_file, read_all_then_stop, read_all_then_tail, no_wait, list_hostiles, diagnostic, tail_and_split, save_reports]):
-        print(f"{Fore.CYAN}No arguments provided - using default behavior:{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  • Auto-detect ESO log file location based on your operating system{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  • Wait patiently for Encounter.log to appear (if not found){Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  • Read existing log data, then monitor for new encounters in real-time{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  • Generate live combat analysis reports as fights happen{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Tip: Use --help to see all available options{Style.RESET_ALL}")
-        print()
-    
-    # Show active options
-    active_options = []
-    if read_all_then_stop:
-        active_options.append("read-all-then-stop")
-    if read_all_then_tail:
-        active_options.append("read-all-then-tail")
-    if no_wait:
-        active_options.append("no-wait")
-    if list_hostiles:
-        active_options.append("list-hostiles")
-    if diagnostic:
-        active_options.append("diagnostic")
-    
-    if active_options:
-        print(f"{Fore.CYAN}Active options: {', '.join(active_options)}{Style.RESET_ALL}")
-    print()
-
-    analyzer = ESOLogAnalyzer(list_hostiles=list_hostiles, diagnostic=diagnostic, save_reports=save_reports)
-
-    if read_all_then_stop:
-        # Determine which log file to use
-        if log_file:
-            read_log = Path(log_file)
-        else:
-            # Use auto-detected log file
-            read_log = _find_eso_log_file(diagnostic=diagnostic)
-            if not read_log:
-                print(f"{Fore.RED}Error: No log file found and none specified{Style.RESET_ALL}")
-                _provide_log_file_guidance()
-                sys.exit(1)
-        
-        if not read_log.exists():
-            print(f"{Fore.RED}Error: Read log file not found: {read_log}{Style.RESET_ALL}")
-            sys.exit(1)
-
-        print(f"{Fore.YELLOW}Read mode: Processing {read_log} from the beginning at full speed{Style.RESET_ALL}")
-        analyzer.current_log_file = str(read_log)
-        
-        # Set up reports directory for read mode
-        if save_reports:
-            if reports_dir:
-                reports_path = Path(reports_dir)
-            else:
-                reports_path = Path(read_log).parent
-            
-            # Validate reports directory
-            if not reports_path.exists():
-                try:
-                    reports_path.mkdir(parents=True, exist_ok=True)
-                except (PermissionError, OSError) as e:
-                    print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                    print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                    sys.exit(1)
-            elif not reports_path.is_dir():
-                print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            elif not os.access(reports_path, os.W_OK):
-                print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            
-            # Update analyzer with reports directory
-            analyzer.reports_dir = reports_path
-        
-        split_dir_path = Path(split_dir) if split_dir else None
-        _replay_log_file(analyzer, read_log, replay_speed, tail_and_split, split_dir_path)
-        return
-
-    # Determine log file path
-    if log_file:
-        log_path = Path(log_file)
-        print(f"{Fore.CYAN}Using specified log file: {log_path}{Style.RESET_ALL}")
-    else:
-        # Auto-detect based on host OS
-        host_type = _get_host_type_description()
-        print(f"{Fore.CYAN}Auto-detecting ESO log location for {host_type}...{Style.RESET_ALL}")
-        
-        # First try to find existing log file
-        log_path = _find_eso_log_file(diagnostic=diagnostic)
-        if log_path:
-            print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
-        else:
-            # Use most likely directory based on host OS
-            likely_directory = _get_most_likely_log_directory()
-            log_path = likely_directory / "Encounter.log"
-            print(f"{Fore.YELLOW}Encounter.log not found, will check in {likely_directory}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Tip: Use --no-wait to see detailed guidance on enabling encounter logging{Style.RESET_ALL}")
-
-    # Check if the directory exists, create it if it doesn't (for monitoring)
-    log_directory = log_path.parent
-    if not log_directory.exists():
-        try:
-            log_directory.mkdir(parents=True, exist_ok=True)
-            print(f"{Fore.YELLOW}Created log directory: {log_directory}{Style.RESET_ALL}")
-        except OSError as e:
-            print(f"{Fore.RED}Error: Cannot create log directory {log_directory}: {e}{Style.RESET_ALL}")
-            sys.exit(1)
-
-    # Handle file existence - wait by default, exit only if --no-wait is used
-    if not log_path.exists():
-        if no_wait:
-            print(f"{Fore.YELLOW}Encounter.log not found at {log_path}{Style.RESET_ALL}")
-            _provide_log_file_guidance()
-            sys.exit(1)
-        else:
-            # Wait for file by default
-            if not _wait_for_file(log_path, True):
-                print(f"{Fore.RED}Error: Could not wait for log file{Style.RESET_ALL}")
-                sys.exit(1)
-    else:
-        print(f"{Fore.GREEN}Encounter.log found at {log_path}{Style.RESET_ALL}")
-
-    print(f"{Fore.GREEN}Monitoring: {log_path}{Style.RESET_ALL}")
-
-    # Set up reports directory now that we have the log path
-    if save_reports:
-        if reports_dir:
-            reports_path = Path(reports_dir)
-        else:
-            reports_path = Path(log_path).parent
-        
-        # Validate reports directory
-        if not reports_path.exists():
-            try:
-                reports_path.mkdir(parents=True, exist_ok=True)
-            except (PermissionError, OSError) as e:
-                print(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                print(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-        elif not reports_path.is_dir():
-            print(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
-            sys.exit(1)
-        elif not os.access(reports_path, os.W_OK):
-            print(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-            print(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-            sys.exit(1)
-        
-        # Update analyzer with reports directory
-        analyzer.reports_dir = reports_path
-
-    # Set the current log file path for timestamp calculations
-    analyzer.current_log_file = str(log_path)
-
-    # Create fight history early so catch-up processing can populate it
-    fight_history = FightHistory()
-    analyzer.fight_history = fight_history
-
-    # Set up file monitoring with simple polling
-    split_dir_path = Path(split_dir) if split_dir else None
-    file_monitor = LogFileMonitor(analyzer, log_path, read_all_then_tail, tail_and_split, split_dir_path)
-    file_monitor.running = True
-
-    # Initialize TUI if appropriate
-    tui = None
-    use_tui = not no_tui and sys.stdout.isatty()
-
-    if use_tui:
-        tui = TuiDisplay()
-        tui.start()
-        if not tui.active:
-            tui = None  # Fall back to print mode
-
-    # Store TUI reference on analyzer for access during encounter processing
-    analyzer.tui = tui
-
-    try:
-        poll_interval = 1.0  # Check for changes every second
-
-        # Mutable box so the cancel_check closure can both stash a pending key
-        # and signal the outer loop without losing keypresses.
-        _pending_key = [None]
-
-        def _cancel_during_catchup():
-            """Poll the TUI for 'q' during long catch-up batches."""
-            if not (tui and tui.active):
-                return False
-            k = tui.get_key()
-            if k == -1:
-                return False
-            if k == ord('q'):
-                file_monitor.running = False
-                return True
-            # Not a quit key — stash it so the main loop handles it next iteration
-            _pending_key[0] = k
-            return False
-
-        while file_monitor.running:
-            file_monitor.check_for_changes(
-                cancel_check=_cancel_during_catchup if (tui and tui.active) else None
-            )
-
-            if not file_monitor.running:
-                break
-
-            # Handle TUI input
-            rendered_this_cycle = False
-            if tui and tui.active:
-                import curses as _curses
-                if _pending_key[0] is not None:
-                    key = _pending_key[0]
-                    _pending_key[0] = None
-                else:
-                    key = tui.get_key()
-                if key == ord('q'):
-                    file_monitor.running = False
-                    break
-                elif key == _curses.KEY_UP or key == ord('k'):
-                    fight_history.scroll_up()
-                    tui.detail_scroll = 0
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == _curses.KEY_DOWN or key == ord('j'):
-                    fight_history.scroll_down()
-                    tui.detail_scroll = 0
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == _curses.KEY_PPAGE:  # Page Up
-                    tui.scroll_detail_up(10)
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == _curses.KEY_NPAGE:  # Page Down
-                    tui.scroll_detail_down(10)
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == ord('c'):
-                    tui.copy_fight_to_clipboard(fight_history)
-                elif key == ord('d') or key == 10:  # d or Enter
-                    tui.detail_mode = not tui.detail_mode
-                    tui.detail_scroll = 0
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == 27:  # Escape - back to compact
-                    if tui.detail_mode:
-                        tui.detail_mode = False
-                        tui.detail_scroll = 0
-                        tui.render_fight(fight_history)
-                        rendered_this_cycle = True
-                elif key == ord('G') or key == _curses.KEY_END:
-                    fight_history.snap_to_latest()
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-                elif key == _curses.KEY_RESIZE:
-                    # On Windows/PDCurses, getmaxyx() returns stale dimensions
-                    # until resize_term(0, 0) is called explicitly.
-                    try:
-                        _curses.resize_term(0, 0)
-                    except _curses.error:
-                        pass
-                    tui.render_fight(fight_history)
-                    rendered_this_cycle = True
-
-            # Refresh TUI every cycle to update elapsed timer (skip if already rendered)
-            if not rendered_this_cycle and tui and tui.active and fight_history.total > 0:
-                tui.render_fight(fight_history)
-
-            if analyzer.diagnostic and not (tui and tui.active):
-                timestamp = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp}] DIAGNOSTIC: Polling {log_path.name} for changes...{Style.RESET_ALL}")
-
-            time.sleep(poll_interval)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if tui:
-            tui.stop()
-        print(f"\n{Fore.YELLOW}Stopping monitor...{Style.RESET_ALL}")
-        file_monitor.running = False
-
-        # Clean up log splitter if it exists
-        if file_monitor.log_splitter:
-            file_monitor.log_splitter.cleanup()
-            if tail_and_split:
-                print(f"{Fore.CYAN}Auto-split cleanup completed{Style.RESET_ALL}")
-
-
-def _wait_for_file(log_path: Path, wait_for_file: bool = False) -> bool:
-    """Wait for the log file to appear if it doesn't exist."""
-    if log_path.exists():
-        return True
-    
-    if not wait_for_file:
-        return False
-    
-    print(f"{Fore.YELLOW}Waiting for {log_path.name} to appear...{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Make sure encounter logging is enabled in ESO{Style.RESET_ALL}")
-    
-    last_status_time = time.time()
-    status_interval = 60  # Print status every 60 seconds
-    
-    while not log_path.exists():
-        current_time = time.time()
-        
-        # Print status every minute
-        if current_time - last_status_time >= status_interval:
-            elapsed_minutes = int((current_time - last_status_time) / 60)
-            print(f"{Fore.YELLOW}[{elapsed_minutes}m] Still waiting for {log_path.name}...{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}Tip: Enable encounter logging in ESO or use the Easy Stalking addon{Style.RESET_ALL}")
-            last_status_time = current_time
-        
-        time.sleep(1)
-    
-    print(f"{Fore.GREEN}{log_path.name} found! Starting monitoring...{Style.RESET_ALL}")
-    return True
 
 def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
     """Enhanced Windows-specific ESO log file detection with comprehensive search."""
@@ -4618,7 +3849,7 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
     
     if diagnostic:
         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching Windows locations for ESO log directories{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching Windows locations for ESO log directories{Style.RESET_ALL}")
     
     # Check each directory
     for directory in search_locations:
@@ -4628,7 +3859,7 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
             
             if diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found directory: {directory}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found directory: {directory}{Style.RESET_ALL}")
             
             # Check for Encounter.log in this directory
             if encounter_log.exists():
@@ -4645,35 +3876,35 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
                         'mod_time_str': mod_time_str
                     })
                     
-                    print(f"{Fore.GREEN}Encounter.log found: {encounter_log}{Style.RESET_ALL}")
-                    print(f"{Fore.GREEN}Last modified: {mod_time_str} (local time){Style.RESET_ALL}")
+                    _console(f"{Fore.GREEN}Encounter.log found: {encounter_log}{Style.RESET_ALL}")
+                    _console(f"{Fore.GREEN}Last modified: {mod_time_str} (local time){Style.RESET_ALL}")
                     
                 except OSError as e:
                     if diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error accessing {encounter_log}: {e}{Style.RESET_ALL}")
+                        _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error accessing {encounter_log}: {e}{Style.RESET_ALL}")
             else:
                 if diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: No Encounter.log in {directory}{Style.RESET_ALL}")
+                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: No Encounter.log in {directory}{Style.RESET_ALL}")
         else:
             if diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Directory not found: {directory}{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Directory not found: {directory}{Style.RESET_ALL}")
     
     # If no directories found, exit with summary
     if not found_directories:
-        print(f"{Fore.YELLOW}No ESO log directories found on Windows.{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Searched locations:{Style.RESET_ALL}")
+        _console(f"{Fore.YELLOW}No ESO log directories found on Windows.{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}Searched locations:{Style.RESET_ALL}")
         for location in search_locations:
-            print(f"{Fore.WHITE}  - {location}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Please ensure ESO is installed and encounter logging is enabled.{Style.RESET_ALL}")
+            _console(f"{Fore.WHITE}  - {location}{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}Please ensure ESO is installed and encounter logging is enabled.{Style.RESET_ALL}")
         return None
     
     # Print found directories
-    print(f"{Fore.GREEN}Found {len(found_directories)} ESO log directory(ies):{Style.RESET_ALL}")
+    _console(f"{Fore.GREEN}Found {len(found_directories)} ESO log directory(ies):{Style.RESET_ALL}")
     for directory in found_directories:
-        print(f"{Fore.WHITE}  - {directory}{Style.RESET_ALL}")
+        _console(f"{Fore.WHITE}  - {directory}{Style.RESET_ALL}")
         
         # Find most recently updated file in directory
         try:
@@ -4693,14 +3924,14 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
             if most_recent_file:
                 mod_datetime = datetime.fromtimestamp(most_recent_time)
                 mod_time_str = mod_datetime.strftime("%Y-%m-%d %H:%M:%S")
-                print(f"{Fore.CYAN}    Most recent file: {most_recent_file.name} ({mod_time_str}){Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}    Most recent file: {most_recent_file.name} ({mod_time_str}){Style.RESET_ALL}")
             else:
-                print(f"{Fore.CYAN}    Directory is empty{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}    Directory is empty{Style.RESET_ALL}")
                 
         except OSError as e:
             if diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error scanning {directory}: {e}{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Error scanning {directory}: {e}{Style.RESET_ALL}")
     
     # If Encounter.log files found, pick the most recent one
     if found_encounter_logs:
@@ -4710,9 +3941,9 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
         most_recent_log = found_encounter_logs[0]
         
         if len(found_encounter_logs) > 1:
-            print(f"{Fore.GREEN}Selected most recently updated Encounter.log:{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}  {most_recent_log['path']}{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}  Last modified: {most_recent_log['mod_time_str']}{Style.RESET_ALL}")
+            _console(f"{Fore.GREEN}Selected most recently updated Encounter.log:{Style.RESET_ALL}")
+            _console(f"{Fore.WHITE}  {most_recent_log['path']}{Style.RESET_ALL}")
+            _console(f"{Fore.WHITE}  Last modified: {most_recent_log['mod_time_str']}{Style.RESET_ALL}")
         
         return most_recent_log['path']
     
@@ -4747,8 +3978,8 @@ def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
                 continue
         
         if best_directory:
-            print(f"{Fore.YELLOW}No Encounter.log files found, but will monitor:{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}  {best_directory / 'Encounter.log'}{Style.RESET_ALL}")
+            _console(f"{Fore.YELLOW}No Encounter.log files found, but will monitor:{Style.RESET_ALL}")
+            _console(f"{Fore.WHITE}  {best_directory / 'Encounter.log'}{Style.RESET_ALL}")
             return best_directory / "Encounter.log"
     
     return None
@@ -4794,10 +4025,10 @@ def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
     # Show diagnostic information if requested
     if diagnostic:
         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-        print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching for Encounter.log in {len(possible_paths)} locations{Style.RESET_ALL}")
+        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Searching for Encounter.log in {len(possible_paths)} locations{Style.RESET_ALL}")
         for i, path in enumerate(possible_paths, 1):
             status = "✓ EXISTS" if path.exists() else "✗ not found"
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: {i:2d}. {path} - {status}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: {i:2d}. {path} - {status}{Style.RESET_ALL}")
 
     # Search for existing files
     found_paths = []
@@ -4809,44 +4040,10 @@ def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
     if found_paths:
         if diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found {len(found_paths)} log file(s), using: {found_paths[0]}{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Found {len(found_paths)} log file(s), using: {found_paths[0]}{Style.RESET_ALL}")
         return found_paths[0]
 
     return None
-
-def _provide_log_file_guidance() -> None:
-    """Provide helpful guidance when no ESO log file is found."""
-    host_type = _get_host_type_description()
-    
-    print(f"{Fore.YELLOW}No ESO Encounter.log file found on {host_type}.{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Here's how to enable encounter logging in ESO:{Style.RESET_ALL}")
-    print()
-    
-    if sys.platform == "win32":
-        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}   %USERPROFILE%\\Documents\\Elder Scrolls Online\\live\\Logs\\Encounter.log{Style.RESET_ALL}")
-    elif sys.platform == "darwin":
-        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}   ~/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   or (if using Wine):{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}   ~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.WHITE}1. Open ESO and go to Settings > Combat > Combat Logging{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}2. Enable 'Combat Logging' and 'Combat Logging to File'{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}3. The log file should appear at:{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}   ~/.wine/drive_c/users/Public/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   or (if using Steam Deck):{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}   ~/.steam/steam/steamapps/compatdata/306130/pfx/drive_c/users/steamuser/Documents/Elder Scrolls Online/live/Logs/Encounter.log{Style.RESET_ALL}")
-    
-    print()
-    print(f"{Fore.CYAN}Alternative: Specify the log file path manually:{Style.RESET_ALL}")
-    print(f"{Fore.WHITE}  python3 src/esolog_tail.py --log-file /path/to/your/Encounter.log{Style.RESET_ALL}")
-    print()
-    print(f"{Fore.CYAN}Tip: You can also use --no-wait to exit immediately if the file doesn't exist.{Style.RESET_ALL}")
 
 def _get_most_likely_log_directory() -> Path:
     """Get the most likely ESO log directory based on the host OS."""
@@ -4919,66 +4116,24 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
             log_splitter.write_log_line(line)
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG written to split file{Style.RESET_ALL}")
         else:
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG NOT written - no file handle{Style.RESET_ALL}")
         
         # End the encounter and close the split file
         if log_splitter.pending_begin_log or log_splitter.current_split_file:
             log_splitter.end_encounter()
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
+                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, closing split file{Style.RESET_ALL}")
         else:
             if log_splitter.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                print(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: END_LOG detected but no active split file to close{Style.RESET_ALL}")
     
     # Write all other lines to current split file
     else:
         log_splitter.write_log_line(line)
 
-def _replay_log_file(analyzer: ESOLogAnalyzer, log_file: Path, speed_multiplier: int, tail_and_split: bool = False, split_dir: Optional[Path] = None):
-    """Replay a log file for testing purposes."""
-
-    print(f"{Fore.YELLOW}Reading log file...{Style.RESET_ALL}")
-
-    # Initialize log splitter if needed
-    log_splitter = LogSplitter(log_file, diagnostic=analyzer.diagnostic, split_dir=split_dir) if tail_and_split else None
-
-    entries = []
-    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
-        for line_num, line in enumerate(f, 1):
-            if line_num % 10000 == 0:
-                print(f"{Fore.YELLOW}Processed {line_num} lines...{Style.RESET_ALL}")
-
-            line = line.strip()
-            if line:
-                entry = analyzer.log_parser.parse_line(line)
-                if entry:
-                    entries.append(entry)
-                    
-                    # Handle log splitting if enabled
-                    if log_splitter:
-                        _handle_replay_log_splitting(log_splitter, entry, line)
-
-    print(f"{Fore.GREEN}Loaded {len(entries)} log entries{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}Starting replay at full speed...{Style.RESET_ALL}\n")
-
-    if not entries:
-        print(f"{Fore.RED}No valid log entries found{Style.RESET_ALL}")
-        return
-
-    # Process all entries at full speed without delays
-    for entry in entries:
-        analyzer.process_log_entry(entry)
-
-    # Final check to ensure any remaining encounters are displayed
-    analyzer._check_pending_encounter_display()
-
-    print(f"\n{Fore.GREEN}Replay complete!{Style.RESET_ALL}")
-
-if __name__ == "__main__":
-    main()

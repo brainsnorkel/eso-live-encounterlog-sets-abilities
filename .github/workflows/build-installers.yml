@@ -1,4 +1,4 @@
-name: Build Cross-Platform Installers
+name: Build Windows Installer
 
 on:
   push:
@@ -14,248 +14,67 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
-        
+        python-version: '3.11'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
-        
+        pip install -r requirements-build.txt
+
     - name: Generate gear set data
-      run: |
-        python scripts/generate_gear_data.py
-        
+      run: python scripts/generate_gear_data.py
+
     - name: Create icon
+      run: python scripts/create_icon.py
+
+    - name: Run tests
       run: |
-        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
-        
-    - name: Build Windows executable
-      run: |
-        pyinstaller esolog-tail.spec
-        
-    - name: Create Windows installer package
-      run: |
-        mkdir dist\installer
-        copy dist\esolog-tail.exe dist\installer\
-        copy README.md dist\installer\
-        echo @echo off > dist\installer\run.bat
-        echo echo ESO Live Encounter Log Sets and Abilities Analyzer >> dist\installer\run.bat
-        echo echo =============================================== >> dist\installer\run.bat
-        echo echo. >> dist\installer\run.bat
-        echo echo Starting analyzer in test mode... >> dist\installer\run.bat
-        echo echo Press Ctrl+C to stop >> dist\installer\run.bat
-        echo echo. >> dist\installer\run.bat
-        echo esolog-tail.exe --test-mode >> dist\installer\run.bat
-        echo pause >> dist\installer\run.bat
-        
+        pip install pytest
+        python -m pytest tests/ -q
+      env:
+        QT_QPA_PLATFORM: offscreen
+
     - name: Get version
       id: version
+      shell: bash
+      run: python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+
+    - name: Build GUI executable (onedir, windowed)
+      run: python -m PyInstaller esolog-tail.spec --noconfirm
+
+    - name: Compile installer (Inno Setup)
+      run: iscc /DAppVersion=${{ steps.version.outputs.VERSION }} installer\esolog-gui.iss
+
+    - name: Create portable zip
       run: |
-        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
-        
-    - name: Create Windows installer archive
-      run: |
-        cd dist
-        powershell Compress-Archive -Path installer -DestinationPath esolog-tail-windows-installer-${{ steps.version.outputs.VERSION }}.zip
-        
-    - name: Upload Windows artifact
+        Copy-Item README.md dist\esolog-gui\
+        Compress-Archive -Path dist\esolog-gui\* -DestinationPath dist\esolog-tail-windows-portable-${{ steps.version.outputs.VERSION }}.zip
+
+    - name: Upload installer artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-win-v021
-        path: dist/installer/
+        name: esolog-tail-windows-setup
+        path: dist/esolog-tail-windows-setup-${{ steps.version.outputs.VERSION }}.exe
 
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
-    - name: Generate gear set data
-      run: |
-        python scripts/generate_gear_data.py
-        
-    - name: Create icon
-      run: |
-        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
-        
-    - name: Build macOS executable
-      run: |
-        pyinstaller esolog-tail.spec
-        
-    - name: Create macOS installer package
-      run: |
-        mkdir -p dist/installer
-        cp dist/esolog-tail dist/installer/
-        cp README.md dist/installer/
-        echo '#!/bin/bash' > dist/installer/run.sh
-        echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
-        echo 'echo "================================================="' >> dist/installer/run.sh
-        echo 'echo ""' >> dist/installer/run.sh
-        echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
-        echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
-        echo 'echo ""' >> dist/installer/run.sh
-        echo './esolog-tail --test-mode' >> dist/installer/run.sh
-        chmod +x dist/installer/run.sh
-        
-    - name: Get version
-      id: version
-      run: |
-        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
-        
-    - name: Create macOS installer archive
-      run: |
-        cd dist
-        zip -r esolog-tail-macos-installer-${{ steps.version.outputs.VERSION }}.zip installer/
-        
-    - name: Upload macOS artifact
+    - name: Upload portable artifact
       uses: actions/upload-artifact@v4
       with:
-        name: esolog-tail-mac-v021
-        path: dist/installer/
+        name: esolog-tail-windows-portable
+        path: dist/esolog-tail-windows-portable-${{ steps.version.outputs.VERSION }}.zip
 
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
-    - name: Generate gear set data
-      run: |
-        python scripts/generate_gear_data.py
-        
-    - name: Create icon
-      run: |
-        python scripts/create_icon.py || echo "Icon creation failed, continuing without icon"
-        
-    - name: Build Linux executable
-      run: |
-        pyinstaller esolog-tail.spec
-        
-    - name: Create Linux installer package
-      run: |
-        mkdir -p dist/installer
-        cp dist/esolog-tail dist/installer/
-        cp README.md dist/installer/
-        echo '#!/bin/bash' > dist/installer/run.sh
-        echo 'echo "ESO Live Encounter Log Sets & Abilities Analyzer"' >> dist/installer/run.sh
-        echo 'echo "================================================="' >> dist/installer/run.sh
-        echo 'echo ""' >> dist/installer/run.sh
-        echo 'echo "Starting analyzer in test mode..."' >> dist/installer/run.sh
-        echo 'echo "Press Ctrl+C to stop"' >> dist/installer/run.sh
-        echo 'echo ""' >> dist/installer/run.sh
-        echo './esolog-tail --test-mode' >> dist/installer/run.sh
-        chmod +x dist/installer/run.sh
-        
-    - name: Get version
-      id: version
-      run: |
-        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
-        
-    - name: Create Linux installer archive
-      run: |
-        cd dist
-        tar -czf esolog-tail-linux-installer-${{ steps.version.outputs.VERSION }}.tar.gz installer/
-        
-    - name: Upload Linux artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: esolog-tail-linux-v021
-        path: dist/installer/
-
-  create-release:
-    needs: [build-windows, build-macos, build-linux]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Get version
-      id: version
-      run: |
-        python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
-        
-    - name: Download Windows artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: esolog-tail-win-v021
-        path: ./artifacts/windows
-        
-    - name: Download macOS artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: esolog-tail-mac-v021
-        path: ./artifacts/macos
-        
-    - name: Download Linux artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: esolog-tail-linux-v021
-        path: ./artifacts/linux
-        
-    - name: Create final release archives
-      run: |
-        # Create release directory
-        mkdir -p artifacts/release
-        
-        # Create Windows archive
-        cd artifacts/windows
-        zip -r ../../artifacts/release/esolog-tail-windows-installer-0.2.1.zip *
-        cd ../..
-        
-        # Create macOS archive  
-        cd artifacts/macos
-        zip -r ../../artifacts/release/esolog-tail-macos-installer-0.2.1.zip *
-        cd ../..
-        
-        # Create Linux archive
-        cd artifacts/linux
-        tar -czf ../../artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz *
-        cd ../..
-        
-        # Verify archives were created
-        ls -la artifacts/release/
-        
     - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/release/esolog-tail-windows-installer-0.2.1.zip
-          ./artifacts/release/esolog-tail-macos-installer-0.2.1.zip
-          ./artifacts/release/esolog-tail-linux-installer-0.2.1.tar.gz
+          dist/esolog-tail-windows-setup-${{ steps.version.outputs.VERSION }}.exe
+          dist/esolog-tail-windows-portable-${{ steps.version.outputs.VERSION }}.zip
         generate_release_notes: true
-        fail_on_unmatched_files: false
+        fail_on_unmatched_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

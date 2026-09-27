@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""GUI tests (offscreen): worker signal bridge, views, freshness, archive.
+
+Runs headless via QT_QPA_PLATFORM=offscreen; skipped if PySide6 is missing.
+"""
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+
+try:
+    from PySide6.QtWidgets import QApplication
+    HAVE_QT = True
+except ImportError:
+    HAVE_QT = False
+
+FIXTURE_LOG = Path(__file__).parent.parent / 'fixtures' / 'golden_fight.log'
+GOLDEN_JSON = Path(__file__).parent.parent / 'fixtures' / 'golden_fight_expected.json'
+
+EPOCH_MS = 1755729685851
+BEGIN_LOG = f'5,BEGIN_LOG,{EPOCH_MS},15,"NA Megaserver","en","eso.live.11.1"'
+
+_app = None
+
+
+def _ensure_app():
+    global _app
+    if _app is None:
+        _app = QApplication.instance() or QApplication([])
+    return _app
+
+
+class TestEngineIsQtFree(unittest.TestCase):
+    """Engine modules must not import Qt (gui-application spec)."""
+
+    def test_no_qt_imports_in_engine_modules(self):
+        src = Path(__file__).parent.parent.parent / 'src'
+        offenders = []
+        for py in src.glob('*.py'):
+            if py.name == 'esolog_gui.py':
+                continue  # GUI entry point, not an engine module
+            text = py.read_text(encoding='utf-8', errors='ignore')
+            if 'PySide6' in text or 'PyQt' in text:
+                offenders.append(py.name)
+        self.assertEqual(offenders, [])
+
+    def test_no_terminal_libs_in_engine_modules(self):
+        src = Path(__file__).parent.parent.parent / 'src'
+        offenders = []
+        for py in src.rglob('*.py'):
+            text = py.read_text(encoding='utf-8', errors='ignore')
+            for banned in ('import curses', 'import click', 'from colorama'):
+                if banned in text:
+                    offenders.append(f'{py.name}: {banned}')
+        self.assertEqual(offenders, [])
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class GuiTestCase(unittest.TestCase):
+
+    def setUp(self):
+        _ensure_app()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.log = self.dir / 'Encounter.log'
+        from app_config import AppConfig
+        self.config = AppConfig(path=self.dir / 'config.json')
+        self.config.set('log_path', str(self.log))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _worker(self):
+        from gui.engine_worker import EngineWorker
+        # Driven synchronously on this thread: we call start()/_poll() directly
+        return EngineWorker(self.config)
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestWorkerSignalBridge(GuiTestCase):
+    """Task 4.2: engine events surface as Qt signals."""
+
+    def test_fight_events_arrive_via_signals(self):
+        self.log.write_text(BEGIN_LOG + '\n', encoding='utf-8')
+        worker = self._worker()
+        received = {'fights': [], 'statuses': [], 'zones': []}
+        worker.fight_completed.connect(lambda e: received['fights'].append(e))
+        worker.log_status.connect(lambda s: received['statuses'].append(s))
+        worker.zone_changed.connect(lambda z, d: received['zones'].append((z, d)))
+        worker.start()
+
+        # Append a complete fight and poll
+        fixture_lines = FIXTURE_LOG.read_text(encoding='utf-8').splitlines()
+        with open(self.log, 'a', encoding='utf-8') as f:
+            for line in fixture_lines[1:]:  # skip duplicate BEGIN_LOG
+                f.write(line + '\n')
+        worker._poll()
+        _app.processEvents()
+
+        self.assertEqual(len(received['fights']), 2)
+        self.assertTrue(received['statuses'])
+        self.assertEqual(received['statuses'][-1].source, 'exact')
+        self.assertIn(('Coral Aerie', 'VETERAN'), received['zones'])
+
+    def test_waiting_state_when_log_missing(self):
+        worker = self._worker()
+        waits = []
+        worker.waiting_for_log.connect(lambda p: waits.append(p))
+        worker.start()
+        _app.processEvents()
+        self.assertTrue(waits)
+        self.assertIn('Encounter.log', waits[0])
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestReviewMatchesGolden(GuiTestCase):
+    """Task 4.3: review replay shows the same fights as the golden data."""
+
+    def test_review_fixture_matches_golden(self):
+        worker = self._worker()
+        loaded = {}
+        worker.review_loaded.connect(lambda p, f: loaded.update(path=p, fights=f))
+        worker.open_review(str(FIXTURE_LOG))
+        _app.processEvents()
+
+        golden = json.loads(GOLDEN_JSON.read_text(encoding='utf-8'))
+        fights = loaded['fights']
+        self.assertEqual(len(fights), len(golden['fights']))
+        for got, want in zip(fights, golden['fights']):
+            self.assertEqual(got.zone_name, want['zone_name'])
+            self.assertEqual(got.is_vet, want['is_vet'])
+            self.assertEqual(round(got.group_dps, 1), want['group_dps'])
+            self.assertEqual([p.get('name') for p in got.players],
+                             [p['name'] for p in want['players']])
+
+    def test_render_functions(self):
+        from gui.fight_render import render_html, render_plain_text, summary_line
+        worker = self._worker()
+        loaded = {}
+        worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
+        worker.open_review(str(FIXTURE_LOG))
+        _app.processEvents()
+        entry = loaded['fights'][0]
+        line = summary_line(entry)
+        self.assertIn('Coral Aerie', line)
+        html_out = render_html(entry, detailed=True)
+        self.assertIn('@brainsnorkel', html_out)
+        self.assertIn('Tide-Born Wildstalker', html_out)
+        # Lists must be joined for display, never rendered as Python reprs
+        self.assertNotIn("['", html_out)
+        self.assertNotIn('["', html_out)
+        # Detail view lists ALL equipment: misc pieces below 5pc included
+        import html as html_mod
+        player1 = entry.players[0]
+        for count, set_name in player1.get('all_sets', []):
+            self.assertIn(html_mod.escape(f'{count}pc {set_name}'), html_out)
+        misc = [s for s in player1.get('all_sets', []) if s[0] < 5]
+        self.assertTrue(misc, 'fixture should include sub-5pc pieces')
+        text_out = render_plain_text(entry)
+        self.assertIn('@brainsnorkel', text_out)
+        self.assertNotIn("['", text_out)
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestMainWindowStates(GuiTestCase):
+    """Tasks 4.5/4.6/4.7: status bar states, settings persistence, waiting."""
+
+    def _window(self):
+        from gui.main_window import MainWindow
+        win = MainWindow(self.config)
+        # Stop the real worker thread; tests drive slots directly
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        return win
+
+    def test_freshness_states(self):
+        from datetime import datetime, timedelta
+        from engine_events import LogStatus
+        from gui.main_window import state_style
+        win = self._window()
+        try:
+            cases = [
+                (timedelta(seconds=40), 'live'),
+                (timedelta(minutes=10), 'idle'),
+                (timedelta(minutes=45), 'stale'),
+            ]
+            for age, state in cases:
+                status = LogStatus(log_path=self.log, size_bytes=1,
+                                   latest_entry_time=datetime.now() - age,
+                                   source='exact')
+                win._on_log_status(status)
+                text = win.freshness_label.text()
+                self.assertIn('Last entry:', text)
+                self.assertIn('ago', text)
+                self.assertEqual(win.freshness_label.styleSheet(),
+                                 state_style(state, win._dark))
+            # Live/stale/none must actually color the label for this theme
+            self.assertTrue(state_style('live', win._dark))
+            self.assertTrue(state_style('stale', win._dark))
+            # No log
+            win._last_status = None
+            win._refresh_freshness_label()
+            self.assertEqual(win.freshness_label.text(), 'No log file')
+            self.assertEqual(win.freshness_label.styleSheet(),
+                             state_style('none', win._dark))
+        finally:
+            win.close()
+
+    def test_age_text_formats(self):
+        from gui.main_window import _age_text
+        self.assertEqual(_age_text(40), '40s')
+        self.assertEqual(_age_text(3 * 60), '3m')
+        self.assertEqual(_age_text(45 * 60), '45m')
+        self.assertEqual(_age_text(2 * 3600 + 300), '2h 5m')
+
+    def test_settings_dialog_round_trip(self):
+        from gui.settings_dialog import SettingsDialog
+        win = self._window()
+        try:
+            dialog = SettingsDialog(self.config, win)
+            dialog.threshold.setValue(2048)
+            dialog.delete_original.setChecked(True)
+            dialog.split_enabled.setChecked(True)
+            dialog.apply_to_config()
+            self.config.save()
+
+            from app_config import AppConfig
+            reloaded = AppConfig(path=self.config.path)
+            self.assertEqual(reloaded.get('archive.size_threshold_mb'), 2048)
+            self.assertTrue(reloaded.get('archive.delete_original'))
+            self.assertTrue(reloaded.get('split.enabled'))
+        finally:
+            win.close()
+
+    def test_sizing_guide_visible_in_settings(self):
+        """log-archiving spec: sizing guide beside the threshold field."""
+        from PySide6.QtWidgets import QLabel
+        from gui.settings_dialog import SIZE_GUIDE, SettingsDialog
+        win = self._window()
+        try:
+            dialog = SettingsDialog(self.config, win)
+            self.assertIn('veteran trial', SIZE_GUIDE)
+            labels = [w.text() for w in dialog.findChildren(QLabel)]
+            self.assertTrue(any(SIZE_GUIDE in text for text in labels),
+                            'sizing guide label missing from settings dialog')
+        finally:
+            win.close()
+
+    def test_archive_events_drive_progress_bar(self):
+        from engine_events import ArchiveEvent
+        win = self._window()
+        try:
+            win._on_archive_event(ArchiveEvent(kind='started', total_bytes=100))
+            self.assertTrue(win.archive_progress.isVisibleTo(win))
+            win._on_archive_event(ArchiveEvent(kind='progress', done_bytes=50,
+                                               total_bytes=100))
+            self.assertEqual(win.archive_progress.value(), 500)
+            win._on_archive_event(ArchiveEvent(kind='completed',
+                                               archive_path=Path('x.zip'),
+                                               done_bytes=100, total_bytes=100))
+            self.assertFalse(win.archive_progress.isVisibleTo(win))
+        finally:
+            win.close()
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestArchiveNowEndToEnd(GuiTestCase):
+    """Task 4.6: Archive now performs a real guarded archive."""
+
+    def test_archive_now_creates_zip(self):
+        self.log.write_text(BEGIN_LOG + '\n60000,END_COMBAT\n', encoding='utf-8')
+        worker = self._worker()
+        events = []
+        worker.archive_event.connect(lambda e: events.append(e))
+        worker.start()
+        worker.archive_now()
+        _app.processEvents()
+
+        kinds = [e.kind for e in events]
+        self.assertIn('completed', kinds)
+        zips = list(self.dir.glob('Encounter-*.zip'))
+        self.assertEqual(len(zips), 1)
+        self.assertTrue(self.log.exists())  # default keep
+
+
+if __name__ == '__main__':
+    unittest.main()

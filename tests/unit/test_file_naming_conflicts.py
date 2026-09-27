@@ -72,11 +72,9 @@ class TestFileNamingConflicts(unittest.TestCase):
         
         # Create temp file with different content
         temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.log", "new encounter data")
-        
-        # Mock the rename operation to simulate conflict
-        with patch('os.rename', side_effect=FileExistsError("File exists")):
-            with patch('os.path.exists', return_value=True):
-                result = self.splitter._handle_rename_conflict(Path(temp_file), Path(target_file))
+
+        # Target already exists on disk: the real filesystem provides the conflict
+        result = self.splitter._handle_rename_conflict(Path(temp_file), Path(target_file))
         
         # Should return True (success) and create suffixed file
         self.assertTrue(result)
@@ -100,16 +98,9 @@ class TestFileNamingConflicts(unittest.TestCase):
         
         # Create temp file with new content
         temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.log", "newest data")
-        
-        # Mock the rename operation to simulate conflicts
-        def mock_rename(src, dst):
-            if os.path.exists(dst):
-                raise FileExistsError("File exists")
-            os.rename(src, dst)
-        
-        with patch('os.rename', side_effect=mock_rename):
-            with patch('os.path.exists', return_value=True):
-                result = self.splitter._handle_rename_conflict(Path(temp_file), Path(temp_file.replace('-temp', '')))
+
+        # Target and -1/-2 suffixes already exist on disk: real conflicts
+        result = self.splitter._handle_rename_conflict(Path(temp_file), Path(temp_file.replace('-temp', '')))
         
         # Should return True and create -3 suffix
         self.assertTrue(result)
@@ -143,11 +134,9 @@ class TestFileNamingConflicts(unittest.TestCase):
         
         # Create temp file with different content
         temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.txt", "new report data")
-        
-        # Mock the rename operation to simulate conflict
-        with patch('os.rename', side_effect=FileExistsError("File exists")):
-            with patch('os.path.exists', return_value=True):
-                result = self.analyzer._handle_rename_conflict(Path(temp_file), Path(target_file))
+
+        # Target already exists on disk: the real filesystem provides the conflict
+        result = self.analyzer._handle_rename_conflict(Path(temp_file), Path(target_file))
         
         # Should return True (success) and create suffixed file
         self.assertTrue(result)

@@ -72,9 +72,10 @@ class TestTimestampFormat(unittest.TestCase):
         
         report_name = report_files[0].name
         timestamp_match = report_name.split('-')[0]
-        
-        # Should be current time (2025 format)
-        self.assertTrue(timestamp_match.startswith('25'), f"Should start with '25' for 2025: {timestamp_match}")
+
+        # Falls back to the BEGIN_LOG timestamp (2025-09-14 10:00:00)
+        self.assertEqual(timestamp_match, "250914100000",
+                         f"Expected BEGIN_LOG-derived timestamp, got: {timestamp_match}")
 
     def test_zone_start_time_set_correctly(self):
         """Test behavior when zone_start_time is set correctly."""
@@ -133,7 +134,8 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
         
         # Should be current time (2025 format)
-        self.assertTrue(timestamp_match.startswith('25'), f"Should start with '25' for 2025: {timestamp_match}")
+        expected_year = time.strftime('%y')
+        self.assertTrue(timestamp_match.startswith(expected_year), f"Should start with '{expected_year}' for the current year: {timestamp_match}")
 
     def test_timestamp_conversion_failure(self):
         """Test behavior when timestamp conversion fails."""
@@ -162,7 +164,8 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
         
         # Should be current time (2025 format)
-        self.assertTrue(timestamp_match.startswith('25'), f"Should start with '25' for 2025: {timestamp_match}")
+        expected_year = time.strftime('%y')
+        self.assertTrue(timestamp_match.startswith(expected_year), f"Should start with '{expected_year}' for the current year: {timestamp_match}")
 
     def test_multiple_timestamps_consistency(self):
         """Test that multiple reports use consistent timestamp logic."""
@@ -257,7 +260,8 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
         
         # Should be current time (2025 format) due to negative timestamp
-        self.assertTrue(timestamp_match.startswith('25'), f"Should start with '25' for 2025: {timestamp_match}")
+        expected_year = time.strftime('%y')
+        self.assertTrue(timestamp_match.startswith(expected_year), f"Should start with '{expected_year}' for the current year: {timestamp_match}")
 
 
 if __name__ == '__main__':

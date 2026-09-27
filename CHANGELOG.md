@@ -2,6 +2,29 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.3.0] - 2026-09-27
+
+### BREAKING
+- **The terminal UI (TUI) and all command-line options are removed.** ESO Log Tail is now a windowed desktop application. Existing `.BAT` launch scripts stop working; every former CLI flag has a GUI equivalent (see the "Migrating from the terminal version" section in the README).
+
+### Added
+- **Desktop GUI application** (`esolog-gui.exe`): live fight summaries, session fight history with compact/detail toggle, clipboard copy, and an "Open log for review" mode for browsing fights in split files or old logs
+- **Windows installer**: wizard-style per-user setup (no admin rights) with Start Menu/Desktop shortcuts, Apps & Features registration, in-place upgrades, and clean uninstall; a portable zip is still published
+- **Automatic log archiving at startup**: when `Encounter.log` has grown past a configurable threshold (default 1 GB ≈ five veteran trials) since the last archive, the app zips it to a dated archive (`Encounter-YYMMDDHHMMSS.zip`, named from the newest log entry) with a progress bar; the settings dialog includes a sizing guide (vet trial ≈ 100–300 MB, vet dungeon ≈ 25–75 MB)
+- **Archive safety**: the archiver takes exclusive (deny-all-sharing) access for the whole zip and skips with a notification when ESO has the log open; archives are verified before success is reported; deleting the original after a verified archive is strictly opt-in
+- **"Archive now"** manual action for archiving mid-session after closing ESO, without restarting the app
+- **Log freshness display**: the status bar shows the newest log entry's date/time and a live "how long ago" counter with live/idle/stale/no-log states, derived from log content (BEGIN_LOG epoch + entry offset) rather than file timestamps
+- **Settings dialog** persisted to a per-user JSON config: log path (or auto-detect), split files, reports, and archive options
+- **Experimental: buff timeline strip** (off by default, Settings → Experimental): a compact per-fight timeline — one thin colored row each for Major Slayer, Major Force, Major Courage, Major Berserk, and Major Vulnerability with time tick marks; hovering a segment shows who cast it and who received it
+
+### Changed
+- Analysis engine decoupled from presentation: results flow through a typed listener interface (`engine_events.AnalyzerListener`); split files and zone reports work exactly as before
+- Runtime dependencies are now just `PySide6` and `platformdirs` (build-time tooling moved to `requirements-build.txt`); `click`, `colorama`, `windows-curses`, `pandas`, `openpyxl`, `requests`, and `watchdog` removed from runtime
+- CI builds a single Windows job producing the installer and portable zip; macOS/Linux build jobs removed
+
+### Removed
+- `TuiDisplay` (curses UI), the Click-based CLI, and the abandoned Tauri scaffold under `gui/`
+
 ## [0.2.6] - 2026-04-12
 
 ### Added
