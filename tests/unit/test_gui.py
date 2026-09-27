@@ -296,6 +296,71 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_update_flow(self):
+        """Update prompt wiring: skip persists; update triggers download."""
+        from unittest.mock import patch
+        from update_check import UpdateInfo
+        win = self._window()
+        try:
+            info = UpdateInfo(version='9.9.9', tag='v9.9.9',
+                              installer_url='https://example.invalid/s.exe',
+                              installer_name='esolog-tail-windows-setup-9.9.9.exe',
+                              notes='', page_url='')
+            # Skip: persisted to config
+            with patch.object(win, '_prompt_update', return_value='skip'):
+                win._on_update_available(info)
+            from app_config import AppConfig
+            self.assertEqual(AppConfig(path=self.config.path)
+                             .get('update.skip_version'), '9.9.9')
+            # Update: emits the download request
+            requested = []
+            win.request_update_download.connect(
+                lambda url, name: requested.append((url, name)))
+            with patch.object(win, '_prompt_update', return_value='update'):
+                win._on_update_available(info)
+            self.assertEqual(requested,
+                             [(info.installer_url, info.installer_name)])
+            # Later: nothing persisted or requested
+            requested.clear()
+            self.config.set('update.skip_version', None)
+            with patch.object(win, '_prompt_update', return_value='later'):
+                win._on_update_available(info)
+            self.assertEqual(requested, [])
+            self.assertIsNone(self.config.get('update.skip_version'))
+        finally:
+            win.close()
+
+    def test_worker_update_check_emits_signal(self):
+        from unittest.mock import patch
+        from update_check import UpdateInfo
+        import gui.engine_worker  # noqa: F401  (module for patch target)
+        worker = self._worker()
+        seen = []
+        worker.update_available.connect(lambda i: seen.append(i))
+        info = UpdateInfo(version='9.9.9', tag='v9.9.9', installer_url='u',
+                          installer_name='n', notes='', page_url='')
+        with patch('update_check.check_for_update', return_value=info):
+            worker.check_for_update()
+        _app.processEvents()
+        self.assertEqual([i.version for i in seen], ['9.9.9'])
+
+    def test_worker_download_update_emits_ready(self):
+        import tempfile
+        worker = self._worker()
+        ready, failed = [], []
+        worker.update_ready.connect(lambda p: ready.append(p))
+        worker.update_failed.connect(lambda r: failed.append(r))
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / 'setup.exe'
+            src.write_bytes(b'installer-bytes')
+            worker.download_update(src.as_uri(), 'esolog-test-setup.exe')
+            _app.processEvents()
+        self.assertEqual(failed, [])
+        self.assertEqual(len(ready), 1)
+        downloaded = Path(ready[0])
+        self.assertEqual(downloaded.read_bytes(), b'installer-bytes')
+        downloaded.unlink()
+
     def test_review_emits_parse_progress(self):
         worker = self._worker()
         events = []

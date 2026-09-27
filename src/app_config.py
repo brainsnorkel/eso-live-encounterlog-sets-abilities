@@ -36,6 +36,10 @@ DEFAULTS = {
     "experimental": {
         "buff_timeline": False,  # compact per-fight buff/debuff timeline strip
     },
+    "update": {
+        "check_enabled": True,   # check GitHub releases at startup
+        "skip_version": None,    # release the user chose to skip
+    },
 }
 
 

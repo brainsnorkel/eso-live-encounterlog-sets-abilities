@@ -106,6 +106,15 @@ class SettingsDialog(QDialog):
         archive_form.addRow(warning)
         layout.addWidget(archive_group)
 
+        # Updates
+        update_group = QGroupBox("Updates")
+        update_form = QFormLayout(update_group)
+        self.update_check = QCheckBox(
+            "Check GitHub for a newer release at startup and offer to update")
+        self.update_check.setChecked(bool(config.get("update.check_enabled", True)))
+        update_form.addRow(self.update_check)
+        layout.addWidget(update_group)
+
         # Experimental
         experimental_group = QGroupBox("Experimental")
         experimental_form = QFormLayout(experimental_group)
@@ -133,3 +142,7 @@ class SettingsDialog(QDialog):
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
         self.config.set("experimental.buff_timeline", self.buff_timeline.isChecked())
+        self.config.set("update.check_enabled", self.update_check.isChecked())
+        if self.update_check.isChecked():
+            # Re-enabling checks also clears any skipped version
+            self.config.set("update.skip_version", None)

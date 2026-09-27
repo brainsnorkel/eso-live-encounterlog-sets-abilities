@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
     request_archive = Signal()
     request_restart = Signal()
     request_review = Signal(str)
+    request_update_download = Signal(str, str)  # url, asset name
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -161,10 +162,14 @@ class MainWindow(QMainWindow):
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.review_loaded.connect(self._on_review_loaded)
         self.worker.parse_progress.connect(self._on_parse_progress)
+        self.worker.update_available.connect(self._on_update_available)
+        self.worker.update_ready.connect(self._on_update_ready)
+        self.worker.update_failed.connect(self._on_update_failed)
 
         self.request_archive.connect(self.worker.archive_now)
         self.request_restart.connect(self.worker.restart_monitoring)
         self.request_review.connect(self.worker.open_review)
+        self.request_update_download.connect(self.worker.download_update)
 
         self.worker_thread.started.connect(self.worker.start)
         # Canonical Qt worker teardown: delete the worker (and its timers)
@@ -296,6 +301,69 @@ class MainWindow(QMainWindow):
         self.banner.setVisible(True)
         self.back_to_live_action.setVisible(True)
         self._reload_list(fights)
+
+    # ---- updates ----
+
+    def _prompt_update(self, info) -> str:
+        """Ask about an available update: 'update' | 'later' | 'skip'."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Update available")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"ESO Log Tail {info.version} is available "
+                    f"(you have {__version__}).")
+        notes = (info.notes or "").strip()
+        if notes:
+            box.setDetailedText(notes)
+        update_btn = box.addButton("Update now", QMessageBox.AcceptRole)
+        box.addButton("Later", QMessageBox.RejectRole)
+        skip_btn = box.addButton("Skip this version", QMessageBox.DestructiveRole)
+        box.setDefaultButton(update_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is update_btn:
+            return "update"
+        if clicked is skip_btn:
+            return "skip"
+        return "later"
+
+    @Slot(object)
+    def _on_update_available(self, info):
+        choice = self._prompt_update(info)
+        if choice == "update":
+            self.statusBar().showMessage(
+                f"Downloading update {info.version}…")
+            self.request_update_download.emit(info.installer_url,
+                                              info.installer_name)
+        elif choice == "skip":
+            self.config.set("update.skip_version", info.version)
+            self.config.save()
+
+    @Slot(str)
+    def _on_update_ready(self, installer_path):
+        reply = QMessageBox.question(
+            self, "Install update",
+            "The update has downloaded. Install it now?\n\n"
+            "ESO Log Tail will close and the installer will take over; "
+            "your settings are kept and monitoring resumes when it "
+            "relaunches.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply != QMessageBox.Yes:
+            self.statusBar().showMessage(
+                f"Update downloaded to {installer_path} — run it when ready",
+                15000)
+            return
+        import subprocess
+        try:
+            subprocess.Popen([installer_path], close_fds=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Update",
+                                f"Could not start the installer:\n{exc}")
+            return
+        self.close()
+
+    @Slot(str)
+    def _on_update_failed(self, reason):
+        self.statusBar().showMessage(f"Update {reason}", 15000)
 
     # ---- freshness ----
 

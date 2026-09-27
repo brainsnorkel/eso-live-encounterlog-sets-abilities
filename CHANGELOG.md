@@ -16,6 +16,8 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 - **Log freshness display**: the status bar shows the newest log entry's date/time and a live "how long ago" counter with live/idle/stale/no-log states, derived from log content (BEGIN_LOG epoch + entry offset) rather than file timestamps
 - **Settings dialog** persisted to a per-user JSON config: log path (or auto-detect), split files, reports, and archive options
 - **Experimental: buff timeline strip** (off by default, Settings → Experimental): a compact per-fight timeline — one thin colored row each for Major Slayer, Major Force, Major Courage, Major Berserk, and Major Vulnerability with time tick marks; hovering a segment shows who cast it and who received it
+- **Update prompt**: the app checks GitHub releases at startup (Settings → Updates to disable) and offers Update now / Later / Skip this version; updating downloads the installer with progress and hands over to it
+- **Work progress in the status bar**: byte-accurate progress while parsing reviewed logs, a busy indicator during large live catch-ups, and download/archive progress share one bar
 
 ### Changed
 - Analysis engine decoupled from presentation: results flow through a typed listener interface (`engine_events.AnalyzerListener`); split files and zone reports work exactly as before

@@ -62,6 +62,10 @@ Open **Settings…** from the toolbar:
 
 Settings persist in a per-user config file and survive upgrades and uninstalls.
 
+### Automatic updates
+
+At startup the app checks GitHub for a newer release (Settings → Updates to disable). When one exists you're prompted with **Update now / Later / Skip this version**; updating downloads the installer with a progress bar, closes the app, and hands over to the installer — settings are kept and the app relaunches when it finishes. Nothing is ever installed without the prompt.
+
 ### Experimental: buff timeline
 
 Settings → Experimental → *Buff timeline* (off by default) adds a very compact strip above each fight summary: one thin colored line per tracked effect — Major Slayer, Major Force, Major Courage, Major Berserk, and Major Vulnerability — filled where the effect was active, with time tick marks. Hover a segment to see who cast it and who received it. Rows for effects that never occurred are omitted, and the strip disappears entirely when there's nothing to show, so it stays out of the way of the fight summary. Being experimental, its look and behavior may change or it may be removed.

@@ -60,6 +60,9 @@ class EngineWorker(QObject):
     # Parsing/import progress: (label, done_bytes, total_bytes).
     # total == 0 -> indeterminate busy; done >= total > 0 -> finished (hide).
     parse_progress = Signal(str, int, int)
+    update_available = Signal(object)  # update_check.UpdateInfo
+    update_ready = Signal(str)         # downloaded installer path
+    update_failed = Signal(str)        # reason
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -101,6 +104,46 @@ class EngineWorker(QObject):
             self._poll_timer.start()
         else:
             self._start_waiting()
+
+        # Non-blocking update check shortly after startup
+        if bool(self.config.get("update.check_enabled", True)):
+            QTimer.singleShot(3000, self.check_for_update)
+
+    @Slot()
+    def check_for_update(self):
+        """Check GitHub for a newer release; silent on any failure."""
+        try:
+            from update_check import check_for_update
+            from version import __version__
+            info = check_for_update(
+                __version__, self.config.get("update.skip_version"))
+            if info is not None:
+                self.update_available.emit(info)
+        except Exception as exc:
+            self.diagnostic.emit(f"update check failed: {exc}")
+
+    @Slot(str, str)
+    def download_update(self, url: str, name: str):
+        """Download the installer to temp, reporting progress."""
+        import tempfile
+        from pathlib import Path as _Path
+
+        from update_check import download_file
+        label = f"Downloading {name}"
+        dest = _Path(tempfile.gettempdir()) / name
+        self.parse_progress.emit(label, 0, 0)
+        try:
+            ok = download_file(
+                url, dest,
+                progress=lambda done, total:
+                    self.parse_progress.emit(label, done, total or 0))
+            if ok:
+                self.update_ready.emit(str(dest))
+            else:
+                self.update_failed.emit("download failed; try again later or "
+                                        "download from the releases page")
+        finally:
+            self.parse_progress.emit(label, 1, 1)  # hide
 
     @Slot()
     def restart_monitoring(self):
