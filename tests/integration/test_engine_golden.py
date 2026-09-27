@@ -29,9 +29,43 @@ GOLDEN_JSON = Path(__file__).parent.parent / 'fixtures' / 'golden_fight_expected
 
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
+# The fixture's BEGIN_LOG epoch: all timestamps in outputs derive from it
+BASE_EPOCH_S = 1755729685.851
+
+# Local-time renderings the engine produces (filenames and report text)
+_TS12_RE = re.compile(r'(?<!\d)(\d{12})(?!\d)')
+_DATETIME_RE = re.compile(r'20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}')
+
 
 def _strip_ansi(text: str) -> str:
     return ANSI_RE.sub('', text)
+
+
+def _normalize_times(text: str) -> str:
+    """Replace local-time renderings with offsets from the fixture epoch.
+
+    The engine formats timestamps in local time, so raw goldens would be
+    tied to the timezone they were generated in (UTC CI runners disagree
+    with a UTC+10 dev machine). Parsing each rendering back through local
+    time and storing seconds-since-BASE_EPOCH keeps the goldens exact and
+    timezone-independent.
+    """
+    import time as _time
+
+    def _to_offset(struct_fmt, value):
+        try:
+            epoch = _time.mktime(_time.strptime(value, struct_fmt))
+        except (ValueError, OverflowError):
+            return None
+        return f'T{int(round(epoch - BASE_EPOCH_S))}'
+
+    def _sub12(match):
+        return _to_offset('%y%m%d%H%M%S', match.group(1)) or match.group(1)
+
+    def _subdt(match):
+        return _to_offset('%Y-%m-%d %H:%M:%S', match.group(0)) or match.group(0)
+
+    return _TS12_RE.sub(_sub12, _DATETIME_RE.sub(_subdt, text))
 
 
 def _fight_entry_to_dict(entry) -> dict:
@@ -40,7 +74,7 @@ def _fight_entry_to_dict(entry) -> dict:
     Excludes ended_at (wall-clock capture time, nondeterministic).
     """
     return {
-        'timestamp': entry.timestamp,
+        'timestamp': _normalize_times(str(entry.timestamp)),
         'zone_name': entry.zone_name,
         'is_vet': entry.is_vet,
         'duration_s': round(entry.duration_s, 3),
@@ -103,20 +137,21 @@ def _replay_pipeline(tmpdir: Path) -> dict:
     report_files = {}
     for f in sorted(reports_dir.rglob('*')):
         if f.is_file():
-            report_files[f.name] = _strip_ansi(f.read_text(encoding='utf-8'))
+            report_files[_normalize_times(f.name)] = _normalize_times(
+                _strip_ansi(f.read_text(encoding='utf-8')))
 
     split_files = {}
     for f in sorted(splits_dir.rglob('*')):
         if f.is_file():
             content = f.read_bytes()
-            split_files[f.name] = {
+            split_files[_normalize_times(f.name)] = {
                 'lines': content.decode('utf-8').count('\n'),
                 'sha256': hashlib.sha256(content).hexdigest(),
             }
 
     # Zone report buffers (reports may flush on zone change/END_LOG; capture both)
     zone_reports = {
-        zone: [_strip_ansi(l) for l in lines_]
+        zone: [_normalize_times(_strip_ansi(l)) for l in lines_]
         for zone, lines_ in analyzer.zone_reports.items()
     }
 

@@ -10,6 +10,12 @@ import time
 from src.esolog_tail import ESOLogAnalyzer, CombatEncounter
 
 
+
+# Expected timestamps are LOCAL renderings of fixture epochs; computed at
+# runtime so tests pass in any timezone (CI runners are UTC).
+def _local_ts(epoch_s):
+    return time.strftime('%y%m%d%H%M%S', time.localtime(epoch_s))
+
 class TestTimestampFormat(unittest.TestCase):
     """Test timestamp format generation for report filenames."""
 
@@ -45,7 +51,7 @@ class TestTimestampFormat(unittest.TestCase):
         # Test datetime conversion
         dt = datetime.fromtimestamp(absolute_timestamp)
         timestamp_str = dt.strftime("%y%m%d%H%M%S")
-        expected_timestamp = "250914100001"
+        expected_timestamp = _local_ts(1757808001)
         self.assertEqual(timestamp_str, expected_timestamp, f"Expected {expected_timestamp}, got {timestamp_str}")
 
     def test_zone_start_time_not_set(self):
@@ -74,7 +80,7 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
 
         # Falls back to the BEGIN_LOG timestamp (2025-09-14 10:00:00)
-        self.assertEqual(timestamp_match, "250914100000",
+        self.assertEqual(timestamp_match, _local_ts(1757808000),
                          f"Expected BEGIN_LOG-derived timestamp, got: {timestamp_match}")
 
     def test_zone_start_time_set_correctly(self):
@@ -105,7 +111,7 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
         
         # Should be the calculated timestamp
-        expected_timestamp = "250914100001"
+        expected_timestamp = _local_ts(1757808001)
         self.assertEqual(timestamp_match, expected_timestamp, f"Expected {expected_timestamp}, got {timestamp_match}")
 
     def test_log_start_unix_timestamp_not_set(self):
@@ -199,7 +205,7 @@ class TestTimestampFormat(unittest.TestCase):
             timestamps.append(timestamp_match)
         
         # All timestamps should be the same
-        expected_timestamp = "250914100001"
+        expected_timestamp = _local_ts(1757808001)
         for timestamp in timestamps:
             self.assertEqual(timestamp, expected_timestamp, f"Expected {expected_timestamp}, got {timestamp}")
 
@@ -230,7 +236,7 @@ class TestTimestampFormat(unittest.TestCase):
         timestamp_match = report_name.split('-')[0]
         
         # Should be the log start timestamp (2025-09-14 10:00:00)
-        expected_timestamp = "250914100000"
+        expected_timestamp = _local_ts(1757808000)
         self.assertEqual(timestamp_match, expected_timestamp, f"Expected {expected_timestamp}, got {timestamp_match}")
 
     def test_negative_timestamp(self):
