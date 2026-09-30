@@ -304,6 +304,72 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_in_fight_search_highlights_all_matches(self):
+        """Typing in the search field highlights every occurrence."""
+        win = self._window()
+        try:
+            worker = self._worker()
+            loaded = {}
+            worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
+            worker.open_review(str(FIXTURE_LOG))
+            _app.processEvents()
+            for entry in loaded['fights']:
+                win._on_fight_completed(entry)
+            win.history_list.setCurrentRow(0)
+
+            # Substring, case-insensitive: "wild" hits "Tide-Born Wildstalker"
+            win.search_field.setText('wild')
+            hits = len(win.fight_view.extraSelections())
+            self.assertGreaterEqual(hits, 1)
+            self.assertIn(str(hits), win.search_count.text())
+            win.search_field.setText('WILD')
+            self.assertEqual(len(win.fight_view.extraSelections()), hits)
+
+            # Switching fights re-applies the search to the new content
+            win.history_list.setCurrentRow(1)
+            self.assertGreaterEqual(len(win.fight_view.extraSelections()), 1)
+
+            # Highlighted ranges actually cover the search text
+            selection = win.fight_view.extraSelections()[0]
+            self.assertEqual(selection.cursor.selectedText().lower(), 'wild')
+
+            # No match
+            win.search_field.setText('zzzznothing')
+            self.assertEqual(len(win.fight_view.extraSelections()), 0)
+            self.assertIn('0 matches', win.search_count.text())
+
+            # Clearing removes highlights and the counter
+            win.search_field.clear()
+            self.assertEqual(len(win.fight_view.extraSelections()), 0)
+            self.assertEqual(win.search_count.text(), '')
+        finally:
+            win.close()
+
+    def test_search_enter_cycles_matches(self):
+        win = self._window()
+        try:
+            worker = self._worker()
+            loaded = {}
+            worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
+            worker.open_review(str(FIXTURE_LOG))
+            _app.processEvents()
+            win._on_fight_completed(loaded['fights'][0])
+            win.history_list.setCurrentRow(0)
+            win.search_field.setText('a')  # plenty of matches
+            matches = win._search_matches()
+            self.assertGreater(len(matches), 2)
+            first_pos = win.fight_view.textCursor().position()
+            win._goto_next_match()
+            second_pos = win.fight_view.textCursor().position()
+            self.assertGreater(second_pos, first_pos)
+            # Wraps around eventually
+            for _ in range(len(matches)):
+                win._goto_next_match()
+            self.assertLessEqual(win.fight_view.textCursor().position(),
+                                 matches[-1].selectionStart())
+        finally:
+            win.close()
+
     def test_archive_events_drive_progress_bar(self):
         from engine_events import ArchiveEvent
         win = self._window()

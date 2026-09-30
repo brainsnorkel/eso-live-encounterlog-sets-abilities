@@ -7,11 +7,14 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
+from PySide6.QtGui import (
+    QAction, QColor, QGuiApplication, QKeySequence, QShortcut, QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
-    QFileDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QProgressBar, QPushButton, QSplitter, QTextBrowser,
-    QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
+    QTextBrowser, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from app_config import AppConfig
@@ -152,9 +155,32 @@ class MainWindow(QMainWindow):
         # the summary text; hidden whenever the fight has no timeline data
         self.timeline_strip = TimelineStrip()
         right_layout.addWidget(self.timeline_strip)
+
+        # In-fight text search: highlights every match in the detail pane
+        search_row = QHBoxLayout()
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText(
+            "Search in fight… (Ctrl+F, Enter jumps to next match)")
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.textChanged.connect(self._apply_search)
+        self.search_field.returnPressed.connect(self._goto_next_match)
+        self.search_count = QLabel("")
+        search_row.addWidget(self.search_field, 1)
+        search_row.addWidget(self.search_count)
+        right_layout.addLayout(search_row)
+
         self.fight_view = QTextBrowser()
         self.fight_view.setOpenExternalLinks(False)
         right_layout.addWidget(self.fight_view, 1)
+
+        focus_search = QAction("Find in fight", self)
+        focus_search.setShortcut(QKeySequence.Find)
+        focus_search.triggered.connect(
+            lambda: (self.search_field.setFocus(), self.search_field.selectAll()))
+        self.addAction(focus_search)
+        QShortcut(QKeySequence(Qt.Key_Escape), self.search_field,
+                  activated=self.search_field.clear,
+                  context=Qt.WidgetShortcut)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -435,6 +461,7 @@ class MainWindow(QMainWindow):
         self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None))
         self.fight_view.setHtml(render_html(entry, self._detailed,
                                             dark=self._dark))
+        self._apply_search()
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text
@@ -442,6 +469,60 @@ class MainWindow(QMainWindow):
         self.fight_view.setHtml(
             f"<div style='color:{muted_color(self._dark)};padding:16px'>"
             f"{html_text}</div>")
+        self._apply_search()
+
+    # ---- in-fight search ----
+
+    def _search_matches(self):
+        """QTextCursor for every match of the search text in the pane."""
+        text = self.search_field.text()
+        matches = []
+        if text:
+            document = self.fight_view.document()
+            cursor = QTextCursor(document)
+            while True:
+                cursor = document.find(text, cursor)  # case-insensitive
+                if cursor.isNull():
+                    break
+                matches.append(QTextCursor(cursor))
+        return matches
+
+    def _apply_search(self):
+        matches = self._search_matches()
+        highlight = QTextCharFormat()
+        # Amber with black text reads on both light and dark themes
+        highlight.setBackground(QColor("#ffd54f"))
+        highlight.setForeground(QColor("#000000"))
+        selections = []
+        for cursor in matches:
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = cursor
+            selection.format = highlight
+            selections.append(selection)
+        self.fight_view.setExtraSelections(selections)
+        if self.search_field.text():
+            n = len(selections)
+            self.search_count.setText(f"{n} match{'es' if n != 1 else ''}")
+        else:
+            self.search_count.setText("")
+        if selections:
+            first = QTextCursor(selections[0].cursor)
+            first.setPosition(first.selectionStart())
+            self.fight_view.setTextCursor(first)
+            self.fight_view.ensureCursorVisible()
+
+    def _goto_next_match(self):
+        """Enter in the search field cycles through matches."""
+        matches = self._search_matches()
+        if not matches:
+            return
+        position = self.fight_view.textCursor().position()
+        target = next((m for m in matches if m.selectionStart() > position),
+                      matches[0])  # wrap around
+        cursor = QTextCursor(target)
+        cursor.setPosition(target.selectionStart())
+        self.fight_view.setTextCursor(cursor)
+        self.fight_view.ensureCursorVisible()
 
     def _toggle_detail(self, checked):
         self._detailed = checked

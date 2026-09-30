@@ -47,6 +47,7 @@ Launch ESO Log Tail (before or during play — both work). It auto-detects `Enco
 - **Live view**: each completed fight appears in the history list; the newest is shown automatically. Selecting an older fight pauses following; selecting the newest resumes it.
 - **Detail view** (toolbar toggle): expands each player with skill lines, both ability bars, and full gear sets.
 - **Copy fight**: copies the selected fight summary as plain text to the clipboard.
+- **Search in fight** (Ctrl+F): type in the search field above the fight pane to highlight every occurrence in the summary — e.g. `pill` lights up each *Pillager's Profit* — with a live match count; Enter jumps between matches, Esc clears. The search follows you as you switch fights.
 - **Open log for review**: load any log file — a split file, an unzipped archive — and browse its fights without disturbing live monitoring. "Back to live" returns to the live session.
 - **Status bar**: shows the current zone and the log freshness indicator:
   - `Last entry: 2026-09-27 14:33:02 (40s ago)` — **live** (green) under 2 minutes, normal up to 30 minutes, **stale** (amber) beyond that, and **No log file** (red) when nothing is being monitored. A `~` prefix means the time came from the file clock rather than log content.
