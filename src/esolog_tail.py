@@ -3532,10 +3532,10 @@ class LogFileMonitor:
                 # Look back through recent log entries to find zone changes
                 self._initialize_zone_history()
                 self.last_position = self.log_file.stat().st_size
-                # Attaching mid-file: learn the current session's player
-                # roster, gear, and ability names, or every fight would
-                # only show players whose UNIT_ADDED happened after attach
-                self._backfill_session_preamble()
+                # Attaching mid-file: replay the latest session so its
+                # fights load into the UI, the roster is known, and a
+                # missing split file for the session is created
+                self._load_latest_session()
             # Initial freshness snapshot (content-derived; falls back to mtime)
             self._emit_initial_log_status()
 
@@ -3570,6 +3570,75 @@ class LogFileMonitor:
                 scanned += pos - start
                 pos = start
         return None
+
+    # Latest sessions up to this size are fully replayed at attach (fights
+    # into history, splitter fed); larger ones fall back to the roster-only
+    # preamble sweep.
+    SESSION_REPLAY_CAP = 768 * 1024 * 1024
+
+    def _session_split_exists(self, session_start: int) -> bool:
+        """True when a split file for this session's stamp already exists."""
+        if self.log_splitter is None:
+            return False
+        try:
+            with open(self.log_file, 'rb') as f:
+                f.seek(session_start)
+                line = f.readline().decode('utf-8', errors='ignore')
+            parts = line.split(',')
+            if len(parts) < 3 or parts[1] != 'BEGIN_LOG':
+                return False
+            stamp = datetime.fromtimestamp(
+                int(parts[2]) / 1000).strftime('%y%m%d%H%M%S')
+            return any(Path(self.log_splitter.split_dir).glob(f"{stamp}*.log"))
+        except (OSError, ValueError):
+            return False
+
+    def _load_latest_session(self):
+        """Replay the log's most recent session up to the attach point.
+
+        Gives a mid-session attach the same state as having run since the
+        session began: full roster, this session's fights in history, and
+        the session's split file (created only if absent). Best-effort:
+        failures leave plain tailing, and oversized sessions fall back to
+        the roster-only preamble sweep.
+        """
+        try:
+            end = self.last_position
+            if end <= 0:
+                return
+            start = self._find_session_start_offset(end)
+            if start is None or end - start > self.SESSION_REPLAY_CAP:
+                self._backfill_session_preamble()
+                return
+            # Don't re-split a session that already has a split file
+            replay_splitter = self.log_splitter
+            if replay_splitter is not None and self._session_split_exists(start):
+                self.log_splitter = None
+            self.analyzer._notify(
+                'on_diagnostic',
+                f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
+            try:
+                self._process_range(start, end)
+            finally:
+                self.log_splitter = replay_splitter
+        except Exception as exc:
+            _console(f"Latest-session load failed: {exc}")
+            try:
+                self._backfill_session_preamble()
+            except Exception:
+                pass
+
+    def _process_range(self, start: int, end: int):
+        """Stream lines in [start, end) through the normal processing path."""
+        with open(self.log_file, 'rb') as f:
+            f.seek(start)
+            while f.tell() < end:
+                raw = f.readline()
+                if not raw:
+                    break
+                line = raw.decode('utf-8', errors='ignore').strip()
+                if line:
+                    self._process_one_line(line)
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
@@ -3832,20 +3901,22 @@ class LogFileMonitor:
 
             line = line.strip()
             if line:
-                entry = self.analyzer.log_parser.parse_line(line)
-                offset_ms = parse_relative_ms(line)
-                if offset_ms is not None:
-                    self.last_entry_offset_ms = offset_ms
-            if entry:
-                # Handle log splitting if enabled
-                if self.log_splitter:
-                    self._handle_log_splitting(entry, line)
-
-                self.analyzer.process_log_entry(entry)
+                self._process_one_line(line)
 
         self.last_position = new_end_position
         if new_lines:
             self._emit_log_status(new_end_position)
+
+    def _process_one_line(self, line: str):
+        """Parse one log line and run it through splitter and analyzer."""
+        entry = self.analyzer.log_parser.parse_line(line)
+        offset_ms = parse_relative_ms(line)
+        if offset_ms is not None:
+            self.last_entry_offset_ms = offset_ms
+        if entry:
+            if self.log_splitter:
+                self._handle_log_splitting(entry, line)
+            self.analyzer.process_log_entry(entry)
 
     def _emit_log_status(self, size_bytes: int):
         """Notify listeners of the log's current freshness."""

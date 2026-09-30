@@ -48,31 +48,75 @@ class TestPreambleBackfill(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _attach_and_fight(self):
+    def _attach_and_fight(self, split_dir=None):
         """Attach a tail-mode monitor at current EOF, then append a fight."""
         analyzer = ESOLogAnalyzer()
         analyzer.fight_history = FightHistory()
-        monitor = LogFileMonitor(analyzer, self.log)  # tail mode: attach at end
+        monitor = LogFileMonitor(analyzer, self.log,
+                                 tail_and_split=split_dir is not None,
+                                 split_dir=split_dir)
         with open(self.log, 'a', encoding='utf-8') as f:
             for line in NEW_FIGHT:
                 f.write(line + '\n')
         monitor._process_new_lines()
         return analyzer
 
-    def test_mid_session_attach_learns_roster(self):
-        """The bug: fights after a mid-session attach lost the roster."""
+    def test_mid_session_attach_replays_session(self):
+        """A mid-session attach loads the session's fights and roster."""
         self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
                             encoding='utf-8')
         analyzer = self._attach_and_fight()
         fights = analyzer.fight_history.fights
-        # Only the post-attach fight appears (old combat is not replayed)...
-        self.assertEqual(len(fights), 1)
-        # ...but it knows every player from the session preamble
-        names = sorted(p.get('name') for p in fights[0].players)
-        self.assertEqual(names, ['@brainsnorkel', '@templar'])
+        # The pre-attach fight is loaded into history, plus the new one
+        self.assertEqual(len(fights), 2)
+        for fight in fights:
+            names = sorted(p.get('name') for p in fight.players)
+            self.assertIn('@brainsnorkel', names)
         self.assertEqual(analyzer.current_zone, 'Coral Aerie')
-        # Epoch learned from the backfilled BEGIN_LOG
+        # Epoch learned from the replayed BEGIN_LOG
         self.assertEqual(analyzer.log_start_unix_timestamp, EPOCH // 1000)
+
+    def test_missing_split_created_at_attach(self):
+        """The Dreadsail case: session had no split; attach creates it."""
+        self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
+                            encoding='utf-8')
+        split_dir = Path(self.tmp.name) / 'splits'
+        split_dir.mkdir()
+        self._attach_and_fight(split_dir=split_dir)
+        import datetime
+        stamp = datetime.datetime.fromtimestamp(EPOCH / 1000).strftime('%y%m%d%H%M%S')
+        splits = list(split_dir.glob(f'{stamp}*.log'))
+        self.assertEqual(len(splits), 1)
+        content = splits[0].read_text(encoding='utf-8')
+        self.assertIn('BEGIN_LOG', content)
+        self.assertIn('BEGIN_COMBAT', content)
+
+    def test_existing_split_not_duplicated(self):
+        self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
+                            encoding='utf-8')
+        split_dir = Path(self.tmp.name) / 'splits'
+        split_dir.mkdir()
+        import datetime
+        stamp = datetime.datetime.fromtimestamp(EPOCH / 1000).strftime('%y%m%d%H%M%S')
+        existing = split_dir / f'{stamp}-Coral-Aerie-vet.log'
+        existing.write_text('partial split from earlier run\n', encoding='utf-8')
+        self._attach_and_fight(split_dir=split_dir)
+        # No new split for the session stamp; the existing file is untouched
+        splits = sorted(split_dir.glob(f'{stamp}*'))
+        self.assertEqual(splits, [existing])
+        self.assertIn('partial split', existing.read_text(encoding='utf-8'))
+
+    def test_oversized_session_falls_back_to_roster_sweep(self):
+        self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
+                            encoding='utf-8')
+        from unittest.mock import patch
+        with patch.object(LogFileMonitor, 'SESSION_REPLAY_CAP', 10):
+            analyzer = self._attach_and_fight()
+        fights = analyzer.fight_history.fights
+        # Old combat is not replayed, but the roster is still known
+        self.assertEqual(len(fights), 1)
+        self.assertEqual(sorted(p.get('name') for p in fights[0].players),
+                         ['@brainsnorkel', '@templar'])
 
     def test_no_begin_log_still_sweeps_roster(self):
         """Fallback: roster events are swept even without a reachable BEGIN_LOG."""
