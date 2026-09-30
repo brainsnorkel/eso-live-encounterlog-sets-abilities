@@ -2,6 +2,22 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.3.1] - 2026-09-30
+
+### Fixed
+- **Death counts were always 0**: player deaths arrive as `DIED` events, not `DIED_XP` (enemy deaths). Fight cards now show that fight's player deaths (validated event-for-event against a real vet Hel-Ra log); zone reports keep the cumulative count
+- **Mid-session app start lost the group**: starting the app after a logging session had begun showed fights with only the players added after attach (observed as one player per fight in a 12-person trial). On attach the latest session is now replayed: its fights load into the history, the full roster/gear/abilities are known, and a **missing split file for the session is created** (existing splits are never duplicated; sessions over 768 MB fall back to a fast roster-only sweep)
+- **Dark-mode readability**: the light/dark decision is now live — when Windows switches theme mid-session (auto dark mode), the fight pane, status bar, and timeline re-render with correct-contrast colors
+- **Major Berserk timeline row never appeared**: live logs apply it via ability IDs 61745/263306/36973; all are now tracked
+- Interrupted archives can no longer leave a corrupt file with a `.zip` name (written as `.partial`, renamed only after verification)
+- Review's "Loading…" status message no longer sticks after the load finishes
+
+### Added
+- **In-fight search** (Ctrl+F): highlights every occurrence in the fight summary with a live match count; Enter cycles matches, Esc clears, and the search follows you between fights
+- **Update prompt**: the app checks GitHub releases at startup (Settings → Updates) and offers Update now / Later / Skip this version; updating downloads the installer with progress and hands over to it
+- **Work progress in the status bar**: byte-accurate progress while parsing reviewed logs, a busy indicator during large live catch-ups; archive and download progress share the same bar
+- **Buff timeline**: Powerful Assault row; uptime % in each row label; buffs that only reached one or two people render dotted; the fight header's text uptime line is replaced by the graph when shown
+
 ## [0.3.0] - 2026-09-27
 
 ### BREAKING
