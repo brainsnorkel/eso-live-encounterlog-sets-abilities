@@ -3532,8 +3532,83 @@ class LogFileMonitor:
                 # Look back through recent log entries to find zone changes
                 self._initialize_zone_history()
                 self.last_position = self.log_file.stat().st_size
+                # Attaching mid-file: learn the current session's player
+                # roster, gear, and ability names, or every fight would
+                # only show players whose UNIT_ADDED happened after attach
+                self._backfill_session_preamble()
             # Initial freshness snapshot (content-derived; falls back to mtime)
             self._emit_initial_log_status()
+
+    # Roster/metadata events swept from the current session when attaching
+    # mid-file. Combat events are deliberately excluded so no old fights
+    # replay; markers include the delimiting commas so they only match the
+    # event-type field (checked within the line's leading bytes).
+    PREAMBLE_EVENT_MARKERS = (
+        b',BEGIN_LOG,', b',ZONE_CHANGED,', b',TRIAL_INIT,',
+        b',UNIT_ADDED,', b',UNIT_CHANGED,', b',PLAYER_INFO,',
+        b',ABILITY_INFO,',
+    )
+    # Cap the backward search for the session's BEGIN_LOG
+    PREAMBLE_LOOKBACK_BYTES = 2 * 1024 * 1024 * 1024
+
+    def _find_session_start_offset(self, end: int) -> Optional[int]:
+        """Byte offset of the most recent BEGIN_LOG line before *end*."""
+        chunk_size = 1024 * 1024
+        scanned = 0
+        pos = end
+        carry = b''
+        with open(self.log_file, 'rb') as f:
+            while pos > 0 and scanned < self.PREAMBLE_LOOKBACK_BYTES:
+                start = max(0, pos - chunk_size)
+                f.seek(start)
+                chunk = f.read(pos - start) + carry
+                idx = chunk.rfind(b',BEGIN_LOG,')
+                if idx != -1:
+                    line_start = chunk.rfind(b'\n', 0, idx) + 1
+                    return start + line_start
+                carry = chunk[:64]
+                scanned += pos - start
+                pos = start
+        return None
+
+    def _backfill_session_preamble(self):
+        """Process the current session's roster/metadata up to attach point.
+
+        Best-effort: any failure leaves the monitor tailing normally, just
+        without pre-attach roster knowledge (the pre-fix behavior).
+        """
+        try:
+            end = self.last_position
+            if end <= 0:
+                return
+            start = self._find_session_start_offset(end)
+            aligned = start is not None  # found offsets are line starts
+            if start is None:
+                # Session began beyond the lookback cap: sweep what we can
+                start = max(0, end - self.PREAMBLE_LOOKBACK_BYTES)
+            processed = 0
+            with open(self.log_file, 'rb') as f:
+                f.seek(start)
+                if start > 0 and not aligned:
+                    f.readline()  # sync to a line boundary
+                while f.tell() < end:
+                    raw = f.readline()
+                    if not raw:
+                        break
+                    head = raw[:40]
+                    if not any(marker in head
+                               for marker in self.PREAMBLE_EVENT_MARKERS):
+                        continue
+                    line = raw.decode('utf-8', errors='ignore').strip()
+                    entry = self.analyzer.log_parser.parse_line(line)
+                    if entry is not None:
+                        self.analyzer.process_log_entry(entry)
+                        processed += 1
+            if processed and self.diagnostic:
+                _console(f"{Fore.CYAN}Session preamble: learned roster from "
+                         f"{processed} events{Style.RESET_ALL}")
+        except Exception as exc:
+            _console(f"Session preamble backfill failed: {exc}")
 
     def _emit_initial_log_status(self):
         """Emit a startup freshness snapshot derived from the file itself."""
