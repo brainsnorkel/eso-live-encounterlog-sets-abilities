@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.4.1] - 2026-10-03
+
+### Added
+- **About… (toolbar)**: version, project link, and credits: skill and gear set links and their hover text point to ESO-Hub.com, and the ability icons are © ZeniMax Online Studios, not the property of this application. The README has the same Credits section
+
 ## [0.4.0] - 2026-10-03
 
 ### Fixed
