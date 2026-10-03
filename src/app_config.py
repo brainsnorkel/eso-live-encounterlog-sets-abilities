@@ -20,10 +20,6 @@ DEFAULTS = {
         "enabled": False,
         "dir": None,            # None -> log file's directory
     },
-    "reports": {
-        "enabled": False,
-        "dir": None,            # None -> log file's directory
-    },
     "archive": {
         "size_threshold_mb": 1024,   # ~5 veteran trials (100-300 MB each)
         "dir": None,                 # None -> log file's directory

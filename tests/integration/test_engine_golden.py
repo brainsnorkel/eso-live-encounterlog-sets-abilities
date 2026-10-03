@@ -3,8 +3,8 @@
 Engine-level golden tests.
 
 Replays tests/fixtures/golden_fight.log through the analysis pipeline and
-compares the resulting fight-history data, saved report files, and split
-files against tests/fixtures/golden_fight_expected.json.
+compares the resulting fight-history data and split files against
+tests/fixtures/golden_fight_expected.json.
 
 These tests pin the engine's user-visible analysis results across the
 GUI refactor: the data (not any terminal rendering) is the contract.
@@ -109,12 +109,10 @@ def _replay_pipeline(tmpdir: Path) -> dict:
     from esolog_tail import ESOLogAnalyzer, LogSplitter, FightHistory
     import esolog_tail as _mod
 
-    reports_dir = tmpdir / 'reports'
     splits_dir = tmpdir / 'splits'
-    reports_dir.mkdir()
     splits_dir.mkdir()
 
-    analyzer = ESOLogAnalyzer(save_reports=True, reports_dir=reports_dir)
+    analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
     analyzer.current_log_file = str(FIXTURE_LOG)
 
@@ -134,12 +132,6 @@ def _replay_pipeline(tmpdir: Path) -> dict:
 
     fights = [_fight_entry_to_dict(f) for f in analyzer.fight_history.fights]
 
-    report_files = {}
-    for f in sorted(reports_dir.rglob('*')):
-        if f.is_file():
-            report_files[_normalize_times(f.name)] = _normalize_times(
-                _strip_ansi(f.read_text(encoding='utf-8')))
-
     split_files = {}
     for f in sorted(splits_dir.rglob('*')):
         if f.is_file():
@@ -149,17 +141,9 @@ def _replay_pipeline(tmpdir: Path) -> dict:
                 'sha256': hashlib.sha256(content).hexdigest(),
             }
 
-    # Zone report buffers (reports may flush on zone change/END_LOG; capture both)
-    zone_reports = {
-        zone: [_normalize_times(_strip_ansi(l)) for l in lines_]
-        for zone, lines_ in analyzer.zone_reports.items()
-    }
-
     return {
         'fights': fights,
-        'report_files': report_files,
         'split_files': split_files,
-        'zone_reports': zone_reports,
     }
 
 
@@ -183,12 +167,6 @@ class TestEngineGolden(unittest.TestCase):
 
     def test_fight_history_matches_golden(self):
         self.assertEqual(self.observed['fights'], self.expected['fights'])
-
-    def test_report_files_match_golden(self):
-        self.assertEqual(self.observed['report_files'], self.expected['report_files'])
-
-    def test_zone_reports_match_golden(self):
-        self.assertEqual(self.observed['zone_reports'], self.expected['zone_reports'])
 
     def test_split_files_match_golden(self):
         self.assertEqual(self.observed['split_files'], self.expected['split_files'])

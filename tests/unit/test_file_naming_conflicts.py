@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 from pathlib import Path
-from src.esolog_tail import LogSplitter, ESOLogAnalyzer
+from src.esolog_tail import LogSplitter
 
 
 class TestFileNamingConflicts(unittest.TestCase):
@@ -23,7 +23,6 @@ class TestFileNamingConflicts(unittest.TestCase):
         with open(dummy_log, 'w') as f:
             f.write("dummy")
         self.splitter = LogSplitter(Path(dummy_log), split_dir=Path(self.temp_dir))
-        self.analyzer = ESOLogAnalyzer(save_reports=True, reports_dir=self.temp_dir)
 
     def tearDown(self):
         """Clean up test files."""
@@ -108,48 +107,6 @@ class TestFileNamingConflicts(unittest.TestCase):
         
         suffixed_file = os.path.join(self.temp_dir, "250914094523-Lucent-Citadel-vet-3.log")
         self.assertTrue(os.path.exists(suffixed_file))
-
-    def test_report_same_content_deletes_temp(self):
-        """Test that report temp file is deleted when target exists with same content."""
-        # Create existing target file
-        target_file = self._create_test_file("250914094523-Lucent-Citadel-vet.txt", "report data")
-        
-        # Create temp file with same content
-        temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.txt", "report data")
-        
-        # Mock the rename operation to simulate conflict
-        with patch('os.rename', side_effect=FileExistsError("File exists")):
-            with patch('os.path.exists', return_value=True):
-                result = self.analyzer._handle_rename_conflict(Path(temp_file), Path(target_file))
-        
-        # Should return True (success) and temp file should be deleted
-        self.assertTrue(result)
-        self.assertFalse(os.path.exists(temp_file))
-        self.assertTrue(os.path.exists(target_file))
-
-    def test_report_different_content_uses_suffix(self):
-        """Test that report with different content uses suffix numbering."""
-        # Create existing target file
-        target_file = self._create_test_file("250914094523-Lucent-Citadel-vet.txt", "old report data")
-        
-        # Create temp file with different content
-        temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.txt", "new report data")
-
-        # Target already exists on disk: the real filesystem provides the conflict
-        result = self.analyzer._handle_rename_conflict(Path(temp_file), Path(target_file))
-        
-        # Should return True (success) and create suffixed file
-        self.assertTrue(result)
-        self.assertFalse(os.path.exists(temp_file))
-        
-        # Check that suffixed file was created
-        suffixed_file = os.path.join(self.temp_dir, "250914094523-Lucent-Citadel-vet-1.txt")
-        self.assertTrue(os.path.exists(suffixed_file))
-        
-        # Verify content is correct
-        with open(suffixed_file, 'r') as f:
-            content = f.read()
-        self.assertEqual(content, "new report data")
 
     def test_temp_file_overwrite_allowed(self):
         """Test that temp files can be overwritten without conflict."""

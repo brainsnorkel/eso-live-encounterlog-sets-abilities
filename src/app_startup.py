@@ -38,12 +38,7 @@ def resolve_log_path(config: AppConfig) -> Optional[Path]:
 
 def build_analyzer(config: AppConfig,
                    listeners: List[AnalyzerListener]) -> ESOLogAnalyzer:
-    reports_enabled = bool(config.get("reports.enabled", False))
-    reports_dir = config.get("reports.dir")
-    analyzer = ESOLogAnalyzer(
-        save_reports=reports_enabled,
-        reports_dir=Path(reports_dir) if reports_dir else None,
-    )
+    analyzer = ESOLogAnalyzer()
     analyzer.track_buff_timeline = bool(
         config.get("experimental.buff_timeline", False))
     analyzer.fight_history = FightHistory()

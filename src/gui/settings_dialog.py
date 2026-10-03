@@ -73,16 +73,6 @@ class SettingsDialog(QDialog):
         split_form.addRow("Split folder (blank = log folder):", self.split_dir)
         layout.addWidget(split_group)
 
-        # Reports
-        reports_group = QGroupBox("Encounter reports")
-        reports_form = QFormLayout(reports_group)
-        self.reports_enabled = QCheckBox("Save a text report for each zone")
-        self.reports_enabled.setChecked(bool(config.get("reports.enabled", False)))
-        self.reports_dir = _PathRow(config.get("reports.dir") or "", directory=True, parent=self)
-        reports_form.addRow(self.reports_enabled)
-        reports_form.addRow("Reports folder (blank = log folder):", self.reports_dir)
-        layout.addWidget(reports_group)
-
         # Archive
         archive_group = QGroupBox("Automatic log archiving (checked at app startup)")
         archive_form = QFormLayout(archive_group)
@@ -151,8 +141,6 @@ class SettingsDialog(QDialog):
         self.config.set("log_path", self.log_row.value())
         self.config.set("split.enabled", self.split_enabled.isChecked())
         self.config.set("split.dir", self.split_dir.value())
-        self.config.set("reports.enabled", self.reports_enabled.isChecked())
-        self.config.set("reports.dir", self.reports_dir.value())
         self.config.set("archive.size_threshold_mb", self.threshold.value())
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())

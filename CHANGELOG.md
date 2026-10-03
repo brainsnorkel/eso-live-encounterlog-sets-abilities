@@ -4,8 +4,13 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Removed
+- **Report file creation**: per-zone `-report.txt` files are no longer written and the Reports settings are gone. Fight summaries live in the app (with in-fight search and clipboard copy); split log files are unaffected
+
 ### Added
 - **Start at login** (Settings → Startup): toggle to launch ESO Log Tail when you sign in to Windows (per-user Run registry entry, no admin rights; removed on uninstall)
+- **Boss-first fight lines**: history entries and the detail header read boss name, time, zone; the player who dealt the fight's first damage is marked with *
+- **Crash resilience**: unhandled errors in the windowed build are logged to `crash.log` instead of terminating the app
 
 ## [0.3.1] - 2026-09-30
 

@@ -267,7 +267,6 @@ class EngineWorker(QObject):
             self.parse_progress.emit(label, 0, total)
 
             analyzer = build_analyzer(self.config, [])
-            analyzer.save_reports = False
             analyzer.current_log_file = str(review_path)
             with open(review_path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:

@@ -737,7 +737,7 @@ class ESOLogAnalyzer(ListenerMixin):
         22: "Lucent Citadel"
     }
 
-    def __init__(self, list_hostiles: bool = False, diagnostic: bool = False, save_reports: bool = False, reports_dir: Optional[Path] = None):
+    def __init__(self, list_hostiles: bool = False, diagnostic: bool = False):
         ListenerMixin.__init__(self)
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
@@ -750,10 +750,6 @@ class ESOLogAnalyzer(ListenerMixin):
         self.current_log_file: Optional[str] = None  # Track current log file path
         self.log_start_unix_timestamp: Optional[int] = None  # Unix timestamp from BEGIN_LOG event
         
-        # Zone-based report tracking
-        self.zone_reports: Dict[str, List[str]] = {}  # zone_name -> list of report lines
-        self.zone_start_time: Optional[int] = None  # Start time for current zone
-        
         # Testing flag for listing hostile monsters
         self.list_hostiles = list_hostiles
         self.hostile_monsters: List[Tuple[str, str, str]] = []  # (unit_id, name, unit_type)
@@ -761,12 +757,7 @@ class ESOLogAnalyzer(ListenerMixin):
         
         # Diagnostic mode for debugging data flow and timing
         self.diagnostic = diagnostic
-        
-        # Report saving functionality
-        self.save_reports = save_reports
-        self.reports_dir = reports_dir
-        self.report_buffer = []  # Buffer to collect report output lines
-        
+
         # Zone history tracking for rewind functionality
         self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
         self.max_zone_history = 10  # Keep last 10 zone changes
@@ -1365,9 +1356,6 @@ class ESOLogAnalyzer(ListenerMixin):
             zone_name = entry.fields[1].strip('"')
             difficulty = entry.fields[2].strip('"')
             
-            # Store previous zone name before updating
-            previous_zone = self.current_zone if self.current_zone else "Unknown"
-            
             _console(f"\n{Fore.YELLOW}=== ZONE CHANGED ==={Style.RESET_ALL}")
             _console(f"{Fore.YELLOW}Zone: {zone_name} ({difficulty}){Style.RESET_ALL}")
             
@@ -1376,10 +1364,6 @@ class ESOLogAnalyzer(ListenerMixin):
                 not self.current_encounter.finalized and self.current_encounter.players):
                 self.current_encounter.finalized = True
                 self._display_encounter_summary(self.current_zone)
-            
-            # Save the previous zone's report if it exists
-            if self.save_reports and previous_zone and previous_zone != "Unknown" and previous_zone in self.zone_reports:
-                self._save_zone_report(previous_zone)
             
             # Reset any existing encounter
             if self.current_encounter:
@@ -1592,14 +1576,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - {trial_name} (ID: {trial_id}), Success: {success}, Score: {final_score}, Vitality: {vitality_bonus}{Style.RESET_ALL}")
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
-        """Handle END_LOG events to save final zone report."""
-        # Save the current zone's report if it exists
-        if self.save_reports and self.current_zone and self.current_zone in self.zone_reports:
-            self._save_zone_report(self.current_zone)
-            
+        """Handle END_LOG events."""
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected, saving final zone report{Style.RESET_ALL}")
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected{Style.RESET_ALL}")
 
     def _handle_begin_cast(self, entry: ESOLogEntry):
         """Handle BEGIN_CAST events."""
@@ -2480,11 +2460,6 @@ class ESOLogAnalyzer(ListenerMixin):
         self.engaged_monsters.clear()
 
         
-        # Add report to zone-based collection if enabled
-        if self.save_reports:
-            self._add_report_to_zone()
-            # Individual report files are saved per-zone, not per-encounter
-        
         # Build fight entry and notify frontends
         if hasattr(self, 'fight_history') and self.fight_history is not None:
             fight_entry = self._build_fight_entry(zone_name)
@@ -2495,276 +2470,6 @@ class ESOLogAnalyzer(ListenerMixin):
         # Add newline after encounter summary for clean formatting
         self._print_and_buffer("")
 
-    def _save_report_to_file(self):
-        """Save the current report buffer to a file."""
-        if not self.report_buffer or not self.current_encounter:
-            return
-            
-        try:
-            # Create reports directory if it doesn't exist
-            if self.reports_dir:
-                reports_path = Path(self.reports_dir)
-            else:
-                # Default to same directory as log file
-                if self.current_log_file:
-                    reports_path = Path(self.current_log_file).parent
-                else:
-                    reports_path = Path.cwd()
-            
-            # Check if directory exists and is writable, or if we can create it
-            if not reports_path.exists():
-                try:
-                    reports_path.mkdir(parents=True, exist_ok=True)
-                except (PermissionError, OSError) as e:
-                    _console(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                    _console(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                    _console(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                    sys.exit(1)
-            elif not reports_path.is_dir():
-                _console(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            elif not os.access(reports_path, os.W_OK):
-                _console(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-                _console(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            
-            # Generate zone-based filename similar to split files
-            # Use the encounter start time for consistent naming
-            if self.current_encounter.start_time:
-                # Use the analyzer's absolute timestamp conversion method
-                absolute_timestamp = self.get_absolute_timestamp(self.current_encounter.start_time)
-                if absolute_timestamp:
-                    dt = datetime.fromtimestamp(absolute_timestamp)
-                    timestamp_str = dt.strftime("%y%m%d%H%M%S")
-                else:
-                    # Fallback to current time if conversion fails
-                    timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
-            else:
-                # Fallback to current time if encounter start time not available
-                timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
-            
-            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt
-            difficulty_suffix = "-vet" if self.current_difficulty and self.current_difficulty.upper() == "VETERAN" else ""
-            zone_suffix = self.current_zone.replace(" ", "-") if self.current_zone else "Unknown-Zone"
-            
-            filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
-            report_file_path = reports_path / filename
-
-            # Dedup check: skip only if the exact-named report already exists.
-            # A glob would falsely match suffixed/-temp files from prior crashes.
-            if report_file_path.exists():
-                if self.diagnostic:
-                    ts = time.strftime("%H:%M:%S", time.localtime())
-                    _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate report: {filename}{Style.RESET_ALL}")
-                self.report_buffer.clear()
-                return
-
-            # Write report to temporary file first
-            temp_filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report-temp.txt"
-            temp_report_path = reports_path / temp_filename
-            
-            with open(temp_report_path, 'w', encoding='utf-8') as f:
-                for line in self.report_buffer:
-                    clean_line = self._strip_ansi_codes(line)
-                    f.write(clean_line + '\n')
-            
-            # Try to rename temp file to final name, handling conflicts
-            try:
-                temp_report_path.rename(report_file_path)
-                if self.diagnostic:
-                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report to {report_file_path}{Style.RESET_ALL}")
-            except Exception as e:
-                # Handle rename conflict
-                if self._handle_rename_conflict(temp_report_path, report_file_path):
-                    if self.diagnostic:
-                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved report with conflict resolution{Style.RESET_ALL}")
-                else:
-                    if self.diagnostic:
-                        timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                        _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
-                
-        except Exception as e:
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save report: {e}{Style.RESET_ALL}")
-        finally:
-            # Clear the report buffer after saving
-            self.report_buffer.clear()
-
-    def _handle_rename_conflict(self, temp_file_path, target_file_path):
-        """Handle rename conflicts by comparing content and using suffixes if needed.
-        
-        Args:
-            temp_file_path: Path to the temporary file
-            target_file_path: Path to the target file
-            
-        Returns:
-            bool: True if conflict was resolved successfully, False otherwise
-        """
-        try:
-            # Check if target file exists
-            if not target_file_path.exists():
-                # No conflict, just rename
-                temp_file_path.rename(target_file_path)
-                return True
-            
-            # Compare file contents using MD5 hash
-            temp_hash = self._get_file_hash(temp_file_path)
-            target_hash = self._get_file_hash(target_file_path)
-            
-            if temp_hash == target_hash:
-                # Same content - delete temp file, keep existing target
-                temp_file_path.unlink()
-                if self.diagnostic:
-                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp report: {temp_file_path}{Style.RESET_ALL}")
-                return True
-            else:
-                # Different content - find available suffix
-                suffix = 1
-                while True:
-                    # Create suffixed filename
-                    stem = target_file_path.stem
-                    suffix_file_path = target_file_path.parent / f"{stem}-{suffix}{target_file_path.suffix}"
-                    
-                    if not suffix_file_path.exists():
-                        # Found available name, rename temp file
-                        temp_file_path.rename(suffix_file_path)
-                        if self.diagnostic:
-                            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Renamed report to suffixed file: {suffix_file_path}{Style.RESET_ALL}")
-                        return True
-                    
-                    suffix += 1
-                    
-        except Exception as e:
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle report rename conflict: {e}{Style.RESET_ALL}")
-            return False
-    
-    def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
-        h = hashlib.md5()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                h.update(chunk)
-        return h.hexdigest()
-
-    def _add_report_to_zone(self):
-        """Add the current report to the zone-based collection."""
-        if not self.report_buffer or not self.current_encounter or not self.current_zone:
-            return
-            
-        # Initialize zone report if it doesn't exist
-        if self.current_zone not in self.zone_reports:
-            self.zone_reports[self.current_zone] = []
-            # Use the same timestamp as split logs (BEGIN_LOG timestamp)
-            if hasattr(self, 'log_start_unix_timestamp') and self.log_start_unix_timestamp:
-                # zone_start_time should be relative timestamp in milliseconds, not absolute
-                # Preserve existing zone_start_time if it's already set, otherwise use encounter start_time
-                if not hasattr(self, 'zone_start_time') or self.zone_start_time is None:
-                    self.zone_start_time = getattr(self.current_encounter, 'start_time', 0)
-            else:
-                if not hasattr(self, 'zone_start_time') or self.zone_start_time is None:
-                    self.zone_start_time = self.current_encounter.start_time
-        
-        # Add report lines to zone collection (strip ANSI color codes)
-        for line in self.report_buffer:
-            clean_line = self._strip_ansi_codes(line)
-            self.zone_reports[self.current_zone].append(clean_line)
-        
-        # Add separator between encounters
-        self.zone_reports[self.current_zone].append("")
-        
-        # Clear the report buffer after adding to zone collection
-        self.report_buffer.clear()
-    
-    def _save_zone_report(self, zone_name: str):
-        """Save the accumulated report for a zone to a file."""
-        if zone_name not in self.zone_reports or not self.zone_reports[zone_name]:
-            return
-            
-        try:
-            # Create reports directory if it doesn't exist
-            if self.reports_dir:
-                reports_path = Path(self.reports_dir)
-            else:
-                # Default to same directory as log file
-                if self.current_log_file:
-                    reports_path = Path(self.current_log_file).parent
-                else:
-                    reports_path = Path.cwd()
-            
-            # Check if directory exists and is writable, or if we can create it
-            if not reports_path.exists():
-                try:
-                    reports_path.mkdir(parents=True, exist_ok=True)
-                except (PermissionError, OSError) as e:
-                    _console(f"{Fore.RED}ERROR: Cannot create reports directory: {reports_path}{Style.RESET_ALL}")
-                    _console(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
-                    _console(f"{Fore.RED}Please create the directory manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                    sys.exit(1)
-            elif not reports_path.is_dir():
-                _console(f"{Fore.RED}ERROR: Reports path exists but is not a directory: {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            elif not os.access(reports_path, os.W_OK):
-                _console(f"{Fore.RED}ERROR: Reports directory is not writable: {reports_path}{Style.RESET_ALL}")
-                _console(f"{Fore.RED}Please check directory permissions or create it manually: mkdir -p {reports_path}{Style.RESET_ALL}")
-                sys.exit(1)
-            
-            # Generate zone-based filename similar to split files
-            # Use the zone start time for consistent naming
-            if self.zone_start_time is not None:
-                # Use the analyzer's absolute timestamp conversion method
-                absolute_timestamp = self.get_absolute_timestamp(self.zone_start_time)
-                if absolute_timestamp:
-                    dt = datetime.fromtimestamp(absolute_timestamp)
-                    timestamp_str = dt.strftime("%y%m%d%H%M%S")
-                else:
-                    # Fallback to current time if conversion fails
-                    timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
-            else:
-                # Fallback to current time if zone start time not available
-                timestamp_str = datetime.now().strftime("%y%m%d%H%M%S")
-            
-            # Use same naming logic as split files: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}-report.txt
-            difficulty_suffix = "-vet" if self.current_difficulty and self.current_difficulty.upper() == "VETERAN" else ""
-            zone_suffix = zone_name.replace(" ", "-") if zone_name else "Unknown-Zone"
-            
-            filename = f"{timestamp_str}-{zone_suffix}{difficulty_suffix}-report.txt"
-            report_file_path = reports_path / filename
-
-            # Dedup check: skip only if the exact-named report already exists.
-            # A glob would falsely match suffixed/-temp files from prior crashes.
-            if report_file_path.exists():
-                if self.diagnostic:
-                    ts = time.strftime("%H:%M:%S", time.localtime())
-                    _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate zone report: {filename}{Style.RESET_ALL}")
-                if zone_name in self.zone_reports:
-                    del self.zone_reports[zone_name]
-                return
-
-            # Write report to file
-            with open(report_file_path, 'w', encoding='utf-8') as f:
-                for line in self.zone_reports[zone_name]:
-                    f.write(line + '\n')
-            
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Saved zone report to {report_file_path}{Style.RESET_ALL}")
-                
-        except Exception as e:
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to save zone report: {e}{Style.RESET_ALL}")
-        finally:
-            # Clear the zone report after saving
-            if zone_name in self.zone_reports:
-                del self.zone_reports[zone_name]
-
     def _strip_ansi_codes(self, text: str) -> str:
         """Remove ANSI color codes from text for clean file output."""
         # Remove ANSI escape sequences
@@ -2772,13 +2477,11 @@ class ESOLogAnalyzer(ListenerMixin):
         return ansi_escape.sub('', text)
 
     def _print_and_buffer(self, text: str):
-        """Buffer a summary line for report saving.
+        """No-op retained for the legacy summary text call sites.
 
-        Fight data reaches frontends structured via on_fight_completed; the
-        rendered text lines exist only for the saved-reports feature.
+        Fight data reaches frontends structured via on_fight_completed;
+        the report-file feature that consumed these lines was removed.
         """
-        if self.save_reports:
-            self.report_buffer.append(text)
 
     def _resolve_timeline_name(self, unit_id: str) -> str:
         """Display name for a timeline unit: player handle, enemy name, or id."""

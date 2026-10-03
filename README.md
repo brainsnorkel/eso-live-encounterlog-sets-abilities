@@ -6,7 +6,7 @@ Live monitoring of Elder Scrolls Online encounter logs in a desktop app. ESO Log
 - Subclass/build inference and gear set identification (722 LibSets sets)
 - Players sorted by DPS with damage share, resources, and role (Tank/Healer/DPS)
 - Group buff uptimes (Major Courage, Major Force, Major Slayer, PA, LE, PW)
-- Per-encounter split log files and saved zone reports
+- Per-encounter split log files
 - Automatic archiving of oversized encounter logs (they grow into the tens of GB)
 - "Last entry" freshness indicator so you can tell at a glance that logging is on
 
@@ -58,7 +58,6 @@ Open **Settings…** from the toolbar:
 
 - **Encounter log**: pick a specific `Encounter.log`, or leave blank to auto-detect.
 - **Split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice.
-- **Reports**: save per-zone text reports named `YYMMDDHHMMSS-{Zone-Name}{-vet}-report.txt`.
 - **Archiving**: see below.
 - **Startup**: *Start ESO Log Tail when I sign in to Windows* — a per-user login entry (no admin rights); uninstalling the app removes it.
 
@@ -91,7 +90,7 @@ Versions up to 0.2.7 were terminal applications launched from `.BAT` files with 
 |---|---|
 | `-f, --log-file PATH` | Settings → Encounter log |
 | `--tail-and-split` / `--split-dir` | Settings → Split files |
-| `--save-reports` / `--reports-dir` | Settings → Reports |
+| `--save-reports` / `--reports-dir` | Removed (fight summaries live in the app; use Copy fight) |
 | `--read-all-then-tail` | Automatic: the app attaches to the live log; use *Open log for review* to inspect older fights |
 | `--read-all-then-stop` (replay) | *Open log for review* |
 | `--no-wait` | Removed: the app always waits and shows a waiting state |

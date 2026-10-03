@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration tests for log splitting and report saving functionality.
+Integration tests for log splitting functionality.
 """
 
 import unittest
@@ -25,17 +25,11 @@ class TestLogSplittingIntegration(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.log_file = Path(self.temp_dir) / "Encounter.log"
         self.split_dir = Path(self.temp_dir) / "splits"
-        self.reports_dir = Path(self.temp_dir) / "reports"
         
         # Create a mock log file with some content
         self.log_file.touch()
         
-        # Create analyzer with both splitting and report saving
-        self.analyzer = ESOLogAnalyzer(
-            save_reports=True,
-            reports_dir=self.reports_dir,
-            diagnostic=False
-        )
+        self.analyzer = ESOLogAnalyzer(diagnostic=False)
         self.analyzer.current_log_file = str(self.log_file)
     
     def tearDown(self):
@@ -44,8 +38,8 @@ class TestLogSplittingIntegration(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    def test_full_encounter_with_splitting_and_reports(self):
-        """Test complete encounter processing with both splitting and report saving."""
+    def test_full_encounter_with_splitting(self):
+        """Test complete encounter processing with splitting."""
         # Create a log splitter
         log_splitter = LogSplitter(self.log_file, diagnostic=False, split_dir=self.split_dir)
         
@@ -116,21 +110,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
         split_file = split_files[0]
         self.assertIn("Coral-Aerie", split_file.name)
         self.assertIn("-vet", split_file.name)
-        
-        # Verify report was saved (may not be saved if no encounter was properly processed)
-        report_files = list(self.reports_dir.glob("*.txt"))
-        # The report may or may not be saved depending on encounter processing
-        # The important thing is that the process didn't crash
-        self.assertGreaterEqual(len(report_files), 0)
-        
-        # Verify report content
-        if report_files:
-            with open(report_files[0], 'r') as f:
-                report_content = f.read()
-            
-            # Should contain encounter summary information
-            self.assertIn("GrpDPS:", report_content)
-            self.assertIn("Test Boss", report_content)
+
     
     def test_multiple_encounters_with_splitting(self):
         """Test multiple encounters with log splitting."""
@@ -201,11 +181,7 @@ class TestLogSplittingIntegration(unittest.TestCase):
         # Verify both split files were created
         split_files = list(self.split_dir.glob("*.log"))
         self.assertEqual(len(split_files), 2)
-        
-        # Verify reports were saved (zone-based, so may be fewer files)
-        report_files = list(self.reports_dir.glob("*.txt"))
-        # With zone-based reporting, we expect fewer files than encounters
-        self.assertGreaterEqual(len(report_files), 0)
+
         
         # Verify file naming
         split_files.sort()
@@ -250,16 +226,6 @@ class TestLogSplittingIntegration(unittest.TestCase):
         split_file = split_files[0]
         self.assertIn("Unknown-Zone", split_file.name)
         
-        # Verify report was saved (may not be saved if no encounter was properly processed)
-        report_files = list(self.reports_dir.glob("*.txt"))
-        # The report may or may not be saved depending on encounter processing
-        # The important thing is that the process didn't crash
-        self.assertGreaterEqual(len(report_files), 0)
-        
-        # If reports were saved, verify naming
-        if report_files:
-            report_file = report_files[0]
-            self.assertIn("Unknown-Zone", report_file.name)
     
     def test_file_handling_edge_cases(self):
         """Test file handling edge cases in integration."""
@@ -344,11 +310,6 @@ class TestLogSplittingIntegration(unittest.TestCase):
             # The important thing is that the file was created and the process didn't crash
             pass
         
-        # Verify report was saved (may not be saved if no encounter was properly processed)
-        report_files = list(self.reports_dir.glob("*.txt"))
-        # The report may or may not be saved depending on encounter processing
-        # The important thing is that the process didn't crash
-        self.assertGreaterEqual(len(report_files), 0)
 
 
 if __name__ == '__main__':
