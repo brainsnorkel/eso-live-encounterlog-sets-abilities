@@ -2,7 +2,7 @@
 
 Live fight summaries from Elder Scrolls Online encounter logs, in a Windows desktop app. ESO Log Tail watches your `Encounter.log` and, the moment combat ends, shows who was in the group, how each player was built, and how they performed.
 
-![Detail view: fight history on the left; on the right a fight header, one row per player with ability-bar icons, gear sets, and a hover showing a set's ESO-Hub page](docs/screencaps/main-window-detail-view.png)
+![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window-buff-timeline.png)
 
 ## Features
 
