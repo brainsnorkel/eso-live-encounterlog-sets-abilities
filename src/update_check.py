@@ -8,13 +8,19 @@ and the app carries on.
 
 import json
 import re
+import sys
 import urllib.request
 from dataclasses import dataclass
 from typing import Optional
 
 GITHUB_REPO = "brainsnorkel/eso-live-encounterlog-sets-abilities"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-INSTALLER_ASSET_PREFIX = "esolog-tail-windows-setup"
+# Release asset that carries the update on each platform: (name prefix, suffix).
+# Windows gets the installer; Linux the tarball. Other platforms have no build.
+PLATFORM_ASSETS = {
+    "win32": ("esolog-tail-windows-setup", ".exe"),
+    "linux": ("esolog-tail-linux-x86_64", ".tar.gz"),
+}
 _TIMEOUT_S = 10
 _VERSION_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
 
@@ -23,7 +29,7 @@ _VERSION_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
 class UpdateInfo:
     version: str          # e.g. "0.4.0"
     tag: str              # e.g. "v0.4.0"
-    installer_url: str    # browser_download_url of the setup exe asset
+    installer_url: str    # browser_download_url of this platform's asset
     installer_name: str   # asset filename
     notes: str            # release body (may be empty)
     page_url: str         # html_url of the release
@@ -44,18 +50,27 @@ def is_newer(candidate: str, current: str) -> bool:
     return cand > cur
 
 
-def release_to_update_info(release: dict) -> Optional[UpdateInfo]:
-    """Extract UpdateInfo from a GitHub release JSON dict, or None."""
+def release_to_update_info(release: dict,
+                           platform: Optional[str] = None) -> Optional[UpdateInfo]:
+    """Extract UpdateInfo from a GitHub release JSON dict, or None.
+
+    None also when the release has no asset for *platform* (default: the
+    running one).
+    """
     if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
         return None
     tag = release.get("tag_name") or ""
     version = parse_version(tag)
     if version is None:
         return None
+    wanted = PLATFORM_ASSETS.get(platform or sys.platform)
+    if wanted is None:
+        return None
+    prefix, suffix = wanted
     installer = None
     for asset in release.get("assets") or []:
         name = asset.get("name") or ""
-        if name.startswith(INSTALLER_ASSET_PREFIX) and name.endswith(".exe"):
+        if name.startswith(prefix) and name.endswith(suffix):
             installer = asset
             break
     if installer is None:

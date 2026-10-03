@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Linux build (experimental)**: releases now carry `esolog-tail-linux-x86_64-<version>.tar.gz`, a self-contained folder to extract and run (`./esolog-gui`), for 64-bit desktops with glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later), X11 or Wayland. The release workflow runs the test suite on Linux and starts the built bundle on an X server before publishing it; it has not been run against a live game yet. On Linux the app finds the log in ESO's Steam (Proton) prefix (native and Flatpak Steam) and the default Wine prefix, the update prompt opens the release page instead of running an installer, and the Windows-only *Start at login* setting is hidden
+
+### Fixed
+- **Split files on Linux**: split logs keep the game's CRLF line endings on every platform. On Linux they were written with LF, so they were not byte-for-byte copies of the game's log
+- **Archiving on Linux**: the guard that skips an archive while ESO has the log open relied on Windows file locking and did nothing elsewhere, so *Delete Encounter.log after a verified archive* could remove a log the game was still writing. On Linux the archive is now skipped when another process has the log open
+
 ## [0.5.0] - 2026-10-03
 
 ### Fixed

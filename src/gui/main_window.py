@@ -3,13 +3,14 @@ Main window: live fight view, session fight history, review mode,
 settings, manual archive, and the freshness status bar.
 """
 
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QColor, QGuiApplication, QKeySequence, QShortcut, QTextCharFormat,
-    QTextCursor,
+    QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence,
+    QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -40,6 +41,11 @@ _STATE_COLORS = {
     True: {"live": "#81c784", "idle": None, "stale": "#ffb74d", "none": "#e57373"},
     False: {"live": "#2e7d32", "idle": None, "stale": "#b25a00", "none": "#c62828"},
 }
+
+
+# Windows updates through its installer; other platforms have none, so an
+# update there is a download from the release page
+HAS_INSTALLER = sys.platform == "win32"
 
 
 def state_style(state: str, dark: bool) -> str:
@@ -402,7 +408,9 @@ class MainWindow(QMainWindow):
         notes = (info.notes or "").strip()
         if notes:
             box.setDetailedText(notes)
-        update_btn = box.addButton("Update now", QMessageBox.AcceptRole)
+        update_btn = box.addButton(
+            "Update now" if HAS_INSTALLER else "Open download page",
+            QMessageBox.AcceptRole)
         box.addButton("Later", QMessageBox.RejectRole)
         skip_btn = box.addButton("Skip this version", QMessageBox.DestructiveRole)
         box.setDefaultButton(update_btn)
@@ -417,7 +425,9 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def _on_update_available(self, info):
         choice = self._prompt_update(info)
-        if choice == "update":
+        if choice == "update" and not HAS_INSTALLER:
+            QDesktopServices.openUrl(QUrl(info.page_url))
+        elif choice == "update":
             self.statusBar().showMessage(
                 f"Downloading update {info.version}…")
             self.request_update_download.emit(info.installer_url,

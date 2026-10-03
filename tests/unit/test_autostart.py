@@ -100,5 +100,33 @@ class TestSettingsWiring(unittest.TestCase):
                 dialog.deleteLater()
 
 
+class TestStartupGroupPlatform(unittest.TestCase):
+    """The Startup group is offered only where the login entry exists."""
+
+    def _checkbox_visible(self, platform):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from app_config import AppConfig
+        from gui.settings_dialog import SettingsDialog
+
+        with tempfile.TemporaryDirectory() as td:
+            config = AppConfig(path=Path(td) / 'c.json')
+            with patch.object(sys, 'platform', platform), \
+                 patch.object(autostart, 'autostart_command',
+                              return_value=None), \
+                 patch.object(autostart, 'is_enabled', return_value=False):
+                dialog = SettingsDialog(config)
+                visible = dialog.autostart.isVisibleTo(dialog)
+                dialog.deleteLater()
+        return visible
+
+    def test_shown_on_windows_hidden_elsewhere(self):
+        self.assertTrue(self._checkbox_visible('win32'))
+        self.assertFalse(self._checkbox_visible('linux'))
+
+
 if __name__ == '__main__':
     unittest.main()

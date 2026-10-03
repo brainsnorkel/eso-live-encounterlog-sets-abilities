@@ -12,6 +12,9 @@ Safety model (log-archiving spec):
 - The original is kept unless delete_original is opted in; deletion happens
   through the still-held exclusive handle (delete-on-close), so there is no
   window for another process to write between verification and deletion.
+- Linux has no deny-all sharing. There the archive is skipped when another
+  process has the log open (a /proc scan at the start), and a log that grows
+  during the zip fails the size verification, so the original is kept.
 
 Trigger model:
 - Size-based: archive when the log has grown more than size_threshold_mb
@@ -94,10 +97,46 @@ if sys.platform == "win32":
             except OSError:
                 pass
 
-else:  # POSIX fallback: no deny-all sharing; rely on size verification
+else:  # POSIX: no deny-all sharing; look for other holders, then size-verify
+    def _held_by_another_process(path: Path) -> bool:
+        """True when another process has *path* open (Linux /proc scan).
+
+        ESO under Wine/Proton keeps the log open like it does on Windows.
+        Matching is by device and inode, so it holds across mount namespaces
+        (Flatpak). Processes we may not inspect are skipped; without /proc
+        (macOS) this is always False.
+        """
+        try:
+            target = os.stat(path)
+        except OSError:
+            return False
+        try:
+            pids = [name for name in os.listdir("/proc") if name.isdigit()]
+        except OSError:
+            return False
+        own_pid = str(os.getpid())
+        for pid in pids:
+            if pid == own_pid:
+                continue
+            fd_dir = f"/proc/{pid}/fd"
+            try:
+                fds = os.listdir(fd_dir)
+            except OSError:
+                continue  # another user's process, or it just exited
+            for fd in fds:
+                try:
+                    held = os.stat(f"{fd_dir}/{fd}")
+                except OSError:
+                    continue
+                if (held.st_dev, held.st_ino) == (target.st_dev, target.st_ino):
+                    return True
+        return False
+
     class _ExclusiveFile:
         def __init__(self, path: Path):
             self._path = Path(path)
+            if _held_by_another_process(self._path):
+                raise LogInUseError(str(path))
             self.file = open(path, "rb")
             self._delete = False
 

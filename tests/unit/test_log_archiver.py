@@ -152,6 +152,52 @@ class TestInUseGuard(ArchiverTestCase):
             pass
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'), 'Linux /proc holder scan')
+class TestInUseGuardLinux(ArchiverTestCase):
+
+    def _hold_open_in_another_process(self):
+        """A child process with the log open for append, as ESO would have."""
+        import subprocess
+        child = subprocess.Popen(
+            [sys.executable, '-c',
+             'import sys, time\n'
+             'handle = open(sys.argv[1], "a")\n'
+             'print("ready", flush=True)\n'
+             'time.sleep(60)\n',
+             str(self.log)],
+            stdout=subprocess.PIPE, text=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        self.assertEqual(child.stdout.readline().strip(), 'ready')
+        self.addCleanup(child.stdout.close)
+        return child
+
+    def test_skip_when_another_process_holds_the_log(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)  # must still keep
+        self._hold_open_in_another_process()
+        result = self.archiver.archive(self.log)
+        self.assertIsNone(result)
+        skipped = self._events('skipped')
+        self.assertEqual(len(skipped), 1)
+        self.assertIn('in use', skipped[0].reason)
+        self.assertTrue(self.log.exists())
+        self.assertEqual(list(self.dir.glob('*.zip')), [])
+
+    def test_archive_proceeds_once_the_holder_is_gone(self):
+        self._write_log()
+        child = self._hold_open_in_another_process()
+        child.kill()
+        child.wait()
+        self.assertIsNotNone(self.archiver.archive(self.log))
+
+    def test_own_handles_do_not_count(self):
+        """The app's own open handle (the tail) must not block an archive."""
+        self._write_log()
+        with open(self.log, 'rb'):
+            self.assertIsNotNone(self.archiver.archive(self.log))
+
+
 class TestTriggerAndMarker(ArchiverTestCase):
 
     def test_below_threshold_no_archive(self):

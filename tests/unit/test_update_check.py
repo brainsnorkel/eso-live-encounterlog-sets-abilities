@@ -19,9 +19,16 @@ from update_check import (
 
 def _release(tag='v0.4.0', assets=None, **extra):
     if assets is None:
+        version = tag.lstrip("v")
         assets = [{
-            'name': f'esolog-tail-windows-setup-{tag.lstrip("v")}.exe',
+            'name': f'esolog-tail-windows-setup-{version}.exe',
             'browser_download_url': f'https://example.invalid/{tag}/setup.exe',
+        }, {
+            'name': f'esolog-tail-windows-portable-{version}.zip',
+            'browser_download_url': f'https://example.invalid/{tag}/portable.zip',
+        }, {
+            'name': f'esolog-tail-linux-x86_64-{version}.tar.gz',
+            'browser_download_url': f'https://example.invalid/{tag}/linux.tar.gz',
         }]
     return {
         'tag_name': tag,
@@ -53,11 +60,36 @@ class TestVersionParsing(unittest.TestCase):
 class TestReleaseParsing(unittest.TestCase):
 
     def test_valid_release(self):
-        info = release_to_update_info(_release())
+        info = release_to_update_info(_release(), platform='win32')
         self.assertEqual(info.version, '0.4.0')
         self.assertEqual(info.tag, 'v0.4.0')
         self.assertIn('setup', info.installer_name)
         self.assertTrue(info.installer_url)
+
+    def test_asset_follows_platform(self):
+        release = _release()
+        win = release_to_update_info(release, platform='win32')
+        self.assertEqual(win.installer_name, 'esolog-tail-windows-setup-0.4.0.exe')
+        linux = release_to_update_info(release, platform='linux')
+        self.assertEqual(linux.installer_name,
+                         'esolog-tail-linux-x86_64-0.4.0.tar.gz')
+        self.assertTrue(linux.installer_url.endswith('linux.tar.gz'))
+        # The running platform is the default
+        if sys.platform in update_check.PLATFORM_ASSETS:
+            self.assertEqual(
+                release_to_update_info(release).installer_name,
+                release_to_update_info(release, sys.platform).installer_name)
+
+    def test_platform_without_a_build_is_rejected(self):
+        self.assertIsNone(release_to_update_info(_release(), platform='darwin'))
+
+    def test_release_without_this_platforms_asset_rejected(self):
+        # A Windows-only release offers nothing to Linux, and vice versa
+        windows_only = _release(assets=[{
+            'name': 'esolog-tail-windows-setup-0.4.0.exe',
+            'browser_download_url': 'https://x/setup.exe'}])
+        self.assertIsNotNone(release_to_update_info(windows_only, 'win32'))
+        self.assertIsNone(release_to_update_info(windows_only, 'linux'))
 
     def test_draft_and_prerelease_rejected(self):
         self.assertIsNone(release_to_update_info(_release(draft=True)))
@@ -66,7 +98,8 @@ class TestReleaseParsing(unittest.TestCase):
     def test_missing_installer_asset_rejected(self):
         release = _release(assets=[{'name': 'esolog-tail-windows-portable-0.4.0.zip',
                                     'browser_download_url': 'https://x/p.zip'}])
-        self.assertIsNone(release_to_update_info(release))
+        self.assertIsNone(release_to_update_info(release, platform='win32'))
+        self.assertIsNone(release_to_update_info(release, platform='linux'))
 
     def test_bad_tag_rejected(self):
         self.assertIsNone(release_to_update_info(_release(tag='nightly')))
@@ -74,6 +107,12 @@ class TestReleaseParsing(unittest.TestCase):
 
 
 class TestCheckForUpdate(unittest.TestCase):
+
+    def setUp(self):
+        # check_for_update reads the running platform; pin one with a build
+        patcher = patch.object(update_check.sys, 'platform', 'win32')
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_newer_release_returned(self):
         with patch.object(update_check, 'fetch_latest_release',

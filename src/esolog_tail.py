@@ -2900,7 +2900,11 @@ class ESOLogAnalyzer(ListenerMixin):
 
 class LogSplitter:
     """Handles automatic splitting of encounter logs into individual encounter files."""
-    
+
+    # ESO writes CRLF line endings; split files keep them on every OS
+    # (text mode alone would give LF on Linux)
+    NEWLINE = '\r\n'
+
     def __init__(self, log_file: Path, diagnostic: bool = False, split_dir: Optional[Path] = None):
         self.log_file = log_file
         self.diagnostic = diagnostic
@@ -3003,7 +3007,8 @@ class LogSplitter:
         
         try:
             # Open file for writing (create new file)
-            self.file_handle = open(self.temp_file_path, 'w', encoding='utf-8')
+            self.file_handle = open(self.temp_file_path, 'w', encoding='utf-8',
+                                    newline=self.NEWLINE)
             self.current_split_file = self.temp_file_path
             self.current_split_path = self.temp_file_path
             self.current_encounter_info = {
@@ -3065,7 +3070,8 @@ class LogSplitter:
             self.split_files.append(self.final_file_path)
             
             # Reopen the file for continued writing
-            self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
+            self.file_handle = open(self.final_file_path, 'a', encoding='utf-8',
+                                    newline=self.NEWLINE)
             
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -3089,7 +3095,8 @@ class LogSplitter:
                     self.split_files.append(self.final_file_path)
 
                     # Reopen the file for continued writing
-                    self.file_handle = open(self.final_file_path, 'a', encoding='utf-8')
+                    self.file_handle = open(self.final_file_path, 'a', encoding='utf-8',
+                                            newline=self.NEWLINE)
             else:
                 # Keep the temp file if conflict resolution fails
                 self.current_split_file = self.temp_file_path
@@ -3313,7 +3320,8 @@ class LogSplitter:
         """Reopen the current split file for appending when new events arrive."""
         if self.current_split_path and not self.file_handle:
             try:
-                self.file_handle = open(self.current_split_path, 'a', encoding='utf-8')
+                self.file_handle = open(self.current_split_path, 'a', encoding='utf-8',
+                                        newline=self.NEWLINE)
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Reopened split file for append: {self.current_split_path}{Style.RESET_ALL}")
@@ -4003,8 +4011,10 @@ def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
             # Native Linux installations (if any)
             Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
             Path.home() / "Documents" / "Elder Scrolls Online" / "Logs" / "Encounter.log",
-            # Steam Deck/SteamOS paths
+            # Steam (Proton) paths: Steam Deck/SteamOS, native Steam, Flatpak Steam
             Path.home() / ".steam" / "steam" / "steamapps" / "compatdata" / "306130" / "pfx" / "drive_c" / "users" / "steamuser" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            Path.home() / ".local" / "share" / "Steam" / "steamapps" / "compatdata" / "306130" / "pfx" / "drive_c" / "users" / "steamuser" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
+            Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam" / "steamapps" / "compatdata" / "306130" / "pfx" / "drive_c" / "users" / "steamuser" / "Documents" / "Elder Scrolls Online" / "live" / "Logs" / "Encounter.log",
         ]
 
     # Show diagnostic information if requested

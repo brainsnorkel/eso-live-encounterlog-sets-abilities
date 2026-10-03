@@ -1,5 +1,6 @@
 """Settings dialog: log path, split files, reports, and archive options."""
 
+import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -110,6 +111,8 @@ class SettingsDialog(QDialog):
                 "Available when running the installed app")
         startup_form.addRow(self.autostart)
         layout.addWidget(startup_group)
+        # The login entry is a Windows Run key; nothing to offer elsewhere
+        startup_group.setVisible(sys.platform == "win32")
 
         # Updates
         update_group = QGroupBox("Updates")

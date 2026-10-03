@@ -1,6 +1,6 @@
 # ESO Log Tail
 
-Live fight summaries from Elder Scrolls Online encounter logs, in a Windows desktop app. ESO Log Tail watches your `Encounter.log` and, the moment combat ends, shows who was in the group, how each player was built, and how they performed.
+Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app for Windows, with an experimental Linux build. ESO Log Tail watches your `Encounter.log` and, the moment combat ends, shows who was in the group, how each player was built, and how they performed.
 
 ![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window-buff-timeline.png)
 
@@ -31,7 +31,26 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a Windows desk
 
 Download `esolog-tail-windows-portable-<version>.zip`, extract it anywhere, and run `esolog-gui.exe`.
 
-### Option 3: From source
+### Option 3: Linux tarball (experimental)
+
+The Linux build is new. It is built and start-tested automatically, but it has not been run against a live game, so treat it as a test build and please report what you find.
+
+1. Download `esolog-tail-linux-x86_64-<version>.tar.gz` from the [latest release](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/releases).
+2. Extract it and run the app:
+
+   ```bash
+   tar -xzf esolog-tail-linux-x86_64-<version>.tar.gz
+   ./esolog-tail-<version>/esolog-gui
+   ```
+
+It needs a 64-bit x86 desktop (X11 or Wayland) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36, or later. Nothing is installed; delete the folder to remove it. What differs from Windows:
+
+- **Finding the log**: the app looks in ESO's Steam (Proton) prefix, including Flatpak Steam, and in the default `~/.wine` prefix. For Lutris, Bottles, a Steam library on another drive, or any other prefix, set the path under Settings → Encounter log. See [ESO log file locations](#eso-log-file-locations).
+- **Updates**: there is no installer, so the update prompt opens the release page for you to download the new tarball.
+- **Start at login** is not offered.
+- Settings and `crash.log` live in `~/.config/esolog-tail/`.
+
+### Option 4: From source
 
 ```bash
 git clone https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities.git
@@ -105,11 +124,11 @@ Open **Settings…** from the toolbar.
 - **Updates**: check GitHub for a newer release at startup and offer to update.
 - **Experimental**: the buff timeline strip, see below.
 
-Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json`, and survive upgrades and uninstalls.
+Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 
 ### Automatic updates
 
-At startup the app checks GitHub for a newer release (Settings → Updates to disable). When one exists you are prompted with **Update now / Later / Skip this version**. Updating downloads the installer with a progress bar, closes the app, and hands over to the installer; settings are kept and the app relaunches when it finishes. Nothing is ever installed without the prompt.
+At startup the app checks GitHub for a newer release (Settings → Updates to disable). When one exists you are prompted with **Update now / Later / Skip this version**. Updating downloads the installer with a progress bar, closes the app, and hands over to the installer; settings are kept and the app relaunches when it finishes. Nothing is ever installed without the prompt. On Linux the first button is **Open download page**: it opens the release page, where you download the new tarball.
 
 ### Experimental: buff timeline
 
@@ -122,7 +141,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **When**: checked **once, at app startup**. ESO keeps the log file open for the whole game session (even between `/encounterlog` toggles), so start-up, typically before you launch ESO, is the safe moment.
 - **Trigger**: the log has grown by more than the configured threshold since the last archive. Default **1024 MB**, about five veteran trials (a vet trial run is typically 100 to 300 MB; a vet dungeon roughly 25 to 75 MB).
 - **What it does**: streams the log into `Encounter-YYMMDDHHMMSS.zip` (stamped from the newest log entry) in the archive folder, default next to the log, showing progress in the status bar. The archive is written as a `.partial` file and only renamed to `.zip` after it verifies, so an interrupted archive never leaves a corrupt zip behind.
-- **Safety**: the app takes exclusive access to the log for the whole operation. If ESO is running and holds the file, the archive is **skipped with a notification** and monitoring starts normally; nothing is ever zipped mid-write.
+- **Safety**: the app takes exclusive access to the log for the whole operation. If ESO is running and holds the file, the archive is **skipped with a notification** and monitoring starts normally; nothing is ever zipped mid-write. Linux cannot lock a file that way, so there the app skips the archive when another process has the log open, and keeps the original if the log grew while it was being zipped.
 - **Your original log is kept** by default. If you enable *Delete Encounter.log after a verified archive*, the original is removed only after the zip verifies, and ESO starts a fresh, small log.
 - **Archive now** (toolbar) runs the same guarded archive at any moment, handy right after you close ESO.
 
@@ -170,6 +189,12 @@ Auto-detection searches, and picks the most recently updated of:
 - `%USERPROFILE%\Documents\Elder Scrolls Online\Logs\Encounter.log`
 - `%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log`
 
+On Linux it uses the first of these that exists (each ends in `Documents/Elder Scrolls Online/live/Logs/Encounter.log`):
+
+- `~/.wine/drive_c/users/Public/` and `~/.wine/drive_c/users/<you>/`
+- `~/.steam/steam/steamapps/compatdata/306130/pfx/drive_c/users/steamuser/`
+- the same Steam path under `~/.local/share/Steam/` and, for Flatpak Steam, under `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/`
+
 ## Building from source
 
 Prerequisites: Python 3.9+ (3.11 recommended) on Windows.
@@ -188,7 +213,9 @@ python -m PyInstaller esolog-tail.spec --noconfirm
 iscc /DAppVersion=0.5.0 installer\esolog-gui.iss
 ```
 
-Tagged releases (`v*`) build both artifacts automatically via GitHub Actions.
+Tagged releases (`v*`) build the installer, the portable zip, and the Linux tarball automatically via GitHub Actions.
+
+On Linux the same tests and PyInstaller command apply, and `dist/esolog-gui/` is the folder the release job packs into the tarball. Build on the oldest distribution you want to support, with Qt's X11 libraries installed (the package list is in `.github/workflows/build-installers.yml`): PyInstaller bundles the ones it finds, and a build without them will not start on a desktop that lacks `libxcb-cursor0`.
 
 ### Refreshing game data after an ESO patch
 
@@ -219,11 +246,13 @@ The icon step is also packaged as the `refresh-ability-icons` skill for Claude C
 
 **Archive was skipped**: ESO was running and had the log open. Close ESO and use *Archive now*, or let the next app start handle it.
 
-**The app closed unexpectedly**: unhandled errors in the windowed build are written to `%LOCALAPPDATA%\esolog-tail\crash.log`; please attach it to a bug report.
+**The app closed unexpectedly**: unhandled errors in the windowed build are written to `%LOCALAPPDATA%\esolog-tail\crash.log` (`~/.config/esolog-tail/crash.log` on Linux); please attach it to a bug report.
+
+**Linux: the app does not start**: run `./esolog-gui` from a terminal to see Qt's message, and include it in a bug report along with your distribution and whether the desktop is X11 or Wayland.
 
 ## Requirements
 
-- Windows 10/11 (the engine is cross-platform Python, but packaging is Windows-only)
+- Windows 10/11, or 64-bit Linux with glibc 2.35 or newer (experimental build)
 - Runtime: `PySide6`, `platformdirs` (see `requirements.txt`)
 - ESO encounter logging enabled in-game
 

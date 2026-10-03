@@ -439,11 +439,12 @@ class TestMainWindowStates(GuiTestCase):
             from app_config import AppConfig
             self.assertEqual(AppConfig(path=self.config.path)
                              .get('update.skip_version'), '9.9.9')
-            # Update: emits the download request
+            # Update (Windows: there is an installer): emits the download request
             requested = []
             win.request_update_download.connect(
                 lambda url, name: requested.append((url, name)))
-            with patch.object(win, '_prompt_update', return_value='update'):
+            with patch.object(win, '_prompt_update', return_value='update'), \
+                 patch('gui.main_window.HAS_INSTALLER', True):
                 win._on_update_available(info)
             self.assertEqual(requested,
                              [(info.installer_url, info.installer_name)])
@@ -454,6 +455,31 @@ class TestMainWindowStates(GuiTestCase):
                 win._on_update_available(info)
             self.assertEqual(requested, [])
             self.assertIsNone(self.config.get('update.skip_version'))
+        finally:
+            win.close()
+
+    def test_update_without_installer_opens_release_page(self):
+        """Linux has no installer: 'update' opens the release page instead."""
+        from unittest.mock import patch
+        from update_check import UpdateInfo
+        win = self._window()
+        try:
+            info = UpdateInfo(
+                version='9.9.9', tag='v9.9.9',
+                installer_url='https://example.invalid/l.tar.gz',
+                installer_name='esolog-tail-linux-x86_64-9.9.9.tar.gz',
+                notes='', page_url='https://example.invalid/releases/v9.9.9')
+            requested = []
+            win.request_update_download.connect(
+                lambda url, name: requested.append((url, name)))
+            with patch.object(win, '_prompt_update', return_value='update'), \
+                 patch('gui.main_window.HAS_INSTALLER', False), \
+                 patch('gui.main_window.QDesktopServices') as services:
+                win._on_update_available(info)
+            self.assertEqual(requested, [])
+            services.openUrl.assert_called_once()
+            self.assertEqual(services.openUrl.call_args[0][0].toString(),
+                             info.page_url)
         finally:
             win.close()
 
