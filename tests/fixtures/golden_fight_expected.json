@@ -20,7 +20,7 @@
           "role": "D",
           "s": 0,
           "sets": "[(5, 'Tide-Born Wildstalker', False), (1, \"Velothi Ur-Mage's Amulet\", True)]",
-          "skill_lines": "['Ardent Flame', 'Assassination', \"Dawn's Wrath\", 'Herald of the Tome']"
+          "skill_lines": "['Ardent Flame', 'Assassination', 'Herald of the Tome']"
         },
         {
           "back_bar": "['Flames of Oblivion', 'Engulfing Flames', 'Inspired Scholarship', 'Quick Cloak', 'Camouflaged Hunter', 'Pragmatic Fatecarver']",
@@ -34,7 +34,7 @@
           "role": "D",
           "s": 0,
           "sets": "[]",
-          "skill_lines": "['Ardent Flame', 'Assassination', \"Dawn's Wrath\", 'Herald of the Tome']"
+          "skill_lines": "['Ardent Flame', 'Assassination', 'Herald of the Tome']"
         }
       ],
       "timestamp": "T9",
@@ -61,7 +61,7 @@
           "role": "D",
           "s": 0,
           "sets": "[(5, 'Tide-Born Wildstalker', False), (1, \"Velothi Ur-Mage's Amulet\", True)]",
-          "skill_lines": "['Ardent Flame', 'Assassination', \"Dawn's Wrath\", 'Herald of the Tome']"
+          "skill_lines": "['Ardent Flame', 'Assassination', 'Herald of the Tome']"
         },
         {
           "back_bar": "['Flames of Oblivion', 'Engulfing Flames', 'Inspired Scholarship', 'Quick Cloak', 'Camouflaged Hunter', 'Pragmatic Fatecarver']",
@@ -75,7 +75,7 @@
           "role": "D",
           "s": 0,
           "sets": "[]",
-          "skill_lines": "['Ardent Flame', 'Assassination', \"Dawn's Wrath\", 'Herald of the Tome']"
+          "skill_lines": "['Ardent Flame', 'Assassination', 'Herald of the Tome']"
         }
       ],
       "timestamp": "T99",

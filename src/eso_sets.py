@@ -260,30 +260,30 @@ class ESOSubclassAnalyzer:
             'Rune of Eldritch Horror', 'Rune of Uncanny Adoration', 'Rune of the Colorless Pool'
         ]
     }   
+    MAX_SKILL_LINES = 3  # a character never has more class skill lines than this
+
     def analyze_subclass(self, abilities: Set[str]) -> Dict[str, any]:
         """Analyze abilities to infer skill lines."""
         if not abilities:
             return {'skill_lines': [], 'confidence': 0.0}
 
         # Clean ability names for better matching
-        clean_abilities = {self._clean_ability_name(ability) for ability in abilities}
+        clean_abilities = {self._clean_ability_name(ability).lower() for ability in abilities}
 
-        # Find skill lines that have at least one matching ability
-        detected_skill_lines = []
-        for skill_line, skill_abilities in self.SKILL_LINE_ABILITIES.items():
-            if any(self._ability_matches(ability, clean_ability) 
-                   for ability in skill_abilities 
-                   for clean_ability in clean_abilities):
-                detected_skill_lines.append(skill_line)
+        # Exact-name matches per skill line. Substring matching is wrong
+        # here: "Carve" (Two Handed) is not a Fatecarver, "Swarming Scion"
+        # (Vampire) is not a Warden Swarm.
+        scored = []
+        for order, (skill_line, skill_abilities) in enumerate(self.SKILL_LINE_ABILITIES.items()):
+            hits = sum(1 for ability in skill_abilities if ability.lower() in clean_abilities)
+            if hits:
+                scored.append((hits, order, skill_line))
 
-        # Create a list of unique skill lines (preserving order)
-        seen = set()
-        unique_skill_lines = []
-        for skill_line in detected_skill_lines:
-            if skill_line not in seen:
-                unique_skill_lines.append(skill_line)
-                seen.add(skill_line)
-        top_skill_lines = unique_skill_lines
+        # A character has at most three class skill lines (subclassing swaps
+        # lines, it never adds a fourth): keep the best-supported three, in
+        # table order
+        best = sorted(scored, key=lambda item: (-item[0], item[1]))[:self.MAX_SKILL_LINES]
+        top_skill_lines = [line for _hits, _order, line in sorted(best, key=lambda item: item[1])]
 
         # Simple confidence: 1.0 if we found skill lines, 0.0 if not
         confidence = 1.0 if top_skill_lines else 0.0
@@ -331,10 +331,8 @@ class ESOSubclassAnalyzer:
         return cleaned.strip()
 
     def _ability_matches(self, pattern: str, ability: str) -> bool:
-        """Check if an ability matches a pattern."""
-        pattern_lower = pattern.lower()
-        ability_lower = ability.lower()
-        return pattern_lower in ability_lower or ability_lower in pattern_lower
+        """Whether a logged ability name is the listed skill (exact, case-insensitive)."""
+        return pattern.strip().lower() == ability.strip().lower()
 
 
 
