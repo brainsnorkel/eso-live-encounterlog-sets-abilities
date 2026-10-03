@@ -60,6 +60,7 @@ Open **Settings…** from the toolbar:
 - **Split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice.
 - **Reports**: save per-zone text reports named `YYMMDDHHMMSS-{Zone-Name}{-vet}-report.txt`.
 - **Archiving**: see below.
+- **Startup**: *Start ESO Log Tail when I sign in to Windows* — a per-user login entry (no admin rights); uninstalling the app removes it.
 
 Settings persist in a per-user config file and survive upgrades and uninstalls.
 

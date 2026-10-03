@@ -106,6 +106,21 @@ class SettingsDialog(QDialog):
         archive_form.addRow(warning)
         layout.addWidget(archive_group)
 
+        # Startup
+        import autostart
+        startup_group = QGroupBox("Startup")
+        startup_form = QFormLayout(startup_group)
+        self.autostart = QCheckBox("Start ESO Log Tail when I sign in to Windows")
+        self._autostart_available = autostart.autostart_command() is not None
+        self._autostart_initial = autostart.is_enabled()
+        self.autostart.setChecked(self._autostart_initial)
+        if not self._autostart_available:
+            self.autostart.setEnabled(False)
+            self.autostart.setToolTip(
+                "Available when running the installed app")
+        startup_form.addRow(self.autostart)
+        layout.addWidget(startup_group)
+
         # Updates
         update_group = QGroupBox("Updates")
         update_form = QFormLayout(update_group)
@@ -146,3 +161,8 @@ class SettingsDialog(QDialog):
         if self.update_check.isChecked():
             # Re-enabling checks also clears any skipped version
             self.config.set("update.skip_version", None)
+        # Start-at-login lives in the registry, not the config file
+        if (self._autostart_available
+                and self.autostart.isChecked() != self._autostart_initial):
+            import autostart
+            autostart.set_enabled(self.autostart.isChecked())

@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Start at login** (Settings → Startup): toggle to launch ESO Log Tail when you sign in to Windows (per-user Run registry entry, no admin rights; removed on uninstall)
+
 ## [0.3.1] - 2026-09-30
 
 ### Fixed
