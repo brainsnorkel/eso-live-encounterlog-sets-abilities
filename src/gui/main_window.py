@@ -140,6 +140,10 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
 
+        about_action = QAction("About…", self)
+        about_action.triggered.connect(self._show_about)
+        toolbar.addAction(about_action)
+
         splitter = QSplitter(Qt.Horizontal)
         self.history_list = QListWidget()
         self.history_list.currentRowChanged.connect(self._show_fight)
@@ -566,6 +570,11 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if reply == QMessageBox.Yes:
             self.request_archive.emit()
+
+    def _show_about(self):
+        """Version, project link, and credits (ESO-Hub links, ZeniMax icons)."""
+        from gui.about import show_about
+        show_about(self, __version__)
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)

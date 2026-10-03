@@ -176,9 +176,14 @@ Tagged releases (`v*`) build both artifacts automatically via GitHub Actions.
 
 This project is for educational and research purposes. ESO game data belongs to ZeniMax Online Studios.
 
-## Acknowledgments
+## Credits
 
+The same credits are shown in the app under **About…**.
+
+- **[ESO-Hub.com](https://eso-hub.com)** — the skill and gear set links in the detail view open pages on ESO-Hub, and the hover (popup) text names those targets. Thanks to the ESO-Hub team for supporting community tools that link to their site. The app sends nothing to ESO-Hub until you click a link; the hover text is built from the app's own data and the link target.
+- **Game icons** — the ability icons shown on the bars are extracted from your own ESO installation (see `scripts/extract_ability_icons.py`) and bundled for display only. They are © ZeniMax Online Studios and are not the property of this application. The Elder Scrolls Online and its artwork are © ZeniMax Online Studios; ESO Log Tail is an unofficial fan tool, not affiliated with or endorsed by ZeniMax.
 - **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)** by Baertram — the gear set database behind set identification
+- **[EsoExtractData](https://en.uesp.net/wiki/ESO_Mod:EsoExtractData)** by UESP — the tool that extracts the icons from the game files
 - **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais — insights into ESO log format parsing
 - **UESP** — authoritative skill line and ability information
 - **ESO community** — encounter log format documentation and testing feedback
