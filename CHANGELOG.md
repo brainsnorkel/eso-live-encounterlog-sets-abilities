@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-03
 
 ### Fixed
 - **Phantom fourth skill line**: skill-line detection matched ability names by substring, so the Two-Handed skill *Carve* counted as an Arcanist *Fatecarver* and *Swarming Scion* as the Warden *Swarm*, giving pure Nightblades a fourth line. Names now match exactly, and at most three lines (the best supported) are reported
