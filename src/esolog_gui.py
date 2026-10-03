@@ -64,6 +64,15 @@ def main() -> int:
     app.setApplicationName("ESO Log Tail")
     app.setOrganizationName("esolog-tail")
 
+    # Window icon: bundled next to the app when frozen, repo root in dev
+    from pathlib import Path
+    from PySide6.QtGui import QIcon
+    base = Path(getattr(sys, "_MEIPASS",
+                        Path(__file__).resolve().parent.parent))
+    icon_path = base / "icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
     config = AppConfig()
     window = MainWindow(config)
     window.show()

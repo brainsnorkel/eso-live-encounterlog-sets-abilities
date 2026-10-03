@@ -9,7 +9,7 @@ a = Analysis(
     ['src/esolog_gui.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
+    datas=[('icon.ico', '.')] if os.path.exists('icon.ico') else [],
     hiddenimports=[
         'app_config',
         'app_startup',
