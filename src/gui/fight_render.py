@@ -70,12 +70,14 @@ def _fmt_resource(value) -> str:
 
 
 def summary_line(entry) -> str:
-    """One-line summary for the history list."""
+    """One-line summary for the history list, led by the boss/fight name."""
     vet = " vet" if entry.is_vet else ""
-    boss = f" — {entry.boss_name}" if entry.boss_name else ""
     zone = entry.zone_name or "Unknown"
-    return (f"{entry.timestamp}  {zone}{vet}  ·  {_fmt_duration(entry.duration_s)}"
-            f"  ·  {_fmt_dps(entry.group_dps)} DPS{boss}")
+    core = (f"{entry.timestamp}  {zone}{vet}  ·  {_fmt_duration(entry.duration_s)}"
+            f"  ·  {_fmt_dps(entry.group_dps)} DPS")
+    if entry.boss_name:
+        return f"{entry.boss_name} — {core}"
+    return core
 
 
 def render_html(entry, detailed: bool, dark: bool = False) -> str:
@@ -85,12 +87,19 @@ def render_html(entry, detailed: bool, dark: bool = False) -> str:
     zone = e(entry.zone_name or "Unknown")
     vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
            if entry.is_vet else "")
-    boss = f" &nbsp;·&nbsp; {e(entry.boss_name)}" if entry.boss_name else ""
+    # Order: boss name (title), then time · zone on the line below
     muted = theme["muted"]
     detail_color = theme["detail"]
+    if entry.boss_name:
+        title = e(entry.boss_name)
+        subline_zone = f" &nbsp;·&nbsp; {zone}{vet}"
+    else:
+        title = f"{zone}{vet}"
+        subline_zone = ""
     parts = [
-        f"<h3 style='margin:0'>{zone}{vet}{boss}</h3>",
+        f"<h3 style='margin:0'>{title}</h3>",
         f"<p style='margin:2px 0;color:{muted}'>{e(str(entry.timestamp))}"
+        f"{subline_zone}"
         f" &nbsp;·&nbsp; {_fmt_duration(entry.duration_s)}"
         f" &nbsp;·&nbsp; Group DPS {_fmt_dps(entry.group_dps)}"
         f" &nbsp;·&nbsp; Deaths {entry.deaths}</p>",
@@ -103,10 +112,15 @@ def render_html(entry, detailed: bool, dark: bool = False) -> str:
         parts.append(f"<p style='margin:2px 0'>{e(_join(entry.buff_summary))}</p>")
 
     parts.append("<table cellpadding='3' cellspacing='0' width='100%'>")
+    first_dealer = str(entry.first_damage_dealer or "")
+    starred = False
     for p in entry.players:
         role = p.get("role") or "D"
         color = theme["roles"].get(role, muted)
         name = e(_join(p.get("name", "")))
+        if first_dealer and str(p.get("unit_id", "")) == first_dealer:
+            name = f"{name} <b>*</b>"
+            starred = True
         class_abbr = e(_join(p.get("class_abbr", "")))
         dps = _fmt_dps(float(p.get("dps") or 0))
         pct = float(p.get("dmg_pct") or 0)
@@ -135,6 +149,9 @@ def render_html(entry, detailed: bool, dark: bool = False) -> str:
                       f"</td></tr>")
             parts.append(detail)
     parts.append("</table>")
+    if starred:
+        parts.append(f"<p style='margin:2px 0;color:{muted};font-size:85%'>"
+                     f"* dealt the first damage of the fight</p>")
     return "".join(parts)
 
 
@@ -164,11 +181,14 @@ def render_plain_text(entry) -> str:
     lines = [summary_line(entry)]
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
+    first_dealer = str(entry.first_damage_dealer or "")
     for p in entry.players:
         role = p.get("role") or "D"
         dps = _fmt_dps(float(p.get("dps") or 0))
         pct = float(p.get("dmg_pct") or 0)
-        lines.append(f"[{role}] {_join(p.get('name', ''))} "
+        star = (" *" if first_dealer
+                and str(p.get("unit_id", "")) == first_dealer else "")
+        lines.append(f"[{role}] {_join(p.get('name', ''))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({pct:.1f}%)")
         skill_lines = _join(p.get("skill_lines"), sep=" / ")
         if skill_lines:
