@@ -60,16 +60,17 @@ def set_enabled(enabled: bool, value_name: str = VALUE_NAME,
             command = command or autostart_command()
             if not command:
                 return False
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
-                                winreg.KEY_SET_VALUE) as key:
+            # CreateKeyEx: fresh profiles may not have the Run key yet
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                                    winreg.KEY_SET_VALUE) as key:
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
         else:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
-                                winreg.KEY_SET_VALUE) as key:
-                try:
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                                    winreg.KEY_SET_VALUE) as key:
                     winreg.DeleteValue(key, value_name)
-                except FileNotFoundError:
-                    pass
+            except FileNotFoundError:
+                pass  # key or value absent: already disabled
         return True
     except OSError:
         return False
