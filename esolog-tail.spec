@@ -9,7 +9,10 @@ a = Analysis(
     ['src/esolog_gui.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('icon.ico', '.')] if os.path.exists('icon.ico') else [],
+    # Bundled data: ability icons (scripts/extract_ability_icons.py) and the
+    # ESO-Hub skill link map (scripts/generate_esohub_links.py)
+    datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
+          + [(d, d) for d in ('data/icons/abilities', 'data/esohub') if os.path.isdir(d)],
     hiddenimports=[
         'app_config',
         'app_startup',

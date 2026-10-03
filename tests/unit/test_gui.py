@@ -166,11 +166,11 @@ class TestReviewMatchesGolden(GuiTestCase):
         # Lists must be joined for display, never rendered as Python reprs
         self.assertNotIn("['", html_out)
         self.assertNotIn('["', html_out)
-        # Detail view lists ALL equipment: misc pieces below 5pc included
+        # Detail view lists ALL equipment: misc pieces below 5 pieces included
         import html as html_mod
         player1 = entry.players[0]
         for count, set_name in player1.get('all_sets', []):
-            self.assertIn(html_mod.escape(f'{count}pc {set_name}'), html_out)
+            self.assertIn(html_mod.escape(f'{count}x {set_name}'), html_out)
         misc = [s for s in player1.get('all_sets', []) if s[0] < 5]
         self.assertTrue(misc, 'fixture should include sub-5pc pieces')
         text_out = render_plain_text(entry)

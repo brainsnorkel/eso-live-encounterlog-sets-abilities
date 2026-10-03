@@ -207,6 +207,10 @@ class PlayerInfo:
         self.equipped_abilities: Set[str] = set()
         self.front_bar_abilities: List[str] = []
         self.back_bar_abilities: List[str] = []
+        # Per-slot detail for the GUI ({'id', 'name', 'icon'}), aligned with
+        # the name lists above
+        self.front_bar_slots: List[Dict[str, str]] = []
+        self.back_bar_slots: List[Dict[str, str]] = []
         self.gear: Dict[str, List[str]] = {}
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()
@@ -252,7 +256,7 @@ class PlayerInfo:
             "2": ["Dark Magic", "Daedric Summoning", "Storm Calling"],  # Sorcerer
             "3": ["Assassination", "Shadow", "Siphoning"],  # Nightblade
             "4": ["Animal Companions", "Green Balance", "Winter's Embrace"],  # Warden
-            "5": ["Bone", "Grave Lord", "Living Death"],  # Necromancer
+            "5": ["Bone Tyrant", "Grave Lord", "Living Death"],  # Necromancer
             "6": ["Aedric Spear", "Dawn's Wrath", "Restoring Light"],  # Templar
             "117": ["Herald of the Tome", "Soldier of Apocrypha", "Curative Runeforms"]  # Arcanist
         }
@@ -263,10 +267,14 @@ class PlayerInfo:
         """Set the equipped abilities from PLAYER_INFO."""
         self.equipped_abilities = ability_names
 
-    def set_front_back_bar_abilities(self, front_bar: List[str], back_bar: List[str]):
+    def set_front_back_bar_abilities(self, front_bar: List[str], back_bar: List[str],
+                                     front_slots: Optional[List[Dict[str, str]]] = None,
+                                     back_slots: Optional[List[Dict[str, str]]] = None):
         """Set the front and back bar abilities from PLAYER_INFO."""
         self.front_bar_abilities = front_bar
         self.back_bar_abilities = back_bar
+        self.front_bar_slots = list(front_slots or [])
+        self.back_bar_slots = list(back_slots or [])
 
     def set_gear(self, gear_data: List[List[str]]):
         """Set the gear data from PLAYER_INFO."""
@@ -741,6 +749,7 @@ class ESOLogAnalyzer(ListenerMixin):
         ListenerMixin.__init__(self)
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
+        self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
         self.current_zone: Optional[str] = None  # Track current zone name
         self.current_difficulty: Optional[str] = None  # Track current difficulty
@@ -1251,6 +1260,20 @@ class ESOLogAnalyzer(ListenerMixin):
                 if self.list_hostiles:
                     self.hostile_monsters.append((unit_id, clean_name, enemy.unit_type))
 
+    def _bar_slots(self, ability_ids: List[str]) -> List[Dict[str, str]]:
+        """[{'id', 'name', 'icon'}] for a bar's ability ids, in slot order.
+
+        Ids without a cached name are skipped exactly as the name lists skip
+        them, so slots and names line up one-to-one.
+        """
+        slots = []
+        for ability_id in ability_ids:
+            name = self.log_parser.get_ability_name(ability_id)
+            if name:
+                slots.append({'id': str(ability_id), 'name': name,
+                              'icon': self.ability_icons.get(str(ability_id), '')})
+        return slots
+
     def _handle_ability_info(self, entry: ESOLogEntry):
         """Handle ABILITY_INFO events to cache ability names and gear sets."""
         # Check if entry is already a AbilityInfoEntry
@@ -1265,7 +1288,13 @@ class ESOLogAnalyzer(ListenerMixin):
             # Update both caches with the parsed ability info
             self.ability_cache[parsed.ability_id] = parsed.ability_name
             self.log_parser.ability_cache[parsed.ability_id] = parsed.ability_name
-            
+            # Icon stem for the GUI's bundled icon set (empty when the line
+            # carries no .dds path)
+            from ability_icons import icon_stem
+            stem = icon_stem(getattr(parsed, 'icon_path', ''))
+            if stem:
+                self.ability_icons[parsed.ability_id] = stem
+
             # Check if this ability is actually a gear set (some gear sets appear as abilities)
             ability_name_lower = parsed.ability_name.lower()
             if any(set_name in ability_name_lower for set_name in ['bahsei', 'mother', 'sorrow', 'relequen', 'spell power', 'false god', 'deadly strike']):
@@ -1297,14 +1326,18 @@ class ESOLogAnalyzer(ListenerMixin):
             # Get front and back bar abilities separately
             front_bar_abilities = self.log_parser.get_front_bar_abilities(player_info)
             back_bar_abilities = self.log_parser.get_back_bar_abilities(player_info)
-            
+            # Per-slot detail (id, name, icon stem) aligned with the name lists
+            front_bar_slots = self._bar_slots(player_info.champion_points)
+            back_bar_slots = self._bar_slots(player_info.additional_data)
+
             # Find the player and set their equipped abilities and gear
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:
                 player = self.current_encounter.players[player_info.unit_id]
                 if self.diagnostic:
                     _console(f"{Fore.MAGENTA}[DIAGNOSTIC] Found player {player.name} in current encounter, setting abilities{Style.RESET_ALL}")
                 player.set_equipped_abilities(equipped_ability_names)
-                player.set_front_back_bar_abilities(front_bar_abilities, back_bar_abilities)
+                player.set_front_back_bar_abilities(front_bar_abilities, back_bar_abilities,
+                                                    front_bar_slots, back_bar_slots)
                 player.set_gear(player_info.gear_data)
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
@@ -2599,8 +2632,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 'sets': player_sets,
                 'all_sets': all_sets,
                 'skill_lines': skill_lines,
+                'class_lines': player.get_class_skill_lines(),
                 'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
                 'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
+                'front_bar_slots': [dict(s) for s in player.front_bar_slots],
+                'back_bar_slots': [dict(s) for s in player.back_bar_slots],
                 'class_name': player.get_class_name(),
                 'cp': player.champion_points,
             })

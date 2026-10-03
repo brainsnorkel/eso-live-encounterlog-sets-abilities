@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Phantom fourth skill line**: skill-line detection matched ability names by substring, so the Two-Handed skill *Carve* counted as an Arcanist *Fatecarver* and *Swarming Scion* as the Warden *Swarm*, giving pure Nightblades a fourth line. Names now match exactly, and at most three lines (the best supported) are reported
+
+### Changed
+- **Detail view layout**: the fight stats sit to the right of the boss name on one line; subclass lines appear beside the class abbreviation (`NB Assassination/Shadow/Herald`) only when the build borrows a line from another class; the largest resource pool is bold; the gear line uses a 25% smaller font and `5x Name` counts
+
+### Added
+- **Ability-bar icons**: the detail view draws both bars as the game's ability icons instead of names, bar 1 left and bar 2 right on one line inside a framed build card. Icons are bundled from the installed client (`data/icons/abilities`, built by `scripts/extract_ability_icons.py`; refresh after a patch with the `refresh-ability-icons` skill) and cached in memory. Hover an icon for the ability name; click it to open the skill's page on ESO-Hub (link map in `data/esohub/skills_en.json` from `scripts/generate_esohub_links.py`). Abilities without a bundled icon still show their name, and "Copy fight" keeps names. In-fight search (Ctrl+F) matches icons by ability name and highlights them like text matches. Gear set names link to their ESO-Hub set pages (hover shows the target; map in `data/esohub/sets_en.json`)
+
 ## [0.3.3] - 2026-10-03
 
 ### Added

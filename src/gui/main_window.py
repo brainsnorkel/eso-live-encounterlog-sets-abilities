@@ -14,14 +14,17 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
-    QTextBrowser, QTextEdit, QVBoxLayout, QWidget,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
+from ability_icons import esohub_set_url, esohub_skill_url
 from app_config import AppConfig
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
-    muted_color, render_html, render_plain_text, summary_line,
+    anchor_names, anchor_tooltips, muted_color, render_html, render_plain_text,
+    summary_line,
 )
+from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
 from gui.timeline_strip import TimelineStrip
 from version import __version__
@@ -160,7 +163,8 @@ class MainWindow(QMainWindow):
         search_row = QHBoxLayout()
         self.search_field = QLineEdit()
         self.search_field.setPlaceholderText(
-            "Search in fight… (Ctrl+F, Enter jumps to next match)")
+            "Search in fight… (Ctrl+F, Enter jumps to next match; "
+            "ability icons match by name)")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_search)
         self.search_field.returnPressed.connect(self._goto_next_match)
@@ -169,8 +173,8 @@ class MainWindow(QMainWindow):
         search_row.addWidget(self.search_count)
         right_layout.addLayout(search_row)
 
-        self.fight_view = QTextBrowser()
-        self.fight_view.setOpenExternalLinks(False)
+        # Serves bundled ability icons, hover names, and ESO-Hub link clicks
+        self.fight_view = FightView()
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -459,8 +463,21 @@ class MainWindow(QMainWindow):
                              and row == len(fights) - 1)
         entry = fights[row]
         self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None))
-        self.fight_view.setHtml(render_html(entry, self._detailed,
-                                            dark=self._dark))
+        # Ability icons replace names in the detail view; the hover text, the
+        # ESO-Hub link and the searchable name of each icon come from the
+        # same per-slot data
+        if self._detailed:
+            self.fight_view.set_tooltips(anchor_tooltips(
+                entry, links=esohub_skill_url, set_links=esohub_set_url))
+            self.fight_view.set_anchor_names(anchor_names(entry, links=esohub_skill_url))
+        else:
+            self.fight_view.set_tooltips({})
+            self.fight_view.set_anchor_names({})
+        self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
+                                            icons=self.fight_view.icons,
+                                            links=esohub_skill_url,
+                                            set_links=esohub_set_url,
+                                            base_pt=self.fight_view.font().pointSizeF()))
         self._apply_search()
 
     def _show_placeholder(self, html_text):
@@ -474,7 +491,9 @@ class MainWindow(QMainWindow):
     # ---- in-fight search ----
 
     def _search_matches(self):
-        """QTextCursor for every match of the search text in the pane."""
+        """QTextCursor for every match of the search text in the pane: each
+        text occurrence, plus each ability icon whose name contains the text
+        (the name is hover text, not document text). Document order."""
         text = self.search_field.text()
         matches = []
         if text:
@@ -485,6 +504,8 @@ class MainWindow(QMainWindow):
                 if cursor.isNull():
                     break
                 matches.append(QTextCursor(cursor))
+            matches.extend(self.fight_view.anchor_matches(text))
+            matches.sort(key=lambda c: c.selectionStart())
         return matches
 
     def _apply_search(self):
