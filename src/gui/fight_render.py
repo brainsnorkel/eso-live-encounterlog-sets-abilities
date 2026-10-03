@@ -70,14 +70,17 @@ def _fmt_resource(value) -> str:
 
 
 def summary_line(entry) -> str:
-    """One-line summary for the history list, led by the boss/fight name."""
+    """History-list line: boss · duration · gdps · zone · timestamp."""
     vet = " vet" if entry.is_vet else ""
     zone = entry.zone_name or "Unknown"
-    core = (f"{entry.timestamp}  {zone}{vet}  ·  {_fmt_duration(entry.duration_s)}"
-            f"  ·  {_fmt_dps(entry.group_dps)} DPS")
+    parts = []
     if entry.boss_name:
-        return f"{entry.boss_name} — {core}"
-    return core
+        parts.append(entry.boss_name)
+    parts.append(_fmt_duration(entry.duration_s))
+    parts.append(f"{_fmt_dps(entry.group_dps)} gdps")
+    parts.append(f"{zone}{vet}")
+    parts.append(str(entry.timestamp))
+    return " · ".join(parts)
 
 
 def render_html(entry, detailed: bool, dark: bool = False) -> str:
@@ -92,17 +95,18 @@ def render_html(entry, detailed: bool, dark: bool = False) -> str:
     detail_color = theme["detail"]
     if entry.boss_name:
         title = e(entry.boss_name)
-        subline_zone = f" &nbsp;·&nbsp; {zone}{vet}"
+        subline_zone = f" · {zone}{vet}"
     else:
         title = f"{zone}{vet}"
         subline_zone = ""
     parts = [
         f"<h3 style='margin:0'>{title}</h3>",
-        f"<p style='margin:2px 0;color:{muted}'>{e(str(entry.timestamp))}"
+        f"<p style='margin:2px 0;color:{muted}'>"
+        f"{_fmt_duration(entry.duration_s)}"
+        f" · {_fmt_dps(entry.group_dps)} gdps"
         f"{subline_zone}"
-        f" &nbsp;·&nbsp; {_fmt_duration(entry.duration_s)}"
-        f" &nbsp;·&nbsp; Group DPS {_fmt_dps(entry.group_dps)}"
-        f" &nbsp;·&nbsp; Deaths {entry.deaths}</p>",
+        f" · {e(str(entry.timestamp))}"
+        f" · Deaths {entry.deaths}</p>",
     ]
     # Text uptime line only when there is no timeline strip to show it
     # (the graph carries the uptimes when the experiment is on)

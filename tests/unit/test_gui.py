@@ -150,10 +150,11 @@ class TestReviewMatchesGolden(GuiTestCase):
         entry = loaded['fights'][0]
         line = summary_line(entry)
         self.assertIn('Coral Aerie', line)
-        # Order: boss name, time, zone
-        self.assertTrue(line.startswith('Test Boss — '))
-        self.assertLess(line.index('Test Boss'), line.index('2025'))
-        self.assertLess(line.index('2025'), line.index('Coral Aerie'))
+        # Order: boss, duration, gdps, zone, timestamp; no em dashes
+        self.assertTrue(line.startswith('Test Boss · '))
+        self.assertNotIn('—', line)
+        self.assertLess(line.index('gdps'), line.index('Coral Aerie'))
+        self.assertLess(line.index('Coral Aerie'), line.index('2025'))
         # First-damage dealer gets a star in both renderings
         html_marked = render_html(entry, detailed=False)
         self.assertIn('@brainsnorkel <b>*</b>', html_marked)
