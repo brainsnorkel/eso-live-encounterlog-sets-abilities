@@ -2,6 +2,16 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Deaths missing from the count**: a player killed by another player (a shared mechanic, PvP) is logged as `KILLING_BLOW` with no `DIED` event, and was never counted; and the death of the last player standing is written about 85 ms after `END_COMBAT`, so it was dropped from the fight it ended. Both are now counted, and the late one is added to the fight that just finished (the fight on screen redraws)
+
+### Added
+- **Death recap**: a player who died in a fight gets a **☠ Death recap** button on their row, in both the detail and compact views (`×2` for two deaths; hover for when and to what they died). It opens a window that lists, for each of that player's deaths, the last 5 seconds of damage and healing, oldest first: time before death, health after the event, the ability with its icon, its source, the amount, and how the hit was taken (hit, DoT, blocked, dodged, or absorbed by a named damage shield), with the overkill on the killing blow. Players the table does not list still get a button under it. The recap is read from the log's `COMBAT_EVENT` lines, including the killing blow, which the log writes just after the `DIED` line
+- **Death cue in the fight history**: a fight in which a player died shows `(d)` after its boss or mob name in the history list, so the fights worth a recap stand out. The clipboard copy is unchanged
+- **Death-recap icons**: the bundled icon set gains the game's 162 `death_recap_*` icons, which is what monster attacks use. `scripts/extract_ability_icons.py` now takes several `--prefix` families and extracts `ability_` and `death_recap_` by default
+
 ## [0.4.1] - 2026-10-03
 
 ### Added

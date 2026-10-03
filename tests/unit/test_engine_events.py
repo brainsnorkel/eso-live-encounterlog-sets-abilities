@@ -60,12 +60,15 @@ class TestListenerMixin(unittest.TestCase):
         self.emitter._notify('on_archive_event', event)
         self.emitter._notify('on_diagnostic', 'hello')
         self.emitter._notify('on_fight_completed', object())
+        self.emitter._notify('on_fight_updated', object())
         kinds = [e[0] for e in self.recorder.events]
-        self.assertEqual(kinds, ['log_status', 'archive_event', 'diagnostic', 'fight_completed'])
+        self.assertEqual(kinds, ['log_status', 'archive_event', 'diagnostic',
+                                 'fight_completed', 'fight_updated'])
 
     def test_default_listener_callbacks_are_noops(self):
         listener = AnalyzerListener()
         listener.on_fight_completed(object())
+        listener.on_fight_updated(object())
         listener.on_zone_changed('z', 'd')
         listener.on_log_status(LogStatus())
         listener.on_archive_event(ArchiveEvent(kind='skipped'))

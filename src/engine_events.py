@@ -57,6 +57,10 @@ class AnalyzerListener:
     def on_fight_completed(self, entry) -> None:  # entry: FightHistoryEntry
         """A combat encounter finished and produced a fight summary."""
 
+    def on_fight_updated(self, entry) -> None:  # entry: FightHistoryEntry
+        """An already-completed fight's summary changed in place (a player
+        death that the log wrote just after the fight ended)."""
+
     def on_zone_changed(self, zone_name: str, difficulty: str) -> None:
         """The player entered a new zone."""
 
@@ -101,6 +105,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_fight_completed(self, entry) -> None:
         self.events.append(("fight_completed", entry))
+
+    def on_fight_updated(self, entry) -> None:
+        self.events.append(("fight_updated", entry))
 
     def on_zone_changed(self, zone_name: str, difficulty: str) -> None:
         self.events.append(("zone_changed", zone_name, difficulty))

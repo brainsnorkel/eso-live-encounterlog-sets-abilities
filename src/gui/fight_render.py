@@ -10,14 +10,20 @@ game's icon (``<img src="icon:<stem>">``, served by the fight view) inside an
 anchor, so hovering shows the name and clicking opens the skill's ESO-Hub
 page when one is known. Without a cache, or for slots whose icon is not
 bundled, the name is shown as text. The plain-text copy always uses names.
+
+A player who died in the fight gets a death-recap button beside their name
+(see death_render); the fight view opens the recap window when it is clicked.
 """
 
 import html
+
+from gui.death_render import death_chip_html, deaths_by_unit
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
 
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 BAR_DIVIDER = "│"  # between bar 1 and bar 2 when both are icon rows
+DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
 
 _THEMES = {
     # dark background: lighter accents
@@ -120,8 +126,13 @@ def _subclass_text(p) -> str:
     return "/".join(_short_line(line) for line in lines)
 
 
-def summary_line(entry) -> str:
-    """History-list line: boss · duration · gdps · zone · timestamp."""
+def summary_line(entry, death_cue: bool = False) -> str:
+    """Fight line: boss · duration · gdps · zone · timestamp.
+
+    death_cue: mark a fight in which a player died with DEATH_CUE after the
+    boss or mob name. The history list asks for it; the clipboard copy,
+    which is read without the app's legend, does not.
+    """
     vet = " vet" if entry.is_vet else ""
     zone = entry.zone_name or "Unknown"
     parts = []
@@ -131,6 +142,8 @@ def summary_line(entry) -> str:
     parts.append(f"{_fmt_dps(entry.group_dps)} gdps")
     parts.append(f"{zone}{vet}")
     parts.append(str(entry.timestamp))
+    if death_cue and entry.deaths:
+        parts[0] = f"{parts[0]} {DEATH_CUE}"
     return " · ".join(parts)
 
 
@@ -282,13 +295,18 @@ def render_html(entry, detailed: bool, dark: bool = False,
     parts.append("<table cellpadding='3' cellspacing='0' width='100%'>")
     first_dealer = str(entry.first_damage_dealer or "")
     starred = False
+    deaths = deaths_by_unit(entry)
     for p in entry.players:
         role = p.get("role") or "D"
         color = theme["roles"].get(role, muted)
         name = e(_join(p.get("name", "")))
-        if first_dealer and str(p.get("unit_id", "")) == first_dealer:
+        unit_id = str(p.get("unit_id", ""))
+        if first_dealer and unit_id == first_dealer:
             name = f"{name} <b>*</b>"
             starred = True
+        # Death-recap button for a player who died in this fight
+        recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
+                      if unit_id in deaths else "")
         class_abbr = e(_join(p.get("class_abbr", "")))
         # Subclass lines beside the class, only for builds that borrow a line
         # from another class
@@ -298,7 +316,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         pct = float(p.get("dmg_pct") or 0)
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
-               f"{subclass_html}</td>"
+               f"{subclass_html}{recap_html}</td>"
                f"<td align='right'>{dps}</td>"
                f"<td align='right'>{pct:.1f}%</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
@@ -345,6 +363,15 @@ def render_html(entry, detailed: bool, dark: bool = False,
     if starred:
         parts.append(f"<p style='margin:2px 0;color:{muted};font-size:85%'>"
                      f"* dealt the first damage of the fight</p>")
+    # Deaths of players the table does not list (their build never reached
+    # the log) still get their recap button
+    listed = {str(p.get("unit_id", "")) for p in entry.players}
+    others = [death_chip_html(unit_id, recaps, dark,
+                              label=str(recaps[0].get("name") or "unknown"))
+              for unit_id, recaps in deaths.items() if unit_id not in listed]
+    if others:
+        parts.append(f"<p style='margin:4px 0;color:{muted}'>"
+                     f"Also died: {' '.join(others)}</p>")
     return "".join(parts)
 
 

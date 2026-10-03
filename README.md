@@ -8,6 +8,7 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a Windows desk
 
 - **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time, and deaths, with every fight of the session kept in a history list.
 - **Players ranked by damage**, with role (Tank/Healer/DPS), class, DPS, damage share, and resource pools (the largest in bold).
+- **Death recaps**: a player who died gets a **Death recap** button on their row. It opens the last 5 seconds before each of their deaths: every hit and heal with its source, the health left after it, and whether the hit was blocked, dodged, or absorbed by a shield.
 - **Builds at a glance**: both ability bars as the game's own icons, subclass lines when a build borrows from another class, and every equipped gear set with piece counts. Gear set identification uses the LibSets database (722 sets).
 - **ESO-Hub links**: hover an ability icon for its name, click it to open the skill on ESO-Hub; set names open their ESO-Hub set pages. Nothing is downloaded until you click.
 - **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward), or an experimental per-fight buff timeline strip.
@@ -54,7 +55,7 @@ Launch ESO Log Tail before or during play; both work. It picks the most recently
 
 ### Fight history
 
-Each completed fight appears in the list on the left as `boss · duration · gdps · zone · timestamp` (`vet` marks veteran difficulty). The newest fight is selected automatically; selecting an older fight pauses that, and selecting the newest again resumes it.
+Each completed fight appears in the list on the left as `boss · duration · gdps · zone · timestamp` (`vet` marks veteran difficulty, and `(d)` after the name marks a fight in which a player died). The newest fight is selected automatically; selecting an older fight pauses that, and selecting the newest again resumes it.
 
 ### Fight detail
 
@@ -65,6 +66,18 @@ The right pane shows the selected fight.
 - **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead.
 - **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
 - **Group buffs**: for groups of three or more, a line of uptime percentages for Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, and Pearlescent Ward. When the experimental timeline strip is on, the strip replaces this line.
+
+### Death recap
+
+A red **☠ Death recap** button appears beside each player who died in the fight (`×2` when they died twice). Hover it for when, and to what, they died. Click it to open the recap window, which stays open beside the fight view.
+
+For each of that player's deaths the window names the killing ability and who used it, then lists the last 5 seconds of damage and healing, oldest first:
+
+- **Time** before the death, and the player's **health** after the event (with its share of max health).
+- The **ability**, with the game's icon, and its **source**: the monster or player that hit or healed.
+- The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
+
+Heals that were pure overheal are left out. A death whose event the game writes just after combat ends (the last player standing in a wipe) is still counted and added to that fight.
 
 ### Search, copy, review
 
@@ -120,7 +133,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **Ability icons**: the log names each ability's icon file, and the app ships those icons extracted from the game (see [Refreshing game data](#refreshing-game-data-after-an-eso-patch)).
 - **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page.
 - **Roles**: Tank/Healer/DPS from resource pools, healing-versus-damage output, and taunt or heal ability fallbacks.
-- **Deaths**: player `DIED` events during the fight.
+- **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player (a shared mechanic, PvP). The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
 
 ### Limitations
 
@@ -128,6 +141,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - Sets the bundled LibSets data does not know appear as `Set#<id>` and have no link.
 - Scribed (Grimoire) skills have no ESO-Hub skill page, so they show their name without a link.
 - After an ESO patch, new skills show as text until the icon set is refreshed, and the ESO-Hub link maps use English page names, so logs from a non-English client will not link.
+- Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
 - ESO logs 13 gear slots; the backup off-hand slot is not logged.
 
 ## Migrating from the terminal version
@@ -181,8 +195,9 @@ Tagged releases (`v*`) build both artifacts automatically via GitHub Actions.
 The app bundles three data sets that go stale when the game changes:
 
 ```cmd
-:: Ability icons from your installed game (needs UESP's EsoExtractData and Pillow;
-:: see the script's header for the paths it looks for). About 2.5 minutes.
+:: Ability and death-recap icons from your installed game (needs UESP's
+:: EsoExtractData and Pillow; see the script's header for the paths it looks
+:: for). About 2.5 minutes.
 python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
 
 :: ESO-Hub skill and set link maps, from ESO-Hub's sitemaps (network access)
@@ -221,7 +236,7 @@ This project is for educational and research purposes. ESO game data belongs to 
 The same credits are shown in the app under **About…**.
 
 - **[ESO-Hub.com](https://eso-hub.com)**: the skill and gear set links in the detail view open pages on ESO-Hub, and the hover (popup) text names those targets. Thanks to the ESO-Hub team for supporting community tools that link to their site. The app sends nothing to ESO-Hub until you click a link; the hover text is built from the app's own data and the link target.
-- **Game icons**: the ability icons shown on the bars are extracted from your own ESO installation (see `scripts/extract_ability_icons.py`) and bundled for display only. They are © ZeniMax Online Studios and are not the property of this application. The Elder Scrolls Online and its artwork are © ZeniMax Online Studios; ESO Log Tail is an unofficial fan tool, not affiliated with or endorsed by ZeniMax.
+- **Game icons**: the ability icons shown on the bars and in death recaps are extracted from your own ESO installation (see `scripts/extract_ability_icons.py`) and bundled for display only. They are © ZeniMax Online Studios and are not the property of this application. The Elder Scrolls Online and its artwork are © ZeniMax Online Studios; ESO Log Tail is an unofficial fan tool, not affiliated with or endorsed by ZeniMax.
 - **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)** by Baertram: the gear set database behind set identification.
 - **[EsoExtractData](https://en.uesp.net/wiki/ESO_Mod:EsoExtractData)** by UESP: the tool that extracts the icons from the game files.
 - **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)**: the addon that makes turning logging on a non-event.

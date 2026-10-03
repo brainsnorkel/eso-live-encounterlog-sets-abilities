@@ -4,21 +4,25 @@ rendered HTML (``icon:<stem>`` image URLs), shows an ability's name while an
 icon is hovered, and opens ESO-Hub links in the system browser.
 
 Links never navigate the document itself: every click is routed through
-anchorClicked, and only http(s) targets are opened externally.
+anchorClicked, and only http(s) targets are opened externally. A click on a
+player's death-recap button is announced through death_recap_requested.
 """
 
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QCursor, QDesktopServices, QTextCursor, QTextDocument
 from PySide6.QtWidgets import QTextBrowser, QToolTip
 
+from gui.death_render import unit_from_href
 from gui.icon_cache import IconCache
 
 ICON_SCHEME = "icon"
 
 
 class FightView(QTextBrowser):
+
+    death_recap_requested = Signal(str)  # unit id of the player who died
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -91,3 +95,7 @@ class FightView(QTextBrowser):
     def _on_anchor_clicked(self, url: QUrl) -> None:
         if url.scheme() in ("http", "https"):
             self._open_external(url)
+            return
+        unit_id = unit_from_href(url.toString())
+        if unit_id is not None:
+            self.death_recap_requested.emit(unit_id)

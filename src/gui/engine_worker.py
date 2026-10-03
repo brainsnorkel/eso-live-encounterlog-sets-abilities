@@ -29,6 +29,9 @@ class SignalListener(AnalyzerListener):
     def on_fight_completed(self, entry):
         self._worker.fight_completed.emit(entry)
 
+    def on_fight_updated(self, entry):
+        self._worker.fight_updated.emit(entry)
+
     def on_zone_changed(self, zone_name, difficulty):
         self._worker.zone_changed.emit(zone_name, difficulty)
 
@@ -50,6 +53,7 @@ class EngineWorker(QObject):
     """
 
     fight_completed = Signal(object)   # FightHistoryEntry
+    fight_updated = Signal(object)     # FightHistoryEntry already delivered
     zone_changed = Signal(str, str)
     log_status = Signal(object)        # LogStatus
     archive_event = Signal(object)     # ArchiveEvent

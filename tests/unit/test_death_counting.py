@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Death counting: player deaths come from DIED events (not DIED_XP)."""
+"""Death counting: player deaths come from DIED events, or KILLING_BLOW when
+another player lands the blow (not DIED_XP)."""
 
 import os
 import sys
@@ -30,6 +31,11 @@ def _died_self(ts, unit_id):
 def _died_xp(ts, killer_id, dying_id):
     return (f"{ts},COMBAT_EVENT,DIED_XP,PHYSICAL,0,32,0,985855,217348,"
             f"{killer_id},{_PLAYER_STATE},{dying_id},{_DEAD_BOSS_STATE}")
+
+
+def _killing_blow(ts, killer_id, dying_id):
+    return (f"{ts},COMBAT_EVENT,KILLING_BLOW,OBLIVION,0,0,0,5389015,59767,"
+            f"{killer_id},{_PLAYER_STATE},{dying_id},{_DEAD_PLAYER_STATE}")
 
 
 class TestDeathCounting(unittest.TestCase):
@@ -66,6 +72,16 @@ class TestDeathCounting(unittest.TestCase):
             '70000,END_COMBAT',
         ])
         self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_player_killed_by_a_player_arrives_as_killing_blow(self):
+        """Friendly fire (and PvP) logs KILLING_BLOW and no DIED for the death."""
+        analyzer = self._run([
+            '10000,BEGIN_COMBAT',
+            _killing_blow(15000, 2, 1),
+            '70000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+        self.assertEqual(analyzer.zone_deaths, 1)
 
     def test_pet_or_npc_death_not_counted(self):
         analyzer = self._run([

@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 
 from ability_icons import esohub_set_url, esohub_skill_url
 from app_config import AppConfig
+from gui.death_recap_dialog import DeathRecapDialog
+from gui.death_render import death_tooltips
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
     anchor_names, anchor_tooltips, muted_color, render_html, render_plain_text,
@@ -65,6 +67,7 @@ class MainWindow(QMainWindow):
         self._last_status = None
         self._follow_live = True
         self._last_placeholder = ""
+        self._death_dialog = None  # created on the first death-recap click
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
@@ -94,6 +97,8 @@ class MainWindow(QMainWindow):
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
         self.timeline_strip.update()
+        if self._death_dialog is not None:
+            self._death_dialog.refresh(dark)
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if 0 <= row < len(fights):
@@ -179,6 +184,7 @@ class MainWindow(QMainWindow):
 
         # Serves bundled ability icons, hover names, and ESO-Hub link clicks
         self.fight_view = FightView()
+        self.fight_view.death_recap_requested.connect(self._show_death_recap)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -219,6 +225,7 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.worker_thread)
 
         self.worker.fight_completed.connect(self._on_fight_completed)
+        self.worker.fight_updated.connect(self._on_fight_updated)
         self.worker.zone_changed.connect(self._on_zone_changed)
         self.worker.log_status.connect(self._on_log_status)
         self.worker.archive_event.connect(self._on_archive_event)
@@ -266,10 +273,26 @@ class MainWindow(QMainWindow):
     def _on_fight_completed(self, entry):
         self._fights.append(entry)
         if self._review_fights is None:
-            item = QListWidgetItem(summary_line(entry))
+            item = QListWidgetItem(summary_line(entry, death_cue=True))
             self.history_list.addItem(item)
             if self._follow_live:
                 self.history_list.setCurrentRow(self.history_list.count() - 1)
+
+    @Slot(object)
+    def _on_fight_updated(self, entry):
+        """A delivered fight gained a death (logged just after combat ended):
+        its history line gets the death cue, and the pane is redrawn if it is
+        the fight on screen."""
+        fights = self._current_fights()
+        # Late deaths belong to the newest fight, so look from the end
+        row = next((i for i in range(len(fights) - 1, -1, -1)
+                    if fights[i] is entry), -1)
+        item = self.history_list.item(row) if row >= 0 else None
+        if item is None:
+            return
+        item.setText(summary_line(entry, death_cue=True))
+        if row == self.history_list.currentRow():
+            self._show_fight(row)
 
     @Slot(str, str)
     def _on_zone_changed(self, zone, difficulty):
@@ -455,7 +478,8 @@ class MainWindow(QMainWindow):
     def _reload_list(self, fights):
         self.history_list.clear()
         for entry in fights:
-            self.history_list.addItem(QListWidgetItem(summary_line(entry)))
+            self.history_list.addItem(
+                QListWidgetItem(summary_line(entry, death_cue=True)))
         if fights:
             self.history_list.setCurrentRow(len(fights) - 1)
 
@@ -469,20 +493,34 @@ class MainWindow(QMainWindow):
         self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
-        # same per-slot data
+        # same per-slot data. Death-recap buttons show in both views
+        tooltips = death_tooltips(entry)
         if self._detailed:
-            self.fight_view.set_tooltips(anchor_tooltips(
+            tooltips.update(anchor_tooltips(
                 entry, links=esohub_skill_url, set_links=esohub_set_url))
             self.fight_view.set_anchor_names(anchor_names(entry, links=esohub_skill_url))
         else:
-            self.fight_view.set_tooltips({})
             self.fight_view.set_anchor_names({})
+        self.fight_view.set_tooltips(tooltips)
         self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
                                             icons=self.fight_view.icons,
                                             links=esohub_skill_url,
                                             set_links=esohub_set_url,
                                             base_pt=self.fight_view.font().pointSizeF()))
         self._apply_search()
+
+    def _show_death_recap(self, unit_id):
+        """A player's death-recap button was clicked in the fight on screen."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if row < 0 or row >= len(fights):
+            return
+        if self._death_dialog is None:
+            self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
+        self._death_dialog.show_recap(fights[row], unit_id, self._dark)
+        self._death_dialog.show()
+        self._death_dialog.raise_()
+        self._death_dialog.activateWindow()
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text

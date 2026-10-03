@@ -2,10 +2,12 @@
 """
 Extract ESO ability icons from the installed game and convert them to PNG.
 
-Why: the encounter log names every slotted ability's icon
+Why: the encounter log names every ability's icon
 (ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"), so the app
-can show ability-bar icons offline if it ships one PNG per ability_*.dds found
-in the game files. Run this after each ESO update to refresh that set.
+can show icons offline if it ships one PNG per icon found in the game files.
+Two families are extracted: ability_*.dds (player skills, for the ability
+bars) and death_recap_*.dds (what monster attacks use, for death recaps).
+Run this after each ESO update to refresh that set.
 
 Requirements (Windows):
   * EsoExtractData v0.53+ by UESP: https://en.uesp.net/wiki/ESO_Mod:EsoExtractData
@@ -16,14 +18,14 @@ Requirements (Windows):
 
 Pipeline:
   1. Dump eso.mnf's file table without extracting anything (-k -m, ~4 s).
-  2. Find every \\esoui\\art\\icons\\ability_*.dds row and merge their table
+  2. Find every \\esoui\\art\\icons\\<prefix>*.dds row and merge their table
      indexes into a few dozen -s/-e ranges (a small gap of unrelated files is
      cheaper than another ~3 s MNF reload; -n only matches exact names).
      The extractor's -s/-e counter is offset from the table's Index column
      (2,337 on the Update 49 client), so two one-file probes calibrate it.
   3. Extract those ranges to a temp folder. Extracted files are numbered by
      table Index (<archive>\\<Index>.dds), which the table maps back to names.
-     Convert the ability_*.dds files to PNG at --size px, write
+     Convert the matching .dds files to PNG at --size px, write
      <out>/manifest.json and report what changed against the previous
      manifest. Optionally (--check-log) verify that every icon slotted on a
      bar in an Encounter.log exists in the output.
@@ -53,6 +55,7 @@ ESO_DIR_CANDIDATES = [
     r"D:\SteamLibrary\steamapps\common\Zenimax Online\The Elder Scrolls Online",
 ]
 ICON_DIR = "\\esoui\\art\\icons\\"
+DEFAULT_PREFIXES = ("ability_", "death_recap_")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "data" / "icons" / "abilities"
 
@@ -223,7 +226,9 @@ def main() -> int:
     ap.add_argument("--extractor", default="", help="path to EsoExtractData.exe")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help=f"output folder (default {DEFAULT_OUT})")
     ap.add_argument("--size", type=int, default=40, help="PNG edge length in px (game icons are 64; default 40)")
-    ap.add_argument("--prefix", default="ability_", help="icon filename prefix to extract (default ability_)")
+    ap.add_argument("--prefix", action="append", metavar="PREFIX",
+                    help="icon filename prefix to extract; repeat for several "
+                         f"(default {' and '.join(DEFAULT_PREFIXES)})")
     ap.add_argument("--gap-mb", type=float, default=10.0,
                     help="bridge index gaps up to this many MB of unrelated files per range (default 10)")
     ap.add_argument("--dry-run", action="store_true", help="only list the icons and ranges, extract nothing")
@@ -235,7 +240,7 @@ def main() -> int:
     extractor = find_extractor(args.extractor)
     mnf = eso_dir / "depot" / "eso.mnf"
     out = Path(args.out)
-    prefix = args.prefix.lower()
+    prefixes = tuple(p.lower() for p in (args.prefix or DEFAULT_PREFIXES))
     log(f"eso.mnf:    {mnf}  ({mnf.stat().st_size:,} bytes, modified "
         f"{datetime.fromtimestamp(mnf.stat().st_mtime):%Y-%m-%d %H:%M})")
     log(f"extractor:  {extractor}")
@@ -247,13 +252,14 @@ def main() -> int:
         mnf_txt = temp / "mnf.txt"
         run_extractor(extractor, [str(mnf), str(temp / "list") + os.sep, "-k", "-m", str(mnf_txt)], temp)
         rows = read_file_table(mnf_txt)
-        wanted = [i for i, r in enumerate(rows) if r[2].lower().startswith(ICON_DIR + prefix)]
+        targets = tuple(ICON_DIR + p for p in prefixes)
+        wanted = [i for i, r in enumerate(rows) if r[2].lower().startswith(targets)]
         if not wanted:
             sys.exit("no matching icon rows in the file table; is this the live eso.mnf?")
         ranges = merge_ranges(rows, wanted, int(args.gap_mb * 1_000_000))
         total_in_ranges = sum(e - s + 1 for s, e in ranges)
         log(f"file table: {len(rows):,} rows in {time.time() - t0:.1f}s; "
-            f"{len(wanted):,} {prefix}*.dds icons -> {len(ranges)} ranges "
+            f"{len(wanted):,} {'/'.join(p + '*.dds' for p in prefixes)} icons -> {len(ranges)} ranges "
             f"({total_in_ranges - len(wanted):,} extra files bridged)")
         if args.dry_run:
             for s, e in ranges:
@@ -313,7 +319,7 @@ def main() -> int:
             "source": {"eso_mnf": str(mnf), "bytes": mnf.stat().st_size,
                        "modified": datetime.fromtimestamp(mnf.stat().st_mtime).isoformat(timespec="seconds")},
             "size_px": args.size,
-            "prefix": prefix,
+            "prefixes": list(prefixes),
             "count": len(icons),
             "icons": dict(sorted(icons.items())),
         }

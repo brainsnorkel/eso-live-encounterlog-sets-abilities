@@ -24,6 +24,7 @@ from fight_history import FightHistory, FightHistoryEntry
 from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
+from death_recap import DeathRecapRecorder, RECAP_RESULTS
 
 
 class _PlainAnsi:
@@ -89,6 +90,11 @@ BUFF_ABILITY_IDS = {
     'lucent_echoes': '220015',
     'pearlescent_ward': '172621',
 }
+
+# The blow that kills the last player standing ends combat, and that player's
+# death event is written after END_COMBAT (about 85 ms later in live logs).
+# A player death this soon after END_COMBAT belongs to the fight that just ended.
+LATE_DEATH_GRACE_MS = 1000
 
 def highlight_taunt_abilities(ability_list):
     """Highlight taunt abilities in purple and return formatted list."""
@@ -803,7 +809,16 @@ class ESOLogAnalyzer(ListenerMixin):
         # Gated by experimental.buff_timeline; nothing is recorded when off.
         self.track_buff_timeline = False
         self.buff_timeline_recorder = BuffTimelineRecorder()
-        
+
+        # Death recaps: the last seconds before each player death
+        self.death_recap_recorder = DeathRecapRecorder(
+            self._resolve_recap_unit, self._resolve_recap_ability)
+        self.fight_death_recaps: List[dict] = []  # this fight's (reset with fight_deaths)
+        # The fight entry just emitted and its start time, for a death that
+        # is logged after END_COMBAT (see LATE_DEATH_GRACE_MS)
+        self._last_fight_entry: Optional[FightHistoryEntry] = None
+        self._last_fight_start: int = 0
+
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
         self.log_parser = ESOLogParser()
@@ -1416,7 +1431,11 @@ class ESOLogAnalyzer(ListenerMixin):
             # Reset death counters for new zone
             self.zone_deaths = 0
             self.fight_deaths = 0
-            
+            self.fight_death_recaps = []
+            self._last_fight_entry = None
+            # Unit ids are handed out afresh in each zone
+            self.death_recap_recorder.reset()
+
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
             self.current_encounter.start_time = entry.timestamp
@@ -1439,6 +1458,8 @@ class ESOLogAnalyzer(ListenerMixin):
 
         # Per-fight death counter starts fresh with each combat
         self.fight_deaths = 0
+        self.fight_death_recaps = []
+        self._last_fight_entry = None
 
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -1539,6 +1560,8 @@ class ESOLogAnalyzer(ListenerMixin):
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
         # Relative-ms offsets restart with each BEGIN_LOG session
         self.buff_timeline_recorder.reset()
+        self.death_recap_recorder.reset()
+        self._last_fight_entry = None
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -1753,10 +1776,19 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
             
+            # Death recap: keep what lands on each player (damage, heals,
+            # shields, dodges) for the seconds before a death
+            if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
+                recap_target = entry.fields[17] if entry.fields[17] != '*' else entry.fields[7]
+                if recap_target in self.current_encounter.players:
+                    self.death_recap_recorder.record(entry.timestamp, entry.fields, recap_target)
+
             # Track death events.
-            # Player deaths arrive as DIED; DIED_XP is an enemy death that
-            # grants XP (its dying unit is the monster, never a player).
-            if combat_event_type in ('DIED', 'DIED_XP'):
+            # Player deaths arrive as DIED, or as KILLING_BLOW when the killer
+            # is another player (friendly fire, PvP): the log then writes no
+            # DIED for that death. DIED_XP is an enemy death that grants XP
+            # (its dying unit is the monster, never a player).
+            if combat_event_type in ('DIED', 'DIED_XP', 'KILLING_BLOW'):
                 # Dying unit is the target unit-state block (fields[17]);
                 # a '*' target means self-inflicted: dying unit is the
                 # source (fields[7]).
@@ -1766,13 +1798,14 @@ class ESOLogAnalyzer(ListenerMixin):
                     dying_unit_id = str(entry.fields[7])
                 else:
                     dying_unit_id = ""
-                if (combat_event_type == 'DIED' and self.current_encounter and
-                        self.current_encounter.find_player_by_unit_id(dying_unit_id)):
-                    self.zone_deaths += 1
-                    self.fight_deaths += 1
+                dying_player = None
+                if combat_event_type != 'DIED_XP' and self.current_encounter:
+                    dying_player = self.current_encounter.find_player_by_unit_id(dying_unit_id)
+                if dying_player:
+                    self._record_player_death(dying_player, dying_unit_id, entry)
 
                 # If it's a hostile enemy death, mark it as damaged by players
-                elif (self.current_encounter and
+                elif (combat_event_type != 'KILLING_BLOW' and self.current_encounter and
                       dying_unit_id in self.current_encounter.enemies):
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
@@ -1879,6 +1912,37 @@ class ESOLogAnalyzer(ListenerMixin):
                                     
                         except (ValueError, IndexError):
                             pass  # Skip invalid health data
+
+    def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, entry: ESOLogEntry):
+        """Count a player's death and capture its recap (see death_recap.py)."""
+        self.zone_deaths += 1
+        self.fight_deaths += 1
+
+        late_entry = self._late_death_fight_entry(entry.timestamp)
+        fight_start = (self._last_fight_start if late_entry is not None
+                       else self.current_encounter.start_time)
+        recap = self.death_recap_recorder.note_death(
+            dying_unit_id, entry.timestamp, entry.fields)
+        recap['unit_id'] = player.unit_id
+        recap['name'] = player.get_display_name()
+        recap['time_ms'] = max(0, entry.timestamp - fight_start)
+        self.fight_death_recaps.append(recap)
+
+        if late_entry is not None:
+            late_entry.deaths += 1
+            late_entry.death_recaps = late_entry.death_recaps + [recap]
+            self._notify('on_fight_updated', late_entry)
+
+    def _late_death_fight_entry(self, timestamp_ms: int) -> Optional[FightHistoryEntry]:
+        """The fight entry just emitted, when a death at *timestamp_ms* still
+        belongs to it (see LATE_DEATH_GRACE_MS); else None."""
+        enc = self.current_encounter
+        if (self._last_fight_entry is None or enc is None or not enc.finalized
+                or enc.combat_ended_at is None):
+            return None
+        if 0 <= timestamp_ms - enc.combat_ended_at <= LATE_DEATH_GRACE_MS:
+            return self._last_fight_entry
+        return None
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
         """Handle EFFECT_CHANGED events for buffs/debuffs."""
@@ -2498,6 +2562,8 @@ class ESOLogAnalyzer(ListenerMixin):
             fight_entry = self._build_fight_entry(zone_name)
             if fight_entry:
                 self.fight_history.append(fight_entry)
+                self._last_fight_entry = fight_entry
+                self._last_fight_start = self.current_encounter.start_time
                 self._notify('on_fight_completed', fight_entry)
 
         # Add newline after encounter summary for clean formatting
@@ -2531,6 +2597,26 @@ class ESOLogAnalyzer(ListenerMixin):
                 return enemy.name
         return f"unit {unit_id}"
 
+    def _resolve_recap_unit(self, unit_id: str) -> str:
+        """Display name for a death-recap source: player handle or monster
+        name; '' when the log names no unit (environment, fall damage)."""
+        enc = self.current_encounter
+        if enc is None or unit_id == "0":
+            return ""
+        player = enc.players.get(unit_id)
+        if player is not None:
+            return player.get_display_name()
+        enemy = enc.enemies.get(unit_id)
+        if enemy is not None and enemy.name:
+            return enemy.name
+        return ""
+
+    def _resolve_recap_ability(self, ability_id: str) -> Tuple[str, str]:
+        """(name, icon stem) for a death-recap ability id."""
+        ability_id = str(ability_id)
+        return (self.ability_cache.get(ability_id) or f"Ability {ability_id}",
+                self.ability_icons.get(ability_id, ''))
+
     def _build_fight_entry(self, zone_name: str = None):
         """Build a FightHistoryEntry from the current encounter."""
         if not self.current_encounter:
@@ -2548,6 +2634,7 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.duration_s = duration
         entry.group_dps = enc.total_damage / duration if duration > 0 and enc.total_damage > 0 else 0
         entry.deaths = self.fight_deaths  # this fight's player deaths
+        entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
 
         # EXPERIMENTAL buff/debuff timeline (None whenever the gate is off)

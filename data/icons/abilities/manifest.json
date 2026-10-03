@@ -1,13 +1,16 @@
 {
- "generated": "2026-10-03T04:34:51+00:00",
+ "generated": "2026-10-03T07:24:57+00:00",
  "source": {
   "eso_mnf": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Zenimax Online\\The Elder Scrolls Online\\depot\\eso.mnf",
   "bytes": 50347872,
   "modified": "2026-09-29T19:00:39"
  },
  "size_px": 40,
- "prefix": "ability_",
- "count": 1794,
+ "prefixes": [
+  "ability_",
+  "death_recap_"
+ ],
+ "count": 1956,
  "icons": {
   "ability_1handed_001": {
    "dds_bytes": 16512,
@@ -7184,6 +7187,654 @@
   "ability_wrothgar_chillingwind": {
    "dds_bytes": 16512,
    "dds_sha1": "847e2206c69768ee3fd50b8c6a7d2752a4d8246e"
+  },
+  "death_recap_arcanist_aoe1": {
+   "dds_bytes": 16512,
+   "dds_sha1": "026f9a73c37f597b3d2745e0892516b0260161f2"
+  },
+  "death_recap_arcanist_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "491025e42865495cd39e24b8a145cf8a7cbb4c15"
+  },
+  "death_recap_arcanist_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8b2de1c7dc68e369fd806690d2d56ba2453edba7"
+  },
+  "death_recap_arcanist_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c7d9aeb2a5a94fcccb2bfa1a059102a35ccf7c24"
+  },
+  "death_recap_arcanist_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8b4d52daea97fd43b93ffa124c4a90c301fd1c69"
+  },
+  "death_recap_arcanist_dot_heavy2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "108c90bdeaa50f17baf5589cf50070699add30e1"
+  },
+  "death_recap_arcanist_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0236f03c2472925f34aeb16a858994b5ede42166"
+  },
+  "death_recap_arcanist_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "806967e0360a1f6347388fab3c8293870c693639"
+  },
+  "death_recap_arcanist_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "2be0ec48de6d877312330d717290cb5582e01b70"
+  },
+  "death_recap_arcanist_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "393c7a9db70fcef27d38123b26ad6b0e18c3bbbe"
+  },
+  "death_recap_arcanist_tentacle": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f006bc806da0bbe12541279f8bba4c3f8fde0eaa"
+  },
+  "death_recap_arcanist_tentacle2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "dec9778af50adf5649e081c01ef1070910f6e6fc"
+  },
+  "death_recap_arcanist_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0aee68dc34cf3bd02edde05c8ef2455f7ccec3fa"
+  },
+  "death_recap_azureplasm": {
+   "dds_bytes": 16512,
+   "dds_sha1": "df9b30de866a4bb0d80a182b413dde761c9aafb5"
+  },
+  "death_recap_bleed": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5cad77a3142a2c154dc64a6493086b8778eaf369"
+  },
+  "death_recap_bleed_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8d364d7282f8ea4efd43dd9ae1d714af551c04ac"
+  },
+  "death_recap_bleed_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d997b09aa568c67eb6f769cbb755d5a98b613a03"
+  },
+  "death_recap_cold_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b8795e4a176f7539889585cc84c0557fc0066d6e"
+  },
+  "death_recap_cold_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ef50cb0237c30f72f93fbae1a2e0c8f2c2cee58d"
+  },
+  "death_recap_cold_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5918999d258ffd6261abbb63bd8386e260a22f8c"
+  },
+  "death_recap_cold_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3a114185c949773c36cd7b3c18fc8a7d7b26ca75"
+  },
+  "death_recap_cold_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0aabe453d28bd28f756ac33a8d34cdac19e381e5"
+  },
+  "death_recap_cold_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6867735da5bb0e7be458dcc75b798ed0e10e5049"
+  },
+  "death_recap_cold_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "bf50f4dc604cd87b9d25c60af3135d0340aa0c59"
+  },
+  "death_recap_cold_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ef820480f6b798dcf2dd8f6191c9665b3e47efe8"
+  },
+  "death_recap_cold_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b642c7783beab44b82991c09cb81829294ad65f0"
+  },
+  "death_recap_cold_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b7e383b9fe3f1d7cb465372c842110a47adf4a00"
+  },
+  "death_recap_disease1_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f3bb0f23d62a2605d107d2317e877f1a33d5239f"
+  },
+  "death_recap_disease2_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e203ce6f2e4155c71226f351af9703d3d98c5b7a"
+  },
+  "death_recap_disease2_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6002dbefef2924972d47c2542349ff0dfafcda2c"
+  },
+  "death_recap_disease2_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1ae543012329816ba5876fdd595eb1cd76922c62"
+  },
+  "death_recap_disease2_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8406cdd7fac97b31ecc7edaca5387915e99b17f7"
+  },
+  "death_recap_disease2_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4507966db95cbd33bb235a250221c803370b8330"
+  },
+  "death_recap_disease2_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "83ae3bc5b7b59c05d89b8ebf0c723b57de933ebb"
+  },
+  "death_recap_disease2_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9603ac654323ac0aad5d08d638fe056610161e49"
+  },
+  "death_recap_disease_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "edcdd1ee17f9c68c50ca5406cf67764a1cade4b6"
+  },
+  "death_recap_disease_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a19358ee33df6ef87be446ea8e425a5c902dd88c"
+  },
+  "death_recap_disease_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a889801d6a4b87612b88f55bdc6dcdebee03b85e"
+  },
+  "death_recap_disease_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ee704e176c8d3d666c342251f1511828be5646a8"
+  },
+  "death_recap_disease_dot_heavy2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b6d4a86fae9aeed6ccc032b59570e0c9bbb100e3"
+  },
+  "death_recap_disease_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "2d1d92e295d1e11bc0bc8c70ca9a824307060c73"
+  },
+  "death_recap_disease_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "2330247557698ebc25baf884a0ccc5a7f2d28c1c"
+  },
+  "death_recap_disease_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8d8bf68dec51eb0bc7d9bc46f1dfd418dd4cde45"
+  },
+  "death_recap_disease_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "44332c21a359a80cc03481bae0905997f870b0f3"
+  },
+  "death_recap_disease_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ad9566f6c70fa2bb3d724d33795e1f6406ddaba8"
+  },
+  "death_recap_dungeontrap_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0ff6fac961f7a9f00a9967d74151f70f7cc28fe3"
+  },
+  "death_recap_dungeontrap_firespout": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8d1efde6b8095fabb9717d4caf0c637909ddb29a"
+  },
+  "death_recap_dungeontrap_pendulum": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6bc64c378d82f3af7890636d2dac86ea5ed8dd51"
+  },
+  "death_recap_dungeontrap_spikes": {
+   "dds_bytes": 16512,
+   "dds_sha1": "093655c85bcf561005827e9a545ca0b9cbb439fa"
+  },
+  "death_recap_earth_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "cc223b8f98cdfc324479a7f921742d47a56a9b63"
+  },
+  "death_recap_earth_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8212a07f98b3874787597dff4ce8969689d419a9"
+  },
+  "death_recap_earth_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0ce38ad54f277bf2cf330cf82b5468035fd2d9cc"
+  },
+  "death_recap_earth_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e7036a3ab81c41e6b715a3887c8057fcfa636638"
+  },
+  "death_recap_earth_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "03008f8f3ae9ae60fc8bef883e0a077e7faea486"
+  },
+  "death_recap_earth_heavy2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "fc682176a11c5b572682fdcc706f9f6c7a5b0c8f"
+  },
+  "death_recap_earth_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "983375a2723319a682f239ad964bf707ee2d7006"
+  },
+  "death_recap_earth_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ab012a28adb3e3d37a6a9e723a00b76ba4c698ff"
+  },
+  "death_recap_earth_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f173b97092b2210ed03676c4d6af56e82b4e1bfc"
+  },
+  "death_recap_earth_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e3e2a01943ac5973eb75d576a2bd4b3b62f80767"
+  },
+  "death_recap_earth_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5404ea4126cf208515eb94f07c5a530508920f32"
+  },
+  "death_recap_environmental": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a196ad7111deee365bbfe3c587d8bcd1ebf41189"
+  },
+  "death_recap_fall_damage": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4cbfcf2a6456c20546f119222397a70f2e07f3d3"
+  },
+  "death_recap_fire_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "810ad3af06a43f71d25599c99791ed29cf61d7f0"
+  },
+  "death_recap_fire_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9638f7bf53bc57e7e47a63be697b53ff54f0746c"
+  },
+  "death_recap_fire_blue_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "010816647eaa39d9ad4fe48e24af8768c239262b"
+  },
+  "death_recap_fire_blue_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "07c6999a868c4087f911571801d8bd73d57a8756"
+  },
+  "death_recap_fire_blue_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "74fde1177f2eb61b1b6f7ced6a23c7efe0bdb589"
+  },
+  "death_recap_fire_blue_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b66e1137022bd648df59c222b75f9caa76eb5fb4"
+  },
+  "death_recap_fire_blue_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "cebc3fab063b0c1f6c2655d4b5b3f680fd8d720f"
+  },
+  "death_recap_fire_blue_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "21f7b28e056caec2df18af42faa6f16f6e82b30f"
+  },
+  "death_recap_fire_blue_melee_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ce764bf763faad117ea30ca5b2d52a5b6aa4b1a7"
+  },
+  "death_recap_fire_blue_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "61c958a5f9b7e7d69e3061239f8c0a1e018d8ef7"
+  },
+  "death_recap_fire_blue_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6019264a41b5097d4a1ecdbe52f20584ffb58e02"
+  },
+  "death_recap_fire_blue_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f9bb2d9841001b833d8759a761b466b14d6d907e"
+  },
+  "death_recap_fire_blue_ranged_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a67dca374462128386d308576d5fbd5da6889106"
+  },
+  "death_recap_fire_blue_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "7ea0e8da84f2d94e682ccf652d0c3edb40dfb718"
+  },
+  "death_recap_fire_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6918516e11e9d75644e939a82615ce98ca1bcf19"
+  },
+  "death_recap_fire_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ea50c0693c16eca3ef8a541a6fd06b1a1b234fd2"
+  },
+  "death_recap_fire_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "dee3fa771583ee1a7a3546e95114ce96870ecc4a"
+  },
+  "death_recap_fire_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a5ee7e2f307d2acffad15de856aa2b228196d6ef"
+  },
+  "death_recap_fire_melee_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f2faba505355fc1262715e720a74adaf4d9f8653"
+  },
+  "death_recap_fire_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "33e78969750ec6f8fff808035e00ec0866941499"
+  },
+  "death_recap_fire_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0dd99a7342b521d43a8f92c49023d705a244628e"
+  },
+  "death_recap_fire_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "88952d1344636a693031f706f56ad4c3d2d4b6be"
+  },
+  "death_recap_fire_ranged_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c7a814ebe3cf2ec9bf74cce2f030df409360cd33"
+  },
+  "death_recap_fire_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "66ff63104e2c37a9e52b43d57970b4515993519a"
+  },
+  "death_recap_lava": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d1536b83fc1b5bb649e0291265f4afc87f57dbfe"
+  },
+  "death_recap_magic_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c658f9ef29d54de32d6dc49472c8adcd91827cf4"
+  },
+  "death_recap_magic_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "aacac7f148fedc96f2bc20704738421d5522e09c"
+  },
+  "death_recap_magic_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4daff6af8ca144be746bc0cf71d5f95edc890d44"
+  },
+  "death_recap_magic_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "fb92433b7c22110ed49ed56a530e1dfd0c2daed9"
+  },
+  "death_recap_magic_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "55789cb5fec8212def14c075a0c553529d65c26e"
+  },
+  "death_recap_magic_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "492532a9969b75380d88f4e3e7f93976aa0fc086"
+  },
+  "death_recap_magic_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f4b13bc41f8e8d5bc00813b96de010e9a48fb4d2"
+  },
+  "death_recap_magic_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "582610ab7cce513e32fbc5a175bfa890982ba6c0"
+  },
+  "death_recap_magic_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "26b49b2370cef4358df2a1abecbe190d57fd04ee"
+  },
+  "death_recap_magic_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "7c886f34c1042ddab5343ac58cf379b19cc0b45b"
+  },
+  "death_recap_melee_basic": {
+   "dds_bytes": 16512,
+   "dds_sha1": "eed277e3cad5eaf8512b5bee30a96fe80469bd11"
+  },
+  "death_recap_melee_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e90211834d4be2354b4b58cf3f47a68487b2f159"
+  },
+  "death_recap_monster_bite_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f9e705a22c710e8ce019129bfca1d61a9f97569c"
+  },
+  "death_recap_monster_bite_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a3e879f967edbc531a428a0a1372f21d05e65cd7"
+  },
+  "death_recap_monster_melee_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3a2656edffcaadcfe60cddc4e5b1917f8f1b3978"
+  },
+  "death_recap_monster_melee_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a7b04c1b6244473d1fe5c0659e70322d5ec8f0be"
+  },
+  "death_recap_murderball": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a515423c7d411967bb21fd2e3a0a515fa558a4c7"
+  },
+  "death_recap_necro_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "66b31689bd45bc98790df47295443d6c0c6828a9"
+  },
+  "death_recap_necro_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e08b471fd926dde3b198f687f610c7c20198cd9b"
+  },
+  "death_recap_necro_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8d2d5ad55f3e56004b1929593ff42c35b7b51dd6"
+  },
+  "death_recap_necro_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3c802d3918ec88008f969e01502cd41176f0a55c"
+  },
+  "death_recap_necro_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "853794cf54ef740867fb887305522de9ee595b66"
+  },
+  "death_recap_necro_dot_heavy2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b1caa31012122792927f18fa7b228b9c37dc34c7"
+  },
+  "death_recap_necro_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d798f7a45588eafc31658e884f54508dfb638a91"
+  },
+  "death_recap_necro_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b66339c021ccc3c05aa13ed3ee8153168960cc0c"
+  },
+  "death_recap_necro_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a3bffd1b50ecc6b7870c455275db11aa9f625ca0"
+  },
+  "death_recap_necro_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "45e3891f8e916523a8cbd17a7c9457f6d651ec1d"
+  },
+  "death_recap_necro_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "6514cfed3ef3cd91fface73c29f063963bf88ea9"
+  },
+  "death_recap_oblivion": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0a9ebab63bf9b4bb3d7a6a06cc51fa1fb76205a3"
+  },
+  "death_recap_poison_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5c431d02b2d3ab5880c33d76f78a516a11c29b4d"
+  },
+  "death_recap_poison_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "951776b7c804b07ad0cbd2093d0d5ddb35afb05f"
+  },
+  "death_recap_poison_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "85ce1ab4a3a9f35e7459c3d0944c1443e2060a56"
+  },
+  "death_recap_poison_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d813906c7c197cce54f13f2eaaaf5c97dc63afd7"
+  },
+  "death_recap_poison_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "40dc9664d652838dd0f8a68e5ef85b8c9bea52f8"
+  },
+  "death_recap_poison_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e384bf912ec1893c990c377809b56fa9193e893f"
+  },
+  "death_recap_poison_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b6982eb89d7b1128967b4b05b5face9496a5addd"
+  },
+  "death_recap_poison_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e5820a45c1b07095d5691a5f7fef0d27b01dfb50"
+  },
+  "death_recap_poison_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3de93a2ed53c8490a43802cd911cd054705d9989"
+  },
+  "death_recap_poison_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e1eba503e21dd7cf160b60edc971440f57c4b30c"
+  },
+  "death_recap_ranged_basic": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1de339aad07fc9067ebcf8ede8e4ebe2c03cbe25"
+  },
+  "death_recap_ranged_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "55e03da26ef13de9ee4f0d1b60db4eafdec5483d"
+  },
+  "death_recap_shadow_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9ae9741aab80d79db699dbdb4fd1add1c26aa4dc"
+  },
+  "death_recap_shadow_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "625e0f85a3bb461d6defdb061c50c0223850d9eb"
+  },
+  "death_recap_shadow_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9392d0703cfcf5f10ae76760e5fd530703d96367"
+  },
+  "death_recap_shadow_dot": {
+   "dds_bytes": 16512,
+   "dds_sha1": "37ec743b7077f0c18fd6aeda5455e41e2df6b00d"
+  },
+  "death_recap_shadow_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3a0964ff94969b869eda6c4d1910c31fb8eb3e4c"
+  },
+  "death_recap_shadow_dot_heavy2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0ce3babac3f2d407acfccdfdf2c16ecc67e4eeba"
+  },
+  "death_recap_shadow_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "7e2e05f899d6675adcb28c1a96490be4f744e58b"
+  },
+  "death_recap_shadow_melee_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0a466c56845a060982bea03b5f99fdf5d9f3fc40"
+  },
+  "death_recap_shadow_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "97908ce7a754e37935b318378465870de333fdc8"
+  },
+  "death_recap_shadow_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9db38a363d8232297f01c139cf728f000d92e41f"
+  },
+  "death_recap_shadow_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "322c553f8afd9b8c9423a5dd05135e328f4406af"
+  },
+  "death_recap_shadow_ranged_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9b31370b693d17660062da28a56499bc682e840c"
+  },
+  "death_recap_shadow_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5a7010a458d8021d1df27dddb1385b49fc902607"
+  },
+  "death_recap_shock_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "dd49536d96e28af408c1a166365b69cbdc669362"
+  },
+  "death_recap_shock_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5b52e27399a69e7d8898b7ab0d070a17e5c4dece"
+  },
+  "death_recap_shock_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4c5c8e3cc337cf081cf213d2d86a4eb12470026c"
+  },
+  "death_recap_shock_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3f8ab100d0dcdf26adee5c9860c85dce496482fd"
+  },
+  "death_recap_shock_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "75967f87a56e016b27712e032b0e890eb9e0e1ca"
+  },
+  "death_recap_shock_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0b4bf2e1a9608be65598c354475420b14cc55392"
+  },
+  "death_recap_shock_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9e4353a852444de579de93f0876b388015e9f69a"
+  },
+  "death_recap_shock_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1ba49c80dc90a4973a0e0f797ca24d62a8cfaf3c"
+  },
+  "death_recap_shock_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8a02b87c8d17ca268a5e6737107000f179e93f63"
+  },
+  "death_recap_shock_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d3ed25c9f128dc81f3333ccf22ab9c7dfe131673"
+  },
+  "death_recap_void_aoe": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5601f2d762939f1013bbad998e00e35431bb5f30"
+  },
+  "death_recap_void_aoe2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ea7a3b1356daabcdd0906916e3e91ab009cfd78f"
+  },
+  "death_recap_void_cone": {
+   "dds_bytes": 16512,
+   "dds_sha1": "99fa8092f686b86a688f596680bb3481e1a92a76"
+  },
+  "death_recap_void_dot_base": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f6e85d0b91b7c961ee77aa94b18d05a58a0f807a"
+  },
+  "death_recap_void_dot_heavy": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5e788c32445f8cc25689675367fbaa16de79dc09"
+  },
+  "death_recap_void_melee": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c0efcec7dafc637fec2077e7c448b6b4ced795ff"
+  },
+  "death_recap_void_ranged": {
+   "dds_bytes": 16512,
+   "dds_sha1": "94314aab3e6fb751aeb8a732ba68df8251872f4a"
+  },
+  "death_recap_void_ranged2": {
+   "dds_bytes": 16512,
+   "dds_sha1": "2ccbdb3ed3949776d384e93ab6a5f117831ee42c"
+  },
+  "death_recap_void_ranged_arrow": {
+   "dds_bytes": 16512,
+   "dds_sha1": "537edeb63ea2ff729e3c6e1de90a29b089622ca0"
+  },
+  "death_recap_void_trap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b6f28894164537127b2a9c5a74e915373d6e86c8"
+  },
+  "death_recap_volendrung": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c33e7ae245d7599bfbfcc13da2bf72959bbe4482"
   }
  }
 }

@@ -1,6 +1,6 @@
 ---
 name: refresh-ability-icons
-description: Re-extract ESO ability icons from the installed game files and convert them to PNG for the app's ability bars. Use after an ESO patch, when a new skill shows as text instead of an icon, or when asked to refresh/update/regenerate the ability icons.
+description: Re-extract ESO ability icons from the installed game files and convert them to PNG for the app's ability bars and death recaps. Use after an ESO patch, when a new skill shows as text instead of an icon, or when asked to refresh/update/regenerate the ability icons.
 license: MIT
 compatibility: Windows only. Needs an installed ESO client, UESP's EsoExtractData v0.53+, and Pillow (requirements-build.txt).
 metadata:
@@ -10,7 +10,7 @@ metadata:
 
 Refresh the bundled ability icons from the live game data.
 
-The encounter log names each slotted ability's icon (`ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"`), and the app resolves that basename to `data/icons/abilities/<basename>.png`. The PNGs come from the game's `depot\eso.mnf` via `scripts/extract_ability_icons.py`; nothing is downloaded from any website.
+The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"`), and the app resolves that basename to `data/icons/abilities/<basename>.png`. Two icon families are bundled: `ability_*` (player skills, shown on the ability bars) and `death_recap_*` (what monster attacks use, shown in death recaps). The PNGs come from the game's `depot\eso.mnf` via `scripts/extract_ability_icons.py`; nothing is downloaded from any website.
 
 **Prerequisites** (check before running)
 
@@ -27,7 +27,7 @@ The encounter log names each slotted ability's icon (`ABILITY_INFO ... "/esoui/a
    python scripts\extract_ability_icons.py --dry-run
    ```
 
-   Expect roughly 1,800 `ability_*.dds` icons grouped into a few dozen `-s/-e` ranges. If the count is zero or the eso.mnf path is wrong, fix `--eso-dir` / `ESO_INSTALL_DIR` before continuing.
+   Expect roughly 1,950 icons (about 1,800 `ability_*.dds` and 160 `death_recap_*.dds`) grouped into a few dozen `-s/-e` ranges. If the count is zero or the eso.mnf path is wrong, fix `--eso-dir` / `ESO_INSTALL_DIR` before continuing.
 
 2. Extract and convert (2-3 minutes; icons land in `data/icons/abilities/`, 40 px by default):
 
@@ -50,4 +50,5 @@ The encounter log names each slotted ability's icon (`ABILITY_INFO ... "/esoui/a
 
 - Scribed (Grimoire) skills log a normal icon (`ability_grimoire_<weapon>.dds`) but append three extra quoted fields after the two flags (focus/signature/affix script names, e.g. `...,F,T,"Magic Damage","Assassin's Misery","Berserk"`). Parsers must read the icon from field 4, never from the end of the line.
 - `EsoExtractData -n <name>` only matches exact filenames and reloads the MNF per run (~3 s), which is why the script extracts index ranges instead. Its `-c` (convert DDS) option does not exist in the v0.53 command-line build; Pillow does the conversion.
-- Everything else under `esoui/art/icons` (gear, achievements, ~34,600 files) is deliberately not extracted; pass `--prefix` to pull a different family.
+- Everything else under `esoui/art/icons` (gear, achievements, ~34,600 files) is deliberately not extracted. `--prefix` names a family to pull and can be repeated; naming any replaces the default pair, and PNGs outside the named families are removed from the output folder, so pass `--out` when trying another family.
+- A few abilities use icons from other families (`quest_spirit_001` for Illustrious Healing, some `passive_*` and `achievement_*`); those show as text in a death recap.

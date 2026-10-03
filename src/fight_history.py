@@ -11,7 +11,8 @@ class FightHistoryEntry:
     """Compact summary of a completed fight for frontend display."""
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
                  'deaths', 'players', 'buff_summary', 'first_damage_dealer',
-                 'trial_info', 'ended_at', 'boss_name', 'buff_timeline']
+                 'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
+                 'death_recaps']
 
     def __init__(self):
         self.timestamp = ""
@@ -29,6 +30,11 @@ class FightHistoryEntry:
         # EXPERIMENTAL: {'duration_ms', 'effects': {name: [interval, ...]}}
         # or None when the buff-timeline experiment is off (the default)
         self.buff_timeline = None
+        # One dict per player death, in order (len == deaths): unit_id, name,
+        # time_ms (into the fight), killer, ability, ability_id, icon,
+        # max_health, and events: the last seconds before the death, oldest
+        # first (see death_recap.py for the row keys)
+        self.death_recaps = []
 
 
 class FightHistory:
