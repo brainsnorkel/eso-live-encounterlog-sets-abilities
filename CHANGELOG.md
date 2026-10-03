@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.3.3] - 2026-10-03
+
+### Added
+- **New app icon**: a shaded 3D d12 (a nod to 12-player trials) on a transparent background, rendered into all icon sizes; the window icon now matches the exe icon everywhere
+
+### Changed
+- **Fight line layout**: history entries and the detail subline now read boss/mob · duration · gdps · zone · timestamp, joined by compact middots (no em dashes)
+
 ## [0.3.2] - 2026-10-03
 
 ### Removed
