@@ -185,7 +185,7 @@ python -m pytest tests/ -q
 python -m PyInstaller esolog-tail.spec --noconfirm
 
 :: Installer (requires Inno Setup 6) -> dist/esolog-tail-windows-setup-<version>.exe
-iscc /DAppVersion=0.4.1 installer\esolog-gui.iss
+iscc /DAppVersion=0.5.0 installer\esolog-gui.iss
 ```
 
 Tagged releases (`v*`) build both artifacts automatically via GitHub Actions.

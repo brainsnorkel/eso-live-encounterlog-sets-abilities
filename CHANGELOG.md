@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-03
 
 ### Fixed
 - **Deaths missing from the count**: a player killed by another player (a shared mechanic, PvP) is logged as `KILLING_BLOW` with no `DIED` event, and was never counted; and the death of the last player standing is written about 85 ms after `END_COMBAT`, so it was dropped from the fight it ended. Both are now counted, and the late one is added to the fight that just finished (the fight on screen redraws)
