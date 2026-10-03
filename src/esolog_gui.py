@@ -8,11 +8,57 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+def _enable_crash_log():
+    """Crash/exception capture for windowed builds.
+
+    PyInstaller's console=False mode sets sys.stderr to None, and an
+    unhandled Python exception then escalates through the default excepthook
+    into a fatal CRT abort (observed as 0xc0000409 in ucrtbase.dll). Route
+    everything to a crash.log instead: unhandled exceptions become logged
+    non-fatal events, and genuine native faults dump their stacks too.
+    """
+    import datetime
+    import faulthandler
+    import threading
+    import traceback
+    try:
+        from app_config import default_config_path
+        crash_path = default_config_path().parent / "crash.log"
+        crash_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(crash_path, "a", buffering=1, encoding="utf-8")
+        handle.write(f"\n--- session {datetime.datetime.now():%Y-%m-%d %H:%M:%S} ---\n")
+        faulthandler.enable(file=handle, all_threads=True)
+
+        def _log_exception(exc_type, exc, tb):
+            try:
+                handle.write(f"[{datetime.datetime.now():%H:%M:%S}] "
+                             f"Unhandled exception:\n")
+                traceback.print_exception(exc_type, exc, tb, file=handle)
+            except Exception:
+                pass  # logging must never raise
+
+        sys.excepthook = _log_exception
+        threading.excepthook = lambda args: _log_exception(
+            args.exc_type, args.exc_value, args.exc_traceback)
+
+        # Give writeless streams a destination so stray prints can't break
+        if sys.stderr is None:
+            sys.stderr = handle
+        if sys.stdout is None:
+            sys.stdout = handle
+        return handle  # keep alive for the process lifetime
+    except Exception:
+        faulthandler.enable()
+        return None
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     from app_config import AppConfig
     from gui.main_window import MainWindow
+
+    crash_log = _enable_crash_log()  # noqa: F841 (must outlive the app)
 
     app = QApplication(sys.argv)
     app.setApplicationName("ESO Log Tail")

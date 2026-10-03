@@ -149,13 +149,21 @@ class EngineWorker(QObject):
     def restart_monitoring(self):
         """Settings changed: rebuild analyzer/monitor. No archive check
         (auto-archive is startup-only by spec)."""
-        self._teardown()
-        self._log_path = resolve_log_path(self.config)
-        self.analyzer = build_analyzer(self.config, [self.listener])
-        if self._log_path is not None and self._log_path.exists():
-            self._attach_monitor()
-        else:
-            self._start_waiting()
+        try:
+            self._teardown()
+            self._log_path = resolve_log_path(self.config)
+            self.analyzer = build_analyzer(self.config, [self.listener])
+            if self._log_path is not None and self._log_path.exists():
+                self._attach_monitor()
+            else:
+                self._start_waiting()
+        except Exception as exc:
+            # A failed restart must degrade to waiting, never escape into Qt
+            self.diagnostic.emit(f"Monitoring restart failed: {exc}")
+            try:
+                self._start_waiting()
+            except Exception:
+                pass
 
     def _teardown(self):
         if self._poll_timer:
