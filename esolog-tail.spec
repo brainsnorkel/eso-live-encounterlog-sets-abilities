@@ -10,10 +10,10 @@ a = Analysis(
     pathex=['src'],
     binaries=[],
     # Bundled data: ability icons (scripts/extract_ability_icons.py), the
-    # ESO-Hub link maps (scripts/generate_esohub_links.py), poison names and
-    # restoration staff ids (scripts/generate_poison_names.py,
-    # scripts/generate_restoration_staves.py) and food and drink buff ids
-    # (scripts/generate_food_buffs.py)
+    # ESO-Hub link maps (scripts/generate_esohub_links.py), poison names,
+    # armor weights and restoration staff ids (scripts/generate_poison_names.py,
+    # scripts/generate_armor_weights.py, scripts/generate_restoration_staves.py)
+    # and food and drink buff ids (scripts/generate_food_buffs.py)
     datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
           + [(d, d) for d in ('data/icons/abilities', 'data/esohub', 'data/items',
                               'data/buffs') if os.path.isdir(d)],

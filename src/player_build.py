@@ -28,10 +28,13 @@ build_fields turns a player's line into the 'gear', 'mundus' and 'food' keys
 of their fight-entry dict. The label functions name the log's values for
 display; a value they do not know is shown in a readable form of itself.
 
-has_restoration_staff answers the one weapon-type question the app asks (the
-role heuristic's): by item id, against the list of restoration staves in
-data/items/restoration_staves.json, built by
-scripts/generate_restoration_staves.py.
+Two things the log leaves out are looked up by item id in tables built from
+UESP's item database. armor_weight says whether an armor piece is light,
+medium or heavy (data/items/armor_weights.json, built by
+scripts/generate_armor_weights.py). has_restoration_staff answers the one
+weapon-type question the app asks, the role heuristic's
+(data/items/restoration_staves.json, built by
+scripts/generate_restoration_staves.py).
 """
 
 import json
@@ -103,6 +106,8 @@ ENCHANT_LABELS = {
     "DISEASE_RESISTANT": "Disease Resist",
 }
 NO_VALUE = ("", "NONE", "INVALID")  # the log's ways of saying "nothing here"
+# Armor weights, as the bundled table and a gear row's 'weight' name them
+WEIGHT_LABELS = {"light": "Light", "medium": "Medium", "heavy": "Heavy"}
 
 MAX_CP_LEVEL = 16  # the level field of a champion-rank 160 item
 # Poison tier per solvent: below each level the tier applies, else the last
@@ -165,6 +170,11 @@ def enchant_label(enchant: str) -> str:
     return ENCHANT_LABELS.get(enchant) or _humanize(enchant)
 
 
+def weight_label(weight: str) -> str:
+    """'medium' -> 'Medium'; '' for a piece whose weight is not known."""
+    return WEIGHT_LABELS.get(str(weight or ""), "")
+
+
 def level_label(cp, level) -> str:
     """'' for a champion-rank 160 item, else 'CP150' or 'Level 32'."""
     try:
@@ -178,14 +188,19 @@ def level_label(cp, level) -> str:
 
 # ---- poisons ----
 
-def _load_table(*path_parts: str, key: str) -> Optional[Dict[str, dict]]:
-    """A bundled id -> dict table, or None when it is absent or malformed."""
+def _load_json(*path_parts: str) -> dict:
+    """A bundled JSON object, {} when the file is absent or malformed."""
     try:
         data = json.loads(bundle_root().joinpath("data", *path_parts)
                           .read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    table = data.get(key) if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load_table(*path_parts: str, key: str) -> Optional[Dict[str, dict]]:
+    """A bundled id -> dict table, or None when it is absent or malformed."""
+    table = _load_json(*path_parts).get(key)
     if not isinstance(table, dict):
         return None
     return {str(k): v for k, v in table.items() if isinstance(v, dict)}
@@ -281,14 +296,29 @@ def food_buff(effect_ids: Iterable[str], name_of: Callable[[str], Optional[str]]
 # ---- gear ----
 
 @lru_cache(maxsize=1)
+def _bundled_armor_weights() -> Dict[str, str]:
+    """Armor item id -> 'light', 'medium' or 'heavy'; {} when the table is
+    absent."""
+    data = _load_json("items", "armor_weights.json")
+    return {str(item_id): weight for weight in WEIGHT_LABELS
+            for item_id in (data.get(weight) if isinstance(data.get(weight), list) else ())}
+
+
+def armor_weight(item_id, table: Optional[Dict[str, str]] = None) -> str:
+    """'light', 'medium' or 'heavy' for an armor piece, '' for an item id the
+    bundled table lacks (a piece newer than the table, or no armor at all).
+
+    The log does not say how heavy a piece is, so its item id is looked up.
+    *table* overrides the bundled one; tests use it.
+    """
+    known = _bundled_armor_weights() if table is None else table
+    return str(known.get(str(item_id)) or "")
+
+
+@lru_cache(maxsize=1)
 def _bundled_restoration_staves() -> FrozenSet[str]:
     """Item ids of every restoration staff; empty when the list is absent."""
-    try:
-        data = json.loads(bundle_root().joinpath("data", "items", "restoration_staves.json")
-                          .read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return frozenset()
-    ids = data.get("ids") if isinstance(data, dict) else None
+    ids = _load_json("items", "restoration_staves.json").get("ids")
     return frozenset(str(i) for i in ids) if isinstance(ids, list) else frozenset()
 
 
@@ -372,16 +402,18 @@ def _to_int(value) -> int:
 def gear_rows(gear: Dict[str, List[str]],
               set_name_of: Optional[Callable[[str], Optional[str]]] = None,
               is_mythic: Optional[Callable[[str], bool]] = None,
-              poisons: Optional[Dict[str, dict]] = None) -> List[dict]:
+              poisons: Optional[Dict[str, dict]] = None,
+              weights: Optional[Dict[str, str]] = None) -> List[dict]:
     """A player's equipment as one dict per logged slot, in display order.
 
     *gear* is slot -> the item's eleven log fields. Each dict has 'slot',
     'item_id', 'set_id', 'set' (the LibSets name, 'Set#<id>' for an unknown
     id, '' for an item of no set), 'mythic', 'quality', 'trait', 'enchant'
-    and 'enchant_quality' as logged, 'cp', 'level', and 'pieces' (see
-    piece_counts; None for an item of no set). A poison has 'name' and no
-    trait or enchant. The lookups default to the bundled set data and poison
-    table; tests pass their own.
+    and 'enchant_quality' as logged, 'cp', 'level', 'pieces' (see
+    piece_counts; None for an item of no set), and 'weight' (see
+    armor_weight; '' for anything but armor). A poison has 'name' and no
+    trait or enchant. The lookups default to the bundled set data, poison
+    table and armor weights; tests pass their own.
     """
     set_name_of = set_name_of or _default_set_name
     is_mythic = is_mythic or _default_is_mythic
@@ -394,7 +426,8 @@ def gear_rows(gear: Dict[str, List[str]],
         cp, level = item[2] == "T", _to_int(item[3])
         row = {"slot": slot, "item_id": str(item[1]), "set_id": "", "set": "",
                "mythic": False, "quality": str(item[5]), "trait": "", "enchant": "",
-               "enchant_quality": "", "cp": cp, "level": level, "pieces": None}
+               "enchant_quality": "", "cp": cp, "level": level, "pieces": None,
+               "weight": armor_weight(item[1], weights) if slot in ARMOR_SLOTS else ""}
         if slot in POISON_SLOTS:
             row["name"] = poison_name(item[1], cp, level, poisons)
         else:

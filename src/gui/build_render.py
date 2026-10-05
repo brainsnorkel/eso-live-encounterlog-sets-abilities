@@ -4,10 +4,11 @@ log recorded it when combat started.
 
 Top to bottom: who it is and which fight; mundus stone and food; both
 ability bars, front above back, with the fight view's line of scribed skills;
-and a gear grid with one row per slot (set, pieces of that set active,
-quality, trait, enchant, enchant quality), a poison row under a bar that has
-one slotted. The data is the fight entry's player dict as the engine's
-player_build module filled it in, and the labels come from that module too.
+and a gear grid with one row per slot (armor weight, set, pieces of that set
+active, quality, trait, enchant, enchant quality), a poison row under a bar
+that has one slotted. The data is the fight entry's player dict as the
+engine's player_build module filled it in, and the labels come from that
+module too.
 
 The anchors here (ability icons, scribed skills and their scripts, set names)
 use the same targets as the fight view, so fight_render.anchor_tooltips
@@ -22,13 +23,14 @@ from gui.fight_render import (
     ROLE_NAMES, _bar_html, _join, _scribed_html, _subclass_text, _theme,
 )
 from player_build import (
-    BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
-    display_quality, enchant_label, level_label, quality_label, trait_label,
+    ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
+    WEIGHT_LABELS, display_quality, enchant_label, level_label, quality_label,
+    trait_label, weight_label,
 )
 
 BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 40 px)
 MUNDUS_ICON_PX = 18
-DASH = "–"  # a slot, or a detail, the log did not list
+DASH = "–"  # a slot the log did not list, or a detail that is not known
 SNAPSHOT_NOTE = "Build as logged at the start of this fight"
 NO_MUNDUS = "none logged"
 NO_FOOD = "no known food or drink at combat start"
@@ -37,9 +39,13 @@ NO_BUILD = "No build was logged for this player in this fight."
 POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted"
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
                "front bar / back bar, for a set whose weapons sit on one bar only.")
-COLUMNS = (("Slot", 11, "left"), ("Set", 28, "left"), ("Pcs", 6, "center"),
-           ("Quality", 13, "left"), ("Trait", 12, "left"), ("Enchant", 16, "left"),
-           ("Enchant quality", 14, "left"))
+UNKNOWN_WEIGHT = "unknown"  # in the armor tally, a piece the bundled table lacks
+COLUMNS = (("Slot", 9, "left"), ("Weight", 8, "left"), ("Set", 25, "left"),
+           ("Pcs", 5, "center"), ("Quality", 13, "left"), ("Trait", 11, "left"),
+           ("Enchant", 17, "left"), ("Enchant quality", 12, "left"))
+# How each cell after the slot name opens
+_CELLS = tuple("<td align='center'>" if align == "center" else "<td>"
+               for _title, _width, align in COLUMNS[1:])
 
 # The game's quality colors; the light theme gets darker variants, since the
 # game's own are picked for a dark background
@@ -166,9 +172,23 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
     return card
 
 
+def _weights_text(gear: dict) -> str:
+    """The armor worn by weight, most pieces first: '5 medium, 1 light,
+    1 heavy'. A piece the bundled table lacks is counted as unknown."""
+    worn = [str(gear[slot].get("weight") or "") for slot in ARMOR_SLOTS if slot in gear]
+    counts = sorted(((worn.count(weight), label.lower())
+                     for weight, label in WEIGHT_LABELS.items()), key=lambda c: -c[0])
+    counts.append((sum(weight not in WEIGHT_LABELS for weight in worn), UNKNOWN_WEIGHT))
+    return ", ".join(f"{count} {name}" for count, name in counts if count)
+
+
 def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
-    """The six cells after the slot name for an armor, jewelry or weapon row."""
+    """The seven cells after the slot name for an armor, jewelry or weapon
+    row. Only armor has a weight: jewelry and weapons leave that cell empty,
+    and a dash stands for a piece the bundled table lacks."""
     dash = f"<span style='color:{theme['muted']}'>{DASH}</span>"
+    weight = e(weight_label(row.get("weight"))) or (
+        dash if row.get("slot") in ARMOR_SLOTS else "")
     name = str(row.get("set") or "")
     if name:
         url = set_links(name) if set_links else None
@@ -182,7 +202,7 @@ def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
     if level:
         quality += f" <span style='color:{theme['muted']}'>{e(level)}</span>"
     enchant = enchant_label(row.get("enchant"))
-    return (set_html, _pieces_text(row), quality,
+    return (weight, set_html, _pieces_text(row), quality,
             e(trait_label(row.get("trait"))) or dash,
             e(enchant) if enchant else dash,
             (_quality_html(str(row.get("enchant_quality") or ""), dark, e) or dash)
@@ -202,9 +222,15 @@ def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float,
                  f"{title}</td>" for title, width, align in COLUMNS)
     parts.append("</tr>")
     small = f"font-size:{base_pt * 0.85:.2f}pt"
+    heading = f"padding-top:7px;color:{muted}"
     for group, slots in SLOT_GROUPS:
-        parts.append(f"<tr><td colspan='{len(COLUMNS)}' style='padding-top:7px;"
-                     f"color:{muted};font-weight:bold'>{group}</td></tr>")
+        # The armor heading carries the weights worn, from the Weight column on
+        tally = _weights_text(gear) if slots == ARMOR_SLOTS else ""
+        parts.append(
+            f"<tr><td colspan='{1 if tally else len(COLUMNS)}' "
+            f"style='{heading};font-weight:bold'>{group}</td>"
+            + (f"<td colspan='{len(COLUMNS) - 1}' style='{heading}'>{tally}</td>"
+               if tally else "") + "</tr>")
         for slot in slots:
             row = gear.get(slot)
             label = f"<td style='color:{muted}'>{SLOT_LABELS[slot]}</td>"
@@ -212,18 +238,19 @@ def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float,
                 if row is None:
                     continue  # no row for a bar without a poison
                 parts.append(
-                    f"<tr>{label}<td>{e(str(row.get('name', '')))}</td><td></td>"
+                    f"<tr>{label}<td></td><td>{e(str(row.get('name', '')))}</td><td></td>"
                     f"<td>{_quality_html(str(row.get('quality') or ''), dark, e)}</td>"
                     f"<td colspan='3' style='color:{muted};{small}'>{POISON_NOTE}</td></tr>")
                 continue
             if row is None:
                 # The log lists equipped items only: an empty slot still gets
                 # its row, so a missing off hand reads as such
-                cells = [f"<span style='color:{muted}'>{DASH}</span>"] + [""] * 5
+                cells = ["", f"<span style='color:{muted}'>{DASH}</span>"] + [""] * 5
             else:
                 cells = _item_cells(row, dark, theme, set_links, text_color, e)
-            parts.append(f"<tr>{label}<td>{cells[0]}</td><td align='center'>{cells[1]}</td>"
-                         + "".join(f"<td>{cell}</td>" for cell in cells[2:]) + "</tr>")
+            parts.append(f"<tr>{label}"
+                         + "".join(f"{td}{cell}</td>" for td, cell in zip(_CELLS, cells))
+                         + "</tr>")
     parts.append("</table>")
     parts.append(f"<p style='margin:6px 0;color:{muted};{small}'>{PIECES_NOTE}</p>")
     return "".join(parts)

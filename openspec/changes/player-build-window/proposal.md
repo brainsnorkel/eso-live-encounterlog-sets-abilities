@@ -24,7 +24,7 @@ Not changing: the fight summary, *Copy fight*, split files, archiving, settings.
 
 Out of scope, decided with the maintainer on 2026-10-05:
 
-- Item names, weapon type and armor weight. The log does not carry them; they would need a bundled table of every equippable item id.
+- Item names, weapon type and armor weight. The log does not carry them; they would need a bundled table of every equippable item id. (Armor weight was added after the 0.6.1 release, at the maintainer's request, from a bundled table of armor item ids: see the spec's "Armor weight" requirement.)
 - Attributes, the damage/crit/penetration/resistance block, skill points and champion point stars. The log does not carry them (only a few champion stars appear as effects).
 - ESO-Hub links for mundus stones, traits and enchants; copying a build as text; stepping between players inside the window.
 

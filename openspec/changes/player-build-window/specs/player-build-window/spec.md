@@ -124,6 +124,25 @@ The window SHALL show a grid with one row per gear slot, in this fixed order and
 - **WHEN** an item's set id is not in the bundled set data
 - **THEN** its row shows `Set#<id>` without a link
 
+### Requirement: Armor weight
+Each row of an armor slot SHALL show whether the piece is light, medium or heavy. The log does not carry this, so the weight SHALL be looked up by item id in a table bundled with the app, with no network access at run time. An armor piece the table does not know SHALL show a dash. Jewelry, weapon, shield and poison rows SHALL show no weight. The Armor group heading SHALL count the pieces worn of each weight, the most worn first.
+
+#### Scenario: Mixed weights
+- **WHEN** a player wears five medium pieces, one light and one heavy
+- **THEN** each armor row names its piece's weight and the Armor heading reads `5 medium, 1 light, 1 heavy`
+
+#### Scenario: Piece newer than the bundled table
+- **WHEN** an armor piece's item id is not in the bundled table
+- **THEN** its weight cell shows a dash and the Armor heading counts it as unknown
+
+#### Scenario: Jewelry and weapons
+- **WHEN** a row is for a jewelry or weapon slot
+- **THEN** its weight cell is empty
+
+#### Scenario: No armor logged
+- **WHEN** the log lists no item in any armor slot
+- **THEN** the Armor heading shows no count
+
 ### Requirement: Readable item attributes
 Quality and enchant quality SHALL be shown under their in-game names (Normal, Fine, Superior, Epic, Legendary) in the matching quality color, with adequate contrast in both light and dark themes. A piece of a mythic set SHALL be shown as Mythic, although the log reports it as legendary. Traits and enchants SHALL be shown as readable names rather than log identifiers. An item with no enchant SHALL show a dash. A trait, enchant or quality value the app does not know SHALL be shown as a readable form of the logged value, never dropped. An armor, jewelry or weapon item below champion rank 160 SHALL show its level beside its quality.
 

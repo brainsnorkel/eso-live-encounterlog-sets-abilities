@@ -55,10 +55,14 @@ def _slot(n, icon='ability_weapon_001', name=None):
     return {'id': str(1000 + n), 'name': name or f'Skill {n}', 'icon': icon}
 
 
+ARMOR = ('HEAD', 'SHOULDERS', 'CHEST', 'HAND', 'WAIST', 'LEGS', 'FEET')
+
+
 def _item(slot, **fields):
     row = {'slot': slot, 'item_id': '1', 'set_id': '1', 'set': 'Alpha', 'mythic': False,
            'quality': 'LEGENDARY', 'trait': 'ARMOR_DIVINES', 'enchant': 'STAMINA',
-           'enchant_quality': 'LEGENDARY', 'cp': True, 'level': 16, 'pieces': [5, 5]}
+           'enchant_quality': 'LEGENDARY', 'cp': True, 'level': 16, 'pieces': [5, 5],
+           'weight': 'medium' if slot in ARMOR else ''}
     row.update(fields)
     return row
 
@@ -479,27 +483,33 @@ class TestBuildRender(BuildGuiTestCase):
         self.assertEqual(grid.count('>Alpha<'), 14)
         for label in set(SLOT_LABELS.values()) - {'Poison'}:
             self.assertIn(f'>{label}</td>', grid)
-        for title in ('Slot', 'Set', 'Pcs', 'Quality', 'Trait', 'Enchant', 'Enchant quality'):
-            self.assertIn(f'>{title}</td>', html)
+        titles = ('Slot', 'Weight', 'Set', 'Pcs', 'Quality', 'Trait', 'Enchant',
+                  'Enchant quality')
+        header = [html.index(f'>{title}</td>') for title in titles]
+        self.assertEqual(header, sorted(header))
 
-    def test_row_cells_are_set_pieces_quality_trait_enchant_enchant_quality(self):
-        from gui.build_render import _QUALITY_COLORS
+    def test_row_cells_are_weight_set_pieces_quality_trait_enchant_enchant_quality(self):
+        from gui.build_render import COLUMNS, _QUALITY_COLORS
         row = _row_of(self._html(), 'Head')
         gold = _QUALITY_COLORS[False]['LEGENDARY']
-        self.assertIn(f'<a href="{SET_URLS["Slimecraw"]}"', row)
         cells = [cell.split('>', 1)[1] for cell in row.split('<td')[2:]]
-        self.assertEqual(cells[1], '1</td>')                      # pieces
-        self.assertEqual(cells[2], f"<span style='color:{gold}'>Legendary</span></td>")
-        self.assertEqual(cells[3], 'Divines</td>')
-        self.assertEqual(cells[4], 'Magicka</td>')
-        self.assertEqual(cells[5], f"<span style='color:{gold}'>Legendary</span></td>")
+        self.assertEqual(len(cells), len(COLUMNS) - 1)
+        self.assertEqual(cells[0], 'Medium</td>')
+        self.assertTrue(cells[1].startswith(f'<a href="{SET_URLS["Slimecraw"]}"'))
+        self.assertEqual(cells[2], '1</td>')                      # pieces
+        self.assertEqual(cells[3], f"<span style='color:{gold}'>Legendary</span></td>")
+        self.assertEqual(cells[4], 'Divines</td>')
+        self.assertEqual(cells[5], 'Magicka</td>')
+        self.assertEqual(cells[6], f"<span style='color:{gold}'>Legendary</span></td>")
 
     def test_slot_the_log_did_not_list_keeps_its_row_with_a_dash(self):
         from gui.build_render import DASH
         html = self._html()   # two staves: neither bar has an off hand
         for group in ('Front bar', 'Back bar'):
             row = _row_of(html, 'Off hand', group)
-            self.assertIn(DASH, row)
+            # The dash stands where the set would
+            self.assertIn(f"{_slot_cell('Off hand')}<td></td>"
+                          f"<td><span style='color:{MUTED}'>{DASH}</span></td>", row)
             self.assertNotIn('Legendary', row)
 
     def test_item_that_belongs_to_no_set(self):
@@ -518,6 +528,70 @@ class TestBuildRender(BuildGuiTestCase):
 
     def test_costume_is_not_shown(self):
         self.assertNotIn('Costume', self._html(unit='2'))
+
+    # ---- armor weight ----
+
+    def _armor_heading(self, html):
+        """The cells of the Armor group's heading row."""
+        start = html.index('>Armor</td>')
+        return html[html.rindex('<tr>', 0, start):html.index('</tr>', start)]
+
+    def test_armor_rows_show_their_weight_after_the_slot(self):
+        html = self._html()
+        self.assertIn(f"{_slot_cell('Head')}<td>Medium</td>", _row_of(html, 'Head'))
+        self.assertIn(f"{_slot_cell('Shoulders')}<td>Light</td>", _row_of(html, 'Shoulders'))
+        gear = [_item('CHEST', weight='heavy')]
+        self.assertIn(f"{_slot_cell('Chest')}<td>Heavy</td>",
+                      _row_of(self._html(self._with(gear=gear)), 'Chest'))
+
+    def test_jewelry_and_weapons_leave_the_weight_empty(self):
+        html = self._html()
+        for label, group in (('Neck', None), ('Ring 2', None), ('Main hand', 'Front bar'),
+                             ('Main hand', 'Back bar')):
+            self.assertIn(f"{_slot_cell(label)}<td></td><td>", _row_of(html, label, group))
+
+    def test_armor_piece_of_unknown_weight_shows_a_dash(self):
+        from gui.build_render import DASH
+        gear = [_item('HEAD'), _item('CHEST', weight=''), _item('LEGS', weight='plate')]
+        html = self._html(self._with(gear=gear))
+        for label in ('Chest', 'Legs'):
+            self.assertIn(f"{_slot_cell(label)}<td><span style='color:{MUTED}'>{DASH}</span></td>",
+                          _row_of(html, label))
+        self.assertIn('>1 medium, 2 unknown</td>', self._armor_heading(html))
+
+    def test_row_from_before_weights_were_recorded_still_draws(self):
+        row = _item('HEAD')
+        del row['weight']
+        self.assertIn('>Alpha<', _row_of(self._html(self._with(gear=[row])), 'Head'))
+
+    def test_armor_heading_counts_the_weights_worn(self):
+        from gui.build_render import COLUMNS
+        heading = self._armor_heading(self._html())
+        self.assertEqual(
+            heading,
+            f"<tr><td colspan='1' style='padding-top:7px;color:{MUTED};font-weight:bold'>"
+            f"Armor</td><td colspan='{len(COLUMNS) - 1}' style='padding-top:7px;"
+            f"color:{MUTED}'>6 medium, 1 light</td>")
+
+    def test_weight_counts_put_the_most_worn_first(self):
+        def tally(*weights):
+            gear = [_item(slot, weight=weight) for slot, weight in zip(ARMOR, weights)]
+            heading = self._armor_heading(self._html(self._with(gear=gear)))
+            return heading[:-len('</td>')].rsplit('>', 1)[1]
+
+        self.assertEqual(tally('heavy', 'light', 'medium', 'medium', 'medium', 'medium',
+                               'medium'), '5 medium, 1 light, 1 heavy')
+        self.assertEqual(tally(*['heavy'] * 7), '7 heavy')
+        # Equal counts keep the order light, medium, heavy
+        self.assertEqual(tally('heavy', 'heavy', 'heavy', 'light', 'light', 'light', 'medium'),
+                         '3 light, 3 heavy, 1 medium')
+        self.assertEqual(tally('light', 'heavy'), '1 light, 1 heavy')
+
+    def test_no_armor_no_weight_count(self):
+        from gui.build_render import COLUMNS
+        heading = self._armor_heading(self._html(self._with(gear=[_item('MAIN_HAND')])))
+        self.assertEqual(heading.count('<td'), 1)
+        self.assertIn(f"colspan='{len(COLUMNS)}'", heading)
 
     # ---- item attributes ----
 
@@ -610,7 +684,8 @@ class TestBuildRender(BuildGuiTestCase):
         from gui.build_render import _QUALITY_COLORS, POISON_NOTE
         html = self._html(unit='2')
         front = _row_of(html, 'Poison', 'Front bar')
-        self.assertIn('<td>Crown Lethal Poison</td>', front)
+        # Named in the set column, under the weapons' sets
+        self.assertIn(f"{_slot_cell('Poison')}<td></td><td>Crown Lethal Poison</td>", front)
         self.assertIn(f"<span style='color:{_QUALITY_COLORS[False]['LEGENDARY']}'>Legendary</span>",
                       front)
         self.assertIn(POISON_NOTE, front)
@@ -719,7 +794,7 @@ class TestBuildWindow(BuildGuiTestCase):
             text = dialog.view.toPlainText()
             for expected in ('Pïque', 'High Elf Warden', 'The Thief',
                              'Perfected Whorl of the Depths', 'Bloodthirsty', '3/5',
-                             'Increase Max Health & Magicka'):
+                             'Increase Max Health & Magicka', '6 medium, 1 light'):
                 self.assertIn(expected, text)
         finally:
             win.close()

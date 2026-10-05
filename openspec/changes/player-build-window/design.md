@@ -32,7 +32,7 @@ See proposal.md for the motivation. This section holds only the facts that shape
 
 **Non-Goals:**
 
-- Any item attribute the log lacks (item name, weapon type, armor weight, stats).
+- Any item attribute the log lacks (item name, weapon type, armor weight, stats). Armor weight has since been added, looked up by item id in `data/items/armor_weights.json` (UESP's item database lists 56,439 armor pieces with a weight; all 905 armor item ids in 48 real logs were among them).
 - Changing how the fight view counts set pieces (see Open Questions).
 - A general item database. The only item names bundled are the 50 poisons.
 

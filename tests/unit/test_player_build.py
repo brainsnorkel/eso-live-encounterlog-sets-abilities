@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Player builds from PLAYER_INFO: gear rows with labels and per-bar piece
-counts, poison names, mundus stones, food, and what the engine puts on a
-fight entry (no Qt needed)."""
+"""Player builds from PLAYER_INFO: gear rows with labels, armor weights and
+per-bar piece counts, poison names, mundus stones, food, and what the engine
+puts on a fight entry (no Qt needed)."""
 
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
@@ -15,9 +17,10 @@ import player_build  # noqa: E402
 from build_session import (  # noqa: E402
     SESSION, fights as _fights, real_gear as _real_gear)
 from player_build import (  # noqa: E402
-    SLOT_GROUPS, SLOT_LABELS, SLOT_ORDER, build_fields, display_quality, enchant_label,
-    food_buff, food_table, gear_rows, is_two_handed, level_label, mundus_stones,
-    piece_counts, poison_name, poison_tier, quality_label, race_name, trait_label)
+    SLOT_GROUPS, SLOT_LABELS, SLOT_ORDER, armor_weight, build_fields, display_quality,
+    enchant_label, food_buff, food_table, gear_rows, is_two_handed, level_label,
+    mundus_stones, piece_counts, poison_name, poison_tier, quality_label, race_name,
+    trait_label, weight_label)
 
 # Every value the October 2026 survey found (design.md), with what it shows as
 TRAITS = {
@@ -62,6 +65,11 @@ FOOD = {'61255': {'kind': 'food', 'type': 'MAX_HEALTH_STAMINA'},
         '84732': {'kind': 'drink', 'type': 'REGEN_HEALTH'},
         '84733': {'kind': 'drink', 'type': 'REGEN_HEALTH'}}
 SET_NAMES = {'1': 'Alpha', '2': 'Beta', '3': 'Gamma', '9': 'Lone Ring'}
+WEIGHTS = {'95044': 'medium', '501': 'light', '502': 'heavy'}
+# Real pieces: Slimecraw Mask, Perfected Epaulets of the Depths, Spell Power
+# Cure Robe, Cuirass of the Sergeant, Girdle of the Crimson Oath
+REAL_WEIGHTS = {'95044': 'medium', '187287': 'light', '111885': 'light',
+                '108766': 'heavy', '177413': 'heavy'}
 
 
 def item(slot, set_id='0', item_id='100', trait=None, quality='LEGENDARY', enchant='STAMINA',
@@ -81,6 +89,7 @@ def rows(gear, **kwargs):
     kwargs.setdefault('set_name_of', SET_NAMES.get)
     kwargs.setdefault('is_mythic', lambda name: name == 'Lone Ring')
     kwargs.setdefault('poisons', POISONS)
+    kwargs.setdefault('weights', WEIGHTS)
     return {row['slot']: row for row in gear_rows(gear, **kwargs)}
 
 
@@ -271,7 +280,7 @@ class TestGearRows(unittest.TestCase):
             'slot': 'HEAD', 'item_id': '95044', 'set_id': '1', 'set': 'Alpha',
             'mythic': False, 'quality': 'ARTIFACT', 'trait': 'ARMOR_PROSPEROUS',
             'enchant': 'MAGICKA', 'enchant_quality': 'ARCANE', 'cp': True, 'level': 15,
-            'pieces': [1, None]})
+            'pieces': [1, None], 'weight': 'medium'})
 
     def test_item_of_no_set(self):
         row = rows(gear_of(item('WAIST', '0')))['WAIST']
@@ -313,6 +322,69 @@ class TestGearRows(unittest.TestCase):
     def test_short_or_empty_entries_are_skipped(self):
         self.assertEqual(gear_rows({'HEAD': ['HEAD', '1'], 'CHEST': []}), [])
         self.assertEqual(gear_rows({}), [])
+
+
+class TestArmorWeights(unittest.TestCase):
+
+    def test_weight_is_looked_up_by_item_id(self):
+        self.assertEqual([armor_weight(i, WEIGHTS) for i in ('95044', '501', '502')],
+                         ['medium', 'light', 'heavy'])
+        self.assertEqual(armor_weight(95044, WEIGHTS), 'medium')   # ids compare as text
+
+    def test_piece_the_table_lacks_has_no_weight(self):
+        self.assertEqual(armor_weight('999999', WEIGHTS), '')
+        self.assertEqual(armor_weight('', WEIGHTS), '')
+        self.assertEqual(armor_weight('95044', {}), '')
+
+    def test_labels(self):
+        self.assertEqual([weight_label(w) for w in ('light', 'medium', 'heavy')],
+                         ['Light', 'Medium', 'Heavy'])
+        self.assertEqual([weight_label(w) for w in ('', None, 'plate')], ['', '', ''])
+
+    def test_every_armor_row_carries_its_weight(self):
+        gear = gear_of(item('HEAD', '1', item_id='95044'), item('CHEST', '1', item_id='502'),
+                       item('WAIST', '1', item_id='501'), item('FEET', '1', item_id='777'))
+        got = rows(gear)
+        self.assertEqual([got[slot]['weight'] for slot in ('HEAD', 'CHEST', 'WAIST', 'FEET')],
+                         ['medium', 'heavy', 'light', ''])
+
+    def test_only_armor_slots_have_a_weight(self):
+        # Even with an id the table knows: jewelry, weapons, shields and
+        # poisons are not looked up
+        gear = gear_of(item('NECK', '1', item_id='502'), item('RING1', '1', item_id='502'),
+                       item('MAIN_HAND', '1', item_id='502'),
+                       item('OFF_HAND', '1', item_id='502', trait='ARMOR_STURDY'),
+                       ['POISON', '502', 'F', '1', 'NONE', 'LEGENDARY', '0', 'INVALID',
+                        'F', '0', 'NORMAL'])
+        self.assertEqual({row['weight'] for row in rows(gear).values()}, {''})
+
+    def test_bundled_table_knows_real_pieces(self):
+        for item_id, weight in REAL_WEIGHTS.items():
+            self.assertEqual(armor_weight(item_id), weight, item_id)
+        # A lightning staff and a ring are no armor
+        self.assertEqual((armor_weight('133257'), armor_weight('187752')), ('', ''))
+
+    def test_worked_example_from_a_real_log(self):
+        got = {row['slot']: row['weight'] for row in gear_rows(_real_gear())}
+        self.assertEqual(got, {
+            'HEAD': 'medium', 'SHOULDERS': 'light', 'CHEST': 'medium', 'HAND': 'medium',
+            'WAIST': 'medium', 'LEGS': 'medium', 'FEET': 'medium',
+            'NECK': '', 'RING1': '', 'RING2': '', 'MAIN_HAND': '', 'BACKUP_MAIN': ''})
+
+    def test_missing_or_malformed_table_gives_no_weights(self):
+        load = player_build._bundled_armor_weights.__wrapped__
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(player_build, 'bundle_root', return_value=Path(tmp)):
+                self.assertEqual(load(), {})
+                table = Path(tmp) / 'data' / 'items' / 'armor_weights.json'
+                table.parent.mkdir(parents=True)
+                table.write_text('{"light": "nope", "medium": [7, 8], "heavy": {}}',
+                                 encoding='utf-8')
+                self.assertEqual(load(), {'7': 'medium', '8': 'medium'})
+                table.write_text('[1, 2]', encoding='utf-8')
+                self.assertEqual(load(), {})
+                table.write_text('not json', encoding='utf-8')
+                self.assertEqual(load(), {})
 
 
 class TestPieceCounts(unittest.TestCase):
@@ -450,9 +522,11 @@ class TestBuildOnTheFightEntry(unittest.TestCase):
             'slot': 'HEAD', 'item_id': '95044', 'set_id': '270', 'set': 'Slimecraw',
             'mythic': False, 'quality': 'LEGENDARY', 'trait': 'ARMOR_DIVINES',
             'enchant': 'MAGICKA', 'enchant_quality': 'LEGENDARY', 'cp': True, 'level': 16,
-            'pieces': [1, 1]})
-        self.assertEqual((by_slot['SHOULDERS']['set'], by_slot['SHOULDERS']['pieces']),
-                         ('Perfected Whorl of the Depths', [3, 5]))
+            'pieces': [1, 1], 'weight': 'medium'})
+        self.assertEqual((by_slot['SHOULDERS']['set'], by_slot['SHOULDERS']['pieces'],
+                          by_slot['SHOULDERS']['weight']),
+                         ('Perfected Whorl of the Depths', [3, 5], 'light'))
+        self.assertEqual(by_slot['NECK']['weight'], '')
         self.assertEqual((by_slot['MAIN_HAND']['trait'], by_slot['MAIN_HAND']['enchant'],
                           by_slot['MAIN_HAND']['pieces']),
                          ('WEAPON_CHARGED', 'POISONED_WEAPON', [2, 0]))

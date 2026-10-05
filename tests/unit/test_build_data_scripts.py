@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The generators behind the build window's bundled tables: poison names
-(scripts/generate_poison_names.py) and food and drink buff ids
+(scripts/generate_poison_names.py), armor weights
+(scripts/generate_armor_weights.py) and food and drink buff ids
 (scripts/generate_food_buffs.py), and the tables they committed."""
 
 import importlib.util
@@ -91,6 +92,67 @@ class TestPoisonNames(unittest.TestCase):
                          {'name': 'Crown Lethal Poison', 'tiered': False})
         self.assertEqual(table['poisons']['76827'],
                          {'name': 'Damage Health Poison', 'tiered': True})
+
+
+class TestArmorWeights(unittest.TestCase):
+
+    # What UESP's export returns for item type 2: armorType 1, 2 and 3 are
+    # light, medium and heavy, and 0 is an item without a weight (a ring here)
+    SAMPLE = {'minedItemSummary': [
+        {'itemId': '95044', 'armorType': '2'},      # Slimecraw Mask
+        {'itemId': '187287', 'armorType': '1'},     # Perfected Epaulets of the Depths
+        {'itemId': '108766', 'armorType': '3'},     # Cuirass of the Sergeant
+        {'itemId': '144', 'armorType': '1'},
+        {'itemId': '187752', 'armorType': '0'},
+        {'itemId': '', 'armorType': '3'},
+        {'itemId': '95044', 'armorType': '2'},
+        {'itemId': '5'},
+        'not a row',
+    ]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_armor_weights.py')
+
+    def test_ids_are_sorted_into_the_three_weights(self):
+        self.assertEqual(self.script.armor_weights(self.SAMPLE),
+                         {'light': [144, 187287], 'medium': [95044], 'heavy': [108766]})
+
+    def test_a_response_without_rows_gives_empty_lists(self):
+        empty = {'light': [], 'medium': [], 'heavy': []}
+        self.assertEqual(self.script.armor_weights({}), empty)
+        self.assertEqual(self.script.armor_weights({'minedItemSummary': 'nope'}), empty)
+
+    def test_a_short_response_would_not_overwrite(self):
+        counts = [len(ids) for ids in self.script.armor_weights(self.SAMPLE).values()]
+        self.assertLess(max(counts), self.script.MIN_PER_WEIGHT)
+
+    def test_file_is_json_with_wrapped_ids(self):
+        weights = {'light': list(range(1000, 1040)), 'medium': [7], 'heavy': []}
+        text = self.script.render(weights, '2026-10-05T00:00:00+00:00')
+        data = json.loads(text)
+        self.assertEqual(data['count'], 41)
+        self.assertEqual({w: data[w] for w in weights}, weights)
+        # Sixteen ids to a line, so a refreshed list diffs line by line
+        id_lines = [line for line in text.splitlines() if line.strip()[:1].isdigit()]
+        self.assertEqual([len(line.split(',')) - line.endswith(',') for line in id_lines],
+                         [16, 16, 8, 1])
+
+    def test_committed_table(self):
+        data = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
+        lists = [data[weight] for weight in ('light', 'medium', 'heavy')]
+        self.assertEqual(data['count'], sum(len(ids) for ids in lists))
+        for ids in lists:
+            self.assertGreaterEqual(len(ids), self.script.MIN_PER_WEIGHT)
+            self.assertEqual(ids, sorted(set(ids)))
+        # No piece has two weights
+        self.assertEqual(len(set().union(*lists)), data['count'])
+        # Pieces worn in real logs
+        self.assertIn(187287, data['light'])     # Perfected Epaulets of the Depths
+        self.assertIn(95044, data['medium'])     # Slimecraw Mask
+        self.assertIn(108766, data['heavy'])     # Cuirass of the Sergeant
+        # A ring and a lightning staff are in none of them
+        self.assertFalse({187752, 133257} & set().union(*lists))
 
 
 class TestFoodBuffs(unittest.TestCase):
