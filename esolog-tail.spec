@@ -47,7 +47,9 @@ a = Analysis(
         'PySide6.QtBluetooth', 'PySide6.QtCharts', 'PySide6.QtConcurrent',
         'PySide6.QtDataVisualization', 'PySide6.QtDesigner', 'PySide6.QtHelp',
         'PySide6.QtLocation', 'PySide6.QtMultimedia',
-        'PySide6.QtMultimediaWidgets', 'PySide6.QtNetworkAuth',
+        # QtNetwork: the update check uses urllib. Left in, its hook bundles
+        # whichever OpenSSL DLLs are on the build machine's PATH.
+        'PySide6.QtMultimediaWidgets', 'PySide6.QtNetwork', 'PySide6.QtNetworkAuth',
         'PySide6.QtNfc', 'PySide6.QtOpenGL', 'PySide6.QtOpenGLWidgets',
         'PySide6.QtPdf', 'PySide6.QtPdfWidgets', 'PySide6.QtPositioning',
         'PySide6.QtQml', 'PySide6.QtQuick', 'PySide6.QtQuick3D',
