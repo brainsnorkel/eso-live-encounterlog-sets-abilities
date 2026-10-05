@@ -7,6 +7,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Fixed
 - **Stray backslash in four set names**: Mara's Balm, Runecarver's Blaze, Spriggan's Vigor and Siegemaster's Focus showed as `Mara\’s Balm`, `Siegemaster'\s Focus` and so on, wherever a set is named: the fight view, the build window and copied text. The LibSets workbook writes those four names with an escape character, which the gear data generator now removes. Their ESO-Hub links are unchanged.
 
+### Technical
+- **Repository tidy**: the installer zips and folders of the 0.2.3 terminal version are removed from the repository (about 90 MB); documentation moves under `docs/` (`reference/`, `research/`, and `archive/` for the terminal version's documents), with a new `docs/development.md`; completed OpenSpec changes are archived; `pyproject.toml` configures pytest in place of the path setup at the top of each test file, and the outdated `setup.py` is gone; `gear_set_database_optimized` is renamed `gear_set_database`; and about 720 lines of terminal output code that no longer ran to any effect are removed from the engine. No change to what the app shows.
+
 ## [0.6.3] - 2026-10-05
 
 ### Fixed

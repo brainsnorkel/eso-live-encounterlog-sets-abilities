@@ -219,6 +219,8 @@ On Linux it uses the first of these that exists (each ends in `Documents/Elder S
 
 ## Building from source
 
+The [development guide](docs/development.md) describes the repository layout, the tests and the release process; the short version follows.
+
 Prerequisites: Python 3.9+ (3.11 recommended) on Windows.
 
 ```cmd
@@ -297,7 +299,7 @@ The icon step is also packaged as the `refresh-ability-icons` skill for Claude C
 
 ## License
 
-This project is for educational and research purposes. ESO game data belongs to ZeniMax Online Studios.
+Released under the [MIT License](LICENSE). ESO game data belongs to ZeniMax Online Studios.
 
 ## Credits
 
