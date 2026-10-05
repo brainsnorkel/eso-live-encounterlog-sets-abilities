@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.1] - 2026-10-05
 
 ### Changed
 - **Healers are recognised by their restoration staff**: a player whose largest pool is magicka is now a healer when a restoration staff is equipped on either bar. Before, they had to out-heal their own damage in that fight, so a healer read as DPS on a short pull or one with little to heal. Out-healing your own damage still marks a magicka player a healer without the staff. In six recent logs every fight with ten or more players now shows one or two healers, where 23 of 34 showed none. The log does not name weapon types, so the staff is recognised by item id against a bundled list (`data/items/restoration_staves.json`, 4,776 staves from UESP's item database, built by `scripts/generate_restoration_staves.py`)
