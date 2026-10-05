@@ -35,6 +35,15 @@ class TestAbout(unittest.TestCase):
         self.assertIn('LibSets', html)
         self.assertIn('EsoExtractData', html)
 
+    def test_credits_name_the_build_window_data_sources(self):
+        from gui.about import about_html
+        html = about_html('0.6.0')
+        self.assertIn('LibFoodDrinkBuff</a> by Scootworks and Baertram', html)
+        self.assertIn("href='https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html'",
+                      html)
+        self.assertIn('<b>Poison names</b>: the ESO item database of', html)
+        self.assertIn('>UESP</a>', html)
+
     def test_toolbar_has_about_action(self):
         from app_config import AppConfig
         from gui.main_window import MainWindow

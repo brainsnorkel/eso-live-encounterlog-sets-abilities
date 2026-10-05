@@ -26,6 +26,7 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, RECAP_RESULTS
 from scribing import ScribingTracker, slot_fields, slot_label
+from player_build import build_fields, is_two_handed, race_name
 
 
 class _PlainAnsi:
@@ -220,6 +221,10 @@ class PlayerInfo:
         self.front_bar_slots: List[Dict[str, str]] = []
         self.back_bar_slots: List[Dict[str, str]] = []
         self.gear: Dict[str, List[str]] = {}
+        # Ability ids of the long-term effects PLAYER_INFO lists (mundus
+        # boon, food, passives), for the build window
+        self.long_term_effects: List[str] = []
+        self.race_id: str = ""  # from UNIT_ADDED
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()
 
@@ -1028,65 +1033,8 @@ class ESOLogAnalyzer(ListenerMixin):
         """
         if len(gear_item) < 2:
             return False
-
-        slot = gear_item[0]
-
-        # Only check MAIN_HAND and BACKUP_MAIN slots
-        if slot not in ['MAIN_HAND', 'BACKUP_MAIN']:
-            return False
-
-        # Check for known 2-handed weapon item IDs first (staffs, bows, 2H weapons)
-        item_id = gear_item[1] if len(gear_item) > 1 else ""
-
-        # Known 2-handed weapon item IDs - these are definitively 2-handed
-        # TODO: This list should be expanded with more known 2H weapon IDs
-        known_two_handed_items = {
-            # Add known staff, bow, and 2H weapon item IDs here
-            # Example: '87874': 'Staff', # Perfected Slivers Lightning Staff
-        }
-
-        if item_id in known_two_handed_items:
-            return True
-
-        # Check if there's a corresponding OFF_HAND weapon
-        off_hand_key = 'OFF_HAND'
-        backup_off_key = 'BACKUP_OFF'
-
-        if slot == 'BACKUP_MAIN':
-            # For backup weapons, check if there's a BACKUP_OFF
-            if backup_off_key in player_gear and player_gear[backup_off_key]:
-                backup_off_item = player_gear[backup_off_key]
-                if len(backup_off_item) > 1:
-                    backup_off_item_id = backup_off_item[1]
-                    # If both weapons have the same item ID, they're dual-wielding (1-handed)
-                    if backup_off_item_id == item_id:
-                        return False
-                    # If off-hand has valid item ID and isn't empty, main hand is 1-handed
-                    if backup_off_item_id != "0" and backup_off_item_id != "":
-                        return False
-                    # If off-hand has armor trait, it's a shield - main hand is 1-handed
-                    if len(backup_off_item) > 4 and "ARMOR" in backup_off_item[4]:
-                        return False
-            # If no backup off-hand equipped, assume 2-handed (staff, bow, 2H weapon)
-            return True
-
-        # For main hand, check if there's an off-hand weapon
-        if off_hand_key in player_gear and player_gear[off_hand_key]:
-            off_hand_item = player_gear[off_hand_key]
-            if len(off_hand_item) > 1:
-                off_hand_item_id = off_hand_item[1]
-                # If both weapons have the same item ID, they're dual-wielding (1-handed)
-                if off_hand_item_id == item_id:
-                    return False
-                # If off-hand has valid item ID and isn't empty, main hand is 1-handed
-                if off_hand_item_id != "0" and off_hand_item_id != "":
-                    return False
-                # If off-hand has armor trait, it's a shield - main hand is 1-handed
-                if len(off_hand_item) > 4 and "ARMOR" in off_hand_item[4]:
-                    return False
-
-        # If no off-hand weapon equipped, assume 2-handed (staff, bow, 2H weapon)
-        return True
+        # One rule for the fight view's piece counts and the build window's
+        return is_two_handed(gear_item[0], gear_item[1], player_gear)
 
     def process_log_entry(self, entry: ESOLogEntry):
         """Process a single log entry."""
@@ -1182,6 +1130,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 class_id = entry.fields[6] if len(entry.fields) > 6 else ""  # Class ID is in field 6
                 champion_points = int(entry.fields[12]) if len(entry.fields) > 12 and entry.fields[12].isdigit() else 0  # Champion Points is in field 12
                 self._note_scribing_identity(unit_id, entry.fields[3], long_unit_id)  # playerPerSessionId is in field 3
+                race_id = entry.fields[7] if len(entry.fields) > 7 else ""  # Race ID is in field 7
 
                 # Create encounter if it doesn't exist (UNIT_ADDED can happen before ZONE_CHANGED)
                 if not self.current_encounter:
@@ -1215,6 +1164,10 @@ class ESOLogAnalyzer(ListenerMixin):
                     
                     # Update session data
                     self._update_player_session(unit_id, clean_name, clean_handle, class_id=class_id, champion_points=champion_points)
+                    # The race is not kept in session data: every UNIT_ADDED carries it
+                    added_player = self.current_encounter.players.get(unit_id)
+                    if added_player is not None:
+                        added_player.race_id = race_id
                     
                     # Associate the long unit ID with the player
                     if long_unit_id and long_unit_id != "0":
@@ -1400,6 +1353,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 player.set_front_back_bar_abilities(front_bar_abilities, back_bar_abilities,
                                                     front_bar_slots, back_bar_slots)
                 player.set_gear(player_info.gear_data)
+                player.long_term_effects = list(player_info.ability_ids)
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
             else:
@@ -2784,7 +2738,13 @@ class ESOLogAnalyzer(ListenerMixin):
                 'back_bar_slots': [dict(s) for s in player.back_bar_slots],
                 'class_name': player.get_class_name(),
                 'cp': player.champion_points,
+                'character': player.name,
+                'race': race_name(player.race_id),
             })
+            # Per-slot gear, mundus and food for the build window
+            entry.players[-1].update(build_fields(
+                player.gear, player.long_term_effects,
+                self.ability_cache.get, self.ability_icons.get))
 
         if len(enc.players) >= 3:
             buff_parts = []

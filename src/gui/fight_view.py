@@ -5,16 +5,28 @@ icon is hovered, and opens ESO-Hub links in the system browser.
 
 Links never navigate the document itself: every click is routed through
 anchorClicked, and only http(s) targets are opened externally. A click on a
-player's death-recap button is announced through death_recap_requested.
+player's death-recap button is announced through death_recap_requested, a
+click on a player's name through build_requested.
+
+A player's name looks like plain text, so the pane shows it can be clicked
+while the pointer is over it: the name is underlined in the link color. Qt
+rich text has no hover styling, so this is an extra selection, which restyles
+text at paint time without touching the document. The in-fight search's
+highlights are extra selections too, and setting one list replaces the
+other; the pane therefore holds both and applies them together.
 """
 
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QUrl, Signal
-from PySide6.QtGui import QCursor, QDesktopServices, QTextCursor, QTextDocument
-from PySide6.QtWidgets import QTextBrowser, QToolTip
+from PySide6.QtGui import (
+    QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
+    QTextDocument,
+)
+from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
+from gui.fight_render import BUILD_HREF, build_unit_from_href
 from gui.icon_cache import IconCache
 
 ICON_SCHEME = "icon"
@@ -23,6 +35,7 @@ ICON_SCHEME = "icon"
 class FightView(QTextBrowser):
 
     death_recap_requested = Signal(str)  # unit id of the player who died
+    build_requested = Signal(str)  # unit id of the player whose name was clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -32,6 +45,10 @@ class FightView(QTextBrowser):
         self._tooltips: Dict[str, str] = {}
         self._anchor_names: Dict[str, str] = {}
         self.current_tooltip = ""  # text shown for the hovered anchor, "" when none
+        self.hovered_build_link = ""  # href of the name carrying the hover cue
+        self._search_selections: List[QTextEdit.ExtraSelection] = []
+        self._hover_selections: List[QTextEdit.ExtraSelection] = []
+        self._link_hover_color: Optional[QColor] = None
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
@@ -45,6 +62,75 @@ class FightView(QTextBrowser):
     def set_anchor_names(self, names: Dict[str, str]) -> None:
         """Plain ability name per anchor href, so searches can match icons."""
         self._anchor_names = dict(names or {})
+
+    def set_link_hover_color(self, color) -> None:
+        """Color of a hovered player name (the theme's link color); the
+        palette's link color when never set."""
+        self._link_hover_color = QColor(color) if color else None
+
+    def set_search_selections(self, selections) -> None:
+        """The in-fight search's highlights. They are applied together with
+        the hover cue: use this rather than setExtraSelections."""
+        self._search_selections = list(selections or [])
+        self._apply_selections()
+
+    def setHtml(self, text: str) -> None:
+        # Selections point into the document being replaced
+        self._search_selections = []
+        self._hover_selections = []
+        self.hovered_build_link = ""
+        self.setExtraSelections([])
+        super().setHtml(text)
+
+    def _apply_selections(self) -> None:
+        self.setExtraSelections(self._search_selections + self._hover_selections)
+
+    def _text_anchor_cursor(self, href: str) -> Optional[QTextCursor]:
+        """A cursor selecting the text of the anchor that leads to *href*
+        (its first run in the document), None when there is none."""
+        document = self.document()
+        start = end = None
+        block = document.begin()
+        while block.isValid() and start is None:
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                fmt = fragment.charFormat()
+                if (fmt.isAnchor() and not fmt.isImageFormat()
+                        and fmt.anchorHref() == href):
+                    if start is None:
+                        start = fragment.position()
+                    end = fragment.position() + fragment.length()
+                elif start is not None:
+                    break  # past the anchor's text
+                it += 1
+            block = block.next()
+        if start is None:
+            return None
+        cursor = QTextCursor(document)
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        return cursor
+
+    def _show_hover_cue(self, href: str) -> None:
+        """Underline the hovered player name in the link color; any other
+        target, or none, clears the cue."""
+        selections = []
+        if href.startswith(BUILD_HREF):
+            cursor = self._text_anchor_cursor(href)
+            if cursor is not None:
+                cue = QTextCharFormat()
+                cue.setFontUnderline(True)
+                cue.setForeground(self._link_hover_color
+                                  or self.palette().color(QPalette.Link))
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = cursor
+                selection.format = cue
+                selections.append(selection)
+        self.hovered_build_link = href if selections else ""
+        if selections or self._hover_selections:
+            self._hover_selections = selections
+            self._apply_selections()
 
     def anchor_matches(self, text: str) -> List[QTextCursor]:
         """A cursor selecting each icon whose ability name contains *text*
@@ -91,10 +177,15 @@ class FightView(QTextBrowser):
             QToolTip.showText(QCursor.pos(), text, self)
         else:
             QToolTip.hideText()
+        self._show_hover_cue(key)
 
     def _on_anchor_clicked(self, url: QUrl) -> None:
         if url.scheme() in ("http", "https"):
             self._open_external(url)
+            return
+        unit_id = build_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.build_requested.emit(unit_id)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

@@ -22,7 +22,9 @@ class FightHistoryEntry:
         self.duration_s = 0.0
         self.group_dps = 0.0
         self.deaths = 0
-        self.players = []  # dicts with keys: role, name, class_abbr, dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar
+        # dicts with keys: role, name, class_abbr, dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar,
+        # and for the build window: character, race, gear, mundus, food (see player_build.build_fields)
+        self.players = []
         self.buff_summary = ""
         self.first_damage_dealer = None
         self.trial_info = None

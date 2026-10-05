@@ -1,0 +1,377 @@
+{
+ "generated": "2026-10-05T02:36:35+00:00",
+ "source": "LibFoodDrinkBuff 19 Data.lua",
+ "count": 92,
+ "food": 49,
+ "drink": 43,
+ "buffs": {
+  "17407": {
+   "kind": "food",
+   "type": "MAX_HEALTH"
+  },
+  "17577": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_STAMINA"
+  },
+  "17581": {
+   "kind": "food",
+   "type": "MAX_ALL"
+  },
+  "17608": {
+   "kind": "food",
+   "type": "REGEN_MAGICKA_STAMINA"
+  },
+  "17614": {
+   "kind": "food",
+   "type": "REGEN_ALL"
+  },
+  "61218": {
+   "kind": "food",
+   "type": "MAX_ALL"
+  },
+  "61255": {
+   "kind": "food",
+   "type": "MAX_HEALTH_STAMINA"
+  },
+  "61257": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAGICKA"
+  },
+  "61259": {
+   "kind": "food",
+   "type": "MAX_HEALTH"
+  },
+  "61260": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "61261": {
+   "kind": "food",
+   "type": "MAX_STAMINA"
+  },
+  "61294": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_STAMINA"
+  },
+  "61322": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "61325": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA"
+  },
+  "61328": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "61335": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "61340": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_STAMINA"
+  },
+  "61345": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA_STAMINA"
+  },
+  "61350": {
+   "kind": "drink",
+   "type": "REGEN_ALL"
+  },
+  "66125": {
+   "kind": "drink",
+   "type": "MAX_HEALTH"
+  },
+  "66128": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "66130": {
+   "kind": "food",
+   "type": "MAX_STAMINA"
+  },
+  "66132": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "66137": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA"
+  },
+  "66141": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "66551": {
+   "kind": "food",
+   "type": "MAX_HEALTH"
+  },
+  "66568": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "66576": {
+   "kind": "food",
+   "type": "MAX_STAMINA"
+  },
+  "66586": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "66590": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA"
+  },
+  "66594": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "68411": {
+   "kind": "food",
+   "type": "MAX_ALL"
+  },
+  "68416": {
+   "kind": "drink",
+   "type": "REGEN_ALL"
+  },
+  "72816": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "72819": {
+   "kind": "food",
+   "type": "MAX_HEALTH_REGEN_STAMINA"
+  },
+  "72822": {
+   "kind": "food",
+   "type": "MAX_HEALTH_REGEN_HEALTH"
+  },
+  "72824": {
+   "kind": "food",
+   "type": "MAX_HEALTH_REGEN_ALL"
+  },
+  "72956": {
+   "kind": "food",
+   "type": "MAX_HEALTH_STAMINA"
+  },
+  "72959": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAGICKA"
+  },
+  "72961": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_STAMINA"
+  },
+  "72965": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_STAMINA"
+  },
+  "72968": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "72971": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA_STAMINA"
+  },
+  "84678": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "84681": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_STAMINA"
+  },
+  "84700": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "84704": {
+   "kind": "drink",
+   "type": "REGEN_ALL"
+  },
+  "84709": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_REGEN_STAMINA"
+  },
+  "84720": {
+   "kind": "drink",
+   "type": "MAX_MAGICKA_REGEN_MAGICKA"
+  },
+  "84725": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_REGEN_HEALTH"
+  },
+  "84731": {
+   "kind": "drink",
+   "type": "MAX_HEALTH_MAGICKA_REGEN_MAGICKA"
+  },
+  "84732": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "84733": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "84735": {
+   "kind": "drink",
+   "type": "MAX_HEALTH_MAGICKA_SPECIAL_VAMPIRE"
+  },
+  "84736": {
+   "kind": "food",
+   "type": "MAX_HEALTH"
+  },
+  "85484": {
+   "kind": "food",
+   "type": "MAX_ALL"
+  },
+  "85497": {
+   "kind": "drink",
+   "type": "REGEN_ALL"
+  },
+  "86559": {
+   "kind": "drink",
+   "type": "REGEN_MAGICKA_STAMINA_FISH"
+  },
+  "86560": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "86673": {
+   "kind": "drink",
+   "type": "MAX_STAMINA_REGEN_STAMINA"
+  },
+  "86674": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "86677": {
+   "kind": "drink",
+   "type": "MAX_STAMINA_REGEN_HEALTH"
+  },
+  "86678": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "86746": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "86747": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH"
+  },
+  "86749": {
+   "kind": "food",
+   "type": "MAX_MAGICKA_STAMINA"
+  },
+  "86787": {
+   "kind": "food",
+   "type": "MAX_STAMINA"
+  },
+  "86789": {
+   "kind": "food",
+   "type": "MAX_HEALTH"
+  },
+  "86791": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "89955": {
+   "kind": "food",
+   "type": "MAX_STAMINA_REGEN_MAGICKA"
+  },
+  "89957": {
+   "kind": "drink",
+   "type": "MAX_STAMINA_HEALTH_REGEN_STAMINA"
+  },
+  "89971": {
+   "kind": "food",
+   "type": "MAX_HEALTH_REGEN_MAGICKA_STAMINA"
+  },
+  "92433": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "92435": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAGICKA"
+  },
+  "92437": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "92474": {
+   "kind": "food",
+   "type": "MAX_HEALTH_STAMINA"
+  },
+  "92476": {
+   "kind": "drink",
+   "type": "REGEN_HEALTH_STAMINA"
+  },
+  "92477": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "100488": {
+   "kind": "drink",
+   "type": "MAX_ALL"
+  },
+  "100498": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAGICKA_REGEN_HEALTH_MAGICKA"
+  },
+  "100502": {
+   "kind": "food",
+   "type": "REGEN_HEALTH_MAGICKA"
+  },
+  "107748": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAGICKA_FISH"
+  },
+  "107789": {
+   "kind": "food",
+   "type": "MAX_HEALTH_STAMINA_REGEN_HEALTH_STAMINA"
+  },
+  "127531": {
+   "kind": "drink",
+   "type": "MAX_HEALTH_MAGICKA"
+  },
+  "127537": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "127572": {
+   "kind": "drink",
+   "type": "MAX_HEALTH_STAMINA_WEREWOLF"
+  },
+  "127578": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "127596": {
+   "kind": "food",
+   "type": "MAX_ALL_REGEN_HEALTH"
+  },
+  "127619": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "127736": {
+   "kind": "food",
+   "type": "MAX_MAGICKA"
+  },
+  "148633": {
+   "kind": "drink",
+   "type": "REGEN_STAMINA"
+  },
+  "267468": {
+   "kind": "food",
+   "type": "MAX_HEALTH_MAX_POISONRESI_MAX_INCOMING_HEAL_WEREWOLF_MAX_BLOCK_MITIGATION"
+  }
+ }
+}

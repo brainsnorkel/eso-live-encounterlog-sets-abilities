@@ -19,10 +19,15 @@ its icon names all four parts, and the plain-text copy uses the same label
 
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
+
+A player's name is a link to their build window (see build_render): it looks
+like the plain bold name it replaces, and the fight view underlines it in the
+theme's link color while the pointer is over it.
 """
 
 import html
 import zlib
+from typing import Optional
 
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
@@ -36,13 +41,16 @@ BAR_DIVIDER = "│"  # between bar 1 and bar 2 when both are icon rows
 DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
+BUILD_HREF = "esolog:build/"  # + the player's unit id
 
 _THEMES = {
     # dark background: lighter accents
     True: {
+        "text": "#e8eaed",
         "muted": "#9aa0a6",
         "detail": "#b8bcc0",
         "vet": "#ffb74d",
+        "link": "#8ab4f8",
         "roles": {"T": "#4fc3f7", "H": "#81c784", "D": "#e57373"},
         # build card (skill lines + bars): faint lift off the dark pane
         "frame_border": "#45494f",
@@ -50,9 +58,11 @@ _THEMES = {
     },
     # light background: darker, saturated accents
     False: {
+        "text": "#202124",
         "muted": "#5f6368",
         "detail": "#3c4043",
         "vet": "#b25a00",
+        "link": "#1a73e8",
         "roles": {"T": "#1565c0", "H": "#2e7d32", "D": "#c62828"},
         "frame_border": "#d6d9dc",
         "frame_bg": "#f6f7f8",
@@ -67,6 +77,36 @@ def _theme(dark: bool) -> dict:
 def muted_color(dark: bool) -> str:
     """Secondary-text color with adequate contrast for the theme."""
     return _theme(dark)["muted"]
+
+
+def link_color(dark: bool) -> str:
+    """Color a player's name takes while the pointer is over it."""
+    return _theme(dark)["link"]
+
+
+def build_href(unit_id) -> str:
+    return f"{BUILD_HREF}{unit_id}"
+
+
+def build_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is a build link, else None."""
+    if href and href.startswith(BUILD_HREF):
+        return href[len(BUILD_HREF):]
+    return None
+
+
+def build_tooltips(entry) -> dict:
+    """Hover text per player-name link: that a click opens the build window."""
+    e = html.escape
+    tips = {}
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        if unit_id:
+            tips[build_href(unit_id)] = (
+                f"<b>{e(_join(p.get('name', '')))}</b><br>"
+                f"<span style='font-size:85%'>Click for the full build: bars, gear, "
+                f"mundus and food</span>")
+    return tips
 
 
 def _join(value, sep=", ") -> str:
@@ -187,17 +227,18 @@ def _ability_href(slot: dict, links) -> str:
     return f"{href}#{variant}" if variant else href
 
 
-def _bar_html(slots, names, icons, links, e) -> str:
+def _bar_html(slots, names, icons, links, e, px: int = ICON_PX) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
     names otherwise, each inside an anchor; the sixth slot (the ultimate)
-    sits apart. With no icon cache the bar is the plain joined name list."""
+    sits apart. With no icon cache the bar is the plain joined name list.
+    px: the icons' edge (the build window draws them larger)."""
     if icons is None or not slots:
         return e(_join(names))
     parts = []
     for index, slot in enumerate(slots):
         stem = str(slot.get("icon") or "")
         if icons.has(stem):
-            body = (f'<img src="icon:{stem}" width="{ICON_PX}" height="{ICON_PX}" '
+            body = (f'<img src="icon:{stem}" width="{px}" height="{px}" '
                     f'style="vertical-align:middle">')
         else:
             body = e(str(slot.get("name", "")))
@@ -356,7 +397,8 @@ def _sets_html(p, set_links, e, color: str) -> str:
 
 def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
-                base_pt: float = 9.0, script_links=None) -> str:
+                base_pt: float = 9.0, script_links=None,
+                text_color: Optional[str] = None) -> str:
     """Render one fight as HTML for a QTextBrowser.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
@@ -364,8 +406,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
     name -> ESO-Hub URL or None for abilities / gear sets / the scripts of
     scribed skills. base_pt: the pane's font size, which the scripts and gear
     lines are scaled from (Qt rich text ignores percentage sizes).
+    text_color: the pane's own text color, which a player's name keeps
+    although it is a link; the theme's default when not given.
     """
     theme = _theme(dark)
+    name_color = text_color or theme["text"]
     e = html.escape
     zone = e(entry.zone_name or "Unknown")
     vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
@@ -409,6 +454,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
         color = theme["roles"].get(role, muted)
         name = e(_join(p.get("name", "")))
         unit_id = str(p.get("unit_id", ""))
+        # The name opens the player's build window. It keeps the look of
+        # plain text; the fight view restyles it while it is hovered
+        if unit_id:
+            name = (f'<a href="{e(build_href(unit_id), quote=True)}" '
+                    f'style="text-decoration:none;color:{name_color}">{name}</a>')
         if first_dealer and unit_id == first_dealer:
             name = f"{name} <b>*</b>"
             starred = True

@@ -11,6 +11,8 @@ REPO_URL = "https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities
 ESOHUB_URL = "https://eso-hub.com"
 LIBSETS_URL = "https://github.com/Baertram/LibSets"
 EXTRACTOR_URL = "https://en.uesp.net/wiki/ESO_Mod:EsoExtractData"
+UESP_URL = "https://en.uesp.net/wiki/Online:Online"
+LIBFOODDRINKBUFF_URL = "https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html"
 
 
 def about_html(version: str) -> str:
@@ -28,6 +30,11 @@ def about_html(version: str) -> str:
         f"installation. They are &copy; ZeniMax Online Studios and are not the "
         f"property of this application.</li>"
         f"<li><b>Gear set data</b>: <a href='{LIBSETS_URL}'>LibSets</a> by Baertram.</li>"
+        f"<li><b>Food and drink buffs</b>: the buff list of "
+        f"<a href='{LIBFOODDRINKBUFF_URL}'>LibFoodDrinkBuff</a> by Scootworks and "
+        f"Baertram.</li>"
+        f"<li><b>Poison names</b>: the ESO item database of "
+        f"<a href='{UESP_URL}'>UESP</a>.</li>"
         f"<li><b>Icon extraction</b>: <a href='{EXTRACTOR_URL}'>EsoExtractData</a> "
         f"by UESP.</li>"
         f"</ul>"

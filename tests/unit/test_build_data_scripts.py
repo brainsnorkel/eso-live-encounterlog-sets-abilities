@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""The generators behind the build window's bundled tables: poison names
+(scripts/generate_poison_names.py) and food and drink buff ids
+(scripts/generate_food_buffs.py), and the tables they committed."""
+
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _load(script: str):
+    path = REPO_ROOT / 'scripts' / script
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# What UESP's export returns for item type 30, cut down to four rows
+UESP_SAMPLE = {
+    "numRecords": 4,
+    "minedItemSummary": [
+        {"itemId": "76827", "name": "Damage Health Poison I"},
+        {"itemId": "81196", "name": "Cloudy Hindering Poison I"},
+        {"itemId": "79690", "name": "Crown Lethal Poison"},
+        {"itemId": "224310", "name": "Trauma Poison"},
+        {"itemId": "", "name": "No Id Poison"},
+        {"itemId": "12", "name": ""},
+    ],
+}
+
+DATA_LUA_EXCERPT = """local lib = LIB_FOOD_DRINK_BUFF
+
+-- The drink buff abilityIds and their LibFoodDrinkBuff_buffTypeConstant
+lib.DRINK_BUFF_ABILITIES = {
+\t[61322] \t= LFDB_BUFF_TYPE_REGEN_HEALTH, -- Health Recovery
+\t[84731] \t= LFDB_BUFF_TYPE_MAX_HEALTH_MAGICKA_REGEN_MAGICKA, -- 2h Witches event: Witchmother's Potent Brew
+\t--[99999] \t= LFDB_BUFF_TYPE_REGEN_ALL, -- retired
+}
+
+-- The food buff abilityIds and their LibFoodDrinkBuff_buffTypeConstant
+lib.FOOD_BUFF_ABILITIES = {
+\t[61255] \t= LFDB_BUFF_TYPE_MAX_HEALTH_STAMINA, -- Increase Max Health & Stamina
+\t[107789] \t= LFDB_BUFF_TYPE_MAX_HEALTH_STAMINA_REGEN_HEALTH_STAMINA, -- Artaeum Takeaway Broth
+}
+
+lib.SOMETHING_ELSE = {
+\t[11111] \t= LFDB_BUFF_TYPE_MAX_HEALTH,
+}
+"""
+
+
+class TestPoisonNames(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_poison_names.py')
+
+    def test_tier_numeral_moves_into_a_flag(self):
+        entries = self.script.poison_entries(UESP_SAMPLE)
+        self.assertEqual(entries['76827'], {'name': 'Damage Health Poison', 'tiered': True})
+        self.assertEqual(entries['81196'], {'name': 'Cloudy Hindering Poison', 'tiered': True})
+
+    def test_untiered_names_are_kept_whole(self):
+        entries = self.script.poison_entries(UESP_SAMPLE)
+        self.assertEqual(entries['79690'], {'name': 'Crown Lethal Poison', 'tiered': False})
+        self.assertEqual(entries['224310'], {'name': 'Trauma Poison', 'tiered': False})
+
+    def test_rows_without_an_id_or_a_name_are_skipped(self):
+        self.assertEqual(set(self.script.poison_entries(UESP_SAMPLE)),
+                         {'76827', '81196', '79690', '224310'})
+        self.assertEqual(self.script.poison_entries({}), {})
+        self.assertEqual(self.script.poison_entries({'minedItemSummary': 'nope'}), {})
+
+    def test_a_short_response_would_not_overwrite(self):
+        # Four rows are a bad response: the game has about fifty poisons
+        self.assertLess(len(self.script.poison_entries(UESP_SAMPLE)), self.script.MIN_POISONS)
+
+    def test_committed_table_names_the_poisons_seen_in_real_logs(self):
+        table = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(table['count'], len(table['poisons']))
+        self.assertGreaterEqual(table['count'], self.script.MIN_POISONS)
+        for item_id in ('76826', '76827', '76834', '76839', '79690', '79691', '81195', '81196'):
+            self.assertIn(item_id, table['poisons'])
+            self.assertTrue(table['poisons'][item_id]['name'])
+        self.assertEqual(table['poisons']['79690'],
+                         {'name': 'Crown Lethal Poison', 'tiered': False})
+        self.assertEqual(table['poisons']['76827'],
+                         {'name': 'Damage Health Poison', 'tiered': True})
+
+
+class TestFoodBuffs(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_food_buffs.py')
+
+    def test_both_tables_are_read_with_their_kind_and_type(self):
+        buffs = self.script.parse_data_lua(DATA_LUA_EXCERPT)
+        self.assertEqual(buffs['61322'], {'kind': 'drink', 'type': 'REGEN_HEALTH'})
+        self.assertEqual(buffs['84731'],
+                         {'kind': 'drink', 'type': 'MAX_HEALTH_MAGICKA_REGEN_MAGICKA'})
+        self.assertEqual(buffs['61255'], {'kind': 'food', 'type': 'MAX_HEALTH_STAMINA'})
+        self.assertEqual(buffs['107789']['kind'], 'food')
+
+    def test_comments_and_other_tables_are_ignored(self):
+        buffs = self.script.parse_data_lua(DATA_LUA_EXCERPT)
+        self.assertNotIn('99999', buffs)   # commented out
+        self.assertNotIn('11111', buffs)   # another table
+        self.assertEqual(len(buffs), 4)
+
+    def test_version_comes_from_the_addon_manifest(self):
+        self.assertEqual(self.script.addon_version('## Title: X\n## Version: 19\n'), '19')
+        self.assertEqual(self.script.addon_version(''), 'unknown')
+
+    def test_source_can_be_a_folder_or_the_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'LibFoodDrinkBuff'
+            folder.mkdir()
+            (folder / 'Data.lua').write_text(DATA_LUA_EXCERPT, encoding='utf-8')
+            (folder / 'LibFoodDrinkBuff.txt').write_text('## Version: 7\n', encoding='utf-8')
+            text, version, origin = self.script.load_source(str(folder))
+            self.assertEqual((len(self.script.parse_data_lua(text)), version), (4, '7'))
+            self.assertEqual(origin, str(folder))
+            text, version, _origin = self.script.load_source(str(folder / 'Data.lua'))
+            self.assertEqual(len(self.script.parse_data_lua(text)), 4)
+
+    def test_committed_table_holds_both_kinds(self):
+        table = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
+        buffs = table['buffs']
+        self.assertEqual(table['count'], len(buffs))
+        self.assertGreaterEqual(table['count'], self.script.MIN_BUFFS)
+        kinds = [entry['kind'] for entry in buffs.values()]
+        self.assertEqual((kinds.count('food'), kinds.count('drink')),
+                         (table['food'], table['drink']))
+        self.assertEqual(set(kinds), {'food', 'drink'})
+        self.assertTrue(all(entry['type'] for entry in buffs.values()))
+        # Foods and drinks found in real logs, companions included
+        self.assertEqual(buffs['107789']['kind'], 'food')    # Artaeum Takeaway Broth
+        self.assertEqual(buffs['89957']['kind'], 'drink')    # Dubious Camoran Throne
+        for effect in ('61255', '127596', '84731', '84732', '84733', '127572', '100488'):
+            self.assertIn(effect, buffs)
+
+    def test_check_log_reports_food_style_effects_on_players_without_known_food(self):
+        lines = [
+            '1,ABILITY_INFO,61255,"Increase Max Health & Stamina","/esoui/art/icons/crafting_cooking_grilled_vegetables.dds",F,F',
+            '1,ABILITY_INFO,555555,"Brand New Stew","/esoui/art/icons/crafting_meat_009.dds",F,F',
+            '1,ABILITY_INFO,89958,"Increase Stamina","/esoui/art/icons/store_magickafood_001.dds",F,F',
+            '1,ABILITY_INFO,13975,"Boon: The Thief","/esoui/art/icons/ability_mundusstones_003.dds",F,F',
+            # Known food, with a companion effect the table lacks: not reported
+            '5,PLAYER_INFO,1,[61255,89958,13975],[1,1,1],[],[1],[2]',
+            # No known food, but a food-style effect: reported
+            '5,PLAYER_INFO,2,[555555,13975],[1,1],[],[1],[2]',
+            # No food at all
+            '5,PLAYER_INFO,3,[13975],[1],[],[1],[2]',
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'Encounter.log'
+            log.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+            total, without, suspects = self.script.unknown_food(log, {'61255'})
+        self.assertEqual((total, without), (3, 2))
+        self.assertEqual(dict(suspects),
+                         {('555555', 'Brand New Stew', 'crafting_meat_009'): 1})
+
+
+if __name__ == '__main__':
+    unittest.main()

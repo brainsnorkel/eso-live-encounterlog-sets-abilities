@@ -9,10 +9,13 @@ a = Analysis(
     ['src/esolog_gui.py'],
     pathex=['src'],
     binaries=[],
-    # Bundled data: ability icons (scripts/extract_ability_icons.py) and the
-    # ESO-Hub skill link map (scripts/generate_esohub_links.py)
+    # Bundled data: ability icons (scripts/extract_ability_icons.py), the
+    # ESO-Hub link maps (scripts/generate_esohub_links.py), poison names
+    # (scripts/generate_poison_names.py) and food and drink buff ids
+    # (scripts/generate_food_buffs.py)
     datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
-          + [(d, d) for d in ('data/icons/abilities', 'data/esohub') if os.path.isdir(d)],
+          + [(d, d) for d in ('data/icons/abilities', 'data/esohub', 'data/items',
+                              'data/buffs') if os.path.isdir(d)],
     hiddenimports=[
         'app_config',
         'app_startup',

@@ -1,0 +1,207 @@
+{
+ "generated": "2026-10-05T02:36:35+00:00",
+ "source": "https://esolog.uesp.net/exportJson.php?table=minedItemSummary&type=30&fields=itemId,name",
+ "count": 50,
+ "poisons": {
+  "76826": {
+   "name": "Drain Health Poison",
+   "tiered": true
+  },
+  "76827": {
+   "name": "Damage Health Poison",
+   "tiered": true
+  },
+  "76828": {
+   "name": "Drain Magicka Poison",
+   "tiered": true
+  },
+  "76829": {
+   "name": "Damage Magicka Poison",
+   "tiered": true
+  },
+  "76830": {
+   "name": "Drain Stamina Poison",
+   "tiered": true
+  },
+  "76831": {
+   "name": "Damage Stamina Poison",
+   "tiered": true
+  },
+  "76832": {
+   "name": "Ward-Draining Poison",
+   "tiered": true
+  },
+  "76833": {
+   "name": "Breaching Poison",
+   "tiered": true
+  },
+  "76834": {
+   "name": "Resolve-Draining Poison",
+   "tiered": true
+  },
+  "76835": {
+   "name": "Fracturing Poison",
+   "tiered": true
+  },
+  "76836": {
+   "name": "Brutality-Draining Poison",
+   "tiered": true
+  },
+  "76837": {
+   "name": "Cowardice Poison",
+   "tiered": true
+  },
+  "76838": {
+   "name": "Brutality-Draining Poison",
+   "tiered": true
+  },
+  "76839": {
+   "name": "Maiming Poison",
+   "tiered": true
+  },
+  "76840": {
+   "name": "Savagery-Draining Poison",
+   "tiered": true
+  },
+  "76841": {
+   "name": "Uncertainty Poison",
+   "tiered": true
+  },
+  "76842": {
+   "name": "Savagery-Draining Poison",
+   "tiered": true
+  },
+  "76843": {
+   "name": "Enervating Poison",
+   "tiered": true
+  },
+  "76844": {
+   "name": "Escapist's Poison",
+   "tiered": true
+  },
+  "76845": {
+   "name": "Entrapping Poison",
+   "tiered": true
+  },
+  "76846": {
+   "name": "Stealth-Draining Poison",
+   "tiered": true
+  },
+  "76847": {
+   "name": "Conspicuous Poison",
+   "tiered": true
+  },
+  "76848": {
+   "name": "Speed-Draining Poison",
+   "tiered": true
+  },
+  "76849": {
+   "name": "Hindering Poison",
+   "tiered": true
+  },
+  "77593": {
+   "name": "Gradual Health Drain Poison",
+   "tiered": true
+  },
+  "77595": {
+   "name": "Gradual Ravage Health Poison",
+   "tiered": true
+  },
+  "77597": {
+   "name": "Protection-Reversing Poison",
+   "tiered": true
+  },
+  "77599": {
+   "name": "Vulnerability Poison",
+   "tiered": true
+  },
+  "77601": {
+   "name": "Vitality-Draining Poison",
+   "tiered": true
+  },
+  "77603": {
+   "name": "Defiling Poison",
+   "tiered": true
+  },
+  "79690": {
+   "name": "Crown Lethal Poison",
+   "tiered": false
+  },
+  "79691": {
+   "name": "Gold Coast Trapping Poison",
+   "tiered": false
+  },
+  "79692": {
+   "name": "Gold Coast Enfeebling Poison",
+   "tiered": false
+  },
+  "79693": {
+   "name": "Gold Coast Draining Poison",
+   "tiered": false
+  },
+  "79694": {
+   "name": "Gold Coast Debilitating Poison",
+   "tiered": false
+  },
+  "81194": {
+   "name": "Cloudy Damage Health Poison",
+   "tiered": true
+  },
+  "81195": {
+   "name": "Cloudy Gradual Ravage Health Poison",
+   "tiered": true
+  },
+  "81196": {
+   "name": "Cloudy Hindering Poison",
+   "tiered": true
+  },
+  "135121": {
+   "name": "Bound Crown Lethal Poison",
+   "tiered": false
+  },
+  "135122": {
+   "name": "Bound Gold Coast Trapping Poison",
+   "tiered": false
+  },
+  "135123": {
+   "name": "Bound Gold Coast Draining Poison",
+   "tiered": false
+  },
+  "152151": {
+   "name": "Ravage Ultimate Poison",
+   "tiered": true
+  },
+  "158309": {
+   "name": "Timidity Poison",
+   "tiered": true
+  },
+  "200471": {
+   "name": "Protection-Reversing Poison",
+   "tiered": true
+  },
+  "224310": {
+   "name": "Trauma Poison",
+   "tiered": false
+  },
+  "224313": {
+   "name": "Force Poison",
+   "tiered": false
+  },
+  "224315": {
+   "name": "Warmage's Sabotage Poison",
+   "tiered": false
+  },
+  "224317": {
+   "name": "Malady Poison",
+   "tiered": false
+  },
+  "224319": {
+   "name": "Enervating Poison",
+   "tiered": false
+  },
+  "224322": {
+   "name": "Vexation Poison",
+   "tiered": false
+  }
+ }
+}

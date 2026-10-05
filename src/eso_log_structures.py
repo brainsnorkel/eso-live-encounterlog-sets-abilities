@@ -1088,8 +1088,9 @@ class PlayerInfoEntry:
         """Parse PLAYER_INFO entry from CSV line (complex regex parsing required)"""
         import re
         
-        # PLAYER_INFO has complex nested arrays that break standard CSV parsing
-        pattern = r'(\d+),PLAYER_INFO,(\d+),\[([^\]]+)\],\[([^\]]+)\],(\[.*\]),(\[.*\]),(\[.*\])'
+        # PLAYER_INFO has complex nested arrays that break standard CSV parsing.
+        # The long-term effect and stack lists may be empty
+        pattern = r'(\d+),PLAYER_INFO,(\d+),\[([^\]]*)\],\[([^\]]*)\],(\[.*\]),(\[.*\]),(\[.*\])'
         match = re.search(pattern, line)
         
         if not match:
@@ -1104,11 +1105,11 @@ class PlayerInfoEntry:
             
             # Parse ability IDs
             ability_ids_str = match.group(3)
-            ability_ids = [int(x.strip()) for x in ability_ids_str.split(',')]
+            ability_ids = [int(x.strip()) for x in ability_ids_str.split(',') if x.strip()]
             
             # Parse ability levels  
             ability_levels_str = match.group(4)
-            ability_levels = [int(x.strip()) for x in ability_levels_str.split(',')]
+            ability_levels = [int(x.strip()) for x in ability_levels_str.split(',') if x.strip()]
             
             # Parse gear data (complex nested structure)
             gear_data_str = match.group(5)

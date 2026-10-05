@@ -1,69 +1,63 @@
 # ESO Encounter Log Gear Slot Structure
 
 ## Overview
-The Elder Scrolls Online encounter log tracks **13 gear slots** per player, not the full 14 slots available in the game's UI. This is a limitation of the encounter log format.
 
-## Complete Gear Slot List
+Each `PLAYER_INFO` line lists one entry per **equipped** item. An empty slot has no entry at all, so the list varies in length, and a two-handed weapon is simply a main hand with no off hand beside it.
 
-| Slot Name | Description | Notes |
-|-----------|-------------|-------|
-| `HEAD` | Helmet | Standard armor slot |
-| `SHOULDERS` | Shoulder pads | Standard armor slot |
-| `HAND` | Gloves/Arms | Log uses "HAND" instead of "ARMS" |
-| `LEGS` | Leg armor | Standard armor slot |
-| `CHEST` | Chest armor | Standard armor slot |
-| `WAIST` | Belt | Log uses "WAIST" instead of "BELT" |
-| `FEET` | Boots | Standard armor slot |
-| `NECK` | Necklace | Jewelry slot |
-| `RING1` | First ring | Jewelry slot |
-| `RING2` | Second ring | Jewelry slot |
-| `MAIN_HAND` | Primary weapon | Active weapon bar |
-| `OFF_HAND` | Secondary weapon/shield | Active weapon bar |
-| `BACKUP_MAIN` | Backup primary weapon | Backup weapon bar |
+The facts below come from a survey of 32 encounter logs written by game version `eso.live.12.1` in October 2026 (4,279 `PLAYER_INFO` lines). 66 of those lines had an empty equipment list.
 
-## Key Differences from Expected
+## Slot names
 
-### Missing Slots
-- **`BACKUP_OFF`**: The encounter log does **not** track the backup off-hand weapon slot
-- This means ESO only logs 13 slots, not the full 14 available in-game
+Seventeen slot names occur. The count is the number of lines, out of the 4,213 with any equipment, that listed the slot.
 
-### Complete ESO Gear Structure
-**In-game ESO has 14 total gear slots:**
-- **7 Armor slots**: HEAD, SHOULDERS, HAND, CHEST, WAIST, LEGS, FEET
-- **3 Jewelry slots**: NECK, RING1, RING2  
-- **4 Weapon slots**: MAIN_HAND, OFF_HAND, BACKUP_MAIN, BACKUP_OFF
+| Slot name | Item | Lines | Notes |
+|-----------|------|-------|-------|
+| `HEAD` | Helmet | 4,213 | |
+| `SHOULDERS` | Shoulders | 4,213 | |
+| `CHEST` | Chest | 4,213 | |
+| `HAND` | Gloves | 4,213 | The log says `HAND`, not "arms" or "hands" |
+| `WAIST` | Belt | 4,213 | The log says `WAIST`, not "belt" |
+| `LEGS` | Legs | 4,213 | |
+| `FEET` | Boots | 4,213 | |
+| `NECK` | Necklace | 4,213 | |
+| `RING1` | First ring | 4,213 | |
+| `RING2` | Second ring | 4,213 | |
+| `MAIN_HAND` | Front-bar main hand | 4,213 | |
+| `OFF_HAND` | Front-bar off hand or shield | 2,501 | Absent beside a two-handed weapon |
+| `POISON` | Front-bar poison | 122 | Only when a poison is slotted |
+| `BACKUP_MAIN` | Back-bar main hand | 3,931 | Absent for one-bar builds |
+| `BACKUP_OFF` | Back-bar off hand or shield | 149 | Absent beside a two-handed weapon |
+| `BACKUP_POISON` | Back-bar poison | 62 | Only when a poison is slotted |
+| `COSTUME` | Costume | 164 | Cosmetic; the app ignores it |
 
-**Encounter log only tracks 13 slots** (missing BACKUP_OFF)
+## Item fields
 
-### Naming Differences
-- **`HAND`** instead of `ARMS` (gloves/gauntlets)
-- **`WAIST`** instead of `BELT`
+Every entry has eleven fields (see `docs/encounterlog-format.md`):
 
-## Gear Data Format
-Each gear slot in the log contains the following information:
 ```
-[SLOT_NAME, ITEM_ID, FLAG1, LEVEL, TRAIT, QUALITY, ENCHANT_VALUE, ENCHANT_TYPE, FLAG2, ITEM_LEVEL, QUALITY_LEVEL]
+[slot, id, isCP, level, trait, displayQuality, setId, enchantType, isEnchantCP, enchantLevel, enchantQuality]
 ```
 
-Example:
+Examples:
+
 ```
 [HEAD,95044,T,16,ARMOR_DIVINES,LEGENDARY,270,MAGICKA,T,16,LEGENDARY]
+[MAIN_HAND,133257,T,16,WEAPON_CHARGED,LEGENDARY,361,POISONED_WEAPON,T,16,LEGENDARY]
+[POISON,79690,F,1,NONE,LEGENDARY,0,INVALID,F,0,NORMAL]
 ```
 
-## Validation
-The parser validates that exactly 13 gear slots are present and that all expected slot names are found in the data.
+- **`isCP`, `level`**: `T,16` is champion rank 160, `T,15` champion rank 150, `F,32` level 32.
+- **`trait`**: prefixed by item kind, for example `ARMOR_DIVINES`, `WEAPON_NIRNHONED`, `JEWELRY_BLOODTHIRSTY`; `NONE` for none. `ARMOR_PROSPEROUS` is the Invigorating trait.
+- **`displayQuality`**: `TRASH`, `NORMAL`, `MAGIC` (Fine; the one value the survey did not meet), `ARCANE` (Superior), `ARTIFACT` (Epic), `LEGENDARY`. A mythic item is logged as `LEGENDARY`; only its set says it is mythic.
+- **`setId`**: the game's set id, `0` for an item of no set. The app names it through the LibSets data.
+- **`enchantType`**: for example `MAGICKA`, `FIERY_WEAPON`, `BERSERKER` (the Weapon Damage glyph), `INCREASE_SPELL_DAMAGE`; `INVALID` for no enchant.
+- **`enchantQuality`**: the same quality names as `displayQuality`.
+- **Poisons** carry an item id and a quality, and nothing in the trait, set and enchant fields. The item id is all the log says about which poison it is.
 
-## Why Only 13 Slots?
-The ESO encounter log appears to be optimized for combat analysis and may not track the backup off-hand weapon because:
-1. **Combat focus**: The log focuses on equipment that directly affects combat calculations
-2. **Rare usage**: Most players use 2H weapons or staves on their backup bar, making the off-hand slot often empty
-3. **Log optimization**: The system may not log empty or rarely-used slots to reduce log size
-4. **Performance**: Backup off-hand weapons are not active during combat, so they don't impact encounter calculations
+## What the log does not carry
 
-**Important**: This is a limitation of the encounter log format, not the parser implementation. The parser correctly handles all available gear slots in the log.
+Item names, weapon types (dagger or staff) and armor weights are not logged. The line is written once per fight, as combat starts, so gear swapped during a fight does not show.
 
-## Parser Behavior
-- **Correctly parses**: All 13 available gear slots from encounter logs
-- **Handles missing slots**: Gracefully handles the absence of BACKUP_OFF
-- **Validates structure**: Ensures exactly 13 slots are present as expected
-- **Future-proof**: Will automatically detect BACKUP_OFF if ESO adds it to logs
+## Where the app reads this
+
+`src/player_build.py` turns these entries into the build window's gear rows: slot order, readable trait, quality and enchant names, set piece counts per weapon bar, and poison names from `data/items/poisons_en.json`.

@@ -157,7 +157,8 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertLess(line.index('Coral Aerie'), line.index('2025'))
         # First-damage dealer gets a star in both renderings
         html_marked = render_html(entry, detailed=False)
-        self.assertIn('@brainsnorkel <b>*</b>', html_marked)
+        # (the name itself is a link to the player's build window)
+        self.assertIn('@brainsnorkel</a> <b>*</b>', html_marked)
         self.assertIn('first damage', html_marked)
         self.assertIn('@brainsnorkel *', render_plain_text(entry))
         html_out = render_html(entry, detailed=True)
