@@ -291,11 +291,12 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_fight_updated(self, entry):
-        """A delivered fight gained a death (logged just after combat ended):
-        its history line gets the death cue, and the pane is redrawn if it is
-        the fight on screen."""
+        """A delivered fight changed: it gained a death (logged just after
+        combat ended), or the game had cut it in two and it has now really
+        ended. Its history line is rewritten, and the pane is redrawn if it
+        is the fight on screen."""
         fights = self._current_fights()
-        # Late deaths belong to the newest fight, so look from the end
+        # Both happen to the newest fight, so look from the end
         row = next((i for i in range(len(fights) - 1, -1, -1)
                     if fights[i] is entry), -1)
         item = self.history_list.item(row) if row >= 0 else None

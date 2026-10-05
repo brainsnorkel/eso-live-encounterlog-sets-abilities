@@ -392,6 +392,29 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         finally:
             win.close()
 
+    def test_fight_the_game_cut_in_two_stays_one_history_line(self):
+        """The engine reports the first part as a fight, then the same entry
+        again once the fight has really ended."""
+        win = self._window()
+        try:
+            entry = _entry_no_deaths()
+            entry.duration_s, entry.group_dps = 66.8, 544635.0
+            win._on_fight_completed(entry)
+            win.history_list.setCurrentRow(0)
+            self.assertIn(' · 1:07 · 544.6k gdps · ', win.history_list.item(0).text())
+
+            entry.duration_s, entry.group_dps, entry.deaths = 129.5, 558974.0, 2
+            win._on_fight_updated(entry)
+            self.assertEqual(win.history_list.count(), 1)
+            self.assertEqual(win.history_list.currentRow(), 0)
+            self.assertTrue(win.history_list.item(0).text().startswith(
+                'Sharpfang (d) · 2:10 · 559.0k gdps · '))
+            shown = win.fight_view.toPlainText()
+            self.assertIn('2:10', shown)
+            self.assertNotIn('1:07', shown)
+        finally:
+            win.close()
+
     def test_open_recap_follows_a_theme_switch(self):
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QColor, QPalette

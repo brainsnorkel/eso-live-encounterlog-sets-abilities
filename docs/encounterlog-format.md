@@ -20,6 +20,8 @@ BEGIN_COMBAT
 
 END_COMBAT
 
+The game also writes END_COMBAT and then BEGIN_COMBAT, with every group member's PLAYER_INFO again, in the middle of a fight. It happens most often as the logging player accepts a resurrection: 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after a `SOUL_GEM_RESURRECTION_ACCEPTED` on the logging player. The engine treats such a pair as one fight (`COMBAT_RESUME_MS` in `src/esolog_tail.py`).
+
 PLAYER_INFO, unitId, [longTermEffectAbilityId,...], [longTermEffectStackCounts,...], [`<equipmentInfo>`,...], [primaryAbilityId,...], [backupAbilityId,...]
 
 BEGIN_CAST, durationMS, channeled, castTrackId, abilityId, `<sourceUnitState>`, `<targetUnitState>`

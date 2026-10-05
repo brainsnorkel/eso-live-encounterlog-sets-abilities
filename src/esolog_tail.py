@@ -17,7 +17,7 @@ import re
 import hashlib
 from pathlib import Path
 from collections import defaultdict, deque
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, FrozenSet, List, Optional, Tuple, Set
 from datetime import datetime
 from gear_set_database_optimized import gear_set_db
 from fight_history import FightHistory, FightHistoryEntry
@@ -97,6 +97,19 @@ BUFF_ABILITY_IDS = {
 # death event is written after END_COMBAT (about 85 ms later in live logs).
 # A player death this soon after END_COMBAT belongs to the fight that just ended.
 LATE_DEATH_GRACE_MS = 1000
+
+# The game ends and restarts combat in the middle of a fight, most often when
+# the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment
+# later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms
+# apart, 45 of them straight after the player accepted a resurrection. A
+# BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy
+# the group hit in the fight's last seconds is still alive; none of the 51
+# pairs between half a second and three seconds apart was the same pull.
+COMBAT_RESUME_MS = 1000
+ENGAGED_ENEMY_MS = 10000
+# The results that count as the group hitting an enemy
+ENEMY_HIT_RESULTS = frozenset(
+    ('DAMAGE', 'CRITICAL_DAMAGE', 'DOT_TICK', 'DOT_TICK_CRITICAL', 'BLOCKED_DAMAGE'))
 
 def highlight_taunt_abilities(ability_list):
     """Highlight taunt abilities in purple and return formatted list."""
@@ -837,6 +850,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # is logged after END_COMBAT (see LATE_DEATH_GRACE_MS)
         self._last_fight_entry: Optional[FightHistoryEntry] = None
         self._last_fight_start: int = 0
+        # A fight the game cut in two (see COMBAT_RESUME_MS): the entry
+        # already emitted for its first part, brought up to date when the
+        # fight really ends; when the group last hit each living enemy; and
+        # the ones it was still hitting as END_COMBAT came
+        self._resumed_fight_entry: Optional[FightHistoryEntry] = None
+        self._enemy_last_hit: Dict[str, int] = {}
+        self._engaged_at_end: FrozenSet[str] = frozenset()
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1062,6 +1082,11 @@ class ESOLogAnalyzer(ListenerMixin):
             self._handle_unit_added(entry)
         elif entry.event_type == "UNIT_CHANGED":
             self._handle_unit_changed(entry)
+        elif entry.event_type == "UNIT_REMOVED":
+            # Gone without a death line (a summoned add whose summoner died):
+            # no longer an enemy the group is fighting
+            if entry.fields:
+                self._enemy_last_hit.pop(entry.fields[0], None)
         elif entry.event_type == "ABILITY_INFO":
             self._handle_ability_info(entry)
         elif entry.event_type == "PLAYER_INFO":
@@ -1204,6 +1229,8 @@ class ESOLogAnalyzer(ListenerMixin):
                     enemy = EnemyInfo(unit_id, clean_name, unit_type)
                     enemy.max_health = health
                     enemy.current_health = health
+                    # A unit id handed out again is a unit nobody has hit yet
+                    self._enemy_last_hit.pop(unit_id, None)
                     enemy.is_hostile = is_hostile
                     
                     self.current_encounter.enemies[unit_id] = enemy
@@ -1442,7 +1469,10 @@ class ESOLogAnalyzer(ListenerMixin):
             self.fight_deaths = 0
             self.fight_death_recaps = []
             self._last_fight_entry = None
+            self._resumed_fight_entry = None
             # Unit ids are handed out afresh in each zone
+            self._enemy_last_hit.clear()
+            self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
             self.scribing.forget_players("unit:")
 
@@ -1466,10 +1496,18 @@ class ESOLogAnalyzer(ListenerMixin):
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
 
+        # The fight that just ended, cut in two by the game: carry on with it
+        if self._continues_last_fight(entry.timestamp):
+            self._resume_last_fight()
+            return
+
         # Per-fight death counter starts fresh with each combat
         self.fight_deaths = 0
         self.fight_death_recaps = []
         self._last_fight_entry = None
+        self._resumed_fight_entry = None
+        self._enemy_last_hit.clear()
+        self._engaged_at_end = frozenset()
 
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -1520,6 +1558,60 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
 
+    def _continues_last_fight(self, timestamp_ms: int) -> bool:
+        """Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
+        just ended instead of starting one (see COMBAT_RESUME_MS): it follows
+        the END_COMBAT closely, and an enemy the group was hitting when the
+        fight ended is still alive."""
+        enc = self.current_encounter
+        if (self._last_fight_entry is None or enc is None or not enc.finalized
+                or enc.combat_ended_at is None):
+            return False
+        if not 0 <= timestamp_ms - enc.combat_ended_at <= COMBAT_RESUME_MS:
+            return False
+        # Not any enemy hit since: the group's damage often reaches the next
+        # pack between the two lines, and that is a new fight
+        return any(unit_id in self._enemy_last_hit for unit_id in self._engaged_at_end)
+
+    def _resume_last_fight(self):
+        """Reopen the encounter END_COMBAT closed. Its damage, deaths and
+        players are kept, and the entry frontends already have is brought up
+        to date when the fight ends (see _display_encounter_summary)."""
+        enc = self.current_encounter
+        ended_at = enc.combat_ended_at
+        enc.finalized = False
+        enc.in_combat = True
+        enc.combat_ended_at = None
+        enc.end_time = 0
+        # A combat event between the two lines moved the start
+        # (see _handle_combat_event)
+        enc.start_time = self._last_fight_start
+        # END_COMBAT closed the buffs that were running: the ones still up
+        # carry on from there
+        for player_id in enc.players:
+            for buff_name in self.global_active_buffs[player_id]:
+                enc.active_buffs[player_id].setdefault(buff_name, ended_at)
+        self._resumed_fight_entry = self._last_fight_entry
+
+    def _note_enemy_hit(self, entry: ESOLogEntry):
+        """Remember when the group last hit each living enemy, which tells a
+        fight the game cut in two from a new one (see _continues_last_fight)."""
+        enc = self.current_encounter
+        target_unit_id = entry.fields[17]
+        enemy = enc.enemies.get(target_unit_id)
+        if enemy is None or not enemy.is_hostile:
+            return
+        source_unit_id = entry.fields[7]
+        if not (enc.find_player_by_unit_id(source_unit_id)
+                or source_unit_id in enc.pet_ownership):
+            return
+        # The target's health after the hit: "current/max"
+        health = entry.fields[18].split("/")[0] if len(entry.fields) > 18 else ""
+        if health == "0":
+            self._enemy_last_hit.pop(target_unit_id, None)
+        else:
+            self._enemy_last_hit[target_unit_id] = entry.timestamp
+
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
@@ -1528,6 +1620,12 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
+        # The living enemies the group hit in the fight's last seconds: if
+        # combat starts again at once, they tell whether it is the same fight
+        self._engaged_at_end = frozenset(
+            unit_id for unit_id, hit in self._enemy_last_hit.items()
+            if entry.timestamp - hit <= ENGAGED_ENEMY_MS)
+
         # Immediately finalize encounter if there are any players
         if self.current_encounter and self.current_encounter.players:
             self.current_encounter.end_time = entry.timestamp
@@ -1572,6 +1670,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self.buff_timeline_recorder.reset()
         self.death_recap_recorder.reset()
         self._last_fight_entry = None
+        self._resumed_fight_entry = None
+        self._enemy_last_hit.clear()
+        self._engaged_at_end = frozenset()
         # The game lists every script combination again in a new session,
         # and numbers its players anew
         self.scribing.reset()
@@ -1790,7 +1891,10 @@ class ESOLogAnalyzer(ListenerMixin):
             
             if combat_event_type in ['DAMAGE', 'CRITICAL_DAMAGE']:
                 pass  # Damage events are handled in the elif block below
-            
+
+            if combat_event_type in ENEMY_HIT_RESULTS and len(entry.fields) > 17:
+                self._note_enemy_hit(entry)
+
             # Death recap: keep what lands on each player (damage, heals,
             # shields, dodges) for the seconds before a death
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
@@ -1822,6 +1926,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 # If it's a hostile enemy death, mark it as damaged by players
                 elif (combat_event_type != 'KILLING_BLOW' and self.current_encounter and
                       dying_unit_id in self.current_encounter.enemies):
+                    self._enemy_last_hit.pop(dying_unit_id, None)
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
@@ -2583,10 +2688,20 @@ class ESOLogAnalyzer(ListenerMixin):
         if hasattr(self, 'fight_history') and self.fight_history is not None:
             fight_entry = self._build_fight_entry(zone_name)
             if fight_entry:
-                self.fight_history.append(fight_entry)
+                resumed, self._resumed_fight_entry = self._resumed_fight_entry, None
+                if resumed is not None:
+                    # The fight the game cut in two (see COMBAT_RESUME_MS):
+                    # frontends hold its entry already, so that one is brought
+                    # up to date instead of a second fight being added
+                    for field in FightHistoryEntry.__slots__:
+                        setattr(resumed, field, getattr(fight_entry, field))
+                    fight_entry = resumed
+                else:
+                    self.fight_history.append(fight_entry)
                 self._last_fight_entry = fight_entry
                 self._last_fight_start = self.current_encounter.start_time
-                self._notify('on_fight_completed', fight_entry)
+                self._notify('on_fight_updated' if resumed is not None
+                             else 'on_fight_completed', fight_entry)
 
         # Add newline after encounter summary for clean formatting
         self._print_and_buffer("")
@@ -2663,7 +2778,9 @@ class ESOLogAnalyzer(ListenerMixin):
         if self.track_buff_timeline:
             entry.buff_timeline = self.buff_timeline_recorder.snapshot_fight(
                 enc.start_time, enc.end_time, self._resolve_timeline_name)
-            self.buff_timeline_recorder.prune_before(enc.end_time)
+            # Not before the end: this fight's intervals are needed once more
+            # if it turns out to carry on (see COMBAT_RESUME_MS)
+            self.buff_timeline_recorder.prune_before(enc.start_time)
 
         # Boss name: prefer most damaged hostile, fall back to highest health
         if enc.most_damaged_hostile and enc.most_damaged_hostile.name:

@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **One pull shown as two fights**: the game writes `END_COMBAT` and, a moment later, `BEGIN_COMBAT` in the middle of a fight, most often as the logging player is resurrected, and the app started a new fight there. A Tideborn Taleria kill of 129.5 s showed as fights of 66.8 s and 62.7 s. Combat that starts again within a second of ending, while an enemy the group hit in the fight's last ten seconds is still alive, now carries on the same fight: its damage, deaths, death recaps and buff uptimes cover the whole pull. The first part still appears as a fight when the game ends combat, and that same history line is brought up to date when the fight really ends. 48 logs of April to October 2026 held 53 such cuts, 0 to 484 ms apart, 45 of them straight after a resurrection was accepted; none of the 51 pairs between half a second and three seconds apart was the same pull. Replayed through the fixed engine, those logs' 854 stretches of combat make 795 fights: all 53 cuts are joined, and so are six trash pulls that ran into each other with a mob alive across the cut. A pack that dies as the next one is pulled still makes two fights
+
 ## [0.6.2] - 2026-10-05
 
 ### Added

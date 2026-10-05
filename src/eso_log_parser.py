@@ -230,6 +230,8 @@ class ESOLogParser:
                 event_type = 'UNIT_ADDED'
             elif class_name == 'UnitChangedEntry':
                 event_type = 'UNIT_CHANGED'
+            elif class_name == 'UnitRemovedEntry':
+                event_type = 'UNIT_REMOVED'
             elif class_name == 'AbilityInfoEntry':
                 event_type = 'ABILITY_INFO'
             elif class_name == 'PlayerInfoEntry':

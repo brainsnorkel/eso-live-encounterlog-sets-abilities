@@ -163,6 +163,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 
 ## What the analysis is based on
 
+- **Fights**: a fight runs from the game's `BEGIN_COMBAT` line to its `END_COMBAT` line. The game also writes that pair in the middle of a fight, a fraction of a second apart, most often as you are resurrected. When combat starts again within a second of ending and an enemy the group was hitting is still alive, the app carries on with the same fight. Its first part shows as a fight until the fight really ends, and that entry is then brought up to date.
 - **Builds**: `PLAYER_INFO` events carry each player's slotted abilities and gear. Skill lines are matched by exact ability name against the class skill tables; a build shows at most three lines.
 - **Gear sets**: item set ids are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database.
 - **Gear detail, mundus and food**: the same `PLAYER_INFO` line lists each equipped item with its trait, quality and enchant, and the player's long-term effects, among them the mundus boon and the food buff. A slotted poison is logged as an item id, named through UESP's item database; food is recognised by the buff list of the LibFoodDrinkBuff addon. The log does not say how heavy an armor piece is, so its item id is looked up in a table of every light, medium and heavy piece, also from UESP's item database.
