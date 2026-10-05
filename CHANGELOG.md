@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Security
+- **Current Python and OpenSSL in the Windows build**: the Windows app was built with Python 3.11.9 (April 2024), the last 3.11 release that has a Windows installer, so it carried none of the security fixes made to Python since, and its OpenSSL was 3.0.13 from January 2024. That is the code that checks for an update and downloads the installer. Both builds now use Python 3.14; on Windows that is 3.14.8 with OpenSSL 3.5.9 at the time of the change
+
+### Changed
+- **Smaller download**: the Windows installer is about 5 MB smaller (38.5 MB, was 43.2 MB) and the installed app about 17 MB smaller. The build installed all of Qt for Python, and Qt's PDF, QML and virtual keyboard libraries were packed into the app although nothing uses them. It now installs only the part of Qt the app uses
+
+### Technical
+- **Dependency and tool versions**: `requirements.txt` asks for `PySide6-Essentials` in place of `PySide6`; the gear data generator reads the LibSets workbook with `openpyxl` directly, so `pandas` and `numpy` are no longer build dependencies (the generated module is byte-for-byte the same); minimum versions are raised: `PySide6-Essentials` 6.10.1 and `pyinstaller` 6.15.0 (the first for Python 3.14), `Pillow` 12.3.0 (earlier releases have known vulnerabilities) and `platformdirs` 4.8.0 (the first with the `WIN_PD_OVERRIDE_LOCAL_APPDATA` variable the development guide relies on); the GitHub Actions used by the build move off the deprecated Node 20 runtime (`checkout` v7, `setup-python` v7, `upload-artifact` v7, `download-artifact` v8, `action-gh-release` v3.0.3, pinned to its commit); the workflow's token is read-only except in the release job; UPX is switched off in the PyInstaller spec, where it only took effect on a machine that had UPX installed. A `return` inside a `finally` block, which Python 3.14 warns about, is removed from the archive action
+
 ## [0.6.4] - 2026-10-06
 
 ### Fixed

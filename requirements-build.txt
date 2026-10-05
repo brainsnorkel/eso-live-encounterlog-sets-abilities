@@ -1,5 +1,6 @@
 # Build-time dependencies (gear data generation, icon, packaging)
-pandas>=1.5.0
-openpyxl>=3.0.0
-Pillow>=9.0.0
-pyinstaller>=6.0
+openpyxl>=3.1.5
+# Releases before 12.3.0 have known vulnerabilities
+Pillow>=12.3.0
+# 6.15.0 is the first release that supports Python 3.14
+pyinstaller>=6.15.0

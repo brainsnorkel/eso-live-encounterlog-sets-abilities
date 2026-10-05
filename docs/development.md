@@ -45,7 +45,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 
 ## Running from source
 
-CI tests and builds with Python 3.11.
+CI tests and builds with Python 3.14, so that is the version to develop on. The tests also passed on 3.11 and 3.13 when CI moved to 3.14 (October 2026); CI does not check those versions.
 
 ```cmd
 pip install -r requirements.txt
@@ -64,7 +64,7 @@ python -m pytest
 - `pyproject.toml` tells pytest where the tests are and puts `src/` and `tests/fixtures/` on the import path. Test files need no path setup of their own.
 - Tests that create widgets set `QT_QPA_PLATFORM=offscreen` themselves, so no window opens.
 - `tests/integration/test_engine_golden.py` replays `tests/fixtures/golden_fight.log` and compares the fights and split files with `golden_fight_expected.json`. After a change that is meant to alter results, regenerate the expected file with `UPDATE_GOLDENS=1 python -m pytest tests/integration/test_engine_golden.py` and review its diff.
-- CI runs the suite on Python 3.11 on Windows and Linux. Keep to syntax 3.11 accepts.
+- CI runs the suite on Python 3.14 on Windows and Linux.
 
 ## Building
 

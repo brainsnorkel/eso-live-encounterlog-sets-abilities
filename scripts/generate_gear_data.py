@@ -8,10 +8,15 @@ installer size by removing the XLSM dependency.
 """
 
 import json
-import pandas as pd
 import os
 from pathlib import Path
 from typing import Dict, List, Set
+
+from openpyxl import load_workbook
+
+def filled(value) -> bool:
+    """True when a worksheet cell holds something."""
+    return value is not None and value != ''
 
 def extract_gear_data():
     """Extract gear set data from the XLSM file."""
@@ -23,13 +28,19 @@ def extract_gear_data():
         return None
     
     try:
-        # Read the Excel file
-        excel_file = pd.ExcelFile(excel_file_path)
+        # Read the Excel file (cached values, not formulas)
+        workbook = load_workbook(excel_file_path, read_only=True, data_only=True)
         # Try both old and new sheet names for compatibility
-        sheet_name = 'Sets (lua data)' if 'Sets (lua data)' in excel_file.sheet_names else 'Sets data'
-        df = pd.read_excel(excel_file, sheet_name=sheet_name, header=1)
+        sheet_name = 'Sets (lua data)' if 'Sets (lua data)' in workbook.sheetnames else 'Sets data'
+        rows = workbook[sheet_name].iter_rows(values_only=True)
+        next(rows)  # a "Last updated" row sits above the column headings
+        headings = next(rows)
+        # One dict per row, keyed by column heading; empty rows are dropped
+        table = [dict(zip(headings, row)) for row in rows
+                 if any(filled(cell) for cell in row)]
+        workbook.close()
         
-        print(f"Extracted {len(df)} gear sets from {excel_file_path}")
+        print(f"Extracted {len(table)} gear sets from {excel_file_path}")
         
         # Extract the data we need
         gear_data = {
@@ -41,13 +52,13 @@ def extract_gear_data():
         }
         
         # Process each row
-        for _, row in df.iterrows():
+        for row in table:
             set_id = row.get('ESO ingame setId')
             set_name_en = row.get('Name EN')
             set_type = row.get('Set Type', '')
             comment = row.get('Comment', '')
             
-            if pd.notna(set_id) and pd.notna(set_name_en):
+            if filled(set_id) and filled(set_name_en):
                 set_id_str = str(int(set_id))
                 # The workbook carries Lua escapes in a few names
                 # ("Mara\’s Balm", "Siegemaster'\s Focus"). The backslash is
@@ -63,8 +74,8 @@ def extract_gear_data():
                 # Store set info
                 gear_data['set_info'][set_name] = {
                     'set_id': set_id_str,
-                    'set_type': str(set_type) if pd.notna(set_type) else '',
-                    'comment': str(comment) if pd.notna(comment) else '',
+                    'set_type': str(set_type) if filled(set_type) else '',
+                    'comment': str(comment) if filled(comment) else '',
                     'items': [],
                     'abilities': []
                 }

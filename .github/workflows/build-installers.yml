@@ -8,6 +8,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# The build jobs install packages from PyPI, so they get a read-only token;
+# only the release job may write
+permissions:
+  contents: read
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -15,12 +20,12 @@ jobs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     - name: Install dependencies
       run: |
@@ -58,28 +63,30 @@ jobs:
         Compress-Archive -Path dist\esolog-gui\* -DestinationPath dist\esolog-tail-windows-portable-${{ steps.version.outputs.VERSION }}.zip
 
     - name: Upload installer artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: esolog-tail-windows-setup
         path: dist/esolog-tail-windows-setup-${{ steps.version.outputs.VERSION }}.exe
 
     - name: Upload portable artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: esolog-tail-windows-portable
         path: dist/esolog-tail-windows-portable-${{ steps.version.outputs.VERSION }}.zip
 
   build-linux:
-    # The oldest hosted image: the bundle runs on this glibc (2.35) and newer
+    # The oldest hosted image: the bundle runs on this glibc (2.35) and newer.
+    # GitHub retires it on 2027-04-17, with day-long brownouts from 2027-03-23
+    # (actions/runner-images#14254); ubuntu-24.04 would raise the floor to 2.39.
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     # Qt's X11 and Wayland plugins link against these. PyInstaller bundles
     # the ones it finds, so installing them here is what lets the tarball
@@ -149,7 +156,7 @@ jobs:
           -C dist esolog-tail-${{ steps.version.outputs.VERSION }}
 
     - name: Upload tarball artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: esolog-tail-linux-x86_64
         path: dist/esolog-tail-linux-x86_64-${{ steps.version.outputs.VERSION }}.tar.gz
@@ -159,15 +166,19 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - name: Download build artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: dist
         merge-multiple: true
 
+    # Pinned to a commit: this step holds the token that publishes the
+    # files the app's update check offers to users
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
       with:
         files: |
           dist/esolog-tail-windows-setup-${{ needs.build-windows.outputs.version }}.exe

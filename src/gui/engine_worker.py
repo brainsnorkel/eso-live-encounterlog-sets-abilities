@@ -253,8 +253,7 @@ class EngineWorker(QObject):
                 if not self.monitor.log_file.exists():
                     # Original deleted after archive: wait for a fresh log
                     self._start_waiting()
-                    return
-                if polling:
+                elif polling:
                     self._poll_timer.start()
 
     @Slot(str)

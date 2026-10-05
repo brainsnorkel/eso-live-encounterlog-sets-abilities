@@ -1,3 +1,9 @@
 # Runtime dependencies (the GUI app)
-PySide6>=6.7.0
-platformdirs>=4.0.0
+# PySide6-Essentials carries QtCore, QtGui and QtWidgets, which is all the app
+# imports. The full PySide6 package adds the Addons wheel (WebEngine, 3D,
+# Multimedia: about 170 MB) that nothing here uses. 6.10.1 is the first
+# release that supports Python 3.14.
+PySide6-Essentials>=6.10.1
+# 4.8.0 added the WIN_PD_OVERRIDE_* variables that docs/development.md uses
+# to keep a test run away from the real config
+platformdirs>=4.8.0

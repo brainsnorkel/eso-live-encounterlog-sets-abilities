@@ -221,7 +221,7 @@ On Linux it uses the first of these that exists (each ends in `Documents/Elder S
 
 The [development guide](docs/development.md) describes the repository layout, the tests and the release process; the short version follows.
 
-Prerequisites: Python 3.9+ (3.11 recommended) on Windows.
+Prerequisites: Python 3.14 on Windows, the version releases are built with. The tests also pass on 3.11 and 3.13.
 
 ```cmd
 pip install -r requirements.txt
@@ -294,7 +294,7 @@ The icon step is also packaged as the `refresh-ability-icons` skill for Claude C
 ## Requirements
 
 - Windows 10/11, or 64-bit Linux with glibc 2.35 or newer (experimental build)
-- Runtime: `PySide6`, `platformdirs` (see `requirements.txt`)
+- Runtime: `PySide6-Essentials`, `platformdirs` (see `requirements.txt`)
 - ESO encounter logging enabled in-game
 
 ## License

@@ -254,7 +254,7 @@ class TestGearSetNames(unittest.TestCase):
         try:
             script = _load('generate_gear_data.py')
         except ImportError:
-            self.skipTest('pandas is not installed (requirements-build.txt)')
+            self.skipTest('openpyxl is not installed (requirements-build.txt)')
         for text in ("Mara's Balm", 'a "quoted" word', 'back\\slash'):
             self.assertEqual(ast.literal_eval(script.quoted(text)), text)
 
