@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.2] - 2026-10-05
 
 ### Added
 - **Armor weight in the build window**: the gear grid has a Weight column that says whether each armor piece is light, medium or heavy, and the Armor heading counts the pieces of each (`5 medium, 1 light, 1 heavy`). The log gives a piece only as an item id, so the weight is looked up in a bundled table (`data/items/armor_weights.json`, 56,439 pieces from UESP's item database, built by `scripts/generate_armor_weights.py`). All 905 armor item ids in 48 logs of April to October 2026 were in it. A piece from a set newer than the table shows a dash until the table is refreshed

@@ -2,5 +2,5 @@
 Version information for ESO Live Encounter Log Sets & Abilities Analyzer
 """
 
-__version__ = "0.6.1"
-__version_info__ = (0, 6, 1)
+__version__ = "0.6.2"
+__version_info__ = (0, 6, 2)
