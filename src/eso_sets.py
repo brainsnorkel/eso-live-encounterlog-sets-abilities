@@ -11,16 +11,7 @@ from collections import defaultdict, Counter
 class ESOSubclassAnalyzer:
     """Analyzes abilities to infer player subclass/build."""
 
-    SKILL_LINE_ALIASES = { 
-        'Assassination': 'Ass',
-        'Dawn\'s Wrath': 'Dawn',
-        'Herald': 'Herald',
-        'Bone': 'BoneTyrant',
-        'Living': 'LivingDeath',
-        'Winter\'s': 'Winter'
-    }
-
- # Complete ESO Class Skill Line Abilities - Updated for 2025
+    # Complete ESO Class Skill Line Abilities - Updated for 2025
     SKILL_LINE_ABILITIES = {
         # Dragonknight Skill Lines
         'Ardent Flame': [

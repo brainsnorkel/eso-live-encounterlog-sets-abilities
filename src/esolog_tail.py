@@ -16,7 +16,7 @@ import io
 import re
 import hashlib
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Dict, FrozenSet, List, Optional, Tuple, Set
 from datetime import datetime
 from gear_set_database import gear_set_db
@@ -25,7 +25,7 @@ from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStat
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
-from scribing import ScribingTracker, slot_fields, slot_label
+from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
 
 
@@ -55,13 +55,6 @@ def _console(*args, **kwargs):
         pass
 
 from version import __version__
-
-# Taunt abilities lookup for highlighting
-TAUNT_ABILITIES = {
-    'puncture', 'ransack', 'pierce armor', 'inner fire', 'inner rage', 
-    'inner beast', 'frost clench', 'runic jolt', 'runic sunder', 'runic embrace',
-    'focused charge', 'explosive charge', 'toppling charge', 'goading throw', 'goading vault'
-}
 
 # Buff ability IDs from BuffTheGroup addon
 BUFF_ABILITY_IDS = {
@@ -110,17 +103,6 @@ ENGAGED_ENEMY_MS = 10000
 # The results that count as the group hitting an enemy
 ENEMY_HIT_RESULTS = frozenset(
     ('DAMAGE', 'CRITICAL_DAMAGE', 'DOT_TICK', 'DOT_TICK_CRITICAL', 'BLOCKED_DAMAGE'))
-
-def highlight_taunt_abilities(ability_list):
-    """Highlight taunt abilities in purple and return formatted list."""
-    highlighted_abilities = []
-    for ability in ability_list:
-        ability_lower = ability.lower()
-        if any(taunt in ability_lower for taunt in TAUNT_ABILITIES):
-            highlighted_abilities.append(f"{Fore.MAGENTA}{ability}{Style.RESET_ALL}")
-        else:
-            highlighted_abilities.append(ability)
-    return highlighted_abilities
 
 # Import our ESO analysis modules
 from eso_sets import ESOSubclassAnalyzer
@@ -439,10 +421,6 @@ class CombatEncounter:
         player.champion_points = champion_points
         self.players[unit_id] = player
 
-    def add_enemy(self, unit_id: str, name: str, unit_type: str):
-        """Add an enemy to this encounter."""
-        self.enemies[unit_id] = EnemyInfo(unit_id, name, unit_type)
-
     def track_pet_ownership(self, pet_unit_id: str, owner_unit_id: str):
         """Track that a pet belongs to a specific player."""
         self.pet_ownership[pet_unit_id] = owner_unit_id
@@ -494,68 +472,6 @@ class CombatEncounter:
             
             # Update highest health hostile if this is a hostile monster
             self.update_highest_health_hostile(enemy)
-
-    def _is_valid_enemy(self, enemy: EnemyInfo) -> bool:
-        """Check if an enemy represents a valid combat target."""
-        # First check if this unit is a friendly (player or pet)
-        if self.is_friendly_unit(enemy.unit_id):
-            return False
-        
-        # Fallback: exclude known environmental hazards and generic terms
-        excluded_names = {
-            # Environmental hazards and mechanics
-            'water', 'fire', 'lava', 'poison', 'ice', 'lightning', 'void',
-            'trap', 'spike', 'flame', 'steam', 'gas', 'cloud', 'mist',
-            'beam', 'laser', 'ray', 'orb', 'crystal', 'shard', 'fragment',
-            'portal', 'gate', 'door', 'barrier', 'wall', 'shield',
-            
-            # Generic environmental terms
-            'element', 'energy', 'force', 'field', 'aura', 'zone', 'area',
-            'mechanism', 'device', 'construct', 'apparatus'
-        }
-        
-        enemy_name_lower = enemy.name.lower()
-        return not any(excluded_name in enemy_name_lower for excluded_name in excluded_names)
-
-    def get_highest_health_enemy(self) -> Optional[EnemyInfo]:
-        """Get the enemy with the highest health, excluding pets, corpses, and environmental hazards."""
-        if not self.enemies:
-            return None
-        
-        max_health = 0
-        highest_health_enemy = None
-        
-        for enemy in self.enemies.values():
-            # Skip if not a valid enemy target
-            if not self._is_valid_enemy(enemy):
-                continue
-                
-            if enemy.max_health > max_health:
-                max_health = enemy.max_health
-                highest_health_enemy = enemy
-                
-        return highest_health_enemy
-
-    def get_most_damaged_enemy(self) -> Optional[EnemyInfo]:
-        """Get the enemy that took the most damage, excluding pets, corpses, and environmental hazards."""
-        if not self.enemies or not self.enemy_damage:
-            return None
-        
-        max_damage = 0
-        most_damaged_enemy = None
-        
-        for unit_id, damage in self.enemy_damage.items():
-            enemy = self.enemies.get(unit_id)
-            if enemy:
-                # Skip if not a valid enemy target
-                if not self._is_valid_enemy(enemy):
-                    continue
-                    
-                if damage > max_damage:
-                    max_damage = damage
-                    most_damaged_enemy = enemy
-                    
-        return most_damaged_enemy
 
     def add_ability_use(self, unit_id: str, ability_name: str):
         """Record an ability use by a player (for tracking purposes only)."""
@@ -622,25 +538,6 @@ class CombatEncounter:
                 start_time = self.active_buffs[player_unit_id][buff_name]
                 self.player_buffs[player_unit_id][buff_name].append((start_time, timestamp))
                 del self.active_buffs[player_unit_id][buff_name]
-
-    def get_buff_uptime(self, player_unit_id: str, buff_name: str) -> float:
-        """Calculate uptime percentage for a specific buff on a player."""
-        if not self.player_buffs[player_unit_id][buff_name]:
-            return 0.0
-        
-        total_uptime = 0
-        for start_time, end_time in self.player_buffs[player_unit_id][buff_name]:
-            total_uptime += (end_time - start_time)
-        
-        # Add any currently active buff time
-        if buff_name in self.active_buffs[player_unit_id]:
-            current_time = self.end_time if self.end_time > 0 else self.start_time
-            total_uptime += (current_time - self.active_buffs[player_unit_id][buff_name])
-        
-        if self.end_time > self.start_time:
-            duration = self.end_time - self.start_time
-            return (total_uptime / duration) * 100.0
-        return 0.0
 
     def finalize_buff_tracking(self):
         """Finalize buff tracking by ending any active buffs at encounter end."""
@@ -1126,17 +1023,6 @@ class ESOLogAnalyzer(ListenerMixin):
         elif entry.event_type == "ENDLESS_DUNGEON_BUFF_REMOVED":
             self._handle_endless_dungeon_buff_removed(entry)
 
-    def _check_pending_encounter_display(self):
-        """Check if we have an encounter that ended but hasn't been displayed yet."""
-        if (self.current_encounter and 
-            self.current_encounter.combat_ended_at and 
-            not self.current_encounter.finalized and 
-            self.current_encounter.players):
-            
-            # Display the encounter if it's been ended
-            self.current_encounter.finalized = True
-            self._display_encounter_summary(self.current_zone)
-
     def _handle_unit_added(self, entry: ESOLogEntry):
         """Handle UNIT_ADDED events to track players and enemies."""
         # UNIT_ADDED format: timestamp,UNIT_ADDED,unit_id,unit_type,F/T,unknown,unknown,F/T,unknown,unknown,"name","@handle",...
@@ -1447,7 +1333,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if (self.current_encounter and self.current_encounter.combat_ended_at and 
                 not self.current_encounter.finalized and self.current_encounter.players):
                 self.current_encounter.finalized = True
-                self._display_encounter_summary(self.current_zone)
+                self._publish_fight(self.current_zone)
             
             # Reset any existing encounter
             if self.current_encounter:
@@ -1515,7 +1401,7 @@ class ESOLogAnalyzer(ListenerMixin):
         if (self.current_encounter and self.current_encounter.combat_ended_at and
             not self.current_encounter.finalized and self.current_encounter.players):
             self.current_encounter.finalized = True
-            self._display_encounter_summary(self.current_zone)
+            self._publish_fight(self.current_zone)
             # Don't reset to None - we'll reuse the encounter and preserve players
         
         # Create a new encounter if we don't have one or if the previous one was finalized
@@ -1576,7 +1462,7 @@ class ESOLogAnalyzer(ListenerMixin):
     def _resume_last_fight(self):
         """Reopen the encounter END_COMBAT closed. Its damage, deaths and
         players are kept, and the entry frontends already have is brought up
-        to date when the fight ends (see _display_encounter_summary)."""
+        to date when the fight ends (see _publish_fight)."""
         enc = self.current_encounter
         ended_at = enc.combat_ended_at
         enc.finalized = False
@@ -1635,7 +1521,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.finalize_buff_tracking()
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
-            self._display_encounter_summary(self.current_zone)
+            self._publish_fight(self.current_zone)
 
     # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -2197,494 +2083,20 @@ class ESOLogAnalyzer(ListenerMixin):
             # Only mark combat activity if we're already in combat (after BEGIN_COMBAT)
             # Don't start combat from EFFECT_CHANGED events alone
 
-    def _end_combat(self, end_time: int):
-        """End the current combat encounter and display results."""
-        # Display results if there are any players
-        if self.current_encounter and self.current_encounter.players:
-            self.current_encounter.end_time = end_time
-            self._display_encounter_summary()
-
-        self.current_encounter = None
-
-    def _end_combat_with_zone(self, end_time: int, zone_name: str):
-        """End the current combat encounter and display results with zone name."""
-        # Display results if there are any players
-        if self.current_encounter and self.current_encounter.players:
-            self.current_encounter.end_time = end_time
-            self._display_encounter_summary(zone_name)
-
-        self.current_encounter = None
-
-    def _format_duration(self, duration_seconds: float) -> str:
-        """Format duration in seconds to minutes:seconds format, rounded to nearest second."""
-        # Round to nearest second
-        duration_seconds = round(duration_seconds)
-        
-        if duration_seconds < 60:
-            # Less than a minute, show only seconds
-            return f"{duration_seconds}s"
-        else:
-            # One minute or more, show minutes:seconds
-            minutes = int(duration_seconds // 60)
-            seconds = duration_seconds % 60
-            return f"{minutes}m {seconds}s"
-
-    def _display_encounter_summary(self, zone_name: str = None):
-        """Display a summary of the completed encounter."""
+    def _publish_fight(self, zone_name: str = None):
+        """Hand the encounter that just ended to the frontends: a new entry in
+        the fight history, or, for a fight the game cut in two, the entry it
+        already has brought up to date (see COMBAT_RESUME_MS)."""
         if not self.current_encounter:
             return
 
-        # Use grace period end time if available, otherwise use end_time
-        end_time = self.current_encounter.end_time
-        duration = (end_time - self.current_encounter.start_time) / 1000.0
-        players_count = len(self.current_encounter.players)
-        
-        # Calculate estimated group DPS
-        estimated_dps = 0
-        if duration > 0 and self.current_encounter.total_damage > 0:
-            estimated_dps = self.current_encounter.total_damage / duration
+        if self.diagnostic and len(self.current_encounter.players) >= 3:
+            self._print_buff_diagnostic_summary()
 
-
-        # Death counter (total deaths since entering zone)
-        deaths_info = ""
-        if self.zone_deaths > 0:
-            deaths_info = f" | Deaths: {self.zone_deaths}"
-        
-        # Most damaged hostile monster info (primary target)
-        hostile_info = ""
-        if (self.current_encounter and self.current_encounter.most_damaged_hostile):
-            hostile = self.current_encounter.most_damaged_hostile
-            hostile_info = f" | {hostile.name} (HP: {hostile.max_health:,})"
-        
-        # Highest HP hostile monster info - only consider enemies that were actually engaged by players
-        highest_hp_info = ""
-        if self.current_encounter:
-            # Find the highest health hostile among enemies that were actually engaged by players
-            # Use the same logic as the hostile monsters display
-            engaged_hostiles = []
-            all_engaged_monsters = set()
-            
-            # Add monsters from hostile_monsters list
-            for unit_id, name, unit_type in self.hostile_monsters:
-                if unit_id in self.engaged_monsters or unit_id in self.current_encounter.enemy_damage:
-                    all_engaged_monsters.add(unit_id)
-            
-            # Add monsters that appeared in combat events but weren't in hostile_monsters list
-            for unit_id in self.engaged_monsters:
-                if unit_id in self.current_encounter.enemies:
-                    enemy = self.current_encounter.enemies[unit_id]
-                    if enemy.is_hostile:
-                        all_engaged_monsters.add(unit_id)
-            
-            # Build list of engaged hostiles with health info
-            for unit_id in all_engaged_monsters:
-                if unit_id in self.current_encounter.enemies:
-                    enemy = self.current_encounter.enemies[unit_id]
-                    if hasattr(enemy, 'is_hostile') and enemy.is_hostile and enemy.max_health > 0:
-                        engaged_hostiles.append(enemy)
-            
-            if engaged_hostiles:
-                # Sort by max health (highest first), then prefer Stormreeve Neidir for equal health
-                engaged_hostiles.sort(key=lambda e: (-e.max_health, 0 if "Stormreeve" in e.name else 1))
-                highest_engaged = engaged_hostiles[0]
-                highest_hp_info = f" | Highest HP: {highest_engaged.name} ({highest_engaged.max_health:,} HP)"
-        
-        # Total health of all damaged enemies
-        total_health_info = ""
-        if (self.current_encounter and self.current_encounter.total_health_damaged > 0):
-            total_health_info = f" | Total Health Pool: {self.current_encounter.total_health_damaged:,} HP"
-
-        # Get formatted combat start time
-        combat_start_time = self.current_encounter.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
-        
-        # Update the combat ended header with start time, duration, players info, DPS, deaths, and enemy info
-        dark_orange = "\033[38;5;208m"  # Dark orange color
-        if zone_name:
-            if estimated_dps > 0:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
-            else:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} ({zone_name}) | {self._format_duration(duration)}{deaths_info}{hostile_info}{Style.RESET_ALL}")
-        else:
-            if estimated_dps > 0:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} | {self._format_duration(duration)} | GrpDPS: {estimated_dps:,.0f}{deaths_info}{hostile_info}{Style.RESET_ALL}")
-            else:
-                self._print_and_buffer(f"{dark_orange}{combat_start_time} | {self._format_duration(duration)}{deaths_info}{hostile_info}{Style.RESET_ALL}")
-        
-        # Show group buff analysis for encounters with 3+ players
-        if players_count >= 3:
-            buff_analysis = self.current_encounter.get_group_buff_analysis()
-            buff_status = []
-            for buff_name, is_present in buff_analysis.items():
-                if is_present:
-                    # Calculate group uptime (time buff was active on any player)
-                    group_uptime = self.current_encounter.get_group_buff_uptime(buff_name)
-                    status = f"{group_uptime:.1f}%"
-                else:
-                    status = "0.0%"
-                buff_status.append(f"{buff_name}: {status}")
-            self._print_and_buffer(f"{Fore.CYAN}{' '.join(buff_status)}{Style.RESET_ALL}")
-            
-            # Print buff diagnostic summary if in diagnostic mode
-            if self.diagnostic:
-                self._print_buff_diagnostic_summary()
-        
-        # Show trial completion information if available
-        if self.current_encounter.trial_info and self.current_encounter.trial_info.get('completed'):
-            trial = self.current_encounter.trial_info
-            trial_name = trial.get('trial_name', f"Trial ID {trial.get('trial_id', 'Unknown')}")
-            duration_ms = trial.get('duration_ms', 0)
-            score = trial.get('final_score', 0)
-            vitality = trial.get('vitality_bonus', 0)
-            
-            trial_info_parts = [trial_name]
-            if duration_ms > 0:
-                duration_formatted = self.format_duration_minutes_seconds(duration_ms)
-                trial_info_parts.append(f"Duration: {duration_formatted}")
-            if score > 0:
-                trial_info_parts.append(f"Score: {score:,}")
-            trial_info_parts.append(f"Vitality: {vitality}")
-            
-            self._print_and_buffer(f"{Fore.YELLOW}Trial Completion: {' | '.join(trial_info_parts)}{Style.RESET_ALL}")
-        
-        # Sort players by damage contribution (descending)
-        # Only include players with PLAYER_INFO data (equipped abilities)
-        players_with_damage = []
-        for player in self.current_encounter.players.values():
-            # Skip players without PLAYER_INFO data (no equipped abilities)
-            if not player.equipped_abilities:
-                continue
-            player_damage = self.current_encounter.player_damage.get(player.unit_id, 0)
-            players_with_damage.append((player, player_damage))
-        
-        # Sort by damage (descending)
-        players_with_damage.sort(key=lambda x: x[1], reverse=True)
-        
-        for player, player_damage in players_with_damage:
-            # Calculate player DPS
-            player_dps = 0
-            if duration > 0 and player_damage > 0:
-                player_dps = player_damage / duration
-            
-            # Use equipped abilities from PLAYER_INFO
-            abilities_to_analyze = player.equipped_abilities
-            
-            # Analyze subclass and build first to create the title line
-            analysis = None
-            if abilities_to_analyze:
-                analysis = self.subclass_analyzer.analyze_subclass(abilities_to_analyze)
-            
-            # Create the title line: @playername {character_name} skill_lines dominant_resource
-            title_parts = [player.get_display_name()]
-            
-            # Add character name if available and different from handle
-            character_name = player.name if player.name and player.name not in ['""', '', '0'] else ""
-            if character_name and character_name != player.get_display_name():
-                title_parts.append(character_name)
-            
-            if analysis and analysis['confidence'] > 0.1:
-                if analysis['skill_lines']:
-                    # Use skill line aliases if available, otherwise extract first word
-                    skill_line_aliases = []
-                    class_skill_lines = player.get_class_skill_lines()
-
-                    for skill_line in analysis['skill_lines']:
-                        # Check if we have an alias for this skill line (partial matching)
-                        alias_found = False
-                        for alias_key, alias_value in self.subclass_analyzer.SKILL_LINE_ALIASES.items():
-                            if alias_key in skill_line:
-                                # Check if this is a class skill line and underline it
-                                if any(alias_value in class_skill for class_skill in class_skill_lines):
-                                    skill_line_aliases.append(f"\033[4m{alias_value}\033[24m")  # Underline without resetting color
-                                else:
-                                    skill_line_aliases.append(alias_value)
-                                alias_found = True
-                                break
-                        
-                        if not alias_found:
-                            # Fall back to first word
-                            first_word = skill_line.split()[0]
-                            # Check if this is a class skill line and underline it
-                            if any(first_word in class_skill for class_skill in class_skill_lines):
-                                skill_line_aliases.append(f"\033[4m{first_word}\033[24m")  # Underline without resetting color
-                            else:
-                                skill_line_aliases.append(first_word)
-                    # Sort skill line aliases before joining
-                    skill_line_aliases.sort()
-                    skill_lines_str = '/'.join(skill_line_aliases)
-                    # Add class name and resource information after skill lines
-                    class_name = player.get_class_name()
-                    if class_name and class_name != "Unknown":
-                        # Format resources with health coloring
-                        resource_str = ""
-                        dps_str = ""  # Initialize dps_str at this scope to avoid UnboundLocalError
-                        
-                        # Always show resource stats, even if values are 0
-                        # Round to nearest 0.5k (500)
-                        def round_to_half_k(value):
-                            if value == 0:
-                                return "0k"
-                            rounded = round(value / 500) * 0.5
-                            if rounded == int(rounded):
-                                return f"{int(rounded)}k"
-                            else:
-                                return f"{rounded:.1f}k"
-
-                        health_display = round_to_half_k(player.max_health)
-                        magicka_display = round_to_half_k(player.max_magicka)
-                        stamina_display = round_to_half_k(player.max_stamina)
-
-                        # Color health red if above 49k
-                        if player.max_health > 0 and player.max_health > 49000:
-                            health_display = f"{Fore.RED}{health_display}{Fore.GREEN}"  # Return to green after red
-
-                        # Bold and underline the highest resource value
-                        max_resource_value = max(player.max_health, player.max_magicka, player.max_stamina)
-                        if max_resource_value > 0:
-                            if player.max_health == max_resource_value:
-                                health_display = f"{Style.BRIGHT}\033[4m{health_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
-                            elif player.max_magicka == max_resource_value:
-                                magicka_display = f"{Style.BRIGHT}\033[4m{magicka_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
-                            elif player.max_stamina == max_resource_value:
-                                stamina_display = f"{Style.BRIGHT}\033[4m{stamina_display}\033[0m{Style.NORMAL}{Fore.GREEN}"
-
-                        # Add Champion Points to resource string
-                        cp_display = f"{player.champion_points}" if player.champion_points > 0 else "0"
-                        resource_str = f" M:{magicka_display} S:{stamina_display} H:{health_display} CP:{cp_display}"
-                        # Add DPS information and damage percentage
-                        dps_str = ""
-                        if player_dps > 0:
-                            # Calculate damage percentage of total group damage
-                            damage_percentage = 0
-                            if self.current_encounter.total_damage > 0:
-                                damage_percentage = (player_damage / self.current_encounter.total_damage) * 100
-                            dps_str = f" D:{damage_percentage:.1f}%"
-
-                        skill_lines_str += f" ({class_name}{resource_str}{dps_str})"
-                    title_parts.append(skill_lines_str)
-                else:
-                    title_parts.append("unknown")
-            else:
-                title_parts.append("unknown")
-            
-            # Add asterisk prefix for first damage dealer
-            prefix = ""
-            if (self.current_encounter.first_damage_dealer and 
-                player.unit_id == self.current_encounter.first_damage_dealer):
-                prefix = "* "
-            
-            self._print_and_buffer(f"{Fore.GREEN}{prefix}{' '.join(title_parts)}{Style.RESET_ALL}")
-            
-            if abilities_to_analyze:
-                # Show front and back bar abilities in order if available
-                if player.front_bar_abilities or player.back_bar_abilities:
-                    # Scribed skills are listed with their scripts:
-                    # "Shocking Banner (Class Flourish / Heroism)"
-                    if player.front_bar_abilities:
-                        front_bar = ([slot_label(s) for s in player.front_bar_slots]
-                                     or player.front_bar_abilities)
-                        highlighted_front_bar = highlight_taunt_abilities(front_bar)
-                        self._print_and_buffer(f"  {', '.join(highlighted_front_bar)}")
-                    if player.back_bar_abilities:
-                        back_bar = ([slot_label(s) for s in player.back_bar_slots]
-                                    or player.back_bar_abilities)
-                        highlighted_back_bar = highlight_taunt_abilities(back_bar)
-                        self._print_and_buffer(f"  {', '.join(highlighted_back_bar)}")
-                else:
-                    abilities_list = sorted(list(abilities_to_analyze))[:10]  # Show top 10 abilities
-                    highlighted_abilities = highlight_taunt_abilities(abilities_list)
-                    self._print_and_buffer(f"  Equipped: {', '.join(highlighted_abilities)}")
-                    if len(abilities_to_analyze) > 10:
-                        self._print_and_buffer(f"  ... and {len(abilities_to_analyze) - 10} more")
-
-
-                # Analyze gear sets (no role-based filtering)
-                identified_sets = []
-                
-                # Also check for gear sets from equipped abilities
-                gear_set_abilities_found = []
-                # Get the equipped ability IDs from the player info
-                if hasattr(player, '_equipped_ability_ids'):
-                    for ability_id in player._equipped_ability_ids:
-                        if ability_id in self.gear_set_abilities:
-                            gear_set_abilities_found.append({
-                                'name': self.gear_set_abilities[ability_id],
-                                'confidence': 0.9,
-                                'source': 'equipped_ability'
-                            })
-                
-                # Combine identified sets with gear set abilities
-                all_identified_sets = identified_sets + gear_set_abilities_found
-                
-                # Create equipment summary line
-                equipment_parts = []
-                if player.gear:
-                    # Count gear pieces by set name
-                    set_counts = {}
-                    for slot, gear_item in player.gear.items():
-                        if len(gear_item) > 6:  # Make sure we have set ID
-                            set_id = str(gear_item[6])  # Set ID is at position 6
-
-                            # Skip items with no set (set ID 0 or empty)
-                            if set_id == "0" or set_id == "" or set_id == "nan":
-                                continue
-
-                            # Look up set name by set ID
-                            set_name = gear_set_db.get_set_name_by_set_id(set_id)
-                            if not set_name:
-                                set_name = f"Unknown Set ({set_id})"
-
-                            # Check if this is a 2-handed weapon or staff (count as 2 pieces)
-                            piece_count = 1
-                            if slot in ['MAIN_HAND', 'BACKUP_MAIN'] and self._is_two_handed_weapon(gear_item, player.gear):
-                                piece_count = 2
-
-                            set_counts[set_name] = set_counts.get(set_name, 0) + piece_count
-                    
-                    # Format equipment summary
-                    for set_name, count in set_counts.items():
-                        if count >= 5:
-                            equipment_parts.append(f"{count}pc {set_name}")
-                        elif count >= 2:
-                            equipment_parts.append(f"{count}pc {set_name}")
-                        else:
-                            equipment_parts.append(f"{count}pc {set_name}")
-                
-                # Add inferred sets
-                if all_identified_sets:
-                    high_confidence_sets = [s for s in all_identified_sets if s['confidence'] > 0.5]
-                    for set_info in high_confidence_sets:
-                        if set_info['name'] not in [part.split('pc ')[1] for part in equipment_parts]:
-                            equipment_parts.append(f"?pc {set_info['name']} (inferred)")
-                
-                # Show equipment summary
-                if equipment_parts:
-                    # Sort equipment by set name, ignoring "Perfected" prefix
-                    def sort_key(item):
-                        # Extract set name from "Xpc Set Name" format
-                        if 'pc ' in item:
-                            set_name = item.split('pc ', 1)[1]
-                            # Remove "Perfected " prefix for sorting
-                            if set_name.startswith('Perfected '):
-                                set_name = set_name[10:]  # Remove "Perfected "
-                            return set_name.lower()
-                        return item.lower()
-
-                    equipment_parts.sort(key=sort_key)
-
-                    # Apply coloring to equipment parts
-                    colored_parts = []
-                    for part in equipment_parts:
-                        if 'pc ' in part:
-                            # Extract piece count and set name
-                            pieces_str, set_name = part.split('pc ', 1)
-                            piece_count = int(pieces_str) if pieces_str.isdigit() else 0
-
-                            # Remove any trailing text like "(inferred)"
-                            clean_set_name = set_name.split(' (')[0]
-
-                            # Check if it's a mythic set (color gold and remove "1pc" prefix)
-                            if clean_set_name in MYTHIC_SETS:
-                                colored_part = f"{Fore.YELLOW}{set_name}{Style.RESET_ALL}"
-                            # Check if it's an incomplete 5-piece set (color dark red) - but never highlight monster sets
-                            elif has_five_piece_bonus(clean_set_name) and piece_count < 5:
-                                # Explicitly exclude 2-piece sets (monster sets + arena weapon sets) from red highlighting
-                                two_piece_set_keywords = [
-                                    # Monster sets (2-piece)
-                                    "spawn of mephala", "blood spawn", "lord warden", "scourge harvester", "engine guardian", "nightflame",
-                                    "nerien'eth", "valkyn skoria", "maw of the infernal", "molag kena", "mighty chudan", "velidreth",
-                                    "giant spider", "shadowrend", "kra'gh", "swarm mother", "sentinel of rkugamz", "chokethorn",
-                                    "slimecraw", "sellistrix", "infernal guardian", "ilambris", "iceheart", "stormfist", "tremorscale",
-                                    "pirate skeleton", "the troll king", "selene", "grothdarr", "earthgore", "domihaus", "thurvokun",
-                                    "zaan", "balorgh", "vykosa", "stonekeeper", "symphony of blades", "grundwulf", "maarselok",
-                                    "mother ciannait", "kjalnar's nightmare", "stone husk", "lady thorn", "encrati's behemoth",
-                                    "baron zaudrus", "prior thierric", "magma incarnate", "kargaeda", "nazaray", "archdruid devyric",
-                                    "euphotic gatekeeper", "roksa the warped", "ozezan the inferno", "anthelmir's construct",
-                                    "the blind", "squall of retribution", "orpheon the tactician", "nunatak", "nunatak's blessing", "nunatak", "nunatak's blessing",
-                                    # Arena weapon sets (2-piece)
-                                    "archer's mind", "footman's fortune", "healer's habit", "robes of destruction mastery", "permafrost",
-                                    "glorious defender", "para bellum", "elemental succession", "hunt leader", "winterborn",
-                                    "titanic cleave", "puncturing remedy", "stinging slashes", "caustic arrow", "destructive impact",
-                                    "grand rejuvenation", "merciless charge", "rampaging slash", "cruel flurry", "thunderous volley",
-                                    "crushing wall", "precise regeneration", "gallant charge", "radial uppercut", "spectral cloak",
-                                    "virulent shot", "wild impulse", "mender's ward", "perfect gallant charge", "perfect radial uppercut",
-                                    "perfect spectral cloak", "perfect virulent shot", "perfect wild impulse", "perfect mender's ward",
-                                    "perfected merciless charge", "perfected rampaging slash", "perfected cruel flurry", "perfected thunderous volley",
-                                    "perfected crushing wall", "perfected precise regeneration", "perfected titanic cleave", "perfected puncturing remedy",
-                                    "perfected stinging slashes", "perfected caustic arrow", "perfected destructive impact", "perfected grand rejuvenation",
-                                    "executioner's blade", "void bash", "frenzied momentum", "point-blank snipe", "wrath of elements",
-                                    "force overflow", "perfected executioner's blade", "perfected void bash", "perfected frenzied momentum",
-                                    "perfected point-blank snipe", "perfected wrath of elements", "perfected force overflow"
-                                ]
-                                if not any(keyword in clean_set_name.lower() for keyword in two_piece_set_keywords):
-                                    colored_part = f"{Fore.RED}{part}{Style.RESET_ALL}"
-                                else:
-                                    colored_part = part
-                            else:
-                                colored_part = part
-                        else:
-                            colored_part = part
-
-                        colored_parts.append(colored_part)
-
-                    self._print_and_buffer(f"  {', '.join(colored_parts)}")
-                elif player.gear:
-                    self._print_and_buffer(f"  {len(player.gear)} items (sets unknown)")
-                else:
-                    self._print_and_buffer(f"  No data")
-                
-            else:
-                self._print_and_buffer(f"  Abilities: No PLAYER_INFO data")
-                self._print_and_buffer(f"  No data")
-        
-        # Display hostile monsters if testing flag is enabled
-        if self.list_hostiles and (self.hostile_monsters or self.engaged_monsters):
-            self._print_and_buffer(f"\n{Fore.YELLOW}=== Hostile Monsters Engaged by Players ==={Style.RESET_ALL}")
-            
-            # Combine hostile monsters that were tracked and those that appeared in combat events
-            all_engaged_monsters = set()
-            
-            # Add monsters from hostile_monsters list
-            for unit_id, name, unit_type in self.hostile_monsters:
-                if unit_id in self.engaged_monsters or unit_id in self.current_encounter.enemy_damage:
-                    all_engaged_monsters.add((unit_id, name, unit_type))
-            
-            # Add monsters that appeared in combat events but weren't in hostile_monsters list
-            for unit_id in self.engaged_monsters:
-                if unit_id in self.current_encounter.enemies:
-                    enemy = self.current_encounter.enemies[unit_id]
-                    all_engaged_monsters.add((unit_id, enemy.name, enemy.unit_type))
-            
-            # Display all engaged monsters
-            unique_hostiles = []
-            seen = set()
-            for unit_id, name, unit_type in all_engaged_monsters:
-                key = (unit_id, name)
-                if key not in seen:
-                    seen.add(key)
-                    damage = self.current_encounter.enemy_damage.get(unit_id, 0)
-                    unique_hostiles.append((unit_id, name, unit_type, damage))
-            
-            # Sort by damage (highest first), then by name
-            unique_hostiles.sort(key=lambda x: (x[3], x[1]), reverse=True)
-            
-            for unit_id, name, unit_type, damage in unique_hostiles:
-                # Get health information from the enemy
-                enemy = self.current_encounter.enemies.get(unit_id)
-                health_info = f"HP: {enemy.max_health:,}" if enemy and enemy.max_health > 0 else "HP: Unknown"
-                
-                if damage > 0:
-                    self._print_and_buffer(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Damage: {damage:,}){Style.RESET_ALL}")
-                else:
-                    self._print_and_buffer(f"{Fore.RED}  {name} (ID: {unit_id}, Type: {unit_type}, {health_info}, Engaged){Style.RESET_ALL}")
-            
-            self._print_and_buffer(f"{Fore.YELLOW}Total hostile monsters engaged: {len(unique_hostiles)}{Style.RESET_ALL}")
-        
         # Clear the hostile monsters list and engaged monsters set for the next encounter
         self.hostile_monsters.clear()
         self.engaged_monsters.clear()
 
-        
-        # Build fight entry and notify frontends
         if hasattr(self, 'fight_history') and self.fight_history is not None:
             fight_entry = self._build_fight_entry(zone_name)
             if fight_entry:
@@ -2702,22 +2114,6 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._last_fight_start = self.current_encounter.start_time
                 self._notify('on_fight_updated' if resumed is not None
                              else 'on_fight_completed', fight_entry)
-
-        # Add newline after encounter summary for clean formatting
-        self._print_and_buffer("")
-
-    def _strip_ansi_codes(self, text: str) -> str:
-        """Remove ANSI color codes from text for clean file output."""
-        # Remove ANSI escape sequences
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        return ansi_escape.sub('', text)
-
-    def _print_and_buffer(self, text: str):
-        """No-op retained for the legacy summary text call sites.
-
-        Fight data reaches frontends structured via on_fight_completed;
-        the report-file feature that consumed these lines was removed.
-        """
 
     def _resolve_timeline_name(self, unit_id: str) -> str:
         """Display name for a timeline unit: player handle, enemy name, or id."""
@@ -2964,12 +2360,6 @@ class ESOLogAnalyzer(ListenerMixin):
         player.gear_data = session_data['gear_data']
         
         return player
-
-    def _is_player_offline(self, unit_id: str) -> bool:
-        """Check if a player is currently offline (not in current encounter)."""
-        if not self.current_encounter:
-            return True
-        return unit_id not in self.current_encounter.players
 
     def _restore_player_from_session(self, unit_id: str, name: str, handle: str):
         """Restore a player from session data when they come back online."""
@@ -4185,34 +3575,6 @@ def _find_eso_log_file(diagnostic: bool = False) -> Optional[Path]:
         return found_paths[0]
 
     return None
-
-def _get_most_likely_log_directory() -> Path:
-    """Get the most likely ESO log directory based on the host OS."""
-    if sys.platform == "win32":
-        # Windows - most common location
-        return Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
-    elif sys.platform == "darwin":
-        # macOS - try native first, then Wine
-        native_path = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
-        wine_path = Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
-        if native_path.exists():
-            return native_path
-        else:
-            return wine_path
-    else:
-        # Linux - Wine is most likely
-        return Path.home() / ".wine" / "drive_c" / "users" / "Public" / "Documents" / "Elder Scrolls Online" / "live" / "Logs"
-
-def _get_host_type_description() -> str:
-    """Get a user-friendly description of the host OS."""
-    if sys.platform == "win32":
-        return "Windows"
-    elif sys.platform == "darwin":
-        return "macOS"
-    elif sys.platform.startswith("linux"):
-        return "Linux"
-    else:
-        return "Unknown"
 
 def _handle_replay_log_splitting(log_splitter, entry, line: str):
     """Handle log splitting logic for replay mode."""

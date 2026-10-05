@@ -1,4 +1,5 @@
-"""Settings dialog: log path, split files, reports, and archive options."""
+"""Settings dialog: log path, split files, archiving, startup, updates, and
+the experimental buff timeline."""
 
 import sys
 from pathlib import Path
