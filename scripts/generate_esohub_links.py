@@ -18,7 +18,7 @@ The app slugifies a logged ability or script name (ability_icons.slugify) to
 look up a skill, a scribed skill or a script, and uses the LibSets name as-is
 to look up a set. Unknown names get no link. Set names are matched by
 ESO-Hub's slug rules plus the spelling differences listed in SET_SLUG_ALIASES
-(see docs/ABILITY_ICONS_AND_TOOLTIPS_RESEARCH.md); unmatched names are
+(see docs/research/esohub-icons-and-tooltips.md); unmatched names are
 reported. Scripts the game has renamed since ESO-Hub named their pages are
 listed in SCRIPT_SLUG_ALIASES.
 

@@ -32,7 +32,7 @@ Seventeen slot names occur. The count is the number of lines, out of the 4,213 w
 
 ## Item fields
 
-Every entry has eleven fields (see `docs/encounterlog-format.md`):
+Every entry has eleven fields (see [encounterlog-format.md](encounterlog-format.md)):
 
 ```
 [slot, id, isCP, level, trait, displayQuality, setId, enchantType, isEnchantCP, enchantLevel, enchantQuality]
