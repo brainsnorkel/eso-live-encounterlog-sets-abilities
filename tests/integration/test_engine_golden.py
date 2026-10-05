@@ -17,12 +17,9 @@ import hashlib
 import json
 import os
 import re
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 FIXTURE_LOG = Path(__file__).parent.parent / 'fixtures' / 'golden_fight.log'
 GOLDEN_JSON = Path(__file__).parent.parent / 'fixtures' / 'golden_fight_expected.json'

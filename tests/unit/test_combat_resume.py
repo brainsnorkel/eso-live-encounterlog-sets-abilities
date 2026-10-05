@@ -10,11 +10,7 @@ and, 36 ms later, BEGIN_COMBAT and every group member's PLAYER_INFO again,
 with the boss at half health throughout.
 """
 
-import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from engine_events import RecordingListener  # noqa: E402
 from esolog_tail import (  # noqa: E402

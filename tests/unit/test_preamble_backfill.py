@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """Mid-session attach must backfill the session's player roster."""
 
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from esolog_tail import ESOLogAnalyzer, FightHistory, LogFileMonitor
 

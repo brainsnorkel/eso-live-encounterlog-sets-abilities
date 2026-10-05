@@ -4,10 +4,6 @@ Unit tests for ESO Analyzer functionality.
 """
 
 import unittest
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from esolog_tail import ESOLogEntry, ESOLogAnalyzer
 from eso_sets import ESOSubclassAnalyzer
@@ -93,7 +89,7 @@ class TestGearSetDatabase(unittest.TestCase):
     
     def test_set_identification(self):
         """Test direct ability-to-set mapping."""
-        from gear_set_database_optimized import gear_set_db
+        from gear_set_database import gear_set_db
         
         # Test known set ability IDs
         identified_sets = []
@@ -106,14 +102,14 @@ class TestGearSetDatabase(unittest.TestCase):
     
     def test_healer_set_mapping(self):
         """Test healer ability mapping."""
-        from gear_set_database_optimized import gear_set_db
+        from gear_set_database import gear_set_db
         
         healer_set = gear_set_db.get_set_name_by_ability_id(SAMPLE_GEAR_SET_IDS['spell_power_cure'])
         self.assertIsNotNone(healer_set)
     
     def test_set_id_to_name_mapping(self):
         """Test set ID to name mapping."""
-        from gear_set_database_optimized import gear_set_db
+        from gear_set_database import gear_set_db
         
         # Test with a known set ID
         set_name = gear_set_db.get_set_name_by_set_id("12345")

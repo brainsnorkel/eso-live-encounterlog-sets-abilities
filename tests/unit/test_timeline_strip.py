@@ -2,12 +2,9 @@
 """Offscreen tests for the experimental TimelineStrip widget."""
 
 import os
-import sys
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 try:
     from PySide6.QtWidgets import QApplication

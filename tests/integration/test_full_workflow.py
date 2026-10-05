@@ -4,13 +4,9 @@ Integration tests for full ESO analyzer workflow.
 """
 
 import unittest
-import sys
-import os
 import tempfile
 import io
 from contextlib import redirect_stdout
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from esolog_tail import ESOLogAnalyzer, ESOLogEntry
 from sample_data import SAMPLE_LOG_LINES

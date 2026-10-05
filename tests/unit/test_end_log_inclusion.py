@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.esolog_tail import LogSplitter, ESOLogEntry
+from esolog_tail import LogSplitter, ESOLogEntry
 
 
 class TestEndLogInclusion(unittest.TestCase):

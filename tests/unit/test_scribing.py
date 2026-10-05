@@ -3,10 +3,7 @@
 how the fight pane presents them (no Qt needed)."""
 
 import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from ability_icons import (  # noqa: E402
     esohub_ability_url, esohub_scribed_skill_url, esohub_script_url)

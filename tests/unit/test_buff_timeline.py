@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the experimental buff/debuff timeline (buff-timeline spec)."""
 
-import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from buff_timeline import (
     MERGE_GAP_MS, TRACKED_TIMELINE_EFFECTS, BuffTimelineRecorder,

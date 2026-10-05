@@ -1,0 +1,11 @@
+# ESO Log Tail is an application, not a library. The modules in src/ run from
+# that folder (python src/esolog_gui.py) and are frozen by PyInstaller
+# (esolog-tail.spec); they are never installed as a package. Dependencies are
+# listed in requirements.txt and requirements-build.txt. This file only
+# configures tools.
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+# src/ holds the app's modules, tests/fixtures/ the data modules tests share
+pythonpath = ["src", "tests/fixtures"]

@@ -5,13 +5,9 @@ Integration tests for log splitting functionality.
 
 import unittest
 import tempfile
-import os
 import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from esolog_tail import ESOLogAnalyzer, LogSplitter, ESOLogEntry
 from sample_data import SAMPLE_LOG_LINES
@@ -310,7 +306,6 @@ class TestLogSplittingIntegration(unittest.TestCase):
             # The important thing is that the file was created and the process didn't crash
             pass
         
-
 
 if __name__ == '__main__':
     unittest.main()

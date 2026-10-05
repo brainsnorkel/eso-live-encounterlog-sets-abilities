@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 from pathlib import Path
-from src.esolog_tail import LogSplitter
+from esolog_tail import LogSplitter
 
 
 class TestFileNamingConflicts(unittest.TestCase):

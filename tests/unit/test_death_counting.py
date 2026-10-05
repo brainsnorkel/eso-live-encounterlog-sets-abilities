@@ -2,11 +2,7 @@
 """Death counting: player deaths come from DIED events, or KILLING_BLOW when
 another player lands the blow (not DIED_XP)."""
 
-import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from esolog_tail import ESOLogAnalyzer, FightHistory
 

@@ -5,15 +5,11 @@ its hover cue, the window's HTML, and the window itself."""
 import copy
 import html as html_lib
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from build_session import fights  # noqa: E402
 

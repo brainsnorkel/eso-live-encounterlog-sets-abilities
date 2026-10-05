@@ -24,7 +24,7 @@ a = Analysis(
         'esolog_tail',
         'fight_history',
         'gear_set_data',
-        'gear_set_database_optimized',
+        'gear_set_database',
         'gui',
         'gui.engine_worker',
         'gui.fight_render',

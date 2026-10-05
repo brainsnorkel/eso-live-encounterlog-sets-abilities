@@ -1,7 +1,4 @@
 """Tests for FightHistory ring buffer."""
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from esolog_tail import FightHistory, FightHistoryEntry
 

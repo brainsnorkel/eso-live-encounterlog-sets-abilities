@@ -2,14 +2,11 @@
 """About dialog: credits for ESO-Hub links and ZeniMax-owned icons."""
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 try:
     from PySide6.QtWidgets import QApplication

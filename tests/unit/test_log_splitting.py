@@ -5,13 +5,9 @@ Unit tests for log splitting functionality.
 
 import unittest
 import tempfile
-import os
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from esolog_tail import LogSplitter, ESOLogEntry
 from sample_data import SAMPLE_LOG_LINES

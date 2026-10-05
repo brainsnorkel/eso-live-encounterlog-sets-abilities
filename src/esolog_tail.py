@@ -19,7 +19,7 @@ from pathlib import Path
 from collections import defaultdict, deque
 from typing import Dict, FrozenSet, List, Optional, Tuple, Set
 from datetime import datetime
-from gear_set_database_optimized import gear_set_db
+from gear_set_database import gear_set_db
 from fight_history import FightHistory, FightHistoryEntry
 from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
 from log_freshness import parse_relative_ms, status_from_tracking

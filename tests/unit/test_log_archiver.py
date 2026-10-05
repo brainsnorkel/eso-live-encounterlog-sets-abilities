@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for the startup log archiver (log-archiving spec)."""
 
-import os
 import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from app_config import AppConfig
 from engine_events import RecordingListener

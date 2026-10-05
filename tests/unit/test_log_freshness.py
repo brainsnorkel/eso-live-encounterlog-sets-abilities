@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for log freshness derivation (log-freshness spec)."""
 
-import os
-import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from log_freshness import (
     derive_log_freshness, derive_session_epoch_ms, parse_begin_log_epoch_ms,
@@ -134,7 +130,6 @@ class TestMonitorEmitsStatus(unittest.TestCase):
     """Freshness events flow through the monitor's tail loop (task 2.1)."""
 
     def test_tail_updates_emit_exact_status(self):
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
         from esolog_tail import ESOLogAnalyzer, LogFileMonitor
         from engine_events import RecordingListener
 

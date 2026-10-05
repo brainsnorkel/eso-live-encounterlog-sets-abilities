@@ -382,12 +382,12 @@ def piece_counts(gear: Dict[str, List[str]]) -> Dict[str, List[Optional[int]]]:
 
 
 def _default_set_name(set_id: str) -> Optional[str]:
-    from gear_set_database_optimized import gear_set_db
+    from gear_set_database import gear_set_db
     return gear_set_db.get_set_name_by_set_id(set_id)
 
 
 def _default_is_mythic(set_name: str) -> bool:
-    from gear_set_database_optimized import gear_set_db
+    from gear_set_database import gear_set_db
     info = gear_set_db.get_set_info(set_name) or {}
     return info.get("set_type") == MYTHIC_SET_TYPE
 

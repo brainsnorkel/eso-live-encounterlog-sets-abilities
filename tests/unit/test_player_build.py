@@ -3,15 +3,10 @@
 per-bar piece counts, poison names, mundus stones, food, and what the engine
 puts on a fight entry (no Qt needed)."""
 
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 import player_build  # noqa: E402
 from build_session import (  # noqa: E402

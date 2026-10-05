@@ -5,9 +5,6 @@ Tests HEALTH_REGEN and endless dungeon events using real example data.
 """
 
 import unittest
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from eso_log_structures import (
     ESOLogStructureParser,

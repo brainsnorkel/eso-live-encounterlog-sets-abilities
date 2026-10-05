@@ -7,11 +7,7 @@ killing blow written after its DIED line, shields written before the hit they
 absorbed, and the last player's death written after END_COMBAT.
 """
 
-import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from death_recap import (  # noqa: E402
     KILLING_BLOW_GRACE_MS, RECAP_WINDOW_MS, DeathRecapRecorder,

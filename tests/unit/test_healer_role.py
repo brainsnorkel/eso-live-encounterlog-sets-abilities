@@ -6,13 +6,8 @@ role the engine puts on a fight entry (no Qt needed)."""
 
 import importlib.util
 import json
-import os
-import sys
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from build_session import fights  # noqa: E402
 from player_build import has_restoration_staff  # noqa: E402

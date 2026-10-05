@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for the engine event/listener interface."""
 
-import os
-import sys
 import unittest
 from datetime import datetime
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from engine_events import (
     AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus, RecordingListener,

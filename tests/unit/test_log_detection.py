@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Encounter.log auto-detection on Linux (Wine and Steam Proton prefixes)."""
 
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import esolog_tail
 

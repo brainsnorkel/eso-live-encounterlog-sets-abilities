@@ -8,8 +8,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 import update_check
 from update_check import (
     check_for_update, download_file, is_newer, parse_version,

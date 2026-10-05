@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Integration test: startup sequencing (archive check before monitoring)."""
 
-import os
-import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from app_config import AppConfig
 from app_startup import run_startup_sequence

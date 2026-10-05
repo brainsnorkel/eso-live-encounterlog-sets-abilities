@@ -4,10 +4,6 @@ Unit tests for damage attribution functionality.
 """
 
 import unittest
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'fixtures'))
 
 from esolog_tail import ESOLogEntry, ESOLogAnalyzer, CombatEncounter, PlayerInfo
 from sample_data import SAMPLE_ENCOUNTER_DATA, SAMPLE_LOG_LINES

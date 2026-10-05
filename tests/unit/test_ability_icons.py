@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """Ability icon helpers and the engine's per-slot bar data (no Qt needed)."""
 
-import os
-import sys
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from ability_icons import esohub_set_url, esohub_skill_url, icon_stem, slugify  # noqa: E402
 
