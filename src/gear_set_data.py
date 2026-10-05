@@ -518,7 +518,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "621": "Glacial Guardian",
     "622": "Turning Tide",
     "623": "Storm-Cursed's Revenge",
-    "624": "Spriggan\’s Vigor",
+    "624": "Spriggan's Vigor",
     "625": "Markyn Ring of Majesty",
     "626": "Belharza's Band",
     "627": "Spaulder of Ruin",
@@ -564,7 +564,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "668": "Langour of Peryite",
     "669": "Nocturnal's Ploy",
     "67": "Shadow Walker",
-    "670": "Mara\’s Balm",
+    "670": "Mara's Balm",
     "671": "Back-Alley Gourmand",
     "672": "Phoenix Moth Theurge",
     "673": "Bastion of Draoife",
@@ -579,7 +579,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "681": "Nix-Hound's Howl",
     "682": "Telvanni Enforcer",
     "683": "Roksa the Warped",
-    "684": "Runecarver\’s Blaze",
+    "684": "Runecarver's Blaze",
     "685": "Apocryphal Inspiration",
     "686": "Abyssal Brace",
     "687": "Ozezan the Inferno",
@@ -661,7 +661,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "781": "Aerie's Cry",
     "782": "Tracker's Lash",
     "783": "Shared Pain",
-    "784": "Siegemaster'\s Focus",
+    "784": "Siegemaster's Focus",
     "79": "Willow's Path",
     "791": "Bulwark Ruination",
     "792": "Farstrider",
@@ -1044,7 +1044,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Malacath's Band of Brutality X": "504",
     "Maligalig's Maelstrom": "619",
     "Mantle of Siroria": "390",
-    "Mara\’s Balm": "670",
+    "Mara's Balm": "670",
     "Marauder's Haste": "466",
     "Mark of the Pariah": "210",
     "Marksman's Crest": "234",
@@ -1225,7 +1225,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Robes of the Withered Hand": "47",
     "Roksa the Warped": "683",
     "Rourken Steamguards": "760",
-    "Runecarver\’s Blaze": "684",
+    "Runecarver's Blaze": "684",
     "Rush of Agony": "604",
     "Salvation": "99",
     "Sanctuary": "110",
@@ -1264,7 +1264,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Shield Breaker": "199",
     "Shield of the Valiant": "132",
     "Shroud of the Lich": "134",
-    "Siegemaster'\s Focus": "784",
+    "Siegemaster's Focus": "784",
     "Silks of the Sun": "31",
     "Silver Rose Vigil": "605",
     "Sithis' Touch": "245",
@@ -1293,7 +1293,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Spider Cultist Cowl": "297",
     "Spinner's Garments": "289",
     "Spriggan's Thorns": "286",
-    "Spriggan\’s Vigor": "624",
+    "Spriggan's Vigor": "624",
     "Squall of Retribution": "797",
     "Steadfast Hero": "421",
     "Steadfast's Mettle": "644",
@@ -3618,7 +3618,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Mara\’s Balm": {
+    "Mara's Balm": {
         "set_id": "670",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL",
         "comment": "",
@@ -4885,7 +4885,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Runecarver\’s Blaze": {
+    "Runecarver's Blaze": {
         "set_id": "684",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
@@ -5158,7 +5158,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Siegemaster'\s Focus": {
+    "Siegemaster's Focus": {
         "set_id": "784",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL",
         "comment": "",
@@ -5361,7 +5361,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Spriggan\’s Vigor": {
+    "Spriggan's Vigor": {
         "set_id": "624",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",

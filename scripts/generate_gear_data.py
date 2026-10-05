@@ -7,6 +7,7 @@ This eliminates the need to parse Excel files at runtime and reduces
 installer size by removing the XLSM dependency.
 """
 
+import json
 import pandas as pd
 import os
 from pathlib import Path
@@ -48,7 +49,12 @@ def extract_gear_data():
             
             if pd.notna(set_id) and pd.notna(set_name_en):
                 set_id_str = str(int(set_id))
-                set_name = str(set_name_en).strip().strip('"').replace("\\'", "'")
+                # The workbook carries Lua escapes in a few names
+                # ("Mara\’s Balm", "Siegemaster'\s Focus"). The backslash is
+                # never part of a set's name, and the typographic apostrophe
+                # becomes the plain one every other name uses.
+                set_name = (str(set_name_en).strip().strip('"')
+                            .replace("\\", "").replace("’", "'"))
                 
                 # Build mappings
                 gear_data['set_id_to_name'][set_id_str] = set_name
@@ -83,9 +89,15 @@ def extract_gear_data():
         print(f"Error extracting gear data: {e}")
         return None
 
+def quoted(text: str) -> str:
+    """*text* as a double-quoted Python string literal. A JSON string is
+    one, with quotes and backslashes escaped."""
+    return json.dumps(text, ensure_ascii=False)
+
+
 def generate_python_module(gear_data: Dict) -> str:
     """Generate Python module code with the extracted data."""
-    
+
     code = '''"""
 Auto-generated gear set data module.
 Generated from LibSets_SetData.xlsm - DO NOT EDIT MANUALLY.
@@ -102,7 +114,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     
     # Add set ID to name mappings
     for set_id, set_name in sorted(gear_data['set_id_to_name'].items()):
-        code += f'    "{set_id}": "{set_name}",\n'
+        code += f'    "{set_id}": {quoted(set_name)},\n'
     
     code += '''}
 
@@ -112,7 +124,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     
     # Add set name to ID mappings
     for set_name, set_id in sorted(gear_data['set_name_to_id'].items()):
-        code += f'    "{set_name}": "{set_id}",\n'
+        code += f'    {quoted(set_name)}: "{set_id}",\n'
     
     code += '''}
 
@@ -122,10 +134,10 @@ SET_INFO: Dict[str, Dict] = {
     
     # Add set info
     for set_name, info in sorted(gear_data['set_info'].items()):
-        code += f'    "{set_name}": {{\n'
+        code += f'    {quoted(set_name)}: {{\n'
         code += f'        "set_id": "{info["set_id"]}",\n'
-        code += f'        "set_type": "{info["set_type"]}",\n'
-        code += f'        "comment": "{info["comment"]}",\n'
+        code += f'        "set_type": {quoted(info["set_type"])},\n'
+        code += f'        "comment": {quoted(info["comment"])},\n'
         code += f'        "items": [],\n'
         code += f'        "abilities": []\n'
         code += f'    }},\n'
@@ -138,7 +150,7 @@ KNOWN_ITEM_MAPPINGS: Dict[str, str] = {
     
     # Add known item mappings
     for item_id, set_name in sorted(gear_data['known_item_mappings'].items()):
-        code += f'    "{item_id}": "{set_name}",\n'
+        code += f'    "{item_id}": {quoted(set_name)},\n'
     
     code += '''}
 
@@ -148,7 +160,7 @@ KNOWN_ABILITY_MAPPINGS: Dict[str, str] = {
     
     # Add known ability mappings
     for ability_id, set_name in sorted(gear_data['known_ability_mappings'].items()):
-        code += f'    "{ability_id}": "{set_name}",\n'
+        code += f'    "{ability_id}": {quoted(set_name)},\n'
     
     code += '''}
 

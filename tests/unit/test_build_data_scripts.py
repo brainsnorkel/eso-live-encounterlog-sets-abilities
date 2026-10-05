@@ -4,6 +4,7 @@
 (scripts/generate_armor_weights.py) and food and drink buff ids
 (scripts/generate_food_buffs.py), and the tables they committed."""
 
+import ast
 import importlib.util
 import json
 import tempfile
@@ -227,6 +228,35 @@ class TestFoodBuffs(unittest.TestCase):
         self.assertEqual((total, without), (3, 2))
         self.assertEqual(dict(suspects),
                          {('555555', 'Brand New Stew', 'crafting_meat_009'): 1})
+
+
+class TestGearSetNames(unittest.TestCase):
+    """The set names scripts/generate_gear_data.py writes into
+    src/gear_set_data.py, and the ESO-Hub link table keyed by them."""
+
+    def test_names_carry_no_escape_artefacts(self):
+        # The LibSets workbook writes "Mara\’s Balm" and "Siegemaster'\s Focus"
+        from gear_set_data import SET_ID_TO_NAME
+        odd = sorted(name for name in SET_ID_TO_NAME.values()
+                     if '\\' in name or '’' in name)
+        self.assertEqual(odd, [])
+        self.assertEqual(SET_ID_TO_NAME['670'], "Mara's Balm")
+        self.assertEqual(SET_ID_TO_NAME['784'], "Siegemaster's Focus")
+
+    def test_every_set_link_is_keyed_by_a_known_set_name(self):
+        from gear_set_data import SET_NAME_TO_ID
+        path = REPO_ROOT / 'data' / 'esohub' / 'sets_en.json'
+        links = json.loads(path.read_text(encoding='utf-8'))['sets']
+        self.assertEqual(sorted(set(links) - set(SET_NAME_TO_ID)), [])
+        self.assertEqual(links["Mara's Balm"], '/en/sets/maras-balm')
+
+    def test_generated_literals_survive_quotes_and_backslashes(self):
+        try:
+            script = _load('generate_gear_data.py')
+        except ImportError:
+            self.skipTest('pandas is not installed (requirements-build.txt)')
+        for text in ("Mara's Balm", 'a "quoted" word', 'back\\slash'):
+            self.assertEqual(ast.literal_eval(script.quoted(text)), text)
 
 
 if __name__ == '__main__':
