@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.4] - 2026-10-06
 
 ### Fixed
 - **Stray backslash in four set names**: Mara's Balm, Runecarver's Blaze, Spriggan's Vigor and Siegemaster's Focus showed as `Mara\’s Balm`, `Siegemaster'\s Focus` and so on, wherever a set is named: the fight view, the build window and copied text. The LibSets workbook writes those four names with an escape character, which the gear data generator now removes. Their ESO-Hub links are unchanged.
