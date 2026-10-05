@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.0] - 2026-10-05
 
 ### Added
 - **Scribed skills show their scripts**: a grimoire's icon and name do not say which signature and affix scripts were scribed into it. The build card now lists each scribed skill under the bars as `Shocking Banner (Class Flourish / Heroism)`, hovering its icon names the grimoire and all three scripts, and "Copy fight" and the text reports use the same label. The skill links to its ESO-Hub scribing page and each script to its script page (new map `data/esohub/scribing_en.json`; `scripts/generate_esohub_links.py` now takes the maps to regenerate as arguments). The scripts come from the three extra fields on a scribed skill's `ABILITY_INFO` line, which the game writes once per session directly before the `PLAYER_INFO` of the first player seen with that combination. A skill shows `(scripts not in log)` when the game wrote it without scripts for that player (they usually follow by a later fight), or when the player's combination was already written for someone else and it could be more than one; the hover says which, and lists the candidates. The approach follows sheumais's ESO Log Tool
