@@ -22,10 +22,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v7
 
+    # check-latest: without it the runner's cached 3.14 is used, which lags
+    # a new security release until the runner image is next rebuilt
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
         python-version: '3.14'
+        check-latest: true
 
     - name: Install dependencies
       run: |
@@ -87,6 +90,7 @@ jobs:
       uses: actions/setup-python@v7
       with:
         python-version: '3.14'
+        check-latest: true
 
     # Qt's X11 and Wayland plugins link against these. PyInstaller bundles
     # the ones it finds, so installing them here is what lets the tarball
