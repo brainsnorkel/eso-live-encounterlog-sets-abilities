@@ -11,19 +11,31 @@ anchor, so hovering shows the name and clicking opens the skill's ESO-Hub
 page when one is known. Without a cache, or for slots whose icon is not
 bundled, the name is shown as text. The plain-text copy always uses names.
 
+Scribed skills: a grimoire's icon and name say nothing about the signature
+and affix scripts written into it, so the build card lists each scribed skill
+under the bars as "Shocking Banner (Class Flourish / Heroism)", the hover on
+its icon names all four parts, and the plain-text copy uses the same label
+(see scribing.py for where the scripts come from and when they are unknown).
+
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 """
 
 import html
+import zlib
 
+from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
+from scribing import scribed_label, slot_label
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
 
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
+SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
 BAR_DIVIDER = "│"  # between bar 1 and bar 2 when both are icon rows
 DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
+SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
+SCRIPTS_UNKNOWN = "scripts not in log"
 
 _THEMES = {
     # dark background: lighter accents
@@ -147,11 +159,32 @@ def summary_line(entry, death_cue: bool = False) -> str:
     return " · ".join(parts)
 
 
+def _is_scribed(slot: dict) -> bool:
+    return bool(slot.get("scribed"))
+
+
+def _scribed_variant(slot: dict) -> str:
+    """URL fragment naming a scribed slot's script combination, '' for any
+    other slot. Hover text is looked up by anchor target, so two players'
+    Shocking Banners with different scripts need different targets."""
+    if not _is_scribed(slot):
+        return ""
+    scripts = slot.get("scripts")
+    if scripts:
+        return ".".join(slugify(str(script)) for script in scripts[1:3])
+    options = slot.get("script_options")
+    if options:
+        return f"options-{zlib.crc32(repr(options).encode('utf-8')):08x}"
+    return "scripts-unknown"
+
+
 def _ability_href(slot: dict, links) -> str:
     """Anchor target for a bar slot: the ESO-Hub skill page when *links*
     knows one, else an internal esolog: URL that only carries the hover."""
     url = links(str(slot.get("name", ""))) if links else None
-    return url or f"esolog:ability/{slot.get('id', '')}"
+    href = url or f"esolog:ability/{slot.get('id', '')}"
+    variant = _scribed_variant(slot)
+    return f"{href}#{variant}" if variant else href
 
 
 def _bar_html(slots, names, icons, links, e) -> str:
@@ -187,9 +220,75 @@ def anchor_names(entry, links=None) -> dict:
     return names
 
 
+def _link_note(href: str, e) -> str:
+    """Where an ESO-Hub anchor leads (without the fragment that only tells
+    script combinations apart)."""
+    return (f"<br><span style='font-size:85%'>"
+            f"Click to open on ESO-Hub<br>{e(href.split('#', 1)[0])}</span>")
+
+
 def _link_tip(name: str, href: str, e) -> str:
-    return (f"<b>{e(name)}</b><br><span style='font-size:85%'>"
-            f"Click to open on ESO-Hub<br>{e(href)}</span>")
+    return f"<b>{e(name)}</b>{_link_note(href, e)}"
+
+
+def _scribed_tip(slot: dict, href: str, e) -> str:
+    """Hover text for a scribed skill: its grimoire and three scripts, or
+    why the scripts are missing (the log gave none for this player, or never
+    tied one of several combinations to them)."""
+    rows = [f"<b>{e(str(slot.get('name', '')))}</b>"]
+    scripts, options = slot.get("scripts"), slot.get("script_options")
+    if slot.get("grimoire") and not options:
+        rows.append(f"Grimoire: {e(str(slot['grimoire']))}")
+    if scripts:
+        rows.extend(f"{kind}: {e(str(script))}"
+                    for kind, script in zip(SCRIPT_KINDS, scripts) if script)
+    elif options:
+        rows.append("The log lists each script combination once, for the first "
+                    "player seen with it. This player's is one of:")
+        for option in options:
+            rows.append(f"• {e(scribed_label(option[0], option[1:]))}" if any(option[1:])
+                        else "• or one the log has without its scripts")
+    else:
+        rows.append("The log has this skill without its scripts.")
+    tip = "<br>".join(rows)
+    return tip + _link_note(href, e) if href.startswith("http") else tip
+
+
+def _scribed_slots(p) -> list:
+    """A player's scribed skills, front bar first; a skill slotted on both
+    bars is listed once."""
+    slots, seen = [], set()
+    for key in ("front_bar_slots", "back_bar_slots"):
+        for slot in p.get(key) or []:
+            mark = _ability_href(slot, None)
+            if _is_scribed(slot) and mark not in seen:
+                seen.add(mark)
+                slots.append(slot)
+    return slots
+
+
+def _scribed_html(p, icons, links, script_links, e, color: str) -> str:
+    """'Shocking Banner (Class Flourish / Heroism) · Leashing Soul (...)': a
+    player's scribed skills with their signature and affix scripts, linked to
+    the skill's and the scripts' ESO-Hub pages where known."""
+    def anchor(label, href):
+        return (f'<a href="{e(href, quote=True)}" '
+                f'style="text-decoration:none;color:{color}">{label}</a>')
+
+    chunks = []
+    for slot in _scribed_slots(p):
+        stem = str(slot.get("icon") or "")
+        icon = (f'<img src="icon:{stem}" width="{SCRIBED_ICON_PX}" '
+                f'height="{SCRIBED_ICON_PX}" style="vertical-align:middle">&nbsp;'
+                if icons is not None and icons.has(stem) else "")
+        name = anchor(e(str(slot.get("name", ""))), _ability_href(slot, links))
+        scripts = []
+        for script in (slot.get("scripts") or [])[1:3]:
+            url = script_links(str(script)) if script_links and script else None
+            scripts.append(anchor(e(str(script)), url) if url else e(str(script)))
+        detail = " / ".join(s for s in scripts if s) or SCRIPTS_UNKNOWN
+        chunks.append(f"{icon}{name} ({detail})")
+    return "&nbsp; · &nbsp;".join(chunks)
 
 
 def _set_items(p):
@@ -206,10 +305,10 @@ def _set_items(p):
     return out
 
 
-def anchor_tooltips(entry, links=None, set_links=None) -> dict:
+def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dict:
     """Hover text per anchor href used by render_html's detail view: the
-    ability or set name, plus where the anchor leads when it is an ESO-Hub
-    page."""
+    ability, script or set name, plus where the anchor leads when it is an
+    ESO-Hub page. A scribed skill's text names its grimoire and scripts."""
     e = html.escape
     tips = {}
     for p in entry.players:
@@ -219,8 +318,16 @@ def anchor_tooltips(entry, links=None, set_links=None) -> dict:
                 if href in tips:
                     continue
                 name = str(slot.get("name", ""))
-                tips[href] = (_link_tip(name, href, e) if href.startswith("http")
-                              else f"<b>{e(name)}</b>")
+                if _is_scribed(slot):
+                    tips[href] = _scribed_tip(slot, href, e)
+                else:
+                    tips[href] = (_link_tip(name, href, e) if href.startswith("http")
+                                  else f"<b>{e(name)}</b>")
+                for kind, script in zip(SCRIPT_KINDS, slot.get("scripts") or []):
+                    url = script_links(str(script)) if script_links and script else None
+                    if url and url not in tips:
+                        tips[url] = (f"<b>{e(str(script))}</b><br>{kind} script"
+                                     f"{_link_note(url, e)}")
         if set_links:
             for _count, name, _perfected in _set_items(p):
                 href = set_links(name)
@@ -249,13 +356,14 @@ def _sets_html(p, set_links, e, color: str) -> str:
 
 def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
-                base_pt: float = 9.0) -> str:
+                base_pt: float = 9.0, script_links=None) -> str:
     """Render one fight as HTML for a QTextBrowser.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
-    keeps the bars as text. links / set_links: callables name -> ESO-Hub URL
-    or None for abilities / gear sets. base_pt: the pane's font size, which
-    the gear line is scaled from (Qt rich text ignores percentage sizes).
+    keeps the bars as text. links / set_links / script_links: callables
+    name -> ESO-Hub URL or None for abilities / gear sets / the scripts of
+    scribed skills. base_pt: the pane's font size, which the scripts and gear
+    lines are scaled from (Qt rich text ignores percentage sizes).
     """
     theme = _theme(dark)
     e = html.escape
@@ -335,6 +443,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
                              f"&nbsp;&nbsp;&nbsp;{back}")
             else:
                 lines.extend(bar for bar in (front, back) if bar)
+            # Under the bars: what each scribed skill was scribed with
+            scribed = _scribed_html(p, icons, links, script_links, e, detail_color)
+            if scribed:
+                lines.append(f"<span style='font-size:{base_pt * 0.85:.2f}pt'>"
+                             f"{scribed}</span>")
             # The bars sit in a framed build card; the gear list follows it in
             # a smaller font. padding-top:0 pulls the card up under the
             # player's name row
@@ -406,8 +519,10 @@ def render_plain_text(entry) -> str:
         skill_lines = _join(p.get("skill_lines"), sep="/")
         if skill_lines:
             lines.append(f"      {skill_lines}")
-        for bar in (p.get("front_bar"), p.get("back_bar")):
-            bar_text = _join(bar)
+        for bar, slots in ((p.get("front_bar"), p.get("front_bar_slots")),
+                           (p.get("back_bar"), p.get("back_bar_slots"))):
+            # Slot labels carry a scribed skill's scripts; names alone do not
+            bar_text = _join([slot_label(slot) for slot in slots] if slots else bar)
             if bar_text:
                 lines.append(f"      {bar_text}")
         sets = _sets_text(p.get("all_sets") or p.get("sets"))

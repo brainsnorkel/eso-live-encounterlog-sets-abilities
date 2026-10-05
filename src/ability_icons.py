@@ -10,8 +10,9 @@ resolved purely by that filename's stem; nothing is downloaded at runtime.
 ESO-Hub page links come from data/esohub/ (built by
 scripts/generate_esohub_links.py from ESO-Hub's sitemaps): a logged ability
 name is slugified the way ESO-Hub slugs its pages and looked up in
-skills_en.json; a LibSets set name is looked up as-is in sets_en.json.
-Unknown names get no link.
+skills_en.json; a LibSets set name is looked up as-is in sets_en.json. A
+scribed skill ("Shocking Banner") and its scripts ("Lingering Torment") are
+looked up by slug in scribing_en.json. Unknown names get no link.
 """
 
 import json
@@ -105,3 +106,39 @@ def esohub_set_url(set_name: str,
     table = links if links is not None else _bundled_set_links()
     path = table.get((set_name or "").strip())
     return f"{ESOHUB_BASE}{path}" if path else None
+
+
+@lru_cache(maxsize=1)
+def _bundled_scribed_skill_links() -> Dict[str, str]:
+    """Scribed skill slug -> ESO-Hub page path; {} when the map is absent."""
+    return _bundled_links("scribing_en.json", "skills")
+
+
+@lru_cache(maxsize=1)
+def _bundled_script_links() -> Dict[str, str]:
+    """Script slug -> ESO-Hub page path; {} when the map is absent."""
+    return _bundled_links("scribing_en.json", "scripts")
+
+
+def esohub_scribed_skill_url(skill_name: str,
+                             links: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """Full ESO-Hub page URL for a scribed skill's logged name (a grimoire
+    with a focus script, e.g. "Shocking Banner"), or None."""
+    table = links if links is not None else _bundled_scribed_skill_links()
+    path = table.get(slugify(skill_name))
+    return f"{ESOHUB_BASE}{path}" if path else None
+
+
+def esohub_script_url(script_name: str,
+                      links: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """Full ESO-Hub page URL for a focus, signature or affix script's logged
+    name, or None."""
+    table = links if links is not None else _bundled_script_links()
+    path = table.get(slugify(script_name))
+    return f"{ESOHUB_BASE}{path}" if path else None
+
+
+def esohub_ability_url(ability_name: str) -> Optional[str]:
+    """ESO-Hub page for any ability on a bar: its skill page, or for a scribed
+    skill the page of that grimoire and focus script; None when unknown."""
+    return esohub_skill_url(ability_name) or esohub_scribed_skill_url(ability_name)

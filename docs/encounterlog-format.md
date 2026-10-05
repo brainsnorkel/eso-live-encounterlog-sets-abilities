@@ -8,7 +8,7 @@ All lines begin with the time in milliseconds since logging began and the line t
 
 `<equipmentInfo>` refers to the following fields for a piece of equipment: slot, id, isCP, level, trait, displayQuality, setId, enchantType, isEnchantCP, enchantLevel, enchantQuality.
 
-`<scribingInfo>` refers to the following fields for an ability: focusScript, signatureScript, affixScript.
+`<scribingInfo>` refers to the following fields for an ability: focusScript, signatureScript, affixScript. The game writes each (abilityId, scripts) combination once per BEGIN_LOG session, directly before the PLAYER_INFO of the first player seen with it, and one abilityId covers several focus scripts of a grimoire, so the scripts belong to that player rather than to the id. The same ability is also written once without `<scribingInfo>`. `src/scribing.py` has the details and the measurements behind them.
 
 ## Line types
 

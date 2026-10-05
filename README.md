@@ -10,6 +10,7 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app 
 - **Players ranked by damage**, with role (Tank/Healer/DPS), class, DPS, damage share, and resource pools (the largest in bold).
 - **Death recaps**: a player who died gets a **Death recap** button on their row. It opens the last 5 seconds before each of their deaths: every hit and heal with its source, the health left after it, and whether the hit was blocked, dodged, or absorbed by a shield.
 - **Builds at a glance**: both ability bars as the game's own icons, subclass lines when a build borrows from another class, and every equipped gear set with piece counts. Gear set identification uses the LibSets database (722 sets).
+- **Scribed skills with their scripts**: a grimoire's icon cannot show what was scribed into it, so each scribed skill is listed under the bars with its signature and affix scripts, for example `Chilling Contingency (Lingering Torment / Intellect and Endurance)`.
 - **ESO-Hub links**: hover an ability icon for its name, click it to open the skill on ESO-Hub; set names open their ESO-Hub set pages. Nothing is downloaded until you click.
 - **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward), or an experimental per-fight buff timeline strip.
 - **Search within a fight** (Ctrl+F), including ability icons by name; copy any fight as plain text.
@@ -83,6 +84,7 @@ The right pane shows the selected fight.
 - **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths.
 - **One row per player**, sorted by damage share: role letter (**T**ank, **H**ealer, **D**PS, inferred from resource pools, healing-versus-damage output, and taunt or heal abilities), name, class, DPS, damage share, and max Health, Magicka, and Stamina with the largest pool in bold. The player who dealt the fight's first damage is marked with `*`. When a build borrows a skill line from another class, the lines show beside the class, for example `NB Assassination/Aedric/Grave`; a stock build shows just the class.
 - **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead.
+- **Scribed skills**: under the bars, each scribed skill with the two scripts its name does not reveal, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
 - **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
 - **Group buffs**: for groups of three or more, a line of uptime percentages for Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, and Pearlescent Ward. When the experimental timeline strip is on, the strip replaces this line.
 
@@ -101,7 +103,7 @@ Heals that were pure overheal are left out. A death whose event the game writes 
 ### Search, copy, review
 
 - **Search in fight** (Ctrl+F): type in the field above the fight pane to highlight every occurrence, with a live match count; Enter jumps between matches, Esc clears. Ability icons match by the name they stand for, so `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights.
-- **Copy fight** (Ctrl+C): copies the selected fight as plain text, names rather than icons, ready to paste into Discord.
+- **Copy fight** (Ctrl+C): copies the selected fight as plain text, names rather than icons, ready to paste into Discord. Scribed skills keep their scripts: `Leashing Soul (Druid's Resurgence / Cowardice)`.
 - **Open log for review**: load any log file, a split file or an unzipped archive, and browse its fights while live monitoring continues in the background. **Back to live** returns to the live session.
 - **About**: version, project link, and credits.
 
@@ -150,7 +152,8 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **Builds**: `PLAYER_INFO` events carry each player's slotted abilities and gear. Skill lines are matched by exact ability name against the class skill tables; a build shows at most three lines.
 - **Gear sets**: item set ids are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database.
 - **Ability icons**: the log names each ability's icon file, and the app ships those icons extracted from the game (see [Refreshing game data](#refreshing-game-data-after-an-eso-patch)).
-- **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page.
+- **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills. The grimoire is read from the skill's icon.
+- **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page, a scribed skill and its scripts to their scribing pages.
 - **Roles**: Tank/Healer/DPS from resource pools, healing-versus-damage output, and taunt or heal ability fallbacks.
 - **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player (a shared mechanic, PvP). The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
 
@@ -158,7 +161,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 
 - Players stay anonymous ("unknown" builds) until the log has produced `ABILITY_INFO` and `PLAYER_INFO` events for them.
 - Sets the bundled LibSets data does not know appear as `Set#<id>` and have no link.
-- Scribed (Grimoire) skills have no ESO-Hub skill page, so they show their name without a link.
+- A scribed skill's scripts are not always in the log, and the skill then shows `(scripts not in log)`. Two cases: the game sometimes writes a player's skill without scripts (they usually follow by a later fight, which then shows them); and it writes each script combination once per logging session, for the first player seen with it, so a later player whose combination was already written gets no line of their own. When that leaves more than one possibility, the skill shows under the grimoire's name. For the same reason, a player who re-scribes mid-session to a combination already written keeps showing their earlier scripts.
 - After an ESO patch, new skills show as text until the icon set is refreshed, and the ESO-Hub link maps use English page names, so logs from a non-English client will not link.
 - Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
 - ESO logs 13 gear slots; the backup off-hand slot is not logged.
@@ -227,7 +230,7 @@ The app bundles three data sets that go stale when the game changes:
 :: for). About 2.5 minutes.
 python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
 
-:: ESO-Hub skill and set link maps, from ESO-Hub's sitemaps (network access)
+:: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
 python scripts\generate_esohub_links.py
 
 :: Gear set data, after dropping a new LibSets_SetData.xlsm into data/gear_sets/
@@ -269,6 +272,6 @@ The same credits are shown in the app under **About…**.
 - **[LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets)** by Baertram: the gear set database behind set identification.
 - **[EsoExtractData](https://en.uesp.net/wiki/ESO_Mod:EsoExtractData)** by UESP: the tool that extracts the icons from the game files.
 - **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)**: the addon that makes turning logging on a non-event.
-- **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais: insights into ESO log format parsing.
+- **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais: insights into ESO log format parsing, and the idea of showing a scribed skill with its scripts as `Name (Signature / Affix)`.
 - **UESP**: authoritative skill line and ability information.
 - **ESO community**: encounter log format documentation and testing feedback.

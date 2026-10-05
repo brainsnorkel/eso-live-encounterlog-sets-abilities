@@ -7,16 +7,26 @@ Generate the ESO-Hub link maps the app bundles under data/esohub/:
   sets_en.json    LibSets set name -> set page path, from sitemap_en_ArmorSet.xml
                   matched against the names in src/gear_set_data.py, e.g.
                   "Deadly Strike": "/en/sets/deadly-strike"
+  scribing_en.json  two maps for scribed skills: "skills", slug -> page of a
+                  grimoire with a focus script, from
+                  sitemap_en_ScribingCombination.xml, e.g.
+                  "shocking-banner": "/en/scribing/combination/93/shocking-banner"
+                  and "scripts", slug -> script page, from sitemap_en_Script.xml,
+                  e.g. "lingering-torment": "/en/scribing/scripts/lingering-torment"
 
-The app slugifies a logged ability name (ability_icons.slugify) to look up a
-skill, and uses the LibSets name as-is to look up a set. Unknown names get no
-link. Set names are matched by ESO-Hub's slug rules plus the spelling
-differences listed in SET_SLUG_ALIASES (see
-docs/ABILITY_ICONS_AND_TOOLTIPS_RESEARCH.md); unmatched names are reported.
+The app slugifies a logged ability or script name (ability_icons.slugify) to
+look up a skill, a scribed skill or a script, and uses the LibSets name as-is
+to look up a set. Unknown names get no link. Set names are matched by
+ESO-Hub's slug rules plus the spelling differences listed in SET_SLUG_ALIASES
+(see docs/ABILITY_ICONS_AND_TOOLTIPS_RESEARCH.md); unmatched names are
+reported. Scripts the game has renamed since ESO-Hub named their pages are
+listed in SCRIPT_SLUG_ALIASES.
 
-Run after ESO updates that add or rename skills or sets, and after refreshing
-the LibSets data (needs network access):
+Run after ESO updates that add or rename skills, sets or scripts, and after
+refreshing the LibSets data (needs network access):
     python scripts/generate_esohub_links.py
+Name the maps to regenerate only some of them:
+    python scripts/generate_esohub_links.py scribing
 """
 
 import json
@@ -36,8 +46,13 @@ SKILL_SITEMAP = "https://eso-hub.com/sitemaps/en/sitemap_en_Skill.xml"
 SET_SITEMAP = "https://eso-hub.com/sitemaps/en/sitemap_en_ArmorSet.xml"
 USER_AGENT = ("esolog-tail build script "
               "(+https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities)")
+SCRIBED_SKILL_SITEMAP = "https://eso-hub.com/sitemaps/en/sitemap_en_ScribingCombination.xml"
+SCRIPT_SITEMAP = "https://eso-hub.com/sitemaps/en/sitemap_en_Script.xml"
 SKILL_PAGE_RE = re.compile(r"^https://eso-hub\.com(/en/skills/[^/]+/[^/]+/([^/]+))/?$")
 SET_PAGE_RE = re.compile(r"^https://eso-hub\.com(/en/sets/([^/]+))/?$")
+SCRIBED_SKILL_PAGE_RE = re.compile(
+    r"^https://eso-hub\.com(/en/scribing/combination/\d+/([^/]+))/?$")
+SCRIPT_PAGE_RE = re.compile(r"^https://eso-hub\.com(/en/scribing/scripts/([^/]+))/?$")
 
 # LibSets spellings that differ from ESO-Hub's page slugs
 SET_SLUG_ALIASES = {
@@ -56,6 +71,13 @@ SET_SLUG_ALIASES = {
 }
 # Not player sets: test templates, superseded entries, dev items
 SKIP_SET_RE = re.compile(r"^Template_Drop_|\(OLD\)$|^Malacath's Band of Brutality X$")
+# Scripts whose name in 2026 logs differs from ESO-Hub's page (logs up to
+# March 2026 still used the page's name): log name -> ESO-Hub slug
+SCRIPT_SLUG_ALIASES = {
+    "Class Flourish": "class-mastery",
+    "Brutality": "brutality-and-sorcery",
+    "Savagery": "savagery-and-prophecy",
+}
 
 
 def fetch(url: str) -> str:
@@ -110,7 +132,7 @@ def write(path: Path, source: str, key: str, mapping: dict, extra: dict) -> None
             print(f"  {label}: {', '.join(items[:12])}{' ...' if len(items) > 12 else ''}")
 
 
-def main() -> int:
+def generate_skills() -> None:
     skills, collisions = page_paths(fetch(SKILL_SITEMAP), SKILL_PAGE_RE)
     if len(skills) < 500:
         sys.exit(f"only {len(skills)} skill pages found in {SKILL_SITEMAP}; not overwriting")
@@ -118,6 +140,29 @@ def main() -> int:
     for slug, kept, other in collisions:
         print(f"  ambiguous skill slug {slug!r}: kept {kept}, also {other}")
 
+
+def generate_scribing() -> None:
+    skills, collisions = page_paths(fetch(SCRIBED_SKILL_SITEMAP), SCRIBED_SKILL_PAGE_RE)
+    if len(skills) < 80:
+        sys.exit(f"only {len(skills)} scribed skill pages found in "
+                 f"{SCRIBED_SKILL_SITEMAP}; not overwriting")
+    scripts, _ = page_paths(fetch(SCRIPT_SITEMAP), SCRIPT_PAGE_RE)
+    if len(scripts) < 50:
+        sys.exit(f"only {len(scripts)} script pages found in {SCRIPT_SITEMAP}; not overwriting")
+    pages = len(scripts)
+    for name, target in SCRIPT_SLUG_ALIASES.items():
+        if target in scripts:
+            scripts.setdefault(slugify(name), scripts[target])
+        else:
+            print(f"  script alias {name!r}: ESO-Hub has no page {target!r}")
+    write(DATA_DIR / "scribing_en.json", SCRIBED_SKILL_SITEMAP, "skills", skills,
+          {"scripts_source": SCRIPT_SITEMAP, "scripts": dict(sorted(scripts.items()))})
+    print(f"  {pages} script pages, {len(scripts) - pages} more names for renamed scripts")
+    for slug, kept, other in collisions:
+        print(f"  ambiguous scribed skill slug {slug!r}: kept {kept}, also {other}")
+
+
+def generate_sets() -> None:
     set_pages, _ = page_paths(fetch(SET_SITEMAP), SET_PAGE_RE)
     if len(set_pages) < 400:
         sys.exit(f"only {len(set_pages)} set pages found in {SET_SITEMAP}; not overwriting")
@@ -135,6 +180,18 @@ def main() -> int:
     if unmatched:
         print(f"  {len(unmatched)} LibSets names without an ESO-Hub page: "
               f"{', '.join(unmatched[:12])}{' ...' if len(unmatched) > 12 else ''}")
+
+
+GENERATORS = {"skills": generate_skills, "sets": generate_sets, "scribing": generate_scribing}
+
+
+def main() -> int:
+    wanted = sys.argv[1:] or list(GENERATORS)
+    unknown = [name for name in wanted if name not in GENERATORS]
+    if unknown:
+        sys.exit(f"unknown map {', '.join(unknown)}; choose from {', '.join(GENERATORS)}")
+    for name in wanted:
+        GENERATORS[name]()
     return 0
 
 

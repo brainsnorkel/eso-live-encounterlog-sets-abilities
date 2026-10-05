@@ -14,7 +14,7 @@ Each structure includes:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Tuple, Union
 from enum import Enum
 import csv
 import io
@@ -450,6 +450,9 @@ class AbilityInfoEntry:
     ABILITY_INFO event - ability definitions
     
     Example: 2928,ABILITY_INFO,84734,"Witchfest Food: Max HM, Reg M","/esoui/art/icons/ability_mage_065.dds",T,T
+
+    A scribed skill appends its focus, signature and affix scripts:
+    2408,ABILITY_INFO,217784,"Leashing Soul","/esoui/art/icons/ability_grimoire_soulmagic1.dds",F,T,"Pull","Druid's Resurgence","Maim"
     """
     line_number: int
     ability_id: int
@@ -457,6 +460,7 @@ class AbilityInfoEntry:
     icon_path: str
     is_passive: bool  # T/F
     is_ultimate: bool  # T/F
+    scribing: Optional[Tuple[str, str, str]] = None  # (focus, signature, affix)
 
     @classmethod
     def parse(cls, line: str) -> Optional['AbilityInfoEntry']:
@@ -464,17 +468,18 @@ class AbilityInfoEntry:
         try:
             reader = csv.reader(io.StringIO(line))
             fields = next(reader)
-            
+
             if len(fields) < 7 or fields[1] != "ABILITY_INFO":
                 return None
-                
+
             return cls(
                 line_number=int(fields[0]),
                 ability_id=int(fields[2]),
                 ability_name=fields[3].strip('"'),
                 icon_path=fields[4].strip('"'),
                 is_passive=fields[5] == "T",
-                is_ultimate=fields[6] == "T"
+                is_ultimate=fields[6] == "T",
+                scribing=(fields[7], fields[8], fields[9]) if len(fields) >= 10 else None
             )
         except (ValueError, IndexError, StopIteration):
             return None

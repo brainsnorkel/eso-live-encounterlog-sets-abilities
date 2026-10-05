@@ -234,6 +234,33 @@ class TestFightViewWidget(FightViewTestCase):
         view.highlighted.emit(QUrl('esolog:ability/unknown'))
         self.assertEqual(view.current_tooltip, '')
 
+    def test_scribed_skill_anchors_differ_by_scripts(self):
+        """Two players' Shocking Banners share a page but not their hover."""
+        from PySide6.QtCore import QUrl
+        from gui.fight_render import anchor_tooltips, render_html
+        from gui.fight_view import FightView
+        entry = _entry_with_bars()
+        page = 'https://eso-hub.com/en/scribing/combination/93/shocking-banner'
+        for name, affix in (('@tester', 'Heroism'), ('@other', 'Berserk')):
+            entry.players.append(dict(entry.players[0], name=name, front_bar=['Shocking Banner'],
+                                      front_bar_slots=[{
+                                          'id': '217699', 'name': 'Shocking Banner', 'scribed': True,
+                                          'icon': 'ability_test_001', 'grimoire': 'Banner Bearer',
+                                          'scripts': ['Shock Damage', 'Class Flourish', affix]}]))
+        links = lambda name: page if name == 'Shocking Banner' else None  # noqa: E731
+        opened = []
+        view = FightView(icons=self._cache(), open_external=lambda url: opened.append(url.toString()) or True)
+        view.set_tooltips(anchor_tooltips(entry, links=links))
+        view.setHtml(render_html(entry, detailed=True, icons=view.icons, links=links))
+        # The anchors survive Qt's URL handling as written, so each finds its text
+        hrefs = [f'{page}#class-flourish.heroism', f'{page}#class-flourish.berserk']
+        for href, affix in zip(hrefs, ('Heroism', 'Berserk')):
+            self.assertIn(f'href="{href}"', render_html(entry, detailed=True, links=links))
+            view.highlighted.emit(QUrl(href))
+            self.assertIn(f'Affix: {affix}', view.current_tooltip)
+        view.anchorClicked.emit(QUrl(hrefs[0]))
+        self.assertEqual(opened, [hrefs[0]])
+
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):
     """Ctrl+F matches an icon by the ability name behind it."""

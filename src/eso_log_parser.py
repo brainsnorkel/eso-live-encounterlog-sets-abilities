@@ -10,7 +10,7 @@ backward compatibility with existing functionality.
 import re
 import csv
 import io
-from typing import Dict, List, Optional, Set, Any
+from typing import Dict, List, Optional, Set, Any, Tuple
 from dataclasses import dataclass, field
 
 # Import structured parser for Phase 3 complete replacement
@@ -116,6 +116,7 @@ class AbilityInfoEntry:
     ability_name: str = ""
     icon_path: str = ""
     flags: List[str] = field(default_factory=list)
+    scribing: Optional[Tuple[str, str, str]] = None  # (focus, signature, affix) of a scribed skill
 
 
 @dataclass
@@ -406,7 +407,8 @@ class ESOLogParser:
                 ability_id=str(structured.ability_id),
                 ability_name=structured.ability_name,
                 icon_path=structured.icon_path,
-                flags=["T" if structured.is_passive else "F", "T" if structured.is_ultimate else "F"]
+                flags=["T" if structured.is_passive else "F", "T" if structured.is_ultimate else "F"],
+                scribing=structured.scribing
             )
         except Exception as e:
             print(f"Failed to convert structured AbilityInfoEntry: {e}")

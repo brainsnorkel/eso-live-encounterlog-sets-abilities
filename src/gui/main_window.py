@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
-from ability_icons import esohub_set_url, esohub_skill_url
+from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
@@ -507,16 +507,18 @@ class MainWindow(QMainWindow):
         tooltips = death_tooltips(entry)
         if self._detailed:
             tooltips.update(anchor_tooltips(
-                entry, links=esohub_skill_url, set_links=esohub_set_url))
-            self.fight_view.set_anchor_names(anchor_names(entry, links=esohub_skill_url))
+                entry, links=esohub_ability_url, set_links=esohub_set_url,
+                script_links=esohub_script_url))
+            self.fight_view.set_anchor_names(anchor_names(entry, links=esohub_ability_url))
         else:
             self.fight_view.set_anchor_names({})
         self.fight_view.set_tooltips(tooltips)
         self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
                                             icons=self.fight_view.icons,
-                                            links=esohub_skill_url,
+                                            links=esohub_ability_url,
                                             set_links=esohub_set_url,
-                                            base_pt=self.fight_view.font().pointSizeF()))
+                                            base_pt=self.fight_view.font().pointSizeF(),
+                                            script_links=esohub_script_url))
         self._apply_search()
 
     def _show_death_recap(self, unit_id):

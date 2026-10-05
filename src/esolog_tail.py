@@ -25,6 +25,7 @@ from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStat
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, RECAP_RESULTS
+from scribing import ScribingTracker, slot_fields, slot_label
 
 
 class _PlainAnsi:
@@ -213,8 +214,9 @@ class PlayerInfo:
         self.equipped_abilities: Set[str] = set()
         self.front_bar_abilities: List[str] = []
         self.back_bar_abilities: List[str] = []
-        # Per-slot detail for the GUI ({'id', 'name', 'icon'}), aligned with
-        # the name lists above
+        # Per-slot detail for the GUI ({'id', 'name', 'icon'}, plus the
+        # scribing.slot_fields of a scribed skill), aligned with the name
+        # lists above
         self.front_bar_slots: List[Dict[str, str]] = []
         self.back_bar_slots: List[Dict[str, str]] = []
         self.gear: Dict[str, List[str]] = {}
@@ -756,6 +758,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self.current_encounter: Optional[CombatEncounter] = None
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
+        self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
+        self.scribing_keys: Dict[str, str] = {}  # unit_id -> the tracker's key for that player
+        self._scribing_characters: Dict[str, str] = {}  # tracker key -> character id last seen
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
         self.current_zone: Optional[str] = None  # Track current zone name
         self.current_difficulty: Optional[str] = None  # Track current difficulty
@@ -1176,6 +1181,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 long_unit_id = entry.fields[10] if len(entry.fields) > 10 else ""  # Long unit ID is in field 10
                 class_id = entry.fields[6] if len(entry.fields) > 6 else ""  # Class ID is in field 6
                 champion_points = int(entry.fields[12]) if len(entry.fields) > 12 and entry.fields[12].isdigit() else 0  # Champion Points is in field 12
+                self._note_scribing_identity(unit_id, entry.fields[3], long_unit_id)  # playerPerSessionId is in field 3
 
                 # Create encounter if it doesn't exist (UNIT_ADDED can happen before ZONE_CHANGED)
                 if not self.current_encounter:
@@ -1275,19 +1281,47 @@ class ESOLogAnalyzer(ListenerMixin):
                 if self.list_hostiles:
                     self.hostile_monsters.append((unit_id, clean_name, enemy.unit_type))
 
-    def _bar_slots(self, ability_ids: List[str]) -> List[Dict[str, str]]:
+    def _bar_slots(self, ability_ids: List[str],
+                   scribed: Optional[Dict[str, Dict]] = None) -> List[Dict[str, str]]:
         """[{'id', 'name', 'icon'}] for a bar's ability ids, in slot order.
 
-        Ids without a cached name are skipped exactly as the name lists skip
-        them, so slots and names line up one-to-one.
+        Ids without a cached name are skipped, so the bar's name list (built
+        from these slots) lines up with them one-to-one. *scribed* holds this
+        player's scribing.slot_fields per scribed ability id: the id alone
+        gives neither the skill's name nor its scripts.
         """
         slots = []
         for ability_id in ability_ids:
             name = self.log_parser.get_ability_name(ability_id)
             if name:
-                slots.append({'id': str(ability_id), 'name': name,
-                              'icon': self.ability_icons.get(str(ability_id), '')})
+                slot = {'id': str(ability_id), 'name': name,
+                        'icon': self.ability_icons.get(str(ability_id), '')}
+                if scribed:
+                    slot.update(scribed.get(str(ability_id), {}))
+                slots.append(slot)
         return slots
+
+    def _note_scribing_identity(self, unit_id: str, session_id: str, character_id: str):
+        """Remember who a player unit is for the scribing tracker.
+
+        UNIT_ADDED's playerPerSessionId stays with a player for the whole
+        BEGIN_LOG session, anonymous players included; unit ids are handed
+        out afresh in each zone.
+        """
+        if not session_id or session_id == "0":
+            return
+        key = f"session:{session_id}"
+        self.scribing_keys[unit_id] = key
+        if character_id and character_id != "0":
+            # Another character under the same session id has its own skills
+            if self._scribing_characters.get(key, character_id) != character_id:
+                self.scribing.forget_player(key)
+            self._scribing_characters[key] = character_id
+
+    def _scribing_player_key(self, unit_id: str) -> str:
+        """Who a script combination is tied to: the player's per-session id,
+        else the unit id (valid until the next zone change)."""
+        return self.scribing_keys.get(unit_id) or f"unit:{unit_id}"
 
     def _handle_ability_info(self, entry: ESOLogEntry):
         """Handle ABILITY_INFO events to cache ability names and gear sets."""
@@ -1309,6 +1343,11 @@ class ESOLogAnalyzer(ListenerMixin):
             stem = icon_stem(getattr(parsed, 'icon_path', ''))
             if stem:
                 self.ability_icons[parsed.ability_id] = stem
+            # A scribed skill's line (with its scripts, or without when the
+            # game has none) is tied to the player whose PLAYER_INFO follows
+            self.scribing.note_ability(parsed.ability_id, parsed.ability_name, stem,
+                                       getattr(parsed, 'scribing', None),
+                                       getattr(parsed, 'timestamp', None))
 
             # Check if this ability is actually a gear set (some gear sets appear as abilities)
             ability_name_lower = parsed.ability_name.lower()
@@ -1336,14 +1375,21 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.diagnostic:
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] player_info found for unit_id: {player_info.unit_id}{Style.RESET_ALL}")
             
-            # Get equipped ability names (all abilities)
-            equipped_ability_names = self.log_parser.get_equipped_abilities(player_info)
-            # Get front and back bar abilities separately
-            front_bar_abilities = self.log_parser.get_front_bar_abilities(player_info)
-            back_bar_abilities = self.log_parser.get_back_bar_abilities(player_info)
-            # Per-slot detail (id, name, icon stem) aligned with the name lists
-            front_bar_slots = self._bar_slots(player_info.champion_points)
-            back_bar_slots = self._bar_slots(player_info.additional_data)
+            # This player's scribed skills: their name and scripts are the
+            # player's own, not a property of the ability id
+            scribed = {
+                ability_id: slot_fields(resolution)
+                for ability_id, resolution in self.scribing.resolve(
+                    self._scribing_player_key(player_info.unit_id),
+                    player_info.champion_points + player_info.additional_data,
+                    player_info.timestamp).items()}
+            # Per-slot detail (id, name, icon stem) for the front and back bar
+            front_bar_slots = self._bar_slots(player_info.champion_points, scribed)
+            back_bar_slots = self._bar_slots(player_info.additional_data, scribed)
+            # Ability names per bar, and all equipped names
+            front_bar_abilities = [slot['name'] for slot in front_bar_slots]
+            back_bar_abilities = [slot['name'] for slot in back_bar_slots]
+            equipped_ability_names = set(front_bar_abilities + back_bar_abilities)
 
             # Find the player and set their equipped abilities and gear
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:
@@ -1435,6 +1481,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self._last_fight_entry = None
             # Unit ids are handed out afresh in each zone
             self.death_recap_recorder.reset()
+            self.scribing.forget_players("unit:")
 
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -1562,6 +1609,11 @@ class ESOLogAnalyzer(ListenerMixin):
         self.buff_timeline_recorder.reset()
         self.death_recap_recorder.reset()
         self._last_fight_entry = None
+        # The game lists every script combination again in a new session,
+        # and numbers its players anew
+        self.scribing.reset()
+        self.scribing_keys.clear()
+        self._scribing_characters.clear()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -2356,11 +2408,17 @@ class ESOLogAnalyzer(ListenerMixin):
             if abilities_to_analyze:
                 # Show front and back bar abilities in order if available
                 if player.front_bar_abilities or player.back_bar_abilities:
+                    # Scribed skills are listed with their scripts:
+                    # "Shocking Banner (Class Flourish / Heroism)"
                     if player.front_bar_abilities:
-                        highlighted_front_bar = highlight_taunt_abilities(player.front_bar_abilities)
+                        front_bar = ([slot_label(s) for s in player.front_bar_slots]
+                                     or player.front_bar_abilities)
+                        highlighted_front_bar = highlight_taunt_abilities(front_bar)
                         self._print_and_buffer(f"  {', '.join(highlighted_front_bar)}")
                     if player.back_bar_abilities:
-                        highlighted_back_bar = highlight_taunt_abilities(player.back_bar_abilities)
+                        back_bar = ([slot_label(s) for s in player.back_bar_slots]
+                                    or player.back_bar_abilities)
+                        highlighted_back_bar = highlight_taunt_abilities(back_bar)
                         self._print_and_buffer(f"  {', '.join(highlighted_back_bar)}")
                 else:
                     abilities_list = sorted(list(abilities_to_analyze))[:10]  # Show top 10 abilities
