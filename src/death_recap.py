@@ -55,7 +55,9 @@ _KINDS: Dict[str, str] = {
 
 # The analyzer checks this before paying for anything else
 RECAP_RESULTS = frozenset(_KINDS)
-_HEAL_RESULTS = frozenset(r for r, kind in _KINDS.items() if kind == "heal")
+# How the log writes a heal that restored health (the analyzer totals these
+# for the role heuristic too)
+HEAL_RESULTS = frozenset(r for r, kind in _KINDS.items() if kind == "heal")
 
 # Indices into a COMBAT_EVENT's fields (after the time offset and line type):
 # actionResult, damageType, powerType, hitValue, overflow, castTrackId,
@@ -101,7 +103,7 @@ class DeathRecapRecorder:
         """Note one COMBAT_EVENT whose result is in RECAP_RESULTS and whose
         target is the player *target_id*."""
         result = fields[0]
-        if fields[_HIT] == "0" and result in _HEAL_RESULTS:
+        if fields[_HIT] == "0" and result in HEAL_RESULTS:
             return  # pure overheal: health did not move
         health_at = _TARGET_HEALTH if fields[_TARGET] != "*" else _SOURCE_HEALTH
         event = (timestamp_ms, result, fields[_HIT], fields[_OVERFLOW],

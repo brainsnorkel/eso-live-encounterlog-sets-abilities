@@ -83,7 +83,7 @@ Each completed fight appears in the list on the left as `boss · duration · gdp
 The right pane shows the selected fight.
 
 - **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths.
-- **One row per player**, sorted by damage share: role letter (**T**ank, **H**ealer, **D**PS, inferred from resource pools, healing-versus-damage output, and taunt or heal abilities), name, class, DPS, damage share, and max Health, Magicka, and Stamina with the largest pool in bold. The player who dealt the fight's first damage is marked with `*`. When a build borrows a skill line from another class, the lines show beside the class, for example `NB Assassination/Aedric/Grave`; a stock build shows just the class.
+- **One row per player**, sorted by damage share: role letter (**T**ank, **H**ealer, **D**PS, inferred from resource pools, a restoration staff or healing output for healers, and taunt or heal abilities), name, class, DPS, damage share, and max Health, Magicka, and Stamina with the largest pool in bold. The player who dealt the fight's first damage is marked with `*`. When a build borrows a skill line from another class, the lines show beside the class, for example `NB Assassination/Aedric/Grave`; a stock build shows just the class.
 - **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead.
 - **Scribed skills**: under the bars, each scribed skill with the two scripts its name does not reveal, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
 - **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
@@ -168,7 +168,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **Ability icons**: the log names each ability's icon file, and the app ships those icons extracted from the game (see [Refreshing game data](#refreshing-game-data-after-an-eso-patch)).
 - **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills. The grimoire is read from the skill's icon.
 - **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page, a scribed skill and its scripts to their scribing pages.
-- **Roles**: Tank/Healer/DPS from resource pools, healing-versus-damage output, and taunt or heal ability fallbacks.
+- **Roles**: the largest resource pool decides. Health is a tank and stamina a DPS. A player whose largest pool is magicka is a healer when a restoration staff is equipped on either bar, or when they healed other players for more than the damage they dealt in that fight; otherwise a DPS. The log does not name weapon types, so the staff is recognised by its item id, from UESP's item database. When all three pools are within 10% of each other, taunt and heal abilities on the bars decide instead.
 - **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player (a shared mechanic, PvP). The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
 
 ### Limitations
@@ -179,6 +179,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - After an ESO patch, new skills show as text until the icon set is refreshed, and the ESO-Hub link maps use English page names, so logs from a non-English client will not link.
 - Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
 - Gear is logged per equipped slot: an empty slot (the off hand beside a two-handed weapon, say) has no entry. Item names, weapon types and armor weights are not in the log at all.
+- Roles are a heuristic. A healer whose largest pool is health or stamina shows as a tank or a DPS, and a restoration staff from a set newer than the bundled list is not recognised until the list is refreshed (out-healing their own damage still marks them a healer).
 - The build window shows the build as combat started. The game writes it once per fight, so gear or skills swapped during the fight do not show.
 - A crafted poison is named by its primary effect (`Damage Health Poison IX`); its other effects are not in the log. A food added to the game after the bundled list was built reads as `no known food or drink` until the list is refreshed.
 
@@ -238,7 +239,7 @@ On Linux the same tests and PyInstaller command apply, and `dist/esolog-gui/` is
 
 ### Refreshing game data after an ESO patch
 
-The app bundles five data sets that go stale when the game changes:
+The app bundles six data sets that go stale when the game changes:
 
 ```cmd
 :: Ability and death-recap icons from your installed game (needs UESP's
@@ -258,6 +259,10 @@ python scripts\generate_poison_names.py
 :: Food and drink buff ids for the build window, from the LibFoodDrinkBuff addon
 :: (your installed copy, else its ESOUI download)
 python scripts\generate_food_buffs.py
+
+:: Restoration staff item ids for the healer role, from UESP's item database
+:: (network access)
+python scripts\generate_restoration_staves.py
 ```
 
 After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encounter.log>` lists food-style effects in a recent log that the bundled table does not know yet, so a new food is noticed before it reads as "no food" in the build window.
@@ -299,5 +304,5 @@ The same credits are shown in the app under **About…**.
 - **[EsoExtractData](https://en.uesp.net/wiki/ESO_Mod:EsoExtractData)** by UESP: the tool that extracts the icons from the game files.
 - **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)**: the addon that makes turning logging on a non-event.
 - **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais: insights into ESO log format parsing, and the idea of showing a scribed skill with its scripts as `Name (Signature / Affix)`.
-- **[UESP](https://en.uesp.net/wiki/Online:Online)**: authoritative skill line and ability information, and the item database the build window's poison names come from.
+- **[UESP](https://en.uesp.net/wiki/Online:Online)**: authoritative skill line and ability information, and the item database behind the build window's poison names and the list of restoration staves that marks healers.
 - **ESO community**: encounter log format documentation and testing feedback.

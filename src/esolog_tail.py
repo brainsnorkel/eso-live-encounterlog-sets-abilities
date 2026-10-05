@@ -24,9 +24,9 @@ from fight_history import FightHistory, FightHistoryEntry
 from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
-from death_recap import DeathRecapRecorder, RECAP_RESULTS
+from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from scribing import ScribingTracker, slot_fields, slot_label
-from player_build import build_fields, is_two_handed, race_name
+from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
 
 
 class _PlainAnsi:
@@ -315,14 +315,21 @@ class PlayerInfo:
         else:
             return "anon"
 
-def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing: int = 0, skill_line_role: str = None) -> str:
-    """Infer player role (T/H/D) from resources and healing heuristics.
+def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing: int = 0, skill_line_role: str = None,
+                      restoration_staff: bool = False) -> str:
+    """Infer player role (T/H/D) from resources, weapon and healing heuristics.
+
+    A player whose largest pool is magicka is a healer when they have a
+    restoration staff equipped, or when they healed other players for more
+    than the damage they dealt (which still finds a healer whose staff the
+    bundled list does not know yet).
 
     Args:
         player: PlayerInfo with max_health, max_magicka, max_stamina
         player_damage: Total damage dealt by this player
         player_healing: Total healing done to OTHER players
         skill_line_role: Role from ability-based inference (fallback)
+        restoration_staff: Whether a restoration staff is on either bar
 
     Returns:
         'T' for tank, 'H' for healer, 'D' for DPS
@@ -350,6 +357,8 @@ def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing
     if s == max_val:
         return 'D'
     if m == max_val:
+        if restoration_staff:
+            return 'H'
         if player_healing > player_damage and player_healing > 0:
             return 'H'
         return 'D'
@@ -1880,8 +1889,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
 
-            # Track healing events for role heuristic
-            elif combat_event_type in ['HEALED', 'CRITICAL_HEAL', 'HOT_TICK', 'HOT_TICK_CRITICAL']:
+            # Track healing events for role heuristic (a plain heal is HEAL in
+            # the log; this used to look for HEALED, which is never written)
+            elif combat_event_type in HEAL_RESULTS:
                 try:
                     hit_value = int(entry.fields[3])
                     source_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
@@ -2691,7 +2701,8 @@ class ESOLogAnalyzer(ListenerMixin):
 
             role = infer_player_role(player, player_damage=player_damage,
                                      player_healing=player_healing,
-                                     skill_line_role=skill_line_role)
+                                     skill_line_role=skill_line_role,
+                                     restoration_staff=has_restoration_staff(player.gear))
 
             # Extract gear sets: mythic and 5-piece sets for compact display
             player_sets = []  # list of (count, name, is_mythic)

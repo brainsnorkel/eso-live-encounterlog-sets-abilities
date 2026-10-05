@@ -27,12 +27,17 @@ What 4,279 such lines from 32 logs of October 2026 show:
 build_fields turns a player's line into the 'gear', 'mundus' and 'food' keys
 of their fight-entry dict. The label functions name the log's values for
 display; a value they do not know is shown in a readable form of itself.
+
+has_restoration_staff answers the one weapon-type question the app asks (the
+role heuristic's): by item id, against the list of restoration staves in
+data/items/restoration_staves.json, built by
+scripts/generate_restoration_staves.py.
 """
 
 import json
 from collections import Counter
 from functools import lru_cache
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional
 
 from ability_icons import bundle_root
 
@@ -274,6 +279,33 @@ def food_buff(effect_ids: Iterable[str], name_of: Callable[[str], Optional[str]]
 
 
 # ---- gear ----
+
+@lru_cache(maxsize=1)
+def _bundled_restoration_staves() -> FrozenSet[str]:
+    """Item ids of every restoration staff; empty when the list is absent."""
+    try:
+        data = json.loads(bundle_root().joinpath("data", "items", "restoration_staves.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    ids = data.get("ids") if isinstance(data, dict) else None
+    return frozenset(str(i) for i in ids) if isinstance(ids, list) else frozenset()
+
+
+def has_restoration_staff(gear: Dict[str, List[str]],
+                          staves: Optional[Iterable[str]] = None) -> bool:
+    """Whether a restoration staff is the main-hand weapon of either bar.
+
+    The log does not name weapon types, so the item id is looked up in the
+    bundled list of restoration staves (*staves* overrides it; tests use
+    that). A Restoration Staff skill on a bar is no substitute: real logs
+    have such skills slotted with another weapon in hand, and staves in hand
+    with none of the skills slotted.
+    """
+    known = _bundled_restoration_staves() if staves is None else frozenset(map(str, staves))
+    return any(len(gear.get(slot) or []) > 1 and str(gear[slot][1]) in known
+               for slot in OFF_HAND_OF)
+
 
 def is_two_handed(slot: str, item_id: str, gear: Dict[str, List[str]]) -> bool:
     """Whether the main-hand item in *slot* fills both hands: no item is

@@ -61,3 +61,5 @@ Item names, weapon types (dagger or staff) and armor weights are not logged. The
 ## Where the app reads this
 
 `src/player_build.py` turns these entries into the build window's gear rows: slot order, readable trait, quality and enchant names, set piece counts per weapon bar, and poison names from `data/items/poisons_en.json`.
+
+It also answers the one weapon-type question the app asks, whether a restoration staff is equipped (the role heuristic uses it to tell healers). The log has no weapon types, so the main-hand item ids are looked up in `data/items/restoration_staves.json`, the item ids of every restoration staff in UESP's item database.
