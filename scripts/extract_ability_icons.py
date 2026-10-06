@@ -115,6 +115,26 @@ def read_file_table(mnf_txt: Path):
     return rows
 
 
+def dump_file_table(exe: Path, mnf: Path, temp: Path):
+    """eso.mnf's file table as rows, dumped without extracting anything."""
+    mnf_txt = temp / "mnf.txt"
+    run_extractor(exe, [str(mnf), str(temp / "list") + os.sep, "-k", "-m", str(mnf_txt)], temp)
+    return read_file_table(mnf_txt)
+
+
+def icon_positions(rows, prefixes=(), stems=()):
+    """Positions in *rows* of the icons whose filename starts with one of
+    *prefixes*, or whose name without .dds is one of *stems* (lowercase)."""
+    targets = tuple(ICON_DIR + p for p in prefixes)
+    exact = {ICON_DIR + s + ".dds" for s in stems}
+    wanted = []
+    for i, row in enumerate(rows):
+        name = row[2].lower()
+        if (targets and name.startswith(targets)) or name in exact:
+            wanted.append(i)
+    return wanted
+
+
 def merge_ranges(rows, wanted, gap_bytes: int):
     """Merge the wanted rows (positions into *rows*) into (start_index, end_index)
     ranges, bridging gaps whose files total at most *gap_bytes*."""
@@ -183,6 +203,49 @@ def sha1_of(path: Path) -> str:
     return h.hexdigest()
 
 
+def extract_icons(exe: Path, mnf: Path, rows, wanted, ranges, out: Path, size: int, temp: Path):
+    """Extract the *wanted* rows (inside *ranges*) and write <out>/<stem>.png
+    at *size* px. Returns ({stem: {dds_bytes, dds_sha1}}, [(basename, error)])."""
+    offset = calibrate_offset(exe, mnf, temp, rows[wanted[0]][0], rows[wanted[-1]][0])
+    log(f"-s/-e offset calibrated: extractor index = table Index + {offset}")
+
+    extract_dir = temp / "x"
+    t1 = time.time()
+    for n, (s, e) in enumerate(ranges, 1):
+        run_extractor(exe, [str(mnf), str(extract_dir) + os.sep,
+                            "-s", str(s + offset), "-e", str(e + offset)], temp)
+        if n % 10 == 0 or n == len(ranges):
+            log(f"  extracted range {n}/{len(ranges)} ({time.time() - t1:.0f}s)")
+
+    name_of = {rows[i][0]: rows[i][2].rsplit("\\", 1)[-1].lower() for i in wanted}
+    produced = numbered_outputs(extract_dir)
+    dds_files = []  # (basename, path)
+    for index, basename in sorted(name_of.items()):
+        if index in produced:
+            dds_files.append((basename, produced[index]))
+    if len(dds_files) != len(name_of):
+        missing = sorted(set(name_of) - set(produced))
+        log(f"WARNING: expected {len(name_of)} icons, extracted {len(dds_files)} "
+            f"(missing table Index e.g. {missing[:5]})")
+
+    out.mkdir(parents=True, exist_ok=True)
+    icons = {}
+    failed = []
+    t2 = time.time()
+    for basename, dds in dds_files:
+        stem = basename.rsplit(".", 1)[0]
+        png = out / f"{stem}.png"
+        try:
+            convert_dds(dds, png, size)
+        except Exception as exc:  # noqa: BLE001 - report and carry on
+            failed.append((basename, repr(exc)[:80]))
+            continue
+        icons[stem] = {"dds_bytes": dds.stat().st_size, "dds_sha1": sha1_of(dds)}
+    log(f"converted {len(icons)} icons in {time.time() - t2:.1f}s"
+        + (f"; {len(failed)} FAILED: {failed[:5]}" if failed else ""))
+    return icons, failed
+
+
 # ------------------------------------------------------------ log checking --
 
 def bar_icons_in_log(log_path: Path):
@@ -249,11 +312,8 @@ def main() -> int:
     temp = Path(tempfile.mkdtemp(prefix="eso-icons-"))
     try:
         t0 = time.time()
-        mnf_txt = temp / "mnf.txt"
-        run_extractor(extractor, [str(mnf), str(temp / "list") + os.sep, "-k", "-m", str(mnf_txt)], temp)
-        rows = read_file_table(mnf_txt)
-        targets = tuple(ICON_DIR + p for p in prefixes)
-        wanted = [i for i, r in enumerate(rows) if r[2].lower().startswith(targets)]
+        rows = dump_file_table(extractor, mnf, temp)
+        wanted = icon_positions(rows, prefixes)
         if not wanted:
             sys.exit("no matching icon rows in the file table; is this the live eso.mnf?")
         ranges = merge_ranges(rows, wanted, int(args.gap_mb * 1_000_000))
@@ -266,29 +326,6 @@ def main() -> int:
                 log(f"  -s {s} -e {e}  (table Index; add the calibrated offset when running by hand)")
             return 0
 
-        offset = calibrate_offset(extractor, mnf, temp, rows[wanted[0]][0], rows[wanted[-1]][0])
-        log(f"-s/-e offset calibrated: extractor index = table Index + {offset}")
-
-        extract_dir = temp / "x"
-        t1 = time.time()
-        for n, (s, e) in enumerate(ranges, 1):
-            run_extractor(extractor, [str(mnf), str(extract_dir) + os.sep,
-                                      "-s", str(s + offset), "-e", str(e + offset)], temp)
-            if n % 10 == 0 or n == len(ranges):
-                log(f"  extracted range {n}/{len(ranges)} ({time.time() - t1:.0f}s)")
-
-        name_of = {rows[i][0]: rows[i][2].rsplit("\\", 1)[-1].lower() for i in wanted}
-        produced = numbered_outputs(extract_dir)
-        dds_files = []  # (basename, path)
-        for index, basename in sorted(name_of.items()):
-            if index in produced:
-                dds_files.append((basename, produced[index]))
-        if len(dds_files) != len(name_of):
-            missing = sorted(set(name_of) - set(produced))
-            log(f"WARNING: expected {len(name_of)} icons, extracted {len(dds_files)} "
-                f"(missing table Index e.g. {missing[:5]})")
-
-        out.mkdir(parents=True, exist_ok=True)
         previous = {}
         manifest_path = out / "manifest.json"
         if manifest_path.is_file():
@@ -296,20 +333,7 @@ def main() -> int:
                 previous = json.loads(manifest_path.read_text(encoding="utf-8")).get("icons", {})
             except ValueError:
                 previous = {}
-        icons = {}
-        failed = []
-        t2 = time.time()
-        for basename, dds in dds_files:
-            stem = basename.rsplit(".", 1)[0]
-            png = out / f"{stem}.png"
-            try:
-                convert_dds(dds, png, args.size)
-            except Exception as exc:  # noqa: BLE001 - report and carry on
-                failed.append((basename, repr(exc)[:80]))
-                continue
-            icons[stem] = {"dds_bytes": dds.stat().st_size, "dds_sha1": sha1_of(dds)}
-        log(f"converted {len(icons)} icons in {time.time() - t2:.1f}s"
-            + (f"; {len(failed)} FAILED: {failed[:5]}" if failed else ""))
+        icons, failed = extract_icons(extractor, mnf, rows, wanted, ranges, out, args.size, temp)
 
         stale = [p for p in out.glob("*.png") if p.stem.lower() not in icons]
         for p in stale:

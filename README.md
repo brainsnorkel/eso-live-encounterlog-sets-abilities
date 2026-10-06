@@ -277,6 +277,26 @@ After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encou
 
 The icon step is also packaged as the `refresh-ability-icons` skill for Claude Code users of this repository. The icon script reports which icons were added or removed and, with `--check-log`, verifies that every ability slotted in that log has an icon.
 
+### Exporting game data for esobuild.com
+
+[esobuild.com](https://esobuild.com) shows the game's ability icons and names each build by its class skill lines, so it needs the icons under the game's file names and tables keyed by the game's ids. `scripts/export_esobuild_assets.py` builds both into one zip after a patch: every `ability_*` icon at 64 px, an ability table (game ability id to name, icon, skill line and type), the skill lines, the mundus boons and the sets with their ESO-Hub pages.
+
+```cmd
+:: The ESO-Hub maps the bundle copies (network access)
+python scripts\generate_esohub_links.py
+
+:: Tables and checks only: no icons extracted, nothing written. About 15 seconds.
+python scripts\export_esobuild_assets.py --update u51 --dry-run
+
+:: The bundle, in build\esobuild-assets\. About 3 minutes. --previous lists what
+:: the patch added, removed and changed.
+python scripts\export_esobuild_assets.py --update u51 --previous <the last bundle.zip>
+```
+
+`--update` is the site's tag for the update the client is on; it is never guessed. The client version in the bundle's manifest comes from the game's own build stamp. Icons come from the installed game, as for the app's own icons. Abilities and sets come from [UESP's ESO log export](https://esolog.uesp.net) (CC-BY-SA 2.5): four requests per run, a few seconds apart, with the replies kept under `build\esobuild-assets\sources\` and reused for a day, so further runs ask UESP nothing; if UESP refuses a request the script stops and does not retry. `--check-fixtures <folder>` runs the site's hand-over checks against its fixture files, and `--check-log <Encounter.log>` compares the tables with what the client itself logged, which shows whether UESP has caught up with a new update.
+
+The bundle is not committed. It is published as a release asset under a tag of its own, `esobuild-assets-<update>-<date>`, created with `gh release create ... --latest=false`: the app's update check reads the repository's latest release, which must stay an app release. The steps are packaged as the `export-esobuild-assets` skill.
+
 ## Troubleshooting
 
 **SmartScreen warning on the installer**: the installer is not code-signed; choose *More info → Run anyway*.
