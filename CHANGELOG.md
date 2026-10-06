@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.5] - 2026-10-06
 
 ### Security
 - **Current Python and OpenSSL in the Windows build**: the Windows app was built with Python 3.11.9 (April 2024), the last 3.11 release that has a Windows installer, so it carried none of the security fixes made to Python since, and its OpenSSL was 3.0.13 from January 2024. That is the code that checks for an update and downloads the installer. Both builds now use Python 3.14, and take its newest patch release at build time rather than the copy cached on the build machine; on Windows that is 3.14.8 with OpenSSL 3.5.9 at the time of the change
