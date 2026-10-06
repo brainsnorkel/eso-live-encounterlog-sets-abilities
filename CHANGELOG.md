@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.6.6] - 2026-10-06
 
 ### Fixed
 - **Three Cyrodiil sets under each other's names**: Colovian Highlands General, Jerall Mountains Warchief and Nibenay Bay Battlereeve each showed under another of the three names, wherever a set is named: the fight view, the build window and copied text. Their ESO-Hub links opened that other set's page as well. The LibSets workbook the set names come from has the three names one set out of place; the gear data generator now gives those set ids the names the game uses
