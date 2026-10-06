@@ -18,6 +18,33 @@ def filled(value) -> bool:
     """True when a worksheet cell holds something."""
     return value is not None and value != ''
 
+# Names the workbook has wrong, by set id. Each is the game's own name, read
+# from the English language table of the installed client (Update 51): string
+# table 38727365 of gamedata\lang\en.lang, where the index is the set id.
+# "EsoExtractData eso.mnf <folder>\ -n en.lang" extracts that file and writes
+# it as a CSV. UESP's setSummary export and LibSets' own Lua data agree. The
+# workbook has the names of three Cyrodiil sets one set out of place and adds
+# an article to one mythic. A correction the workbook no longer needs is
+# reported, so that it can be removed.
+NAME_CORRECTIONS = {
+    "711": "Colovian Highlands General",  # workbook: Jerall Mountains Warchief
+    "712": "Jerall Mountains Warchief",   # workbook: Nibenay Bay Battlereeve
+    "713": "Nibenay Bay Battlereeve",     # workbook: Colovian Highlands General
+    "854": "Prowler's Talisman",          # workbook: The Prowler's Talisman
+}
+
+def corrected_name(set_id: str, workbook_name: str) -> str:
+    """The game's name for a set the workbook misnames, else the workbook's."""
+    right_name = NAME_CORRECTIONS.get(set_id)
+    if right_name is None:
+        return workbook_name
+    if right_name == workbook_name:
+        print(f"Note: the workbook now names set {set_id} {workbook_name!r}; "
+              f"its entry in NAME_CORRECTIONS can go")
+    else:
+        print(f"Corrected set {set_id}: {workbook_name!r} -> {right_name!r}")
+    return right_name
+
 def extract_gear_data():
     """Extract gear set data from the XLSM file."""
     current_dir = Path(__file__).parent.parent
@@ -66,7 +93,8 @@ def extract_gear_data():
                 # becomes the plain one every other name uses.
                 set_name = (str(set_name_en).strip().strip('"')
                             .replace("\\", "").replace("’", "'"))
-                
+                set_name = corrected_name(set_id_str, set_name)
+
                 # Build mappings
                 gear_data['set_id_to_name'][set_id_str] = set_name
                 gear_data['set_name_to_id'][set_name] = set_id_str

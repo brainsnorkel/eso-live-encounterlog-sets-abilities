@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-03T05:16:57+00:00",
+ "generated": "2026-10-06T07:27:17+00:00",
  "source": "https://eso-hub.com/sitemaps/en/sitemap_en_ArmorSet.xml",
- "count": 711,
+ "count": 714,
  "unmatched_libsets_names": [],
  "sets": {
   "Abyssal Brace": "/en/sets/abyssal-brace",
@@ -336,6 +336,7 @@
   "Morkuldin": "/en/sets/morkuldin",
   "Mother Ciannait": "/en/sets/mother-ciannait",
   "Mother's Sorrow": "/en/sets/mothers-sorrow",
+  "Mylenne Moon-Caller": "/en/sets/mylenne-moon-caller",
   "Naga Shaman": "/en/sets/naga-shaman",
   "Nazaray": "/en/sets/nazaray",
   "Necropotence": "/en/sets/necropotence",
@@ -457,6 +458,7 @@
   "Prior Thierric": "/en/sets/prior-thierric",
   "Prisoner's Rags": "/en/sets/prisoners-rags",
   "Prophet's": "/en/sets/prophets",
+  "Prowler's Talisman": "/en/sets/prowlers-talisman",
   "Puncturing Remedy": "/en/sets/puncturing-remedy",
   "Pyrebrand": "/en/sets/pyrebrand",
   "Queen's Elegance": "/en/sets/queens-elegance",
@@ -590,6 +592,7 @@
   "Systres' Scowl": "/en/sets/systres-scowl",
   "Syvarra's Scales": "/en/sets/syvarras-scales",
   "Talfyg's Treachery": "/en/sets/talfygs-treachery",
+  "Tarcyr": "/en/sets/tarcyr",
   "Tarnished Nightmare": "/en/sets/tarnished-nightmare",
   "Tava's Favor": "/en/sets/tavas-favor",
   "Telvanni Efficiency": "/en/sets/telvanni-efficiency",

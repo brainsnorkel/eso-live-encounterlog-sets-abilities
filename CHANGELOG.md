@@ -4,6 +4,11 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Fixed
+- **Three Cyrodiil sets under each other's names**: Colovian Highlands General, Jerall Mountains Warchief and Nibenay Bay Battlereeve each showed under another of the three names, wherever a set is named: the fight view, the build window and copied text. Their ESO-Hub links opened that other set's page as well. The LibSets workbook the set names come from has the three names one set out of place; the gear data generator now gives those set ids the names the game uses
+
+- **Three newer sets shown as numbers**: Prowler's Talisman, Tarcyr and Mylenne Moon-Caller showed as `Set#854`, `Set#876` and `Set#877` with no ESO-Hub link, and the build window did not treat Prowler's Talisman as a mythic. The bundled LibSets workbook is now the one of April 2026, which knows them
+
 ### Technical
 - **Game data export for esobuild.com**: a new script, `scripts/export_esobuild_assets.py`, builds a zip of game data for the esobuild.com site: every `ability_*` icon at 64 px under the game's file names, and tables keyed by the game's ids for abilities (name, icon, skill line, type), skill lines, mundus boons and sets, with a manifest naming the client version and each source. Icons come from the installed game, abilities and sets from UESP's ESO log export, page paths from ESO-Hub's sitemaps. The bundle is published as a release asset under its own tag and is not part of the app. The steps of `scripts/extract_ability_icons.py` are now functions the export calls; the icons that script writes are byte for byte the same. No change to what the app shows
 

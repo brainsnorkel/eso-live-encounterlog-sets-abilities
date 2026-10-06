@@ -607,9 +607,9 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "707": "Perfected Ansuul's Torment",
     "708": "Perfected Peace and Serenity",
     "71": "Durok's Bane",
-    "711": "Jerall Mountains Warchief",
-    "712": "Nibenay Bay Battlereeve",
-    "713": "Colovian Highlands General",
+    "711": "Colovian Highlands General",
+    "712": "Jerall Mountains Warchief",
+    "713": "Nibenay Bay Battlereeve",
     "72": "Nikulas' Heavy Armor",
     "722": "Reawakened Hierophant",
     "723": "Basalt-Blooded Warrior",
@@ -717,9 +717,12 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "85": "Almalexia's Mercy",
     "850": "Thousand Eyes",
     "851": "The Ruckus",
+    "854": "Prowler's Talisman",
     "855": "Gorethief",
     "86": "Queen's Elegance",
     "87": "Eyes of Mara",
+    "876": "Tarcyr",
+    "877": "Mylenne Moon-Caller",
     "88": "Robes of Destruction Mastery",
     "89": "Sentry",
     "90": "Senche's Bite",
@@ -832,7 +835,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Claw of the Forest Wraith": "679",
     "Clever Alchemist": "225",
     "Coldharbour's Favorite": "437",
-    "Colovian Highlands General": "713",
+    "Colovian Highlands General": "711",
     "Combat Physician": "194",
     "Concentrated Force": "367",
     "Coral Riptide": "647",
@@ -995,7 +998,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Ironblood": "337",
     "Jailbreaker": "295",
     "Jailer's Tenacity": "404",
-    "Jerall Mountains Warchief": "711",
+    "Jerall Mountains Warchief": "712",
     "Jerensi's Bladestorm": "795",
     "Jolting Arms": "186",
     "Jorvuld's Guidance": "346",
@@ -1070,6 +1073,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Morkuldin": "219",
     "Mother Ciannait": "478",
     "Mother's Sorrow": "292",
+    "Mylenne Moon-Caller": "877",
     "Naga Shaman": "409",
     "Nazaray": "633",
     "Necropotence": "98",
@@ -1077,7 +1081,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Netch Oil": "793",
     "Netch's Touch": "300",
     "New Moon Acolyte": "470",
-    "Nibenay Bay Battlereeve": "712",
+    "Nibenay Bay Battlereeve": "713",
     "Night Mother's Embrace": "34",
     "Night Mother's Gaze": "51",
     "Night Terror": "112",
@@ -1191,6 +1195,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Prior Thierric": "608",
     "Prisoner's Rags": "26",
     "Prophet's": "380",
+    "Prowler's Talisman": "854",
     "Puncturing Remedy": "314",
     "Pyrebrand": "776",
     "Queen's Elegance": "86",
@@ -1325,6 +1330,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Systres' Scowl": "645",
     "Syvarra's Scales": "228",
     "Talfyg's Treachery": "513",
+    "Tarcyr": "876",
     "Tarnished Nightmare": "736",
     "Tava's Favor": "224",
     "Telvanni Efficiency": "696",
@@ -2135,7 +2141,7 @@ SET_INFO: Dict[str, Dict] = {
         "abilities": []
     },
     "Colovian Highlands General": {
-        "set_id": "713",
+        "set_id": "711",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL_MONSTER",
         "comment": "",
         "items": [],
@@ -3276,7 +3282,7 @@ SET_INFO: Dict[str, Dict] = {
         "abilities": []
     },
     "Jerall Mountains Warchief": {
-        "set_id": "711",
+        "set_id": "712",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL_MONSTER",
         "comment": "",
         "items": [],
@@ -3800,6 +3806,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Mylenne Moon-Caller": {
+        "set_id": "877",
+        "set_type": "LIBSETS_SETTYPE_SOLO_MONSTER",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Naga Shaman": {
         "set_id": "409",
         "set_type": "LIBSETS_SETTYPE_CRAFTED",
@@ -3850,7 +3863,7 @@ SET_INFO: Dict[str, Dict] = {
         "abilities": []
     },
     "Nibenay Bay Battlereeve": {
-        "set_id": "712",
+        "set_id": "713",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL_MONSTER",
         "comment": "",
         "items": [],
@@ -4644,6 +4657,13 @@ SET_INFO: Dict[str, Dict] = {
         "set_id": "380",
         "set_type": "LIBSETS_SETTYPE_SPECIAL",
         "comment": "Level up advisor grants this set during levelling",
+        "items": [],
+        "abilities": []
+    },
+    "Prowler's Talisman": {
+        "set_id": "854",
+        "set_type": "LIBSETS_SETTYPE_MYTHIC",
+        "comment": "",
         "items": [],
         "abilities": []
     },
@@ -5581,6 +5601,13 @@ SET_INFO: Dict[str, Dict] = {
     "Talfyg's Treachery": {
         "set_id": "513",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Tarcyr": {
+        "set_id": "876",
+        "set_type": "LIBSETS_SETTYPE_SOLO_MONSTER",
         "comment": "",
         "items": [],
         "abilities": []

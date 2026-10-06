@@ -5,11 +5,14 @@
 (scripts/generate_food_buffs.py), and the tables they committed."""
 
 import ast
+import contextlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -257,6 +260,52 @@ class TestGearSetNames(unittest.TestCase):
             self.skipTest('openpyxl is not installed (requirements-build.txt)')
         for text in ("Mara's Balm", 'a "quoted" word', 'back\\slash'):
             self.assertEqual(ast.literal_eval(script.quoted(text)), text)
+
+    def test_three_cyrodiil_sets_carry_the_games_names(self):
+        # The LibSets workbook has these three names one set out of place; the
+        # client's own language table (Update 51) has them this way
+        from gear_set_data import SET_ID_TO_NAME, SET_NAME_TO_ID, SET_INFO
+        self.assertEqual([SET_ID_TO_NAME[set_id] for set_id in ('711', '712', '713')],
+                         ["Colovian Highlands General", "Jerall Mountains Warchief",
+                          "Nibenay Bay Battlereeve"])
+        for set_id in ('711', '712', '713'):
+            name = SET_ID_TO_NAME[set_id]
+            self.assertEqual(SET_NAME_TO_ID[name], set_id)
+            self.assertEqual(SET_INFO[name]['set_id'], set_id)
+
+    def test_sets_added_since_update_49_have_a_name_and_a_link(self):
+        from gear_set_data import SET_ID_TO_NAME
+        path = REPO_ROOT / 'data' / 'esohub' / 'sets_en.json'
+        links = json.loads(path.read_text(encoding='utf-8'))['sets']
+        for set_id, name, page in (('854', "Prowler's Talisman", '/en/sets/prowlers-talisman'),
+                                   ('876', "Tarcyr", '/en/sets/tarcyr'),
+                                   ('877', "Mylenne Moon-Caller", '/en/sets/mylenne-moon-caller')):
+            self.assertEqual(SET_ID_TO_NAME[set_id], name)
+            self.assertEqual(links[name], page)
+
+    def test_a_correction_replaces_the_workbooks_name_for_its_set_only(self):
+        try:
+            script = _load('generate_gear_data.py')
+        except ImportError:
+            self.skipTest('openpyxl is not installed (requirements-build.txt)')
+        said = io.StringIO()
+        with mock.patch.object(script, 'NAME_CORRECTIONS', {'711': "Right Name"}), \
+                contextlib.redirect_stdout(said):
+            self.assertEqual(script.corrected_name('711', "Wrong Name"), "Right Name")
+            self.assertEqual(script.corrected_name('712', "Wrong Name"), "Wrong Name")
+            self.assertNotIn("can go", said.getvalue())
+            # A workbook that has caught up: same result, and it says so
+            self.assertEqual(script.corrected_name('711', "Right Name"), "Right Name")
+        self.assertIn("NAME_CORRECTIONS can go", said.getvalue())
+
+    def test_every_correction_is_in_the_committed_data(self):
+        try:
+            script = _load('generate_gear_data.py')
+        except ImportError:
+            self.skipTest('openpyxl is not installed (requirements-build.txt)')
+        from gear_set_data import SET_ID_TO_NAME
+        for set_id, name in script.NAME_CORRECTIONS.items():
+            self.assertEqual(SET_ID_TO_NAME.get(set_id), name)
 
 
 if __name__ == '__main__':
