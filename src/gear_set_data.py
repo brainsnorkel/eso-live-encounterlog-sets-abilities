@@ -66,7 +66,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "160": "Burning Spellweave",
     "161": "Twice-Born Star",
     "162": "Spawn of Mephala",
-    "163": "Blood Spawn",
+    "163": "Bloodspawn",
     "164": "Lord Warden",
     "165": "Scourge Harvester",
     "166": "Engine Guardian",
@@ -289,10 +289,10 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "39": "Alessian Order",
     "390": "Mantle of Siroria",
     "391": "Vestment of Olorime",
-    "392": "Perfect Aegis of Galenwe",
-    "393": "Perfect Arms of Relequen",
-    "394": "Perfect Mantle of Siroria",
-    "395": "Perfect Vestment of Olorime",
+    "392": "Perfected Aegis of Galenwe",
+    "393": "Perfected Arms of Relequen",
+    "394": "Perfected Mantle of Siroria",
+    "395": "Perfected Vestment of Olorime",
     "397": "Balorgh",
     "398": "Vykosa",
     "399": "Hanu's Compassion",
@@ -321,16 +321,16 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "420": "Soldier of Anguish",
     "421": "Steadfast Hero",
     "422": "Battalion Defender",
-    "423": "Perfect Gallant Charge",
-    "424": "Perfect Radial Uppercut",
-    "425": "Perfect Spectral Cloak",
-    "426": "Perfect Virulent Shot",
-    "427": "Perfect Wild Impulse",
-    "428": "Perfect Mender's Ward",
+    "423": "Perfected Gallant Charge",
+    "424": "Perfected Radial Uppercut",
+    "425": "Perfected Spectral Cloak",
+    "426": "Perfected Virulent Shot",
+    "427": "Perfected Wild Impulse",
+    "428": "Perfected Mender's Ward",
     "429": "Mighty Glacier",
     "43": "Armor of the Seducer",
     "430": "Tzogvin's Warband",
-    "431": "Icy Conjuror",
+    "431": "Icy Conjurer",
     "432": "Stonekeeper",
     "433": "Frozen Watcher",
     "434": "Scavenging Demise",
@@ -346,11 +346,11 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "443": "Eye of Nahviintaas",
     "444": "False God's Devotion",
     "445": "Tooth of Lokkestiiz",
-    "446": "Claw of Yolnakhriin",
+    "446": "Claw of Yolnahkriin",
     "448": "Perfected Eye of Nahviintaas",
     "449": "Perfected False God's Devotion",
     "450": "Perfected Tooth of Lokkestiiz",
-    "451": "Perfected Claw of Yolnakhriin",
+    "451": "Perfected Claw of Yolnahkriin",
     "452": "Hollowfang Thirst",
     "453": "Dro'Zakar's Claws",
     "454": "Renald's Resolve",
@@ -468,7 +468,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "574": "Foolkiller's Ward",
     "575": "Ring of the Pale Order",
     "576": "Pearls of Ehlnofey",
-    "577": "Encrati's Behemoth",
+    "577": "Encratis's Behemoth",
     "578": "Baron Zaudrus",
     "579": "Frostbite",
     "58": "Hide of the Werewolf",
@@ -529,7 +529,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "632": "Kargaeda",
     "633": "Nazaray",
     "634": "Nunatak",
-    "635": "Lady Malydga",
+    "635": "Lady Malygda",
     "636": "Baron Thirsk",
     "64": "Shadow Dancer's Raiment",
     "640": "Order's Wrath",
@@ -561,13 +561,13 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "665": "Phylactery's Grasp",
     "666": "Archdruid Devyric",
     "667": "Euphotic Gatekeeper",
-    "668": "Langour of Peryite",
+    "668": "Languor of Peryite",
     "669": "Nocturnal's Ploy",
     "67": "Shadow Walker",
     "670": "Mara's Balm",
     "671": "Back-Alley Gourmand",
     "672": "Phoenix Moth Theurge",
-    "673": "Bastion of Draoife",
+    "673": "Bastion of the Draoife",
     "674": "Faun's Lark Cladding",
     "675": "Stormweaver's Cavort",
     "676": "Syrabane's Ward",
@@ -586,7 +586,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "688": "Snake in the Stars",
     "689": "Shell Splitter",
     "69": "Ranger's Gait",
-    "690": "Judgement of Akatosh",
+    "690": "Judgment of Akatosh",
     "691": "Cryptcanon Vestments",
     "692": "Esoteric Environment Greaves",
     "693": "Torc of the Last Ayleid King",
@@ -621,7 +621,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "73": "Oblivion's Foe",
     "730": "Cinders of Anthelmir",
     "731": "Sluthrug's Hunger",
-    "732": "Black-Grove Grounding",
+    "732": "Black-Glove Grounding",
     "734": "Anthelmir's Construct",
     "735": "Blind Path Induction",
     "736": "Tarnished Nightmare",
@@ -634,7 +634,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "756": "Baan Dar's Blessing",
     "757": "Symmetry of the Weald",
     "758": "Macabre Vintage",
-    "759": "Ayleid Rufuge",
+    "759": "Ayleid Refuge",
     "76": "Robes of Alteration Mastery",
     "760": "Rourken Steamguards",
     "761": "The Shadow Queen's Cowl",
@@ -657,7 +657,7 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "778": "Umbral Edge",
     "779": "Beacon of Oblivion",
     "78": "Hist Bark",
-    "780": "Aetheric Lance",
+    "780": "Aetheric Lancer",
     "781": "Aerie's Cry",
     "782": "Tracker's Lash",
     "783": "Shared Pain",
@@ -746,7 +746,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Aegis of Galenwe": "388",
     "Aerie's Cry": "781",
     "Aetherial Ascension": "541",
-    "Aetheric Lance": "780",
+    "Aetheric Lancer": "780",
     "Affliction": "101",
     "Agility": "206",
     "Akaviri Dragonguard": "21",
@@ -776,7 +776,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Assassin's Guile": "323",
     "Auroran's Thunder": "435",
     "Automated Defense": "330",
-    "Ayleid Rufuge": "759",
+    "Ayleid Refuge": "759",
     "Azureblight Reaper": "456",
     "Baan Dar's Blessing": "756",
     "Back-Alley Gourmand": "671",
@@ -789,7 +789,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Baron Thirsk": "636",
     "Baron Zaudrus": "578",
     "Basalt-Blooded Warrior": "723",
-    "Bastion of Draoife": "673",
+    "Bastion of the Draoife": "673",
     "Bastion of the Heartland": "131",
     "Battalion Defender": "422",
     "Battlefield Acrobat": "419",
@@ -801,16 +801,16 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Black Foundry Steel": "824",
     "Black Gem Monstrosity": "828",
     "Black Rose": "179",
-    "Black-Grove Grounding": "732",
+    "Black-Glove Grounding": "732",
     "Blackfeather Flight": "804",
     "Blessing of High Isle": "643",
     "Blessing of the Potentates": "128",
     "Blind Path Induction": "735",
     "Blood Moon": "400",
-    "Blood Spawn": "163",
     "Blooddrinker": "339",
     "Bloodlord's Embrace": "521",
     "Bloodlord's Embrace (OLD)": "500",
+    "Bloodspawn": "163",
     "Bloodthorn's Touch": "65",
     "Blunted Blades": "755",
     "Bog Raider": "581",
@@ -831,7 +831,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Chimera's Rebuke": "677",
     "Chokethorn": "269",
     "Cinders of Anthelmir": "730",
-    "Claw of Yolnakhriin": "446",
+    "Claw of Yolnahkriin": "446",
     "Claw of the Forest Wraith": "679",
     "Clever Alchemist": "225",
     "Coldharbour's Favorite": "437",
@@ -899,7 +899,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Elemental Succession": "215",
     "Elf Bane": "83",
     "Embershield": "158",
-    "Encrati's Behemoth": "577",
+    "Encratis's Behemoth": "577",
     "Endurance": "204",
     "Enervating Aura": "631",
     "Engine Guardian": "166",
@@ -983,7 +983,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Hunt Leader": "216",
     "Huntsman's Warmask": "845",
     "Iceheart": "274",
-    "Icy Conjuror": "431",
+    "Icy Conjurer": "431",
     "Ilambris": "273",
     "Immolator Charr": "599",
     "Immortal Warrior": "136",
@@ -1002,7 +1002,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Jerensi's Bladestorm": "795",
     "Jolting Arms": "186",
     "Jorvuld's Guidance": "346",
-    "Judgement of Akatosh": "690",
+    "Judgment of Akatosh": "690",
     "Kagrenac's Hope": "92",
     "Kargaeda": "632",
     "Kazpian's Cruel Signet": "815",
@@ -1017,11 +1017,11 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Kyne's Kiss": "59",
     "Kyne's Wind": "492",
     "Kynmarcher's Cruelty": "615",
-    "Lady Malydga": "635",
+    "Lady Malygda": "635",
     "Lady Thorn": "535",
     "Lamia's Song": "303",
     "Lamp Knight's Art": "803",
-    "Langour of Peryite": "668",
+    "Languor of Peryite": "668",
     "Law of Julianos": "207",
     "Leeching Plate": "196",
     "Lefthander's Aegis Belt": "656",
@@ -1113,21 +1113,13 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Pearlescent Ward": "648",
     "Pearls of Ehlnofey": "576",
     "Pelinal's Wrath": "242",
-    "Perfect Aegis of Galenwe": "392",
-    "Perfect Arms of Relequen": "393",
-    "Perfect Gallant Charge": "423",
-    "Perfect Mantle of Siroria": "394",
-    "Perfect Mender's Ward": "428",
-    "Perfect Radial Uppercut": "424",
-    "Perfect Spectral Cloak": "425",
-    "Perfect Vestment of Olorime": "395",
-    "Perfect Virulent Shot": "426",
-    "Perfect Wild Impulse": "427",
+    "Perfected Aegis of Galenwe": "392",
     "Perfected Ansuul's Torment": "707",
+    "Perfected Arms of Relequen": "393",
     "Perfected Bahsei's Mania": "591",
     "Perfected Caustic Arrow": "531",
     "Perfected Chaotic Whirlwind": "359",
-    "Perfected Claw of Yolnakhriin": "451",
+    "Perfected Claw of Yolnahkriin": "451",
     "Perfected Concentrated Force": "361",
     "Perfected Coral Riptide": "652",
     "Perfected Cruel Flurry": "524",
@@ -1141,11 +1133,14 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected False God's Devotion": "449",
     "Perfected Force Overflow": "568",
     "Perfected Frenzied Momentum": "565",
+    "Perfected Gallant Charge": "423",
     "Perfected Grand Rejuvenation": "533",
     "Perfected Harmony in Chaos": "821",
     "Perfected Kazpian's Cruel Signet": "820",
     "Perfected Kyne's Wind": "493",
     "Perfected Lucent Echoes": "771",
+    "Perfected Mantle of Siroria": "394",
+    "Perfected Mender's Ward": "428",
     "Perfected Merciless Charge": "522",
     "Perfected Mora Scribe's Thesis": "773",
     "Perfected Peace and Serenity": "708",
@@ -1155,11 +1150,13 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected Point-Blank Snipe": "566",
     "Perfected Precise Regeneration": "527",
     "Perfected Puncturing Remedy": "529",
+    "Perfected Radial Uppercut": "424",
     "Perfected Rampaging Slash": "523",
     "Perfected Recovery Convergence": "818",
     "Perfected Roaring Opportunist": "497",
     "Perfected Saxhleel Champion": "589",
     "Perfected Slivers of the Null Arca": "772",
+    "Perfected Spectral Cloak": "425",
     "Perfected Stinging Slashes": "530",
     "Perfected Stone-Talker's Oath": "592",
     "Perfected Sul-Xan's Torment": "590",
@@ -1169,9 +1166,12 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Perfected Titanic Cleave": "528",
     "Perfected Tooth of Lokkestiiz": "450",
     "Perfected Transformative Hope": "705",
+    "Perfected Vestment of Olorime": "395",
+    "Perfected Virulent Shot": "426",
     "Perfected Void Bash": "564",
     "Perfected Vrol's Command": "495",
     "Perfected Whorl of the Depths": "653",
+    "Perfected Wild Impulse": "427",
     "Perfected Wrath of Elements": "567",
     "Perfected Xoryn's Masterpiece": "770",
     "Perfected Yandir's Might": "499",
@@ -1517,7 +1517,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Aetheric Lance": {
+    "Aetheric Lancer": {
         "set_id": "780",
         "set_type": "LIBSETS_SETTYPE_CLASS",
         "comment": "Templar",
@@ -1727,7 +1727,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Ayleid Rufuge": {
+    "Ayleid Refuge": {
         "set_id": "759",
         "set_type": "LIBSETS_SETTYPE_OVERLAND",
         "comment": "",
@@ -1818,7 +1818,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Bastion of Draoife": {
+    "Bastion of the Draoife": {
         "set_id": "673",
         "set_type": "LIBSETS_SETTYPE_OVERLAND",
         "comment": "",
@@ -1902,7 +1902,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Black-Grove Grounding": {
+    "Black-Glove Grounding": {
         "set_id": "732",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
@@ -1944,13 +1944,6 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Blood Spawn": {
-        "set_id": "163",
-        "set_type": "LIBSETS_SETTYPE_MONSTER",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Blooddrinker": {
         "set_id": "339",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -1969,6 +1962,13 @@ SET_INFO: Dict[str, Dict] = {
         "set_id": "500",
         "set_type": "",
         "comment": "See setId 521",
+        "items": [],
+        "abilities": []
+    },
+    "Bloodspawn": {
+        "set_id": "163",
+        "set_type": "LIBSETS_SETTYPE_MONSTER",
+        "comment": "",
         "items": [],
         "abilities": []
     },
@@ -2112,7 +2112,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Claw of Yolnakhriin": {
+    "Claw of Yolnahkriin": {
         "set_id": "446",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
@@ -2588,7 +2588,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Encrati's Behemoth": {
+    "Encratis's Behemoth": {
         "set_id": "577",
         "set_type": "LIBSETS_SETTYPE_MONSTER",
         "comment": "",
@@ -3176,7 +3176,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Icy Conjuror": {
+    "Icy Conjurer": {
         "set_id": "431",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
         "comment": "",
@@ -3309,7 +3309,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Judgement of Akatosh": {
+    "Judgment of Akatosh": {
         "set_id": "690",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL",
         "comment": "",
@@ -3414,7 +3414,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Lady Malydga": {
+    "Lady Malygda": {
         "set_id": "635",
         "set_type": "LIBSETS_SETTYPE_IMPERIALCITY_MONSTER",
         "comment": "",
@@ -3442,7 +3442,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Langour of Peryite": {
+    "Languor of Peryite": {
         "set_id": "668",
         "set_type": "LIBSETS_SETTYPE_CYRODIIL",
         "comment": "",
@@ -4086,78 +4086,22 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Perfect Aegis of Galenwe": {
+    "Perfected Aegis of Galenwe": {
         "set_id": "392",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
         "abilities": []
     },
-    "Perfect Arms of Relequen": {
-        "set_id": "393",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Gallant Charge": {
-        "set_id": "423",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Mantle of Siroria": {
-        "set_id": "394",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Mender's Ward": {
-        "set_id": "428",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Radial Uppercut": {
-        "set_id": "424",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Spectral Cloak": {
-        "set_id": "425",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Vestment of Olorime": {
-        "set_id": "395",
-        "set_type": "LIBSETS_SETTYPE_TRIAL",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Virulent Shot": {
-        "set_id": "426",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
-    "Perfect Wild Impulse": {
-        "set_id": "427",
-        "set_type": "LIBSETS_SETTYPE_ARENA",
-        "comment": "",
-        "items": [],
-        "abilities": []
-    },
     "Perfected Ansuul's Torment": {
         "set_id": "707",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Arms of Relequen": {
+        "set_id": "393",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
         "items": [],
@@ -4184,7 +4128,7 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
-    "Perfected Claw of Yolnakhriin": {
+    "Perfected Claw of Yolnahkriin": {
         "set_id": "451",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
         "comment": "",
@@ -4282,6 +4226,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Gallant Charge": {
+        "set_id": "423",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Grand Rejuvenation": {
         "set_id": "533",
         "set_type": "LIBSETS_SETTYPE_ARENA",
@@ -4313,6 +4264,20 @@ SET_INFO: Dict[str, Dict] = {
     "Perfected Lucent Echoes": {
         "set_id": "771",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Mantle of Siroria": {
+        "set_id": "394",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Mender's Ward": {
+        "set_id": "428",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
         "comment": "",
         "items": [],
         "abilities": []
@@ -4380,6 +4345,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Radial Uppercut": {
+        "set_id": "424",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Rampaging Slash": {
         "set_id": "523",
         "set_type": "LIBSETS_SETTYPE_ARENA",
@@ -4411,6 +4383,13 @@ SET_INFO: Dict[str, Dict] = {
     "Perfected Slivers of the Null Arca": {
         "set_id": "772",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Spectral Cloak": {
+        "set_id": "425",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
         "comment": "",
         "items": [],
         "abilities": []
@@ -4478,6 +4457,20 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Perfected Vestment of Olorime": {
+        "set_id": "395",
+        "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Virulent Shot": {
+        "set_id": "426",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Perfected Void Bash": {
         "set_id": "564",
         "set_type": "LIBSETS_SETTYPE_ARENA",
@@ -4495,6 +4488,13 @@ SET_INFO: Dict[str, Dict] = {
     "Perfected Whorl of the Depths": {
         "set_id": "653",
         "set_type": "LIBSETS_SETTYPE_TRIAL",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Perfected Wild Impulse": {
+        "set_id": "427",
+        "set_type": "LIBSETS_SETTYPE_ARENA",
         "comment": "",
         "items": [],
         "abilities": []

@@ -23,14 +23,37 @@ def filled(value) -> bool:
 # table 38727365 of gamedata\lang\en.lang, where the index is the set id.
 # "EsoExtractData eso.mnf <folder>\ -n en.lang" extracts that file and writes
 # it as a CSV. UESP's setSummary export and LibSets' own Lua data agree. The
-# workbook has the names of three Cyrodiil sets one set out of place and adds
-# an article to one mythic. A correction the workbook no longer needs is
-# reported, so that it can be removed.
+# workbook has the names of three Cyrodiil sets (711 to 713) one set out of
+# place and spells the others differently from the game; these are all the
+# names that differed when the 725 were compared. A correction the workbook no
+# longer needs is reported, so that it can be removed.
 NAME_CORRECTIONS = {
-    "711": "Colovian Highlands General",  # workbook: Jerall Mountains Warchief
-    "712": "Jerall Mountains Warchief",   # workbook: Nibenay Bay Battlereeve
-    "713": "Nibenay Bay Battlereeve",     # workbook: Colovian Highlands General
-    "854": "Prowler's Talisman",          # workbook: The Prowler's Talisman
+    "163": "Bloodspawn",                     # workbook: Blood Spawn
+    "392": "Perfected Aegis of Galenwe",     # workbook: Perfect Aegis of Galenwe
+    "393": "Perfected Arms of Relequen",     # workbook: Perfect Arms of Relequen
+    "394": "Perfected Mantle of Siroria",    # workbook: Perfect Mantle of Siroria
+    "395": "Perfected Vestment of Olorime",  # workbook: Perfect Vestment of Olorime
+    "423": "Perfected Gallant Charge",       # workbook: Perfect Gallant Charge
+    "424": "Perfected Radial Uppercut",      # workbook: Perfect Radial Uppercut
+    "425": "Perfected Spectral Cloak",       # workbook: Perfect Spectral Cloak
+    "426": "Perfected Virulent Shot",        # workbook: Perfect Virulent Shot
+    "427": "Perfected Wild Impulse",         # workbook: Perfect Wild Impulse
+    "428": "Perfected Mender's Ward",        # workbook: Perfect Mender's Ward
+    "431": "Icy Conjurer",                   # workbook: Icy Conjuror
+    "446": "Claw of Yolnahkriin",            # workbook: Claw of Yolnakhriin
+    "451": "Perfected Claw of Yolnahkriin",  # workbook: Perfected Claw of Yolnakhriin
+    "577": "Encratis's Behemoth",            # workbook: Encrati's Behemoth
+    "635": "Lady Malygda",                   # workbook: Lady Malydga
+    "668": "Languor of Peryite",             # workbook: Langour of Peryite
+    "673": "Bastion of the Draoife",         # workbook: Bastion of Draoife
+    "690": "Judgment of Akatosh",            # workbook: Judgement of Akatosh
+    "711": "Colovian Highlands General",     # workbook: Jerall Mountains Warchief
+    "712": "Jerall Mountains Warchief",      # workbook: Nibenay Bay Battlereeve
+    "713": "Nibenay Bay Battlereeve",        # workbook: Colovian Highlands General
+    "732": "Black-Glove Grounding",          # workbook: Black-Grove Grounding
+    "759": "Ayleid Refuge",                  # workbook: Ayleid Rufuge
+    "780": "Aetheric Lancer",                # workbook: Aetheric Lance
+    "854": "Prowler's Talisman",             # workbook: The Prowler's Talisman
 }
 
 def corrected_name(set_id: str, workbook_name: str) -> str:

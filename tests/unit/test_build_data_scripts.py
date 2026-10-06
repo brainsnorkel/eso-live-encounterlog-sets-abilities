@@ -273,6 +273,19 @@ class TestGearSetNames(unittest.TestCase):
             self.assertEqual(SET_NAME_TO_ID[name], set_id)
             self.assertEqual(SET_INFO[name]['set_id'], set_id)
 
+    def test_names_are_spelt_as_the_game_spells_them(self):
+        # The workbook has "Perfect Arms of Relequen", "Blood Spawn", "Icy Conjuror"
+        from gear_set_data import SET_ID_TO_NAME
+        for set_id, name in (('163', "Bloodspawn"), ('393', "Perfected Arms of Relequen"),
+                             ('428', "Perfected Mender's Ward"), ('431', "Icy Conjurer"),
+                             ('446', "Claw of Yolnahkriin"), ('780', "Aetheric Lancer")):
+            self.assertEqual(SET_ID_TO_NAME[set_id], name)
+        self.assertEqual([name for name in SET_ID_TO_NAME.values() if name.startswith('Perfect ')], [])
+        path = REPO_ROOT / 'data' / 'esohub' / 'sets_en.json'
+        links = json.loads(path.read_text(encoding='utf-8'))['sets']
+        self.assertEqual(links["Perfected Arms of Relequen"], '/en/sets/perfected-arms-of-relequen')
+        self.assertEqual(links["Bloodspawn"], '/en/sets/bloodspawn')
+
     def test_sets_added_since_update_49_have_a_name_and_a_link(self):
         from gear_set_data import SET_ID_TO_NAME
         path = REPO_ROOT / 'data' / 'esohub' / 'sets_en.json'
