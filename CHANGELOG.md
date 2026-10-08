@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.7.0] - 2026-10-09
 
 ### Added
 - **Weapon types in the build window** (#8): the gear grid's Weight column is now Type, and a weapon row says what the weapon is, as the game names it: Inferno Staff, Ice Staff, Lightning Staff, Restoration Staff, Greatsword, Battle Axe, Maul, Axe, Mace, Sword, Dagger, Bow or Shield. Armor rows show their weight there as before. The log never names a weapon's type, so the item id is looked up in a bundled table of every weapon and shield in UESP's item database (`data/items/weapon_types.json`, 62,896 items, built by `scripts/generate_weapon_types.py`, which can also read a reply from UESP already saved to disk). All 174 weapon ids in 20 recent logs were in it; a weapon from a set newer than the table shows a dash. The table replaces the list of restoration staves the healer role relied on, which it answers as well
