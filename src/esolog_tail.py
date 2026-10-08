@@ -422,8 +422,14 @@ class CombatEncounter:
         self.players[unit_id] = player
 
     def track_pet_ownership(self, pet_unit_id: str, owner_unit_id: str):
-        """Track that a pet belongs to a specific player."""
-        self.pet_ownership[pet_unit_id] = owner_unit_id
+        """Record *pet_unit_id* as a pet of the player who owns it, so its
+        damage and healing count as that player's; forget it when the owner
+        is nobody ("0") or not a player (a boss's summons), which also
+        covers a unit id handed out again."""
+        if owner_unit_id != "0" and self.find_player_by_unit_id(owner_unit_id):
+            self.pet_ownership[pet_unit_id] = owner_unit_id
+        else:
+            self.pet_ownership.pop(pet_unit_id, None)
 
     def is_friendly_unit(self, unit_id: str) -> bool:
         """Check if a unit ID belongs to a friendly player or their pet."""
@@ -984,6 +990,8 @@ class ESOLogAnalyzer(ListenerMixin):
             # no longer an enemy the group is fighting
             if entry.fields:
                 self._enemy_last_hit.pop(entry.fields[0], None)
+                if self.current_encounter:
+                    self.current_encounter.pet_ownership.pop(entry.fields[0], None)
         elif entry.event_type == "ABILITY_INFO":
             self._handle_ability_info(entry)
         elif entry.event_type == "PLAYER_INFO":
@@ -1120,7 +1128,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     enemy.is_hostile = is_hostile
                     
                     self.current_encounter.enemies[unit_id] = enemy
-                    
+                    # The game names the owner of a summoned unit
+                    # (ownerUnitId): a player's pet, whose damage and healing
+                    # are that player's
+                    self.current_encounter.track_pet_ownership(
+                        unit_id, entry.fields[13] if len(entry.fields) > 13 else "0")
+
                     # Update highest health hostile monster (only if currently hostile)
                     if is_hostile:
                         self.current_encounter.update_highest_health_hostile(enemy)
@@ -1132,11 +1145,16 @@ class ESOLogAnalyzer(ListenerMixin):
     def _handle_unit_changed(self, entry: ESOLogEntry):
         """Handle UNIT_CHANGED events to track when monsters become hostile."""
         # UNIT_CHANGED format: timestamp,UNIT_CHANGED,unit_id,class_id,race_id,name,display_name,character_id,level,champion_points,owner_unit_id,reaction,is_grouped_with_local_player
-        # After parsing: fields[0]=unit_id, fields[3]=name, fields[9]=reaction
+        # After parsing: fields[0]=unit_id, fields[3]=name, fields[8]=owner_unit_id, fields[9]=reaction
         if self.current_encounter and len(entry.fields) >= 10:
             unit_id = entry.fields[0]
             name = entry.fields[3] if len(entry.fields) > 3 else ""
             new_state = entry.fields[9] if len(entry.fields) > 9 else ""
+
+            # The owner can change after the unit was added: a pet that has
+            # expired loses its owner a moment before its UNIT_REMOVED
+            if unit_id in self.current_encounter.enemies:
+                self.current_encounter.track_pet_ownership(unit_id, entry.fields[8])
             
             # Only process if this is a known enemy and it's becoming HOSTILE
             if (unit_id in self.current_encounter.enemies and 
@@ -1409,17 +1427,20 @@ class ESOLogAnalyzer(ListenerMixin):
             # Create new encounter but preserve players and enemies from previous encounter in same zone
             old_players = {}
             old_enemies = {}
+            old_pets = {}
             if self.current_encounter:
                 if self.current_encounter.players:
                     old_players = self.current_encounter.players.copy()
                 if self.current_encounter.enemies:
                     old_enemies = self.current_encounter.enemies.copy()
+                old_pets = self.current_encounter.pet_ownership.copy()
             
             self.current_encounter = CombatEncounter()
 
-            # Restore players and enemies from previous encounter (they persist across combats in same zone)
+            # Restore players, enemies and pets from previous encounter (they persist across combats in same zone)
             self.current_encounter.players = old_players
             self.current_encounter.enemies = old_enemies
+            self.current_encounter.pet_ownership = old_pets
 
             # Reset resource tracking for all players for the new encounter
             for player in self.current_encounter.players.values():
