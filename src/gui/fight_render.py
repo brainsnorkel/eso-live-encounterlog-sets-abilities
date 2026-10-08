@@ -55,6 +55,8 @@ _THEMES = {
         # build card (skill lines + bars): faint lift off the dark pane
         "frame_border": "#45494f",
         "frame_bg": "#2a2e33",
+        # the ring on, or the name of, an ability the player taunted with
+        "taunt": "#ce93d8",
     },
     # light background: darker, saturated accents
     False: {
@@ -66,6 +68,7 @@ _THEMES = {
         "roles": {"T": "#1565c0", "H": "#2e7d32", "D": "#c62828"},
         "frame_border": "#d6d9dc",
         "frame_bg": "#f6f7f8",
+        "taunt": "#7b1fa2",
     },
 }
 
@@ -227,19 +230,37 @@ def _ability_href(slot: dict, links) -> str:
     return f"{href}#{variant}" if variant else href
 
 
-def _bar_html(slots, names, icons, links, e, px: int = ICON_PX) -> str:
+def _taunt_mark(slot: dict, taunt_color: Optional[str]) -> str:
+    """The color an ability the player taunted with is marked in, '' for
+    any other slot or when no color is given."""
+    return taunt_color if taunt_color and slot.get("taunt") else ""
+
+
+def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
+              taunt_color: Optional[str] = None) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
     names otherwise, each inside an anchor; the sixth slot (the ultimate)
     sits apart. With no icon cache the bar is the plain joined name list.
-    px: the icons' edge (the build window draws them larger)."""
+    px: the icons' edge (the build window draws them larger). taunt_color:
+    an ability the player taunted with gets a ring of it on its icon (see
+    the view's loadResource) or its name in it."""
     if icons is None or not slots:
+        if slots and any(_taunt_mark(slot, taunt_color) for slot in slots):
+            return _join([
+                f"<span style='color:{taunt_color}'>{e(str(slot.get('name', '')))}</span>"
+                if _taunt_mark(slot, taunt_color) else e(str(slot.get("name", "")))
+                for slot in slots])
         return e(_join(names))
     parts = []
     for index, slot in enumerate(slots):
         stem = str(slot.get("icon") or "")
+        mark = _taunt_mark(slot, taunt_color)
         if icons.has(stem):
-            body = (f'<img src="icon:{stem}" width="{px}" height="{px}" '
+            ring = f"?ring={mark.lstrip('#')}" if mark else ""
+            body = (f'<img src="icon:{stem}{ring}" width="{px}" height="{px}" '
                     f'style="vertical-align:middle">')
+        elif mark:
+            body = f"<span style='color:{mark}'>{e(str(slot.get('name', '')))}</span>"
         else:
             body = e(str(slot.get("name", "")))
         href = e(_ability_href(slot, links), quote=True)
@@ -480,8 +501,10 @@ def render_html(entry, detailed: bool, dark: bool = False,
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
         parts.append(row)
         if detailed:
-            front = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e)
-            back = _bar_html(p.get("back_bar_slots"), p.get("back_bar"), icons, links, e)
+            front = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e,
+                              taunt_color=theme["taunt"])
+            back = _bar_html(p.get("back_bar_slots"), p.get("back_bar"), icons, links, e,
+                             taunt_color=theme["taunt"])
             # Icon bars are compact, so bar 1 sits left of bar 2 on one line;
             # text bars are long and stay stacked
             icon_bars = icons is not None and bool(
@@ -575,6 +598,10 @@ def render_plain_text(entry) -> str:
             bar_text = _join([slot_label(slot) for slot in slots] if slots else bar)
             if bar_text:
                 lines.append(f"      {bar_text}")
+        taunts = p.get("taunts") or []
+        if taunts:
+            lines.append("      taunted with " + ", ".join(
+                f"{t.get('name', '')} ×{t.get('count', 0)}" for t in taunts))
         sets = _sets_text(p.get("all_sets") or p.get("sets"))
         if sets:
             lines.append(f"      {sets}")

@@ -18,7 +18,7 @@ other; the pane therefore holds both and applies them together.
 
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
     QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument,
@@ -30,6 +30,16 @@ from gui.fight_render import BUILD_HREF, build_unit_from_href
 from gui.icon_cache import IconCache
 
 ICON_SCHEME = "icon"
+_RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in that color
+
+
+def _ring_color(url: QUrl) -> Optional[str]:
+    """'#rrggbb' when an icon URL asks for a ring (the fight render marks
+    the abilities a player taunted with that way), else None."""
+    value = QUrlQuery(url).queryItemValue(_RING_QUERY)
+    if len(value) == 6 and all(c in "0123456789abcdefABCDEF" for c in value):
+        return f"#{value}"
+    return None
 
 
 class FightView(QTextBrowser):
@@ -164,7 +174,7 @@ class FightView(QTextBrowser):
 
     def loadResource(self, resource_type, name: QUrl):
         if resource_type == QTextDocument.ImageResource and name.scheme() == ICON_SCHEME:
-            image = self.icons.image(name.path())
+            image = self.icons.image(name.path(), ring=_ring_color(name))
             if image is not None:
                 return image
         return super().loadResource(resource_type, name)

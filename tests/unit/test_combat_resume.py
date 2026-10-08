@@ -336,9 +336,10 @@ class TestBuffsAcrossTheCut(unittest.TestCase):
             f'22000,EFFECT_CHANGED,FADED,1,901,{FORCE},{_player(2)},*',
             *FIRST_PART[3:],
         ])
-        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:50%')
+        # A group fighting a boss gets its taunt uptime too, here none
+        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:50% Taunt:0%')
         engine.feed(SECOND_PART)
-        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:25%')
+        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:25% Taunt:0%')
 
     def test_timeline_keeps_the_first_part(self):
         force = ('{ts},EFFECT_CHANGED,{change},1,111,61747,' + _player(1) + ',' + _player(2))

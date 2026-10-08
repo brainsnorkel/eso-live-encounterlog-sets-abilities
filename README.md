@@ -13,7 +13,7 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app 
 - **Scribed skills with their scripts**: a grimoire's icon cannot show what was scribed into it, so each scribed skill is listed under the bars with its signature and affix scripts, for example `Chilling Contingency (Lingering Torment / Intellect and Endurance)`.
 - **Full build per player**: click a player's name for a window with their gear slot by slot (set, quality, trait, enchant, slotted poison), both ability bars, mundus stone and food.
 - **ESO-Hub links**: hover an ability icon for its name, click it to open the skill on ESO-Hub; set names open their ESO-Hub set pages. Nothing is downloaded until you click.
-- **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward), or an experimental per-fight buff timeline strip.
+- **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward) and **taunt uptime** on the boss, with the abilities each player taunted with marked on their bars; or an experimental per-fight buff timeline strip.
 - **Search within a fight** (Ctrl+F), including ability icons by name; copy any fight as plain text.
 - **Review any log file** without interrupting live monitoring.
 - **Log housekeeping**: per-encounter split files, automatic archiving of oversized logs (they grow into the tens of GB), and a freshness indicator so you can tell at a glance that logging is on.
@@ -84,10 +84,10 @@ The right pane shows the selected fight.
 
 - **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths.
 - **One row per player**, sorted by damage share: role letter (**T**ank, **H**ealer, **D**PS, inferred from resource pools, a restoration staff or healing output for healers, and taunt or heal abilities), name, class, DPS, damage share, and max Health, Magicka, and Stamina with the largest pool in bold. The player who dealt the fight's first damage is marked with `*`. When a build borrows a skill line from another class, the lines show beside the class, for example `NB Assassination/Aedric/Grave`; a stock build shows just the class.
-- **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead.
+- **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead. An ability the player taunted with in that fight is ringed in purple (or named in purple).
 - **Scribed skills**: under the bars, each scribed skill with the two scripts its name does not reveal, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
 - **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
-- **Group buffs**: for groups of three or more, a line of uptime percentages for Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, and Pearlescent Ward. When the experimental timeline strip is on, the strip replaces this line.
+- **Group buffs and taunt**: for groups of three or more, a line of uptime percentages for Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, and Pearlescent Ward. `Taunt:97%` is how long the boss had a taunt on it: shown for a group of three or more fighting a boss, and for anyone who taunted; averaged over the bosses when a fight has several, and a boss killed before the end is measured to its death. When the experimental timeline strip is on, the strip replaces this line.
 
 ### Death recap
 
@@ -105,19 +105,19 @@ Heals that were pure overheal are left out. A death whose event the game writes 
 
 Click a player's name in the fight pane, in either view, to open their build for that fight. The name is underlined while the pointer is over it. The window stays open beside the fight view and keeps the fight it was opened for; clicking another name reuses it.
 
-![Build window: a player's mundus stone and food, both ability bars, and a gear grid with armor weight, set, pieces, quality, trait and enchant per slot](docs/screencaps/build-window.png)
+![Build window: a player's mundus stone and food, both ability bars, and a gear grid with armor weight or weapon type, set, pieces, quality, trait and enchant per slot](docs/screencaps/build-window.png)
 
 - **Header**: account and character name, race, class, champion points and role, then the fight.
 - **Mundus and food**: the mundus stone, and the food or drink buff the player had as combat started. `no known food or drink` means none of their effects is a food or drink the app knows.
 - **Bars**: front bar above back bar, ultimate set apart, with the fight view's hover text, ESO-Hub links and line of scribed skills.
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
-- **Weight** says whether an armor piece is light, medium or heavy, and the Armor heading counts the pieces of each, for example `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
+- **Type** says whether an armor piece is light, medium or heavy, and what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, for example `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
 - **Pcs** is the number of pieces of the row's set that are active, counted per weapon bar: armor and jewelry count on both bars, and each bar adds its own weapons, a two-handed one as two. `5` means five on either bar. `5/3`, as on Soulcleaver in the picture, means five on the front bar and three on the back: that set's five-piece bonus is live on the front bar only.
 
 ### Search, copy, review
 
 - **Search in fight** (Ctrl+F): type in the field above the fight pane to highlight every occurrence, with a live match count; Enter jumps between matches, Esc clears. Ability icons match by the name they stand for, so `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights.
-- **Copy fight** (Ctrl+C): copies the selected fight as plain text, names rather than icons, ready to paste into Discord. Scribed skills keep their scripts: `Leashing Soul (Druid's Resurgence / Cowardice)`.
+- **Copy fight** (Ctrl+C): copies the selected fight as plain text, names rather than icons, ready to paste into Discord. Scribed skills keep their scripts: `Leashing Soul (Druid's Resurgence / Cowardice)`. A player who taunted gets a line naming what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
 - **Open log for review**: load any log file, a split file or an unzipped archive, and browse its fights while live monitoring continues in the background. **Back to live** returns to the live session.
 - **About**: version, project link, and credits.
 
@@ -148,7 +148,7 @@ At startup the app checks GitHub for a newer release (Settings → Updates to di
 
 ### Experimental: buff timeline
 
-Settings → Experimental → *Buff timeline* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
+Settings → Experimental → *Buff timeline* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
 
 ## Automatic log archiving
 
@@ -180,8 +180,8 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - A scribed skill's scripts are not always in the log, and the skill then shows `(scripts not in log)`. Two cases: the game sometimes writes a player's skill without scripts (they usually follow by a later fight, which then shows them); and it writes each script combination once per logging session, for the first player seen with it, so a later player whose combination was already written gets no line of their own. When that leaves more than one possibility, the skill shows under the grimoire's name. For the same reason, a player who re-scribes mid-session to a combination already written keeps showing their earlier scripts.
 - After an ESO patch, new skills show as text until the icon set is refreshed, and the ESO-Hub link maps use English page names, so logs from a non-English client will not link.
 - Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
-- Gear is logged per equipped slot: an empty slot (the off hand beside a two-handed weapon, say) has no entry. Item names, weapon types and armor weights are not in the log at all. Armor weight is shown all the same, looked up by item id in a bundled table; a piece from a set newer than that table shows a dash in the Weight column until the table is refreshed.
-- Roles are a heuristic. A healer whose largest pool is health or stamina shows as a tank or a DPS, and a restoration staff from a set newer than the bundled list is not recognised until the list is refreshed (out-healing their own damage still marks them a healer).
+- Gear is logged per equipped slot: an empty slot (the off hand beside a two-handed weapon, say) has no entry. Item names, weapon types and armor weights are not in the log at all. Armor weights and weapon types are shown all the same, looked up by item id in bundled tables; a piece from a set newer than those tables shows a dash in the Type column until they are refreshed.
+- Roles are a heuristic. A healer whose largest pool is health or stamina shows as a tank or a DPS, and a restoration staff from a set newer than the bundled weapon table is not recognised until the table is refreshed (out-healing their own damage still marks them a healer).
 - The build window shows the build as combat started. The game writes it once per fight, so gear or skills swapped during the fight do not show.
 - A crafted poison is named by its primary effect (`Damage Health Poison IX`); its other effects are not in the log. A food added to the game after the bundled list was built reads as `no known food or drink` until the list is refreshed.
 
@@ -264,9 +264,10 @@ python scripts\generate_poison_names.py
 :: (your installed copy, else its ESOUI download)
 python scripts\generate_food_buffs.py
 
-:: Restoration staff item ids for the healer role, from UESP's item database
-:: (network access)
-python scripts\generate_restoration_staves.py
+:: Weapon types (inferno staff, dagger, shield, ...) for the build window and
+:: the healer role, from UESP's item database (network access; or --from a
+:: reply of theirs already saved)
+python scripts\generate_weapon_types.py
 
 :: Armor weights (light, medium, heavy) for the build window, from UESP's item
 :: database (network access)
@@ -332,5 +333,5 @@ The same credits are shown in the app under **About…**.
 - **[EsoExtractData](https://en.uesp.net/wiki/ESO_Mod:EsoExtractData)** by UESP: the tool that extracts the icons from the game files.
 - **[Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html)**: the addon that makes turning logging on a non-event.
 - **[ESO Log Tool](https://github.com/sheumais/logs)** by sheumais: insights into ESO log format parsing, and the idea of showing a scribed skill with its scripts as `Name (Signature / Affix)`.
-- **[UESP](https://en.uesp.net/wiki/Online:Online)**: authoritative skill line and ability information, and the item database behind the build window's poison names and armor weights and the list of restoration staves that marks healers.
+- **[UESP](https://en.uesp.net/wiki/Online:Online)**: authoritative skill line and ability information, and the item database behind the build window's poison names, armor weights and weapon types (the restoration staff that marks a healer among them).
 - **ESO community**: encounter log format documentation and testing feedback.

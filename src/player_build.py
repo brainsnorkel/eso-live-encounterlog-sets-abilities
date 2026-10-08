@@ -31,16 +31,16 @@ display; a value they do not know is shown in a readable form of itself.
 Two things the log leaves out are looked up by item id in tables built from
 UESP's item database. armor_weight says whether an armor piece is light,
 medium or heavy (data/items/armor_weights.json, built by
-scripts/generate_armor_weights.py). has_restoration_staff answers the one
-weapon-type question the app asks, the role heuristic's
-(data/items/restoration_staves.json, built by
-scripts/generate_restoration_staves.py).
+scripts/generate_armor_weights.py). weapon_type says what a weapon or shield
+is, an inferno staff or a dagger (data/items/weapon_types.json, built by
+scripts/generate_weapon_types.py); has_restoration_staff puts the role
+heuristic's question to it.
 """
 
 import json
 from collections import Counter
 from functools import lru_cache
-from typing import Callable, Dict, FrozenSet, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from ability_icons import bundle_root
 
@@ -69,6 +69,7 @@ OFF_HAND_OF = {"MAIN_HAND": "OFF_HAND", "BACKUP_MAIN": "BACKUP_OFF"}
 _BODY_SLOTS = frozenset(ARMOR_SLOTS + JEWELRY_SLOTS)
 _FRONT_WEAPONS = ("MAIN_HAND", "OFF_HAND")
 _BACK_WEAPONS = ("BACKUP_MAIN", "BACKUP_OFF")
+WEAPON_SLOTS = _FRONT_WEAPONS + _BACK_WEAPONS  # a shield sits in an off hand
 
 RACE_NAMES = {
     "1": "Breton", "2": "Redguard", "3": "Orc", "4": "Dark Elf", "5": "Nord",
@@ -108,6 +109,16 @@ ENCHANT_LABELS = {
 NO_VALUE = ("", "NONE", "INVALID")  # the log's ways of saying "nothing here"
 # Armor weights, as the bundled table and a gear row's 'weight' name them
 WEIGHT_LABELS = {"light": "Light", "medium": "Medium", "heavy": "Heavy"}
+# Weapon types, as the bundled table and a gear row's 'weapon_type' name
+# them, with the game's name for each
+WEAPON_TYPE_LABELS = {
+    "axe": "Axe", "mace": "Mace", "sword": "Sword", "greatsword": "Greatsword",
+    "battle_axe": "Battle Axe", "maul": "Maul", "bow": "Bow",
+    "restoration_staff": "Restoration Staff", "dagger": "Dagger",
+    "inferno_staff": "Inferno Staff", "ice_staff": "Ice Staff",
+    "lightning_staff": "Lightning Staff", "shield": "Shield",
+}
+RESTORATION_STAFF = "restoration_staff"
 
 MAX_CP_LEVEL = 16  # the level field of a champion-rank 160 item
 # Poison tier per solvent: below each level the tier applies, else the last
@@ -316,10 +327,30 @@ def armor_weight(item_id, table: Optional[Dict[str, str]] = None) -> str:
 
 
 @lru_cache(maxsize=1)
-def _bundled_restoration_staves() -> FrozenSet[str]:
-    """Item ids of every restoration staff; empty when the list is absent."""
-    ids = _load_json("items", "restoration_staves.json").get("ids")
-    return frozenset(str(i) for i in ids) if isinstance(ids, list) else frozenset()
+def _bundled_weapon_types() -> Dict[str, str]:
+    """Weapon or shield item id -> its type ('inferno_staff', 'dagger',
+    'shield', ...); {} when the table is absent."""
+    data = _load_json("items", "weapon_types.json")
+    return {str(item_id): kind for kind in WEAPON_TYPE_LABELS
+            for item_id in (data.get(kind) if isinstance(data.get(kind), list) else ())}
+
+
+def weapon_type(item_id, table: Optional[Dict[str, str]] = None) -> str:
+    """'axe', 'inferno_staff', 'shield' and so on for a weapon or shield, ''
+    for an item id the bundled table lacks (a weapon newer than the table, or
+    no weapon at all).
+
+    The log does not say what a weapon is, so its item id is looked up.
+    *table* overrides the bundled one; tests use it.
+    """
+    known = _bundled_weapon_types() if table is None else table
+    return str(known.get(str(item_id)) or "")
+
+
+def weapon_type_label(kind: str) -> str:
+    """In-game name of a weapon type: 'inferno_staff' -> 'Inferno Staff'; ''
+    for a type the table does not name, or none."""
+    return WEAPON_TYPE_LABELS.get(str(kind or ""), "")
 
 
 def has_restoration_staff(gear: Dict[str, List[str]],
@@ -327,13 +358,19 @@ def has_restoration_staff(gear: Dict[str, List[str]],
     """Whether a restoration staff is the main-hand weapon of either bar.
 
     The log does not name weapon types, so the item id is looked up in the
-    bundled list of restoration staves (*staves* overrides it; tests use
-    that). A Restoration Staff skill on a bar is no substitute: real logs
-    have such skills slotted with another weapon in hand, and staves in hand
-    with none of the skills slotted.
+    bundled weapon table (*staves*, item ids to take for staves, overrides
+    it; tests use that). A Restoration Staff skill on a bar is no
+    substitute: real logs have such skills slotted with another weapon in
+    hand, and staves in hand with none of the skills slotted.
     """
-    known = _bundled_restoration_staves() if staves is None else frozenset(map(str, staves))
-    return any(len(gear.get(slot) or []) > 1 and str(gear[slot][1]) in known
+    known = frozenset(map(str, staves)) if staves is not None else None
+
+    def is_staff(item_id: str) -> bool:
+        if known is not None:
+            return item_id in known
+        return weapon_type(item_id) == RESTORATION_STAFF
+
+    return any(len(gear.get(slot) or []) > 1 and is_staff(str(gear[slot][1]))
                for slot in OFF_HAND_OF)
 
 
@@ -403,17 +440,19 @@ def gear_rows(gear: Dict[str, List[str]],
               set_name_of: Optional[Callable[[str], Optional[str]]] = None,
               is_mythic: Optional[Callable[[str], bool]] = None,
               poisons: Optional[Dict[str, dict]] = None,
-              weights: Optional[Dict[str, str]] = None) -> List[dict]:
+              weights: Optional[Dict[str, str]] = None,
+              weapon_types: Optional[Dict[str, str]] = None) -> List[dict]:
     """A player's equipment as one dict per logged slot, in display order.
 
     *gear* is slot -> the item's eleven log fields. Each dict has 'slot',
     'item_id', 'set_id', 'set' (the LibSets name, 'Set#<id>' for an unknown
     id, '' for an item of no set), 'mythic', 'quality', 'trait', 'enchant'
     and 'enchant_quality' as logged, 'cp', 'level', 'pieces' (see
-    piece_counts; None for an item of no set), and 'weight' (see
-    armor_weight; '' for anything but armor). A poison has 'name' and no
-    trait or enchant. The lookups default to the bundled set data, poison
-    table and armor weights; tests pass their own.
+    piece_counts; None for an item of no set), 'weight' (see armor_weight;
+    '' for anything but armor) and 'weapon_type' (see weapon_type; '' for
+    anything but a weapon or shield). A poison has 'name' and no trait or
+    enchant. The lookups default to the bundled set data, poison table,
+    armor weights and weapon types; tests pass their own.
     """
     set_name_of = set_name_of or _default_set_name
     is_mythic = is_mythic or _default_is_mythic
@@ -427,7 +466,9 @@ def gear_rows(gear: Dict[str, List[str]],
         row = {"slot": slot, "item_id": str(item[1]), "set_id": "", "set": "",
                "mythic": False, "quality": str(item[5]), "trait": "", "enchant": "",
                "enchant_quality": "", "cp": cp, "level": level, "pieces": None,
-               "weight": armor_weight(item[1], weights) if slot in ARMOR_SLOTS else ""}
+               "weight": armor_weight(item[1], weights) if slot in ARMOR_SLOTS else "",
+               "weapon_type": (weapon_type(item[1], weapon_types)
+                               if slot in WEAPON_SLOTS else "")}
         if slot in POISON_SLOTS:
             row["name"] = poison_name(item[1], cp, level, poisons)
         else:

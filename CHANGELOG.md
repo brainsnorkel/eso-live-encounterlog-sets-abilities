@@ -2,6 +2,13 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Weapon types in the build window** (#8): the gear grid's Weight column is now Type, and a weapon row says what the weapon is, as the game names it: Inferno Staff, Ice Staff, Lightning Staff, Restoration Staff, Greatsword, Battle Axe, Maul, Axe, Mace, Sword, Dagger, Bow or Shield. Armor rows show their weight there as before. The log never names a weapon's type, so the item id is looked up in a bundled table of every weapon and shield in UESP's item database (`data/items/weapon_types.json`, 62,896 items, built by `scripts/generate_weapon_types.py`, which can also read a reply from UESP already saved to disk). All 174 weapon ids in 20 recent logs were in it; a weapon from a set newer than the table shows a dash. The table replaces the list of restoration staves the healer role relied on, which it answers as well
+
+- **Taunts** (#9): for a group of three or more fighting a boss, and for anyone who taunted, the uptime line gains `Taunt:NN%`, how long the boss had a taunt on it: averaged over the bosses when a fight has several, and a boss killed before the end is measured to its death. On each player's bars, an ability they taunted with in that fight is ringed in purple (its name in purple where it has no icon), in the fight pane and the build window, and copied text lists them (`taunted with Inner Rage ×262`). The experimental timeline strip gets a Taunt row. No list of taunt skills is involved: the log records every taunt, as a TAUNTED event that shares its cast tracking id with the taunting skill's own cast, and as the Taunt debuff on the enemy, whose spans give the uptime. Destructive Clench with an ice staff is logged as Frost Clench under another id and is recognised by the icon the two share. Checked on 1,361 taunts in twelve logs of October 2026
+
 ## [0.6.6] - 2026-10-06
 
 ### Fixed

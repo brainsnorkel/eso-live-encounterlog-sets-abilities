@@ -82,6 +82,16 @@ class TestRecorder(unittest.TestCase):
         snap = self.rec.snapshot_fight(0, 60_000, _names)
         self.assertIn('Powerful Assault', snap['effects'])
 
+    def test_taunt_on_an_enemy_is_tracked(self):
+        from buff_timeline import BuffTimelineRecorder
+        recorder = BuffTimelineRecorder()
+        recorder.record("GAINED", "38254", "1", "70", 11_000)
+        recorder.record("UPDATED", "38254", "1", "70", 20_000)
+        recorder.record("FADED", "38254", "1", "70", 26_000)
+        snapshot = recorder.snapshot_fight(10_000, 60_000, lambda u: {"1": "@tank"}.get(u, "Boss"))
+        self.assertEqual(snapshot["effects"]["Taunt"], [
+            {"start_ms": 1_000, "end_ms": 16_000, "source": "@tank", "target": "Boss"}])
+
     def test_multiple_ability_ids_map_to_one_effect(self):
         for ability_id in ('106754', '122389', '167061'):
             self.rec.record('GAINED', ability_id, '1', '70', 10_000)

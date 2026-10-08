@@ -15,7 +15,7 @@ from player_build import (  # noqa: E402
     SLOT_GROUPS, SLOT_LABELS, SLOT_ORDER, armor_weight, build_fields, display_quality,
     enchant_label, food_buff, food_table, gear_rows, is_two_handed, level_label,
     mundus_stones, piece_counts, poison_name, poison_tier, quality_label, race_name,
-    trait_label, weight_label)
+    trait_label, weapon_type, weapon_type_label, weight_label)
 
 # Every value the October 2026 survey found (design.md), with what it shows as
 TRAITS = {
@@ -65,6 +65,13 @@ WEIGHTS = {'95044': 'medium', '501': 'light', '502': 'heavy'}
 # Cure Robe, Cuirass of the Sergeant, Girdle of the Crimson Oath
 REAL_WEIGHTS = {'95044': 'medium', '187287': 'light', '111885': 'light',
                 '108766': 'heavy', '177413': 'heavy'}
+WEAPON_TYPES = {'133257': 'lightning_staff', '601': 'dagger', '602': 'shield'}
+# Real weapons: a lightning staff, an ice staff, a dagger, an inferno staff,
+# Restoration Staff of the Gorethief, The Maelstrom's Greatsword and Bow,
+# Webspinner's Brace
+REAL_WEAPON_TYPES = {'133257': 'lightning_staff', '187194': 'ice_staff', '200834': 'dagger',
+                     '166283': 'inferno_staff', '224527': 'restoration_staff',
+                     '71130': 'greatsword', '71142': 'bow', '139': 'shield'}
 
 
 def item(slot, set_id='0', item_id='100', trait=None, quality='LEGENDARY', enchant='STAMINA',
@@ -85,6 +92,7 @@ def rows(gear, **kwargs):
     kwargs.setdefault('is_mythic', lambda name: name == 'Lone Ring')
     kwargs.setdefault('poisons', POISONS)
     kwargs.setdefault('weights', WEIGHTS)
+    kwargs.setdefault('weapon_types', WEAPON_TYPES)
     return {row['slot']: row for row in gear_rows(gear, **kwargs)}
 
 
@@ -275,7 +283,7 @@ class TestGearRows(unittest.TestCase):
             'slot': 'HEAD', 'item_id': '95044', 'set_id': '1', 'set': 'Alpha',
             'mythic': False, 'quality': 'ARTIFACT', 'trait': 'ARMOR_PROSPEROUS',
             'enchant': 'MAGICKA', 'enchant_quality': 'ARCANE', 'cp': True, 'level': 15,
-            'pieces': [1, None], 'weight': 'medium'})
+            'pieces': [1, None], 'weight': 'medium', 'weapon_type': ''})
 
     def test_item_of_no_set(self):
         row = rows(gear_of(item('WAIST', '0')))['WAIST']
@@ -376,6 +384,74 @@ class TestArmorWeights(unittest.TestCase):
                 table.write_text('{"light": "nope", "medium": [7, 8], "heavy": {}}',
                                  encoding='utf-8')
                 self.assertEqual(load(), {'7': 'medium', '8': 'medium'})
+                table.write_text('[1, 2]', encoding='utf-8')
+                self.assertEqual(load(), {})
+                table.write_text('not json', encoding='utf-8')
+                self.assertEqual(load(), {})
+
+
+class TestWeaponTypes(unittest.TestCase):
+
+    def test_type_is_looked_up_by_item_id(self):
+        self.assertEqual([weapon_type(i, WEAPON_TYPES) for i in ('133257', '601', '602')],
+                         ['lightning_staff', 'dagger', 'shield'])
+        self.assertEqual(weapon_type(133257, WEAPON_TYPES), 'lightning_staff')  # ids compare as text
+
+    def test_weapon_the_table_lacks_has_no_type(self):
+        self.assertEqual(weapon_type('999999', WEAPON_TYPES), '')
+        self.assertEqual(weapon_type('', WEAPON_TYPES), '')
+        self.assertEqual(weapon_type('133257', {}), '')
+
+    def test_labels_are_the_games_names(self):
+        kinds = ('axe', 'mace', 'sword', 'greatsword', 'battle_axe', 'maul', 'bow',
+                 'restoration_staff', 'dagger', 'inferno_staff', 'ice_staff',
+                 'lightning_staff', 'shield')
+        self.assertEqual([weapon_type_label(k) for k in kinds],
+                         ['Axe', 'Mace', 'Sword', 'Greatsword', 'Battle Axe', 'Maul', 'Bow',
+                          'Restoration Staff', 'Dagger', 'Inferno Staff', 'Ice Staff',
+                          'Lightning Staff', 'Shield'])
+        self.assertEqual([weapon_type_label(k) for k in ('', None, 'wand')], ['', '', ''])
+
+    def test_every_weapon_row_carries_its_type(self):
+        gear = gear_of(item('MAIN_HAND', '1', item_id='133257'),
+                       item('OFF_HAND', '1', item_id='602', trait='ARMOR_STURDY'),
+                       item('BACKUP_MAIN', '1', item_id='601'),
+                       item('BACKUP_OFF', '1', item_id='777'))
+        got = rows(gear)
+        self.assertEqual([got[slot]['weapon_type']
+                          for slot in ('MAIN_HAND', 'OFF_HAND', 'BACKUP_MAIN', 'BACKUP_OFF')],
+                         ['lightning_staff', 'shield', 'dagger', ''])
+
+    def test_only_weapon_slots_have_a_type(self):
+        # Even with an id the table knows: armor, jewelry and poisons are not
+        # looked up
+        gear = gear_of(item('HEAD', '1', item_id='601'), item('NECK', '1', item_id='601'),
+                       item('RING1', '1', item_id='601'),
+                       ['POISON', '601', 'F', '1', 'NONE', 'LEGENDARY', '0', 'INVALID',
+                        'F', '0', 'NORMAL'])
+        self.assertEqual({row['weapon_type'] for row in rows(gear).values()}, {''})
+
+    def test_bundled_table_knows_real_weapons(self):
+        for item_id, kind in REAL_WEAPON_TYPES.items():
+            self.assertEqual(weapon_type(item_id), kind, item_id)
+        # A medium helmet and a ring are no weapon
+        self.assertEqual((weapon_type('95044'), weapon_type('187752')), ('', ''))
+
+    def test_worked_example_from_a_real_log(self):
+        got = {row['slot']: row['weapon_type'] for row in gear_rows(_real_gear())}
+        self.assertEqual({slot: kind for slot, kind in got.items() if kind},
+                         {'MAIN_HAND': 'lightning_staff', 'BACKUP_MAIN': 'ice_staff'})
+
+    def test_missing_or_malformed_table_gives_no_types(self):
+        load = player_build._bundled_weapon_types.__wrapped__
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(player_build, 'bundle_root', return_value=Path(tmp)):
+                self.assertEqual(load(), {})
+                table = Path(tmp) / 'data' / 'items' / 'weapon_types.json'
+                table.parent.mkdir(parents=True)
+                table.write_text('{"axe": "nope", "dagger": [7, 8], "shield": {}}',
+                                 encoding='utf-8')
+                self.assertEqual(load(), {'7': 'dagger', '8': 'dagger'})
                 table.write_text('[1, 2]', encoding='utf-8')
                 self.assertEqual(load(), {})
                 table.write_text('not json', encoding='utf-8')
@@ -517,14 +593,15 @@ class TestBuildOnTheFightEntry(unittest.TestCase):
             'slot': 'HEAD', 'item_id': '95044', 'set_id': '270', 'set': 'Slimecraw',
             'mythic': False, 'quality': 'LEGENDARY', 'trait': 'ARMOR_DIVINES',
             'enchant': 'MAGICKA', 'enchant_quality': 'LEGENDARY', 'cp': True, 'level': 16,
-            'pieces': [1, 1], 'weight': 'medium'})
+            'pieces': [1, 1], 'weight': 'medium', 'weapon_type': ''})
         self.assertEqual((by_slot['SHOULDERS']['set'], by_slot['SHOULDERS']['pieces'],
                           by_slot['SHOULDERS']['weight']),
                          ('Perfected Whorl of the Depths', [3, 5], 'light'))
-        self.assertEqual(by_slot['NECK']['weight'], '')
+        self.assertEqual((by_slot['NECK']['weight'], by_slot['NECK']['weapon_type']), ('', ''))
         self.assertEqual((by_slot['MAIN_HAND']['trait'], by_slot['MAIN_HAND']['enchant'],
-                          by_slot['MAIN_HAND']['pieces']),
-                         ('WEAPON_CHARGED', 'POISONED_WEAPON', [2, 0]))
+                          by_slot['MAIN_HAND']['pieces'], by_slot['MAIN_HAND']['weapon_type']),
+                         ('WEAPON_CHARGED', 'POISONED_WEAPON', [2, 0], 'lightning_staff'))
+        self.assertEqual(by_slot['BACKUP_MAIN']['weapon_type'], 'ice_staff')
         self.assertTrue(by_slot['RING2']['mythic'])
 
     def test_fight_view_counts_are_unchanged(self):

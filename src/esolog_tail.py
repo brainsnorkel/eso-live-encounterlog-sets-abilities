@@ -99,6 +99,12 @@ LATE_DEATH_GRACE_MS = 1000
 # the group hit in the fight's last seconds is still alive; none of the 51
 # pairs between half a second and three seconds apart was the same pull.
 COMBAT_RESUME_MS = 1000
+# Taunts. The game puts one Taunt debuff on a taunted enemy whatever skill
+# taunted, and writes a TAUNTED combat event that shares its cast tracking
+# id with that skill's own cast and hits, which is how the skill is known
+TAUNT_EFFECT_ID = "38254"
+TAUNTED = "TAUNTED"
+CAST_MEMORY = 4096  # casts remembered by tracking id; a taunt follows its cast within ms
 ENGAGED_ENEMY_MS = 10000
 # The results that count as the group hitting an enemy
 ENEMY_HIT_RESULTS = frozenset(
@@ -360,6 +366,37 @@ def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing
     return 'D'
 
 
+def _covered_ms(spans: List[Tuple[int, int]], start: int, end: int) -> int:
+    """How many ms of [start, end] the *spans* cover between them, overlaps
+    counted once."""
+    clipped = sorted((max(a, start), min(b, end)) for a, b in spans
+                     if min(b, end) > max(a, start))
+    total, open_from, open_to = 0, None, None
+    for a, b in clipped:
+        if open_to is None or a > open_to:
+            if open_to is not None:
+                total += open_to - open_from
+            open_from, open_to = a, b
+        else:
+            open_to = max(open_to, b)
+    if open_to is not None:
+        total += open_to - open_from
+    return total
+
+
+def mark_taunt_slots(slots: List[dict], taunts: List[dict]) -> None:
+    """Put 'taunt': True on each bar slot the player taunted with: the slot
+    whose ability id a taunt names, or, for a taunt logged under an id no
+    slot has, the slot that shares its icon (Destructive Clench taunts as
+    Frost Clench, a separate id with the same icon)."""
+    slotted = {str(slot.get("id", "")) for slot in slots}
+    ids = {t["id"] for t in taunts}
+    icons = {t["icon"] for t in taunts if t["icon"] and t["id"] not in slotted}
+    for slot in slots:
+        if str(slot.get("id", "")) in ids or (slot.get("icon") and slot["icon"] in icons):
+            slot["taunt"] = True
+
+
 class EnemyInfo:
     """Stores information about an enemy unit."""
 
@@ -370,6 +407,8 @@ class EnemyInfo:
         self.max_health: int = 0
         self.current_health: int = 0
         self.is_hostile: bool = False
+        self.is_boss: bool = False  # the game's own flag on UNIT_ADDED
+        self.died_at: Optional[int] = None  # log time of its DIED, when seen
 
 class CombatEncounter:
     """Represents a single combat encounter."""
@@ -411,6 +450,13 @@ class CombatEncounter:
         # Track first damage dealer
         self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
         self.first_damage_timestamp: Optional[int] = None  # Timestamp of first damage
+
+        # Taunts: the spans the Taunt debuff was on each enemy (unit id ->
+        # [(from, to)]), when it came on and has not gone yet, and per
+        # player the abilities they taunted with (ability id -> times)
+        self.taunt_spans: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
+        self.taunt_since: Dict[str, int] = {}
+        self.player_taunts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
@@ -538,6 +584,53 @@ class CombatEncounter:
                 start_time = self.active_buffs[player_unit_id][buff_name]
                 self.player_buffs[player_unit_id][buff_name].append((start_time, timestamp))
                 del self.active_buffs[player_unit_id][buff_name]
+
+    def track_taunt(self, enemy_unit_id: str, effect_type: str, timestamp: int):
+        """The Taunt debuff coming (GAINED, or UPDATED by a fresh taunt) or
+        going (FADED) on an enemy. A taunt landing while one is up extends
+        the span rather than starting it over. A span still open when the
+        fight ends runs to its end (see taunt_uptime), and on from there if
+        the fight turns out to carry on."""
+        if effect_type in ("GAINED", "UPDATED"):
+            self.taunt_since.setdefault(enemy_unit_id, timestamp)
+        elif effect_type == "FADED":
+            since = self.taunt_since.pop(enemy_unit_id, None)
+            if since is not None and timestamp > since:
+                self.taunt_spans[enemy_unit_id].append((since, timestamp))
+
+    def note_taunt(self, player_unit_id: str, ability_id: str):
+        """A player taunted with an ability ('' when the log did not say which)."""
+        self.player_taunts[player_unit_id][ability_id] += 1
+
+    def bosses_fought(self) -> List[str]:
+        """Unit ids of the hostile units the game flags as bosses that the
+        group hit or taunted in this fight. Enemies carry over from fight to
+        fight within a zone, so the flag alone would name a boss already
+        dead."""
+        return [unit_id for unit_id, enemy in self.enemies.items()
+                if enemy.is_boss and enemy.is_hostile
+                and (self.enemy_damage.get(unit_id) or unit_id in self.taunt_spans
+                     or unit_id in self.taunt_since)]
+
+    def taunt_uptime(self) -> Optional[float]:
+        """Percentage of the fight the Taunt debuff was on the boss: the mean
+        over the bosses fought of each one's taunted time within the fight,
+        a boss killed before the fight ended measured to its death. None for
+        a fight without a boss."""
+        shares = []
+        for unit_id in self.bosses_fought():
+            end = self.end_time
+            died_at = self.enemies[unit_id].died_at
+            if died_at is not None and self.start_time < died_at < end:
+                end = died_at
+            if end <= self.start_time:
+                continue
+            spans = list(self.taunt_spans.get(unit_id, ()))
+            if unit_id in self.taunt_since:
+                spans.append((self.taunt_since[unit_id], end))
+            covered = _covered_ms(spans, self.start_time, end)
+            shares.append(min(covered / (end - self.start_time), 1.0))
+        return 100.0 * sum(shares) / len(shares) if shares else None
 
     def finalize_buff_tracking(self):
         """Finalize buff tracking by ending any active buffs at encounter end."""
@@ -738,6 +831,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Gated by experimental.buff_timeline; nothing is recorded when off.
         self.track_buff_timeline = False
         self.buff_timeline_recorder = BuffTimelineRecorder()
+
+        # Which ability each of the players' recent casts was, by cast
+        # tracking id: a TAUNTED event names its skill through it
+        self._cast_abilities: Dict[str, str] = {}
 
         # Death recaps: the last seconds before each player death
         self.death_recap_recorder = DeathRecapRecorder(
@@ -1118,6 +1215,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     # A unit id handed out again is a unit nobody has hit yet
                     self._enemy_last_hit.pop(unit_id, None)
                     enemy.is_hostile = is_hostile
+                    enemy.is_boss = len(entry.fields) > 5 and entry.fields[5] == "T"
                     
                     self.current_encounter.enemies[unit_id] = enemy
                     
@@ -1655,7 +1753,12 @@ class ESOLogAnalyzer(ListenerMixin):
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
-            
+
+            # Remembered for the taunt the cast may land (see TAUNTED in
+            # _handle_combat_event)
+            if caster_unit_id in self.current_encounter.players:
+                self._remember_cast(entry.fields[2], ability_id)
+
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
 
@@ -1781,6 +1884,15 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ENEMY_HIT_RESULTS and len(entry.fields) > 17:
                 self._note_enemy_hit(entry)
 
+            # Taunts: a TAUNTED result shares its cast tracking id with the
+            # taunting skill's own cast and hits, which name the skill
+            if len(entry.fields) > 17 and entry.fields[7] in self.current_encounter.players:
+                if combat_event_type == TAUNTED:
+                    self.current_encounter.note_taunt(
+                        entry.fields[7], self._cast_abilities.get(entry.fields[5], ""))
+                else:
+                    self._remember_cast(entry.fields[5], entry.fields[6])
+
             # Death recap: keep what lands on each player (damage, heals,
             # shields, dodges) for the seconds before a death
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
@@ -1814,6 +1926,8 @@ class ESOLogAnalyzer(ListenerMixin):
                       dying_unit_id in self.current_encounter.enemies):
                     self._enemy_last_hit.pop(dying_unit_id, None)
                     enemy = self.current_encounter.enemies[dying_unit_id]
+                    if enemy.died_at is None:
+                        enemy.died_at = entry.timestamp
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -1991,6 +2105,12 @@ class ESOLogAnalyzer(ListenerMixin):
                         extracted[0], extracted[1], extracted[2], extracted[3],
                         entry.timestamp)
 
+            # Taunts: the Taunt debuff coming and going on an enemy
+            if ability_id == TAUNT_EFFECT_ID and self.current_encounter:
+                extracted = extract_effect_fields(entry.fields)
+                if extracted is not None and extracted[3] in self.current_encounter.enemies:
+                    self.current_encounter.track_taunt(extracted[3], effect_type, entry.timestamp)
+
             # Always track group buffs globally, regardless of encounter state
             for buff_name, buff_ids in self.group_buff_ids.items():
                 if ability_id in buff_ids:
@@ -2150,6 +2270,33 @@ class ESOLogAnalyzer(ListenerMixin):
         return (self.ability_cache.get(ability_id) or f"Ability {ability_id}",
                 self.ability_icons.get(ability_id, ''))
 
+    def _remember_cast(self, cast_id: str, ability_id: str):
+        """Keep which ability a cast tracking id belongs to (see TAUNTED in
+        _handle_combat_event). The first word stands: a BEGIN_CAST precedes
+        its hits. Bounded: the oldest half goes when the memory is full."""
+        casts = self._cast_abilities
+        if cast_id in casts:
+            return
+        if len(casts) >= CAST_MEMORY:
+            for key in list(casts)[:CAST_MEMORY // 2]:
+                del casts[key]
+        casts[cast_id] = ability_id
+
+    def _taunts_of(self, enc: CombatEncounter, unit_id: str) -> List[dict]:
+        """The abilities a player taunted with in this fight, most used
+        first: {'id', 'name', 'icon', 'count'} each. A taunt the log did not
+        tie to a cast is left out."""
+        taunts = []
+        for ability_id, count in (enc.player_taunts.get(unit_id) or {}).items():
+            if not ability_id:
+                continue
+            name = self.log_parser.get_ability_name(ability_id) or f"Ability {ability_id}"
+            taunts.append({'id': str(ability_id), 'name': name,
+                           'icon': self.ability_icons.get(str(ability_id), ''),
+                           'count': count})
+        taunts.sort(key=lambda t: (-t['count'], t['name']))
+        return taunts
+
     def _build_fight_entry(self, zone_name: str = None):
         """Build a FightHistoryEntry from the current encounter."""
         if not self.current_encounter:
@@ -2269,15 +2416,26 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
                 self.ability_cache.get, self.ability_icons.get))
+            # The abilities this player taunted with, marked on their bars
+            taunts = self._taunts_of(enc, player.unit_id)
+            entry.players[-1]['taunts'] = taunts
+            if taunts:
+                mark_taunt_slots(entry.players[-1]['front_bar_slots']
+                                 + entry.players[-1]['back_bar_slots'], taunts)
 
+        buff_parts = []
         if len(enc.players) >= 3:
-            buff_parts = []
             buff_analysis = enc.get_group_buff_analysis()
             for buff_name, is_present in buff_analysis.items():
                 if is_present:
                     uptime = enc.get_group_buff_uptime(buff_name)
                     buff_parts.append(f"{buff_name}:{uptime:.0f}%")
-            entry.buff_summary = " ".join(buff_parts)
+        # Taunt uptime on the boss: for a group, and for anyone who taunted
+        taunt_uptime = enc.taunt_uptime()
+        if taunt_uptime is not None and (len(enc.players) >= 3
+                                         or any(enc.player_taunts.values())):
+            buff_parts.append(f"Taunt:{taunt_uptime:.0f}%")
+        entry.buff_summary = " ".join(buff_parts)
 
         if enc.trial_info and enc.trial_info.get('completed'):
             trial = enc.trial_info

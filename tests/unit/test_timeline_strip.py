@@ -77,6 +77,14 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertEqual(len(self.strip._rows), 6)
         self.assertLessEqual(self.strip.sizeHint().height(), 100)
 
+    def test_taunt_row_is_last_and_solid_with_one_receiver(self):
+        timeline = _sample_timeline()
+        timeline["effects"]["Taunt"] = [
+            {"start_ms": 0, "end_ms": 45_000, "source": "@tank", "target": "Test Boss"}]
+        self.strip.set_timeline(timeline)
+        self.assertEqual(self.strip._rows[-1], "Taunt")
+        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "dotted": False})
+
     def test_uptime_percentages(self):
         from gui.timeline_strip import uptime_pct
         # Two overlapping intervals 10-20s and 15-30s = 20s union of 60s

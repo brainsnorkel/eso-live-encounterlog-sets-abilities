@@ -38,7 +38,7 @@ class TestAbout(unittest.TestCase):
         self.assertIn('LibFoodDrinkBuff</a> by Scootworks and Baertram', html)
         self.assertIn("href='https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html'",
                       html)
-        self.assertIn('<b>Poison names, armor weights and restoration staves</b>: '
+        self.assertIn('<b>Poison names, armor weights and weapon types</b>: '
                       'the ESO item database of', html)
         self.assertIn('>UESP</a>', html)
 
