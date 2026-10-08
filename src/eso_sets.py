@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
 """
-ESO Set Database and Analysis Module
-Provides gear set identification and subclass inference functionality.
+Which class skill lines a player's abilities come from (subclassing).
+
+Design: since Update 46 a character can swap any of its three class skill
+lines for another class's, so the class id in UNIT_ADDED no longer says
+what a build is. The log names each slotted ability (ABILITY_INFO), and
+every class ability, morphs included, belongs to exactly one skill line, so
+the lines are inferred from the names: SKILL_LINE_ABILITIES lists every
+class line with its ultimate, actives and morphs, as the game names them.
+A player's slotted abilities are matched to those names exactly (never by
+substring: "Carve" is Two Handed, not Fatecarver; "Swarming Scion" is
+Vampire, not a Warden Swarm) and the lines with the most matches win, at
+most three, since subclassing swaps lines and never adds a fourth. Weapon,
+guild, world and alliance abilities match nothing and are ignored. The
+fight view shows the inferred lines beside the class only when they differ
+from the class's own three (PlayerInfo.get_class_skill_lines), so a stock
+build shows just its class. A player with no class ability slotted shows no
+lines.
 """
 
 import re
@@ -254,7 +269,8 @@ class ESOSubclassAnalyzer:
     MAX_SKILL_LINES = 3  # a character never has more class skill lines than this
 
     def analyze_subclass(self, abilities: Set[str]) -> Dict[str, any]:
-        """Analyze abilities to infer skill lines."""
+        """The class skill lines behind a set of slotted ability names: the
+        best-supported three, in table order (see the module docstring)."""
         if not abilities:
             return {'skill_lines': [], 'confidence': 0.0}
 

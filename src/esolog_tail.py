@@ -86,12 +86,14 @@ BUFF_ABILITY_IDS = {
     'pearlescent_ward': '172621',
 }
 
-# The blow that kills the last player standing ends combat, and that player's
+# Design: A death just after END_COMBAT. The blow that kills the last player
+# standing ends combat, and that player's
 # death event is written after END_COMBAT (about 85 ms later in live logs).
 # A player death this soon after END_COMBAT belongs to the fight that just ended.
 LATE_DEATH_GRACE_MS = 1000
 
-# The game ends and restarts combat in the middle of a fight, most often when
+# Design: Fights the game cuts in two. The game ends and restarts combat in
+# the middle of a fight, most often when
 # the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment
 # later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms
 # apart, 45 of them straight after the player accepted a resurrection. A
@@ -99,9 +101,15 @@ LATE_DEATH_GRACE_MS = 1000
 # the group hit in the fight's last seconds is still alive; none of the 51
 # pairs between half a second and three seconds apart was the same pull.
 COMBAT_RESUME_MS = 1000
-# Taunts. The game puts one Taunt debuff on a taunted enemy whatever skill
-# taunted, and writes a TAUNTED combat event that shares its cast tracking
-# id with that skill's own cast and hits, which is how the skill is known
+# Design: Taunts. The game puts one Taunt debuff on a taunted enemy whatever
+# skill taunted, and writes a TAUNTED combat event that shares its cast
+# tracking id with that skill's own cast and hits, which is how the skill is
+# known: no list of taunt skills is needed, and a skill logged under another
+# id (Destructive Clench with an ice staff is logged as Frost Clench) is
+# matched to its bar slot by the icon the two share (mark_taunt_slots). The
+# debuff's spans on each enemy give the uptime (track_taunt, taunt_uptime),
+# shown for a group of three or more fighting a boss and for anyone who
+# taunted. Checked on 1,361 taunts in twelve logs of October 2026.
 TAUNT_EFFECT_ID = "38254"
 TAUNTED = "TAUNTED"
 CAST_MEMORY = 4096  # casts remembered by tracking id; a taunt follows its cast within ms
@@ -471,7 +479,22 @@ class CombatEncounter:
         """Record *pet_unit_id* as a pet of the player who owns it, so its
         damage and healing count as that player's; forget it when the owner
         is nobody ("0") or not a player (a boss's summons), which also
-        covers a unit id handed out again."""
+        covers a unit id handed out again.
+
+        Design: the log names the owner of every summoned unit, as
+        ownerUnitId in UNIT_ADDED (fields[13]) and UNIT_CHANGED (fields[8]).
+        A survey of nine trial and dungeon logs (October 2026) found 1,142
+        player-owned units, all MONSTER with reaction NPC_ALLY or FRIENDLY
+        (Blighted Blastbones, Skeletal Archer, Wild Guardian, Gloom Wraith,
+        atronachs, Clannfear, Glyphic of the Tides, companions), and 1,283
+        boss-owned ones; 18 unit ids were handed out again with a different
+        owner; and the owner field dropped to 0 on 106 pets, none of which
+        dealt damage afterwards (0.3 to 11 s before its UNIT_REMOVED). So
+        ownership follows the log exactly, and is carried into the next
+        fight with the players and enemies, since pets are summoned before
+        the pull. Pets were 0 to 8% of a group's damage per log. Earlier
+        code guessed pets from EFFECT_CHANGED targets and never found one.
+        """
         if owner_unit_id != "0" and self.find_player_by_unit_id(owner_unit_id):
             self.pet_ownership[pet_unit_id] = owner_unit_id
         else:
@@ -544,7 +567,11 @@ class CombatEncounter:
             self.players[short_unit_id].add_long_unit_id(long_unit_id)
 
     def add_damage_to_player(self, unit_id: str, damage: int):
-        """Add damage to a specific player's total (players and their pets)."""
+        """Credit damage dealt by *unit_id* to the player it belongs to:
+        the player themself, or the owner of a pet (see
+        track_pet_ownership). Damage from a unit that is neither is
+        counted for nobody: a boss's summons, trial mechanics that hit
+        other enemies, and the like."""
         # Find the player this unit belongs to
         player = self.find_player_by_unit_id(unit_id)
         if player:
@@ -580,7 +607,19 @@ class CombatEncounter:
         self.player_healing[source_player.unit_id] += heal_value
 
     def track_buff(self, player_unit_id: str, buff_name: str, effect_type: str, timestamp: int):
-        """Track buff applications and removals for uptime calculation."""
+        """A group buff landing on (GAINED) or leaving (FADED) a player.
+
+        Design: the uptime line tracks six buffs by ability id (group_buff_ids
+        in the analyzer: Major Courage, Major Force, Major Slayer, Powerful
+        Assault, Lucent Echoes, Pearlescent Ward). Each is recorded per
+        player as (start, end) spans; UPDATED lines (a refresh) change
+        nothing, since the buff was already up. Spans that start before the
+        pull are carried in from the analyzer's global tracking at
+        BEGIN_COMBAT, and spans still open at END_COMBAT are closed there
+        (finalize_buff_tracking). The percentage shown is the share of the
+        fight the buff was on *any* group member (get_group_buff_uptime), the
+        question a raid lead asks ("was Courage up?"), not a per-player mean.
+        """
         if effect_type == "GAINED":
             # Start tracking this buff
             self.active_buffs[player_unit_id][buff_name] = timestamp
@@ -676,7 +715,9 @@ class CombatEncounter:
             return "Unknown Time"
 
     def get_group_buff_uptime(self, buff_name: str) -> float:
-        """Calculate uptime percentage for a group buff (active on any player)."""
+        """Share of the fight (percent) a group buff was active on any
+        player: every player's spans clamped to the fight, merged, and
+        summed (see track_buff for the design)."""
         # Collect all time intervals when the buff was active on any player
         active_intervals = []
         
@@ -2087,7 +2128,22 @@ class ESOLogAnalyzer(ListenerMixin):
         return None
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
-        """Handle EFFECT_CHANGED events for buffs/debuffs."""
+        """A buff or debuff coming, going or refreshing: group buff uptimes,
+        taunts, the experimental timeline, and enemy health.
+
+        Design: an EFFECT_CHANGED line is ``changeType, stackCount,
+        castTrackId, abilityId, <sourceUnitState>, <targetUnitState>``. A
+        unit state is ten fields (unitId, health, magicka, stamina,
+        ultimate, werewolf, shield, x, y, heading), so the source's id is
+        fields[4] and the target's fields[14]; the target state is a single
+        "*" when the effect is on the source itself. Reading the target from
+        the wrong offset (fields[10], the source's shield, nearly always
+        "0") made every group buff look as if it were only ever on its
+        caster, so the one reader, extract_effect_fields, serves every
+        consumer here. Enemy health is read from the target state when the
+        target is explicit and from the source state when it is "*"; the
+        source state's health is never the target's.
+        """
         # EFFECT_CHANGED format: changeType, stackCount, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>, playerInitiatedRemoveCastTrackId:optional
         # Where <targetUnitState> is replaced with * if the target unit is the same as the source unit (self-cast)
         # Note: entry.fields starts after line_number and event_type, so indices are shifted

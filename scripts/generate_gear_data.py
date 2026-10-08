@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """
-Pre-build script to extract gear set data from LibSets_SetData.xlsm
-and generate an efficient Python module with optimized data structures.
+Generate src/gear_set_data.py, the set table the app ships, from the LibSets
+addon's workbook (data/gear_sets/LibSets_SetData.xlsm).
 
-This eliminates the need to parse Excel files at runtime and reduces
-installer size by removing the XLSM dependency.
+Design: the encounter log names a gear piece's set only by its set id
+(PLAYER_INFO ... setId). LibSets, the addon the ESO community keeps for
+exactly this mapping, publishes a workbook with every set's id, name, type
+(crafted, trial, mythic, ...) and item ids; this script reads it at build
+time with openpyxl and writes a Python module, so nothing is parsed at run
+time and the workbook is not bundled. The CI build runs the script, so a
+change here is what ships. Set names are shown as the game spells them: the
+workbook's spelling differs for a few dozen sets ("Perfect" for
+"Perfected", "Blood Spawn", three Cyrodiil sets one id out of place), so
+NAME_CORRECTIONS carries the name from the installed client's own English
+string table for each of those ids, and the script reports a correction
+the workbook no longer needs. ESO-Hub links for sets are looked up by the
+corrected name (see src/ability_icons.py).
 """
 
 import json

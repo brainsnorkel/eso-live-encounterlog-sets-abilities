@@ -100,6 +100,13 @@ On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs 
 
 The data under `data/` and `src/gear_set_data.py` go stale when the game is patched. Each has a script in `scripts/` that rebuilds it; the commands and what each needs are in the README under [Refreshing game data after an ESO patch](../README.md#refreshing-game-data-after-an-eso-patch).
 
+## Documentation
+
+Two documents are built from the app and the code rather than written by hand, so that they cannot drift:
+
+- **User guide screenshots** (`docs/screencaps/`, shown in `docs/user-guide.md` and the README): `python scripts/capture_screenshots.py --log <a split log>` draws the app offscreen over that log, under a scratch config, and overwrites the PNG files. A veteran trial split log with a death and taunts gives the pictures the guide describes; `--boss` picks the fight. Rerun it when a screen changes.
+- **Design notes** (`docs/design.md`): `python scripts/build_design_doc.py` collects the design notes kept in the code. The rule is that the explanation of a hard problem (what the log carries, which data source is trusted, why a rule was chosen after measuring real logs) lives in the docstring of the function or module that solves it, or in a comment block that starts with `# Design: <Title>`, next to the code it has to keep honest. The script's `TOPICS` list names the sources; add an entry for a new problem, and rerun the script whenever one of those docstrings changes. The document holds no text of its own.
+
 ## Releasing
 
 1. Changes add their notes under `## [Unreleased]` at the top of `CHANGELOG.md` as they are made.

@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **User guide**: `docs/user-guide.md` walks through every screen with pictures the app draws itself: `scripts/capture_screenshots.py` renders the app offscreen over a log file, under a scratch config, and writes the pictures the guide and the README show, so they stay in step with the app. Linked from the README
+
+### Technical
+- **Design notes kept in the code**: the explanation of each hard problem (the encounter log's unit states and effect lines, fights the game cuts in two, roles, class skill lines and subclassing, ability icons and ESO-Hub links, scribed skills, builds and weapon types, set names, group buff uptimes, taunts, pets, death recaps, the timeline, the GUI and the engine thread) now lives in the docstring or a `# Design:` comment of the code that solves it, and `scripts/build_design_doc.py` collects them into `docs/design.md`, linked from the README and the development guide. Docstrings that only named their function were written out for the effect handler, group buff tracking, pets, taunts, skill line inference and the gear data generator
+- **Repository tidy**: the five merged worktrees and their branches are removed
+
 ## [0.7.0] - 2026-10-09
 
 ### Added

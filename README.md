@@ -4,6 +4,8 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app 
 
 ![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window-buff-timeline.png)
 
+New here? Read the [user guide](docs/user-guide.md). Curious how the numbers are made? The [design notes](docs/design.md) explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
+
 ## Features
 
 - **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time, and deaths, with every fight of the session kept in a history list.
@@ -71,6 +73,8 @@ ESO only writes `Encounter.log` while encounter logging is on, and it is off by 
 The status bar's **Last entry** indicator turns green while the log is being written, so you can confirm logging is on from the app.
 
 ## Using the app
+
+The [user guide](docs/user-guide.md) walks through every screen with pictures; the sections below are the reference.
 
 Launch ESO Log Tail before or during play; both work. It picks the most recently updated `Encounter.log` across the known ESO locations. If there is no log yet, it waits and attaches automatically when the file appears. If a logging session is already under way, the app replays it on attach: the session's fights load into the history and the full roster, gear, and abilities are known, so starting mid-raid does not leave you with a half-empty group (sessions over 768 MB fall back to a faster roster-only sweep).
 
@@ -162,6 +166,8 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **Archive now** (toolbar) runs the same guarded archive at any moment, handy right after you close ESO.
 
 ## What the analysis is based on
+
+The [design notes](docs/design.md), collected from the code itself, go into each of these in depth.
 
 - **Fights**: a fight runs from the game's `BEGIN_COMBAT` line to its `END_COMBAT` line. The game also writes that pair in the middle of a fight, a fraction of a second apart, most often as you are resurrected. When combat starts again within a second of ending and an enemy the group was hitting is still alive, the app carries on with the same fight. Its first part shows as a fight until the fight really ends, and that entry is then brought up to date.
 - **Builds**: `PLAYER_INFO` events carry each player's slotted abilities and gear. Skill lines are matched by exact ability name against the class skill tables; a build shows at most three lines.

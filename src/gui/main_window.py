@@ -683,7 +683,8 @@ class MainWindow(QMainWindow):
             # the old analyzer's and are dropped
             self._restart_pending = True
             self.request_restart.emit()
-        # Delete the closed dialog here, on the UI thread, rather than leave
+        # Design: Qt objects are freed on the UI thread. Delete the closed
+        # dialog here, on the UI thread, rather than leave
         # it to Python's garbage collector, which frees whatever is garbage
         # on whichever thread is allocating at the time. That was the engine
         # thread replaying the log after the restart, and freeing the
