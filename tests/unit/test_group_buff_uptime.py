@@ -74,6 +74,13 @@ def _run(lines):
     return analyzer
 
 
+def _buffs(fight):
+    """The uptime line's buff items, without the taunt item a group fighting
+    a boss also gets (issue #9)."""
+    return ' '.join(part for part in fight.buff_summary.split()
+                    if not part.startswith('Taunt:'))
+
+
 class TestBuffOnAnotherPlayer(unittest.TestCase):
 
     def test_a_buff_cast_on_another_player_counts(self):
@@ -83,7 +90,7 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
             _effect(22000, 'FADED', COURAGE, _player(1), _player(2)),
         ] + FIGHT_END)
         fight = analyzer.fight_history.fights[0]
-        self.assertEqual(fight.buff_summary, 'MCourage:50%')
+        self.assertEqual(_buffs(fight), 'MCourage:50%')
         # It is on player 2, not on the player who cast it
         enc = analyzer.current_encounter
         self.assertEqual(enc.player_buffs['2']['MCourage'], [(12000, 22000)])
@@ -93,7 +100,7 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
         analyzer = _run([
             _effect(5000, 'GAINED', COURAGE, _player(1), _player(2)),
         ] + FIGHT_START + FIGHT_END)
-        self.assertEqual(analyzer.fight_history.fights[0].buff_summary, 'MCourage:100%')
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MCourage:100%')
 
     def test_uptime_is_the_time_the_buff_was_on_anyone(self):
         # Major Force on player 2 for 10-20 s and on player 3 for 15-25 s:
@@ -104,7 +111,7 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
             _effect(20000, 'FADED', FORCE, _player(1), _player(2)),
             _effect(25000, 'FADED', FORCE, _player(1), _player(3)),
         ] + FIGHT_END)
-        self.assertEqual(analyzer.fight_history.fights[0].buff_summary, 'MForce:75%')
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MForce:75%')
 
     def test_the_sources_shield_is_not_read_as_the_target(self):
         # The source's shield value sits where the target id used to be read.
@@ -113,7 +120,7 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
             _effect(10000, 'GAINED', COURAGE, _player(1, shield=3), _player(2)),
         ] + FIGHT_END)
         enc = analyzer.current_encounter
-        self.assertEqual(analyzer.fight_history.fights[0].buff_summary, 'MCourage:100%')
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MCourage:100%')
         self.assertIn('MCourage', enc.player_buffs['2'])
         self.assertNotIn('MCourage', enc.player_buffs['3'])
 
