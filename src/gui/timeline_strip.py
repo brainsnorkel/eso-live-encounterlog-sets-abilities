@@ -4,8 +4,9 @@ EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
 One thin colored row per tracked effect across the fight duration, with the
 effect's uptime % in its label, time tick marks, and hover tooltips naming
 caster and receiver. A group buff that only ever reached one or two
-receivers renders dotted rather than solid (Major Vulnerability is exempt:
-it targets the boss, so a single receiver is its normal case).
+receivers renders dotted rather than solid (Major Vulnerability and Taunt
+are exempt: they target the boss, so a single receiver is their normal
+case).
 
 Deliberately tiny: it must never crowd the fight summary. Hidden entirely
 when the displayed fight carries no timeline data.
@@ -16,7 +17,8 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QToolTip, QWidget
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
-                "Major Berserk", "Powerful Assault", "Major Vulnerability"]
+                "Major Berserk", "Powerful Assault", "Major Vulnerability",
+                "Taunt"]
 
 EFFECT_COLORS = {
     "Major Slayer": QColor("#e57373"),
@@ -25,6 +27,7 @@ EFFECT_COLORS = {
     "Major Berserk": QColor("#ba68c8"),
     "Powerful Assault": QColor("#ff8a65"),
     "Major Vulnerability": QColor("#4db6ac"),
+    "Taunt": QColor("#9575cd"),
 }
 
 EFFECT_SHORT = {
@@ -34,10 +37,11 @@ EFFECT_SHORT = {
     "Major Berserk": "M.Berserk",
     "Powerful Assault": "PA",
     "Major Vulnerability": "M.Vuln",
+    "Taunt": "Taunt",
 }
 
 # Effects whose normal case is a single receiver (never rendered dotted)
-SINGLE_TARGET_EFFECTS = {"Major Vulnerability"}
+SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 
 # A group buff reaching at most this many distinct receivers renders dotted
 SPARSE_RECEIVER_LIMIT = 2

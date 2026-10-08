@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """Who is a healer: magicka as the largest pool, plus a restoration staff
 equipped or more healing of others than damage dealt. Covers the staff
-lookup, the bundled staff list and its generator, the healing total, and the
-role the engine puts on a fight entry (no Qt needed)."""
+lookup (against the bundled weapon table, whose generator is tested with the
+other build data scripts), the healing total, and the role the engine puts
+on a fight entry (no Qt needed)."""
 
-import importlib.util
-import json
 import unittest
-from pathlib import Path
 
 from build_session import fights  # noqa: E402
 from player_build import has_restoration_staff  # noqa: E402
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Real item ids: a restoration staff, a lightning staff and a dagger
 RESTO_STAFF = '224527'      # Restoration Staff of the Gorethief
@@ -52,48 +48,6 @@ class TestRestorationStaffLookup(unittest.TestCase):
         self.assertTrue(has_restoration_staff(_gear(('BACKUP_MAIN', RESTO_STAFF))))
         self.assertFalse(has_restoration_staff(
             _gear(('MAIN_HAND', LIGHTNING_STAFF), ('BACKUP_MAIN', DAGGER))))
-
-
-class TestStaffListGenerator(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        path = REPO_ROOT / 'scripts' / 'generate_restoration_staves.py'
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        cls.script = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.script)
-
-    def test_only_restoration_staves_are_kept(self):
-        payload = {'minedItemSummary': [
-            {'itemId': '224527', 'weaponType': '9'},
-            {'itemId': '685', 'weaponType': '9'},
-            {'itemId': '133257', 'weaponType': '15'},
-            {'itemId': '200834', 'weaponType': '11'},
-            {'itemId': '', 'weaponType': '9'},
-            {'itemId': '685', 'weaponType': '9'},
-        ]}
-        self.assertEqual(self.script.restoration_staff_ids(payload), [685, 224527])
-        self.assertEqual(self.script.restoration_staff_ids({}), [])
-
-    def test_file_is_json_with_wrapped_ids(self):
-        ids = list(range(1000, 1040))
-        text = self.script.render(ids, '2026-10-05T00:00:00+00:00')
-        data = json.loads(text)
-        self.assertEqual((data['count'], data['ids']), (40, ids))
-        # Sixteen ids to a line, so a refreshed list diffs line by line
-        id_lines = [line for line in text.splitlines() if line.strip()[:1].isdigit()]
-        self.assertEqual([len(line.split(',')) - line.endswith(',') for line in id_lines],
-                         [16, 16, 8])
-
-    def test_committed_list(self):
-        data = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
-        ids = data['ids']
-        self.assertEqual(data['count'], len(ids))
-        self.assertGreaterEqual(len(ids), self.script.MIN_STAVES)
-        self.assertEqual(ids, sorted(set(ids)))
-        self.assertIn(int(RESTO_STAFF), ids)
-        self.assertNotIn(int(LIGHTNING_STAFF), ids)
-        self.assertNotIn(int(DAGGER), ids)
 
 
 # ---- through the engine ----

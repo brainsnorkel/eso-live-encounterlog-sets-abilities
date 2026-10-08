@@ -52,13 +52,15 @@ def _slot(n, icon='ability_weapon_001', name=None):
 
 
 ARMOR = ('HEAD', 'SHOULDERS', 'CHEST', 'HAND', 'WAIST', 'LEGS', 'FEET')
+WEAPONS = ('MAIN_HAND', 'OFF_HAND', 'BACKUP_MAIN', 'BACKUP_OFF')
 
 
 def _item(slot, **fields):
     row = {'slot': slot, 'item_id': '1', 'set_id': '1', 'set': 'Alpha', 'mythic': False,
            'quality': 'LEGENDARY', 'trait': 'ARMOR_DIVINES', 'enchant': 'STAMINA',
            'enchant_quality': 'LEGENDARY', 'cp': True, 'level': 16, 'pieces': [5, 5],
-           'weight': 'medium' if slot in ARMOR else ''}
+           'weight': 'medium' if slot in ARMOR else '',
+           'weapon_type': 'dagger' if slot in WEAPONS else ''}
     row.update(fields)
     return row
 
@@ -427,6 +429,18 @@ class TestBuildRender(BuildGuiTestCase):
         self.assertIn('>Front</td>', html)
         self.assertNotIn('>Back</td>', html)
 
+    def test_abilities_the_player_taunted_with_are_marked_as_in_the_fight_view(self):
+        slots = [_slot(0), _slot(1, icon='ability_missing'), _slot(2)]
+        slots[0]['taunt'] = slots[1]['taunt'] = True
+        html = self._html(self._with(front_bar_slots=slots,
+                                     front_bar=[s['name'] for s in slots]))
+        self.assertIn('<img src="icon:ability_weapon_001?ring=7b1fa2" width="36"', html)
+        self.assertIn("<span style='color:#7b1fa2'>Skill 1</span>", html)
+        self.assertEqual(html.count('?ring='), 1)
+        dark = self._html(self._with(front_bar_slots=slots,
+                                     front_bar=[s['name'] for s in slots]), dark=True)
+        self.assertIn('?ring=ce93d8"', dark)
+
     def test_ability_without_a_bundled_icon_shows_its_name(self):
         slots = [_slot(1), _slot(2, icon='ability_missing', name='Odd Skill')]
         html = self._html(self._with(front_bar_slots=slots, front_bar=['Skill 1', 'Odd Skill']))
@@ -479,7 +493,7 @@ class TestBuildRender(BuildGuiTestCase):
         self.assertEqual(grid.count('>Alpha<'), 14)
         for label in set(SLOT_LABELS.values()) - {'Poison'}:
             self.assertIn(f'>{label}</td>', grid)
-        titles = ('Slot', 'Weight', 'Set', 'Pcs', 'Quality', 'Trait', 'Enchant',
+        titles = ('Slot', 'Type', 'Set', 'Pcs', 'Quality', 'Trait', 'Enchant',
                   'Enchant quality')
         header = [html.index(f'>{title}</td>') for title in titles]
         self.assertEqual(header, sorted(header))
@@ -540,11 +554,37 @@ class TestBuildRender(BuildGuiTestCase):
         self.assertIn(f"{_slot_cell('Chest')}<td>Heavy</td>",
                       _row_of(self._html(self._with(gear=gear)), 'Chest'))
 
-    def test_jewelry_and_weapons_leave_the_weight_empty(self):
+    def test_jewelry_leaves_the_type_empty(self):
         html = self._html()
-        for label, group in (('Neck', None), ('Ring 2', None), ('Main hand', 'Front bar'),
-                             ('Main hand', 'Back bar')):
-            self.assertIn(f"{_slot_cell(label)}<td></td><td>", _row_of(html, label, group))
+        for label in ('Neck', 'Ring 1', 'Ring 2'):
+            self.assertIn(f"{_slot_cell(label)}<td></td><td>", _row_of(html, label))
+
+    def test_weapon_rows_show_their_type_after_the_slot(self):
+        # @brainsnorkel's real weapons: a lightning staff and an ice staff,
+        # typed from the bundled table
+        html = self._html()
+        self.assertIn(f"{_slot_cell('Main hand')}<td>Lightning Staff</td>",
+                      _row_of(html, 'Main hand', 'Front bar'))
+        self.assertIn(f"{_slot_cell('Main hand')}<td>Ice Staff</td>",
+                      _row_of(html, 'Main hand', 'Back bar'))
+        gear = [_item('MAIN_HAND', weapon_type='greatsword'),
+                _item('BACKUP_MAIN', weapon_type='sword'),
+                _item('BACKUP_OFF', weapon_type='shield', trait='ARMOR_STURDY')]
+        html = self._html(self._with(gear=gear))
+        self.assertIn(f"{_slot_cell('Main hand')}<td>Greatsword</td>",
+                      _row_of(html, 'Main hand', 'Front bar'))
+        self.assertIn(f"{_slot_cell('Main hand')}<td>Sword</td>",
+                      _row_of(html, 'Main hand', 'Back bar'))
+        self.assertIn(f"{_slot_cell('Off hand')}<td>Shield</td>",
+                      _row_of(html, 'Off hand', 'Back bar'))
+
+    def test_weapon_of_unknown_type_shows_a_dash(self):
+        from gui.build_render import DASH
+        gear = [_item('MAIN_HAND', weapon_type=''), _item('OFF_HAND', weapon_type='wand')]
+        html = self._html(self._with(gear=gear))
+        for label in ('Main hand', 'Off hand'):
+            self.assertIn(f"{_slot_cell(label)}<td><span style='color:{MUTED}'>{DASH}</span></td>",
+                          _row_of(html, label, 'Front bar'))
 
     def test_armor_piece_of_unknown_weight_shows_a_dash(self):
         from gui.build_render import DASH

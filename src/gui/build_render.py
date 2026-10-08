@@ -4,9 +4,9 @@ log recorded it when combat started.
 
 Top to bottom: who it is and which fight; mundus stone and food; both
 ability bars, front above back, with the fight view's line of scribed skills;
-and a gear grid with one row per slot (armor weight, set, pieces of that set
-active, quality, trait, enchant, enchant quality), a poison row under a bar
-that has one slotted. The data is the fight entry's player dict as the
+and a gear grid with one row per slot (armor weight or weapon type, set,
+pieces of that set active, quality, trait, enchant, enchant quality), a
+poison row under a bar that has one slotted. The data is the fight entry's player dict as the
 engine's player_build module filled it in, and the labels come from that
 module too.
 
@@ -24,8 +24,8 @@ from gui.fight_render import (
 )
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
-    WEIGHT_LABELS, display_quality, enchant_label, level_label, quality_label,
-    trait_label, weight_label,
+    WEAPON_SLOTS, WEIGHT_LABELS, display_quality, enchant_label, level_label,
+    quality_label, trait_label, weapon_type_label, weight_label,
 )
 
 BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 40 px)
@@ -40,9 +40,10 @@ POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
                "front bar / back bar, for a set whose weapons sit on one bar only.")
 UNKNOWN_WEIGHT = "unknown"  # in the armor tally, a piece the bundled table lacks
-COLUMNS = (("Slot", 9, "left"), ("Weight", 8, "left"), ("Set", 25, "left"),
+# Type: an armor piece's weight, a weapon's or shield's kind
+COLUMNS = (("Slot", 9, "left"), ("Type", 12, "left"), ("Set", 23, "left"),
            ("Pcs", 5, "center"), ("Quality", 13, "left"), ("Trait", 11, "left"),
-           ("Enchant", 17, "left"), ("Enchant quality", 12, "left"))
+           ("Enchant", 15, "left"), ("Enchant quality", 12, "left"))
 # How each cell after the slot name opens
 _CELLS = tuple("<td align='center'>" if align == "center" else "<td>"
                for _title, _width, align in COLUMNS[1:])
@@ -155,7 +156,8 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
     rows = []
     for label, slots_key, names_key in (("Front", "front_bar_slots", "front_bar"),
                                         ("Back", "back_bar_slots", "back_bar")):
-        bar = _bar_html(p.get(slots_key), p.get(names_key), icons, links, e, BAR_ICON_PX)
+        bar = _bar_html(p.get(slots_key), p.get(names_key), icons, links, e, BAR_ICON_PX,
+                        taunt_color=theme["taunt"])
         if bar:
             rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{label}</td>"
                         f"<td valign='middle'>{bar}</td></tr>")
@@ -184,11 +186,17 @@ def _weights_text(gear: dict) -> str:
 
 def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
     """The seven cells after the slot name for an armor, jewelry or weapon
-    row. Only armor has a weight: jewelry and weapons leave that cell empty,
-    and a dash stands for a piece the bundled table lacks."""
+    row. The type cell is an armor piece's weight or a weapon's kind (a
+    shield's too), with a dash for a piece the bundled tables lack; jewelry
+    leaves it empty."""
     dash = f"<span style='color:{theme['muted']}'>{DASH}</span>"
-    weight = e(weight_label(row.get("weight"))) or (
-        dash if row.get("slot") in ARMOR_SLOTS else "")
+    slot = row.get("slot")
+    if slot in ARMOR_SLOTS:
+        kind = e(weight_label(row.get("weight"))) or dash
+    elif slot in WEAPON_SLOTS:
+        kind = e(weapon_type_label(row.get("weapon_type"))) or dash
+    else:
+        kind = ""
     name = str(row.get("set") or "")
     if name:
         url = set_links(name) if set_links else None
@@ -202,7 +210,7 @@ def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
     if level:
         quality += f" <span style='color:{theme['muted']}'>{e(level)}</span>"
     enchant = enchant_label(row.get("enchant"))
-    return (weight, set_html, _pieces_text(row), quality,
+    return (kind, set_html, _pieces_text(row), quality,
             e(trait_label(row.get("trait"))) or dash,
             e(enchant) if enchant else dash,
             (_quality_html(str(row.get("enchant_quality") or ""), dark, e) or dash)

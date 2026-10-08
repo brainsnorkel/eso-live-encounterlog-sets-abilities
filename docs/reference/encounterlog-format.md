@@ -66,3 +66,12 @@ ENDLESS_DUNGEON_BUFF_REMOVED, id, abilityId
 
 ## Undocumented/unknown line types
 ENDLESS_DUNGEON_INIT
+
+## Taunts, as live logs record them
+
+Found while building the taunt uptime line and the marks on taunting abilities (October 2026, twelve logs, 1,361 taunts):
+
+- A taunt that lands writes `COMBAT_EVENT,TAUNTED,GENERIC,0,0,0,<castTrackId>,38254,<source>,<target>`. Its abilityId is always 38254 (the generic "Taunt"), so the event alone does not say which skill taunted. Its `castTrackId` is the one the taunting skill's own `BEGIN_CAST` and `COMBAT_EVENT` hits carry, which names the skill in every one of the 1,361 cases (1,357 through the cast, 4 through a hit alone).
+- The game keeps one debuff on the taunted enemy, ability 38254 "Taunt", written as `EFFECT_CHANGED` GAINED, UPDATED (a fresh taunt while one is up) and FADED lines whose target unit state is the enemy's. Its spans are the taunt uptime.
+- The skill a player slots is not always the id that casts and hits. Destructive Clench (38984) with an ice staff is logged as Frost Clench (38989), a separate id with the same icon (`ability_destructionstaff_005_a`); 175 of the 1,361 taunts were of that kind. Inner Rage, Pierce Armor, Ransack, Inner Fire, Inner Beast, Leashing Soul, Goading Throw and Chains of Dominance are logged under their slotted ids.
+- `UNIT_ADDED` flags bosses with `isBoss` (the seventh field after the line type: `UNIT_ADDED,125,MONSTER,F,0,89037,T,...` is Nahviintaas). Enemies stay in the engine's unit list from fight to fight within a zone, so a boss is only measured in a fight that hit or taunted it.

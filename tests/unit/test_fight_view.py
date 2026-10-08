@@ -95,6 +95,29 @@ class TestBarRendering(FightViewTestCase):
         self.assertIn('href="https://eso-hub.com/en/skills/templar/aedric-spear/biting-jabs"', html)
         self.assertIn('href="esolog:ability/99"', html)  # hover anchor without a page
 
+    def test_abilities_the_player_taunted_with_are_ringed_or_purple(self):
+        from gui.fight_render import render_html
+        entry = _entry_with_bars()
+        slots = entry.players[0]['front_bar_slots']
+        slots[0]['taunt'] = True   # has an icon: ringed in the taunt color
+        slots[1]['taunt'] = True   # no icon: its name in that color
+        html = render_html(entry, detailed=True, icons=self._cache(), links=_links)
+        self.assertIn('<img src="icon:ability_test_001?ring=7b1fa2"', html)
+        self.assertIn("<span style='color:#7b1fa2'>Unknown Thing</span>", html)
+        dark = render_html(entry, detailed=True, dark=True, icons=self._cache(), links=_links)
+        self.assertIn('<img src="icon:ability_test_001?ring=ce93d8"', dark)
+        self.assertIn("<span style='color:#ce93d8'>Unknown Thing</span>", dark)
+        # Without an icon cache the bar is text, the taunting names colored
+        text = render_html(entry, detailed=True, links=_links)
+        self.assertIn("<span style='color:#7b1fa2'>Biting Jabs</span>, "
+                      "<span style='color:#7b1fa2'>Unknown Thing</span>", text)
+        # Nothing marked: no ring and no color
+        plain = render_html(_entry_with_bars(), detailed=True, icons=self._cache(), links=_links)
+        self.assertNotIn('?ring=', plain)
+        self.assertNotIn('#7b1fa2', plain)
+        self.assertNotIn('<span', render_html(_entry_with_bars(), detailed=True, links=_links)
+                         .split('Biting Jabs')[0][-40:])
+
     def test_icon_bars_sit_side_by_side(self):
         """Bar 1 left of bar 2 on one line when both render as icons."""
         from gui.fight_render import BAR_DIVIDER, render_html
@@ -210,6 +233,33 @@ class TestFightViewWidget(FightViewTestCase):
         reds = sum(1 for x in range(400) for y in range(200)
                    if out.pixelColor(x, y).red() > 200 and out.pixelColor(x, y).green() < 60)
         self.assertGreater(reds, 50)
+
+    def test_serves_a_ringed_icon_for_a_taunting_ability(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QTextDocument
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        ringed = view.loadResource(QTextDocument.ImageResource,
+                                   QUrl('icon:ability_test_001?ring=7b1fa2'))
+        self.assertEqual((ringed.width(), ringed.height()), (40, 40))
+        self.assertEqual(ringed.pixelColor(1, 1).name(), '#7b1fa2')    # the ring, inside the edge
+        self.assertEqual(ringed.pixelColor(38, 38).name(), '#7b1fa2')
+        self.assertEqual(ringed.pixelColor(20, 20).name(), '#ff0000')  # the icon itself
+        # The base icon is untouched, and a ring the URL does not spell as
+        # a color is ignored
+        for url in ('icon:ability_test_001', 'icon:ability_test_001?ring=purple'):
+            image = view.loadResource(QTextDocument.ImageResource, QUrl(url))
+            self.assertEqual(image.pixelColor(1, 1).name(), '#ff0000', url)
+        # Drawn once per color, then served again
+        again = view.loadResource(QTextDocument.ImageResource,
+                                  QUrl('icon:ability_test_001?ring=7b1fa2'))
+        self.assertIs(ringed, again)
+        other = view.loadResource(QTextDocument.ImageResource,
+                                  QUrl('icon:ability_test_001?ring=ce93d8'))
+        self.assertEqual(other.pixelColor(1, 1).name(), '#ce93d8')
+        # An icon the cache lacks stays missing, ring or not
+        self.assertFalse(view.icons.has('ability_missing'))
+        self.assertIsNone(view.icons.image('ability_missing', ring='#7b1fa2'))
 
     def test_external_links_open_outside_and_hover_shows_name(self):
         from PySide6.QtCore import QUrl

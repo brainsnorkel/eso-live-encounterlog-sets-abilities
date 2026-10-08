@@ -159,6 +159,91 @@ class TestArmorWeights(unittest.TestCase):
         self.assertFalse({187752, 133257} & set().union(*lists))
 
 
+class TestWeaponTypes(unittest.TestCase):
+
+    # What UESP's export returns for item type 1: weaponType is the game's
+    # WEAPONTYPE constant, a shield among them (14); 7 is a prop
+    SAMPLE = {'minedItemSummary': [
+        {'itemId': '133257', 'weaponType': '15'},   # a lightning staff
+        {'itemId': '224527', 'weaponType': '9'},    # Restoration Staff of the Gorethief
+        {'itemId': '200834', 'weaponType': '11'},   # a dagger
+        {'itemId': '139', 'weaponType': '14'},      # Webspinner's Brace, a shield
+        {'itemId': '685', 'weaponType': '9'},
+        {'itemId': '7', 'weaponType': '7'},
+        {'itemId': '', 'weaponType': '9'},
+        {'itemId': '685', 'weaponType': '9'},
+        {'itemId': '5'},
+        'not a row',
+    ]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_weapon_types.py')
+
+    def test_ids_are_sorted_into_their_types(self):
+        got = self.script.weapon_types(self.SAMPLE)
+        self.assertEqual({kind: ids for kind, ids in got.items() if ids},
+                         {'lightning_staff': [133257], 'restoration_staff': [685, 224527],
+                          'dagger': [200834], 'shield': [139]})
+        self.assertEqual(set(got), set(self.script.WEAPON_TYPES.values()))
+
+    def test_a_response_without_rows_gives_empty_lists(self):
+        empty = {kind: [] for kind in self.script.WEAPON_TYPES.values()}
+        self.assertEqual(self.script.weapon_types({}), empty)
+        self.assertEqual(self.script.weapon_types({'minedItemSummary': 'nope'}), empty)
+
+    def test_a_short_response_would_not_overwrite(self):
+        counts = [len(ids) for ids in self.script.weapon_types(self.SAMPLE).values()]
+        self.assertLess(max(counts), self.script.MIN_PER_TYPE)
+
+    def test_file_is_json_with_wrapped_ids(self):
+        types = {kind: [] for kind in self.script.WEAPON_TYPES.values()}
+        types.update(axe=list(range(1000, 1040)), shield=[7])
+        text = self.script.render(types, '2026-10-08T00:00:00+00:00')
+        data = json.loads(text)
+        self.assertEqual(data['count'], 41)
+        self.assertEqual({kind: data[kind] for kind in types}, types)
+        # Sixteen ids to a line, so a refreshed list diffs line by line
+        id_lines = [line for line in text.splitlines() if line.strip()[:1].isdigit()]
+        self.assertEqual([len(line.split(',')) - line.endswith(',') for line in id_lines],
+                         [16, 16, 8, 1])
+
+    def test_a_saved_reply_is_read_in_place_of_the_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = Path(tmp) / 'reply.json'
+            saved.write_text(json.dumps(self.SAMPLE), encoding='utf-8')
+            payload, source = self.script.load_payload(['--from', str(saved)])
+            self.assertEqual((payload, source), (self.SAMPLE, str(saved)))
+            saved.write_text('not json', encoding='utf-8')
+            with self.assertRaises(SystemExit):
+                self.script.load_payload(['--from', str(saved)])
+        with self.assertRaises(SystemExit):
+            self.script.load_payload(['--bogus'])
+
+    def test_committed_table(self):
+        data = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
+        kinds = list(self.script.WEAPON_TYPES.values())
+        lists = [data[kind] for kind in kinds]
+        self.assertEqual(data['count'], sum(len(ids) for ids in lists))
+        for ids in lists:
+            self.assertGreaterEqual(len(ids), self.script.MIN_PER_TYPE)
+            self.assertEqual(ids, sorted(set(ids)))
+        # No weapon has two types
+        self.assertEqual(len(set().union(*lists)), data['count'])
+        # Weapons wielded in real logs
+        self.assertIn(133257, data['lightning_staff'])
+        self.assertIn(224527, data['restoration_staff'])   # Restoration Staff of the Gorethief
+        self.assertIn(55939, data['restoration_staff'])    # The Master's Restoration Staff
+        self.assertIn(71152, data['inferno_staff'])        # The Maelstrom's Inferno Staff
+        self.assertIn(187194, data['ice_staff'])
+        self.assertIn(200834, data['dagger'])
+        self.assertIn(71130, data['greatsword'])           # The Maelstrom's Greatsword
+        self.assertIn(71142, data['bow'])                  # The Maelstrom's Bow
+        self.assertIn(139, data['shield'])                 # Webspinner's Brace
+        # A ring and a medium helmet are in none of them
+        self.assertFalse({187752, 95044} & set().union(*lists))
+
+
 class TestFoodBuffs(unittest.TestCase):
 
     @classmethod

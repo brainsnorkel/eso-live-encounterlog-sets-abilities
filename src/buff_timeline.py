@@ -24,6 +24,8 @@ TRACKED_TIMELINE_EFFECTS: Dict[str, set] = {
     "Major Berserk": {"61745", "263306", "36973", "62195"},
     "Powerful Assault": {"61771"},
     "Major Vulnerability": {"106754", "122389", "167061"},
+    # The debuff a taunt puts on the enemy: one id whatever skill taunted
+    "Taunt": {"38254"},
 }
 
 # Adjacent intervals for the same (source, target) closer than this are one

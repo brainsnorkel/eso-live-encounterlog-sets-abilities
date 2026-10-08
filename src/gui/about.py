@@ -33,7 +33,7 @@ def about_html(version: str) -> str:
         f"<li><b>Food and drink buffs</b>: the buff list of "
         f"<a href='{LIBFOODDRINKBUFF_URL}'>LibFoodDrinkBuff</a> by Scootworks and "
         f"Baertram.</li>"
-        f"<li><b>Poison names, armor weights and restoration staves</b>: the ESO "
+        f"<li><b>Poison names, armor weights and weapon types</b>: the ESO "
         f"item database of <a href='{UESP_URL}'>UESP</a>.</li>"
         f"<li><b>Icon extraction</b>: <a href='{EXTRACTOR_URL}'>EsoExtractData</a> "
         f"by UESP.</li>"
