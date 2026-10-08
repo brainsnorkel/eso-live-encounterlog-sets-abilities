@@ -22,9 +22,8 @@ DELETE_WARNING = ("Deletes Encounter.log after the archive is created and "
 class _PathRow(QHBoxLayout):
     """Line edit + Browse button for a file or directory path."""
 
-    def __init__(self, value: str, directory: bool, parent: QDialog):
+    def __init__(self, value: str, directory: bool):
         super().__init__()
-        self._parent = parent
         self._directory = directory
         self.edit = QLineEdit(value or "")
         browse = QPushButton("Browse…")
@@ -33,11 +32,18 @@ class _PathRow(QHBoxLayout):
         self.addWidget(browse)
 
     def _browse(self):
+        # The file dialog's parent is the settings window the edit sits in.
+        # No reference to it is kept here: a row that pointed back at its
+        # dialog made a reference cycle, so the dialog was freed by the
+        # garbage collector on whichever thread happened to be allocating,
+        # once the engine thread mid-replay, and freeing Qt objects off the
+        # UI thread aborts the process
+        window = self.edit.window()
         if self._directory:
-            path = QFileDialog.getExistingDirectory(self._parent, "Select folder",
+            path = QFileDialog.getExistingDirectory(window, "Select folder",
                                                     self.edit.text() or str(Path.home()))
         else:
-            path, _ = QFileDialog.getOpenFileName(self._parent, "Select Encounter.log",
+            path, _ = QFileDialog.getOpenFileName(window, "Select Encounter.log",
                                                   self.edit.text() or str(Path.home()),
                                                   "Log files (*.log);;All files (*)")
         if path:
@@ -61,7 +67,7 @@ class SettingsDialog(QDialog):
         # Log file
         log_group = QGroupBox("Encounter log")
         log_form = QFormLayout(log_group)
-        self.log_row = _PathRow(config.get("log_path") or "", directory=False, parent=self)
+        self.log_row = _PathRow(config.get("log_path") or "", directory=False)
         log_form.addRow("Log file (blank = auto-detect):", self.log_row)
         layout.addWidget(log_group)
 
@@ -70,7 +76,7 @@ class SettingsDialog(QDialog):
         split_form = QFormLayout(split_group)
         self.split_enabled = QCheckBox("Create a split log file for each encounter")
         self.split_enabled.setChecked(bool(config.get("split.enabled", False)))
-        self.split_dir = _PathRow(config.get("split.dir") or "", directory=True, parent=self)
+        self.split_dir = _PathRow(config.get("split.dir") or "", directory=True)
         split_form.addRow(self.split_enabled)
         split_form.addRow("Split folder (blank = log folder):", self.split_dir)
         layout.addWidget(split_group)
@@ -87,7 +93,7 @@ class SettingsDialog(QDialog):
         guide.setWordWrap(True)
         guide.setStyleSheet("color: #888; font-size: 11px;")
         archive_form.addRow(guide)
-        self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True, parent=self)
+        self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True)
         archive_form.addRow("Archive folder (blank = log folder):", self.archive_dir)
         self.delete_original = QCheckBox("Delete Encounter.log after a verified archive")
         self.delete_original.setChecked(bool(config.get("archive.delete_original", False)))

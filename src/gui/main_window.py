@@ -422,6 +422,7 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(update_btn)
         box.exec()
         clicked = box.clickedButton()
+        box.deleteLater()  # on the UI thread, as for the settings dialog
         if clicked is update_btn:
             return "update"
         if clicked is skip_btn:
@@ -663,6 +664,12 @@ class MainWindow(QMainWindow):
                 self.history_list.clear()
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
             self.request_restart.emit()
+        # Delete the closed dialog here, on the UI thread, rather than leave
+        # it to Python's garbage collector, which frees whatever is garbage
+        # on whichever thread is allocating at the time. That was the engine
+        # thread replaying the log after the restart, and freeing the
+        # dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+        dialog.deleteLater()
 
     def _open_review_dialog(self):
         start_dir = str(Path(self.config.get("split.dir")
