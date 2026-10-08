@@ -16,6 +16,8 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 - **Saving settings could crash the app**: pressing Save in the Settings window restarts monitoring, which replays the current log session on the engine thread. The closed Settings window was left for Python's garbage collector to free, and its path rows pointed back at the window, a cycle only that collector could free, on whichever thread happened to be allocating at the time: the engine thread, mid-replay. Freeing the window's Qt objects there aborted the app, with nothing in the crash log but the engine's position in the log. The window now deletes the closed dialog itself, on the UI thread, and nothing in the dialog points back at it. Reproduced and confirmed on a Sunspire log: the real Save flow aborted every time; with the collector off, or with the dialog deleted on the UI thread, it never did
 
+- **Fights listed twice after saving settings**: Save restarts monitoring, but the engine only reaches the restart once the replay it is in the middle of has finished (the session loaded at startup, or by an earlier Save), and that replay keeps sending fights meanwhile. The window cleared its history the moment Save was pressed, so the rest of the old replay refilled it and the new replay's fights were listed under them, the first copy without the timeline the new setting had just turned on. The history is now cleared when the engine reports that the restart has begun, and fights sent before that are dropped. A review opened from a file keeps its list across the restart
+
 ## [0.6.6] - 2026-10-06
 
 ### Fixed

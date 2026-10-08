@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self._detailed = True
         self._last_status = None
         self._follow_live = True
+        self._restart_pending = False  # Save pressed, engine not yet restarted
         self._last_placeholder = ""
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
@@ -243,6 +244,7 @@ class MainWindow(QMainWindow):
         self.worker.diagnostic.connect(self._on_diagnostic)
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
+        self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
         self.worker.review_loaded.connect(self._on_review_loaded)
         self.worker.parse_progress.connect(self._on_parse_progress)
         self.worker.update_available.connect(self._on_update_available)
@@ -282,6 +284,8 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_fight_completed(self, entry):
+        if self._restart_pending:
+            return  # from the analyzer Settings is replacing
         self._fights.append(entry)
         if self._review_fights is None:
             item = QListWidgetItem(summary_line(entry, death_cue=True))
@@ -295,6 +299,8 @@ class MainWindow(QMainWindow):
         combat ended), or the game had cut it in two and it has now really
         ended. Its history line is rewritten, and the pane is redrawn if it
         is the fight on screen."""
+        if self._restart_pending:
+            return
         fights = self._current_fights()
         # Both happen to the newest fight, so look from the end
         row = next((i for i in range(len(fights) - 1, -1, -1)
@@ -375,6 +381,18 @@ class MainWindow(QMainWindow):
             f"Enable encounter logging in ESO (/encounterlog) or install the "
             f"Easy Stalking addon. Monitoring starts automatically when the "
             f"file appears.")
+
+    @Slot()
+    def _on_monitoring_restarting(self):
+        """The engine has begun the restart Settings asked for. Everything
+        it sent before this belonged to the analyzer being replaced, so the
+        history is cleared now rather than when Save was pressed: a replay
+        still running at that moment went on filling a list cleared too
+        early, and its fights showed above the new analyzer's."""
+        self._restart_pending = False
+        self._fights.clear()
+        if self._review_fights is None:
+            self.history_list.clear()
 
     @Slot(str)
     def _on_monitoring_started(self, path):
@@ -659,10 +677,11 @@ class MainWindow(QMainWindow):
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
-            self._fights.clear()
-            if self._review_fights is None:
-                self.history_list.clear()
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
+            # The history is cleared when the engine reaches the restart
+            # (see _on_monitoring_restarting); until then its fights are
+            # the old analyzer's and are dropped
+            self._restart_pending = True
             self.request_restart.emit()
         # Delete the closed dialog here, on the UI thread, rather than leave
         # it to Python's garbage collector, which frees whatever is garbage

@@ -60,6 +60,9 @@ class EngineWorker(QObject):
     diagnostic = Signal(str)
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
+    # A requested restart has begun: fights sent before this came from the
+    # analyzer being replaced (queued signals arrive in emission order)
+    monitoring_restarting = Signal()
     review_loaded = Signal(str, list)  # path, [FightHistoryEntry]
     # Parsing/import progress: (label, done_bytes, total_bytes).
     # total == 0 -> indeterminate busy; done >= total > 0 -> finished (hide).
@@ -153,6 +156,9 @@ class EngineWorker(QObject):
     def restart_monitoring(self):
         """Settings changed: rebuild analyzer/monitor. No archive check
         (auto-archive is startup-only by spec)."""
+        # Slots on this thread run one after another, so this is emitted
+        # only once any replay the old analyzer was in the middle of is done
+        self.monitoring_restarting.emit()
         try:
             self._teardown()
             self._log_path = resolve_log_path(self.config)
