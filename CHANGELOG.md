@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Group buff uptimes counted a buff only on the player who cast it** (#11): the uptime line's MCourage, MForce, Mslayer, PA, LE and PW percentages are the share of the fight the buff was on any group member, but the engine never saw a buff one player put on another. An EFFECT_CHANGED line carries a ten-field unit state for the source and another for the target, and the target id was read from the source's shield value, almost always `0`, in place of the target's own id, so only a buff a player gave themself counted. Buffs that come from someone else were undercounted or missing: Lucent Echoes was absent from most uptime lines, Major Slayer and Major Force often read 0% when they were up all fight, and Major Courage read tens of points low. Replaying nine trial and dungeon logs of this year (170 fights of three or more players) through the old and the new engine, the uptime line changes in 143 of them, and each buff is now seen on all twelve players of a trial group rather than on one. The experimental timeline and the taunt tracking read the target correctly already and are unchanged. A side effect: the same wrong id had been filling the engine's table of supposed pets with shield values, and a unit whose id happened to match one had its damage or healing credited to a group member at random. That table is no longer filled, and in five of the 170 fights a player's DPS moves by up to 1%
+
 ## [0.6.6] - 2026-10-06
 
 ### Fixed

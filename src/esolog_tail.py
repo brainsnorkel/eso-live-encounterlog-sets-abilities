@@ -1962,34 +1962,23 @@ class ESOLogAnalyzer(ListenerMixin):
             cast_track_id = entry.fields[2]  # castTrackId
             ability_id = entry.fields[3]  # abilityId
             
-            # Extract source unit ID from sourceUnitState (first field after abilityId)
-            source_unit_id = entry.fields[4] if len(entry.fields) > 4 else "0"
-            
-            # Determine target unit ID
-            # If targetUnitState is "*", then target is same as source
-            # Otherwise, target unit ID is in the targetUnitState (first field of targetUnitState)
-            target_unit_id = source_unit_id  # Default to source
-            if len(entry.fields) > 10:
-                # Check if targetUnitState is "*" (same as source)
-                if entry.fields[-1] == "*":
-                    target_unit_id = source_unit_id
-                else:
-                    # Extract target unit ID from targetUnitState
-                    # targetUnitState starts after sourceUnitState (which has 6 fields: unitId, health, magicka, stamina, ultimate, werewolf)
-                    target_unit_id = entry.fields[10] if len(entry.fields) > 10 else source_unit_id
+            # Source and target unit ids. A unit state is ten fields wide
+            # (unitId, health, magicka, stamina, ultimate, werewolf, shield,
+            # x, y, heading), so an explicit target id is fields[14], and "*"
+            # there means the target is the source (see extract_effect_fields)
+            extracted = extract_effect_fields(entry.fields)
+            source_unit_id = extracted[2] if extracted else "0"
+            target_unit_id = extracted[3] if extracted else source_unit_id
+            self_target = target_unit_id == source_unit_id
             
             if self.diagnostic and target_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
 
-            # EXPERIMENTAL timeline capture. Extracts source/target itself:
-            # the unit-state blocks are 10 fields wide, so an explicit target
-            # id sits at fields[14] (see extract_effect_fields).
-            if self.track_buff_timeline:
-                extracted = extract_effect_fields(entry.fields)
-                if extracted is not None:
-                    self.buff_timeline_recorder.record(
-                        extracted[0], extracted[1], extracted[2], extracted[3],
-                        entry.timestamp)
+            # EXPERIMENTAL timeline capture
+            if self.track_buff_timeline and extracted is not None:
+                self.buff_timeline_recorder.record(
+                    effect_type, ability_id, source_unit_id, target_unit_id,
+                    entry.timestamp)
 
             # Always track group buffs globally, regardless of encounter state
             for buff_name, buff_ids in self.group_buff_ids.items():
@@ -2003,21 +1992,8 @@ class ESOLogAnalyzer(ListenerMixin):
                         self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
                         # Note: Buff event already logged by _track_global_buff, no need to log again
 
-            # Only process other encounter-specific logic if we have an active encounter
-            if self.current_encounter:
-                # Associate long unit ID with target player if we can find the target
-                if target_unit_id in self.current_encounter.players:
-                    self.current_encounter.associate_long_unit_id(target_unit_id, source_unit_id)
-
-                # Track pet ownership: if source is a player and target is not a player, target might be a pet
-                if (source_unit_id in self.current_encounter.players and
-                    target_unit_id not in self.current_encounter.players):
-                    # Check if target is likely a pet (not a known enemy)
-                    if target_unit_id not in self.current_encounter.enemies:
-                        self.current_encounter.track_pet_ownership(target_unit_id, source_unit_id)
-
-            # Parse health information for enemies and players from EFFECT_CHANGED events
-            # EFFECT_CHANGED format: GAINED/FADED/UPDATED,stacks,source_unit_id,ability_id,target_unit_id,source_health/max,source_magicka/max,source_stamina/max,source_ultimate/max,source_werewolf/max,source_shield,source_x,source_y,source_heading,target_unit_id,target_health/max,target_magicka/max,target_stamina/max,target_ultimate/max,target_werewolf/max,target_shield,target_x,target_y,target_heading
+            # Enemy health from the unit states: the target's own ten fields
+            # when the target is explicit, the source's when it is "*"
             
             # Only process health parsing if we have an active encounter
             if self.current_encounter:
@@ -2038,8 +2014,9 @@ class ESOLogAnalyzer(ListenerMixin):
                         except (ValueError, IndexError):
                             pass  # Skip invalid health data
             
-            # Also check the first target_unit_id (original logic for backward compatibility)
-            if self.current_encounter and len(entry.fields) >= 6:
+            # A self-targeted effect on an enemy: the source state is the
+            # enemy's, so its health is fields[5]
+            if self_target and self.current_encounter and len(entry.fields) >= 6:
                 first_target_health_info = str(entry.fields[5])  # Field 6 (0-indexed)
                 if "/" in first_target_health_info and target_unit_id in self.current_encounter.enemies:
                     try:
