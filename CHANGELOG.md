@@ -2,7 +2,10 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.7.1] - 2026-10-09
+
+### Changed
+- **Taunt marks stand out** (#12): the ring on an ability a player taunted with is wider (an eighth of the icon), has a dark hairline outside it so it shows on any icon art and a light one inside, and pulses: it brightens and fades about once a second, in the fight pane and the build window. The name of a taunting ability that has no icon is bold as well as purple. The pulse redraws only the ringed icons, so the page does not move or reflow
 
 ### Added
 - **User guide**: `docs/user-guide.md` walks through every screen with pictures the app draws itself: `scripts/capture_screenshots.py` renders the app offscreen over a log file, under a scratch config, and writes the pictures the guide and the README show, so they stay in step with the app. Linked from the README
