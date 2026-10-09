@@ -2,8 +2,9 @@
 EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
 
 One thin colored row per tracked effect across the fight duration, with the
-effect's uptime % in its label, time tick marks, and hover tooltips naming
-caster and receiver. A group buff that only ever reached one or two
+effect's uptime % in its label, whose effect it is beside it (group, self,
+pets, boss or enemies), time tick marks, and hover tooltips naming caster
+and receiver. A group buff that only ever reached one or two
 receivers renders dotted rather than solid (Major Vulnerability and Taunt
 are exempt: they target the boss, so a single receiver is their normal
 case).
@@ -56,6 +57,11 @@ ROW_HEIGHT = 10
 ROW_GAP = 2
 AXIS_HEIGHT = 14
 LABEL_WIDTH = 120
+# A column between the label and the track naming whose effect the row is:
+# group, self, pets, boss or enemies (effect_rules scopes); the built-in
+# rows are group buffs except the two that sit on the boss
+SCOPE_WIDTH = 46
+BUILTIN_SCOPES = {"Major Vulnerability": "boss", "Taunt": "boss"}
 MARGIN = 4
 
 
@@ -126,6 +132,7 @@ class TimelineStrip(QWidget):
                     "uptime_pct": uptime_pct(intervals, duration),
                     "dotted": (effect not in SINGLE_TARGET_EFFECTS
                                and len(receivers) <= SPARSE_RECEIVER_LIMIT),
+                    "scope": BUILTIN_SCOPES.get(effect, "group"),
                 }
             for index, item in enumerate(tracked or []):
                 name = item.get("name")
@@ -137,6 +144,7 @@ class TimelineStrip(QWidget):
                     "uptime_pct": int(round(item.get("uptime_pct", 0))),
                     "dotted": False,
                     "label": item.get("text", name),
+                    "scope": item.get("scope", ""),
                     "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
                     "stacks_max": (item.get("max_stacks") or 0) if item.get("kind") == "stacks" else 0,
                 }
@@ -167,8 +175,9 @@ class TimelineStrip(QWidget):
         return QSize(200, self._strip_height())
 
     def _track_rect(self) -> QRectF:
-        return QRectF(LABEL_WIDTH, MARGIN,
-                      max(1, self.width() - LABEL_WIDTH - MARGIN),
+        left = LABEL_WIDTH + SCOPE_WIDTH
+        return QRectF(left, MARGIN,
+                      max(1, self.width() - left - MARGIN),
                       len(self._rows) * (ROW_HEIGHT + ROW_GAP))
 
     def _row_rect(self, row: int) -> QRectF:
@@ -220,6 +229,10 @@ class TimelineStrip(QWidget):
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter, label)
+            # Whose effect this row is
+            painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
+                                    SCOPE_WIDTH - 4, rect.height() + 2),
+                             Qt.AlignLeft | Qt.AlignVCenter, info.get("scope", ""))
             # Track background
             painter.fillRect(rect, track_bg)
             # Fill segments (dotted when the buff reached <=2 receivers; a
@@ -292,7 +305,7 @@ class TimelineStrip(QWidget):
                 effect, ms, hits = found
                 if hits:
                     info = self._row_info.get(effect, {})
-                    lines = [f"<b>{effect}</b> @ {_fmt_tick(ms)}"
+                    lines = [f"<b>{effect}</b> ({info.get('scope', '')}) @ {_fmt_tick(ms)}"
                              f" &nbsp;·&nbsp; uptime {info.get('uptime_pct', 0)}%"]
                     for iv in hits:
                         who = (f"{iv['source']} → {iv['target']}" if iv.get("source")

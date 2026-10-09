@@ -83,7 +83,7 @@ class TestTimelineStrip(unittest.TestCase):
             {"start_ms": 0, "end_ms": 45_000, "source": "@tank", "target": "Test Boss"}]
         self.strip.set_timeline(timeline)
         self.assertEqual(self.strip._rows[-1], "Taunt")
-        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "dotted": False})
+        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "dotted": False, "scope": "boss"})
 
     def test_uptime_percentages(self):
         from gui.timeline_strip import uptime_pct
@@ -255,6 +255,19 @@ class TestTrackedRows(unittest.TestCase):
         self.assertEqual(self.strip._rows, [])
         self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
         self.assertEqual(self.strip._rows, ["OB"])
+
+    def test_every_row_names_whose_effect_it_is(self):
+        from gui.timeline_strip import LABEL_WIDTH, SCOPE_WIDTH
+        tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
+                    "uptime_pct": 75.0, "max_stacks": 3,
+                    "intervals": [{"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me"}]}]
+        self.strip.set_timeline(_sample_timeline(), tracked)
+        scopes = {row: self.strip._row_info[row]["scope"] for row in self.strip._rows}
+        self.assertEqual(scopes, {"Major Force": "group", "Major Vulnerability": "boss", "Crux": "self"})
+        # The scope column sits between the label and the track
+        self.assertEqual(self.strip._track_rect().left(), LABEL_WIDTH + SCOPE_WIDTH)
+        self.strip.show()
+        self.strip.grab()  # paints the scope words without error
 
 
 if __name__ == '__main__':

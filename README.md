@@ -173,7 +173,7 @@ When the experimental timeline strip is on, each rule is a row of it as well, an
 
 ### Experimental: buff timeline
 
-Settings → Experimental → *Buff timeline* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
+Settings → Experimental → *Buff timeline* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule. Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
 
 ## Automatic log archiving
 

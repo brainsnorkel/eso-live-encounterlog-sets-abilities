@@ -72,7 +72,7 @@ The rules are plain text: copy them to a friend, or paste theirs in. A tracker e
 
 ## The buff timeline (experimental)
 
-Settings → Experimental → **Buff timeline** adds a strip above the fight: one thin row per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was up, with the uptime in the row label and time ticks underneath. A group buff that reached only one or two people is dotted rather than solid. Hover a segment for who cast it and who received it. The strip replaces the text uptime line.
+Settings → Experimental → **Buff timeline** adds a strip above the fight: one thin row per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was up, with the uptime in the row label and time ticks underneath. A group buff that reached only one or two people is dotted rather than solid. Hover a segment for who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule (`self`, `pets`, `enemies`). The strip replaces the text uptime line.
 
 ![The main window with the buff timeline strip](screencaps/main-window-buff-timeline.png)
 

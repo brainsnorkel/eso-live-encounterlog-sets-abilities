@@ -58,7 +58,11 @@ Settings SHALL show the rule text in an editable box with the number of rules it
 
 ### Requirement: Timeline rows for tracked effects
 
-When the experimental timeline strip is on, the strip SHALL show one row per rule after the built-in rows, labelled with the rule's uptime-line text; a stacking effect's filled bar SHALL vary in height with the stack count, the peak reaching the row's full height.
+When the experimental timeline strip is on, the strip SHALL show one row per rule after the built-in rows, labelled with the rule's uptime-line text; a stacking effect's filled bar SHALL vary in height with the stack count, the peak reaching the row's full height. Every row, built-in or tracked, SHALL say whose effect it is beside its label (`group`, `self`, `pets`, `boss` or `enemies`): the built-in group buffs are `group`, Major Vulnerability and Taunt are `boss`.
+
+#### Scenario: Scope beside each row
+- GIVEN the strip shows Major Force, Taunt and a `Crux ... on self stacks` rule
+- THEN the rows read `group`, `boss` and `self` beside their labels
 
 #### Scenario: Stacks drawn by height
 - GIVEN a `stacks` rule whose effect held 1 then 3 stacks
