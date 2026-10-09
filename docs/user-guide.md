@@ -50,7 +50,7 @@ Click a player's name to open their build for that fight. The window stays open 
 
 ## Death recaps
 
-A player who died has a red **☠ Death recap** button on their row (`×2` for two deaths). Hover it for when and to what they died; click it for the recap window.
+A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deaths. Hover it for when and to what they died; click it for the recap window.
 
 ![The death recap window: the last seconds before a death](screencaps/death-recap.png)
 

@@ -95,7 +95,7 @@ The right pane shows the selected fight.
 
 ### Death recap
 
-A red **☠ Death recap** button appears beside each player who died in the fight (`×2` when they died twice). Hover it for when, and to what, they died. Click it to open the recap window, which stays open beside the fight view.
+A red skull (**☠**) appears beside each player who died in the fight, `☠ ×2` when they died twice. Hover it for when, and to what, they died. Click it to open the recap window, which stays open beside the fight view.
 
 For each of that player's deaths the window names the killing ability and who used it, then lists the last 5 seconds of damage and healing, oldest first:
 

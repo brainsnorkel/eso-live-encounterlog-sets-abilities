@@ -103,7 +103,7 @@ class TestDeathButtonInFightView(DeathRecapGuiTestCase):
             html = render_html(_entry_with_deaths(), detailed=detailed)
             tester_row = html[html.index('@tester'):html.index('@friend')]
             self.assertIn('href="esolog:deaths/1"', tester_row)
-            self.assertIn('Death recap ×2', tester_row)
+            self.assertIn('☠ ×2', tester_row)
             friend_row = html[html.index('@friend'):html.index('</table>')]
             self.assertNotIn('esolog:deaths', friend_row)
         self.assertNotIn('esolog:deaths', render_html(_entry_no_deaths(), detailed=True))
@@ -292,7 +292,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         try:
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.setCurrentRow(0)
-            self.assertIn('Death recap', win.fight_view.toPlainText())
+            self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIsNone(win._death_dialog)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
@@ -327,7 +327,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.setCurrentRow(0)
             view = win.fight_view
-            found = view.document().find('Death recap')
+            found = view.document().find('☠')
             self.assertFalse(found.isNull())
             inside = QTextCursor(view.document())
             inside.setPosition(found.selectionStart() + 3)
@@ -348,7 +348,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win.history_list.setCurrentRow(0)
             self.assertIn('esolog:deaths/1', win.fight_view._tooltips)
             win.detail_action.setChecked(False)
-            self.assertIn('Death recap', win.fight_view.toPlainText())
+            self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIn('esolog:deaths/1', win.fight_view._tooltips)
         finally:
             win.close()
@@ -359,14 +359,14 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             entry = _entry_no_deaths()
             win._on_fight_completed(entry)
             win.history_list.setCurrentRow(0)
-            self.assertNotIn('Death recap', win.fight_view.toPlainText())
+            self.assertNotIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 0', win.fight_view.toPlainText())
             self.assertNotIn('(d)', win.history_list.item(0).text())
 
             entry.deaths = 1
             entry.death_recaps = [_death('1', '@tester', 20085, 'Sharpfang', 'Slap', [])]
             win._on_fight_updated(entry)
-            self.assertIn('Death recap', win.fight_view.toPlainText())
+            self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 1', win.fight_view.toPlainText())
             self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang (d) '))
 

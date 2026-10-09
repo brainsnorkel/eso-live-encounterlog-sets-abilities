@@ -93,12 +93,14 @@ def _killed_by(recap: dict) -> str:
 
 
 def death_chip_html(unit_id, deaths: List[dict], dark: bool,
-                    label: str = "Death recap") -> str:
-    """The death-recap button for a player who died: a filled chip that the
-    fight view routes to the recap window."""
+                    label: str = "") -> str:
+    """The death-recap button for a player who died: a filled chip with the
+    skull, and ×N when they died more than once, that the fight view routes
+    to the recap window. The hover text says what it is; a label is only
+    added when a caller asks for one."""
     theme = _THEMES[bool(dark)]
     count = f" ×{len(deaths)}" if len(deaths) > 1 else ""
-    text = html.escape(f"{SKULL} {label}{count}")
+    text = html.escape(f"{SKULL}{' ' + label if label else ''}{count}")
     return (f'<a href="{html.escape(death_href(unit_id), quote=True)}" '
             f'style="text-decoration:none;font-weight:bold;'
             f'color:{theme["chip_fg"]};background-color:{theme["chip_bg"]}">'
