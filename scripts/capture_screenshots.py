@@ -19,6 +19,7 @@ time, so the pictures stay in step with the app:
     build-window.png                one player's build window
     death-recap.png                 one player's death recap
     settings.png                    the Settings dialog
+    examples-dialog.png             the example tracking rules picker
     review-mode.png                 a log opened for review
 
 Needs PySide6 and, on Windows, the fonts under C:\\Windows\\Fonts (the
@@ -163,11 +164,20 @@ def main():
     else:
         print("  (no death in this log: death-recap.png not written)")
 
-    # Settings
+    # Settings, and the example-rules picker it opens
     dialog = SettingsDialog(win.config, win)
     dialog.show()
     pump(1)
     save(dialog, "settings.png")
+    from effect_rules import parse_rules
+    from gui.examples_dialog import ExamplesDialog
+    present = [rule.name for rule in parse_rules(dialog.rules_edit.toPlainText())[0]]
+    picker = ExamplesDialog(present, dialog)
+    picker.resize(720, 520)
+    picker.show()
+    pump(1)
+    save(picker, "examples-dialog.png")
+    picker.deleteLater()
     dialog.deleteLater()
     pump(0.5)
 
