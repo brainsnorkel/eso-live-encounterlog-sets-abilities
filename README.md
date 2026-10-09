@@ -91,7 +91,7 @@ The right pane shows the selected fight.
 - **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead. An ability the player taunted with in that fight is ringed in purple (or named in purple).
 - **Scribed skills**: under the bars, each scribed skill with the two scripts its name does not reveal, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
 - **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
-- **Group buffs and taunt**: for groups of three or more, a line of uptime percentages for Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, and Pearlescent Ward. `Taunt:97%` is how long the boss had a taunt on it: shown for a group of three or more fighting a boss, and for anyone who taunted; averaged over the bosses when a fight has several, and a boss killed before the end is measured to its death. When the experimental timeline strip is on, the strip replaces this line.
+- **Uptime line**: one item per tracked-effect rule (Settings → Tracked effects), on every fight whatever the group size. A fresh install shows the six group buffs (how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group), `Taunt:97%` (how long each boss had a taunt on it, averaged over the bosses when a fight has several, a boss killed before the end measured to its death) and seven boss debuffs. In a fight without a boss, a boss rule measures the pack instead and says how many of its mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. Every item is a rule you can edit or delete, and **Examples…** has them back. When the experimental timeline strip is on, the strip replaces this line.
 
 ### Death recap
 
@@ -142,8 +142,7 @@ Open **Settings…** from the toolbar.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [Automatic log archiving](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall.
 - **Updates**: check GitHub for a newer release at startup and offer to update.
-- **Experimental**: the buff timeline strip, see below.
-- **Tracked effects**: your own additions to the uptime line, as text you can copy to others. One rule per line: `Name = ability ids on self | group | pets | boss | enemies`, then `stacks` for an effect that stacks. `Off-Balance = 45902 62988 39077 on boss` is the share of the fight the boss was off balance under any of those ids; `Crux = 184220 on self stacks` is the mean and peak Crux count you held. A line that starts with `$` is a [HyperTools](https://github.com/Hyperioxes/HyperTools) tracker export, pasted as is. The box says how many rules it holds and which lines it skips; **Examples…** opens a list of example rules to tick and add under yours, or to copy for sharing. See [Tracked effects](#tracked-effects) below.
+- **Tracked effects**: the uptime line, as text you can copy to others, and a checkbox that shows the same rules as a per-fight timeline strip in place of the line (see below). One rule per line: `Name = ability ids on self | group | pets | boss | enemies`, then `stacks` for an effect that stacks, or `each` for the mean over the units. `Off-Balance = 45902 62988 39077 on boss` is the share of the fight the boss was off balance under any of those ids; `Crux = 184220 on self stacks` is the mean and peak Crux count you held; `Taunt = 38254 on boss each` is the taunt's measure. The group buffs and the taunt are rules here like the rest, so you can rename or delete them. A line that starts with `$` is a [HyperTools](https://github.com/Hyperioxes/HyperTools) tracker export, pasted as is. The box says how many rules it holds and which lines it skips; **Examples…** opens a list of example rules to tick and add under yours, or to copy for sharing. See [Tracked effects](#tracked-effects) below.
 
 Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 
@@ -153,10 +152,17 @@ At startup the app checks GitHub for a newer release (Settings → Updates to di
 
 ### Tracked effects
 
-The uptime line's six group buffs and the taunt are built in. Anything else the log carries, you can add yourself in Settings → Tracked effects, and the items appear on the uptime line of every fight, in the fight pane and in copied text, whatever the group size.
+Every item of the uptime line is a rule in Settings → Tracked effects, and the items appear on every fight, in the fight pane and in copied text, whatever the group size. A fresh install starts with these, and anything else the log carries you can add yourself:
 
 ```
-# Name = ability ids on <scope> [stacks]
+# Name = ability ids on <scope> [stacks | each]
+Major Courage    = 109966 on group
+Major Force      = 61747 on group
+Major Slayer     = 93109 on group
+Powerful Assault = 61771 on group
+Lucent Echoes    = 220015 on group
+Pearlescent Ward = 172621 on group
+Taunt            = 38254 on boss each
 Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
 Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
@@ -168,15 +174,17 @@ Alkosh        = 76667 on boss
 
 - A rule matches any of its ids: an effect such as Off-Balance has one id per skill that applies it.
 - The scope says whose effects count: `self` is the player whose client writes the log, `group` any group member, `pets` a group member's pet, `boss` an enemy the game flags as a boss, `enemies` any hostile.
-- `uptime` (the default) is the share of the fight the effect was on at least one unit of the scope, shown as `Off-Balance:17%`. `stacks` is the mean stack count while it was up and the peak, shown as `Crux:2.1/3`.
+- `uptime` (the default) is the share of the fight the effect was on at least one unit of the scope, shown as `Off-Balance:17%`. `stacks` is the mean stack count while it was up and the peak, shown as `Crux:2.1/3`. `each` measures the effect on every unit of the scope separately, over the time that unit was alive in the fight, and shows the mean: the taunt's measure, where a fight with two bosses averages them and a boss killed early is measured to its death.
+- In a fight without a boss (a trash pack), a `boss` rule measures every hostile the group fought instead, and both it and an `enemies` rule say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. In a boss fight nothing changes.
+- The group buffs and the taunt are rules like the rest: delete the ones you do not want, rename them (`MCourage` if you prefer the short form), and **Examples…** has them back.
 - A line that starts with `$` is a tracker exported from the HyperTools addon: its name, ability ids and target become a rule; `stacks` or `on boss` after the string override it.
 - Ability ids are the ones the game logs; an addon such as HyperTools or LuiExtended shows them, as does the hover text of the buff timeline. A rule for an id the log never writes simply reads 0%.
 
-When the experimental timeline strip is on, each rule is a row of it as well, and a stacking effect's bar rises and falls with the count.
+When the experimental timeline strip is on, each rule is a row of it as well, a stacking effect's bar rises and falls with the count, and a boss rule measured on a pack says `mobs` beside its label.
 
 ### Experimental: buff timeline
 
-Settings → Experimental → *Buff timeline* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule. Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
+Settings → Tracked effects → *Show these as a per-fight timeline strip* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule (`mobs` for a boss rule measured on the pack of a fight without a boss). Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
 
 ## Automatic log archiving
 

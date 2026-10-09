@@ -39,9 +39,11 @@ class FightHistoryEntry:
         # max_health, and events: the last seconds before the death, oldest
         # first (see death_recap.py for the row keys)
         self.death_recaps = []
-        # The user's tracked effects for this fight, one dict per rule in
-        # rule order: name, scope, kind, uptime_pct, avg_stacks, max_stacks,
-        # text (the uptime line's item) and intervals (see
+        # The tracked effects for this fight (every item of the uptime line
+        # is one), one dict per rule in rule order: name, scope, kind, units
+        # (what it measured: the scope, or 'mobs' in a fight without a boss),
+        # uptime_pct, avg_stacks, max_stacks, mobs_reached, mobs, text (the
+        # uptime line's item) and intervals (see
         # effect_rules.EffectTracker.snapshot); [] when there are no rules
         self.tracked = []
 

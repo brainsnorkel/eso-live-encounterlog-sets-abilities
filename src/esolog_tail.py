@@ -57,36 +57,6 @@ def _console(*args, **kwargs):
 
 from version import __version__
 
-# Buff ability IDs from BuffTheGroup addon
-BUFF_ABILITY_IDS = {
-    'powerful_assault': '61771',
-    'major_slayer': '93109', 
-    'major_courage': '109966',
-    'major_force': '61747',
-    'major_berserk': '62195',
-    'minor_berserk': '61744',
-    'minor_courage': '147417',
-    'major_sorcery': '61687',
-    'minor_sorcery': '61685',
-    'major_brutality': '61665',
-    'minor_prophecy': '61691',
-    'major_resolve': '61694',
-    'minor_resolve': '61693',
-    'minor_intellect': '61706',
-    'empower': '61737',
-    'major_heroism': '61709',
-    'radiating_regeneration': '40079',
-    'major_expedition': '61736',
-    'spalder_of_ruin': '163401',
-    'minor_toughness': '88490',
-    'minor_endurance': '61704',
-    'minor_savagery': '61666',
-    'minor_expedition': '61735',
-    'pillagers_profit_cooldown': '172056',
-    'lucent_echoes': '220015',
-    'pearlescent_ward': '172621',
-}
-
 # Design: A death just after END_COMBAT. The blow that kills the last player
 # standing ends combat, and that player's
 # death event is written after END_COMBAT (about 85 ms later in live logs).
@@ -108,10 +78,11 @@ COMBAT_RESUME_MS = 1000
 # known: no list of taunt skills is needed, and a skill logged under another
 # id (Destructive Clench with an ice staff is logged as Frost Clench) is
 # matched to its bar slot by the icon the two share (mark_taunt_slots). The
-# debuff's spans on each enemy give the uptime (track_taunt, taunt_uptime),
-# shown for a group of three or more fighting a boss and for anyone who
-# taunted. Checked on 1,361 taunts in twelve logs of October 2026.
-TAUNT_EFFECT_ID = "38254"
+# debuff's spans on each enemy give the uptime line's Taunt item through the
+# default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's
+# taunted share of its time in the fight, averaged over the bosses, the
+# pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve
+# logs of October 2026.
 TAUNTED = "TAUNTED"
 CAST_MEMORY = 4096  # casts remembered by tracking id; a taunt follows its cast within ms
 ENGAGED_ENEMY_MS = 10000
@@ -378,24 +349,6 @@ def infer_player_role(player: PlayerInfo, player_damage: int = 0, player_healing
     return 'D'
 
 
-def _covered_ms(spans: List[Tuple[int, int]], start: int, end: int) -> int:
-    """How many ms of [start, end] the *spans* cover between them, overlaps
-    counted once."""
-    clipped = sorted((max(a, start), min(b, end)) for a, b in spans
-                     if min(b, end) > max(a, start))
-    total, open_from, open_to = 0, None, None
-    for a, b in clipped:
-        if open_to is None or a > open_to:
-            if open_to is not None:
-                total += open_to - open_from
-            open_from, open_to = a, b
-        else:
-            open_to = max(open_to, b)
-    if open_to is not None:
-        total += open_to - open_from
-    return total
-
-
 def mark_taunt_slots(slots: List[dict], taunts: List[dict]) -> None:
     """Put 'taunt': True on each bar slot the player taunted with: the slot
     whose ability id a taunt names, or, for a taunt logged under an id no
@@ -420,7 +373,9 @@ class EnemyInfo:
         self.current_health: int = 0
         self.is_hostile: bool = False
         self.is_boss: bool = False  # the game's own flag on UNIT_ADDED
+        self.added_at: Optional[int] = None  # log time of its UNIT_ADDED
         self.died_at: Optional[int] = None  # log time of its DIED, when seen
+        self.removed_at: Optional[int] = None  # log time of its UNIT_REMOVED
 
 class CombatEncounter:
     """Represents a single combat encounter."""
@@ -439,10 +394,6 @@ class CombatEncounter:
         self.player_deaths: int = 0  # Track player deaths
         self.in_combat = False
         self.finalized = False  # Track if encounter has been finalized (ended)
-        
-        # Buff tracking
-        self.player_buffs: Dict[str, Dict[str, List[Tuple[int, int]]]] = defaultdict(lambda: defaultdict(list))  # player_id -> buff_name -> [(start_time, end_time)]
-        self.active_buffs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # player_id -> buff_name -> start_time
         
         # Pet ownership tracking
         self.pet_ownership: Dict[str, str] = {}
@@ -463,11 +414,8 @@ class CombatEncounter:
         self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
         self.first_damage_timestamp: Optional[int] = None  # Timestamp of first damage
 
-        # Taunts: the spans the Taunt debuff was on each enemy (unit id ->
-        # [(from, to)]), when it came on and has not gone yet, and per
-        # player the abilities they taunted with (ability id -> times)
-        self.taunt_spans: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
-        self.taunt_since: Dict[str, int] = {}
+        # Taunts: per player the abilities they taunted with (ability id ->
+        # times); the debuff's spans are the Taunt rule's (effect_rules)
         self.player_taunts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
@@ -610,84 +558,30 @@ class CombatEncounter:
             self.player_healing[source_player.unit_id] = 0
         self.player_healing[source_player.unit_id] += heal_value
 
-    def track_buff(self, player_unit_id: str, buff_name: str, effect_type: str, timestamp: int):
-        """A group buff landing on (GAINED) or leaving (FADED) a player.
-
-        Design: the uptime line tracks six buffs by ability id (group_buff_ids
-        in the analyzer: Major Courage, Major Force, Major Slayer, Powerful
-        Assault, Lucent Echoes, Pearlescent Ward). Each is recorded per
-        player as (start, end) spans; UPDATED lines (a refresh) change
-        nothing, since the buff was already up. Spans that start before the
-        pull are carried in from the analyzer's global tracking at
-        BEGIN_COMBAT, and spans still open at END_COMBAT are closed there
-        (finalize_buff_tracking). The percentage shown is the share of the
-        fight the buff was on *any* group member (get_group_buff_uptime), the
-        question a raid lead asks ("was Courage up?"), not a per-player mean.
-        """
-        if effect_type == "GAINED":
-            # Start tracking this buff
-            self.active_buffs[player_unit_id][buff_name] = timestamp
-        elif effect_type == "FADED":
-            # End tracking this buff and record the duration
-            if buff_name in self.active_buffs[player_unit_id]:
-                start_time = self.active_buffs[player_unit_id][buff_name]
-                self.player_buffs[player_unit_id][buff_name].append((start_time, timestamp))
-                del self.active_buffs[player_unit_id][buff_name]
-
-    def track_taunt(self, enemy_unit_id: str, effect_type: str, timestamp: int):
-        """The Taunt debuff coming (GAINED, or UPDATED by a fresh taunt) or
-        going (FADED) on an enemy. A taunt landing while one is up extends
-        the span rather than starting it over. A span still open when the
-        fight ends runs to its end (see taunt_uptime), and on from there if
-        the fight turns out to carry on."""
-        if effect_type in ("GAINED", "UPDATED"):
-            self.taunt_since.setdefault(enemy_unit_id, timestamp)
-        elif effect_type == "FADED":
-            since = self.taunt_since.pop(enemy_unit_id, None)
-            if since is not None and timestamp > since:
-                self.taunt_spans[enemy_unit_id].append((since, timestamp))
-
     def note_taunt(self, player_unit_id: str, ability_id: str):
         """A player taunted with an ability ('' when the log did not say which)."""
         self.player_taunts[player_unit_id][ability_id] += 1
 
-    def bosses_fought(self) -> List[str]:
-        """Unit ids of the hostile units the game flags as bosses that the
-        group hit or taunted in this fight. Enemies carry over from fight to
-        fight within a zone, so the flag alone would name a boss already
-        dead."""
-        return [unit_id for unit_id, enemy in self.enemies.items()
-                if enemy.is_boss and enemy.is_hostile
-                and (self.enemy_damage.get(unit_id) or unit_id in self.taunt_spans
-                     or unit_id in self.taunt_since)]
-
-    def taunt_uptime(self) -> Optional[float]:
-        """Percentage of the fight the Taunt debuff was on the boss: the mean
-        over the bosses fought of each one's taunted time within the fight,
-        a boss killed before the fight ended measured to its death. None for
-        a fight without a boss."""
-        shares = []
-        for unit_id in self.bosses_fought():
-            end = self.end_time
-            died_at = self.enemies[unit_id].died_at
-            if died_at is not None and self.start_time < died_at < end:
-                end = died_at
-            if end <= self.start_time:
+    def fight_units(self) -> Dict[str, tuple]:
+        """What effect_rules measures a fight's rules on, unit id -> (kind,
+        since_ms, gone_ms): the players ('self' or 'group'), and the
+        hostiles the group hit in this fight ('boss' or 'enemy', by the
+        game's flag) with the log time each was added and the time it died
+        or was removed, None when it was there throughout. Enemies carry
+        over from fight to fight within a zone, so a boss that only stands
+        in the list, dead since the last pull, is not a boss of this fight:
+        it has to have been hit."""
+        units: Dict[str, tuple] = {}
+        for unit_id, player in self.players.items():
+            units[unit_id] = ("self" if player.is_local else "group", None, None)
+        for unit_id in self.enemy_damage:
+            enemy = self.enemies.get(unit_id)
+            if enemy is None or not enemy.is_hostile:
                 continue
-            spans = list(self.taunt_spans.get(unit_id, ()))
-            if unit_id in self.taunt_since:
-                spans.append((self.taunt_since[unit_id], end))
-            covered = _covered_ms(spans, self.start_time, end)
-            shares.append(min(covered / (end - self.start_time), 1.0))
-        return 100.0 * sum(shares) / len(shares) if shares else None
-
-    def finalize_buff_tracking(self):
-        """Finalize buff tracking by ending any active buffs at encounter end."""
-        for player_id, active_buffs in self.active_buffs.items():
-            for buff_name, start_time in active_buffs.items():
-                end_time = self.end_time if self.end_time > 0 else self.start_time
-                self.player_buffs[player_id][buff_name].append((start_time, end_time))
-        self.active_buffs.clear()
+            gone = [at for at in (enemy.died_at, enemy.removed_at) if at is not None]
+            units[unit_id] = ("boss" if enemy.is_boss else "enemy", enemy.added_at,
+                              min(gone) if gone else None)
+        return units
 
     def get_combat_start_time_formatted(self, log_file_path: str = None, log_start_unix: int = None) -> str:
         """Get the combat start time formatted as local date/time."""
@@ -717,80 +611,6 @@ class CombatEncounter:
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, OSError):
             return "Unknown Time"
-
-    def get_group_buff_uptime(self, buff_name: str) -> float:
-        """Share of the fight (percent) a group buff was active on any
-        player: every player's spans clamped to the fight, merged, and
-        summed (see track_buff for the design)."""
-        # Collect all time intervals when the buff was active on any player
-        active_intervals = []
-        
-        # Check all players for this buff
-        for player_id in self.players.keys():
-            # Add completed buff periods
-            if buff_name in self.player_buffs[player_id]:
-                for start_time, end_time in self.player_buffs[player_id][buff_name]:
-                    # Clamp intervals to encounter bounds
-                    start_clamped = max(start_time, self.start_time)
-                    end_clamped = min(end_time, self.end_time) if self.end_time > 0 else end_time
-                    if start_clamped < end_clamped:
-                        active_intervals.append((start_clamped, end_clamped))
-            
-            # Add currently active buff
-            if buff_name in self.active_buffs[player_id]:
-                start_time = self.active_buffs[player_id][buff_name]
-                end_time = self.end_time if self.end_time > 0 else self.start_time
-                # Clamp to encounter bounds
-                start_clamped = max(start_time, self.start_time)
-                end_clamped = min(end_time, self.end_time) if self.end_time > 0 else end_time
-                if start_clamped < end_clamped:
-                    active_intervals.append((start_clamped, end_clamped))
-        
-        if not active_intervals:
-            return 0.0
-        
-        # Merge overlapping intervals and calculate total active time
-        active_intervals.sort()  # Sort by start time
-        merged_intervals = []
-        
-        for start, end in active_intervals:
-            if not merged_intervals or merged_intervals[-1][1] < start:
-                # No overlap, add new interval
-                merged_intervals.append((start, end))
-            else:
-                # Overlap exists, extend the last interval
-                merged_intervals[-1] = (merged_intervals[-1][0], max(merged_intervals[-1][1], end))
-        
-        # Calculate total active time
-        total_active_time = sum(end - start for start, end in merged_intervals)
-        
-        # Calculate uptime percentage
-        encounter_duration = self.end_time - self.start_time if self.end_time > self.start_time else 0
-        if encounter_duration > 0:
-            uptime_percentage = (total_active_time / encounter_duration) * 100.0
-            # Cap at 100% to prevent display issues
-            return min(uptime_percentage, 100.0)
-        return 0.0
-
-    def get_group_buff_analysis(self) -> Dict[str, bool]:
-        """Analyze which group buffs are present across all players."""
-        group_buffs = ['MCourage', 'MForce', 'Mslayer', 'PA', 'LE', 'PW']
-        buff_analysis = {}
-        
-        for buff_name in group_buffs:
-            # Check if any player had this buff during the encounter
-            has_buff = False
-            for player_id in self.players.keys():
-                if buff_name in self.player_buffs[player_id] and self.player_buffs[player_id][buff_name]:
-                    has_buff = True
-                    break
-                # Also check if buff is currently active
-                if buff_name in self.active_buffs[player_id]:
-                    has_buff = True
-                    break
-            buff_analysis[buff_name] = has_buff
-        
-        return buff_analysis
 
 class ESOLogAnalyzer(ListenerMixin):
     """Main analyzer class for processing ESO encounter logs."""
@@ -851,33 +671,10 @@ class ESOLogAnalyzer(ListenerMixin):
         self.max_zone_history = 10  # Keep last 10 zone changes
         
         
-        # Group buff ability IDs - using constants from BuffTheGroup addon
-        self.major_courage_ids = {
-            BUFF_ABILITY_IDS['major_courage'],  # Major Courage - Increases Weapon and Spell Damage by 430
-        }
-        
-        # Group buff IDs for tracking in encounters with 3+ players
-        self.group_buff_ids = {
-            'MCourage': self.major_courage_ids,
-            'MForce': {BUFF_ABILITY_IDS['major_force']},  # Increases Critical Damage by 20%
-            'Mslayer': {BUFF_ABILITY_IDS['major_slayer']},  # Increases damage done to Dungeon, Trial, and Arena monsters by 10%
-            'PA': {BUFF_ABILITY_IDS['powerful_assault']},  # Powerful Assault - Increases Weapon and Spell Damage
-            'LE': {BUFF_ABILITY_IDS['lucent_echoes']},  # Lucent Echoes - Increases Weapon and Spell Damage
-            'PW': {BUFF_ABILITY_IDS['pearlescent_ward']},  # Pearlescent Ward - Increases Weapon and Spell Damage
-        }
-        
         # Session tracking for players going offline/online
         self.player_sessions: Dict[str, Dict] = {}  # handle+name -> {unit_id, name, equipped_abilities, gear_data, last_seen}
         self.unit_id_to_handle: Dict[str, str] = {}  # unit_id -> handle
         
-        # Global buff tracking for buffs applied before combat starts
-        self.global_player_buffs: Dict[str, Dict[str, List[Tuple[int, int]]]] = defaultdict(lambda: defaultdict(list))  # unit_id -> buff_name -> [(start_time, end_time)]
-        self.global_active_buffs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # unit_id -> buff_name -> start_time
-        
-        # Diagnostic buff tracking
-        self.buff_events_log: List[Dict] = []  # List of buff events for debugging
-        self.player_buff_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))  # timestamp -> buff_name -> count
-
         # EXPERIMENTAL: per-fight buff/debuff timeline (buff-timeline spec).
         # Gated by experimental.buff_timeline; nothing is recorded when off.
         self.track_buff_timeline = False
@@ -912,124 +709,6 @@ class ESOLogAnalyzer(ListenerMixin):
         
         # Initialize gear set mapping database
         self._initialize_gear_database()
-
-    def _track_global_buff(self, unit_id: str, buff_name: str, effect_type: str, timestamp: int):
-        """Track buff applications and removals globally, even when no encounter is active."""
-        if effect_type == "GAINED":
-            # Start tracking this buff globally
-            self.global_active_buffs[unit_id][buff_name] = timestamp
-            # Log buff event for diagnostics
-            self._log_buff_event(unit_id, buff_name, effect_type, timestamp)
-        elif effect_type == "FADED":
-            # End tracking this buff and record the duration globally
-            if buff_name in self.global_active_buffs[unit_id]:
-                start_time = self.global_active_buffs[unit_id][buff_name]
-                self.global_player_buffs[unit_id][buff_name].append((start_time, timestamp))
-                del self.global_active_buffs[unit_id][buff_name]
-                # Log buff event for diagnostics
-                self._log_buff_event(unit_id, buff_name, effect_type, timestamp)
-
-    def _log_buff_event(self, unit_id: str, buff_name: str, effect_type: str, timestamp: int):
-        """Log buff events for diagnostic purposes."""
-        if not self.diagnostic:
-            return
-            
-        # Get player name if available
-        player_name = "Unknown"
-        if self.current_encounter and unit_id in self.current_encounter.players:
-            player_name = self.current_encounter.players[unit_id].name
-        elif unit_id in self.player_sessions:
-            player_name = self.player_sessions[unit_id].get('name', 'Unknown')
-        
-        # Count active players with this buff
-        active_count = 0
-        for pid in self.global_active_buffs:
-            if buff_name in self.global_active_buffs[pid]:
-                active_count += 1
-        
-        # Log the event
-        event = {
-            'timestamp': timestamp,
-            'unit_id': unit_id,
-            'player_name': player_name,
-            'buff_name': buff_name,
-            'effect_type': effect_type,
-            'active_count': active_count,
-            'has_encounter': self.current_encounter is not None,
-            'encounter_active': self.current_encounter.in_combat if self.current_encounter else False
-        }
-        self.buff_events_log.append(event)
-        
-        # Update player count tracking
-        timestamp_str = str(timestamp)
-        if effect_type == "GAINED":
-            self.player_buff_counts[timestamp_str][buff_name] = active_count
-        elif effect_type == "FADED":
-            self.player_buff_counts[timestamp_str][buff_name] = active_count
-        
-        # Print diagnostic output
-        import time
-        timestamp_str_display = time.strftime("%H:%M:%S", time.localtime(timestamp / 1000)) if timestamp > 1000000000 else str(timestamp)
-        _console(f"{Fore.CYAN}[BUFF-DIAG] {timestamp_str_display} {effect_type} {buff_name} on {player_name} (ID:{unit_id}) - Active: {active_count} players{Style.RESET_ALL}")
-
-    def _print_buff_diagnostic_summary(self):
-        """Print a diagnostic summary of buff events for the encounter."""
-        if not self.diagnostic or not self.current_encounter:
-            return
-            
-        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
-        _console(f"{Fore.YELLOW}BUFF DIAGNOSTIC SUMMARY{Style.RESET_ALL}")
-        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
-        
-        # Filter buff events for this encounter's timeframe
-        encounter_start = self.current_encounter.start_time
-        encounter_end = self.current_encounter.end_time if self.current_encounter.end_time > 0 else encounter_start + 1000
-        
-        relevant_events = [e for e in self.buff_events_log 
-                          if encounter_start <= e['timestamp'] <= encounter_end]
-        
-        # Group events by buff name
-        buff_events_by_name = {}
-        for event in relevant_events:
-            buff_name = event['buff_name']
-            if buff_name not in buff_events_by_name:
-                buff_events_by_name[buff_name] = []
-            buff_events_by_name[buff_name].append(event)
-        
-        # Print summary for each buff
-        for buff_name, events in buff_events_by_name.items():
-            _console(f"{Fore.CYAN}\\n{buff_name}:{Style.RESET_ALL}")
-            gained_count = sum(1 for e in events if e['effect_type'] == 'GAINED')
-            faded_count = sum(1 for e in events if e['effect_type'] == 'FADED')
-            unique_players = set(e['player_name'] for e in events)
-            
-            _console(f"  Events: {len(events)} total ({gained_count} gained, {faded_count} faded)")
-            _console(f"  Players: {len(unique_players)} unique players affected")
-            
-            # Show max concurrent players
-            max_concurrent = max(e['active_count'] for e in events) if events else 0
-            _console(f"  Max Concurrent: {max_concurrent} players")
-            
-            # Show first and last events
-            if events:
-                first_event = min(events, key=lambda e: e['timestamp'])
-                last_event = max(events, key=lambda e: e['timestamp'])
-                import time
-                first_time = time.strftime("%H:%M:%S", time.localtime(first_event['timestamp'] / 1000)) if first_event['timestamp'] > 1000000000 else str(first_event['timestamp'])
-                last_time = time.strftime("%H:%M:%S", time.localtime(last_event['timestamp'] / 1000)) if last_event['timestamp'] > 1000000000 else str(last_event['timestamp'])
-                _console(f"  First Event: {first_time} ({first_event['effect_type']} on {first_event['player_name']})")
-                _console(f"  Last Event: {last_time} ({last_event['effect_type']} on {last_event['player_name']})")
-        
-        # Show encounter timing info
-        _console(f"{Fore.CYAN}\\nEncounter Timing:{Style.RESET_ALL}")
-        import time
-        start_time = time.strftime("%H:%M:%S", time.localtime(encounter_start / 1000)) if encounter_start > 1000000000 else str(encounter_start)
-        end_time = time.strftime("%H:%M:%S", time.localtime(encounter_end / 1000)) if encounter_end > 1000000000 else str(encounter_end)
-        _console(f"  Start: {start_time}")
-        _console(f"  End: {end_time}")
-        _console(f"  Duration: {(encounter_end - encounter_start) / 1000:.1f}s")
-        
-        _console(f"{Fore.YELLOW}{'='*60}{Style.RESET_ALL}")
 
     def get_trial_name(self, trial_id: int) -> str:
         """Get trial name from trial ID."""
@@ -1132,11 +811,16 @@ class ESOLogAnalyzer(ListenerMixin):
             self._handle_unit_changed(entry)
         elif entry.event_type == "UNIT_REMOVED":
             # Gone without a death line (a summoned add whose summoner died):
-            # no longer an enemy the group is fighting
+            # no longer an enemy the group is fighting, and the effects
+            # still on it end here (the game writes no FADED for them)
             if entry.fields:
                 self._enemy_last_hit.pop(entry.fields[0], None)
+                self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     self.current_encounter.pet_ownership.pop(entry.fields[0], None)
+                    enemy = self.current_encounter.enemies.get(entry.fields[0])
+                    if enemy is not None and enemy.removed_at is None:
+                        enemy.removed_at = entry.timestamp
         elif entry.event_type == "ABILITY_INFO":
             self._handle_ability_info(entry)
         elif entry.event_type == "PLAYER_INFO":
@@ -1273,6 +957,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     self._enemy_last_hit.pop(unit_id, None)
                     enemy.is_hostile = is_hostile
                     enemy.is_boss = len(entry.fields) > 5 and entry.fields[5] == "T"
+                    enemy.added_at = entry.timestamp
                     
                     self.current_encounter.enemies[unit_id] = enemy
                     # The game names the owner of a summoned unit
@@ -1521,7 +1206,9 @@ class ESOLogAnalyzer(ListenerMixin):
             self.fight_death_recaps = []
             self._last_fight_entry = None
             self._resumed_fight_entry = None
-            # Unit ids are handed out afresh in each zone
+            # Unit ids are handed out afresh in each zone: the tracked
+            # effects on hostiles and pets end here
+            self.effect_tracker.zone_changed(entry.timestamp)
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
@@ -1597,17 +1284,6 @@ class ESOLogAnalyzer(ListenerMixin):
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
         
-        # Transfer any globally tracked buffs that are active when combat starts
-        for player_id in self.current_encounter.players.keys():
-            # Transfer completed buff periods from global tracking
-            for buff_name, buff_periods in self.global_player_buffs[player_id].items():
-                self.current_encounter.player_buffs[player_id][buff_name].extend(buff_periods)
-            
-            # Transfer currently active buffs from global tracking
-            for buff_name, start_time in self.global_active_buffs[player_id].items():
-                if buff_name not in self.current_encounter.active_buffs[player_id]:
-                    self.current_encounter.active_buffs[player_id][buff_name] = start_time
-        
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
@@ -1632,7 +1308,6 @@ class ESOLogAnalyzer(ListenerMixin):
         players are kept, and the entry frontends already have is brought up
         to date when the fight ends (see _publish_fight)."""
         enc = self.current_encounter
-        ended_at = enc.combat_ended_at
         enc.finalized = False
         enc.in_combat = True
         enc.combat_ended_at = None
@@ -1640,11 +1315,6 @@ class ESOLogAnalyzer(ListenerMixin):
         # A combat event between the two lines moved the start
         # (see _handle_combat_event)
         enc.start_time = self._last_fight_start
-        # END_COMBAT closed the buffs that were running: the ones still up
-        # carry on from there
-        for player_id in enc.players:
-            for buff_name in self.global_active_buffs[player_id]:
-                enc.active_buffs[player_id].setdefault(buff_name, ended_at)
         self._resumed_fight_entry = self._last_fight_entry
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
@@ -1685,8 +1355,6 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.end_time = entry.timestamp
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
-            # Finalize buff tracking
-            self.current_encounter.finalize_buff_tracking()
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
             self._publish_fight(self.current_zone)
@@ -1999,6 +1667,9 @@ class ESOLogAnalyzer(ListenerMixin):
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     if enemy.died_at is None:
                         enemy.died_at = entry.timestamp
+                    # Its effects end with it: the game does not always
+                    # write FADED for a corpse's (see effect_rules)
+                    self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -2137,8 +1808,9 @@ class ESOLogAnalyzer(ListenerMixin):
         return None
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
-        """A buff or debuff coming, going or refreshing: group buff uptimes,
-        taunts, the experimental timeline, and enemy health.
+        """A buff or debuff coming, going or refreshing: the tracked effects
+        (every item of the uptime line), the experimental timeline, and
+        enemy health.
 
         Design: an EFFECT_CHANGED line is ``changeType, stackCount,
         castTrackId, abilityId, <sourceUnitState>, <targetUnitState>``. A
@@ -2180,29 +1852,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     effect_type, ability_id, source_unit_id, target_unit_id,
                     entry.timestamp)
 
-            # The user's tracked effects: any id, judged by the target's kind
+            # The tracked effects, every item of the uptime line: any id,
+            # judged by the target's kind
             if self.effect_tracker and extracted is not None:
                 self.effect_tracker.record(
                     effect_type, ability_id, target_unit_id, stack_count,
                     entry.timestamp, self._unit_kind(target_unit_id))
-
-            # Taunts: the Taunt debuff coming and going on an enemy
-            if ability_id == TAUNT_EFFECT_ID and self.current_encounter:
-                extracted = extract_effect_fields(entry.fields)
-                if extracted is not None and extracted[3] in self.current_encounter.enemies:
-                    self.current_encounter.track_taunt(extracted[3], effect_type, entry.timestamp)
-
-            # Always track group buffs globally, regardless of encounter state
-            for buff_name, buff_ids in self.group_buff_ids.items():
-                if ability_id in buff_ids:
-                    # Track buff globally
-                    self._track_global_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
-                    
-                    # Also track in current encounter if it exists and player is in encounter
-                    if (self.current_encounter and 
-                        target_unit_id in self.current_encounter.players):
-                        self.current_encounter.track_buff(target_unit_id, buff_name, effect_type, entry.timestamp)
-                        # Note: Buff event already logged by _track_global_buff, no need to log again
 
             # Enemy health from the unit states: the target's own ten fields
             # when the target is explicit, the source's when it is "*"
@@ -2278,9 +1933,6 @@ class ESOLogAnalyzer(ListenerMixin):
         already has brought up to date (see COMBAT_RESUME_MS)."""
         if not self.current_encounter:
             return
-
-        if self.diagnostic and len(self.current_encounter.players) >= 3:
-            self._print_buff_diagnostic_summary()
 
         # Clear the hostile monsters list and engaged monsters set for the next encounter
         self.hostile_monsters.clear()
@@ -2510,25 +2162,13 @@ class ESOLogAnalyzer(ListenerMixin):
                 mark_taunt_slots(entry.players[-1]['front_bar_slots']
                                  + entry.players[-1]['back_bar_slots'], taunts)
 
-        buff_parts = []
-        if len(enc.players) >= 3:
-            buff_analysis = enc.get_group_buff_analysis()
-            for buff_name, is_present in buff_analysis.items():
-                if is_present:
-                    uptime = enc.get_group_buff_uptime(buff_name)
-                    buff_parts.append(f"{buff_name}:{uptime:.0f}%")
-        # Taunt uptime on the boss: for a group, and for anyone who taunted
-        taunt_uptime = enc.taunt_uptime()
-        if taunt_uptime is not None and (len(enc.players) >= 3
-                                         or any(enc.player_taunts.values())):
-            buff_parts.append(f"Taunt:{taunt_uptime:.0f}%")
-        # The user's tracked effects follow the built-in ones, whatever the
+        # The uptime line: every item is a rule (effect_rules), measured on
+        # the fight's players and the hostiles the group hit, whatever the
         # group size (a rule can be about the logging player alone)
         entry.tracked = (self.effect_tracker.snapshot(
-            enc.start_time, enc.end_time, self._resolve_timeline_name)
+            enc.start_time, enc.end_time, self._resolve_timeline_name, enc.fight_units())
             if self.effect_tracker else [])
-        buff_parts.extend(item["text"] for item in entry.tracked)
-        entry.buff_summary = " ".join(buff_parts)
+        entry.buff_summary = " ".join(item["text"] for item in entry.tracked)
         if entry.tracked:
             # Not before the end: this fight's spans are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)

@@ -12,9 +12,13 @@ from typing import Any, Optional
 
 import platformdirs
 
-from effect_rules import DEFAULT_RULES
+from effect_rules import DEFAULT_RULES, UPTIME_LINE_RULES, lines_to_add
 
 APP_NAME = "esolog-tail"
+
+# The rules text's layout: 1 held the user's additions to a line whose
+# group buffs and taunt were built in; 2 has those as rules too
+TRACKING_VERSION = 2
 
 DEFAULTS = {
     "log_path": None,           # None -> auto-detect
@@ -36,6 +40,7 @@ DEFAULTS = {
     },
     "tracking": {
         "rules": DEFAULT_RULES,  # tracked effects, one rule per line (effect_rules)
+        "version": TRACKING_VERSION,
     },
     "update": {
         "check_enabled": True,   # check GitHub releases at startup
@@ -67,12 +72,29 @@ class AppConfig:
         self.reload()
 
     def reload(self) -> None:
+        """Read the file over DEFAULTS. A rules text saved before the uptime
+        line's group buffs and taunt became rules (tracking.version absent,
+        0.8.0 and earlier) kept only the user's own additions, so the line
+        would lose those items on upgrade: the missing ones are put in
+        front of it, by name, so a rule the user had already written under
+        the same name stays theirs. Nothing is written back; the version
+        is saved with the next Save, and the top-up is harmless to repeat.
+        """
         try:
             stored = json.loads(self.path.read_text(encoding="utf-8"))
-            if isinstance(stored, dict):
-                self.data = _deep_merge(DEFAULTS, stored)
         except (OSError, ValueError):
-            pass
+            return
+        if not isinstance(stored, dict):
+            return
+        self.data = _deep_merge(DEFAULTS, stored)
+        tracking = stored.get("tracking")
+        if (isinstance(tracking, dict) and isinstance(tracking.get("rules"), str)
+                and "version" not in tracking):
+            missing = lines_to_add(UPTIME_LINE_RULES.splitlines(), tracking["rules"])
+            if missing:
+                self.data["tracking"]["rules"] = ("\n".join(missing) + "\n"
+                                                  + tracking["rules"])
+            self.data["tracking"]["version"] = TRACKING_VERSION
 
     def save(self) -> None:
         try:

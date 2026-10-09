@@ -64,7 +64,7 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         dialog = SettingsDialog(self.config)
         # A fresh config shows the bundled examples, all of which parse
         self.assertEqual(dialog.rules_edit.toPlainText(), DEFAULT_RULES)
-        self.assertEqual(dialog.rules_status.text(), "7 rules")
+        self.assertEqual(dialog.rules_status.text(), "14 rules")
         dialog.rules_edit.setPlainText("Crux = 184220 on self stacks\nBad = 1 on mobs\n")
         self.assertTrue(dialog.rules_status.text().startswith("1 rule; skipped: line 2:"))
         dialog.apply_to_config()
@@ -75,9 +75,9 @@ class TestSettingsDialogLifetime(unittest.TestCase):
     def test_example_lines_are_appended_without_duplicates_and_reported(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)
-        # The box already holds the seven defaults: adding them again adds nothing
+        # The box already holds the fourteen defaults: adding one again adds nothing
         dialog.append_rules(["Crux = 184220 on self stacks"])
-        self.assertTrue(dialog.rules_status.text().startswith("Nothing to add · 7 rules"))
+        self.assertTrue(dialog.rules_status.text().startswith("Nothing to add · 14 rules"))
         # A user's own rules stay; new lines go underneath
         dialog.rules_edit.setPlainText("Mine = 1 on boss")
         dialog.append_rules(["Crux = 184220 on self stacks", "Relequen = 107203 on boss stacks"])

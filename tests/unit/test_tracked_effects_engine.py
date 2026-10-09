@@ -4,14 +4,15 @@ the units the log describes, and shown on the uptime line."""
 
 import unittest
 
-from effect_rules import EffectTracker, parse_rules
+from effect_rules import DEFAULT_RULES, EffectTracker, parse_rules
 from engine_events import RecordingListener
 from esolog_tail import ESOLogAnalyzer, FightHistory
 
 EPOCH = 1759600000000
 BOSS_HEALTH = 1000000
+MOB_HEALTH = 50000
 ABILITY = 12345
-OB_A, OB_B, CRUX, COURAGE = "45902", "62988", "184220", "109966"
+OB_A, OB_B, CRUX, COURAGE, TAUNT = "45902", "62988", "184220", "109966", "38254"
 
 
 def _player(unit_id, health=20000):
@@ -31,6 +32,25 @@ def _effect(ts, change, ability, source, target=None, stacks=1):
 def _hit(ts, player, damage, boss_health_after):
     return (f"{ts},COMBAT_EVENT,DAMAGE,PHYSICAL,1,{damage},0,900,{ABILITY},"
             f"{_player(player)},{_unit(70, BOSS_HEALTH)}")
+
+
+def _hit_unit(ts, player, unit, health=MOB_HEALTH):
+    return (f"{ts},COMBAT_EVENT,DAMAGE,PHYSICAL,1,1000,0,900,{ABILITY},"
+            f"{_player(player)},{_unit(unit, health)}")
+
+
+def _died(ts, unit, health=MOB_HEALTH):
+    """The unit's death: DIED_XP with the dying unit as the target state."""
+    return (f"{ts},COMBAT_EVENT,DIED_XP,PHYSICAL,0,0,0,900,{ABILITY},"
+            f"{_player(1)},{unit},0/{health},0/0,0/0,0/0,0/0,0,0.6,0.4,2.3")
+
+
+def _mob(ts, unit, name, boss="F", health=MOB_HEALTH):
+    return f'{ts},UNIT_ADDED,{unit},MONSTER,F,0,{health},{boss},0,0,"{name}","",0,50,160,0,HOSTILE,F'
+
+
+def _builds(ts, *players):
+    return [f'{ts},PLAYER_INFO,{unit},[45549],[1],[],[12345],[12345]' for unit in players]
 
 
 # Player 1 writes the log (isLocalPlayer T); 70 is a boss, 71 a mob, 90 a pet
@@ -137,6 +157,73 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
         ] + FIGHT_END, rules="")
         fight = analyzer.fight_history.fights[0]
         self.assertEqual((fight.tracked, fight.buff_summary), ([], ""))
+
+    def test_the_default_rules_are_the_whole_uptime_line(self):
+        # The group buffs and the taunt are rules like the rest: a group of
+        # two gets them too, and one never seen reads 0%
+        analyzer = _run(FIGHT_START + [
+            _effect(10000, 'GAINED', COURAGE, _player(1), _player(2)),
+            _effect(20000, 'FADED', COURAGE, _player(1), _player(2)),
+            _effect(10000, 'GAINED', TAUNT, _player(1), _unit(70)),
+            _effect(22000, 'FADED', TAUNT, _player(1), _unit(70)),
+        ] + FIGHT_END, rules=DEFAULT_RULES)
+        self.assertEqual(
+            analyzer.fight_history.fights[0].buff_summary,
+            "Major Courage:50% Major Force:0% Major Slayer:0% Powerful Assault:0% "
+            "Lucent Echoes:0% Pearlescent Ward:0% Taunt:60% Off-Balance:0% Touch of Z'en:0 "
+            "Crux:0 Morag Tong:0% Minor Brittle:0% Major Brittle:0% Alkosh:0%")
+
+
+class TestFightsWithoutABoss(unittest.TestCase):
+    """A trash pack: a boss rule measures the mobs the group fought and says
+    how many it reached; a mob's death ends the effects on it."""
+
+    def test_a_boss_rule_measures_the_pack_and_counts_the_mobs(self):
+        # Two deckhands hit and no boss: Off-Balance on one for 6 s, on the
+        # other for 2 s inside that
+        analyzer = _run(FIGHT_START + [
+            _mob(10500, 72, "Dreadsail Sailor"),
+            _hit_unit(11000, 1, 71), _hit_unit(11000, 2, 72),
+            _effect(12000, 'GAINED', OB_A, _player(1), _unit(71, MOB_HEALTH)),
+            _effect(14000, 'GAINED', OB_A, _player(2), _unit(72, MOB_HEALTH)),
+            _effect(16000, 'FADED', OB_A, _player(2), _unit(72, MOB_HEALTH)),
+            _effect(18000, 'FADED', OB_A, _player(1), _unit(71, MOB_HEALTH)),
+            '30000,END_COMBAT',
+        ])
+        items = _items(analyzer.fight_history.fights[0])
+        self.assertEqual((items["OB"]["text"], items["OB"]["units"]), ("OB:30% on 2 of 2 mobs", "mobs"))
+        self.assertEqual((items["OB"]["mobs_reached"], items["OB"]["mobs"]), (2, 2))
+        self.assertEqual(sorted(iv["target"] for iv in items["OB"]["intervals"]),
+                         ["Dreadsail Deckhand", "Dreadsail Sailor"])
+        # A group rule is unchanged by the fight having no boss
+        self.assertEqual(items["Everyone"]["text"], "Everyone:0%")
+
+    def test_a_dead_mobs_effect_ends_at_its_death_and_stays_out_of_the_next_pull(self):
+        analyzer = _run(FIGHT_START + [
+            _mob(10500, 72, "Dreadsail Sailor"),
+            _hit_unit(11000, 1, 71),
+            _effect(12000, 'GAINED', OB_A, _player(1), _unit(71, MOB_HEALTH)),
+            _died(16000, 71),  # and no FADED line for its Off-Balance
+            '30000,END_COMBAT',
+            # The next pull in the zone, against the sailor
+            '40000,BEGIN_COMBAT', *_builds(40001, 1, 2),
+            _hit_unit(41000, 1, 72),
+            '50000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        self.assertEqual(_items(first)["OB"]["text"], "OB:20% on 1 of 1 mobs")
+        # Reached nothing: no count after the 0, though the pack is known
+        self.assertEqual((_items(second)["OB"]["text"], _items(second)["OB"]["mobs"]), ("OB:0%", 1))
+
+    def test_each_averages_the_bosses(self):
+        analyzer = _run(FIGHT_START + [
+            _mob(10500, 72, "Second Boss", boss="T", health=BOSS_HEALTH),
+            _hit_unit(11000, 2, 72, BOSS_HEALTH),
+            _effect(10000, 'GAINED', TAUNT, _player(1), _unit(70)),  # 70 taunted throughout
+        ] + FIGHT_END, rules="Taunt = 38254 on boss each\nAny boss = 38254 on boss\n")
+        items = _items(analyzer.fight_history.fights[0])
+        self.assertEqual(items["Taunt"]["text"], "Taunt:50%")
+        self.assertEqual(items["Any boss"]["text"], "Any boss:100%")
 
 
 if __name__ == '__main__':

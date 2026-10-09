@@ -14,11 +14,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QVBoxLayout,
 )
 
-from effect_rules import EXAMPLE_RULES, parse_rules
-
-
-def _rule_name(line: str) -> str:
-    return line.split("=", 1)[0].strip().lower()
+from effect_rules import EXAMPLE_RULES, rule_name as _rule_name
 
 
 class ExamplesDialog(QDialog):
@@ -67,10 +63,3 @@ class ExamplesDialog(QDialog):
         lines = self.selected_lines()
         if lines:
             QGuiApplication.clipboard().setText("\n".join(lines) + "\n")
-
-
-def example_lines_to_add(dialog_lines: List[str], current_text: str) -> List[str]:
-    """Of the ticked lines, those whose rule name *current_text* does not
-    already have (the dialog unticks them, but a user can tick them back)."""
-    have = {rule.name.lower() for rule in parse_rules(current_text)[0]}
-    return [line for line in dialog_lines if _rule_name(line) not in have]

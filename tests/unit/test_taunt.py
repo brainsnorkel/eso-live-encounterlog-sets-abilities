@@ -8,14 +8,17 @@ id with the BEGIN_CAST of the skill that taunted, and the game keeps one
 Taunt debuff (ability 38254) on the enemy that GAINED, UPDATED and FADED
 lines bracket. Destructive Clench with an ice staff is cast and hits as
 Frost Clench, a different id with the same icon as the slotted skill.
+
+The uptime is the default Taunt rule (effect_rules, ``on boss each``): each
+boss's taunted share of its time in the fight, a boss killed early measured
+to its death, averaged over the bosses; the pack's mobs when there is none.
 """
 
 import unittest
 
+from effect_rules import EffectTracker, parse_rules  # noqa: E402
 from engine_events import RecordingListener  # noqa: E402
-from esolog_tail import (  # noqa: E402
-    CAST_MEMORY, ESOLogAnalyzer, FightHistory, _covered_ms, mark_taunt_slots,
-)
+from esolog_tail import CAST_MEMORY, ESOLogAnalyzer, FightHistory, mark_taunt_slots  # noqa: E402
 from gui.fight_render import render_plain_text  # noqa: E402
 
 EPOCH = 1759600000000
@@ -115,6 +118,7 @@ FIGHT = [
 def _fights(lines, base=None):
     analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
+    analyzer.effect_tracker = EffectTracker(parse_rules("Taunt = 38254 on boss each\n")[0])
     analyzer.add_listener(RecordingListener())
     for line in (base if base is not None else _base()) + lines:
         entry = analyzer.log_parser.parse_line(line)
@@ -151,19 +155,22 @@ class TestTauntUptime(unittest.TestCase):
         # 30 taunted of the boss's 40 s
         self.assertEqual(fights[0].buff_summary, 'Taunt:75%')
 
-    def test_no_line_for_a_fight_without_a_boss(self):
+    def test_a_fight_without_a_boss_measures_the_pack(self):
+        # The same unit, not flagged as a boss: a pack of one, taunted 60%
         _analyzer, fights = _fights(FIGHT, base=_base(boss_flag='F'))
-        self.assertEqual(fights[0].buff_summary, '')
-        # The taunts themselves are still known
+        self.assertEqual(fights[0].buff_summary, 'Taunt:60% on 1 of 1 mobs')
+        # The taunts themselves are known as before
         self.assertEqual([t['name'] for t in _player_of(fights[0], '@brainsnorkel')['taunts']],
                          ['Inner Rage', 'Frost Clench'])
 
-    def test_a_small_group_gets_the_line_only_when_someone_taunted(self):
+    def test_a_small_group_gets_the_line_too(self):
+        # The item used to need three players or a taunt; as a rule it is
+        # measured whatever the group size
         duo = [line for line in _base() if '"@third"' not in line]
         quiet = ['10000,BEGIN_COMBAT', *_builds(10001, 1, 2), _hit(11000, 2),
                  _hit(20000, 1), '30000,END_COMBAT']
         _analyzer, fights = _fights(quiet, base=duo)
-        self.assertEqual(fights[0].buff_summary, '')
+        self.assertEqual(fights[0].buff_summary, 'Taunt:0%')
         taunting = ['10000,BEGIN_COMBAT', *_builds(10001, 1, 2), _hit(11000, 2),
                     *_taunt(15000, 1, INNER_RAGE, 901), '30000,END_COMBAT']
         _analyzer, fights = _fights(taunting, base=duo)
@@ -171,7 +178,8 @@ class TestTauntUptime(unittest.TestCase):
 
     def test_a_boss_dead_since_the_last_fight_is_not_measured(self):
         # The boss dies in the first fight; the second, against the deckhand
-        # only, carries the boss's unit over but did not fight it
+        # only, carries the boss's unit over but did not fight it, so it is
+        # a fight without a boss: the pack is the deckhand, never taunted
         first = FIGHT[:-2] + [_hit(50000, 2, boss_health_after=0),
                               _event(50001, 'DIED_XP', 0, _player(2), _boss(0)),
                               '50100,END_COMBAT']
@@ -181,7 +189,8 @@ class TestTauntUptime(unittest.TestCase):
                   _event(80000, 'DAMAGE', 1000, _player(3), deckhand),
                   '90000,END_COMBAT']
         _analyzer, fights = _fights(first + second)
-        self.assertEqual([f.buff_summary for f in fights], ['Taunt:75%', ''])
+        self.assertEqual([f.buff_summary for f in fights], ['Taunt:75%', 'Taunt:0%'])
+        self.assertEqual(fights[1].tracked[0]["units"], "mobs")
 
 
 class TestWhoTauntedWithWhat(unittest.TestCase):
@@ -226,13 +235,6 @@ class TestWhoTauntedWithWhat(unittest.TestCase):
 
 
 class TestHelpers(unittest.TestCase):
-
-    def test_covered_ms_merges_overlaps_and_clips_to_the_window(self):
-        self.assertEqual(_covered_ms([], 0, 100), 0)
-        self.assertEqual(_covered_ms([(10, 20), (15, 30), (40, 50)], 0, 100), 30)
-        self.assertEqual(_covered_ms([(0, 50), (90, 200)], 10, 100), 50)
-        self.assertEqual(_covered_ms([(200, 300)], 0, 100), 0)
-        self.assertEqual(_covered_ms([(0, 1000)], 100, 200), 100)
 
     def test_mark_taunt_slots(self):
         slots = [{'id': '1', 'icon': 'a'}, {'id': '2', 'icon': 'b'}, {'id': '3', 'icon': 'b'},

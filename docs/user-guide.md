@@ -13,7 +13,7 @@ A walk through the app, screen by screen. The pictures are taken from the app it
 ![The main window: the fight history on the left, the selected fight on the right](screencaps/main-window.png)
 
 - **Left**: the history, one line per completed fight: `boss · duration · group DPS · zone · time`. `vet` marks veteran difficulty and `(d)` a fight in which a player died. The newest fight is selected as it ends; select an older fight to read it, and the newest again to follow live fights.
-- **Right**: the selected fight. The header names the boss, the duration, the group DPS, the zone, the start time and the deaths. Under it, for a group of three or more, the uptime line: how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group, and `Taunt:NN%`, how long the boss had a taunt on it.
+- **Right**: the selected fight. The header names the boss, the duration, the group DPS, the zone, the start time and the deaths. Under it the uptime line, one item per tracked-effect rule: a fresh install shows how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group, `Taunt:NN%`, how long each boss had a taunt on it, and seven boss debuffs. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`.
 - **One row per player**, ranked by damage: the role letter (**T**ank, **H**ealer, **D**PS), the account name, the class, and when a build borrows skill lines from another class, those lines beside it; then DPS, the share of the group's damage, and the player's health, magicka and stamina with the largest pool in bold. A `*` after a name marks the player who dealt the fight's first damage.
 
 The DPS numbers include what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. The ticks of damage-over-time effects are not counted.
@@ -58,15 +58,17 @@ For each death it names the killing ability and who used it, then lists the last
 
 ## Tracking effects of your own
 
-The uptime line's group buffs and taunt are built in. To watch anything else, open Settings → **Tracked effects** and write one rule per line:
+Every item of the uptime line is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included:
 
 ```
+Major Courage = 109966 on group
+Taunt         = 38254 on boss each
 Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
 Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
 ```
 
-Each rule adds an item to the uptime line of every fight: `Off-Balance:17%` is how much of the fight the boss was off balance under any of those ids, and `Crux:2.1/3` the mean and peak Crux you held. The scope after `on` says whose effects count (`self`, `group`, `pets`, `boss` or `enemies`), and `stacks` asks for the count instead of the uptime. The box tells you how many rules it holds and which lines it cannot read. **Examples…** opens a list of example rules, each with what it tells you and its line: tick the ones you want and **Add to rules** puts them under yours, or **Copy** puts the ticked lines on the clipboard to share. A rule you already have starts unticked.
+Each rule is an item on the uptime line of every fight: `Major Courage:87%` is how much of the fight anyone in the group had Major Courage, `Off-Balance:17%` how much of it the boss was off balance under any of those ids, and `Crux:2.1/3` the mean and peak Crux you held. The scope after `on` says whose effects count (`self`, `group`, `pets`, `boss` or `enemies`); `stacks` asks for the count instead of the uptime, and `each` for the mean over the units, each measured for as long as it was alive in the fight, which is how the taunt is measured: a fight with two bosses averages them, and a boss killed early is measured to its death. In a fight without a boss, a trash pack, a `boss` rule measures every hostile the group fought instead and says how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. Delete the lines you do not want to see, rename them as you like; the box tells you how many rules it holds and which lines it cannot read. **Examples…** opens a list of example rules, each with what it tells you and its line, the uptime line's own items first: tick the ones you want and **Add to rules** puts them under yours, or **Copy** puts the ticked lines on the clipboard to share. A rule you already have starts unticked.
 
 ![The example rules picker: a checkbox per rule with what it tells you and its line](screencaps/examples-dialog.png)
 
@@ -74,7 +76,7 @@ The rules are plain text: copy them to a friend, or paste theirs in. A tracker e
 
 ## The buff timeline (experimental)
 
-Settings → Experimental → **Buff timeline** adds a strip above the fight: one thin row per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was up, with the uptime in the row label and time ticks underneath. A group buff that reached only one or two people is dotted rather than solid. Hover a segment for who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule (`self`, `pets`, `enemies`). The strip replaces the text uptime line.
+Settings → Tracked effects → **Show these as a per-fight timeline strip** adds a strip above the fight: one thin row per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was up, with the uptime in the row label and time ticks underneath. A group buff that reached only one or two people is dotted rather than solid. Hover a segment for who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule (`self`, `pets`, `enemies`, or `mobs` for a boss rule measured on the pack of a fight without a boss). The strip replaces the text uptime line.
 
 ![The main window with the buff timeline strip](screencaps/main-window-buff-timeline.png)
 
@@ -97,7 +99,7 @@ Settings → Experimental → **Buff timeline** adds a strip above the fight: on
 - **Automatic log archiving**: ESO never truncates `Encounter.log`, so it grows by hundreds of MB a night. Once it has grown past the threshold, the app zips it at startup (before ESO has the file open), and can delete the original after the zip has verified, so ESO starts a fresh, small log. **Archive now** on the toolbar does the same at any moment, for instance right after you close ESO.
 - **Startup**: start the app when you sign in to Windows.
 - **Updates**: check GitHub for a newer release at startup and offer to install it; nothing is installed without the prompt.
-- **Experimental**: the buff timeline strip.
+- **Tracked effects**: the uptime line's rules, and the checkbox that shows them as a per-fight timeline strip instead.
 
 Saving restarts monitoring: the history clears and the current session is replayed with the new settings.
 

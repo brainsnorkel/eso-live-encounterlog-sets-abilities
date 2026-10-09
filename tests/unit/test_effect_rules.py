@@ -6,10 +6,12 @@ import unittest
 
 from effect_rules import (
     DEFAULT_RULES,
+    UPTIME_LINE_RULES,
     EffectTracker,
     Rule,
     decode_hypertools,
     hypertools_rules,
+    lines_to_add,
     parse_rules,
 )
 
@@ -51,13 +53,33 @@ class TestRuleText(unittest.TestCase):
     def test_the_bundled_examples_parse(self):
         rules, errors = parse_rules(DEFAULT_RULES)
         self.assertEqual(errors, [])
+        # The uptime line's own items first, then the maintainer's debuffs
         self.assertEqual([r.name for r in rules],
-                         ["Off-Balance", "Touch of Z'en", "Crux", "Morag Tong",
+                         ["Major Courage", "Major Force", "Major Slayer", "Powerful Assault",
+                          "Lucent Echoes", "Pearlescent Ward", "Taunt",
+                          "Off-Balance", "Touch of Z'en", "Crux", "Morag Tong",
                           "Minor Brittle", "Major Brittle", "Alkosh"])
-        self.assertEqual(rules[3], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
-        self.assertEqual(rules[6], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
-        self.assertIn("45902", rules[0].ids)
-        self.assertEqual((rules[2].scope, rules[2].kind), ("self", "stacks"))
+        self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime"))
+        self.assertEqual(rules[6], Rule("Taunt", frozenset({"38254"}), "boss", "each"))
+        self.assertEqual(rules[10], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
+        self.assertEqual(rules[13], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
+        self.assertIn("45902", rules[7].ids)
+        self.assertEqual((rules[9].scope, rules[9].kind), ("self", "stacks"))
+        self.assertTrue(DEFAULT_RULES.startswith("#"))
+        self.assertIn(UPTIME_LINE_RULES, DEFAULT_RULES)
+
+    def test_each_is_a_measurement_of_its_own(self):
+        rules, errors = parse_rules("Taunt = 38254 on boss each\n"
+                                    "Both = 1 stacks each\n"
+                                    "Twice = 1 each each\n")
+        self.assertEqual([(r.name, r.kind) for r in rules], [("Taunt", "each"), ("Twice", "each")])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("two measurements", errors[0])
+
+    def test_lines_to_add_skips_names_the_text_has(self):
+        self.assertEqual(lines_to_add(["Crux = 184220 on self stacks", "Mine = 1 on boss"],
+                                      "crux = 1 on self\n"),
+                         ["Mine = 1 on boss"])
 
 
 # A HyperTools export, as the addon's Transmission.lua writes it: a table of
@@ -175,6 +197,111 @@ class TestTracker(unittest.TestCase):
         self.assertFalse(t)
         t.record("GAINED", "5", "70", "1", 0, "boss")
         self.assertEqual(t.snapshot(0, 1000), [])
+
+
+class TestFightsWithoutABoss(unittest.TestCase):
+    """A boss rule in a trash pack measures the pack, and says how many of
+    its mobs the effect reached."""
+
+    def test_a_boss_rule_measures_the_pack_when_no_boss_was_fought(self):
+        t = _tracker("OB = 45902 on boss\nAll = 45902 on enemies\n")
+        t.record("GAINED", "45902", "71", "1", 0, "enemy")
+        t.record("FADED", "45902", "71", "1", 10000, "enemy")
+        t.record("GAINED", "45902", "72", "1", 5000, "enemy")
+        t.record("FADED", "45902", "72", "1", 15000, "enemy")
+        ob, every = t.snapshot(0, 60000)
+        self.assertEqual((ob["text"], ob["units"], ob["mobs_reached"], ob["mobs"]),
+                         ("OB:25% on 2 of 2 mobs", "mobs", 2, 2))
+        self.assertEqual(every["text"], "All:25% on 2 of 2 mobs")
+        # A span on a boss makes it a boss fight: the boss alone, no pack
+        t.record("GAINED", "45902", "70", "1", 20000, "boss")
+        t.record("FADED", "45902", "70", "1", 26000, "boss")
+        ob, every = t.snapshot(0, 60000)
+        self.assertEqual((ob["text"], ob["units"], ob["mobs"]), ("OB:10%", "boss", 0))
+        self.assertEqual((every["text"], every["units"]), ("All:35%", "enemies"))
+
+    def test_the_engines_units_decide_the_boss_and_the_pack(self):
+        t = _tracker("OB = 45902 on boss\n")
+        t.record("GAINED", "45902", "71", "1", 0, "enemy")
+        t.record("FADED", "45902", "71", "1", 30000, "enemy")
+        # A boss the group hit, though the effect never reached it: a boss fight
+        [ob] = t.snapshot(0, 60000, units={"70": ("boss", None, None), "71": ("enemy", None, None)})
+        self.assertEqual(ob["text"], "OB:0%")
+        # No boss: the pack is the mobs the group hit, plus the one reached
+        [ob] = t.snapshot(0, 60000, units={"72": ("enemy", None, None), "73": ("enemy", None, None)})
+        self.assertEqual((ob["text"], ob["mobs_reached"], ob["mobs"]), ("OB:50% on 1 of 3 mobs", 1, 3))
+
+    def test_a_stacks_rule_counts_the_mobs_too(self):
+        t = _tracker("Z'en = 126597 on boss stacks\n")
+        t.record("GAINED", "126597", "71", "4", 0, "enemy")
+        t.record("FADED", "126597", "71", "0", 30000, "enemy")
+        [zen] = t.snapshot(0, 60000, units={"71": ("enemy", None, None), "72": ("enemy", None, None)})
+        self.assertEqual(zen["text"], "Z'en:4.0/4 on 1 of 2 mobs")
+
+
+class TestEach(unittest.TestCase):
+    """``each``: the mean over the units of each one's own share, measured
+    over the time the unit was in the fight (the taunt's measure)."""
+
+    def test_each_averages_the_units_and_measures_each_to_its_death(self):
+        t = _tracker("Taunt = 38254 on boss each\nAny = 38254 on boss\n")
+        t.record("GAINED", "38254", "70", "1", 0, "boss")
+        t.record("FADED", "38254", "70", "1", 30000, "boss")
+        t.record("GAINED", "38254", "71", "1", 0, "boss")
+        t.record("FADED", "38254", "71", "1", 20000, "boss")
+        t.forget_unit("70", 40000)  # boss 70 dies at 40 s
+        each, any_ = t.snapshot(0, 60000)
+        # 70: 30 of its 40 s; 71: 20 of 60 s; the mean 54%. The union: 30 of 60
+        self.assertEqual((each["text"], each["uptime_pct"]), ("Taunt:54%", 54.2))
+        self.assertEqual(any_["text"], "Any:50%")
+        # The engine's units say the same, and bring in a boss the effect
+        # never reached, which counts as 0
+        each, _any = t.snapshot(0, 60000, units={"70": ("boss", None, 40000),
+                                                 "71": ("boss", None, None),
+                                                 "72": ("boss", None, None)})
+        self.assertEqual(each["uptime_pct"], 36.1)
+
+    def test_a_unit_added_during_the_fight_is_measured_from_then(self):
+        t = _tracker("Taunt = 38254 on boss each\n")
+        t.record("GAINED", "38254", "70", "1", 30000, "boss")
+        [each] = t.snapshot(0, 60000, units={"70": ("boss", 30000, None)})
+        self.assertEqual(each["uptime_pct"], 100.0)
+        # Gone before the fight began: not a unit of this fight
+        [each] = t.snapshot(0, 60000, units={"70": ("boss", 30000, None), "71": ("boss", None, 0)})
+        self.assertEqual(each["uptime_pct"], 100.0)
+
+    def test_each_on_the_group_is_the_mean_of_the_players_own_uptimes(self):
+        t = _tracker("Courage = 109966 on group each\n")
+        t.record("GAINED", "109966", "1", "1", 0, "self")
+        t.record("GAINED", "109966", "2", "1", 0, "group")
+        t.record("FADED", "109966", "2", "1", 30000, "group")
+        [c] = t.snapshot(0, 60000, units={"1": ("self", None, None), "2": ("group", None, None),
+                                          "3": ("group", None, None)})
+        self.assertEqual((c["text"], c["uptime_pct"]), ("Courage:50%", 50.0))
+
+
+class TestUnitsThatGo(unittest.TestCase):
+    """The game does not always write FADED for a unit that dies or is
+    removed, and unit ids start over in a new zone."""
+
+    def test_a_corpses_effect_ends_at_its_death_and_stays_out_of_the_next_fight(self):
+        t = _tracker("X = 5 on enemies\n")
+        t.record("GAINED", "5", "71", "1", 0, "enemy")
+        t.forget_unit("71", 10000)  # no FADED was written
+        [x] = t.snapshot(0, 20000)
+        self.assertEqual(x["text"], "X:50% on 1 of 1 mobs")
+        t.prune_before(20000)
+        [x] = t.snapshot(30000, 40000)
+        self.assertEqual(x["text"], "X:0%")
+
+    def test_a_zone_change_ends_spans_on_hostiles_and_pets_not_on_players(self):
+        t = _tracker("Boss = 5 on boss\nMine = 5 on self\nPet = 5 on pets\n")
+        t.record("GAINED", "5", "70", "1", 0, "boss")
+        t.record("GAINED", "5", "1", "1", 0, "self")
+        t.record("GAINED", "5", "90", "1", 0, "pet")
+        t.zone_changed(10000)
+        boss, mine, pet = t.snapshot(0, 20000)
+        self.assertEqual((boss["uptime_pct"], mine["uptime_pct"], pet["uptime_pct"]), (50.0, 100.0, 50.0))
 
 
 if __name__ == '__main__':

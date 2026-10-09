@@ -65,18 +65,15 @@ TOPICS = [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
     ]),
-    ("Group buff uptimes", [
-        "src/esolog_tail.py:CombatEncounter.track_buff",
-        "src/esolog_tail.py:CombatEncounter.get_group_buff_uptime",
-    ]),
-    ("Tracked effects: rules anyone can paste", [
+    ("Tracked effects: the uptime line as rules anyone can paste", [
         "src/effect_rules.py",
         "src/effect_rules.py:EffectTracker",
+        "src/effect_rules.py:EffectTracker.snapshot",
+        "src/esolog_tail.py:CombatEncounter.fight_units",
+        "src/app_config.py:AppConfig.reload",
     ]),
     ("Taunts", [
         "src/esolog_tail.py#Taunts",
-        "src/esolog_tail.py:CombatEncounter.track_taunt",
-        "src/esolog_tail.py:CombatEncounter.taunt_uptime",
         "src/esolog_tail.py:mark_taunt_slots",
     ]),
     ("Pets: whose damage and healing they are", [

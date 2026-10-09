@@ -2,6 +2,21 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Boss debuffs in trash packs**: a rule `on boss` has nothing to measure in a fight without a boss, so it measures every hostile the group fought instead, and both it and a rule `on enemies` then say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`, `Touch of Z'en:2.1/5 on 6 of 12 mobs`. The pack is the mobs the group hit plus any a tracked effect landed on, and the timeline row says `mobs` beside such a rule. In a boss fight nothing changes. Fights without a boss are most fights: 281 of 376 in twelve trial and dungeon logs of 2026, with up to 71 mobs hit, where Off-Balance reached up to 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle 18 of 32 and the taunt 20 of 32
+- **`each`**, a third measurement beside `uptime` and `stacks`: the effect on every unit of the scope separately, over the time that unit was alive in the fight, averaged. `Taunt = 38254 on boss each` is the taunt's measure (#9), each boss to its death and the mean over the bosses; `Courage each = 109966 on group each` is the mean of the players' own Major Courage uptimes, an example in the picker
+
+### Changed
+- **The whole uptime line is rules**, so every item can be removed: the six group buffs and the taunt, tracked in code until now, are the first seven lines of the default rules, named in full (`Major Courage:87%` where the line read `MCourage:87%`), and **Examples…** offers them again to anyone who deleted one. A rules text saved by 0.8.0 is given the seven lines in front of it once, so nothing disappears on upgrade, and a rule already written under one of those names stays as it was. Two things follow from the buffs being rules: they are measured whatever the group size (the line needed three players before, so duo and solo fights now see them), and a buff that never appeared reads `0%` rather than being left off the line. The numbers agree: replaying twelve logs of 2026 through both, the six buffs read the same in 690 of 745 readings, and in the other 55 (46 of them Major Courage, the buff refreshed most) the rule reads higher, never lower, because the old code ignored an UPDATED refresh when it had missed the GAINED before it, though the buff was up (a 12 s fight that read 7% reads 100%). The taunt reads the same in 52 of 79 boss fights and higher in 27 of them (lower in one, by 5 points), for two reasons the rule gets right: a taunt already on the boss at the pull, which the old code dropped at BEGIN_COMBAT until the tank's next refresh (twelve fights, one 7.7 s fight read 0% and reads 100%), and a boss or add that arrived after the pull or was gone before the end, now measured over the time it was there rather than the whole fight
+
+- **Settings no longer calls the buff timeline experimental**: its checkbox sits under the tracked-effect rules it draws, in the one Tracked effects group, and says what the strip does. The setting itself is unchanged
+- **Timeline labels that do not fit**: a row label wider than its column (`Off-Balance:11% on 2 of 11 mobs`) is cut with an ellipsis instead of losing its start, and hovering any row's label shows it whole with whose effect it is; a built-in row's hover gives the effect's full name
+
+### Fixed
+- **An effect left on a corpse ran into every later fight of the zone**: the game does not always write FADED for an effect on a unit that dies or is removed, and a tracked rule kept such a span open, so Hemorrhaging or Off-Balance left on a mob that died counted as up for the rest of the zone (in 124 of the 376 fights a span was still open on a dead or removed unit when the fight ended). A unit's death or removal now ends its spans, and a zone change ends the spans on hostiles and pets
+
 ## [0.8.0] - 2026-10-09
 
 ### Changed

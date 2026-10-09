@@ -12,16 +12,19 @@ with the boss at half health throughout.
 
 import unittest
 
+from effect_rules import EffectTracker, parse_rules  # noqa: E402
 from engine_events import RecordingListener  # noqa: E402
 from esolog_tail import (  # noqa: E402
-    BUFF_ABILITY_IDS, COMBAT_RESUME_MS, ENGAGED_ENEMY_MS, ESOLogAnalyzer, FightHistory,
+    COMBAT_RESUME_MS, ENGAGED_ENEMY_MS, ESOLogAnalyzer, FightHistory,
 )
 
 EPOCH = 1759600000000
 BOSS_HEALTH = 1000000
 NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
-COURAGE = BUFF_ABILITY_IDS['major_courage']
-FORCE = BUFF_ABILITY_IDS['major_force']
+COURAGE = '109966'
+FORCE = '61747'
+# The uptime line's items this file looks at
+RULES = "Major Courage = 109966 on group\nMajor Force = 61747 on group\nTaunt = 38254 on boss each\n"
 
 
 def _player(unit_id, health=20000):
@@ -93,6 +96,7 @@ class Engine:
     def __init__(self, timeline=False):
         self.analyzer = ESOLogAnalyzer()
         self.analyzer.fight_history = FightHistory()
+        self.analyzer.effect_tracker = EffectTracker(parse_rules(RULES)[0])
         self.analyzer.track_buff_timeline = timeline
         self.listener = RecordingListener()
         self.analyzer.add_listener(self.listener)
@@ -336,10 +340,12 @@ class TestBuffsAcrossTheCut(unittest.TestCase):
             f'22000,EFFECT_CHANGED,FADED,1,901,{FORCE},{_player(2)},*',
             *FIRST_PART[3:],
         ])
-        # A group fighting a boss gets its taunt uptime too, here none
-        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:50% Taunt:0%')
+        # The boss was never taunted
+        self.assertEqual(engine.fights[0].buff_summary,
+                         'Major Courage:100% Major Force:50% Taunt:0%')
         engine.feed(SECOND_PART)
-        self.assertEqual(engine.fights[0].buff_summary, 'MCourage:100% MForce:25% Taunt:0%')
+        self.assertEqual(engine.fights[0].buff_summary,
+                         'Major Courage:100% Major Force:25% Taunt:0%')
 
     def test_timeline_keeps_the_first_part(self):
         force = ('{ts},EFFECT_CHANGED,{change},1,111,61747,' + _player(1) + ',' + _player(2))

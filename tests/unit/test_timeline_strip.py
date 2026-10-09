@@ -260,14 +260,45 @@ class TestTrackedRows(unittest.TestCase):
         from gui.timeline_strip import LABEL_WIDTH, SCOPE_WIDTH
         tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
                     "uptime_pct": 75.0, "max_stacks": 3,
-                    "intervals": [{"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me"}]}]
+                    "intervals": [{"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me"}]},
+                   # A boss rule measured on the pack of a fight without a boss
+                   {"name": "Alkosh", "kind": "uptime", "scope": "boss", "units": "mobs",
+                    "text": "Alkosh:17% on 3 of 7 mobs", "uptime_pct": 16.7, "max_stacks": 0,
+                    "intervals": [{"start_ms": 0, "end_ms": 10_000, "stacks": 1, "target": "Deckhand"}]}]
         self.strip.set_timeline(_sample_timeline(), tracked)
         scopes = {row: self.strip._row_info[row]["scope"] for row in self.strip._rows}
-        self.assertEqual(scopes, {"Major Force": "group", "Major Vulnerability": "boss", "Crux": "self"})
+        self.assertEqual(scopes, {"Major Force": "group", "Major Vulnerability": "boss",
+                                  "Crux": "self", "Alkosh": "mobs"})
         # The scope column sits between the label and the track
         self.assertEqual(self.strip._track_rect().left(), LABEL_WIDTH + SCOPE_WIDTH)
         self.strip.show()
         self.strip.grab()  # paints the scope words without error
+
+    def test_a_label_that_does_not_fit_is_cut_and_shown_whole_on_hover(self):
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QFontMetrics
+        from gui.timeline_strip import LABEL_WIDTH, SCOPE_WIDTH
+        text = "Off-Balance:11% on 2 of 11 mobs"
+        tracked = [{"name": "Off-Balance", "kind": "uptime", "scope": "boss", "units": "mobs",
+                    "text": text, "uptime_pct": 11.0, "max_stacks": 0,
+                    "intervals": [{"start_ms": 0, "end_ms": 5_000, "stacks": 1, "target": "Reaver"}]}]
+        self.strip.set_timeline(_sample_timeline(), tracked)
+        row = self.strip._rows.index("Off-Balance")
+        info = self.strip._row_info["Off-Balance"]
+        metrics = QFontMetrics(self.strip._label_font())  # the font the labels are painted in
+        painted = self.strip._painted_label("Off-Balance", info, metrics)
+        self.assertTrue(painted.endswith("…") and len(painted) < len(text), painted)
+        self.assertTrue(painted.startswith("Off-Bal"), painted)
+        # Hovering the label, or the scope word beside it, gives the whole text
+        y = self.strip._row_rect(row).center().y()
+        self.assertEqual(self.strip._label_at(QPointF(LABEL_WIDTH / 2, y)), (text, "mobs"))
+        self.assertEqual(self.strip._label_at(QPointF(LABEL_WIDTH + 5, y)), (text, "mobs"))
+        self.assertIsNone(self.strip._label_at(QPointF(LABEL_WIDTH + SCOPE_WIDTH + 5, y)))
+        # A built-in row is drawn short and hovers as its full name
+        force = self.strip._row_info["Major Force"]
+        self.assertEqual(self.strip._painted_label("Major Force", force, metrics), "M.Force 33%")
+        self.assertEqual(self.strip._label_at(QPointF(LABEL_WIDTH / 2, self.strip._row_rect(0).center().y())),
+                         ("Major Force 33%", "group"))
 
 
 if __name__ == '__main__':

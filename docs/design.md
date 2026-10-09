@@ -11,10 +11,11 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2139](../src/esolog_tail.py#L2139)*
+*[src/esolog_tail.py:1810](../src/esolog_tail.py#L1810)*
 
-A buff or debuff coming, going or refreshing: group buff uptimes,
-taunts, the experimental timeline, and enemy health.
+A buff or debuff coming, going or refreshing: the tracked effects
+(every item of the uptime line), the experimental timeline, and
+enemy health.
 
 Design: an EFFECT_CHANGED line is ``changeType, stackCount,
 castTrackId, abilityId, <sourceUnitState>, <targetUnitState>``. A
@@ -33,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:96](../src/esolog_tail.py#L96)*
+*[src/esolog_tail.py:66](../src/esolog_tail.py#L66)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1615](../src/esolog_tail.py#L1615)*
+*[src/esolog_tail.py:1291](../src/esolog_tail.py#L1291)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -48,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1630](../src/esolog_tail.py#L1630)*
+*[src/esolog_tail.py:1306](../src/esolog_tail.py#L1306)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -56,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:90](../src/esolog_tail.py#L90)*
+*[src/esolog_tail.py:60](../src/esolog_tail.py#L60)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -64,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3221](../src/esolog_tail.py#L3221)*
+*[src/esolog_tail.py:2861](../src/esolog_tail.py#L2861)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -100,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:331](../src/esolog_tail.py#L331)*
+*[src/esolog_tail.py:302](../src/esolog_tail.py#L302)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -386,34 +387,7 @@ string table for each of those ids, and the script reports a correction
 the workbook no longer needs. ESO-Hub links for sets are looked up by the
 corrected name (see src/ability_icons.py).
 
-## Group buff uptimes
-
-### CombatEncounter.track_buff
-
-*[src/esolog_tail.py:613](../src/esolog_tail.py#L613)*
-
-A group buff landing on (GAINED) or leaving (FADED) a player.
-
-Design: the uptime line tracks six buffs by ability id (group_buff_ids
-in the analyzer: Major Courage, Major Force, Major Slayer, Powerful
-Assault, Lucent Echoes, Pearlescent Ward). Each is recorded per
-player as (start, end) spans; UPDATED lines (a refresh) change
-nothing, since the buff was already up. Spans that start before the
-pull are carried in from the analyzer's global tracking at
-BEGIN_COMBAT, and spans still open at END_COMBAT are closed there
-(finalize_buff_tracking). The percentage shown is the share of the
-fight the buff was on *any* group member (get_group_buff_uptime), the
-question a raid lead asks ("was Courage up?"), not a per-player mean.
-
-### CombatEncounter.get_group_buff_uptime
-
-*[src/esolog_tail.py:721](../src/esolog_tail.py#L721)*
-
-Share of the fight (percent) a group buff was active on any
-player: every player's spans clamped to the fight, merged, and
-summed (see track_buff for the design).
-
-## Tracked effects: rules anyone can paste
+## Tracked effects: the uptime line as rules anyone can paste
 
 ### src/effect_rules.py
 
@@ -422,27 +396,73 @@ summed (see track_buff for the design).
 Tracked effects: rules anyone can paste, and the tracker they drive
 (engine side, no Qt). Issue #10.
 
-Design: the six group buffs and the taunt on the uptime line are built in;
-this lets a user name any effect by its ability ids and ask for its uptime
-or its stack count on a chosen kind of unit, in a plain text they can copy
-to others. One rule per line::
+Design: every item on the uptime line is a rule. A rule names an effect by
+its ability ids and asks for its uptime or its stack count on a chosen kind
+of unit, in a plain text anyone can copy to others. One rule per line::
 
 ```
-    # Name = ability ids... on <scope> [stacks]
+    # Name = ability ids... on <scope> [stacks | each]
+    Major Courage = 109966 on group
+    Taunt         = 38254 on boss each
     Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
     Touch of Z'en = 126597 on boss stacks
     Crux          = 184220 on self stacks
-    Minor Courage = 147417 on group
 ```
 
 A rule matches any of its ids (an effect such as Off-Balance has one id
 per skill that applies it). The scope says whose effects count: ``self``
 is the player who writes the log, ``group`` any group member, ``pets`` a
 group member's pet, ``boss`` an enemy the game flags as a boss, ``enemies``
-any hostile. ``uptime`` (the default) is the share of the fight the
-effect was on at least one unit in scope, the question "was it up?";
-``stacks`` is the mean stack count while it was up, with the peak, for
-effects that stack (Crux, Touch of Z'en, Arms of Relequen).
+any hostile. Three measurements: ``uptime`` (the default) is the share of
+the fight the effect was on at least one unit in scope, the question "was
+it up?"; ``stacks`` is the mean stack count while it was up, with the peak,
+for effects that stack (Crux, Touch of Z'en, Arms of Relequen); ``each``
+measures the effect on every unit of the scope separately, over the time
+that unit was alive in the fight, and shows the mean of those shares, the
+question "was each boss taunted?". ``each`` is the taunt's measure since
+issue #9: a fight with two bosses averages them, and a boss killed before
+the fight ends is measured to its death. The difference is not academic:
+in 95 boss fights of twelve 2026 logs, the taunt's union to the fight's
+end differed from its per-boss mean in 39, reading lower by up to 83
+points where a boss died early and the fight ran on against its adds.
+
+The uptime line's six group buffs (Major Courage, Major Force, Major
+Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward) and the taunt
+were tracked in code until 0.8.0; they are the first seven of
+DEFAULT_RULES now, so anyone can rename, edit or delete them, and the
+example picker holds them for whoever wants one back. As rules they read
+the same, with two differences: a group buff is measured whatever the
+group size (the code needed three players), and one that never appeared
+in a fight reads 0% rather than being left off the line. Replaying the
+twelve logs (376 fights) through both: the six buffs agreed in 690 of 745
+readings; in the other 55 (46 of them Major Courage, the buff refreshed
+most) the rule read higher, never lower, because the code ignored an
+UPDATED refresh when it had missed the GAINED before it, though the buff
+was up: a 12 s fight that read 7% reads 100%. The taunt agreed in 52 of 79
+boss fights and read higher in 27 (lower in one, by 5 points): the code
+kept its taunt spans in the encounter, which BEGIN_COMBAT replaces, so a
+taunt already on the boss at the pull was lost until the tank's next
+refresh (twelve fights, a 7.7 s fight reading 0% that reads 100%), and it
+measured every boss from the fight's start whether or not it had arrived,
+where ``each`` measures a unit over the time it was there.
+
+Fights without a boss: trash packs are most fights (281 of the 376, with
+up to 71 mobs hit). A ``boss`` rule has nothing to measure there, so it
+measures every hostile the group fought instead, and both it and an
+``enemies`` rule then say how many of the pack's mobs the effect reached,
+``Alkosh:45% on 7 of 12 mobs`` (the pack is the mobs the group hit, plus
+any a tracked effect landed on). In those fights Off-Balance reached up to
+27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle
+18 of 32, the taunt 20 of 32. In a boss fight nothing changes: the boss
+rule reads the boss alone (its effect was on the adds too in about half
+the boss fights, almost never on the adds alone).
+
+Dead units: the game does not always write FADED for an effect on a unit
+that dies or is removed. 124 of the 376 fights ended with a span still
+open on a dead or removed mob, and such a span runs into every later fight
+of the zone. The engine tells the tracker when a unit dies or is removed
+(forget_unit) and when the zone changes (zone_changed), which ends those
+spans there.
 
 A line that starts with ``$`` is a HyperTools export string, pasted as
 is: HyperTools (the in-game tracker addon) serialises a tracker as nested
@@ -466,42 +486,78 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:301](../src/effect_rules.py#L301)*
+*[src/effect_rules.py:406](../src/effect_rules.py#L406)*
 
 Open and closed spans of each rule's effect on each unit in scope,
-with the stack count, in raw log milliseconds; snapshot() reads a
-fight's window out of them, as the timeline recorder does.
+with the stack count and the unit's kind, in raw log milliseconds;
+snapshot() reads a fight's window out of them, as the timeline
+recorder does.
+
+Each id of a rule runs its own span on a unit, so overlapping ids do
+not cut each other short, and the measurement merges them. A span is
+closed by FADED, by a stack change (one span ends, the next begins),
+by the unit's death or removal (forget_unit: the game does not always
+write FADED for a corpse's effects) or by a zone change for hostiles
+and pets (zone_changed: unit ids are handed out afresh). Closed spans
+are pruned once the fight they belong to has been published.
+
+### EffectTracker.snapshot
+
+*[src/effect_rules.py:512](../src/effect_rules.py#L512)*
+
+One entry per rule for the fight window: name, scope, kind, what
+it was measured on ('units': the scope, or 'mobs' for a hostile
+rule in a fight without a boss), the uptime percentage, the mean
+and peak stacks while up, how many of the pack's mobs it reached
+and how many there were, the text the uptime line shows, and
+fight-relative intervals for a timeline.
+
+*units* is what the engine knows of the fight's units, unit id ->
+(kind, since_ms, gone_ms): the players ('self' or 'group'), and the
+hostiles the group hit ('boss' or 'enemy') with the log time each
+was added and the time it died or was removed, None when not in
+the fight. It says whether the fight had a boss, which mobs make
+up the pack, and the window an ``each`` rule measures each unit
+over. Without it (the tracker alone) the spans tell: a span on a
+boss means a boss fight, and a unit is measured from the fight's
+start to its death as forget_unit reported it, or the fight's end.
+
+### CombatEncounter.fight_units
+
+*[src/esolog_tail.py:565](../src/esolog_tail.py#L565)*
+
+What effect_rules measures a fight's rules on, unit id -> (kind,
+since_ms, gone_ms): the players ('self' or 'group'), and the
+hostiles the group hit in this fight ('boss' or 'enemy', by the
+game's flag) with the log time each was added and the time it died
+or was removed, None when it was there throughout. Enemies carry
+over from fight to fight within a zone, so a boss that only stands
+in the list, dead since the last pull, is not a boss of this fight:
+it has to have been hit.
+
+### AppConfig.reload
+
+*[src/app_config.py:74](../src/app_config.py#L74)*
+
+Read the file over DEFAULTS. A rules text saved before the uptime
+line's group buffs and taunt became rules (tracking.version absent,
+0.8.0 and earlier) kept only the user's own additions, so the line
+would lose those items on upgrade: the missing ones are put in
+front of it, by name, so a rule the user had already written under
+the same name stays theirs. Nothing is written back; the version
+is saved with the next Save, and the top-up is harmless to repeat.
 
 ## Taunts
 
 ### Taunts
 
-*[src/esolog_tail.py:105](../src/esolog_tail.py#L105)*
+*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
 
-The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime (track_taunt, taunt_uptime), shown for a group of three or more fighting a boss and for anyone who taunted. Checked on 1,361 taunts in twelve logs of October 2026.
-
-### CombatEncounter.track_taunt
-
-*[src/esolog_tail.py:637](../src/esolog_tail.py#L637)*
-
-The Taunt debuff coming (GAINED, or UPDATED by a fresh taunt) or
-going (FADED) on an enemy. A taunt landing while one is up extends
-the span rather than starting it over. A span still open when the
-fight ends runs to its end (see taunt_uptime), and on from there if
-the fight turns out to carry on.
-
-### CombatEncounter.taunt_uptime
-
-*[src/esolog_tail.py:664](../src/esolog_tail.py#L664)*
-
-Percentage of the fight the Taunt debuff was on the boss: the mean
-over the bosses fought of each one's taunted time within the fight,
-a boss killed before the fight ended measured to its death. None for
-a fight without a boss.
+The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:399](../src/esolog_tail.py#L399)*
+*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -512,7 +568,7 @@ Frost Clench, a separate id with the same icon).
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:482](../src/esolog_tail.py#L482)*
+*[src/esolog_tail.py:430](../src/esolog_tail.py#L430)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -535,7 +591,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:573](../src/esolog_tail.py#L573)*
+*[src/esolog_tail.py:521](../src/esolog_tail.py#L521)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

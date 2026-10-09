@@ -1,5 +1,5 @@
 """Settings dialog: log path, split files, archiving, startup, updates, and
-the experimental buff timeline."""
+the tracked effects with their timeline strip."""
 
 import sys
 from pathlib import Path
@@ -15,8 +15,12 @@ from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
 
 RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
-              "then stacks for a stacking effect. A line that starts with $ is a HyperTools "
-              "tracker export. Copy these lines to share them.")
+              "then stacks for a stacking effect, or each for the mean over the units "
+              "(the taunt's measure). Every item of the uptime line is a rule here, the group "
+              "buffs and the taunt included: delete what you do not want, Examples… has them "
+              "back. In a fight without a boss, a boss rule measures the pack and says how many "
+              "mobs it reached. A line that starts with $ is a HyperTools tracker export. Copy "
+              "these lines to share them.")
 
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
@@ -137,19 +141,9 @@ class SettingsDialog(QDialog):
         update_form.addRow(self.update_check)
         layout.addWidget(update_group)
 
-        # Experimental
-        experimental_group = QGroupBox("Experimental")
-        experimental_form = QFormLayout(experimental_group)
-        self.buff_timeline = QCheckBox(
-            "Buff timeline: compact per-fight strip for Major Slayer / Force / "
-            "Courage / Berserk / Vulnerability with hover attribution")
-        self.buff_timeline.setChecked(
-            bool(config.get("experimental.buff_timeline", False)))
-        experimental_form.addRow(self.buff_timeline)
-        layout.addWidget(experimental_group)
-
-        # Tracked effects: the rule text, with its parse result underneath
-        tracking_group = QGroupBox("Tracked effects (added to the uptime line)")
+        # Tracked effects: the rule text, with its parse result underneath,
+        # and the timeline strip that draws the same rules
+        tracking_group = QGroupBox("Tracked effects (the uptime line)")
         tracking_layout = QVBoxLayout(tracking_group)
         help_label = QLabel(RULES_HELP)
         help_label.setWordWrap(True)
@@ -173,6 +167,13 @@ class SettingsDialog(QDialog):
         tracking_layout.addLayout(rules_row)
         self.rules_edit.textChanged.connect(self._check_rules)
         self._check_rules()
+        # The strip (the config key keeps its original name)
+        self.buff_timeline = QCheckBox(
+            "Show these as a per-fight timeline strip in place of the uptime line; "
+            "hover a segment for who cast it and who received it")
+        self.buff_timeline.setChecked(
+            bool(config.get("experimental.buff_timeline", False)))
+        tracking_layout.addWidget(self.buff_timeline)
         layout.addWidget(tracking_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -193,9 +194,9 @@ class SettingsDialog(QDialog):
 
     def append_rules(self, lines) -> None:
         """Append rule lines whose names the box lacks, and say how many."""
-        from gui.examples_dialog import example_lines_to_add
+        from effect_rules import lines_to_add
         text = self.rules_edit.toPlainText()
-        new = example_lines_to_add(list(lines), text)
+        new = lines_to_add(list(lines), text)
         if not new:
             self._check_rules()
             self.rules_status.setText("Nothing to add · " + self.rules_status.text())

@@ -3,8 +3,10 @@ EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
 
 One thin colored row per tracked effect across the fight duration, with the
 effect's uptime % in its label, whose effect it is beside it (group, self,
-pets, boss or enemies), time tick marks, and hover tooltips naming caster
-and receiver. A group buff that only ever reached one or two
+pets, boss, enemies, or mobs for a boss rule measured on the pack of a
+fight without a boss), time tick marks, and hover tooltips naming caster
+and receiver. A label wider than its column is cut with an ellipsis, and
+hovering any label shows it whole. A group buff that only ever reached one or two
 receivers renders dotted rather than solid (Major Vulnerability and Taunt
 are exempt: they target the boss, so a single receiver is their normal
 case).
@@ -144,7 +146,9 @@ class TimelineStrip(QWidget):
                     "uptime_pct": int(round(item.get("uptime_pct", 0))),
                     "dotted": False,
                     "label": item.get("text", name),
-                    "scope": item.get("scope", ""),
+                    # What the rule measured this fight: its scope, or the
+                    # pack's mobs for a boss rule in a fight without a boss
+                    "scope": item.get("units") or item.get("scope", ""),
                     "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
                     "stacks_max": (item.get("max_stacks") or 0) if item.get("kind") == "stacks" else 0,
                 }
@@ -213,22 +217,21 @@ class TimelineStrip(QWidget):
         track_bg = QColor(text_color)
         track_bg.setAlphaF(0.08)
 
-        small = QFont(self.font())
-        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2))
-        painter.setFont(small)
+        painter.setFont(self._label_font())
 
         duration = self._timeline["duration_ms"]
 
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
             info = self._row_info.get(effect, {})
-            # Label with uptime % (a tracked rule shows its uptime-line text)
+            # Label with uptime % (a tracked rule shows its uptime-line text),
+            # cut with an ellipsis when it does not fit; hovering it shows
+            # the whole label (see _label_at)
             painter.setPen(dim)
-            label = info.get("label") or (f"{EFFECT_SHORT.get(effect, effect)} "
-                                          f"{info.get('uptime_pct', 0)}%")
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
-                             Qt.AlignRight | Qt.AlignVCenter, label)
+                             Qt.AlignRight | Qt.AlignVCenter,
+                             self._painted_label(effect, info, painter.fontMetrics()))
             # Whose effect this row is
             painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
                                     SCOPE_WIDTH - 4, rect.height() + 2),
@@ -281,6 +284,37 @@ class TimelineStrip(QWidget):
                          Qt.AlignRight | Qt.AlignTop, "experimental")
         painter.end()
 
+    # ---- labels ----
+
+    def _label_font(self) -> QFont:
+        """The small font the labels, scope words and ticks are painted in."""
+        small = QFont(self.font())
+        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2))
+        return small
+
+    def _full_label(self, effect: str, info: dict) -> str:
+        """A row's whole label: a rule's uptime-line text, or the built-in
+        effect's full name with its uptime."""
+        return info.get("label") or f"{effect} {info.get('uptime_pct', 0)}%"
+
+    def _painted_label(self, effect: str, info: dict, metrics) -> str:
+        """The label as drawn: the built-in effects by their short names,
+        and anything wider than the label column cut with an ellipsis."""
+        label = info.get("label") or (f"{EFFECT_SHORT.get(effect, effect)} "
+                                      f"{info.get('uptime_pct', 0)}%")
+        return metrics.elidedText(label, Qt.ElideRight, int(LABEL_WIDTH - 2 * MARGIN))
+
+    def _label_at(self, pos):
+        """(whole label, scope word) of the row whose label or scope word
+        is under *pos*, or None."""
+        for row, effect in enumerate(self._rows):
+            rect = self._row_rect(row)
+            band = QRectF(0, rect.top() - 1, LABEL_WIDTH + SCOPE_WIDTH, rect.height() + 2)
+            if band.contains(pos):
+                info = self._row_info.get(effect, {})
+                return self._full_label(effect, info), info.get("scope", "")
+        return None
+
     # ---- hover attribution ----
 
     def _intervals_at(self, pos):
@@ -299,8 +333,16 @@ class TimelineStrip(QWidget):
 
     def event(self, ev):
         if ev.type() == QEvent.ToolTip:
-            found = self._intervals_at(ev.position() if hasattr(ev, "position")
-                                       else ev.pos())
+            pos = ev.position() if hasattr(ev, "position") else ev.pos()
+            # A row's label, whole, with whose effect it is
+            labelled = self._label_at(pos)
+            if labelled:
+                label, scope = labelled
+                QToolTip.showText(ev.globalPos(),
+                                  f"<b>{label}</b> ({scope})" if scope else f"<b>{label}</b>",
+                                  self)
+                return True
+            found = self._intervals_at(pos)
             if found:
                 effect, ms, hits = found
                 if hits:

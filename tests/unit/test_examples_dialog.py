@@ -16,7 +16,7 @@ try:
 except ImportError:
     HAVE_QT = False
 
-from effect_rules import EXAMPLE_RULES, parse_rules
+from effect_rules import EXAMPLE_RULES, lines_to_add, parse_rules
 
 
 class TestExampleLibrary(unittest.TestCase):
@@ -49,7 +49,7 @@ class TestExamplesDialog(unittest.TestCase):
         # Only the ticked lines come back, in library order
         lines = dialog.selected_lines()
         self.assertNotIn("Crux = 184220 on self stacks", lines)
-        self.assertEqual(lines[0], "Touch of Z'en = 126597 on boss stacks")
+        self.assertEqual(lines[0], "Major Courage = 109966 on group")
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
@@ -58,16 +58,17 @@ class TestExamplesDialog(unittest.TestCase):
         dialog = ExamplesDialog()
         for i in range(dialog.list.count()):
             dialog.list.item(i).setCheckState(Qt.Unchecked)
-        dialog.list.item(2).setCheckState(Qt.Checked)  # Crux
+        crux = next(i for i in range(dialog.list.count())
+                    if dialog.list.item(i).data(Qt.UserRole).startswith("Crux ="))
+        dialog.list.item(crux).setCheckState(Qt.Checked)
         dialog.copy_button.click()
         self.assertEqual(QGuiApplication.clipboard().text(), "Crux = 184220 on self stacks\n")
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
     def test_lines_already_in_the_box_are_not_added_twice(self):
-        from gui.examples_dialog import example_lines_to_add
-        new = example_lines_to_add(["Crux = 184220 on self stacks", "Relequen = 107203 on boss stacks"],
-                                   "crux = 1 on self\n")
+        new = lines_to_add(["Crux = 184220 on self stacks", "Relequen = 107203 on boss stacks"],
+                           "crux = 1 on self\n")
         self.assertEqual(new, ["Relequen = 107203 on boss stacks"])
 
 

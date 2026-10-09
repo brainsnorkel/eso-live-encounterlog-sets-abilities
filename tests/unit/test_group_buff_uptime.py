@@ -5,19 +5,23 @@ player who applied it (issue #11).
 An EFFECT_CHANGED line carries two unit states of ten fields each. The
 target's starts at field 14 and is "*" when the target is the source. The
 engine used to take the target id from field 10, the source's shield value,
-so a buff one player put on another was never seen.
+so a buff one player put on another was never seen. The group buffs are
+rules of the uptime line now (effect_rules), fed by the same reader.
 """
 
 import unittest
 
+from effect_rules import EffectTracker, parse_rules
 from engine_events import RecordingListener
-from esolog_tail import BUFF_ABILITY_IDS, ESOLogAnalyzer, FightHistory
+from esolog_tail import ESOLogAnalyzer, FightHistory
 
 EPOCH = 1759600000000
 BOSS_HEALTH = 1000000
-COURAGE = BUFF_ABILITY_IDS['major_courage']
-FORCE = BUFF_ABILITY_IDS['major_force']
+COURAGE = '109966'
+FORCE = '61747'
 DEBUFF = 12345
+
+RULES = "Major Courage = 109966 on group\nMajor Force = 61747 on group\n"
 
 
 def _player(unit_id, health=20000, shield=0):
@@ -66,6 +70,7 @@ FIGHT_END = [
 def _run(lines):
     analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
+    analyzer.effect_tracker = EffectTracker(parse_rules(RULES)[0])
     analyzer.add_listener(RecordingListener())
     for line in BASE + lines:
         entry = analyzer.log_parser.parse_line(line)
@@ -75,10 +80,14 @@ def _run(lines):
 
 
 def _buffs(fight):
-    """The uptime line's buff items, without the taunt item a group fighting
-    a boss also gets (issue #9)."""
-    return ' '.join(part for part in fight.buff_summary.split()
-                    if not part.startswith('Taunt:'))
+    """The uptime line: here the two group buff rules."""
+    return fight.buff_summary
+
+
+def _receivers(fight, name):
+    """Who the rule's effect was on, in span order."""
+    item = next(item for item in fight.tracked if item["name"] == name)
+    return [interval["target"] for interval in item["intervals"]]
 
 
 class TestBuffOnAnotherPlayer(unittest.TestCase):
@@ -90,17 +99,15 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
             _effect(22000, 'FADED', COURAGE, _player(1), _player(2)),
         ] + FIGHT_END)
         fight = analyzer.fight_history.fights[0]
-        self.assertEqual(_buffs(fight), 'MCourage:50%')
+        self.assertEqual(_buffs(fight), 'Major Courage:50% Major Force:0%')
         # It is on player 2, not on the player who cast it
-        enc = analyzer.current_encounter
-        self.assertEqual(enc.player_buffs['2']['MCourage'], [(12000, 22000)])
-        self.assertNotIn('MCourage', enc.player_buffs['1'])
+        self.assertEqual(_receivers(fight, 'Major Courage'), ['@templar'])
 
     def test_a_buff_cast_before_the_pull_on_another_player_carries_in(self):
         analyzer = _run([
             _effect(5000, 'GAINED', COURAGE, _player(1), _player(2)),
         ] + FIGHT_START + FIGHT_END)
-        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MCourage:100%')
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'Major Courage:100% Major Force:0%')
 
     def test_uptime_is_the_time_the_buff_was_on_anyone(self):
         # Major Force on player 2 for 10-20 s and on player 3 for 15-25 s:
@@ -111,7 +118,7 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
             _effect(20000, 'FADED', FORCE, _player(1), _player(2)),
             _effect(25000, 'FADED', FORCE, _player(1), _player(3)),
         ] + FIGHT_END)
-        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MForce:75%')
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'Major Courage:0% Major Force:75%')
 
     def test_the_sources_shield_is_not_read_as_the_target(self):
         # The source's shield value sits where the target id used to be read.
@@ -119,10 +126,18 @@ class TestBuffOnAnotherPlayer(unittest.TestCase):
         analyzer = _run(FIGHT_START + [
             _effect(10000, 'GAINED', COURAGE, _player(1, shield=3), _player(2)),
         ] + FIGHT_END)
-        enc = analyzer.current_encounter
-        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'MCourage:100%')
-        self.assertIn('MCourage', enc.player_buffs['2'])
-        self.assertNotIn('MCourage', enc.player_buffs['3'])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(_buffs(fight), 'Major Courage:100% Major Force:0%')
+        self.assertEqual(_receivers(fight, 'Major Courage'), ['@templar'])
+
+    def test_a_refresh_counts_when_the_gained_line_was_missed(self):
+        # Major Courage is refreshed by UPDATED lines every few seconds; a log
+        # that starts, or a player who joins, mid-buff shows the refresh first
+        analyzer = _run(FIGHT_START + [
+            _effect(12000, 'UPDATED', COURAGE, _player(1), _player(2)),
+            _effect(22000, 'FADED', COURAGE, _player(1), _player(2)),
+        ] + FIGHT_END)
+        self.assertEqual(_buffs(analyzer.fight_history.fights[0]), 'Major Courage:50% Major Force:0%')
 
 
 class TestOtherReadersOfTheTarget(unittest.TestCase):
