@@ -1,0 +1,45 @@
+# Design: Expected effects on the uptime line
+
+## Context
+
+See proposal.md for the motivation. The state this builds on:
+
+- `effect_rules.parse_rules` reads a line as `Name = ` followed by order-free words: ids, `on <scope>` or a bare scope word, and one measurement word. `Rule` is a frozen dataclass (name, ids, scope, kind). A HyperTools line is decoded and the words after it override its scope and measurement.
+- `EffectTracker.snapshot(start, end, name_of, units)` returns one item per rule, in rule order, with the text the line shows; the engine joins every item's text into `FightHistoryEntry.buff_summary` and keeps the items in `entry.tracked`. `units` (from `CombatEncounter.fight_units`) lists the fight's players (`self`, `group`) and the hostiles hit; the unit tests call `snapshot` without it.
+- `TimelineStrip.set_timeline(timeline, tracked)` adds a row per tracked item that has intervals, after the recorder's built-in rows, and skips an item whose name a built-in row already has.
+- `AppConfig.reload` tops up a rules text saved without `tracking.version` with the seven uptime-line lines it lacks, by name (`TRACKING_VERSION` is 2).
+- Survey, 2026-10-10 (`survey.py` beside this file, every tenth split log by name within 1.5 GB: 13 logs, 196 fights, trials and dungeons of 2026): 3 fights of one player, 71 of four, 122 of eleven to fourteen. Of the fourteen default items, the number reading 0 per fight today averages 13.0 in the solo fights, 10.0 in the four-player fights (never fewer than 8) and 5.9 in the trial fights (4 to 9). The six group buffs in the trial fights: Major Courage seen in 96%, Lucent Echoes 86%, Pearlescent Ward 82%, Major Slayer 71%, Major Force and Powerful Assault 52% (Major Force in 51 of 54 boss fights but 13 of 68 pack fights: horns are saved for bosses). In the four-player fights: Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the other three never. The taunt: 70 of 71 four-player fights, all 122 trial fights, no solo fight. Crux in every fight (the logging character is an Arcanist); Off-Balance 73% of trial fights and 14% of dungeon fights; Minor Brittle 86% and 75%; Morag Tong, Major Brittle, Alkosh and Z'en in 0 to 7%. With the defaults below applied to the same fights, the line shows 1.0 item per solo fight, 4.0 per four-player fight and 9.7 per trial fight, of which 1.6 are expected buffs reading 0.
+
+## Goals / Non-Goals
+
+**Goals:**
+- One new word in the rule text, shareable as plain text like the rest, that says in which group sizes a rule stays on the line when its effect is absent.
+- The line in a small group or solo play shows what happened, not a column of zeros; the line in a trial still flags a missing group buff.
+- A saved rules text keeps the behaviour the user sees today for the seven uptime-line rules without the user editing it.
+
+**Non-Goals:**
+- Hiding an effect that *was* seen (a rule is never silenced by `expected`).
+- Numeric group-size ranges (`expected 5+`): the issue asks for the three words, which are easier to share and to read.
+- Changing the recorder's built-in strip rows (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), which already appear only when they occurred.
+- Expectations by zone or by role (a tank's taunt, a healer's Major Courage).
+
+## Decisions
+
+- **Group sizes are three fixed classes, counted from the fight's players.** `solo` is one player, `small` two to four, `large` five or more. Issue #13 says "small group (1-4)" and lists `solo` beside it; the overlap is resolved by giving solo the one-player case, since a solo fight is what a player means by the word and a four-player dungeon is what `small` is for; the maintainer confirmed on 2026-10-10 that small means two to four. The count is the players in the engine's `fight_units` (the players the encounter knows, the same the fight pane lists), so the snapshot derives it from the `units` it already receives; the tracker alone, without `units`, has no size and shows every item, which keeps the existing unit tests and the rule "unknown means show" in one place. *Alternative*: pass the size as a new parameter from the engine. Rejected: a second source of the same fact.
+- **Shown = seen or expected, decided in the snapshot, kept as flags.** Each item gains `seen` (the rule had at least one span in the fight window, after the boss filter), `expected` (the fight's size is in the rule's set) and `shown` (either). The snapshot still returns every rule, so `entry.tracked` keeps one entry per rule and nothing that reads it today breaks; the engine builds `buff_summary` from the shown items and the strip adds rows for the shown items. *Alternative*: drop unshown items from the snapshot. Rejected: the strip and any later reader would lose the information that a rule existed and was hidden, and tests asserting the item count would change for no gain.
+- **`expected` is a keyword that takes the size words after it; a size word on its own is an error.** `expected small large`, `expected all`, `expected` alone (`all`). The parser consumes size words that follow `expected` and stops at the first other word, so `expected large on boss` works and so does `on boss expected large`. A bare `large` elsewhere gets its own error ("belongs after 'expected'") rather than the generic one, because it is the likely mistake. *Alternative*: accept bare size words like bare scope words. Rejected: `all` and `solo` read oddly on their own, and the keyword leaves room for other words later.
+- **The seven defaults carry `expected`; the boss debuffs do not.** From the survey: in the large-group fights the six group buffs are present most of the time and their absence is the thing to notice; in four-player fights they are mostly absent and their zeros are noise; the taunt is present in nearly every fight of two or more players. The taunt is `expected small` as well as `large` because a dungeon group has a tank (the maintainer confirmed this on 2026-10-10); Pearlescent Ward stays `expected large` though a dungeon tank wore it in about half the four-player fights, by the same decision. The boss debuffs (Off-Balance, the Brittles, Alkosh, Morag Tong, Z'en) depend on who is in the group; none is expected by default, so each shows when it happened. Crux is the logging player's own and shows when they are an Arcanist. The user changes any of this by editing the words.
+- **A 0.9.0 rules text is upgraded by appending the default's words, by name, once.** `TRACKING_VERSION` becomes 3. On reload of a text with version 2 (or one just topped up from no version), each line whose rule name matches one of the seven (case-insensitive) and that parses without an `expected` of its own gets ` expected <sizes>` appended to its text; the line's own spelling, ids and spacing are kept. A line the user renamed, or that already has `expected`, is left alone. The top-up for an unversioned text uses the new default lines, so a 0.8.0 config gets the words in one step. Nothing is written at startup; the version is saved with the next Save and the upgrade is idempotent. *Alternative*: leave saved texts alone and document the word. Rejected: on upgrade the group buffs would silently disappear from a trial fight that lacks one, the opposite of what the line is for.
+- **The strip draws an empty row for an expected, absent rule.** `set_timeline` adds a row for every shown item, intervals or not; an empty track with `0%` in the label is the visual counterpart of `Major Courage:0%`. The skip of a rule whose name a built-in row has stays: when the recorder's row is present the effect was seen, so nothing is lost.
+
+## Risks / Trade-offs
+
+- [A group member without logged abilities is not in the pane's list but is in `fight_units`] → the count comes from `fight_units`, the same set the snapshot measures group rules on; the two differ only for a player the log never described, and the size classes are wide.
+- [A twelve-player group that reads eleven for a fight (one player not yet added when the pull began)] → still `large`; the boundary is at four and five, where dungeon groups sit well inside `small`.
+- [A user who liked the zeros] → `expected all` on any rule restores today's behaviour for it, and the help text says so.
+- [The copied text and the strip disagree on a rule whose name matches a built-in strip row] → unchanged from today; the built-in row shows the recorder's union while the line shows the rule's measure.
+- [The line changes for everyone on upgrade] → only by omission of items that read 0 and are not expected; the changelog says which, and the survey numbers are in the design notes.
+
+## Migration Plan
+
+Config: `tracking.version` 3. A stored text with version 2 has its seven uptime-line lines given the default `expected` words on read, by name; a text without a version is topped up with the new lines and then versioned. Users who never saved Settings get the new defaults. Rollback: delete the words, or set a rule `expected all`.
