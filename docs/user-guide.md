@@ -66,7 +66,7 @@ Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
 ```
 
-Each rule adds an item to the uptime line of every fight: `Off-Balance:17%` is how much of the fight the boss was off balance under any of those ids, and `Crux:2.1/3` the mean and peak Crux you held. The scope after `on` says whose effects count (`self`, `group`, `pets`, `boss` or `enemies`), and `stacks` asks for the count instead of the uptime. The box tells you how many rules it holds and which lines it cannot read; **Examples** brings the bundled ones back.
+Each rule adds an item to the uptime line of every fight: `Off-Balance:17%` is how much of the fight the boss was off balance under any of those ids, and `Crux:2.1/3` the mean and peak Crux you held. The scope after `on` says whose effects count (`self`, `group`, `pets`, `boss` or `enemies`), and `stacks` asks for the count instead of the uptime. The box tells you how many rules it holds and which lines it cannot read; **Add examples** adds the bundled example rules you do not have yet and leaves yours alone.
 
 The rules are plain text: copy them to a friend, or paste theirs in. A tracker exported from the HyperTools addon works too: paste its `$...` string as a line and its name, ability ids and target become a rule. Save restarts monitoring, so the rules apply to the session's fights at once.
 

@@ -10,7 +10,7 @@
 ## 2. Settings
 
 - [x] 2.1 `tracking.rules` in the config defaults (the bundled examples) and `build_analyzer` building the tracker from it; verified by a round trip through a reloaded AppConfig in the Settings tests
-- [x] 2.2 The Settings box: monospace text, live count and error line, an Examples button, saved by Save; verified by `tests/unit/test_settings_dialog.py` cases for the status text and the round trip
+- [x] 2.2 The Settings box: monospace text, live count and error line, an Add examples button that appends the missing example rules and reports what it did, saved by Save; verified by `tests/unit/test_settings_dialog.py` cases for the status text and the round trip
 
 ## 3. Timeline rows
 
