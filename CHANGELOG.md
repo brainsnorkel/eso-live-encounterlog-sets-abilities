@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-10-09
 
 ### Changed
 - **Death recap button is just the skull**: the red chip on a dead player's row reads `☠`, or `☠ ×3` for three deaths, instead of `☠ Death recap ×3`, which wrapped onto a second line next to a long class line. Hover and click are as before

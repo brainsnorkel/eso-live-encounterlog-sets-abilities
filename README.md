@@ -265,7 +265,7 @@ python -m pytest tests/ -q
 python -m PyInstaller esolog-tail.spec --noconfirm
 
 :: Installer (requires Inno Setup 6) -> dist/esolog-tail-windows-setup-<version>.exe
-iscc /DAppVersion=0.7.1 installer\esolog-gui.iss
+iscc /DAppVersion=0.8.0 installer\esolog-gui.iss
 ```
 
 Tagged releases (`v*`) build the installer, the portable zip, and the Linux tarball automatically via GitHub Actions.
