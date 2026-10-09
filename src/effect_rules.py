@@ -57,10 +57,10 @@ _SCOPE_KINDS = {
     "enemies": {"boss", "enemy"},
 }
 
-# The rules a fresh install starts with: the examples of issue #10. The
-# first three ids are what the logs show; "The Morag Tong", the set's
-# debuff, is 34384 (confirmed by Chris, 2026-10-09; the sampled logs had
-# nobody wearing the set)
+# The rules a fresh install starts with, as the maintainer set them
+# (2026-10-09): the examples of issue #10 and three boss debuffs. The first
+# three ids are what the logs show; the rest are the maintainer's (The
+# Morag Tong set's debuff, Minor and Major Brittle, Roar of Alkosh's)
 DEFAULT_RULES = """\
 # Tracked effects, one per line: Name = ability ids on <scope> [stacks]
 # scope: self | group | pets | boss | enemies. Share these lines as text.
@@ -69,11 +69,14 @@ Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 
 Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
 Morag Tong    = 34384 on boss
+Minor Brittle = 145975 on boss
+Major Brittle = 263825 on boss
+Alkosh        = 76667 on boss
 """
 
 # The example library Settings offers to paste from: (title, what it tells
-# you, the rule line). Every id was seen in the 2026 logs except Morag
-# Tong's, confirmed by the maintainer. The first four are DEFAULT_RULES.
+# you, the rule line). The first seven are DEFAULT_RULES; the other ids
+# were seen in the 2026 logs.
 EXAMPLE_RULES = [
     ("Off-Balance on the boss",
      "Share of the fight the boss was off balance, under any of the skills that cause it",
@@ -87,6 +90,15 @@ EXAMPLE_RULES = [
     ("The Morag Tong on the boss",
      "Uptime of the Morag Tong set's debuff",
      "Morag Tong = 34384 on boss"),
+    ("Minor Brittle on the boss",
+     "Uptime of Minor Brittle (critical damage taken up)",
+     "Minor Brittle = 145975 on boss"),
+    ("Major Brittle on the boss",
+     "Uptime of Major Brittle",
+     "Major Brittle = 263825 on boss"),
+    ("Roar of Alkosh on the boss",
+     "Uptime of the Roar of Alkosh set's debuff",
+     "Alkosh = 76667 on boss"),
     ("Off-Balance immunity on the boss",
      "How much of the fight the boss could not be put off balance",
      "OB immunity = 134599 on boss"),

@@ -50,7 +50,7 @@ For every fight, each rule SHALL add an item to the uptime line after the built-
 
 ### Requirement: Rules live in Settings and start as the bundled examples
 
-Settings SHALL show the rule text in an editable box with the number of rules it holds and the errors of lines it skips, and keep the text in the per-user settings; saving applies the rules by restarting monitoring. A fresh install starts with the examples of issue #10. An Examples button SHALL open a picker listing a library of example rules, each with a title, what it tells you and its line; the user ticks rules and adds them under the box's text (a rule whose name the box already has starts unticked and is never added twice) or copies the ticked lines to the clipboard to share.
+Settings SHALL show the rule text in an editable box with the number of rules it holds and the errors of lines it skips, and keep the text in the per-user settings; saving applies the rules by restarting monitoring. A fresh install starts with seven rules: the examples of issue #10 and three boss debuffs (Minor Brittle, Major Brittle, Roar of Alkosh). An Examples button SHALL open a picker listing a library of example rules, each with a title, what it tells you and its line; the user ticks rules and adds them under the box's text (a rule whose name the box already has starts unticked and is never added twice) or copies the ticked lines to the clipboard to share.
 
 #### Scenario: Picking examples
 - GIVEN the box holds `Mine = 1 on boss` AND the picker is opened and two examples ticked

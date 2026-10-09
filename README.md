@@ -161,6 +161,9 @@ Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
 Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
 Morag Tong    = 34384 on boss
+Minor Brittle = 145975 on boss
+Major Brittle = 263825 on boss
+Alkosh        = 76667 on boss
 ```
 
 - A rule matches any of its ids: an effect such as Off-Balance has one id per skill that applies it.
