@@ -57,9 +57,10 @@ _SCOPE_KINDS = {
     "enemies": {"boss", "enemy"},
 }
 
-# The rules a fresh install starts with: the examples of issue #10 whose
-# ids the logs show (Morag Tong's set debuff never appeared in one, so it
-# is left for whoever knows its id)
+# The rules a fresh install starts with: the examples of issue #10. The
+# first three ids are what the logs show; "The Morag Tong", the set's
+# debuff, is 34384 (confirmed by Chris, 2026-10-09; the sampled logs had
+# nobody wearing the set)
 DEFAULT_RULES = """\
 # Tracked effects, one per line: Name = ability ids on <scope> [stacks]
 # scope: self | group | pets | boss | enemies. Share these lines as text.
@@ -67,6 +68,7 @@ DEFAULT_RULES = """\
 Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss
 Touch of Z'en = 126597 on boss stacks
 Crux          = 184220 on self stacks
+Morag Tong    = 34384 on boss
 """
 
 MERGE_GAP_MS = 50  # an effect refreshed within this is one span

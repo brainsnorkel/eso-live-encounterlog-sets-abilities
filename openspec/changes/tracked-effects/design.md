@@ -28,7 +28,7 @@ Non-goals: per-player breakdowns (who had it), rules by effect name (names diffe
 - [The `self` scope needs the local-player flag] → every log the app has seen carries it on the logging player's UNIT_ADDED; a reviewed log from another player's client marks that player as self.
 - [Many rules on a busy fight] → the tracker does one dictionary lookup per EFFECT_CHANGED line for ids it does not know; spans are pruned per fight; a rule on `enemies` in a trash fight can hold hundreds of spans, still small.
 - [HyperTools changes its format] → the decoder mirrors `Transmission.lua` of the installed version; a string it cannot read is one skipped line with an error, never a crash.
-- [An example id nobody has verified in a log misleads] → the bundled examples are only ids the logs showed; Morag Tong, whose debuff no log of ours carries, is left for a user who knows its id.
+- [An example id no sampled log carries] → three of the four example ids were seen in the logs; The Morag Tong's (34384) was confirmed by the maintainer, nobody in the sampled logs wore the set.
 
 ## Migration Plan
 

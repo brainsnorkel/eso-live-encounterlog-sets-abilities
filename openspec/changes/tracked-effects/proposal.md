@@ -9,7 +9,7 @@ The uptime line knows six group buffs and the taunt, chosen in code. Raid leads 
 - **Tracked effects, by rule**: the user names effects by their ability ids and asks for the effect's uptime or its stack count on a kind of unit: the logging player, any group member, a group member's pet, a boss, or any enemy. Each rule adds an item to the fight's uptime line, in the fight pane and in copied text, whatever the group size.
 - **A plain text rule format**, one rule per line, kept in Settings and shareable by copy and paste: `Off-Balance = 45902 62988 39077 on boss`, `Crux = 184220 on self stacks`. A line that will not parse is reported with its number and skipped; the others still work.
 - **HyperTools exports accepted as rules**: a line that starts with `$` is a HyperTools tracker export string; its name, ability ids and target become a rule, groups included.
-- **Bundled examples**: a fresh install starts with three of the examples of issue #10 (Off-Balance on the boss as a union of its ids, Touch of Z'en stacks on the boss, Crux stacks on self), and Settings can restore them. Morag Tong is left out: no log of ours carries its debuff, so its id would be a guess.
+- **Bundled examples**: a fresh install starts with the four examples of issue #10 (Off-Balance on the boss as a union of its ids, Touch of Z'en stacks on the boss, Crux stacks on self, The Morag Tong debuff on the boss), and Settings can restore them.
 - **Timeline rows** (when the experimental strip is on): one row per rule after the built-in rows; a stacking effect's bar is drawn with a height that follows the stack count.
 
 ## Capabilities

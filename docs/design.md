@@ -466,7 +466,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:242](../src/effect_rules.py#L242)*
+*[src/effect_rules.py:244](../src/effect_rules.py#L244)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count, in raw log milliseconds; snapshot() reads a

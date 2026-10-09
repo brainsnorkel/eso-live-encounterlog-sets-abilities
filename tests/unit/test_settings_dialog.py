@@ -64,7 +64,7 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         dialog = SettingsDialog(self.config)
         # A fresh config shows the bundled examples, all of which parse
         self.assertEqual(dialog.rules_edit.toPlainText(), DEFAULT_RULES)
-        self.assertEqual(dialog.rules_status.text(), "3 rules")
+        self.assertEqual(dialog.rules_status.text(), "4 rules")
         dialog.rules_edit.setPlainText("Crux = 184220 on self stacks\nBad = 1 on mobs\n")
         self.assertTrue(dialog.rules_status.text().startswith("1 rule; skipped: line 2:"))
         dialog.apply_to_config()
