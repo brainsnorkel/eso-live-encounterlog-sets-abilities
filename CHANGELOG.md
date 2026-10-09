@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.9.0] - 2026-10-09
 
 ### Added
 - **Boss debuffs in trash packs**: a rule `on boss` has nothing to measure in a fight without a boss, so it measures every hostile the group fought instead, and both it and a rule `on enemies` then say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`, `Touch of Z'en:2.1/5 on 6 of 12 mobs`. The pack is the mobs the group hit plus any a tracked effect landed on, and the timeline row says `mobs` beside such a rule. In a boss fight nothing changes. Fights without a boss are most fights: 281 of 376 in twelve trial and dungeon logs of 2026, with up to 71 mobs hit, where Off-Balance reached up to 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle 18 of 32 and the taunt 20 of 32
