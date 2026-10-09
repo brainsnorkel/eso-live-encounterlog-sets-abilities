@@ -72,25 +72,18 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
-    def test_add_examples_keeps_the_users_rules_and_says_what_it_did(self):
+    def test_example_lines_are_appended_without_duplicates_and_reported(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)
-        # The box already holds the examples: nothing to add, and it says so
-        dialog.examples_button.click()
-        self.assertTrue(dialog.rules_status.text().startswith("The examples are already here · 4 rules"))
-        # A user's own rules stay; the missing examples go underneath
-        dialog.rules_edit.setPlainText("Mine = 1 on boss\nCrux = 184220 on self stacks")
-        dialog.examples_button.click()
-        text = dialog.rules_edit.toPlainText()
-        self.assertTrue(text.startswith("Mine = 1 on boss\nCrux = 184220 on self stacks\n"))
-        self.assertIn("Off-Balance", text)
-        self.assertEqual(text.count("Crux"), 1)
-        self.assertTrue(dialog.rules_status.text().startswith("3 examples added · 5 rules"))
-        # An empty box gets the examples with their comment lines
-        dialog.rules_edit.setPlainText("")
-        dialog.examples_button.click()
-        self.assertTrue(dialog.rules_edit.toPlainText().startswith("# Tracked effects"))
-        self.assertTrue(dialog.rules_status.text().startswith("Examples added · 4 rules"))
+        # The box already holds the four defaults: adding them again adds nothing
+        dialog.append_rules(["Crux = 184220 on self stacks"])
+        self.assertTrue(dialog.rules_status.text().startswith("Nothing to add · 4 rules"))
+        # A user's own rules stay; new lines go underneath
+        dialog.rules_edit.setPlainText("Mine = 1 on boss")
+        dialog.append_rules(["Crux = 184220 on self stacks", "Relequen = 107203 on boss stacks"])
+        self.assertEqual(dialog.rules_edit.toPlainText(),
+                         "Mine = 1 on boss\nCrux = 184220 on self stacks\nRelequen = 107203 on boss stacks\n")
+        self.assertTrue(dialog.rules_status.text().startswith("2 rules added · 3 rules"))
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 

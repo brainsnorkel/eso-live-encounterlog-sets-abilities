@@ -71,6 +71,51 @@ Crux          = 184220 on self stacks
 Morag Tong    = 34384 on boss
 """
 
+# The example library Settings offers to paste from: (title, what it tells
+# you, the rule line). Every id was seen in the 2026 logs except Morag
+# Tong's, confirmed by the maintainer. The first four are DEFAULT_RULES.
+EXAMPLE_RULES = [
+    ("Off-Balance on the boss",
+     "Share of the fight the boss was off balance, under any of the skills that cause it",
+     "Off-Balance = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss"),
+    ("Touch of Z'en stacks on the boss",
+     "Mean and peak stacks of Z'en's Redress's debuff while it was up",
+     "Touch of Z'en = 126597 on boss stacks"),
+    ("Crux on yourself",
+     "Mean and peak Crux an Arcanist held (the player writing the log)",
+     "Crux = 184220 on self stacks"),
+    ("The Morag Tong on the boss",
+     "Uptime of the Morag Tong set's debuff",
+     "Morag Tong = 34384 on boss"),
+    ("Off-Balance immunity on the boss",
+     "How much of the fight the boss could not be put off balance",
+     "OB immunity = 134599 on boss"),
+    ("Major Vulnerability on the boss",
+     "Uptime under the ids the game uses for it",
+     "Major Vulnerability = 106754 122389 167061 176815 on boss"),
+    ("Minor Vulnerability on the boss",
+     "Uptime under the ids the game uses for it",
+     "Minor Vulnerability = 79717 68359 228115 228118 183271 on boss"),
+    ("Arms of Relequen stacks on the boss",
+     "Mean and peak stacks of the set's debuff",
+     "Relequen = 107203 on boss stacks"),
+    ("Hemorrhaging stacks on enemies",
+     "Mean and peak stacks of the bleed status effect on any hostile",
+     "Hemorrhaging = 148801 on enemies stacks"),
+    ("Major Berserk on yourself",
+     "Uptime of your own Major Berserk, from any source",
+     "Major Berserk = 61745 263306 36973 62195 on self"),
+    ("Minor Berserk on the group",
+     "Uptime on any group member",
+     "Minor Berserk = 61744 on group"),
+    ("Minor Courage on the group",
+     "Uptime on any group member",
+     "Minor Courage = 147417 on group"),
+    ("Major Protection on the group",
+     "Uptime on any group member, a Bull Netch's included",
+     "Major Protection = 61722 on group"),
+]
+
 MERGE_GAP_MS = 50  # an effect refreshed within this is one span
 
 

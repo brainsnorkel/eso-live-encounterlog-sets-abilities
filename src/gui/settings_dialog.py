@@ -165,10 +165,10 @@ class SettingsDialog(QDialog):
         self.rules_status = QLabel("")
         self.rules_status.setWordWrap(True)
         rules_row.addWidget(self.rules_status, 1)
-        self.examples_button = QPushButton("Add examples")
+        self.examples_button = QPushButton("Examples…")
         self.examples_button.setToolTip(
-            "Add the bundled example rules that are not here yet; your own rules stay")
-        self.examples_button.clicked.connect(self._add_examples)
+            "Pick example rules to add to the box, or copy them to share")
+        self.examples_button.clicked.connect(self._pick_examples)
         rules_row.addWidget(self.examples_button)
         tracking_layout.addLayout(rules_row)
         self.rules_edit.textChanged.connect(self._check_rules)
@@ -180,29 +180,31 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _add_examples(self) -> None:
-        """Append the bundled example rules whose names the text does not
-        have yet, and say so; an empty box gets the examples with their
-        comment lines. Nothing of the user's is replaced."""
+    def _pick_examples(self) -> None:
+        """The example picker; its ticked lines go under the user's rules."""
+        from gui.examples_dialog import ExamplesDialog
+        present = [rule.name for rule in parse_rules(self.rules_edit.toPlainText())[0]]
+        dialog = ExamplesDialog(present, self)
+        try:
+            if dialog.exec() == ExamplesDialog.Accepted:
+                self.append_rules(dialog.selected_lines())
+        finally:
+            dialog.deleteLater()  # on the UI thread, as the main window does
+
+    def append_rules(self, lines) -> None:
+        """Append rule lines whose names the box lacks, and say how many."""
+        from gui.examples_dialog import example_lines_to_add
         text = self.rules_edit.toPlainText()
-        if not text.strip():
-            self.rules_edit.setPlainText(DEFAULT_RULES)
+        new = example_lines_to_add(list(lines), text)
+        if not new:
             self._check_rules()
-            self.rules_status.setText("Examples added · " + self.rules_status.text())
+            self.rules_status.setText("Nothing to add · " + self.rules_status.text())
             return
-        have = {rule.name.lower() for rule in parse_rules(text)[0]}
-        missing = [line for line in DEFAULT_RULES.splitlines()
-                   if line.strip() and not line.startswith("#")
-                   and line.split("=", 1)[0].strip().lower() not in have]
-        if not missing:
-            self._check_rules()
-            self.rules_status.setText("The examples are already here · " + self.rules_status.text())
-            return
-        joined = text if text.endswith("\n") else text + "\n"
-        self.rules_edit.setPlainText(joined + "\n".join(missing) + "\n")
+        joined = text if not text.strip() or text.endswith("\n") else text + "\n"
+        self.rules_edit.setPlainText(joined + "\n".join(new) + "\n")
         self._check_rules()
-        noun = "example" if len(missing) == 1 else "examples"
-        self.rules_status.setText(f"{len(missing)} {noun} added · " + self.rules_status.text())
+        noun = "rule" if len(new) == 1 else "rules"
+        self.rules_status.setText(f"{len(new)} {noun} added · " + self.rules_status.text())
 
     def _check_rules(self) -> None:
         """Say how many rules the text holds, and which lines will not parse."""
