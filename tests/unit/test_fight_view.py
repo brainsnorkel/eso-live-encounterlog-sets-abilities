@@ -103,14 +103,14 @@ class TestBarRendering(FightViewTestCase):
         slots[1]['taunt'] = True   # no icon: its name in that color
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links)
         self.assertIn('<img src="icon:ability_test_001?ring=7b1fa2"', html)
-        self.assertIn("<span style='color:#7b1fa2'>Unknown Thing</span>", html)
+        self.assertIn("<span style='color:#7b1fa2;font-weight:bold'>Unknown Thing</span>", html)
         dark = render_html(entry, detailed=True, dark=True, icons=self._cache(), links=_links)
         self.assertIn('<img src="icon:ability_test_001?ring=ce93d8"', dark)
-        self.assertIn("<span style='color:#ce93d8'>Unknown Thing</span>", dark)
+        self.assertIn("<span style='color:#ce93d8;font-weight:bold'>Unknown Thing</span>", dark)
         # Without an icon cache the bar is text, the taunting names colored
         text = render_html(entry, detailed=True, links=_links)
-        self.assertIn("<span style='color:#7b1fa2'>Biting Jabs</span>, "
-                      "<span style='color:#7b1fa2'>Unknown Thing</span>", text)
+        self.assertIn("<span style='color:#7b1fa2;font-weight:bold'>Biting Jabs</span>, "
+                      "<span style='color:#7b1fa2;font-weight:bold'>Unknown Thing</span>", text)
         # Nothing marked: no ring and no color
         plain = render_html(_entry_with_bars(), detailed=True, icons=self._cache(), links=_links)
         self.assertNotIn('?ring=', plain)
@@ -396,6 +396,58 @@ class TestSearchFindsAbilityIcons(FightViewTestCase):
             self.assertEqual(win.fight_view.extraSelections(), [])
         finally:
             win.close()
+
+
+class TestTauntPulse(FightViewTestCase):
+    """The taunt ring pulses (issue #12): the cache draws the ring at phases
+    of a glow, and the view steps the page's ringed icons through them."""
+
+    def test_the_ring_is_wide_outlined_and_brighter_mid_glow(self):
+        cache = self._cache()
+        rest = cache.image('ability_test_001', ring='#7b1fa2')
+        mid = cache.image('ability_test_001', ring='#7b1fa2', phase=0.5)
+        # Dark hairline on the edge, the ring from the next pixel for a
+        # fifth of the icon, the icon untouched inside
+        self.assertLess(rest.pixelColor(0, 0).lightness(), 60)
+        self.assertEqual(rest.pixelColor(1, 1).name(), '#7b1fa2')
+        self.assertEqual(rest.pixelColor(4, 4).name(), '#7b1fa2')
+        self.assertEqual(rest.pixelColor(20, 20).name(), '#ff0000')
+        self.assertEqual(mid.pixelColor(20, 20).name(), '#ff0000')
+        self.assertGreater(mid.pixelColor(1, 1).lightness(), rest.pixelColor(1, 1).lightness())
+        # A full cycle is the resting image again, drawn once
+        self.assertIs(cache.image('ability_test_001', ring='#7b1fa2', phase=1.0), rest)
+        self.assertIs(cache.image('ability_test_001', ring='#7b1fa2', phase=0.5), mid)
+
+    def test_the_view_pulses_only_while_a_ringed_icon_is_on_the_page(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QColor, QImage, QPainter, QTextDocument
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        view.resize(300, 100)
+        view.show()
+        url = QUrl('icon:ability_test_001?ring=7b1fa2')
+        view.setHtml('<p><img src="icon:ability_test_001?ring=7b1fa2" width="40" height="40"></p>')
+        # Laying the page out loads the icon
+        out = QImage(300, 100, QImage.Format_ARGB32)
+        painter = QPainter(out)
+        view.document().drawContents(painter)
+        painter.end()
+        self.assertEqual(list(view._ring_urls), [url.toString()])
+        self.assertTrue(view._pulse.isActive())
+        at_rest = view.document().resource(QTextDocument.ImageResource, url)
+        self.assertEqual(QImage(at_rest).pixelColor(1, 1).name(), '#7b1fa2')
+        # One step on: the page's image for that URL is the brighter one
+        view._pulse_step()
+        stepped = QImage(view.document().resource(QTextDocument.ImageResource, url))
+        self.assertGreater(stepped.pixelColor(1, 1).lightness(), QColor('#7b1fa2').lightness())
+        self.assertEqual(stepped.pixelColor(20, 20).name(), '#ff0000')
+        # A page without a ring stops the pulse
+        view.setHtml('<p>nothing ringed</p>')
+        self.assertEqual(view._ring_urls, {})
+        self.assertFalse(view._pulse.isActive())
+        view._pulse_step()
+        self.assertFalse(view._pulse.isActive())
+        view.close()
 
 
 if __name__ == '__main__':

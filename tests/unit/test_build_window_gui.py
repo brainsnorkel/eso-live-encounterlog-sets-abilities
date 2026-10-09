@@ -435,7 +435,7 @@ class TestBuildRender(BuildGuiTestCase):
         html = self._html(self._with(front_bar_slots=slots,
                                      front_bar=[s['name'] for s in slots]))
         self.assertIn('<img src="icon:ability_weapon_001?ring=7b1fa2" width="36"', html)
-        self.assertIn("<span style='color:#7b1fa2'>Skill 1</span>", html)
+        self.assertIn("<span style='color:#7b1fa2;font-weight:bold'>Skill 1</span>", html)
         self.assertEqual(html.count('?ring='), 1)
         dark = self._html(self._with(front_bar_slots=slots,
                                      front_bar=[s['name'] for s in slots]), dark=True)

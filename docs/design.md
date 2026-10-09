@@ -553,3 +553,29 @@ early, and its fights showed above the new analyzer's.
 *[src/gui/main_window.py:686](../src/gui/main_window.py#L686)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+## Taunt marks that pulse in a text page
+
+### ringed
+
+*[src/gui/icon_cache.py:26](../src/gui/icon_cache.py#L26)*
+
+A copy of *image* with a ring of *color* just inside its edge: about
+an eighth of the icon wide (5 px on the bundled 40 px icons), a dark
+hairline outside it so it reads on any icon art, and a light hairline
+inside. *phase*, 0 to 1 around one glow cycle, brightens the ring from
+the colour itself (0) to a paler, lighter tone (0.5) and back, which the
+fight view steps through to make a taunt mark pulse (issue #12).
+
+### FightView._pulse_step
+
+*[src/gui/fight_view.py:199](../src/gui/fight_view.py#L199)*
+
+Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
+the document asks for an image's resource each time it paints, and
+one set with addResource is taken before loadResource is asked. So
+every ringed icon the page has loaded is redrawn at the next phase
+of the glow (IconCache keeps PULSE_STEPS images per ring colour) and
+the viewport repainted: a few small images and a repaint every
+PULSE_INTERVAL_MS, no layout, so the page never moves. The timer
+runs only while the page holds a ringed icon and the view is shown.

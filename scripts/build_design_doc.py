@@ -90,6 +90,10 @@ TOPICS = [
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",
         "src/gui/main_window.py#Qt objects are freed on the UI thread",
     ]),
+    ("Taunt marks that pulse in a text page", [
+        "src/gui/icon_cache.py:ringed",
+        "src/gui/fight_view.py:FightView._pulse_step",
+    ]),
 ]
 
 

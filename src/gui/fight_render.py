@@ -247,7 +247,7 @@ def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
     if icons is None or not slots:
         if slots and any(_taunt_mark(slot, taunt_color) for slot in slots):
             return _join([
-                f"<span style='color:{taunt_color}'>{e(str(slot.get('name', '')))}</span>"
+                f"<span style='color:{taunt_color};font-weight:bold'>{e(str(slot.get('name', '')))}</span>"
                 if _taunt_mark(slot, taunt_color) else e(str(slot.get("name", "")))
                 for slot in slots])
         return e(_join(names))
@@ -260,7 +260,7 @@ def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
             body = (f'<img src="icon:{stem}{ring}" width="{px}" height="{px}" '
                     f'style="vertical-align:middle">')
         elif mark:
-            body = f"<span style='color:{mark}'>{e(str(slot.get('name', '')))}</span>"
+            body = f"<span style='color:{mark};font-weight:bold'>{e(str(slot.get('name', '')))}</span>"
         else:
             body = e(str(slot.get("name", "")))
         href = e(_ability_href(slot, links), quote=True)

@@ -18,7 +18,7 @@ other; the pane therefore holds both and applies them together.
 
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QUrl, QUrlQuery, Signal
+from PySide6.QtCore import QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
     QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument,
@@ -27,10 +27,11 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
 from gui.fight_render import BUILD_HREF, build_unit_from_href
-from gui.icon_cache import IconCache
+from gui.icon_cache import PULSE_STEPS, IconCache
 
 ICON_SCHEME = "icon"
 _RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in that color
+PULSE_INTERVAL_MS = 150  # a glow cycle is PULSE_STEPS of these: about a breath
 
 
 def _ring_color(url: QUrl) -> Optional[str]:
@@ -59,6 +60,13 @@ class FightView(QTextBrowser):
         self._search_selections: List[QTextEdit.ExtraSelection] = []
         self._hover_selections: List[QTextEdit.ExtraSelection] = []
         self._link_hover_color: Optional[QColor] = None
+        # Taunt marks pulse: the ringed icons on the page are redrawn at the
+        # next glow phase on a timer (see _pulse_step)
+        self._ring_urls: Dict[str, QUrl] = {}
+        self._pulse_phase = 0
+        self._pulse = QTimer(self)
+        self._pulse.setInterval(PULSE_INTERVAL_MS)
+        self._pulse.timeout.connect(self._pulse_step)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
@@ -90,6 +98,10 @@ class FightView(QTextBrowser):
         self._hover_selections = []
         self.hovered_build_link = ""
         self.setExtraSelections([])
+        # The new page asks for its ringed icons afresh (loadResource)
+        self._ring_urls = {}
+        self._pulse_phase = 0
+        self._pulse.stop()
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -174,10 +186,39 @@ class FightView(QTextBrowser):
 
     def loadResource(self, resource_type, name: QUrl):
         if resource_type == QTextDocument.ImageResource and name.scheme() == ICON_SCHEME:
-            image = self.icons.image(name.path(), ring=_ring_color(name))
+            ring = _ring_color(name)
+            image = self.icons.image(name.path(), ring=ring)
             if image is not None:
+                if ring:
+                    self._ring_urls[name.toString()] = QUrl(name)
+                    if not self._pulse.isActive():
+                        self._pulse.start()
                 return image
         return super().loadResource(resource_type, name)
+
+    def _pulse_step(self) -> None:
+        """Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
+        the document asks for an image's resource each time it paints, and
+        one set with addResource is taken before loadResource is asked. So
+        every ringed icon the page has loaded is redrawn at the next phase
+        of the glow (IconCache keeps PULSE_STEPS images per ring colour) and
+        the viewport repainted: a few small images and a repaint every
+        PULSE_INTERVAL_MS, no layout, so the page never moves. The timer
+        runs only while the page holds a ringed icon and the view is shown.
+        """
+        if not self._ring_urls:
+            self._pulse.stop()
+            return
+        if not self.isVisible():
+            return
+        self._pulse_phase = (self._pulse_phase + 1) % PULSE_STEPS
+        document = self.document()
+        for url in self._ring_urls.values():
+            image = self.icons.image(url.path(), ring=_ring_color(url),
+                                     phase=self._pulse_phase / PULSE_STEPS)
+            if image is not None:
+                document.addResource(QTextDocument.ImageResource, url, image)
+        self.viewport().update()
 
     def _on_highlighted(self, url) -> None:
         key = url.toString() if isinstance(url, QUrl) else str(url)
