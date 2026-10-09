@@ -56,6 +56,20 @@ A player who died has a red **☠ Death recap** button on their row (`×2` for t
 
 For each death it names the killing ability and who used it, then lists the last five seconds of damage and healing, oldest first: the time before the death, the health left after each event, the ability with its icon and its source, the amount, and whether the hit was a critical, a DoT tick, blocked, dodged, absorbed by a shield (and which), or a heal. The killing blow shows its overkill.
 
+## Tracking effects of your own
+
+The uptime line's group buffs and taunt are built in. To watch anything else, open Settings → **Tracked effects** and write one rule per line:
+
+```
+Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
+Touch of Z'en = 126597 on boss stacks
+Crux          = 184220 on self stacks
+```
+
+Each rule adds an item to the uptime line of every fight: `Off-Balance:17%` is how much of the fight the boss was off balance under any of those ids, and `Crux:2.1/3` the mean and peak Crux you held. The scope after `on` says whose effects count (`self`, `group`, `pets`, `boss` or `enemies`), and `stacks` asks for the count instead of the uptime. The box tells you how many rules it holds and which lines it cannot read; **Examples** brings the bundled ones back.
+
+The rules are plain text: copy them to a friend, or paste theirs in. A tracker exported from the HyperTools addon works too: paste its `$...` string as a line and its name, ability ids and target become a rule. Save restarts monitoring, so the rules apply to the session's fights at once.
+
 ## The buff timeline (experimental)
 
 Settings → Experimental → **Buff timeline** adds a strip above the fight: one thin row per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was up, with the uptime in the row label and time ticks underneath. A group buff that reached only one or two people is dotted rather than solid. Hover a segment for who cast it and who received it. The strip replaces the text uptime line.

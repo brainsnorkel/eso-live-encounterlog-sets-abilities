@@ -143,12 +143,33 @@ Open **Settings…** from the toolbar.
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall.
 - **Updates**: check GitHub for a newer release at startup and offer to update.
 - **Experimental**: the buff timeline strip, see below.
+- **Tracked effects**: your own additions to the uptime line, as text you can copy to others. One rule per line: `Name = ability ids on self | group | pets | boss | enemies`, then `stacks` for an effect that stacks. `Off-Balance = 45902 62988 39077 on boss` is the share of the fight the boss was off balance under any of those ids; `Crux = 184220 on self stacks` is the mean and peak Crux count you held. A line that starts with `$` is a [HyperTools](https://github.com/Hyperioxes/HyperTools) tracker export, pasted as is. The box says how many rules it holds and which lines it skips; **Examples** restores the bundled ones. See [Tracked effects](#tracked-effects) below.
 
 Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 
 ### Automatic updates
 
 At startup the app checks GitHub for a newer release (Settings → Updates to disable). When one exists you are prompted with **Update now / Later / Skip this version**. Updating downloads the installer with a progress bar, closes the app, and hands over to the installer; settings are kept and the app relaunches when it finishes. Nothing is ever installed without the prompt. On Linux the first button is **Open download page**: it opens the release page, where you download the new tarball.
+
+### Tracked effects
+
+The uptime line's six group buffs and the taunt are built in. Anything else the log carries, you can add yourself in Settings → Tracked effects, and the items appear on the uptime line of every fight, in the fight pane and in copied text, whatever the group size.
+
+```
+# Name = ability ids on <scope> [stacks]
+Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
+Touch of Z'en = 126597 on boss stacks
+Crux          = 184220 on self stacks
+Morag Tong    = 34384 on boss
+```
+
+- A rule matches any of its ids: an effect such as Off-Balance has one id per skill that applies it.
+- The scope says whose effects count: `self` is the player whose client writes the log, `group` any group member, `pets` a group member's pet, `boss` an enemy the game flags as a boss, `enemies` any hostile.
+- `uptime` (the default) is the share of the fight the effect was on at least one unit of the scope, shown as `Off-Balance:17%`. `stacks` is the mean stack count while it was up and the peak, shown as `Crux:2.1/3`.
+- A line that starts with `$` is a tracker exported from the HyperTools addon: its name, ability ids and target become a rule; `stacks` or `on boss` after the string override it.
+- Ability ids are the ones the game logs; an addon such as HyperTools or LuiExtended shows them, as does the hover text of the buff timeline. A rule for an id the log never writes simply reads 0%.
+
+When the experimental timeline strip is on, each rule is a row of it as well, and a stacking effect's bar rises and falls with the count.
 
 ### Experimental: buff timeline
 
@@ -174,6 +195,7 @@ The [design notes](docs/design.md), collected from the code itself, go into each
 - **Gear sets**: item set ids are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database.
 - **Gear detail, mundus and food**: the same `PLAYER_INFO` line lists each equipped item with its trait, quality and enchant, and the player's long-term effects, among them the mundus boon and the food buff. A slotted poison is logged as an item id, named through UESP's item database; food is recognised by the buff list of the LibFoodDrinkBuff addon. The log does not say how heavy an armor piece is, so its item id is looked up in a table of every light, medium and heavy piece, also from UESP's item database.
 - **Ability icons**: the log names each ability's icon file, and the app ships those icons extracted from the game (see [Refreshing game data](#refreshing-game-data-after-an-eso-patch)).
+- **Tracked effects**: every buff and debuff is an `EFFECT_CHANGED` line naming the ability, the target and the stack count; a rule's uptime is the union of its ids' spans over the units of its scope, and its stacks the highest count among them, averaged over the time it was up.
 - **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills. The grimoire is read from the skill's icon.
 - **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page, a scribed skill and its scripts to their scribing pages.
 - **Roles**: the largest resource pool decides. Health is a tank and stamina a DPS. A player whose largest pool is magicka is a healer when a restoration staff is equipped on either bar, or when they healed other players for more than the damage they dealt in that fight; otherwise a DPS. The log does not name weapon types, so the staff is recognised by its item id, from UESP's item database. When all three pools are within 10% of each other, taunt and heal abilities on the bars decide instead.

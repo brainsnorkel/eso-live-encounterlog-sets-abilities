@@ -25,6 +25,7 @@ from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStat
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
+from effect_rules import EffectTracker
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
 
@@ -234,6 +235,9 @@ class PlayerInfo:
         # boon, food, passives), for the build window
         self.long_term_effects: List[str] = []
         self.race_id: str = ""  # from UNIT_ADDED
+        # The game's isLocalPlayer flag on UNIT_ADDED: the player whose
+        # client writes the log (the "self" scope of effect_rules)
+        self.is_local: bool = False
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()
 
@@ -878,6 +882,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # Gated by experimental.buff_timeline; nothing is recorded when off.
         self.track_buff_timeline = False
         self.buff_timeline_recorder = BuffTimelineRecorder()
+        # The user's tracked effects (effect_rules); build_analyzer sets the
+        # rules from the config, an empty tracker records nothing
+        self.effect_tracker = EffectTracker([])
 
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
@@ -1234,6 +1241,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     added_player = self.current_encounter.players.get(unit_id)
                     if added_player is not None:
                         added_player.race_id = race_id
+                        added_player.is_local = len(entry.fields) > 2 and entry.fields[2] == "T"
                     
                     # Associate the long unit ID with the player
                     if long_unit_id and long_unit_id != "0":
@@ -1714,6 +1722,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
         # Relative-ms offsets restart with each BEGIN_LOG session
         self.buff_timeline_recorder.reset()
+        self.effect_tracker.reset()
         self.death_recap_recorder.reset()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
@@ -2171,6 +2180,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     effect_type, ability_id, source_unit_id, target_unit_id,
                     entry.timestamp)
 
+            # The user's tracked effects: any id, judged by the target's kind
+            if self.effect_tracker and extracted is not None:
+                self.effect_tracker.record(
+                    effect_type, ability_id, target_unit_id, stack_count,
+                    entry.timestamp, self._unit_kind(target_unit_id))
+
             # Taunts: the Taunt debuff coming and going on an enemy
             if ability_id == TAUNT_EFFECT_ID and self.current_encounter:
                 extracted = extract_effect_fields(entry.fields)
@@ -2288,6 +2303,24 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._last_fight_start = self.current_encounter.start_time
                 self._notify('on_fight_updated' if resumed is not None
                              else 'on_fight_completed', fight_entry)
+
+    def _unit_kind(self, unit_id: str) -> Optional[str]:
+        """What the encounter knows a unit to be, for effect_rules scopes:
+        'self' (the player writing the log), 'group' (another player),
+        'pet' (a group member's pet), 'boss' (a hostile the game flags as a
+        boss), 'enemy' (any other hostile), or None."""
+        enc = self.current_encounter
+        if enc is None:
+            return None
+        player = enc.players.get(unit_id)
+        if player is not None:
+            return "self" if player.is_local else "group"
+        if unit_id in enc.pet_ownership:
+            return "pet"
+        enemy = enc.enemies.get(unit_id)
+        if enemy is not None and enemy.is_hostile:
+            return "boss" if enemy.is_boss else "enemy"
+        return None
 
     def _resolve_timeline_name(self, unit_id: str) -> str:
         """Display name for a timeline unit: player handle, enemy name, or id."""
@@ -2489,7 +2522,17 @@ class ESOLogAnalyzer(ListenerMixin):
         if taunt_uptime is not None and (len(enc.players) >= 3
                                          or any(enc.player_taunts.values())):
             buff_parts.append(f"Taunt:{taunt_uptime:.0f}%")
+        # The user's tracked effects follow the built-in ones, whatever the
+        # group size (a rule can be about the logging player alone)
+        entry.tracked = (self.effect_tracker.snapshot(
+            enc.start_time, enc.end_time, self._resolve_timeline_name)
+            if self.effect_tracker else [])
+        buff_parts.extend(item["text"] for item in entry.tracked)
         entry.buff_summary = " ".join(buff_parts)
+        if entry.tracked:
+            # Not before the end: this fight's spans are needed once more
+            # if it turns out to carry on (see COMBAT_RESUME_MS)
+            self.effect_tracker.prune_before(enc.start_time)
 
         if enc.trial_info and enc.trial_info.get('completed'):
             trial = enc.trial_info

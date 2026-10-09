@@ -4,12 +4,19 @@ the experimental buff timeline."""
 import sys
 from pathlib import Path
 
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox,
+    QVBoxLayout,
 )
 
 from app_config import AppConfig
+from effect_rules import DEFAULT_RULES, parse_rules
+
+RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
+              "then stacks for a stacking effect. A line that starts with $ is a HyperTools "
+              "tracker export. Copy these lines to share them.")
 
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
@@ -141,13 +148,51 @@ class SettingsDialog(QDialog):
         experimental_form.addRow(self.buff_timeline)
         layout.addWidget(experimental_group)
 
+        # Tracked effects: the rule text, with its parse result underneath
+        tracking_group = QGroupBox("Tracked effects (added to the uptime line)")
+        tracking_layout = QVBoxLayout(tracking_group)
+        help_label = QLabel(RULES_HELP)
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: #888; font-size: 11px;")
+        tracking_layout.addWidget(help_label)
+        self.rules_edit = QPlainTextEdit()
+        self.rules_edit.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.rules_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.rules_edit.setPlainText(config.get("tracking.rules", DEFAULT_RULES) or "")
+        self.rules_edit.setMinimumHeight(120)
+        tracking_layout.addWidget(self.rules_edit)
+        rules_row = QHBoxLayout()
+        self.rules_status = QLabel("")
+        self.rules_status.setWordWrap(True)
+        rules_row.addWidget(self.rules_status, 1)
+        examples = QPushButton("Examples")
+        examples.setToolTip("Replace the rules with the bundled examples")
+        examples.clicked.connect(lambda: self.rules_edit.setPlainText(DEFAULT_RULES))
+        rules_row.addWidget(examples)
+        tracking_layout.addLayout(rules_row)
+        self.rules_edit.textChanged.connect(self._check_rules)
+        self._check_rules()
+        layout.addWidget(tracking_group)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _check_rules(self) -> None:
+        """Say how many rules the text holds, and which lines will not parse."""
+        rules, errors = parse_rules(self.rules_edit.toPlainText())
+        count = f"{len(rules)} rule{'s' if len(rules) != 1 else ''}"
+        if errors:
+            self.rules_status.setStyleSheet("color: #d98a3d; font-size: 11px;")
+            self.rules_status.setText(f"{count}; skipped: " + "; ".join(errors))
+        else:
+            self.rules_status.setStyleSheet("color: #888; font-size: 11px;")
+            self.rules_status.setText(count)
+
     def apply_to_config(self) -> None:
         """Write the dialog values into the config (caller persists)."""
+        self.config.set("tracking.rules", self.rules_edit.toPlainText())
         self.config.set("log_path", self.log_row.value())
         self.config.set("split.enabled", self.split_enabled.isChecked())
         self.config.set("split.dir", self.split_dir.value())

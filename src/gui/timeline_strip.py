@@ -43,6 +43,12 @@ EFFECT_SHORT = {
 # Effects whose normal case is a single receiver (never rendered dotted)
 SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 
+# The user's tracked effects (effect_rules) get rows after the built-in
+# ones, coloured in turn from this list; a stacking rule's bar is drawn with
+# a height that follows the stack count over the fight's peak
+TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
+                  QColor("#a1887f"), QColor("#90a4ae"), QColor("#ffb74d")]
+
 # A group buff reaching at most this many distinct receivers renders dotted
 SPARSE_RECEIVER_LIMIT = 2
 
@@ -95,16 +101,20 @@ class TimelineStrip(QWidget):
         self._timeline = None
         self._rows = []       # ordered effect names present in the timeline
         self._row_info = {}   # effect -> {'uptime_pct': int, 'dotted': bool}
+        self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
         self.setVisible(False)
 
     # ---- data ----
 
-    def set_timeline(self, timeline) -> None:
-        """timeline: {'duration_ms', 'effects': {...}} or None to hide."""
-        valid = bool(timeline and timeline.get("effects")
-                     and timeline.get("duration_ms", 0) > 0)
+    def set_timeline(self, timeline, tracked=None) -> None:
+        """timeline: {'duration_ms', 'effects': {...}} or None to hide.
+        tracked: the fight's tracked effects (FightHistoryEntry.tracked),
+        rows after the built-in ones; a rule that never occurred has none."""
+        valid = bool(timeline and timeline.get("duration_ms", 0) > 0
+                     and (timeline.get("effects") or tracked))
         self._timeline = timeline if valid else None
-        self._rows = ([e for e in EFFECT_ORDER if e in timeline["effects"]]
+        self._tracked = {}
+        self._rows = ([e for e in EFFECT_ORDER if e in (timeline.get("effects") or {})]
                       if valid else [])
         self._row_info = {}
         if valid:
@@ -117,9 +127,28 @@ class TimelineStrip(QWidget):
                     "dotted": (effect not in SINGLE_TARGET_EFFECTS
                                and len(receivers) <= SPARSE_RECEIVER_LIMIT),
                 }
+            for index, item in enumerate(tracked or []):
+                name = item.get("name")
+                if not name or not item.get("intervals") or name in self._row_info:
+                    continue
+                self._tracked[name] = item
+                self._rows.append(name)
+                self._row_info[name] = {
+                    "uptime_pct": int(round(item.get("uptime_pct", 0))),
+                    "dotted": False,
+                    "label": item.get("text", name),
+                    "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
+                    "stacks_max": (item.get("max_stacks") or 0) if item.get("kind") == "stacks" else 0,
+                }
         self.setVisible(bool(self._rows))
         self.updateGeometry()
         self.update()
+
+    def _intervals(self, effect):
+        """The intervals of a row, built-in or tracked."""
+        if effect in self._tracked:
+            return self._tracked[effect]["intervals"]
+        return self._timeline["effects"][effect]
 
     # ---- geometry ----
 
@@ -180,27 +209,33 @@ class TimelineStrip(QWidget):
         painter.setFont(small)
 
         duration = self._timeline["duration_ms"]
-        effects = self._timeline["effects"]
 
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
             info = self._row_info.get(effect, {})
-            # Label with uptime %
+            # Label with uptime % (a tracked rule shows its uptime-line text)
             painter.setPen(dim)
-            label = (f"{EFFECT_SHORT.get(effect, effect)} "
-                     f"{info.get('uptime_pct', 0)}%")
+            label = info.get("label") or (f"{EFFECT_SHORT.get(effect, effect)} "
+                                          f"{info.get('uptime_pct', 0)}%")
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter, label)
             # Track background
             painter.fillRect(rect, track_bg)
-            # Fill segments (dotted when the buff reached <=2 receivers)
-            color = EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
+            # Fill segments (dotted when the buff reached <=2 receivers; a
+            # stacking rule's bar as high as its count over the peak)
+            color = info.get("color") or EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
             dotted = info.get("dotted", False)
-            for interval in effects[effect]:
+            stacks_max = info.get("stacks_max", 0)
+            for interval in self._intervals(effect):
                 x0 = self._x_for_ms(interval["start_ms"])
                 x1 = self._x_for_ms(interval["end_ms"])
-                if dotted:
+                if stacks_max:
+                    level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
+                    height = max(2.0, rect.height() * level / stacks_max)
+                    painter.fillRect(QRectF(x0, rect.bottom() - height,
+                                            max(1.0, x1 - x0), height), color)
+                elif dotted:
                     pen = QPen(color, max(2.0, ROW_HEIGHT - 4.0),
                                Qt.DotLine, Qt.FlatCap)
                     painter.setPen(pen)
@@ -244,7 +279,7 @@ class TimelineStrip(QWidget):
                 ms = self._ms_for_x(pos.x())
                 if ms is None:
                     return None
-                hits = [iv for iv in self._timeline["effects"][effect]
+                hits = [iv for iv in self._intervals(effect)
                         if iv["start_ms"] <= ms <= iv["end_ms"]]
                 return effect, ms, hits
         return None
@@ -260,9 +295,12 @@ class TimelineStrip(QWidget):
                     lines = [f"<b>{effect}</b> @ {_fmt_tick(ms)}"
                              f" &nbsp;·&nbsp; uptime {info.get('uptime_pct', 0)}%"]
                     for iv in hits:
+                        who = (f"{iv['source']} → {iv['target']}" if iv.get("source")
+                               else f"on {iv.get('target', '')}")
+                        stacks = f" &nbsp; ×{iv['stacks']}" if iv.get("stacks") and effect in self._tracked else ""
                         lines.append(
                             f"{_fmt_tick(iv['start_ms'])}–{_fmt_tick(iv['end_ms'])}"
-                            f" &nbsp; {iv['source']} → {iv['target']}")
+                            f" &nbsp; {who}{stacks}")
                     QToolTip.showText(ev.globalPos(), "<br>".join(lines), self)
                     return True
             QToolTip.hideText()

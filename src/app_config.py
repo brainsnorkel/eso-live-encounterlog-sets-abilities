@@ -12,6 +12,8 @@ from typing import Any, Optional
 
 import platformdirs
 
+from effect_rules import DEFAULT_RULES
+
 APP_NAME = "esolog-tail"
 
 DEFAULTS = {
@@ -31,6 +33,9 @@ DEFAULTS = {
     },
     "experimental": {
         "buff_timeline": False,  # compact per-fight buff/debuff timeline strip
+    },
+    "tracking": {
+        "rules": DEFAULT_RULES,  # tracked effects, one rule per line (effect_rules)
     },
     "update": {
         "check_enabled": True,   # check GitHub releases at startup

@@ -69,6 +69,10 @@ TOPICS = [
         "src/esolog_tail.py:CombatEncounter.track_buff",
         "src/esolog_tail.py:CombatEncounter.get_group_buff_uptime",
     ]),
+    ("Tracked effects: rules anyone can paste", [
+        "src/effect_rules.py",
+        "src/effect_rules.py:EffectTracker",
+    ]),
     ("Taunts", [
         "src/esolog_tail.py#Taunts",
         "src/esolog_tail.py:CombatEncounter.track_taunt",

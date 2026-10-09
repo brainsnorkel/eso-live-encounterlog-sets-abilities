@@ -12,7 +12,7 @@ class FightHistoryEntry:
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
                  'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
-                 'death_recaps']
+                 'death_recaps', 'tracked']
 
     def __init__(self):
         self.timestamp = ""
@@ -39,6 +39,11 @@ class FightHistoryEntry:
         # max_health, and events: the last seconds before the death, oldest
         # first (see death_recap.py for the row keys)
         self.death_recaps = []
+        # The user's tracked effects for this fight, one dict per rule in
+        # rule order: name, scope, kind, uptime_pct, avg_stacks, max_stacks,
+        # text (the uptime line's item) and intervals (see
+        # effect_rules.EffectTracker.snapshot); [] when there are no rules
+        self.tracked = []
 
 
 class FightHistory:

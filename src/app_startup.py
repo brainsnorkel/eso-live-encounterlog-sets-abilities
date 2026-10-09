@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from app_config import AppConfig
+from effect_rules import DEFAULT_RULES, EffectTracker, parse_rules
 from engine_events import AnalyzerListener
 from esolog_tail import ESOLogAnalyzer, LogFileMonitor, _find_eso_log_file
 from fight_history import FightHistory
@@ -41,6 +42,10 @@ def build_analyzer(config: AppConfig,
     analyzer = ESOLogAnalyzer()
     analyzer.track_buff_timeline = bool(
         config.get("experimental.buff_timeline", False))
+    # The user's tracked effects; a line that will not parse is skipped
+    # here and reported in Settings
+    rules, _errors = parse_rules(config.get("tracking.rules", DEFAULT_RULES) or "")
+    analyzer.effect_tracker = EffectTracker(rules)
     analyzer.fight_history = FightHistory()
     for listener in listeners:
         analyzer.add_listener(listener)

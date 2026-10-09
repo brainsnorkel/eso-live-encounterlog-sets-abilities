@@ -192,5 +192,70 @@ class TestSettingsToggle(unittest.TestCase):
             dialog.deleteLater()
 
 
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestTrackedRows(unittest.TestCase):
+    """Rows for the user's tracked effects (effect_rules), after the built-in ones."""
+
+    def setUp(self):
+        _ensure_app()
+        from gui.timeline_strip import TimelineStrip
+        self.strip = TimelineStrip()
+        self.strip.resize(600, 100)
+
+    def tearDown(self):
+        self.strip.deleteLater()
+
+    def test_tracked_effects_are_rows_after_the_built_in_ones(self):
+        tracked = [
+            {"name": "Crux", "kind": "stacks", "text": "Crux:2.0/3", "uptime_pct": 75.0,
+             "max_stacks": 3, "intervals": [
+                 {"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me"},
+                 {"start_ms": 20_000, "end_ms": 40_000, "stacks": 3, "target": "@me"}]},
+            {"name": "Never", "kind": "uptime", "text": "Never:0%", "uptime_pct": 0.0,
+             "max_stacks": 0, "intervals": []},
+            {"name": "OB", "kind": "uptime", "text": "OB:17%", "uptime_pct": 16.7,
+             "max_stacks": 0, "intervals": [
+                 {"start_ms": 30_000, "end_ms": 40_000, "stacks": 1, "target": "Test Boss"}]},
+        ]
+        self.strip.set_timeline(_sample_timeline(), tracked)
+        # A rule that never occurred has no row, as for a built-in effect
+        self.assertEqual(self.strip._rows, ["Major Force", "Major Vulnerability", "Crux", "OB"])
+        self.assertEqual(self.strip._row_info["Crux"]["label"], "Crux:2.0/3")
+        self.assertEqual(self.strip._row_info["OB"]["uptime_pct"], 17)
+        # Hover on a tracked row names the unit and the stacks
+        found = self.strip._intervals_at(self.strip._row_rect(2).center())
+        self.assertEqual(found[0], "Crux")
+        self.assertEqual([iv["stacks"] for iv in found[2]], [3])
+
+    def test_a_stacking_rule_is_drawn_by_height(self):
+        from gui.timeline_strip import TRACKED_COLORS
+        tracked = [{"name": "Crux", "kind": "stacks", "text": "Crux:2.0/3", "uptime_pct": 100.0,
+                    "max_stacks": 3, "intervals": [
+                        {"start_ms": 0, "end_ms": 30_000, "stacks": 1, "target": "@me"},
+                        {"start_ms": 30_000, "end_ms": 60_000, "stacks": 3, "target": "@me"}]}]
+        self.strip.set_timeline(_sample_timeline(), tracked)
+        self.strip.show()
+        image = self.strip.grab().toImage()
+        rect = self.strip._row_rect(2)
+        color = TRACKED_COLORS[0].rgb()
+
+        def filled_height(ms):
+            x = int(self.strip._x_for_ms(ms))
+            return sum(1 for y in range(int(rect.top()), int(rect.bottom()) + 1)
+                       if image.pixel(x, y) == color)
+
+        one, three = filled_height(15_000), filled_height(45_000)
+        self.assertEqual(three, int(rect.height()))
+        self.assertTrue(2 <= one <= three // 2, (one, three))
+
+    def test_tracked_rows_alone_need_the_timeline_on(self):
+        tracked = [{"name": "OB", "kind": "uptime", "text": "OB:17%", "uptime_pct": 16.7,
+                    "max_stacks": 0, "intervals": [{"start_ms": 0, "end_ms": 10, "stacks": 1, "target": "x"}]}]
+        self.strip.set_timeline(None, tracked)
+        self.assertEqual(self.strip._rows, [])
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
+        self.assertEqual(self.strip._rows, ["OB"])
+
+
 if __name__ == '__main__':
     unittest.main()

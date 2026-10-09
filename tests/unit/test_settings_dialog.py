@@ -58,6 +58,20 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         finally:
             gc.enable()
 
+    def test_tracked_effect_rules_are_checked_as_typed_and_saved(self):
+        from gui.settings_dialog import SettingsDialog
+        from effect_rules import DEFAULT_RULES
+        dialog = SettingsDialog(self.config)
+        # A fresh config shows the bundled examples, all of which parse
+        self.assertEqual(dialog.rules_edit.toPlainText(), DEFAULT_RULES)
+        self.assertEqual(dialog.rules_status.text(), "4 rules")
+        dialog.rules_edit.setPlainText("Crux = 184220 on self stacks\nBad = 1 on mobs\n")
+        self.assertTrue(dialog.rules_status.text().startswith("1 rule; skipped: line 2:"))
+        dialog.apply_to_config()
+        self.assertEqual(self.config.get("tracking.rules"), "Crux = 184220 on self stacks\nBad = 1 on mobs\n")
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
     def test_a_path_rows_browse_dialog_belongs_to_the_settings_window(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)

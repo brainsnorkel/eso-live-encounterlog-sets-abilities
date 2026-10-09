@@ -525,7 +525,8 @@ class MainWindow(QMainWindow):
         self._follow_live = (self._review_fights is None
                              and row == len(fights) - 1)
         entry = fights[row]
-        self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None))
+        self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None),
+                                         getattr(entry, 'tracked', None))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each

@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Tracked effects** (#10): Settings → Tracked effects takes rules of your own, one per line, `Name = ability ids on self | group | pets | boss | enemies`, with `stacks` for an effect that stacks, and each rule adds an item to the uptime line of every fight, in the fight pane and in copied text, whatever the group size: `Off-Balance:17%` for the share of the fight the boss was off balance under any of the rule's ids, `Crux:2.1/3` for the mean and peak count held. The rules are plain text to share by copy and paste, and a tracker exported from the HyperTools addon can be pasted as a line as it is. A fresh install starts with four examples (Off-Balance on the boss, Touch of Z'en stacks on the boss, Crux stacks on yourself, Morag Tong on the boss), and the box says how many rules it holds and which lines it skips. When the experimental timeline strip is on, each rule is a row of it, a stacking effect's bar rising with the count. Checked on nine trial and dungeon logs of 2026: Off-Balance on a trial boss reads 4 to 28% per fight, Crux 1 to 3 on the Arcanist
+
 ## [0.7.1] - 2026-10-09
 
 ### Changed
