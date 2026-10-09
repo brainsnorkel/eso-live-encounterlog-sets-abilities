@@ -278,10 +278,6 @@ class TimelineStrip(QWidget):
                              Qt.AlignHCenter | Qt.AlignTop, _fmt_tick(ms))
             ms += step
 
-        # Experimental marking, unobtrusive
-        painter.setPen(dim)
-        painter.drawText(QRectF(track.right() - 90, 0, 90, MARGIN + ROW_HEIGHT),
-                         Qt.AlignRight | Qt.AlignTop, "experimental")
         painter.end()
 
     # ---- labels ----
