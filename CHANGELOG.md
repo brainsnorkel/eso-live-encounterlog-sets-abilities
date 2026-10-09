@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.9.1] - 2026-10-10
 
 ### Changed
 - **The timeline strip no longer says "experimental"**: the word painted in the strip's top-right corner is gone. The strip and its setting are otherwise unchanged
