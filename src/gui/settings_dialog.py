@@ -169,8 +169,10 @@ class SettingsDialog(QDialog):
         self._check_rules()
         # The strip (the config key keeps its original name)
         self.buff_timeline = QCheckBox(
-            "Show these as a per-fight timeline strip in place of the uptime line; "
-            "hover a segment for who cast it and who received it")
+            "Show these as a per-fight timeline strip in place of the uptime line")
+        self.buff_timeline.setToolTip(
+            "One row per effect across the fight; hover a segment of the strip for "
+            "who cast the effect and who received it")
         self.buff_timeline.setChecked(
             bool(config.get("experimental.buff_timeline", False)))
         tracking_layout.addWidget(self.buff_timeline)

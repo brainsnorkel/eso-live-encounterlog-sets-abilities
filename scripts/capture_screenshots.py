@@ -167,6 +167,10 @@ def main():
     # Settings, and the example-rules picker it opens
     dialog = SettingsDialog(win.config, win)
     dialog.show()
+    # No window manager offscreen: the dialog opens at its minimum height,
+    # which undercounts the wrapped help text, and adjustSize() would cap
+    # it at the 800 px virtual screen. Its size hint is the honest height
+    dialog.resize(720, dialog.sizeHint().height())
     pump(1)
     save(dialog, "settings.png")
     from effect_rules import parse_rules
