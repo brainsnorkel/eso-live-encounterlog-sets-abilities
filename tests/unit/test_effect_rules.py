@@ -51,7 +51,7 @@ class TestRuleText(unittest.TestCase):
     def test_the_bundled_examples_parse(self):
         rules, errors = parse_rules(DEFAULT_RULES)
         self.assertEqual(errors, [])
-        self.assertEqual([r.name for r in rules], ["Off-Balance", "Touch of Z'en", "Crux", "Morag Tong"])
+        self.assertEqual([r.name for r in rules], ["Off-Balance", "Touch of Z'en", "Crux"])
         self.assertIn("45902", rules[0].ids)
         self.assertEqual((rules[2].scope, rules[2].kind), ("self", "stacks"))
 

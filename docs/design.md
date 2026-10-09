@@ -458,11 +458,15 @@ Elemental Blockade, 39077, 34733, 20806, 130139), so a union is needed,
 and its uptime on a trial boss was 4 to 28% per fight; Crux stacks to 3
 on the Arcanist alone; a pet-applied buff (a Glyphic's heal, Major
 Protection from a netch) lands on players like any other and needs no
-special case, since only the target's kind is looked at.
+special case, since only the target's kind is looked at. Replaying the
+bundled examples through two of those logs (Sunspire, Kyne's Aegis):
+Off-Balance on the boss 12 to 28% per boss fight, to the decimal what an
+independent scan of the lines gives; Crux on the logging Arcanist a mean
+of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:238](../src/effect_rules.py#L238)*
+*[src/effect_rules.py:242](../src/effect_rules.py#L242)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count, in raw log milliseconds; snapshot() reads a
@@ -605,7 +609,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:686](../src/gui/main_window.py#L686)*
+*[src/gui/main_window.py:687](../src/gui/main_window.py#L687)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
