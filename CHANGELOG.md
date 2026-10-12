@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.10.0] - 2026-10-12
 
 ### Added
 - **Boss DPS beside total DPS**: in a fight with a boss, each player's row and the fight header read `boss / total`, for example `34.3k / 39.5k`: the damage dealt to the units the game flags as bosses, then all damage dealt. A fight without a boss keeps the single total. The game's flag is reliable in dungeons and trials (both Z'Maja and her Shade, both Lucent Citadel twins); the Infinite Archive's arc bosses carry no flag, so those fights show the total alone
