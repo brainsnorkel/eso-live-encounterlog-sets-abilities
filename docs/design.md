@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1810](../src/esolog_tail.py#L1810)*
+*[src/esolog_tail.py:1830](../src/esolog_tail.py#L1830)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the experimental timeline, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1291](../src/esolog_tail.py#L1291)*
+*[src/esolog_tail.py:1311](../src/esolog_tail.py#L1311)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1306](../src/esolog_tail.py#L1306)*
+*[src/esolog_tail.py:1326](../src/esolog_tail.py#L1326)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2861](../src/esolog_tail.py#L2861)*
+*[src/esolog_tail.py:2885](../src/esolog_tail.py#L2885)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:302](../src/esolog_tail.py#L302)*
+*[src/esolog_tail.py:320](../src/esolog_tail.py#L320)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -524,7 +524,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:565](../src/esolog_tail.py#L565)*
+*[src/esolog_tail.py:585](../src/esolog_tail.py#L585)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -537,7 +537,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:74](../src/app_config.py#L74)*
+*[src/app_config.py:78](../src/app_config.py#L78)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -557,18 +557,26 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
+*[src/esolog_tail.py:370](../src/esolog_tail.py#L370)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
 slot has, the slot that shares its icon (Destructive Clench taunts as
 Frost Clench, a separate id with the same icon).
 
+## What counts as damage
+
+### What counts as damage
+
+*[src/esolog_tail.py:92](../src/esolog_tail.py#L92)*
+
+A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
+
 ## Pets: whose damage and healing they are
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:430](../src/esolog_tail.py#L430)*
+*[src/esolog_tail.py:453](../src/esolog_tail.py#L453)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -591,13 +599,14 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:521](../src/esolog_tail.py#L521)*
+*[src/esolog_tail.py:544](../src/esolog_tail.py#L544)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
 track_pet_ownership). Damage from a unit that is neither is
 counted for nobody: a boss's summons, trial mechanics that hit
-other enemies, and the like.
+other enemies, and the like. *to_boss* says the target is a unit
+the game flags as a boss, so the hit also counts as boss damage.
 
 ## Death recaps
 
@@ -655,7 +664,7 @@ Engine modules never import Qt; this adapter is the only crossing point.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:386](../src/gui/main_window.py#L386)*
+*[src/gui/main_window.py:424](../src/gui/main_window.py#L424)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -665,7 +674,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:687](../src/gui/main_window.py#L687)*
+*[src/gui/main_window.py:725](../src/gui/main_window.py#L725)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

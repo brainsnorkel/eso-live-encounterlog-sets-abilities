@@ -144,6 +144,20 @@ def _fmt_resource(value) -> str:
     return f"{v / 1000:.1f}k" if v else "-"
 
 
+def _dps_text(p, boss_fight: bool) -> str:
+    """A player's dps cell: 'boss / total' in a fight with a boss, the
+    total alone in one without (there, boss dps would read 0 for all)."""
+    total = _fmt_dps(float(p.get("dps") or 0))
+    if not boss_fight:
+        return total
+    return f"{_fmt_dps(float(p.get('boss_dps') or 0))} / {total}"
+
+
+def _is_boss_fight(entry) -> bool:
+    """Whether the group dealt any damage to a unit the game flags as a boss."""
+    return float(getattr(entry, "group_boss_dps", 0) or 0) > 0
+
+
 def _resources_html(p) -> str:
     """'H 23.3k · M 14.9k · S 27.6k' with the largest pool in bold."""
     pools = [("H", p.get("h")), ("M", p.get("m")), ("S", p.get("s"))]
@@ -446,9 +460,14 @@ def render_html(entry, detailed: bool, dark: bool = False,
         title = f"{zone}{vet}"
         subline_zone = ""
     # Fight stats sit to the right of the boss name on the same line, in the
-    # pane's normal size and weight: duration · gdps · zone · timestamp · deaths
+    # pane's normal size and weight: duration · gdps · zone · timestamp · deaths.
+    # Dps figures read 'boss / total' in a fight with a boss, like the rows
+    boss_fight = _is_boss_fight(entry)
+    gdps = _fmt_dps(entry.group_dps)
+    if boss_fight:
+        gdps = f"{_fmt_dps(entry.group_boss_dps)} / {gdps}"
     stats = (f"{_fmt_duration(entry.duration_s)}"
-             f" · {_fmt_dps(entry.group_dps)} gdps"
+             f" · {gdps} gdps"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
              f" · Deaths {entry.deaths}")
@@ -491,7 +510,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # from another class
         subclass = _subclass_text(p)
         subclass_html = f" <span style='color:{muted}'>{e(subclass)}</span>" if subclass else ""
-        dps = _fmt_dps(float(p.get("dps") or 0))
+        dps = _dps_text(p, boss_fight)
         pct = float(p.get("dmg_pct") or 0)
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
@@ -581,9 +600,10 @@ def render_plain_text(entry) -> str:
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
     first_dealer = str(entry.first_damage_dealer or "")
+    boss_fight = _is_boss_fight(entry)
     for p in entry.players:
         role = p.get("role") or "D"
-        dps = _fmt_dps(float(p.get("dps") or 0))
+        dps = _dps_text(p, boss_fight)
         pct = float(p.get("dmg_pct") or 0)
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")

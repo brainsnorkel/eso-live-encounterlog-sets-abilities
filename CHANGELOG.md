@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Boss DPS beside total DPS**: in a fight with a boss, each player's row and the fight header read `boss / total`, for example `34.3k / 39.5k`: the damage dealt to the units the game flags as bosses, then all damage dealt. A fight without a boss keeps the single total. The game's flag is reliable in dungeons and trials (both Z'Maja and her Shade, both Lucent Citadel twins); the Infinite Archive's arc bosses carry no flag, so those fights show the total alone
+
+### Fixed
+- **DPS counted only direct hits**: damage-over-time ticks, what got through a block and what an enemy's damage shield absorbed were never summed, so every DPS figure the app showed was low. Measured on 29 of the maintainer's split logs (990 dungeon and arena fights, 34 trial fights), the ticks were 26% of all damage dealt, and the top player's DPS in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. The six results Combat Metrics sums now count; hits the target was immune to, reflects and overkill still do not. The figures now agree with Combat Metrics and ESO Logs in what they count
+
 ## [0.9.2] - 2026-10-12
 
 ### Added

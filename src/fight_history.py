@@ -10,7 +10,7 @@ cursor-navigable collection of those summaries.
 class FightHistoryEntry:
     """Compact summary of a completed fight for frontend display."""
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
-                 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
+                 'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked']
 
@@ -21,8 +21,11 @@ class FightHistoryEntry:
         self.is_vet = False
         self.duration_s = 0.0
         self.group_dps = 0.0
+        # The group's dps against the units the game flags as bosses (0 in
+        # a fight without one); each player's share is their 'boss_dps'
+        self.group_boss_dps = 0.0
         self.deaths = 0
-        # dicts with keys: role, name, class_abbr, dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar,
+        # dicts with keys: role, name, class_abbr, dps, boss_dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar,
         # front_bar_slots, back_bar_slots (a slot the player taunted with carries 'taunt': True),
         # taunts (the abilities they taunted with, see ESOLogAnalyzer._taunts_of),
         # and for the build window: character, race, gear, mundus, food (see player_build.build_fields)

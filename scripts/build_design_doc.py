@@ -76,6 +76,9 @@ TOPICS = [
         "src/esolog_tail.py#Taunts",
         "src/esolog_tail.py:mark_taunt_slots",
     ]),
+    ("What counts as damage", [
+        "src/esolog_tail.py#What counts as damage",
+    ]),
     ("Pets: whose damage and healing they are", [
         "src/esolog_tail.py:CombatEncounter.track_pet_ownership",
         "src/esolog_tail.py:CombatEncounter.add_damage_to_player",
