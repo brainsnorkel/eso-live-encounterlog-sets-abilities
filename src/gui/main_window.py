@@ -3,11 +3,12 @@ Main window: live fight view, session fight history, review mode,
 settings, manual archive, and the freshness status bar.
 """
 
+import base64
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QByteArray, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence, QPalette,
     QShortcut, QTextCharFormat, QTextCursor,
@@ -52,6 +53,21 @@ HAS_INSTALLER = sys.platform == "win32"
 def state_style(state: str, dark: bool) -> str:
     color = _STATE_COLORS[bool(dark)].get(state)
     return f"color: {color};" if color else ""
+
+
+def _encode_state(state: QByteArray) -> str:
+    """Qt state blob -> JSON-safe text for the config file."""
+    return base64.b64encode(bytes(state)).decode("ascii")
+
+
+def _decode_state(text) -> "QByteArray | None":
+    """Inverse of _encode_state; None for a missing or unreadable value."""
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        return QByteArray(base64.b64decode(text, validate=True))
+    except (ValueError, TypeError):
+        return None
 
 
 class MainWindow(QMainWindow):
@@ -211,6 +227,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
+        self._splitter = splitter
 
         # Status bar: freshness (left), zone (middle), archive progress (right)
         self.freshness_label = QLabel("No log file")
@@ -230,6 +247,26 @@ class MainWindow(QMainWindow):
         self._ticker.start()
 
         self._show_placeholder("Starting…")
+        self._restore_window_layout()
+
+    # ---- window placement ----
+
+    def _restore_window_layout(self):
+        """Put the window and the history/fight split back where they were
+        when the app was last closed. Qt's restoreGeometry() keeps a window
+        that was on a monitor which is no longer attached on a visible
+        screen, so a stale value is safe to apply."""
+        geometry = _decode_state(self.config.get("window.geometry"))
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        splitter = _decode_state(self.config.get("window.splitter"))
+        if splitter is not None:
+            self._splitter.restoreState(splitter)
+
+    def _save_window_layout(self):
+        self.config.set("window.geometry", _encode_state(self.saveGeometry()))
+        self.config.set("window.splitter", _encode_state(self._splitter.saveState()))
+        self.config.save()
 
     def _build_worker(self):
         self.worker_thread = QThread(self)
@@ -264,6 +301,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._ticker.stop()
+        self._save_window_layout()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
         # block as long as it takes rather than proceed with it running.

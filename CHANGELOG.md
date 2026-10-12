@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **The window remembers where it was**: its position, size, maximized state and the split between the fight list and the detail pane are saved when the app closes and restored on the next start. A window last seen on a monitor that is no longer attached is brought back onto a visible screen. Stored under `window` in the config file
+
 ## [0.9.1] - 2026-10-10
 
 ### Changed

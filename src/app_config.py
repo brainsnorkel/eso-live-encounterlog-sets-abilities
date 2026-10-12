@@ -46,6 +46,10 @@ DEFAULTS = {
         "check_enabled": True,   # check GitHub releases at startup
         "skip_version": None,    # release the user chose to skip
     },
+    "window": {
+        "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
+        "splitter": None,        # base64 QSplitter.saveState() of the main split
+    },
 }
 
 
