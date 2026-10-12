@@ -169,7 +169,9 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [build-windows, build-linux]
-    runs-on: ubuntu-latest
+    # Pinned: GitHub moves ubuntu-latest to Ubuntu 26 from 2026-10-19,
+    # and a release must not change runner under us unannounced
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
