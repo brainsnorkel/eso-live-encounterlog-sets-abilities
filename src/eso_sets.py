@@ -43,7 +43,11 @@ loses to the lines whose actives are slotted.
 The fight view and build window show only the borrowed lines, each with a
 plus sign before its first word ("NB +Herald" for a Nightblade who swapped
 a line for Herald of the Tome), so a stock build shows just its class. A
-player whose class is unknown shows every line found.
+player whose class is unknown shows every line found. The Class Mastery
+passives in the same list (the table holds the 35, five per class; only a
+character with all three of its own lines can take them, and 39% of the
+surveyed builds carried one or two) are named on the build window's mundus
+and food line and in the fight's plain-text copy.
 """
 
 import json

@@ -2,8 +2,9 @@
 The build window's HTML: one player's build for a fight, as the encounter
 log recorded it when combat started.
 
-Top to bottom: who it is and which fight; mundus stone and food; both
-ability bars, front above back, with the fight view's line of scribed skills;
+Top to bottom: who it is and which fight; mundus stone, food and Class
+Mastery passives; both ability bars, front above back, with the fight
+view's line of scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
 poison row under a bar that has one slotted. The data is the fight entry's player dict as the
@@ -125,8 +126,10 @@ def _header_html(entry, p, theme, base_pt: float, e) -> str:
 
 
 def _mundus_food_html(p, theme, icons, e) -> str:
-    """'Mundus [icon] The Thief    Food Artaeum Takeaway Broth'. The food part
-    is left out when the engine could not check for food at all."""
+    """'Mundus [icon] The Thief    Food Artaeum Takeaway Broth    Mastery An
+    Eye for Exploitation, Above and Beyond'. The food part is left out when
+    the engine could not check for food at all, the mastery part when the
+    player has no Class Mastery passive (a subclassed build cannot)."""
     muted = theme["muted"]
     stones = []
     for stone in p.get("mundus") or []:
@@ -145,6 +148,10 @@ def _mundus_food_html(p, theme, icons, e) -> str:
         else:
             label, value = "Food", f"<span style='color:{muted}'>{NO_FOOD}</span>"
         parts.append(f"<span style='color:{muted}'>{label}</span>&nbsp; {value}")
+    masteries = [str(name) for name in (p.get("masteries") or []) if name]
+    if masteries:
+        parts.append(f"<span style='color:{muted}'>Mastery</span>&nbsp; "
+                     f"{e(', '.join(masteries))}")
     return (f"<p style='margin:8px 0 6px 0'>"
             f"{'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.join(parts)}</p>")
 

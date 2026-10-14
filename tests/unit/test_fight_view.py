@@ -185,6 +185,13 @@ class TestBarRendering(FightViewTestCase):
         # Two borrowed lines, each with its own plus sign
         entry.players[0]['skill_lines'] = ['Assassination', 'Animal Companions', 'Herald of the Tome']
         self.assertIn('+Animal +Herald', render_html(entry, detailed=False))
+        # Class Mastery passives: named in the plain copy, not in the row
+        entry.players[0]['masteries'] = ['An Eye for Exploitation', 'Above and Beyond']
+        self.assertIn('      mastery: An Eye for Exploitation, Above and Beyond',
+                      render_plain_text(entry))
+        self.assertNotIn('Exploitation', render_html(entry, detailed=True))
+        entry.players[0]['masteries'] = []
+        self.assertNotIn('mastery', render_plain_text(entry))
         # Unknown class: every line is shown rather than hidden
         entry.players[0]['class_lines'] = []
         entry.players[0]['skill_lines'] = ["Dawn's Wrath", 'Bone Tyrant']

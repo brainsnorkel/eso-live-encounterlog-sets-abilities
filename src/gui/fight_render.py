@@ -623,6 +623,9 @@ def render_plain_text(entry) -> str:
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")
+        masteries = [str(name) for name in (p.get("masteries") or []) if name]
+        if masteries:
+            lines.append(f"      mastery: {', '.join(masteries)}")
         for bar, slots in ((p.get("front_bar"), p.get("front_bar_slots")),
                            (p.get("back_bar"), p.get("back_bar_slots"))):
             # Slot labels carry a scribed skill's scripts; names alone do not

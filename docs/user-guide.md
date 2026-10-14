@@ -44,7 +44,7 @@ Click a player's name to open their build for that fight. The window stays open 
 ![The build window: mundus and food, both bars, and the gear grid](screencaps/build-window.png)
 
 - **Header**: account and character name, race, class, champion points and role, then the fight.
-- **Mundus and food**: the mundus stone, and the food or drink buff the player had as combat started.
+- **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken (none shown for a subclassed build).
 - **Bars**: as in the fight view, with the same hover names, ESO-Hub links and scribed-skill line.
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar. **Type** is the armor weight, or what a weapon is (Inferno Staff, Dagger, Greatsword, Shield). **Pcs** is how many pieces of that row's set are active: `5` on either bar; `5/3` means five on the front bar and three on the back, so the set's five-piece bonus is live on the front bar only. Quality, trait, enchant and the enchant's quality follow. A mythic piece is marked, a slotted poison gets a row under its bar, and a dash means the log did not say.
 

@@ -755,6 +755,14 @@ class TestBuildRender(BuildGuiTestCase):
         self.assertIn('Mundus</span>&nbsp; The Atronach, <img src="icon:ability_mundusstones_003"',
                       self._html(unit='3'))
 
+    def test_class_mastery_passives_follow_mundus_and_food(self):
+        html = self._html(self._with(masteries=['An Eye for Exploitation', 'Above and Beyond']))
+        self.assertIn("Mastery</span>&nbsp; An Eye for Exploitation, Above and Beyond</p>", html)
+        self.assertIn('Mundus</span>', html)
+        # No mastery (a subclassed build, or an old log): no label at all
+        self.assertNotIn('Mastery', self._html(self._with(masteries=[])))
+        self.assertNotIn('Mastery', self._html(self._with(skill_lines=['Herald of the Tome'])))
+
     def test_translated_mundus_name_is_shown_as_logged(self):
         stone = [{'id': '13975', 'name': 'Segen: Der Dieb', 'icon': 'ability_mundusstones_003'}]
         self.assertIn('&nbsp;Segen: Der Dieb', self._html(self._with(mundus=stone)))

@@ -13,7 +13,7 @@ New here? Read the [user guide](docs/user-guide.md). Curious how the numbers are
 - **Death recaps**: a player who died gets a **Death recap** button on their row. It opens the last 5 seconds before each of their deaths: every hit and heal with its source, the health left after it, and whether the hit was blocked, dodged, or absorbed by a shield.
 - **Builds at a glance**: both ability bars as the game's own icons, the skill lines a build borrows from another class (read from the character's passives, so a line taken for its passives alone shows too), and every equipped gear set with piece counts. Gear set identification uses the LibSets database (722 sets).
 - **Scribed skills with their scripts**: a grimoire's icon cannot show what was scribed into it, so each scribed skill is listed under the bars with its signature and affix scripts, for example `Chilling Contingency (Lingering Torment / Intellect and Endurance)`.
-- **Full build per player**: click a player's name for a window with their gear slot by slot (set, quality, trait, enchant, slotted poison), both ability bars, mundus stone and food.
+- **Full build per player**: click a player's name for a window with their gear slot by slot (set, quality, trait, enchant, slotted poison), both ability bars, mundus stone, food and Class Mastery passives.
 - **ESO-Hub links**: hover an ability icon for its name, click it to open the skill on ESO-Hub; set names open their ESO-Hub set pages. Nothing is downloaded until you click.
 - **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward) and **taunt uptime** on the boss, with the abilities each player taunted with marked on their bars; or an experimental per-fight buff timeline strip.
 - **Search within a fight** (Ctrl+F), including ability icons by name; copy any fight as plain text.
@@ -112,7 +112,7 @@ Click a player's name in the fight pane, in either view, to open their build for
 ![Build window: a player's mundus stone and food, both ability bars, and a gear grid with armor weight or weapon type, set, pieces, quality, trait and enchant per slot](docs/screencaps/build-window.png)
 
 - **Header**: account and character name, race, class, champion points and role, then the fight.
-- **Mundus and food**: the mundus stone, and the food or drink buff the player had as combat started. `no known food or drink` means none of their effects is a food or drink the app knows.
+- **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken. `no known food or drink` means none of their effects is a food or drink the app knows; no mastery part means the character has none (a subclassed build cannot).
 - **Bars**: front bar above back bar, ultimate set apart, with the fight view's hover text, ESO-Hub links and line of scribed skills.
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
 - **Type** says whether an armor piece is light, medium or heavy, and what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, for example `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).

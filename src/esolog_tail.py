@@ -109,7 +109,7 @@ DAMAGE_RESULTS = frozenset(
      'BLOCKED_DAMAGE', 'DAMAGE_SHIELDED'))
 
 # Import our ESO analysis modules
-from eso_sets import ESOSubclassAnalyzer, skill_lines_of
+from eso_sets import ESOSubclassAnalyzer, lines_from_passives, skill_lines_of
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {
@@ -2165,6 +2165,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 'all_sets': all_sets,
                 'skill_lines': skill_lines,
                 'class_lines': player.get_class_skill_lines(),
+                # The Class Mastery passives among the long-term effects
+                'masteries': lines_from_passives(player.long_term_effects)[1],
                 'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
                 'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
                 'front_bar_slots': [dict(s) for s in player.front_bar_slots],
