@@ -1,27 +1,59 @@
 #!/usr/bin/env python3
 """
-Which class skill lines a player's abilities come from (subclassing).
+Which class skill lines a player has (subclassing).
 
 Design: since Update 46 a character can swap any of its three class skill
 lines for another class's, so the class id in UNIT_ADDED no longer says
-what a build is. The log names each slotted ability (ABILITY_INFO), and
-every class ability, morphs included, belongs to exactly one skill line, so
-the lines are inferred from the names: SKILL_LINE_ABILITIES lists every
-class line with its ultimate, actives and morphs, as the game names them.
-A player's slotted abilities are matched to those names exactly (never by
-substring: "Carve" is Two Handed, not Fatecarver; "Swarming Scion" is
-Vampire, not a Warden Swarm) and the lines with the most matches win, at
-most three, since subclassing swaps lines and never adds a fourth. Weapon,
-guild, world and alliance abilities match nothing and are ignored. The
-fight view shows the inferred lines beside the class only when they differ
-from the class's own three (PlayerInfo.get_class_skill_lines), so a stock
-build shows just its class. A player with no class ability slotted shows no
-lines.
+what a build is. Two things in the log do.
+
+The passives. The first list on a player's PLAYER_INFO line is their
+long-term effects, and among the mundus boon, food and set auras it carries
+every class-line passive the character has learned, by ability id. A
+character with Assassination, Herald of the Tome and Animal Companions
+lists Hemorrhage, Executioner, Splintered Secrets, Advanced Species and so
+on. Each passive belongs to one line, so the lines are read off the ids
+with no guessing: skill_lines_of looks each id up in
+data/skills/class_passives.json (UESP's player skill table cut down to the
+203 class passives by scripts/generate_class_passives.py, masteries
+included) and names a line for every passive found. The lookup is by id,
+never by name or icon: the group's Combustion resource return, the Reusable
+Parts ally effect and the Resolute Defense proc share a passive's name and
+land in the same list, and a passive's icon does not tell it from an active
+(Blessing at the Peak uses an ability_* icon). Both rank ids of a passive
+are in the table; a character lists the rank they have.
+
+The slotted abilities, as a filler. ESOSubclassAnalyzer matches the names
+of the bar abilities (ABILITY_INFO) against SKILL_LINE_ABILITIES, every
+class line's ultimate, actives and morphs as the game names them, exactly
+(never by substring: "Carve" is Two Handed, not Fatecarver; "Swarming
+Scion" is Vampire, not a Warden Swarm), and the lines with the most matches
+win. It cannot see a line the player slotted nothing from, which is routine
+for healers, tanks and Arcanist DPS, and the passives can miss a line whose
+passives a mid-level character has not learned yet. So skill_lines_of takes
+the passives' lines first and fills up to three from the slotted guess.
+In 73 split logs of September and October 2026 (7,019 distinct builds) the
+passives named exactly three lines for 98.5% of builds and never
+contradicted the slotted guess, which had missed one or more lines in 56%
+of them; 489 builds borrowed a line, and for 133 of those the lines shown
+change, 18 of them borrowed purely for the passives (nothing slotted). A
+character has at most three lines, since subclassing swaps lines and never
+adds a fourth; a fourth line of passives, seen three times in the survey,
+loses to the lines whose actives are slotted.
+
+The fight view and build window show only the borrowed lines, each with a
+plus sign before its first word ("NB +Herald" for a Nightblade who swapped
+a line for Herald of the Tome), so a stock build shows just its class. A
+player whose class is unknown shows every line found.
 """
 
+import json
 import re
-from typing import Dict, List, Set, Optional, Tuple
-from collections import defaultdict, Counter
+from collections import Counter
+from functools import lru_cache
+from typing import Dict, Iterable, List, Optional, Set, Tuple
+
+from ability_icons import bundle_root
+
 
 class ESOSubclassAnalyzer:
     """Analyzes abilities to infer player subclass/build."""
@@ -340,6 +372,76 @@ class ESOSubclassAnalyzer:
     def _ability_matches(self, pattern: str, ability: str) -> bool:
         """Whether a logged ability name is the listed skill (exact, case-insensitive)."""
         return pattern.strip().lower() == ability.strip().lower()
+
+
+# ---- skill lines from the passives PLAYER_INFO lists ----
+
+MAX_SKILL_LINES = ESOSubclassAnalyzer.MAX_SKILL_LINES
+# Display order of the lines, the table's: a class's three lines together
+LINE_ORDER = {line: index for index, line in enumerate(ESOSubclassAnalyzer.SKILL_LINE_ABILITIES)}
+MASTERY_LINE = "Class Mastery"
+
+
+@lru_cache(maxsize=1)
+def class_passive_table() -> Dict[str, dict]:
+    """data/skills/class_passives.json as {ability id: {'class', 'line',
+    'name', 'rank'}}; {} when the file is absent or malformed."""
+    try:
+        data = json.loads(bundle_root().joinpath("data", "skills", "class_passives.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    passives = data.get("passives") if isinstance(data, dict) else None
+    return {str(ability_id): entry for ability_id, entry in (passives or {}).items()
+            if isinstance(entry, dict) and entry.get("line")}
+
+
+def lines_from_passives(effect_ids: Iterable[str],
+                        table: Optional[Dict[str, dict]] = None) -> Tuple[Dict[str, int], List[str]]:
+    """({line: passives found}, [mastery names]) from a player's long-term
+    effect ids: the class lines whose passives the ids name, in table order,
+    and the Class Mastery passives among them. An id the table does not know
+    is skipped, so a same-named effect never counts."""
+    table = class_passive_table() if table is None else table
+    counts: Counter = Counter()
+    masteries: List[str] = []
+    for effect in effect_ids or []:
+        entry = table.get(str(effect))
+        if not entry:
+            continue
+        if entry["line"] == MASTERY_LINE:
+            name = str(entry.get("name") or "")
+            if name and name not in masteries:
+                masteries.append(name)
+        else:
+            counts[entry["line"]] += 1
+    ordered = {line: counts[line] for line in sorted(counts, key=lambda l: LINE_ORDER.get(l, len(LINE_ORDER)))}
+    return ordered, masteries
+
+
+def skill_lines_of(effect_ids: Iterable[str], slotted_abilities: Iterable[str],
+                   table: Optional[Dict[str, dict]] = None) -> List[str]:
+    """The player's class skill lines, at most MAX_SKILL_LINES, in table
+    order: the lines their passives name, filled up from the lines their
+    slotted abilities name (see the module docstring). A fourth line of
+    passives loses to the lines with a slotted ability, then to the lines
+    with more passives."""
+    found, _masteries = lines_from_passives(effect_ids, table)
+    slotted = set(slotted_abilities or [])
+    guessed = (ESOSubclassAnalyzer().analyze_subclass(slotted)['skill_lines']
+               if slotted else [])
+    if len(found) > MAX_SKILL_LINES:
+        ranked = sorted(found, key=lambda line: (line not in guessed, -found[line],
+                                                 LINE_ORDER.get(line, len(LINE_ORDER))))
+        lines = ranked[:MAX_SKILL_LINES]
+    else:
+        lines = list(found)
+        for line in guessed:
+            if len(lines) >= MAX_SKILL_LINES:
+                break
+            if line not in lines:
+                lines.append(line)
+    return sorted(lines, key=lambda line: LINE_ORDER.get(line, len(LINE_ORDER)))
 
 
 

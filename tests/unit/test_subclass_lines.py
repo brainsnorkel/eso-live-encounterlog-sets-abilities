@@ -40,5 +40,90 @@ class TestSubclassDetection(unittest.TestCase):
         self.assertEqual(self.analyzer.analyze_subclass({'Light Attack (Bow)'})['skill_lines'], [])
 
 
+# Rows of data/skills/class_passives.json, as the game ids are
+PASSIVES = {
+    '36641': {'class': 'Nightblade', 'line': 'Assassination', 'name': 'Hemorrhage', 'rank': 1},
+    '45060': {'class': 'Nightblade', 'line': 'Assassination', 'name': 'Hemorrhage', 'rank': 2},
+    '45048': {'class': 'Nightblade', 'line': 'Assassination', 'name': 'Executioner', 'rank': 2},
+    '45071': {'class': 'Nightblade', 'line': 'Shadow', 'name': 'Shadow Barrier', 'rank': 2},
+    '45155': {'class': 'Nightblade', 'line': 'Siphoning', 'name': 'Soul Siphoner', 'rank': 2},
+    '86194': {'class': 'Warden', 'line': "Winter's Embrace", 'name': 'Icy Aura', 'rank': 2},
+    '86066': {'class': 'Warden', 'line': 'Animal Companions', 'name': 'Flourish', 'rank': 1},
+    '184887': {'class': 'Arcanist', 'line': 'Herald of the Tome', 'name': 'Splintered Secrets', 'rank': 2},
+    '45011': {'class': 'Dragonknight', 'line': 'Ardent Flame', 'name': 'Combustion', 'rank': 2},
+    '263604': {'class': 'Nightblade', 'line': 'Class Mastery', 'name': 'An Eye for Exploitation', 'rank': 1},
+    '263605': {'class': 'Nightblade', 'line': 'Class Mastery', 'name': 'Above and Beyond', 'rank': 1},
+}
+
+
+class TestSkillLinesFromPassives(unittest.TestCase):
+    """The lines a player's PLAYER_INFO passives name, the slotted abilities
+    filling in (eso_sets.skill_lines_of)."""
+
+    def test_passives_name_the_lines_by_id_in_table_order(self):
+        from eso_sets import lines_from_passives, skill_lines_of
+        # A Nightblade who swapped Siphoning for Herald of the Tome, with
+        # mundus, food and a mastery in the same list
+        effects = ['13975', '45060', '45048', '45071', '184887', '263604', '263605']
+        found, masteries = lines_from_passives(effects, PASSIVES)
+        self.assertEqual(found, {'Assassination': 2, 'Shadow': 1, 'Herald of the Tome': 1})
+        self.assertEqual(masteries, ['An Eye for Exploitation', 'Above and Beyond'])
+        self.assertEqual(skill_lines_of(effects, set(), PASSIVES),
+                         ['Assassination', 'Shadow', 'Herald of the Tome'])
+        # Rank 1 of a passive names the line as rank 2 does
+        self.assertEqual(skill_lines_of(['36641'], set(), PASSIVES), ['Assassination'])
+        # Ids come as strings or ints
+        self.assertEqual(skill_lines_of([45060, 86194], set(), PASSIVES),
+                         ['Assassination', "Winter's Embrace"])
+
+    def test_same_named_effects_do_not_count(self):
+        from eso_sets import skill_lines_of
+        # 42030 is the Combustion resource return a Dragonknight gives the
+        # group: not in the table, so not an Ardent Flame passive
+        self.assertEqual(skill_lines_of(['42030', '45071'], set(), PASSIVES), ['Shadow'])
+        self.assertEqual(skill_lines_of(['45011', '45071'], set(), PASSIVES),
+                         ['Ardent Flame', 'Shadow'])
+
+    def test_slotted_abilities_fill_in_for_unlearned_passives(self):
+        from eso_sets import skill_lines_of
+        # A mid-level Nightblade with no Siphoning passive yet but Siphoning
+        # Attacks slotted: the slotted line fills the third place
+        bars = {'Surprise Attack', 'Shadowy Disguise', 'Siphoning Attacks', 'Carve'}
+        self.assertEqual(skill_lines_of(['45060', '45071'], bars, PASSIVES),
+                         ['Assassination', 'Shadow', 'Siphoning'])
+        # Three lines of passives leave no room: the bars add nothing
+        self.assertEqual(skill_lines_of(['45060', '45071', '45155'], {'Fatecarver'}, PASSIVES),
+                         ['Assassination', 'Shadow', 'Siphoning'])
+        # No passives at all (an empty table, an old log): the bars alone
+        self.assertEqual(skill_lines_of([], bars, PASSIVES), ['Assassination', 'Shadow', 'Siphoning'])
+        self.assertEqual(skill_lines_of(['45060'], bars, {}), ['Assassination', 'Shadow', 'Siphoning'])
+        self.assertEqual(skill_lines_of([], set(), PASSIVES), [])
+
+    def test_a_fourth_line_of_passives_loses_to_the_slotted_lines(self):
+        from eso_sets import skill_lines_of
+        effects = ['45060', '45048', '45071', '45155', '86194']   # four lines
+        # Winter's Embrace is slotted and Siphoning is not: Siphoning goes
+        self.assertEqual(skill_lines_of(effects, {'Surprise Attack', 'Polar Wind'}, PASSIVES),
+                         ['Assassination', 'Shadow', "Winter's Embrace"])
+        # Nothing slotted: the line with the fewest passives goes
+        self.assertEqual(skill_lines_of(effects + ['86066'], set(), PASSIVES),
+                         ['Assassination', 'Shadow', 'Siphoning'])
+
+    def test_bundled_table_covers_every_class(self):
+        from eso_sets import MASTERY_LINE, class_passive_table
+        table = class_passive_table()
+        self.assertEqual(len(table), 203)
+        classes = {entry['class'] for entry in table.values()}
+        self.assertEqual(len(classes), 7)
+        for class_name in classes:
+            lines = {entry['line'] for entry in table.values()
+                     if entry['class'] == class_name and entry['line'] != MASTERY_LINE}
+            self.assertEqual(len(lines), 3, class_name)
+            self.assertTrue(lines <= set(ESOSubclassAnalyzer.SKILL_LINE_ABILITIES), lines)
+        self.assertEqual(table['45060']['line'], 'Assassination')
+        self.assertEqual(table['29424']['rank'], 1)
+        self.assertNotIn('42030', table)
+
+
 if __name__ == '__main__':
     unittest.main()

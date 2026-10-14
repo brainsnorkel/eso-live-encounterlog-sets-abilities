@@ -16,7 +16,7 @@ a = Analysis(
     # and food and drink buff ids (scripts/generate_food_buffs.py)
     datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
           + [(d, d) for d in ('data/icons/abilities', 'data/esohub', 'data/items',
-                              'data/buffs') if os.path.isdir(d)],
+                              'data/buffs', 'data/skills') if os.path.isdir(d)],
     hiddenimports=[
         'app_config',
         'app_startup',

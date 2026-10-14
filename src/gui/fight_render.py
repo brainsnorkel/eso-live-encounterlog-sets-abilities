@@ -27,7 +27,7 @@ theme's link color while the pointer is over it.
 
 import html
 import zlib
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
@@ -182,17 +182,28 @@ def _short_line(name) -> str:
     return first[:-2] if first.endswith("'s") else first
 
 
-def _subclass_text(p) -> str:
-    """'Assassination/Shadow/Herald' when the detected skill lines include one
-    outside the player's own class; '' for a stock build, where the class
-    abbreviation already says it all."""
+def _borrowed_lines(p) -> Tuple[List[str], bool]:
+    """(the skill lines to show, whether they are borrowed): the lines
+    outside the player's own class, or every line when the class is unknown.
+    Nothing for a stock build, where the class abbreviation says it all."""
     lines = p.get("skill_lines") or []
     if isinstance(lines, str):
         lines = [lines]
     class_lines = set(p.get("class_lines") or [])
-    if not lines or (class_lines and all(line in class_lines for line in lines)):
-        return ""
-    return "/".join(_short_line(line) for line in lines)
+    if not class_lines:
+        return list(lines), False
+    return [line for line in lines if line not in class_lines], True
+
+
+def _subclass_text(p, short: bool = True) -> str:
+    """'+Herald +Animal' for a build that borrows Herald of the Tome and
+    Animal Companions from other classes (full names with short=False);
+    'Dawn/Bone' for a player whose class is unknown; '' for a stock build."""
+    lines, borrowed = _borrowed_lines(p)
+    names = [_short_line(line) if short else str(line) for line in lines]
+    if borrowed:
+        return " ".join(f"+{name}" for name in names)
+    return "/".join(names)
 
 
 def summary_line(entry, death_cue: bool = False) -> str:
@@ -609,7 +620,7 @@ def render_plain_text(entry) -> str:
                 and str(p.get("unit_id", "")) == first_dealer else "")
         lines.append(f"[{role}] {_join(p.get('name', ''))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({pct:.1f}%)")
-        skill_lines = _join(p.get("skill_lines"), sep="/")
+        skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")
         for bar, slots in ((p.get("front_bar"), p.get("front_bar_slots")),

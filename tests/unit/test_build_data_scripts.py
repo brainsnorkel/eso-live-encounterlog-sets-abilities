@@ -406,5 +406,69 @@ class TestGearSetNames(unittest.TestCase):
             self.assertEqual(SET_ID_TO_NAME.get(set_id), name)
 
 
+class TestClassPassives(unittest.TestCase):
+    """scripts/generate_class_passives.py: the class passives of UESP's
+    player skill table, by game id."""
+
+    # UESP playerSkills rows cut down: a passive in two ranks, a mastery, an
+    # active, a weapon passive, an effect without a class, a broken row
+    SAMPLE = {'playerSkills': [
+        {'id': '29424', 'name': 'Combustion', 'classType': 'Dragonknight', 'skillLine': 'Ardent Flame',
+         'baseAbilityId': '29424', 'rank': '1', 'isPassive': '1', 'skillType': '1'},
+        {'id': '45011', 'name': 'Combustion', 'classType': 'Dragonknight', 'skillLine': 'Ardent Flame',
+         'baseAbilityId': '29424', 'rank': '2', 'isPassive': '1', 'skillType': '1'},
+        {'id': '263604', 'name': 'An Eye for Exploitation', 'classType': 'Nightblade',
+         'skillLine': 'Class Mastery', 'baseAbilityId': '263604', 'rank': '1', 'isPassive': '1',
+         'skillType': '1'},
+        {'id': '15540', 'name': 'Toppling Charge', 'classType': 'Templar', 'skillLine': 'Aedric Spear',
+         'baseAbilityId': '22149', 'rank': '1', 'isPassive': '0', 'skillType': '1'},
+        {'id': '45596', 'name': 'Slayer', 'classType': '', 'skillLine': 'Fighters Guild',
+         'baseAbilityId': '45596', 'rank': '2', 'isPassive': '1', 'skillType': '3'},
+        {'id': '', 'name': 'No Id', 'classType': 'Warden', 'skillLine': 'Green Balance',
+         'isPassive': '1', 'skillType': '1'},
+        'not a row',
+    ]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_class_passives.py')
+
+    def test_class_passives_by_id_with_both_ranks_and_masteries(self):
+        self.assertEqual(self.script.class_passives(self.SAMPLE), {
+            '29424': {'class': 'Dragonknight', 'line': 'Ardent Flame', 'name': 'Combustion', 'rank': 1},
+            '45011': {'class': 'Dragonknight', 'line': 'Ardent Flame', 'name': 'Combustion', 'rank': 2},
+            '263604': {'class': 'Nightblade', 'line': 'Class Mastery',
+                       'name': 'An Eye for Exploitation', 'rank': 1},
+        })
+        self.assertEqual(self.script.class_passives({}), {})
+        self.assertEqual(self.script.class_passives({'playerSkills': 'nope'}), {})
+
+    def test_a_short_response_would_not_overwrite(self):
+        counts = self.script.per_class(self.script.class_passives(self.SAMPLE))
+        self.assertLess(max(counts.values()), self.script.PASSIVES_PER_CLASS)
+
+    def test_file_is_json_one_passive_per_line(self):
+        passives = self.script.class_passives(self.SAMPLE)
+        text = self.script.render(passives, '2026-10-15T00:00:00+00:00')
+        data = json.loads(text)
+        self.assertEqual(data['passives'], passives)
+        self.assertEqual(data['count'], 3)
+        self.assertIn('UESP', data['attribution'])
+        self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 3)
+
+    def test_committed_table_matches_the_script(self):
+        data = json.loads((REPO_ROOT / 'data' / 'skills' / 'class_passives.json')
+                          .read_text(encoding='utf-8'))
+        self.assertEqual(data['count'], len(data['passives']))
+        counts = self.script.per_class(data['passives'])
+        self.assertEqual(set(counts), set(self.script.CLASSES))
+        for class_name, count in counts.items():
+            self.assertEqual(count, self.script.PASSIVES_PER_CLASS, class_name)
+        self.assertEqual(data['passives'], self.script.class_passives(
+            {'playerSkills': [dict(id=i, isPassive='1', skillType='1', classType=e['class'],
+                                   skillLine=e['line'], name=e['name'], rank=str(e['rank']))
+                              for i, e in data['passives'].items()]}))
+
+
 if __name__ == '__main__':
     unittest.main()

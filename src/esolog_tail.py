@@ -109,7 +109,7 @@ DAMAGE_RESULTS = frozenset(
      'BLOCKED_DAMAGE', 'DAMAGE_SHIELDED'))
 
 # Import our ESO analysis modules
-from eso_sets import ESOSubclassAnalyzer
+from eso_sets import ESOSubclassAnalyzer, skill_lines_of
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {
@@ -1175,12 +1175,13 @@ class ESOLogAnalyzer(ListenerMixin):
             
             if player_handle:  # Only update if we have a handle
                 self._update_player_session(
-                    player_info.unit_id, 
-                    player_name, 
-                    player_handle, 
-                    equipped_ability_names, 
+                    player_info.unit_id,
+                    player_name,
+                    player_handle,
+                    equipped_ability_names,
                     player_info.gear_data,
-                    player_class_id
+                    player_class_id,
+                    long_term_effects=list(player_info.ability_ids)
                 )
                 
 
@@ -2112,14 +2113,12 @@ class ESOLogAnalyzer(ListenerMixin):
             dmg_pct = (player_damage / enc.total_damage * 100) if enc.total_damage > 0 else 0
             player_healing = enc.player_healing.get(player.unit_id, 0)
 
-            # Extract skill lines and ability-based role for fallback
+            # The ability-based role, for the role fallback
             analysis = self.subclass_analyzer.analyze_subclass(player.equipped_abilities) if player.equipped_abilities else None
-            skill_lines = []
-            skill_line_role = None
-            if analysis:
-                if analysis.get('skill_lines'):
-                    skill_lines = list(analysis['skill_lines'])
-                skill_line_role = analysis.get('role')
+            skill_line_role = analysis.get('role') if analysis else None
+            # The class skill lines: from the passives PLAYER_INFO lists,
+            # the slotted abilities filling in (eso_sets)
+            skill_lines = skill_lines_of(player.long_term_effects, player.equipped_abilities)
 
             role = infer_player_role(player, player_damage=player_damage,
                                      player_healing=player_healing,
@@ -2211,7 +2210,7 @@ class ESOLogAnalyzer(ListenerMixin):
         return entry
 
 
-    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0):
+    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0, long_term_effects: List[str] = None):
         """Update or create a player session with their current data."""
         if not handle or handle == "" or not name or name == "":
             return
@@ -2237,6 +2236,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 'champion_points': champion_points,
                 'equipped_abilities': equipped_abilities or [],
                 'gear_data': gear_data or [],
+                'long_term_effects': long_term_effects or [],
                 'last_seen': 0
             }
         else:
@@ -2251,6 +2251,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.player_sessions[session_key]['equipped_abilities'] = equipped_abilities
             if gear_data:
                 self.player_sessions[session_key]['gear_data'] = gear_data
+            if long_term_effects:
+                self.player_sessions[session_key]['long_term_effects'] = long_term_effects
             self.player_sessions[session_key]['last_seen'] = 0
 
     def _get_player_from_session(self, unit_id: str, name: str, handle: str) -> Optional[PlayerInfo]:
@@ -2277,7 +2279,8 @@ class ESOLogAnalyzer(ListenerMixin):
         player.champion_points = session_data.get('champion_points', 0)
         player.equipped_abilities = session_data['equipped_abilities']
         player.gear_data = session_data['gear_data']
-        
+        player.long_term_effects = list(session_data.get('long_term_effects') or [])
+
         return player
 
     def _restore_player_from_session(self, unit_id: str, name: str, handle: str):
@@ -2291,7 +2294,8 @@ class ESOLogAnalyzer(ListenerMixin):
             return
 
         # Update session with current unit_id
-        self._update_player_session(unit_id, name, handle, player.equipped_abilities, player.gear_data, player.class_id)
+        self._update_player_session(unit_id, name, handle, player.equipped_abilities, player.gear_data, player.class_id,
+                                    long_term_effects=player.long_term_effects)
 
         # Add player to current encounter with session data
         self.current_encounter.players[unit_id] = player
