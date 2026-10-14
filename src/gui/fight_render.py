@@ -206,6 +206,12 @@ def _subclass_text(p, short: bool = True) -> str:
     return "/".join(names)
 
 
+def _mastery_text(p) -> str:
+    """'An Eye for Exploitation, Above and Beyond' for a pure-class build
+    with Class Mastery passives; '' without."""
+    return ", ".join(str(name) for name in (p.get("masteries") or []) if name)
+
+
 def summary_line(entry, death_cue: bool = False) -> str:
     """Fight line: boss · duration · gdps · zone · timestamp.
 
@@ -517,10 +523,15 @@ def render_html(entry, detailed: bool, dark: bool = False,
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
         class_abbr = e(_join(p.get("class_abbr", "")))
-        # Subclass lines beside the class, only for builds that borrow a line
-        # from another class
-        subclass = _subclass_text(p)
-        subclass_html = f" <span style='color:{muted}'>{e(subclass)}</span>" if subclass else ""
+        # Beside the class: the lines a build borrows from another class
+        # ("NB +Herald"), or a pure-class build's Class Mastery passives
+        # ("NB: An Eye for Exploitation, Above and Beyond"); nothing for a
+        # stock build without them
+        beside = _subclass_text(p)
+        if not beside and _mastery_text(p):
+            class_abbr += ":"
+            beside = _mastery_text(p)
+        subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
         dps = _dps_text(p, boss_fight)
         pct = float(p.get("dmg_pct") or 0)
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
@@ -623,9 +634,9 @@ def render_plain_text(entry) -> str:
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")
-        masteries = [str(name) for name in (p.get("masteries") or []) if name]
+        masteries = _mastery_text(p)
         if masteries:
-            lines.append(f"      mastery: {', '.join(masteries)}")
+            lines.append(f"      {masteries}")
         for bar, slots in ((p.get("front_bar"), p.get("front_bar_slots")),
                            (p.get("back_bar"), p.get("back_bar_slots"))):
             # Slot labels carry a scribed skill's scripts; names alone do not
