@@ -456,22 +456,31 @@ class TestClassPassives(unittest.TestCase):
         {'id': '107994', 'name': 'Pound of Flesh', 'isPassive': '0', 'target': 'Enemy'},
         {'id': '263549', 'name': 'Pound of Flesh', 'isPassive': '1', 'target': 'Self'},
         {'id': '45060', 'name': 'Hemorrhage', 'isPassive': '1', 'target': 'Self'},
+        {'id': '263306', 'name': 'Major Berserk', 'isPassive': '0', 'target': ''},
+        {'id': '61745', 'name': 'Major Berserk', 'isPassive': '0', 'target': ''},
         'not a row',
     ]}
     MASTERIES = {
         '263604': {'class': 'Nightblade', 'line': 'Class Mastery', 'name': 'An Eye for Exploitation', 'rank': 1},
         '263410': {'class': 'Arcanist', 'line': 'Class Mastery', 'name': 'Unbound Potential', 'rank': 1},
         '263549': {'class': 'Necromancer', 'line': 'Class Mastery', 'name': 'Pound of Flesh', 'rank': 1},
+        '263247': {'class': 'Dragonknight', 'line': 'Class Mastery', 'name': 'Lead from the Front', 'rank': 1},
         '45060': {'class': 'Nightblade', 'line': 'Assassination', 'name': 'Hemorrhage', 'rank': 2},
     }
 
     def test_mastery_effects_by_id_without_the_passives_or_monster_abilities(self):
+        # The buff-named signature effect comes in with the buff's name kept;
+        # the ordinary Major Berserk id does not
         self.assertEqual(self.script.mastery_effects(self.MINED, self.MASTERIES), {
+            '263306': {'class': 'Dragonknight', 'name': 'Lead from the Front', 'effect': 'Major Berserk'},
             '263411': {'class': 'Arcanist', 'name': 'Unbound Potential'},
             '263640': {'class': 'Nightblade', 'name': 'An Eye for Exploitation'},
         })
         self.assertEqual(self.script.mastery_effects({}, self.MASTERIES), {})
         self.assertEqual(self.script.mastery_effects(self.MINED, {}), {})
+        for mastery in self.script.SIGNATURE_EFFECTS.values():
+            self.assertIn(mastery, {'Lead from the Front', "Tundra's Maw", 'Bountiful Harvest',
+                                    "Cutthroat's Focus"})
 
     def test_file_is_json_one_passive_per_line(self):
         passives = self.script.class_passives(self.SAMPLE)
@@ -481,9 +490,9 @@ class TestClassPassives(unittest.TestCase):
         self.assertEqual(data['passives'], passives)
         self.assertEqual(data['count'], 3)
         self.assertEqual(data['mastery_effects'], effects)
-        self.assertEqual(data['mastery_effects_count'], 2)
+        self.assertEqual(data['mastery_effects_count'], 3)
         self.assertIn('UESP', data['attribution'])
-        self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 5)
+        self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 6)
 
     def test_committed_table_matches_the_script(self):
         data = json.loads((REPO_ROOT / 'data' / 'skills' / 'class_passives.json')

@@ -31,6 +31,18 @@ among them); the ones that are not the passives themselves are kept under
 target enemies; a mastery effect never does, so enemy-targeted rows are
 left out.
 
+Some masteries fire effects named after the buff they grant rather than
+after themselves, with ids in the same block: Lead from the Front's Major
+Berserk and Major Protection, Tundra's Maw's Major Brittle, Bountiful
+Harvest's Major Heroism, Cutthroat's Focus's Cutthroat's Mockery.
+SIGNATURE_EFFECTS maps those by hand, from 73 split logs of September and
+October 2026 in which each id was sourced by one class alone (263306 and
+263307 by Dragonknights 6,631 times and by no one else; 263825 by Wardens
+14,207 times; 268257 by Wardens 128,405 times; 268259 by Nightblades 203
+times) and whose durations match the masteries' text; the engine checks
+the source's class as well. Nothing in UESP's tables ties them to their
+mastery, so a new one has to be found the same way.
+
 Run after an ESO update that adds a class or a skill line (two requests to
 UESP, five seconds apart; UESP asks heavy users to go lightly, so do not
 loop it):
@@ -65,6 +77,15 @@ MIN_MASTERY_EFFECTS = 40  # 60 on the Update 51 client; fewer means a short repl
 CLASSES = ("Dragonknight", "Sorcerer", "Nightblade", "Warden", "Necromancer",
            "Templar", "Arcanist")
 SECONDS_BETWEEN_REQUESTS = 5
+# Effects a mastery fires under its buff's name, not its own (see the module
+# docstring for how each was pinned to its mastery)
+SIGNATURE_EFFECTS = {
+    "263306": "Lead from the Front",   # Major Berserk, Dragonknights only
+    "263307": "Lead from the Front",   # Major Protection, with it
+    "263825": "Tundra's Maw",          # Major Brittle for 2.1 s, Wardens only
+    "268257": "Bountiful Harvest",     # Major Heroism for 3 s, Wardens only
+    "268259": "Cutthroat's Focus",     # Cutthroat's Mockery for 5 s, Nightblades only
+}
 
 
 def fetch(url: str) -> str:
@@ -115,7 +136,13 @@ def mastery_effects(payload: dict, passives: dict) -> dict:
             continue
         ability_id = str(row.get("id", "")).strip()
         name = str(row.get("name") or "").strip()
-        if not ability_id.isdigit() or name not in masteries or ability_id in passives:
+        if not ability_id.isdigit() or ability_id in passives:
+            continue
+        mastery = SIGNATURE_EFFECTS.get(ability_id)
+        if mastery and mastery in masteries:
+            found[ability_id] = {"class": masteries[mastery], "name": mastery, "effect": name}
+            continue
+        if name not in masteries:
             continue
         if str(row.get("target") or "").strip().lower() == "enemy":
             continue

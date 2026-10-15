@@ -1895,13 +1895,14 @@ class ESOLogAnalyzer(ListenerMixin):
             # Kept on the player and in their session for the rest of the
             # session, a mastery not changing between fights
             if effect_type == "GAINED" and self.current_encounter:
-                mastery = mastery_of_effect(ability_id)
-                if mastery:
-                    holder = self.current_encounter.players.get(source_unit_id)
-                    if holder is not None and mastery not in holder.masteries_seen:
-                        holder.masteries_seen.append(mastery)
-                        self._update_player_session(holder.unit_id, holder.name, holder.handle,
-                                                    masteries=holder.masteries_seen)
+                holder = self.current_encounter.players.get(source_unit_id)
+                holder_class = holder.get_class_name() if holder is not None else ""
+                mastery = (mastery_of_effect(ability_id, None if holder_class == "Unknown" else holder_class)
+                           if holder is not None else "")
+                if mastery and mastery not in holder.masteries_seen:
+                    holder.masteries_seen.append(mastery)
+                    self._update_player_session(holder.unit_id, holder.name, holder.handle,
+                                                masteries=holder.masteries_seen)
 
             # Enemy health from the unit states: the target's own ten fields
             # when the target is explicit, the source's when it is "*"

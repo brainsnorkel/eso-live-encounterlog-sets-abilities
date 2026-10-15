@@ -94,11 +94,39 @@ class TestClassMastery(unittest.TestCase):
         monster_fires = f'12000,EFFECT_CHANGED,GAINED,1,777,{UNBOUND_POTENTIAL},{_monster(70, 50000, 50000)},*'
         _analyzer, fights = _run(_fight(10000, [
             monster_fires,
-            _gained(13000, UNBOUND_POTENTIAL, 2), _gained(14000, UNBOUND_POTENTIAL, 2),
-            _gained(15000, HEMORRHAGE, 2),  # a line passive, not a mastery
+            _gained(13000, UNBOUND_POTENTIAL, 1), _gained(14000, UNBOUND_POTENTIAL, 1),
+            _gained(15000, HEMORRHAGE, 1),  # a line passive, not a mastery
+            _gained(16000, UNBOUND_POTENTIAL, 2),  # a Nightblade: not an Arcanist mastery's holder
         ], HEMORRHAGE))
+        self.assertEqual(_masteries(fights[0], 1), ['Unbound Potential'])
+        self.assertEqual(_masteries(fights[0], 2), [])
+
+    def test_buff_named_signature_effects_need_the_right_class(self):
+        # 263306 is the Major Berserk a Dragonknight's Lead from the Front
+        # gives the group; 263825 the Major Brittle of a Warden's Tundra's Maw
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,1,4,"Knight","@dk",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,4,4,"Warden","@warden",1004,50,3225,0,PLAYER_ALLY,T',
+            '2600,ABILITY_INFO,263306,"Major Berserk","/esoui/art/icons/ability_mage_065.dds",F,F',
+            '2600,ABILITY_INFO,263825,"Major Brittle","/esoui/art/icons/ability_mage_065.dds",F,F',
+        ]
+        fight = _fight(10000, [
+            # The Dragonknight gives player 1 Major Berserk; a Nightblade (2)
+            # sourcing the same id is not a Dragonknight
+            f'12000,EFFECT_CHANGED,GAINED,1,777,263306,{_player(3)},{_player(1)}',
+            f'12000,EFFECT_CHANGED,GAINED,1,778,263306,{_player(2)},{_player(1)}',
+            f'13000,EFFECT_CHANGED,GAINED,1,779,263825,{_player(4)},{_monster(70, 50000, 50000)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Lead from the Front'])
+        self.assertEqual(_masteries(fights[0], 4), ["Tundra's Maw"])
+        self.assertEqual(_masteries(fights[0], 2), [])
         self.assertEqual(_masteries(fights[0], 1), [])
-        self.assertEqual(_masteries(fights[0], 2), ['Unbound Potential'])
 
     def test_session_cache_carries_a_fired_mastery(self):
         analyzer, _fights = _run(_fight(10000, [_gained(12000, UNBOUND_POTENTIAL, 1)], HEMORRHAGE))

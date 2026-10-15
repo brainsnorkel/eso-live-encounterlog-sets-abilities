@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-15T07:43:14+00:00",
+ "generated": "2026-10-15T08:02:32+00:00",
  "source": ["https://esolog.uesp.net/exportJson.php?table=playerSkills&fields=id,name,classType,skillLine,baseAbilityId,rank,isPassive,skillType", "https://esolog.uesp.net/exportJson.php?table=minedSkills&fields=id,name,isPassive,target"],
  "attribution": "Skill data from UESP (esolog.uesp.net), CC-BY-SA 2.5",
  "count": 203,
@@ -208,7 +208,7 @@
   "263873": {"class": "Sorcerer", "line": "Class Mastery", "name": "Calculated Defense", "rank": 1},
   "263874": {"class": "Sorcerer", "line": "Class Mastery", "name": "Sphere of Influence", "rank": 1}
  },
- "mastery_effects_count": 60,
+ "mastery_effects_count": 65,
  "mastery_effects": {
   "263197": {"class": "Dragonknight", "name": "Inexorable Descent"},
   "263200": {"class": "Dragonknight", "name": "Booming Voice"},
@@ -218,6 +218,8 @@
   "263232": {"class": "Dragonknight", "name": "Resolute Defense"},
   "263233": {"class": "Dragonknight", "name": "Resolute Defense"},
   "263234": {"class": "Dragonknight", "name": "Resolute Defense"},
+  "263306": {"class": "Dragonknight", "name": "Lead from the Front", "effect": "Major Berserk"},
+  "263307": {"class": "Dragonknight", "name": "Lead from the Front", "effect": "Major Protection"},
   "263308": {"class": "Dragonknight", "name": "Lead from the Front"},
   "263309": {"class": "Dragonknight", "name": "Wildfire Embers"},
   "263334": {"class": "Arcanist", "name": "Abyssal Emergence"},
@@ -249,6 +251,7 @@
   "263688": {"class": "Nightblade", "name": "Share the Spoils"},
   "263689": {"class": "Nightblade", "name": "Share the Spoils"},
   "263690": {"class": "Nightblade", "name": "Share the Spoils"},
+  "263825": {"class": "Warden", "name": "Tundra's Maw", "effect": "Major Brittle"},
   "263826": {"class": "Warden", "name": "Wild Adaptation"},
   "263828": {"class": "Warden", "name": "Green-Keeper's Hide"},
   "263829": {"class": "Warden", "name": "Bountiful Harvest"},
@@ -264,7 +267,9 @@
   "267305": {"class": "Warden", "name": "Glacial Obstinance"},
   "267310": {"class": "Warden", "name": "Glacial Obstinance"},
   "268256": {"class": "Necromancer", "name": "Veil's Forfeit"},
+  "268257": {"class": "Warden", "name": "Bountiful Harvest", "effect": "Major Heroism"},
   "268258": {"class": "Warden", "name": "Bountiful Harvest"},
+  "268259": {"class": "Nightblade", "name": "Cutthroat's Focus", "effect": "Cutthroat's Mockery"},
   "268260": {"class": "Nightblade", "name": "Cutthroat's Focus"},
   "268274": {"class": "Sorcerer", "name": "Calculated Defense"},
   "268275": {"class": "Sorcerer", "name": "Sphere of Influence"},

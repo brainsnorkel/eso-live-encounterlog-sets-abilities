@@ -60,9 +60,17 @@ it for the rest of the session, since a mastery does not change between
 fights. In the 73 survey logs, 11,697 pure-class player rows: the list
 alone named a mastery for 42% of them, the list plus the fight's own
 effects for 79%, the list plus the session's effects for 90% (191 of 209
-characters). Nine of the 35 masteries fire no effect of their own name
-(Tundra's Maw works through Major Brittle, Lead from the Front through
-Major Berserk, Share the Spoils through resources) and stay invisible.
+characters). Nine of the 35 masteries fire no effect of their own name;
+for four of them the effect is named after the buff it grants and has an
+id in the same block, sourced by one class alone in those logs: Lead from
+the Front's Major Berserk and Major Protection (Dragonknights), Tundra's
+Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
+Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
+those as signature effects (scripts/generate_class_passives.py says how
+each was pinned down), and mastery_of_effect checks the source's class for
+them. The other five (Share the Spoils, Nocturnal Inspiration,
+Conservation of Energy, Bastion of Light, Devout Guardian) work through
+resources, ultimate or unnamed heals and shields and stay invisible.
 """
 
 import json
@@ -422,24 +430,31 @@ def class_passive_table() -> Dict[str, dict]:
 
 
 @lru_cache(maxsize=1)
-def mastery_effect_table() -> Dict[str, str]:
-    """{ability id: mastery name} for the effects the masteries fire and the
-    mastery passives themselves (both show as EFFECT_CHANGED from the
-    holder); {} when the file is absent or malformed."""
+def mastery_effect_table() -> Dict[str, Tuple[str, str]]:
+    """{ability id: (mastery name, class)} for the effects the masteries fire
+    and the mastery passives themselves (both show as EFFECT_CHANGED from
+    the holder); {} when the file is absent or malformed."""
     effects = _class_passive_file().get("mastery_effects")
-    table = {str(ability_id): str(entry.get("name") or "")
+    table = {str(ability_id): (str(entry.get("name") or ""), str(entry.get("class") or ""))
              for ability_id, entry in (effects or {}).items()
              if isinstance(entry, dict) and entry.get("name")}
     for ability_id, entry in class_passive_table().items():
         if entry.get("line") == MASTERY_LINE and entry.get("name"):
-            table[ability_id] = str(entry["name"])
+            table[ability_id] = (str(entry["name"]), str(entry.get("class") or ""))
     return table
 
 
-def mastery_of_effect(ability_id, table: Optional[Dict[str, str]] = None) -> str:
-    """The Class Mastery an effect id belongs to, '' for any other id."""
+def mastery_of_effect(ability_id, class_name: Optional[str] = None,
+                      table: Optional[Dict[str, Tuple[str, str]]] = None) -> str:
+    """The Class Mastery an effect id belongs to, '' for any other id. With
+    *class_name* (the source's class, as get_class_name says it) an effect
+    of another class's mastery gives '' too: the buff-named signature
+    effects are tied to a class by evidence, so the class is checked."""
     table = mastery_effect_table() if table is None else table
-    return table.get(str(ability_id), "")
+    name, owner = table.get(str(ability_id), ("", ""))
+    if class_name and owner and class_name != owner:
+        return ""
+    return name
 
 
 def lines_from_passives(effect_ids: Iterable[str],

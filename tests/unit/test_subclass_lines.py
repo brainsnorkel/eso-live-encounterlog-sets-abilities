@@ -126,19 +126,30 @@ class TestSkillLinesFromPassives(unittest.TestCase):
 
     def test_mastery_effects_name_their_mastery(self):
         from eso_sets import mastery_effect_table, mastery_of_effect
-        # A small table: the effect Unbound Potential fires, and the passive itself
-        table = {'263411': 'Unbound Potential', '263604': 'An Eye for Exploitation'}
-        self.assertEqual(mastery_of_effect('263411', table), 'Unbound Potential')
-        self.assertEqual(mastery_of_effect(263604, table), 'An Eye for Exploitation')
-        self.assertEqual(mastery_of_effect('45060', table), '')
-        # The bundled one: 60 effects plus the 35 passives, no monster ability
+        # A small table: the effect Unbound Potential fires, the passive
+        # itself, and Lead from the Front's buff-named Major Berserk
+        table = {'263411': ('Unbound Potential', 'Arcanist'),
+                 '263604': ('An Eye for Exploitation', 'Nightblade'),
+                 '263306': ('Lead from the Front', 'Dragonknight')}
+        self.assertEqual(mastery_of_effect('263411', table=table), 'Unbound Potential')
+        self.assertEqual(mastery_of_effect(263604, table=table), 'An Eye for Exploitation')
+        self.assertEqual(mastery_of_effect('45060', table=table), '')
+        # The source's class, when known, has to be the mastery's
+        self.assertEqual(mastery_of_effect('263306', 'Dragonknight', table), 'Lead from the Front')
+        self.assertEqual(mastery_of_effect('263306', 'Nightblade', table), '')
+        self.assertEqual(mastery_of_effect('263306', None, table), 'Lead from the Front')
+        # The bundled one: 60 effects, 5 signature effects, the 35 passives,
+        # no monster ability
         bundled = mastery_effect_table()
-        self.assertEqual(len(bundled), 95)
-        self.assertEqual(bundled['263411'], 'Unbound Potential')      # proc effect
-        self.assertEqual(bundled['263604'], 'An Eye for Exploitation')  # the passive
-        self.assertEqual(bundled['268274'], 'Calculated Defense')     # group effect
-        self.assertNotIn('107994', bundled)                           # Pound of Flesh, a monster's
+        self.assertEqual(len(bundled), 100)
+        self.assertEqual(bundled['263411'], ('Unbound Potential', 'Arcanist'))       # proc effect
+        self.assertEqual(bundled['263604'], ('An Eye for Exploitation', 'Nightblade'))  # the passive
+        self.assertEqual(bundled['268274'], ('Calculated Defense', 'Sorcerer'))      # group effect
+        self.assertEqual(bundled['263825'], ("Tundra's Maw", 'Warden'))             # Major Brittle
+        self.assertEqual(bundled['268257'], ('Bountiful Harvest', 'Warden'))        # Major Heroism
+        self.assertNotIn('107994', bundled)                                         # Pound of Flesh, a monster's
         self.assertEqual(mastery_of_effect('263369'), 'Abyssal Emergence')
+        self.assertEqual(mastery_of_effect('263306', 'Warden'), '')
 
 
 if __name__ == '__main__':

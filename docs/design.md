@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2919](../src/esolog_tail.py#L2919)*
+*[src/esolog_tail.py:2920](../src/esolog_tail.py#L2920)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -186,9 +186,17 @@ it for the rest of the session, since a mastery does not change between
 fights. In the 73 survey logs, 11,697 pure-class player rows: the list
 alone named a mastery for 42% of them, the list plus the fight's own
 effects for 79%, the list plus the session's effects for 90% (191 of 209
-characters). Nine of the 35 masteries fire no effect of their own name
-(Tundra's Maw works through Major Brittle, Lead from the Front through
-Major Berserk, Share the Spoils through resources) and stay invisible.
+characters). Nine of the 35 masteries fire no effect of their own name;
+for four of them the effect is named after the buff it grants and has an
+id in the same block, sourced by one class alone in those logs: Lead from
+the Front's Major Berserk and Major Protection (Dragonknights), Tundra's
+Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
+Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
+those as signature effects (scripts/generate_class_passives.py says how
+each was pinned down), and mastery_of_effect checks the source's class for
+them. The other five (Share the Spoils, Nocturnal Inspiration,
+Conservation of Energy, Bastion of Light, Devout Guardian) work through
+resources, ultimate or unnamed heals and shields and stay invisible.
 
 ## Ability icons and ESO-Hub links
 
