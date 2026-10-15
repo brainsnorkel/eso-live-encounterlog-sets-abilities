@@ -36,35 +36,35 @@ class TestWindowLayoutRemembered(unittest.TestCase):
         return config
 
     def _window(self, config):
-        """A main window whose engine thread has been stopped and joined.
+        """A main window whose engine thread is never started.
 
-        quit() alone races the thread's start: on a slow runner (CI) the
-        worker's start slot may already be running when quit() lands, and
-        a second window made while the first's worker is mid-teardown
-        crashed the process (an access violation under PySide 6.12 on
-        GitHub's Windows runner, 2026-10-15). So the worker is told to stop
-        on its own thread first and the thread is joined without a limit."""
+        Quitting the thread right after the window starts it races the
+        worker's start slot: on a slow runner the slot may already be
+        running when quit() lands, the worker is then destroyed on its own
+        thread when the thread finishes, and the window's next round of
+        events crashed the process (an access violation under PySide 6.12
+        on GitHub's Windows runner, three of four runs on 2026-10-15, never
+        in 28 local runs of the same versions). This test is about
+        geometry, so the thread is replaced by one whose start() does
+        nothing: no worker ever runs, nothing is torn down across threads."""
+        from unittest import mock
+
         from gui.main_window import MainWindow
-        win = MainWindow(config)
-        self._stop(win)
-        return win
+        from PySide6.QtCore import QThread
 
-    def _stop(self, win):
-        from PySide6.QtCore import QMetaObject, Qt
-        if win.worker_thread.isRunning():
-            try:
-                QMetaObject.invokeMethod(win.worker, "stop", Qt.QueuedConnection)
-            except RuntimeError:
+        class IdleThread(QThread):
+            def start(self, *args):
                 pass
-            win.worker_thread.quit()
-            win.worker_thread.wait()
-        self.app.processEvents()
+
+        with mock.patch("gui.main_window.QThread", IdleThread):
+            win = MainWindow(config)
+        self.assertFalse(win.worker_thread.isRunning())
+        return win
 
     def _discard(self, win):
         """Close a window and delete it before another is made."""
         from PySide6.QtCore import QEvent
         win.close()
-        self._stop(win)
         win.deleteLater()
         self.app.sendPostedEvents(None, QEvent.DeferredDelete)
         self.app.processEvents()
