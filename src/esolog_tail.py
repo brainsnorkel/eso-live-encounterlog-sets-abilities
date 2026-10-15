@@ -109,7 +109,7 @@ DAMAGE_RESULTS = frozenset(
      'BLOCKED_DAMAGE', 'DAMAGE_SHIELDED'))
 
 # Import our ESO analysis modules
-from eso_sets import ESOSubclassAnalyzer, lines_from_passives, skill_lines_of
+from eso_sets import ESOSubclassAnalyzer, lines_from_passives, mastery_of_effect, skill_lines_of
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
 MYTHIC_SETS = {
@@ -223,6 +223,9 @@ class PlayerInfo:
         # Ability ids of the long-term effects PLAYER_INFO lists (mundus
         # boon, food, passives), for the build window
         self.long_term_effects: List[str] = []
+        # Class Mastery names seen firing from this player this session: a
+        # proc mastery is never in the list above (eso_sets)
+        self.masteries_seen: List[str] = []
         self.race_id: str = ""  # from UNIT_ADDED
         # The game's isLocalPlayer flag on UNIT_ADDED: the player whose
         # client writes the log (the "self" scope of effect_rules)
@@ -277,6 +280,13 @@ class PlayerInfo:
         }
         return class_skill_lines.get(self.class_id, [])
 
+
+    def masteries(self) -> List[str]:
+        """The player's Class Mastery passives: those in the PLAYER_INFO
+        list, then those seen firing this session (eso_sets)."""
+        names = list(lines_from_passives(self.long_term_effects)[1])
+        names.extend(name for name in self.masteries_seen if name not in names)
+        return names
 
     def set_equipped_abilities(self, ability_names: Set[str]):
         """Set the equipped abilities from PLAYER_INFO."""
@@ -1880,6 +1890,19 @@ class ESOLogAnalyzer(ListenerMixin):
                     effect_type, ability_id, target_unit_id, stack_count,
                     entry.timestamp, self._unit_kind(target_unit_id))
 
+            # A Class Mastery effect names its holder, the source: a proc
+            # mastery is never in the PLAYER_INFO passive list (eso_sets).
+            # Kept on the player and in their session for the rest of the
+            # session, a mastery not changing between fights
+            if effect_type == "GAINED" and self.current_encounter:
+                mastery = mastery_of_effect(ability_id)
+                if mastery:
+                    holder = self.current_encounter.players.get(source_unit_id)
+                    if holder is not None and mastery not in holder.masteries_seen:
+                        holder.masteries_seen.append(mastery)
+                        self._update_player_session(holder.unit_id, holder.name, holder.handle,
+                                                    masteries=holder.masteries_seen)
+
             # Enemy health from the unit states: the target's own ten fields
             # when the target is explicit, the source's when it is "*"
             
@@ -2165,8 +2188,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 'all_sets': all_sets,
                 'skill_lines': skill_lines,
                 'class_lines': player.get_class_skill_lines(),
-                # The Class Mastery passives among the long-term effects
-                'masteries': lines_from_passives(player.long_term_effects)[1],
+                # The Class Mastery passives: listed, or seen firing
+                'masteries': player.masteries(),
                 'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
                 'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
                 'front_bar_slots': [dict(s) for s in player.front_bar_slots],
@@ -2212,7 +2235,7 @@ class ESOLogAnalyzer(ListenerMixin):
         return entry
 
 
-    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0, long_term_effects: List[str] = None):
+    def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0, long_term_effects: List[str] = None, masteries: List[str] = None):
         """Update or create a player session with their current data."""
         if not handle or handle == "" or not name or name == "":
             return
@@ -2239,6 +2262,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 'equipped_abilities': equipped_abilities or [],
                 'gear_data': gear_data or [],
                 'long_term_effects': long_term_effects or [],
+                'masteries': list(masteries or []),
                 'last_seen': 0
             }
         else:
@@ -2255,6 +2279,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.player_sessions[session_key]['gear_data'] = gear_data
             if long_term_effects:
                 self.player_sessions[session_key]['long_term_effects'] = long_term_effects
+            if masteries:
+                known = self.player_sessions[session_key].setdefault('masteries', [])
+                known.extend(name for name in masteries if name not in known)
             self.player_sessions[session_key]['last_seen'] = 0
 
     def _get_player_from_session(self, unit_id: str, name: str, handle: str) -> Optional[PlayerInfo]:
@@ -2282,6 +2309,7 @@ class ESOLogAnalyzer(ListenerMixin):
         player.equipped_abilities = session_data['equipped_abilities']
         player.gear_data = session_data['gear_data']
         player.long_term_effects = list(session_data.get('long_term_effects') or [])
+        player.masteries_seen = list(session_data.get('masteries') or [])
 
         return player
 
@@ -2297,7 +2325,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
         # Update session with current unit_id
         self._update_player_session(unit_id, name, handle, player.equipped_abilities, player.gear_data, player.class_id,
-                                    long_term_effects=player.long_term_effects)
+                                    long_term_effects=player.long_term_effects, masteries=player.masteries_seen)
 
         # Add player to current encounter with session data
         self.current_encounter.players[unit_id] = player

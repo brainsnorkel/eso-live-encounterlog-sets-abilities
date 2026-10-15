@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1831](../src/esolog_tail.py#L1831)*
+*[src/esolog_tail.py:1841](../src/esolog_tail.py#L1841)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the experimental timeline, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1312](../src/esolog_tail.py#L1312)*
+*[src/esolog_tail.py:1322](../src/esolog_tail.py#L1322)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1327](../src/esolog_tail.py#L1327)*
+*[src/esolog_tail.py:1337](../src/esolog_tail.py#L1337)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2891](../src/esolog_tail.py#L2891)*
+*[src/esolog_tail.py:2919](../src/esolog_tail.py#L2919)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:320](../src/esolog_tail.py#L320)*
+*[src/esolog_tail.py:330](../src/esolog_tail.py#L330)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -169,12 +169,26 @@ loses to the lines whose actives are slotted.
 The fight view and build window show only the borrowed lines, each with a
 plus sign before its first word ("NB +Herald" for a Nightblade who swapped
 a line for Herald of the Tome), so a stock build shows just its class. A
-player whose class is unknown shows every line found. The Class Mastery
-passives in the same list (the table holds the 35, five per class; only a
-character with all three of its own lines can take them, and 39% of the
-surveyed builds carried one or two) take the same place beside the class,
-after a colon ("NB: An Eye for Exploitation, Above and Beyond"), and are
-named on the build window's mundus and food line too.
+player whose class is unknown shows every line found.
+
+Class Mastery passives (five per class; only a character with all three of
+its own lines can take them) take the same place beside the class, after a
+colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
+the build window's mundus and food line too. Two sources name them,
+because the PLAYER_INFO list holds only the passives whose effect is always
+on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
+Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
+in the log as an EFFECT_CHANGED the player is the source of, under one of
+a few effect ids that carry its name; the table lists those 60 ids as
+mastery_effects, and mastery_of_effect names the mastery of one. The
+engine notes a mastery on its holder when such an effect fires, and keeps
+it for the rest of the session, since a mastery does not change between
+fights. In the 73 survey logs, 11,697 pure-class player rows: the list
+alone named a mastery for 42% of them, the list plus the fight's own
+effects for 79%, the list plus the session's effects for 90% (191 of 209
+characters). Nine of the 35 masteries fire no effect of their own name
+(Tundra's Maw works through Major Brittle, Lead from the Front through
+Major Berserk, Share the Spoils through resources) and stay invisible.
 
 ## Ability icons and ESO-Hub links
 
@@ -556,7 +570,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:585](../src/esolog_tail.py#L585)*
+*[src/esolog_tail.py:595](../src/esolog_tail.py#L595)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -589,7 +603,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:370](../src/esolog_tail.py#L370)*
+*[src/esolog_tail.py:380](../src/esolog_tail.py#L380)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -608,7 +622,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:453](../src/esolog_tail.py#L453)*
+*[src/esolog_tail.py:463](../src/esolog_tail.py#L463)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -631,7 +645,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:544](../src/esolog_tail.py#L544)*
+*[src/esolog_tail.py:554](../src/esolog_tail.py#L554)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

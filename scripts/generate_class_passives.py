@@ -2,7 +2,9 @@
 """
 Generate data/skills/class_passives.json: every class skill line passive and
 Class Mastery passive by game ability id, with its class, skill line, name
-and rank, for the skill lines shown beside a player's class.
+and rank, for the skill lines and masteries shown beside a player's class;
+and the ids of the effects the masteries fire, by which a mastery is known
+when it is not in the player's passive list.
 
 The encounter log lists a player's passives by id on their PLAYER_INFO line
 and never says which skill line a passive belongs to. UESP's player skill
@@ -18,16 +20,29 @@ the Reusable Parts ally effect, the Resolute Defense and Steadfast
 Candescence procs), and a passive's icon does not tell it from an active
 (Blessing at the Peak and Landslide use ability_* icons).
 
-Run after an ESO update that adds a class or a skill line (one request to
-UESP, which asks heavy users to go lightly: do not loop it):
+The PLAYER_INFO list holds only the passives whose effect is always on. A
+mastery that works by a proc (Unbound Potential, Abyssal Emergence, Wildfire
+Embers, Bright Harbinger...) is never in it; it shows in the log as an
+EFFECT_CHANGED the player is the source of, under one of a few effect ids
+that carry the mastery's name. UESP's mined skill table lists those ids
+(97 ids carry a mastery's name on the Update 51 client, the 35 passives
+among them); the ones that are not the passives themselves are kept under
+'mastery_effects'. Two monster abilities are also called Pound of Flesh and
+target enemies; a mastery effect never does, so enemy-targeted rows are
+left out.
+
+Run after an ESO update that adds a class or a skill line (two requests to
+UESP, five seconds apart; UESP asks heavy users to go lightly, so do not
+loop it):
     python scripts/generate_class_passives.py
-or from a reply already on disk, such as the one the esobuild export keeps:
-    python scripts/generate_class_passives.py --from build/esobuild-assets/sources/player_skills.json
+or from replies already on disk, such as the ones the esobuild export keeps:
+    python scripts/generate_class_passives.py --from build/esobuild-assets/sources/player_skills.json --mined build/esobuild-assets/sources/mined_skills.json
 """
 
 import argparse
 import json
 import sys
+import time
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
@@ -37,6 +52,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "data" / "skills" / "class_passives.json"
 EXPORT_URL = ("https://esolog.uesp.net/exportJson.php?table=playerSkills"
               "&fields=id,name,classType,skillLine,baseAbilityId,rank,isPassive,skillType")
+MINED_URL = ("https://esolog.uesp.net/exportJson.php?table=minedSkills"
+             "&fields=id,name,isPassive,target")
 ATTRIBUTION = "Skill data from UESP (esolog.uesp.net), CC-BY-SA 2.5"
 USER_AGENT = ("esolog-tail build script "
               "(+https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities)")
@@ -44,8 +61,10 @@ SKILL_TYPE_CLASS = "1"  # UESP's skillType for class skill lines
 MASTERY_LINE = "Class Mastery"
 # A class has three lines of four passives in two ranks, plus five masteries
 PASSIVES_PER_CLASS = 3 * 4 * 2 + 5
+MIN_MASTERY_EFFECTS = 40  # 60 on the Update 51 client; fewer means a short reply
 CLASSES = ("Dragonknight", "Sorcerer", "Nightblade", "Warden", "Necromancer",
            "Templar", "Arcanist")
+SECONDS_BETWEEN_REQUESTS = 5
 
 
 def fetch(url: str) -> str:
@@ -83,40 +102,67 @@ def class_passives(payload: dict) -> dict:
     return dict(sorted(found.items(), key=lambda item: int(item[0])))
 
 
+def mastery_effects(payload: dict, passives: dict) -> dict:
+    """{ability id: {'class', 'name'}} for every mined skill that carries a
+    Class Mastery's name and is not one of the mastery passives themselves
+    nor enemy-targeted (the Pound of Flesh monster abilities)."""
+    rows = payload.get("minedSkills") if isinstance(payload, dict) else None
+    masteries = {entry["name"]: entry["class"] for entry in passives.values()
+                 if entry["line"] == MASTERY_LINE and entry["name"]}
+    found = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        ability_id = str(row.get("id", "")).strip()
+        name = str(row.get("name") or "").strip()
+        if not ability_id.isdigit() or name not in masteries or ability_id in passives:
+            continue
+        if str(row.get("target") or "").strip().lower() == "enemy":
+            continue
+        found[ability_id] = {"class": masteries[name], "name": name}
+    return dict(sorted(found.items(), key=lambda item: int(item[0])))
+
+
 def per_class(passives: dict) -> Counter:
     return Counter(entry["class"] for entry in passives.values())
 
 
-def render(passives: dict, generated: str) -> str:
-    """The file's JSON, one passive per line so a refresh diffs by id."""
-    entries = ",\n".join(f"  {json.dumps(ability_id)}: {json.dumps(entry)}"
-                         for ability_id, entry in passives.items())
+def render(passives: dict, effects: dict, generated: str) -> str:
+    """The file's JSON, one entry per line so a refresh diffs by id."""
+    def block(entries):
+        return ",\n".join(f"  {json.dumps(ability_id)}: {json.dumps(entry)}"
+                          for ability_id, entry in entries.items())
     return ("{\n"
             f' "generated": {json.dumps(generated)},\n'
-            f' "source": {json.dumps(EXPORT_URL)},\n'
+            f' "source": {json.dumps([EXPORT_URL, MINED_URL])},\n'
             f' "attribution": {json.dumps(ATTRIBUTION)},\n'
             f' "count": {len(passives)},\n'
             ' "passives": {\n'
-            f"{entries}\n"
+            f"{block(passives)}\n"
+            " },\n"
+            f' "mastery_effects_count": {len(effects)},\n'
+            ' "mastery_effects": {\n'
+            f"{block(effects)}\n"
             " }\n"
             "}\n")
 
 
-def previous_ids(path: Path) -> set:
+def previous_ids(path: Path, key: str) -> set:
     if not path.is_file():
         return set()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
         return set()
-    return set((data.get("passives") or {}).keys()) if isinstance(data, dict) else set()
+    return set((data.get(key) or {}).keys()) if isinstance(data, dict) else set()
 
 
-def write(path: Path, passives: dict) -> None:
-    before = previous_ids(path)
+def write(path: Path, passives: dict, effects: dict) -> None:
+    before = previous_ids(path, "passives")
+    before_effects = previous_ids(path, "mastery_effects")
     path.parent.mkdir(parents=True, exist_ok=True)
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    path.write_text(render(passives, generated), encoding="utf-8")
+    path.write_text(render(passives, effects, generated), encoding="utf-8")
     now = set(passives)
     print(f"{path.relative_to(REPO_ROOT)}: {len(passives)} class passives "
           f"(+{len(now - before)} -{len(before - now)} vs previous)")
@@ -125,26 +171,38 @@ def write(path: Path, passives: dict) -> None:
         masteries = sum(1 for entry in passives.values()
                         if entry["class"] == class_name and entry["line"] == MASTERY_LINE)
         print(f"  {class_name}: {counts.get(class_name, 0)} ({masteries} masteries)")
+    now_effects = set(effects)
+    print(f"  mastery effects: {len(effects)} "
+          f"(+{len(now_effects - before_effects)} -{len(before_effects - now_effects)} vs previous)")
+
+
+def _load(source: Path, url: str) -> dict:
+    try:
+        return json.loads(source.read_text(encoding="utf-8") if source else fetch(url))
+    except ValueError:
+        sys.exit(f"{source or url} did not hold JSON; not overwriting")
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--from", dest="source", type=Path,
                         help="a saved UESP playerSkills reply to read instead of fetching")
+    parser.add_argument("--mined", type=Path,
+                        help="a saved UESP minedSkills reply to read instead of fetching")
     args = parser.parse_args(argv)
-    try:
-        payload = json.loads(args.source.read_text(encoding="utf-8") if args.source
-                             else fetch(EXPORT_URL))
-    except ValueError:
-        sys.exit(f"{args.source or EXPORT_URL} did not hold JSON; not overwriting")
-    passives = class_passives(payload)
+    passives = class_passives(_load(args.source, EXPORT_URL))
     short = [f"{class_name} {per_class(passives).get(class_name, 0)}"
              for class_name in CLASSES
              if per_class(passives).get(class_name, 0) < PASSIVES_PER_CLASS]
     if short:
         sys.exit(f"fewer than {PASSIVES_PER_CLASS} passives for {', '.join(short)}; "
                  "not overwriting")
-    write(OUT_PATH, passives)
+    if not args.mined and not args.source:
+        time.sleep(SECONDS_BETWEEN_REQUESTS)
+    effects = mastery_effects(_load(args.mined, MINED_URL), passives)
+    if len(effects) < MIN_MASTERY_EFFECTS:
+        sys.exit(f"only {len(effects)} mastery effects found; not overwriting")
+    write(OUT_PATH, passives, effects)
     return 0
 
 

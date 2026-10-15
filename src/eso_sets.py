@@ -43,12 +43,26 @@ loses to the lines whose actives are slotted.
 The fight view and build window show only the borrowed lines, each with a
 plus sign before its first word ("NB +Herald" for a Nightblade who swapped
 a line for Herald of the Tome), so a stock build shows just its class. A
-player whose class is unknown shows every line found. The Class Mastery
-passives in the same list (the table holds the 35, five per class; only a
-character with all three of its own lines can take them, and 39% of the
-surveyed builds carried one or two) take the same place beside the class,
-after a colon ("NB: An Eye for Exploitation, Above and Beyond"), and are
-named on the build window's mundus and food line too.
+player whose class is unknown shows every line found.
+
+Class Mastery passives (five per class; only a character with all three of
+its own lines can take them) take the same place beside the class, after a
+colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
+the build window's mundus and food line too. Two sources name them,
+because the PLAYER_INFO list holds only the passives whose effect is always
+on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
+Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
+in the log as an EFFECT_CHANGED the player is the source of, under one of
+a few effect ids that carry its name; the table lists those 60 ids as
+mastery_effects, and mastery_of_effect names the mastery of one. The
+engine notes a mastery on its holder when such an effect fires, and keeps
+it for the rest of the session, since a mastery does not change between
+fights. In the 73 survey logs, 11,697 pure-class player rows: the list
+alone named a mastery for 42% of them, the list plus the fight's own
+effects for 79%, the list plus the session's effects for 90% (191 of 209
+characters). Nine of the 35 masteries fire no effect of their own name
+(Tundra's Maw works through Major Brittle, Lead from the Front through
+Major Berserk, Share the Spoils through resources) and stay invisible.
 """
 
 import json
@@ -388,17 +402,44 @@ MASTERY_LINE = "Class Mastery"
 
 
 @lru_cache(maxsize=1)
-def class_passive_table() -> Dict[str, dict]:
-    """data/skills/class_passives.json as {ability id: {'class', 'line',
-    'name', 'rank'}}; {} when the file is absent or malformed."""
+def _class_passive_file() -> dict:
+    """data/skills/class_passives.json as parsed; {} when absent or malformed."""
     try:
         data = json.loads(bundle_root().joinpath("data", "skills", "class_passives.json")
                           .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    passives = data.get("passives") if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+@lru_cache(maxsize=1)
+def class_passive_table() -> Dict[str, dict]:
+    """The file's passives as {ability id: {'class', 'line', 'name',
+    'rank'}}; {} when the file is absent or malformed."""
+    passives = _class_passive_file().get("passives")
     return {str(ability_id): entry for ability_id, entry in (passives or {}).items()
             if isinstance(entry, dict) and entry.get("line")}
+
+
+@lru_cache(maxsize=1)
+def mastery_effect_table() -> Dict[str, str]:
+    """{ability id: mastery name} for the effects the masteries fire and the
+    mastery passives themselves (both show as EFFECT_CHANGED from the
+    holder); {} when the file is absent or malformed."""
+    effects = _class_passive_file().get("mastery_effects")
+    table = {str(ability_id): str(entry.get("name") or "")
+             for ability_id, entry in (effects or {}).items()
+             if isinstance(entry, dict) and entry.get("name")}
+    for ability_id, entry in class_passive_table().items():
+        if entry.get("line") == MASTERY_LINE and entry.get("name"):
+            table[ability_id] = str(entry["name"])
+    return table
+
+
+def mastery_of_effect(ability_id, table: Optional[Dict[str, str]] = None) -> str:
+    """The Class Mastery an effect id belongs to, '' for any other id."""
+    table = mastery_effect_table() if table is None else table
+    return table.get(str(ability_id), "")
 
 
 def lines_from_passives(effect_ids: Iterable[str],

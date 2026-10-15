@@ -447,19 +447,54 @@ class TestClassPassives(unittest.TestCase):
         counts = self.script.per_class(self.script.class_passives(self.SAMPLE))
         self.assertLess(max(counts.values()), self.script.PASSIVES_PER_CLASS)
 
+    # UESP minedSkills rows cut down: the passive itself, two effects of the
+    # mastery, a monster ability of the same name, an unrelated skill
+    MINED = {'minedSkills': [
+        {'id': '263604', 'name': 'An Eye for Exploitation', 'isPassive': '1', 'target': 'Self'},
+        {'id': '263640', 'name': 'An Eye for Exploitation', 'isPassive': '1', 'target': 'Self'},
+        {'id': '263411', 'name': 'Unbound Potential', 'isPassive': '0', 'target': 'Self'},
+        {'id': '107994', 'name': 'Pound of Flesh', 'isPassive': '0', 'target': 'Enemy'},
+        {'id': '263549', 'name': 'Pound of Flesh', 'isPassive': '1', 'target': 'Self'},
+        {'id': '45060', 'name': 'Hemorrhage', 'isPassive': '1', 'target': 'Self'},
+        'not a row',
+    ]}
+    MASTERIES = {
+        '263604': {'class': 'Nightblade', 'line': 'Class Mastery', 'name': 'An Eye for Exploitation', 'rank': 1},
+        '263410': {'class': 'Arcanist', 'line': 'Class Mastery', 'name': 'Unbound Potential', 'rank': 1},
+        '263549': {'class': 'Necromancer', 'line': 'Class Mastery', 'name': 'Pound of Flesh', 'rank': 1},
+        '45060': {'class': 'Nightblade', 'line': 'Assassination', 'name': 'Hemorrhage', 'rank': 2},
+    }
+
+    def test_mastery_effects_by_id_without_the_passives_or_monster_abilities(self):
+        self.assertEqual(self.script.mastery_effects(self.MINED, self.MASTERIES), {
+            '263411': {'class': 'Arcanist', 'name': 'Unbound Potential'},
+            '263640': {'class': 'Nightblade', 'name': 'An Eye for Exploitation'},
+        })
+        self.assertEqual(self.script.mastery_effects({}, self.MASTERIES), {})
+        self.assertEqual(self.script.mastery_effects(self.MINED, {}), {})
+
     def test_file_is_json_one_passive_per_line(self):
         passives = self.script.class_passives(self.SAMPLE)
-        text = self.script.render(passives, '2026-10-15T00:00:00+00:00')
+        effects = self.script.mastery_effects(self.MINED, self.MASTERIES)
+        text = self.script.render(passives, effects, '2026-10-15T00:00:00+00:00')
         data = json.loads(text)
         self.assertEqual(data['passives'], passives)
         self.assertEqual(data['count'], 3)
+        self.assertEqual(data['mastery_effects'], effects)
+        self.assertEqual(data['mastery_effects_count'], 2)
         self.assertIn('UESP', data['attribution'])
-        self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 3)
+        self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 5)
 
     def test_committed_table_matches_the_script(self):
         data = json.loads((REPO_ROOT / 'data' / 'skills' / 'class_passives.json')
                           .read_text(encoding='utf-8'))
         self.assertEqual(data['count'], len(data['passives']))
+        self.assertEqual(data['mastery_effects_count'], len(data['mastery_effects']))
+        self.assertGreaterEqual(len(data['mastery_effects']), self.script.MIN_MASTERY_EFFECTS)
+        masteries = {e['name'] for e in data['passives'].values() if e['line'] == 'Class Mastery'}
+        for ability_id, effect in data['mastery_effects'].items():
+            self.assertIn(effect['name'], masteries)
+            self.assertNotIn(ability_id, data['passives'])
         counts = self.script.per_class(data['passives'])
         self.assertEqual(set(counts), set(self.script.CLASSES))
         for class_name, count in counts.items():

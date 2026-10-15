@@ -124,6 +124,22 @@ class TestSkillLinesFromPassives(unittest.TestCase):
         self.assertEqual(table['29424']['rank'], 1)
         self.assertNotIn('42030', table)
 
+    def test_mastery_effects_name_their_mastery(self):
+        from eso_sets import mastery_effect_table, mastery_of_effect
+        # A small table: the effect Unbound Potential fires, and the passive itself
+        table = {'263411': 'Unbound Potential', '263604': 'An Eye for Exploitation'}
+        self.assertEqual(mastery_of_effect('263411', table), 'Unbound Potential')
+        self.assertEqual(mastery_of_effect(263604, table), 'An Eye for Exploitation')
+        self.assertEqual(mastery_of_effect('45060', table), '')
+        # The bundled one: 60 effects plus the 35 passives, no monster ability
+        bundled = mastery_effect_table()
+        self.assertEqual(len(bundled), 95)
+        self.assertEqual(bundled['263411'], 'Unbound Potential')      # proc effect
+        self.assertEqual(bundled['263604'], 'An Eye for Exploitation')  # the passive
+        self.assertEqual(bundled['268274'], 'Calculated Defense')     # group effect
+        self.assertNotIn('107994', bundled)                           # Pound of Flesh, a monster's
+        self.assertEqual(mastery_of_effect('263369'), 'Abyssal Emergence')
+
 
 if __name__ == '__main__':
     unittest.main()
