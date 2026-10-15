@@ -43,9 +43,14 @@ jobs:
       run: python scripts/create_icon.py
 
     - name: Run tests
+      # The window-layout test runs in a process of its own: in the whole
+      # suite it crashed the Windows runner with an access violation while
+      # deleting a shown main window (2026-10-15, issue #18), yet passed on
+      # its own and after every subset of the other GUI tests.
       run: |
         pip install pytest
-        python -m pytest tests/ -q
+        python -m pytest tests/ -q --ignore=tests/unit/test_window_layout.py
+        python -m pytest tests/unit/test_window_layout.py -q
       env:
         QT_QPA_PLATFORM: offscreen
 
@@ -120,9 +125,14 @@ jobs:
       run: python scripts/create_icon.py
 
     - name: Run tests
+      # The window-layout test runs in a process of its own: in the whole
+      # suite it crashed the Windows runner with an access violation while
+      # deleting a shown main window (2026-10-15, issue #18), yet passed on
+      # its own and after every subset of the other GUI tests.
       run: |
         pip install pytest
-        python -m pytest tests/ -q
+        python -m pytest tests/ -q --ignore=tests/unit/test_window_layout.py
+        python -m pytest tests/unit/test_window_layout.py -q
       env:
         QT_QPA_PLATFORM: offscreen
 
