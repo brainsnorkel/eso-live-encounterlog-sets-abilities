@@ -88,6 +88,23 @@ class TestBossDps(unittest.TestCase):
         self.assertEqual(fight.group_dps, 17500.0)
         self.assertEqual(fight.group_boss_dps, 15000.0)
 
+    def test_players_rank_by_boss_damage_then_all_damage(self):
+        # Player 2 deals more damage in all (to the add) but less to the
+        # boss: player 1 ranks first
+        fight = _run([BOSS, ADD] + FIGHT_START + [
+            _hit(11000, _player(1), 100000, _monster(70, 900000, BOSS_HEALTH)),
+            _hit(12000, _player(2), 40000, _monster(70, 860000, BOSS_HEALTH)),
+            _hit(13000, _player(2), 200000, _monster(71, 0, ADD_HEALTH)),
+        ] + FIGHT_END)
+        self.assertEqual([p['unit_id'] for p in fight.players], ['1', '2'])
+        self.assertGreater(fight.players[1]['dps'], fight.players[0]['dps'])
+        # No boss: all damage decides
+        fight = _run([ADD] + FIGHT_START + [
+            _hit(11000, _player(1), 10000, _monster(71, 40000, ADD_HEALTH)),
+            _hit(12000, _player(2), 30000, _monster(71, 10000, ADD_HEALTH)),
+        ] + FIGHT_END)
+        self.assertEqual([p['unit_id'] for p in fight.players], ['2', '1'])
+
     def test_every_damaging_result_counts(self):
         """DoT ticks, blocked hits and shield absorbs are damage; a hit the
         target was immune to, and overkill, are not (see DAMAGE_RESULTS)."""

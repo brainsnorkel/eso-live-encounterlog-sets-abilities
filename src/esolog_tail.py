@@ -2128,7 +2128,10 @@ class ESOLogAnalyzer(ListenerMixin):
             player_damage = enc.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
 
-        players_with_damage.sort(key=lambda x: x[1], reverse=True)
+        # Ranked by damage to the bosses first, then by all damage: in a
+        # fight without a boss every boss figure is 0 and all damage decides
+        players_with_damage.sort(
+            key=lambda x: (enc.player_boss_damage.get(x[0].unit_id, 0), x[1]), reverse=True)
 
         for player, player_damage in players_with_damage:
             player_dps = player_damage / duration if duration > 0 else 0
