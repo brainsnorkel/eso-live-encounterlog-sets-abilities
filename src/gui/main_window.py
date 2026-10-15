@@ -294,10 +294,24 @@ class MainWindow(QMainWindow):
         self.request_update_download.connect(self.worker.download_update)
 
         self.worker_thread.started.connect(self.worker.start)
-        # Canonical Qt worker teardown: delete the worker (and its timers)
-        # once its thread's event loop has finished, not at interpreter exit
-        self.worker_thread.finished.connect(self.worker.deleteLater)
+        # Worker teardown once its thread's event loop has finished, on the
+        # UI thread (_discard_worker): the worker is a Python-created
+        # QObject, and freeing one of those on another thread corrupts the
+        # interpreter (the Settings dialog did it in 0.6.x and aborted the
+        # app; in the tests, which quit the thread early, it surfaced as an
+        # access violation several tests later on GitHub's Windows runner,
+        # 2026-10-15). A finished thread leaves the worker with no thread
+        # affinity, so the UI thread may pull it over before deleting it.
+        self.worker_thread.finished.connect(self._discard_worker)
         self.worker_thread.start()
+
+    @Slot()
+    def _discard_worker(self):
+        try:
+            self.worker.moveToThread(self.thread())
+            self.worker.deleteLater()
+        except RuntimeError:
+            pass  # already gone
 
     def closeEvent(self, event):
         self._ticker.stop()
