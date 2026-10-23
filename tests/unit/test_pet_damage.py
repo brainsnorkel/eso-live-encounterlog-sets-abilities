@@ -62,7 +62,9 @@ BASE = [
 # Player 1's Blighted Blastbones, summoned before the pull
 PET = _unit_added(3000, 90, 'Blighted Blastbones', 1)
 
-# A twenty-second fight: player 2 hits once, the pet hits once
+# A twenty-second fight: player 2 hits once, the pet hits once. Each dps
+# figure divides by the span of its own hits, a second at least (see
+# damage_stats), so a lone hit reads as its value per second
 FIGHT_START = [
     '10000,BEGIN_COMBAT',
     *[f'10001,PLAYER_INFO,{unit},[45549],[1],[],[12345],[12345]' for unit in (1, 2, 3)],
@@ -92,8 +94,8 @@ class TestPetDamage(unittest.TestCase):
     def test_a_pets_damage_counts_as_its_owners(self):
         analyzer = _run([PET] + FIGHT_START + [PLAYER_HIT, PET_HIT] + FIGHT_END)
         fight = analyzer.fight_history.fights[0]
-        self.assertEqual(_dps(fight), {'1': 5000.0, '2': 15000.0, '3': 0.0})
-        self.assertEqual(fight.group_dps, 20000.0)
+        self.assertEqual(_dps(fight), {'1': 100000.0, '2': 300000.0, '3': 0.0})
+        self.assertEqual(fight.group_dps, 400000.0)  # both hits, a second apart
 
     def test_a_pet_summoned_during_the_fight(self):
         analyzer = _run(FIGHT_START + [
@@ -101,7 +103,7 @@ class TestPetDamage(unittest.TestCase):
             _unit_added(11500, 90, 'Blighted Blastbones', 1),
             PET_HIT,
         ] + FIGHT_END)
-        self.assertEqual(_dps(analyzer.fight_history.fights[0]), {'1': 5000.0, '2': 15000.0, '3': 0.0})
+        self.assertEqual(_dps(analyzer.fight_history.fights[0]), {'1': 100000.0, '2': 300000.0, '3': 0.0})
 
     def test_the_pets_hit_can_open_the_fight(self):
         analyzer = _run([PET] + FIGHT_START + [PET_HIT, PLAYER_HIT] + FIGHT_END)
@@ -117,8 +119,8 @@ class TestPetDamage(unittest.TestCase):
             f'{later + 20000},END_COMBAT',
         ])
         first, second = analyzer.fight_history.fights
-        self.assertEqual(_dps(first), {'1': 0.0, '2': 15000.0, '3': 0.0})
-        self.assertEqual(_dps(second), {'1': 5000.0, '2': 5000.0, '3': 0.0})
+        self.assertEqual(_dps(first), {'1': 0.0, '2': 300000.0, '3': 0.0})
+        self.assertEqual(_dps(second), {'1': 100000.0, '2': 100000.0, '3': 0.0})
 
     def test_a_bosss_summons_are_nobodys_pet(self):
         analyzer = _run([
@@ -133,7 +135,7 @@ class TestPetDamage(unittest.TestCase):
         ] + FIGHT_END)
         self.assertEqual(analyzer.current_encounter.pet_ownership, {})
         # The hit it landed while it had an owner stays with player 1
-        self.assertEqual(_dps(analyzer.fight_history.fights[0])['1'], 5000.0)
+        self.assertEqual(_dps(analyzer.fight_history.fights[0])['1'], 100000.0)
 
     def test_a_unit_id_handed_out_again_is_not_the_pet(self):
         analyzer = _run([PET] + FIGHT_START + [

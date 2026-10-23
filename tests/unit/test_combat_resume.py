@@ -132,11 +132,14 @@ class TestFightCutInTwo(unittest.TestCase):
         self.assertEqual(fight.boss_name, 'Tideborn Taleria')
         # From the first BEGIN_COMBAT to the last END_COMBAT
         self.assertAlmostEqual(fight.duration_s, 40.1)
-        # Every hit counts, the one between the two lines included
-        self.assertAlmostEqual(fight.group_dps, 1000000 / 40.1)
+        # Every hit counts, the one between the two lines included, and the
+        # dps time runs from the first hit to the last across both parts
+        # (11000 to 50000); a player's own dps over their own hits' span
+        self.assertAlmostEqual(fight.dps_time_s, 39.0)
+        self.assertAlmostEqual(fight.group_dps, 1000000 / 39)
         dps = {p['name']: p['dps'] for p in fight.players}
-        self.assertAlmostEqual(dps['@brainsnorkel'], 100000 / 40.1)
-        self.assertAlmostEqual(dps['@templar'], 900000 / 40.1)
+        self.assertAlmostEqual(dps['@brainsnorkel'], 100000.0)  # one hit: the floor
+        self.assertAlmostEqual(dps['@templar'], 900000 / 39)
         self.assertEqual(fight.deaths, 1)
 
     def test_first_part_shows_until_the_fight_really_ends(self):
@@ -145,7 +148,7 @@ class TestFightCutInTwo(unittest.TestCase):
         fight = engine.fights[0]
         started = fight.timestamp
         self.assertAlmostEqual(fight.duration_s, 20.031)
-        self.assertAlmostEqual(fight.group_dps, 400000 / 20.031)
+        self.assertAlmostEqual(fight.group_dps, 400000 / 18)  # hits at 11000 and 29000
         self.assertEqual([kind for kind, _entry in engine.events()], ['fight_completed'])
 
         engine.feed(SECOND_PART)
@@ -186,7 +189,7 @@ class TestFightCutInTwo(unittest.TestCase):
         ])
         self.assertEqual(len(engine.fights), 1)
         self.assertAlmostEqual(engine.fights[0].duration_s, 40.1)
-        self.assertAlmostEqual(engine.fights[0].group_dps, 1000000 / 40.1)
+        self.assertAlmostEqual(engine.fights[0].group_dps, 1000000 / 39)
         self.assertEqual([kind for kind, _entry in engine.events()],
                          ['fight_completed', 'fight_updated', 'fight_updated'])
 
@@ -211,7 +214,7 @@ class TestFightCutInTwo(unittest.TestCase):
         self.assertAlmostEqual(first.duration_s, 40.1)
         self.assertEqual((second.boss_name, second.deaths), ('Dreadsail Deckhand', 0))
         self.assertAlmostEqual(second.duration_s, 10.0)
-        self.assertAlmostEqual(second.group_dps, 7000.0)
+        self.assertAlmostEqual(second.group_dps, 70000.0)  # one hit: the floor
         self.assertEqual([kind for kind, _entry in engine.events()],
                          ['fight_completed', 'fight_updated', 'fight_completed'])
 

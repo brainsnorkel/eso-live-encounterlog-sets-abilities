@@ -42,6 +42,25 @@ class TestAbout(unittest.TestCase):
                       'the ESO item database of', html)
         self.assertIn('>UESP</a>', html)
 
+    def test_credits_name_combat_metrics_for_the_dps_definitions(self):
+        from gui.about import about_html
+        html = about_html('0.12.0')
+        self.assertIn("<a href='https://www.esoui.com/downloads/info1360-CombatMetrics.html'>"
+                      "Combat Metrics</a> by Solinur", html)
+        self.assertIn("<a href='https://github.com/Solinur/LibCombat'>LibCombat</a>", html)
+        self.assertIn("<a href='https://github.com/Solinur/CombatMetrics'>Combat Metrics source</a>",
+                      html)
+        self.assertIn('the dps time', html)
+
+    def test_readme_credits_mirror_the_dialog(self):
+        readme = (Path(__file__).resolve().parents[2] / 'README.md').read_text(encoding='utf-8')
+        credits = readme[readme.index('## Credits'):]
+        for url in ('https://www.esoui.com/downloads/info1360-CombatMetrics.html',
+                    'https://github.com/Solinur/LibCombat',
+                    'https://github.com/Solinur/CombatMetrics',
+                    'https://eso-hub.com', 'https://github.com/Baertram/LibSets'):
+            self.assertIn(url, credits)
+
     def test_toolbar_has_about_action(self):
         from app_config import AppConfig
         from gui.main_window import MainWindow
