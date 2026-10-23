@@ -36,15 +36,15 @@ The list on the left has one line per completed fight: `boss · duration · grou
 
 ### The fight
 
-- **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt.
+- **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. Click the group DPS, or **DPS graph** on the toolbar, for the [dps over time graph](#dps-over-time).
 - **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; six boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Alkosh); and Crux, the mean and peak Crux you held. Every row is a [tracked-effect rule](#tracked-effects), on every fight whatever the group size. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
   - the role letter, **T**ank, **H**ealer or **D**PS (see [Roles](#what-the-numbers-are-based-on));
   - the account name, with `*` after the player who dealt the fight's first damage;
   - the class. A build that borrows skill lines from another class shows those lines after a plus sign, `NB +Aedric +Grave`, read from the character's passives, so a line taken for its passives alone shows too. A pure-class build names its Class Mastery passives after a colon instead, `NB: An Eye for Exploitation, Above and Beyond`. A stock build shows just the class;
-  - DPS (`boss / total` in a fight with a boss), the share of the group's damage, and max health, magicka and stamina with the largest pool in bold.
+  - DPS and the share of the group's damage, each `boss / total` in a fight with a boss (against the units the game flags as bosses, then against everything), and max health, magicka and stamina with the largest pool in bold. Click a DPS figure for the player's [damage window](#a-players-damage); hover it for the time the figure divides by.
 
-DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on).
+DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on). Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's. The header shows the fight time and, when it reads differently, the group's dps time beside it: `1:40 (dps time 1:32)`.
 
 ### A player's row in detail
 
@@ -78,6 +78,28 @@ Click a player's name, in either view, to open their build for that fight. The n
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
 - **Type** is the armor weight, or what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
 - **Pcs** is the number of pieces of the row's set that are active, counted per weapon bar: armor and jewelry count on both bars, and each bar adds its own weapons, a two-handed one as two. `5` means five on either bar. `5/3` means five on the front bar and three on the back: that set's five-piece bonus is live on the front bar only.
+
+## A player's damage
+
+Click a player's DPS figure to open their damage for that fight. The window stays open beside the main window and keeps the fight it was opened for; clicking another figure reuses it.
+
+![The damage window: one player's damage by ability, and by target below](screencaps/damage-window.png)
+
+- **Header**: the player, then the fight, then the total: the damage dealt, the dps time it was dealt in, the DPS, and the player's share of the group's damage. Under it, where the first and last hits fell in the fight, and what the DPS would read over the whole fight.
+- **Abilities**: one row per ability, largest damage first, with its icon: damage, share of the player's damage, hits, critical rate, largest hit, average hit, and DPS (that ability's damage over the player's dps time). A pet's ability says `(pet)`. A shield's absorb counts as damage, not as a hit.
+- **Targets**: each unit the player hit, with the damage, its share, the hits, the span from the player's first hit on it to their last, and the DPS over that span (what Combat Metrics calls the real DPS to that target). Bosses are marked.
+- **Boss targets only**: in a fight with a boss, the switch at the bottom narrows every figure to the units the game flags as bosses.
+
+## DPS over time
+
+Click the group DPS figure in the fight header, or **DPS graph** on the toolbar, for a graph of the fight: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis.
+
+![The DPS graph: the group and the players over a fight](screencaps/dps-graph.png)
+
+- **Show** picks the curve: the average over a window of 1, 5 (the default, as in Combat Metrics), 10 or 30 seconds, or the running figure, which is the live dps as it stood at each second and ends at the fight's dps.
+- **Legend**: tick the group and the players to draw. The first eight players are on to begin with, and a player past the eighth draws dashed in a reused colour, since eight is as many colours as can be told apart. Each entry shows the player's dps (`boss / total` in a fight with a boss). The choices are kept from one fight to the next while the window is open.
+- **Hover** the chart for a crosshair with every drawn line's value at that second; with four lines or fewer, each line's end value is labelled.
+- **Boss targets only** narrows every line to the damage on the units the game flags as bosses.
 
 ## Death recaps
 
@@ -189,7 +211,7 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 The [design notes](design.md), collected from the code itself, go into each of these in depth.
 
 - **Fights**: a fight runs from the game's `BEGIN_COMBAT` line to its `END_COMBAT` line. The game also writes that pair in the middle of a fight, a fraction of a second apart, most often as you are resurrected. When combat starts again within a second of ending and an enemy the group was hitting is still alive, the app carries on with the same fight: its first part shows as a fight until the fight really ends, and that entry is then brought up to date.
-- **Damage**: a player's damage is every hit of theirs or their pets' on a hostile unit: direct hits, damage-over-time ticks, what got through a block and what an enemy's damage shield absorbed, the same results Combat Metrics sums. Overkill past the target's remaining health is not counted. Boss DPS is the part dealt to units the game flags as bosses; the Infinite Archive's arc bosses carry no such flag, so those fights show the total alone.
+- **Damage**: a player's damage is every hit of theirs or their pets' on a hostile unit: direct hits, damage-over-time ticks, what got through a block and what an enemy's damage shield absorbed, the same results Combat Metrics sums. Overkill past the target's remaining health is not counted. Boss DPS is the part dealt to units the game flags as bosses; the Infinite Archive's arc bosses carry no such flag, so those fights show the total alone. Every DPS figure divides by its dps time, first hit to last and a second at least, as Combat Metrics' does: a player's by the span of their own hits, their boss DPS by their hits on the bosses, the group's by the group's; the fight time shown beside it divides nothing. Measured on 113 split logs, that raises the group's figure by a median 1% in boss fights of a minute or more and a player's own by a median 6%. The damage window (click a DPS figure) breaks a player's damage down by ability and by target the way Combat Metrics does.
 - **Roles**: the largest resource pool decides. Health is a tank and stamina a DPS. A player whose largest pool is magicka is a healer when a restoration staff is equipped on either bar, or when they healed other players for more than the damage they dealt in that fight; otherwise a DPS. When all three pools are within 10% of each other, taunt and heal abilities on the bars decide instead.
 - **Builds**: `PLAYER_INFO` events carry each player's slotted abilities, gear and long-term effects. The class skill lines are read from the class passives among those effects, with the slotted abilities filling in for a line whose passives a character has not learned; a build has at most three lines. The same table names the Class Mastery passives: from the passive list for a mastery whose effect is always on, and from the effect a proc mastery fires (the player being its source) for the others, kept for the rest of the session.
 - **Werewolf form**: the game writes only a player's two human bars, never the bar a werewolf fights with. The app tells a player is in werewolf form from the effects the game puts on them as they transform, and rebuilds their werewolf bar from the werewolf skills they cast in form; a Carnage counts as its Pounce, which it replaces at close range.
