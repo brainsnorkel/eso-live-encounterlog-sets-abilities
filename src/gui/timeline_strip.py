@@ -11,13 +11,24 @@ receivers renders dotted rather than solid (Major Vulnerability and Taunt
 are exempt: they target the boss, so a single receiver is their normal
 case).
 
+A single click on a row, label or bar, opens a pop-up summing the row up
+over the whole fight: who applied the effect and who had it (issue #19,
+effect_summary). It is a transient popup, closed by a click elsewhere or
+Esc, and deletes itself on close: Qt owns it through its parent, and it
+holds nothing of the strip, so the garbage collector never frees it off
+the UI thread.
+
 Deliberately tiny: it must never crowd the fight summary. Hidden entirely
 when the displayed fight carries no timeline data.
 """
 
+from html import escape
+
 from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QToolTip, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
+
+from effect_summary import matrix, summarise
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
                 "Major Berserk", "Powerful Assault", "Major Vulnerability",
@@ -66,6 +77,14 @@ SCOPE_WIDTH = 46
 BUILTIN_SCOPES = {"Major Vulnerability": "boss", "Taunt": "boss"}
 MARGIN = 4
 
+# The pop-up lists at most this many casters or receivers, then "+N more"
+# (a pack's mobs can run to dozens); a caster x receiver grid is added when
+# both sides are this small
+SUMMARY_LIST_LIMIT = 12
+MATRIX_MAX_SOURCES = 4
+MATRIX_MAX_TARGETS = 12
+CLICK_HINT = "<br><i>Click for who applied it and who had it</i>"
+
 
 def _tick_step_ms(duration_ms: int) -> int:
     if duration_ms <= 2 * 60_000:
@@ -111,6 +130,7 @@ class TimelineStrip(QWidget):
         self._row_info = {}   # effect -> {'uptime_pct': int, 'dotted': bool}
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
         self.setVisible(False)
+        self.setCursor(Qt.PointingHandCursor)
 
     # ---- data ----
 
@@ -311,6 +331,85 @@ class TimelineStrip(QWidget):
                 return self._full_label(effect, info), info.get("scope", "")
         return None
 
+    def _row_at(self, pos):
+        """The effect of the row under *pos*, label, scope word or bar, or None."""
+        for row, effect in enumerate(self._rows):
+            rect = self._row_rect(row)
+            if QRectF(0, rect.top() - 1, rect.right() + 1, rect.height() + 2).contains(pos):
+                return effect
+        return None
+
+    # ---- click: the row's sources and targets ----
+
+    def summary_html(self, effect: str) -> str:
+        """The pop-up's text for a row: a header, the casters, the
+        receivers, and a caster x receiver grid when both are few."""
+        info = self._row_info.get(effect, {})
+        intervals = self._intervals(effect)
+        duration = self._timeline["duration_ms"]
+        stacks = bool(info.get("stacks_max"))
+        summary = summarise(intervals, duration, stacks=stacks)
+        scope = info.get("scope", "")
+        head = [f"<b>{escape(self._full_label(effect, info))}</b>"
+                + (f" ({escape(scope)})" if scope else ""),
+                f"Up {summary['uptime_pct']}% of {_fmt_tick(duration)} on any unit"]
+        if info.get("dotted"):
+            receivers = len(summary["targets"])
+            head.append(f"<i>Dotted: reached only {receivers} "
+                        f"receiver{'s' if receivers != 1 else ''}</i>")
+
+        def table(title, columns, lines, cells):
+            rows = [f"<tr><th align=left>{escape(title)}</th>"
+                    + "".join(f"<th align=right>&nbsp;{c}</th>" for c in columns) + "</tr>"]
+            for line in lines[:SUMMARY_LIST_LIMIT]:
+                rows.append(f"<tr><td>{escape(line['name'])}</td>"
+                            + "".join(f"<td align=right>&nbsp;{v}</td>" for v in cells(line))
+                            + "</tr>")
+            if len(lines) > SUMMARY_LIST_LIMIT:
+                rows.append(f"<tr><td><i>+{len(lines) - SUMMARY_LIST_LIMIT} more</i></td></tr>")
+            return "<table cellspacing=0 cellpadding=1>" + "".join(rows) + "</table>"
+
+        sections = [table("Applied by", ["uptime", "alone", "spans"], summary["sources"],
+                          lambda l: [f"{l['uptime_pct']}%", f"{l['sole_pct']}%", l["spans"]])]
+        if stacks:
+            sections.append(table("On", ["uptime", "peak", "at peak", "spans"], summary["targets"],
+                                  lambda l: [f"{l['uptime_pct']}%", f"×{l['max_stacks']}",
+                                             f"{l['at_max_pct']}%", l["spans"]]))
+        else:
+            sections.append(table("On", ["uptime", "spans"], summary["targets"],
+                                  lambda l: [f"{l['uptime_pct']}%", l["spans"]]))
+        grid = matrix(intervals, duration)
+        if (grid and len(grid) <= MATRIX_MAX_SOURCES
+                and len(summary["targets"]) <= MATRIX_MAX_TARGETS):
+            sources = [line["name"] for line in summary["sources"]]
+            rows = ["<tr><th align=left>On \\ by</th>"
+                    + "".join(f"<th align=right>&nbsp;{escape(s)}</th>" for s in sources) + "</tr>"]
+            for line in summary["targets"]:
+                target = line["name"]
+                rows.append(f"<tr><td>{escape(target)}</td>" + "".join(
+                    f"<td align=right>&nbsp;{grid[s][target]}%</td>" if target in grid[s]
+                    else "<td align=right>&nbsp;–</td>" for s in sources) + "</tr>")
+            sections.append("<table cellspacing=0 cellpadding=1>" + "".join(rows) + "</table>")
+        return "<br>".join(head) + "".join(
+            f"<p style='margin-top:6px'>{section}</p>" for section in sections)
+
+    def show_summary(self, effect: str, global_pos) -> "SummaryPopup":
+        """Open the pop-up for *effect*'s row at *global_pos*."""
+        QToolTip.hideText()
+        popup = SummaryPopup(self.summary_html(effect), self)
+        popup.adjustSize()
+        popup.move(global_pos)
+        popup.show()
+        return popup
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.LeftButton and self._timeline:
+            effect = self._row_at(ev.position())
+            if effect:
+                self.show_summary(effect, ev.globalPosition().toPoint())
+                return
+        super().mouseReleaseEvent(ev)
+
     # ---- hover attribution ----
 
     def _intervals_at(self, pos):
@@ -335,7 +434,8 @@ class TimelineStrip(QWidget):
             if labelled:
                 label, scope = labelled
                 QToolTip.showText(ev.globalPos(),
-                                  f"<b>{label}</b> ({scope})" if scope else f"<b>{label}</b>",
+                                  (f"<b>{label}</b> ({scope})" if scope else f"<b>{label}</b>")
+                                  + CLICK_HINT,
                                   self)
                 return True
             found = self._intervals_at(pos)
@@ -352,8 +452,31 @@ class TimelineStrip(QWidget):
                         lines.append(
                             f"{_fmt_tick(iv['start_ms'])}–{_fmt_tick(iv['end_ms'])}"
                             f" &nbsp; {who}{stacks}")
-                    QToolTip.showText(ev.globalPos(), "<br>".join(lines), self)
+                    QToolTip.showText(ev.globalPos(), "<br>".join(lines) + CLICK_HINT, self)
                     return True
             QToolTip.hideText()
             return True
         return super().event(ev)
+
+
+class SummaryPopup(QFrame):
+    """A row's sources and targets: a transient popup that closes on a click
+    elsewhere or Esc and deletes itself when closed. It keeps no reference
+    to the strip; Qt owns it through its parent."""
+
+    def __init__(self, html: str, parent=None):
+        super().__init__(parent, Qt.Popup)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        self.label = QLabel(html)
+        self.label.setTextFormat(Qt.RichText)
+        self.label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.label)
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(ev)

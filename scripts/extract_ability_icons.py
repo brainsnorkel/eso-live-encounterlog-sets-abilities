@@ -5,9 +5,14 @@ Extract ESO ability icons from the installed game and convert them to PNG.
 Why: the encounter log names every ability's icon
 (ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"), so the app
 can show icons offline if it ships one PNG per icon found in the game files.
-Two families are extracted: ability_*.dds (player skills, for the ability
-bars) and death_recap_*.dds (what monster attacks use, for death recaps).
-Run this after each ESO update to refresh that set.
+Three families are extracted: ability_*.dds (player skills, for the ability
+bars), death_recap_*.dds (what monster attacks use, for death recaps), and
+the skill icons an update named after itself, u<NN>_ability_*.dds: Update 50
+gave five werewolf skills u50_ability_werewolf_* icons, and Crypt Transfer
+has had u38_ability_armor_ultimatetransfer since Update 38. A slotted skill
+whose icon belongs to no such family is named in DEFAULT_STEMS: Rampage, what
+the werewolf ultimate becomes at full Fury, uses an achievement icon. Run
+this after each ESO update to refresh that set.
 
 Requirements (Windows):
   * EsoExtractData v0.53+ by UESP: https://en.uesp.net/wiki/ESO_Mod:EsoExtractData
@@ -56,6 +61,11 @@ ESO_DIR_CANDIDATES = [
 ]
 ICON_DIR = "\\esoui\\art\\icons\\"
 DEFAULT_PREFIXES = ("ability_", "death_recap_")
+# Skill icons named after the update that added them (u50_ability_werewolf_pounce)
+UPDATE_ICON_PATTERN = r"u\d+_ability_"
+# Icons from other families that a slotted skill uses: Rampage and Enduring
+# Rampage, the werewolf ultimate at full Fury
+DEFAULT_STEMS = ("achievement_u26_skyrim_werewolfdevour100",)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "data" / "icons" / "abilities"
 
@@ -122,15 +132,19 @@ def dump_file_table(exe: Path, mnf: Path, temp: Path):
     return read_file_table(mnf_txt)
 
 
-def icon_positions(rows, prefixes=(), stems=()):
+def icon_positions(rows, prefixes=(), stems=(), patterns=()):
     """Positions in *rows* of the icons whose filename starts with one of
-    *prefixes*, or whose name without .dds is one of *stems* (lowercase)."""
+    *prefixes* or with a match of one of the regular expressions *patterns*,
+    or whose name without .dds is one of *stems* (all lowercase)."""
     targets = tuple(ICON_DIR + p for p in prefixes)
     exact = {ICON_DIR + s + ".dds" for s in stems}
+    matchers = [re.compile(p) for p in patterns]
     wanted = []
     for i, row in enumerate(rows):
         name = row[2].lower()
-        if (targets and name.startswith(targets)) or name in exact:
+        filename = name[len(ICON_DIR):] if name.startswith(ICON_DIR) else ""
+        if ((targets and name.startswith(targets)) or name in exact
+                or (filename and "\\" not in filename and any(m.match(filename) for m in matchers))):
             wanted.append(i)
     return wanted
 
@@ -290,8 +304,11 @@ def main() -> int:
     ap.add_argument("--out", default=str(DEFAULT_OUT), help=f"output folder (default {DEFAULT_OUT})")
     ap.add_argument("--size", type=int, default=40, help="PNG edge length in px (game icons are 64; default 40)")
     ap.add_argument("--prefix", action="append", metavar="PREFIX",
-                    help="icon filename prefix to extract; repeat for several "
-                         f"(default {' and '.join(DEFAULT_PREFIXES)})")
+                    help="icon filename prefix to extract; repeat for several. Naming any replaces "
+                         f"the default families ({', '.join(DEFAULT_PREFIXES)}, the update-named "
+                         f"{UPDATE_ICON_PATTERN} icons and DEFAULT_STEMS)")
+    ap.add_argument("--stem", action="append", metavar="NAME",
+                    help="one more icon to extract, by its filename without .dds; repeat for several")
     ap.add_argument("--gap-mb", type=float, default=10.0,
                     help="bridge index gaps up to this many MB of unrelated files per range (default 10)")
     ap.add_argument("--dry-run", action="store_true", help="only list the icons and ranges, extract nothing")
@@ -303,7 +320,13 @@ def main() -> int:
     extractor = find_extractor(args.extractor)
     mnf = eso_dir / "depot" / "eso.mnf"
     out = Path(args.out)
-    prefixes = tuple(p.lower() for p in (args.prefix or DEFAULT_PREFIXES))
+    if args.prefix:
+        prefixes, patterns, stems = tuple(p.lower() for p in args.prefix), (), ()
+    else:
+        prefixes, patterns, stems = DEFAULT_PREFIXES, (UPDATE_ICON_PATTERN,), DEFAULT_STEMS
+    stems = tuple(stems) + tuple(s.lower() for s in (args.stem or ()))
+    families = ([p + "*.dds" for p in prefixes] + [p + "*.dds" for p in patterns]
+                + [s + ".dds" for s in stems])
     log(f"eso.mnf:    {mnf}  ({mnf.stat().st_size:,} bytes, modified "
         f"{datetime.fromtimestamp(mnf.stat().st_mtime):%Y-%m-%d %H:%M})")
     log(f"extractor:  {extractor}")
@@ -313,13 +336,13 @@ def main() -> int:
     try:
         t0 = time.time()
         rows = dump_file_table(extractor, mnf, temp)
-        wanted = icon_positions(rows, prefixes)
+        wanted = icon_positions(rows, prefixes, stems, patterns)
         if not wanted:
             sys.exit("no matching icon rows in the file table; is this the live eso.mnf?")
         ranges = merge_ranges(rows, wanted, int(args.gap_mb * 1_000_000))
         total_in_ranges = sum(e - s + 1 for s, e in ranges)
         log(f"file table: {len(rows):,} rows in {time.time() - t0:.1f}s; "
-            f"{len(wanted):,} {'/'.join(p + '*.dds' for p in prefixes)} icons -> {len(ranges)} ranges "
+            f"{len(wanted):,} icons of {', '.join(families)} -> {len(ranges)} ranges "
             f"({total_in_ranges - len(wanted):,} extra files bridged)")
         if args.dry_run:
             for s, e in ranges:
@@ -344,6 +367,8 @@ def main() -> int:
                        "modified": datetime.fromtimestamp(mnf.stat().st_mtime).isoformat(timespec="seconds")},
             "size_px": args.size,
             "prefixes": list(prefixes),
+            "patterns": list(patterns),
+            "stems": list(stems),
             "count": len(icons),
             "icons": dict(sorted(icons.items())),
         }

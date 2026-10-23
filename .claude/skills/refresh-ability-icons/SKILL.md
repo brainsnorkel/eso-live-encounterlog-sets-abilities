@@ -10,7 +10,7 @@ metadata:
 
 Refresh the bundled ability icons from the live game data.
 
-The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"`), and the app resolves that basename to `data/icons/abilities/<basename>.png`. Two icon families are bundled: `ability_*` (player skills, shown on the ability bars) and `death_recap_*` (what monster attacks use, shown in death recaps). The PNGs come from the game's `depot\eso.mnf` via `scripts/extract_ability_icons.py`; nothing is downloaded from any website.
+The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"`), and the app resolves that basename to `data/icons/abilities/<basename>.png`. Three icon families are bundled: `ability_*` (player skills, shown on the ability bars), `death_recap_*` (what monster attacks use, shown in death recaps) and the skill icons an update named after itself, `u<NN>_ability_*` (Update 50's werewolf skills, Crypt Transfer). Single icons from other families that a slotted skill uses are listed in the script's `DEFAULT_STEMS` (Rampage's achievement icon). The PNGs come from the game's `depot\eso.mnf` via `scripts/extract_ability_icons.py`; nothing is downloaded from any website.
 
 **Prerequisites** (check before running)
 
@@ -27,7 +27,7 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
    python scripts\extract_ability_icons.py --dry-run
    ```
 
-   Expect roughly 1,950 icons (about 1,800 `ability_*.dds` and 160 `death_recap_*.dds`) grouped into a few dozen `-s/-e` ranges. If the count is zero or the eso.mnf path is wrong, fix `--eso-dir` / `ESO_INSTALL_DIR` before continuing.
+   Expect roughly 2,020 icons (about 1,800 `ability_*.dds`, 160 `death_recap_*.dds`, 66 `u<NN>_ability_*.dds` and the `DEFAULT_STEMS`; 2,023 on the client of 2026-10-20) grouped into a few dozen `-s/-e` ranges. If the count is zero or the eso.mnf path is wrong, fix `--eso-dir` / `ESO_INSTALL_DIR` before continuing.
 
 2. Extract and convert (2-3 minutes; icons land in `data/icons/abilities/`, 40 px by default):
 
@@ -50,5 +50,5 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
 - Scribed (Grimoire) skills log a normal icon (`ability_grimoire_<weapon>.dds`) but append three extra quoted fields after the two flags (focus/signature/affix script names, e.g. `...,F,T,"Magic Damage","Assassin's Misery","Berserk"`). Parsers must read the icon from field 4, never from the end of the line.
 - `EsoExtractData -n <name>` only matches exact filenames and reloads the MNF per run (~3 s), which is why the script extracts index ranges instead. Its `-c` (convert DDS) option does not exist in the v0.53 command-line build; Pillow does the conversion.
-- Everything else under `esoui/art/icons` (gear, achievements, ~34,600 files) is deliberately not extracted. `--prefix` names a family to pull and can be repeated; naming any replaces the default pair, and PNGs outside the named families are removed from the output folder, so pass `--out` when trying another family.
-- A few abilities use icons from other families (`quest_spirit_001` for Illustrious Healing, some `passive_*` and `achievement_*`); those show as text in a death recap.
+- Everything else under `esoui/art/icons` (gear, achievements, ~34,600 files) is deliberately not extracted. `--prefix` names a family to pull and can be repeated; naming any replaces the default families, and PNGs outside the named families are removed from the output folder, so pass `--out` when trying another family. `--stem` adds single icons by name.
+- A few abilities use icons from other families (`quest_spirit_001` for Illustrious Healing, some `passive_*` and `achievement_*`); those show as text in a death recap. When `--check-log` reports one slotted on a bar, add its name to `DEFAULT_STEMS` in the script, as was done for Rampage.

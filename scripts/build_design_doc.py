@@ -56,6 +56,9 @@ TOPICS = [
     ("Scribed skills and their scripts", [
         "src/scribing.py",
     ]),
+    ("Werewolf form: the bar the log never writes", [
+        "src/werewolf.py",
+    ]),
     ("Builds: gear, weapon types, armor weights, mundus and food", [
         "src/player_build.py",
         "scripts/generate_weapon_types.py",
@@ -95,6 +98,8 @@ TOPICS = [
     ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
+        "src/effect_rules.py:EffectTracker.record",
+        "src/effect_summary.py",
     ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",

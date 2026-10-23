@@ -1,6 +1,6 @@
 # Development guide
 
-How the repository is laid out, and how to run, test, build and release ESO Log Tail. The [README](../README.md) covers what the app does.
+How the repository is laid out, and how to run, test, build and release ESO Log Tail, and how to refresh its game data after an ESO patch. The [README](../README.md) covers installing the app, and the [user guide](user-guide.md) what it does.
 
 ## Repository layout
 
@@ -33,7 +33,10 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `app_startup.py` | Startup order without Qt: config, log path, archive check, monitor. |
 | `app_config.py` | The per-user `config.json`. |
 | `player_build.py`, `scribing.py`, `death_recap.py`, `buff_timeline.py` | Per-fight detail: gear, mundus and food; scribed skills; death recaps; the experimental buff timeline. |
-| `eso_sets.py` | Skill line tables, for the subclass lines shown beside a class. |
+| `werewolf.py` | Werewolf form: the bar the log never writes, rebuilt from the skills cast in form, the share of a fight spent in form, and the morph a Rampage in a bar stands in for. |
+| `effect_rules.py` | Tracked effects: the rule text format, the HyperTools import, the default and example rules, and `EffectTracker`, which measures each rule per fight. |
+| `effect_summary.py` | Who applied an effect and who had it over a fight, for the timeline strip's click popup. |
+| `eso_sets.py` | Skill line tables and the class passive data (`data/skills/class_passives.json`), for the skill lines and Class Mastery passives shown beside a class. |
 | `gear_set_database.py`, `gear_set_data.py` | Gear set lookups. `gear_set_data.py` is generated; do not edit it. |
 | `ability_icons.py` | Icon file names and ESO-Hub link lookups. |
 | `log_archiver.py`, `log_freshness.py` | Archiving an oversized log; the "Last entry" indicator. |
@@ -97,9 +100,69 @@ A module that PyInstaller cannot find by following imports must be listed under 
 
 On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs into the release tarball. Build on the oldest distribution you want to support, with Qt's X11 and Wayland libraries installed (the package list is in the workflow file): PyInstaller bundles the ones it finds.
 
-## Refreshing bundled data
+## Refreshing game data after an ESO patch
 
-The data under `data/` and `src/gear_set_data.py` go stale when the game is patched. Each has a script in `scripts/` that rebuilds it; the commands and what each needs are in the README under [Refreshing game data after an ESO patch](../README.md#refreshing-game-data-after-an-eso-patch).
+The app bundles eight data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
+
+```cmd
+:: Ability and death-recap icons from your installed game (needs UESP's
+:: EsoExtractData and Pillow; see the script's header for the paths it looks
+:: for). About 2.5 minutes.
+python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
+
+:: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
+python scripts\generate_esohub_links.py
+
+:: Gear set data, after dropping a new LibSets_SetData.xlsm into data/gear_sets/
+python scripts\generate_gear_data.py
+
+:: Class skill line and Class Mastery passives by ability id, for the skill
+:: lines and masteries beside a class, from UESP's player skill table (network
+:: access; or --from a reply of theirs already saved)
+python scripts\generate_class_passives.py
+
+:: Poison names for the build window, from UESP's item database (network access)
+python scripts\generate_poison_names.py
+
+:: Food and drink buff ids for the build window, from the LibFoodDrinkBuff addon
+:: (your installed copy, else its ESOUI download)
+python scripts\generate_food_buffs.py
+
+:: Weapon types (inferno staff, dagger, shield, ...) for the build window and
+:: the healer role, from UESP's item database (network access; or --from a
+:: reply of theirs already saved)
+python scripts\generate_weapon_types.py
+
+:: Armor weights (light, medium, heavy) for the build window, from UESP's item
+:: database (network access)
+python scripts\generate_armor_weights.py
+```
+
+The scripts that ask UESP send one trimmed request each; please do not run them in a loop.
+
+After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encounter.log>` lists food-style effects in a recent log that the bundled table does not know yet, so a new food is noticed before it reads as "no food" in the build window.
+
+The icon step is also packaged as the `refresh-ability-icons` skill for Claude Code users of this repository. The icon script reports which icons were added or removed and, with `--check-log`, verifies that every ability slotted in that log has an icon.
+
+## Exporting game data for esobuild.com
+
+[esobuild.com](https://esobuild.com) shows the game's ability icons and names each build by its class skill lines, so it needs the icons under the game's file names and tables keyed by the game's ids. `scripts/export_esobuild_assets.py` builds both into one zip after a patch: every `ability_*` icon at 64 px, an ability table (game ability id to name, icon, skill line and type), the skill lines, the mundus boons and the sets with their ESO-Hub pages.
+
+```cmd
+:: The ESO-Hub maps the bundle copies (network access)
+python scripts\generate_esohub_links.py
+
+:: Tables and checks only: no icons extracted, nothing written. About 15 seconds.
+python scripts\export_esobuild_assets.py --update u51 --dry-run
+
+:: The bundle, in build\esobuild-assets\. About 3 minutes. --previous lists what
+:: the patch added, removed and changed.
+python scripts\export_esobuild_assets.py --update u51 --previous <the last bundle.zip>
+```
+
+`--update` is the site's tag for the update the client is on; it is never guessed. The client version in the bundle's manifest comes from the game's own build stamp. Icons come from the installed game, as for the app's own icons. Abilities and sets come from [UESP's ESO log export](https://esolog.uesp.net) (CC-BY-SA 2.5): four requests per run, a few seconds apart, with the replies kept under `build\esobuild-assets\sources\` and reused for a day, so further runs ask UESP nothing; if UESP refuses a request the script stops and does not retry. `--check-fixtures <folder>` runs the site's hand-over checks against its fixture files, and `--check-log <Encounter.log>` compares the tables with what the client itself logged, which shows whether UESP has caught up with a new update.
+
+The bundle is not committed. It is published as a release asset under a tag of its own, `esobuild-assets-<update>-<date>`, created with `gh release create ... --latest=false`: the app's update check reads the repository's latest release, which must stay an app release. The steps are packaged as the `export-esobuild-assets` skill.
 
 ## Documentation
 
@@ -111,8 +174,10 @@ Two documents are built from the app and the code rather than written by hand, s
 ## Releasing
 
 1. Changes add their notes under `## [Unreleased]` at the top of `CHANGELOG.md` as they are made.
-2. The release commit sets the version in `src/version.py` (`__version__` and `__version_info__`), renames `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, and updates the `iscc /DAppVersion=` example in the README.
+2. The release commit sets the version in `src/version.py` (`__version__` and `__version_info__`) and renames `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`.
 3. Push an annotated tag `vX.Y.Z`.
+
+A `v1.0.0` tag from September 2025, the terminal era, is still in the repository and sorts above the current `v0.x` releases in `git tag --sort=-v:refname`. It has no GitHub release, so the update check ignores it; read the current version from `src/version.py` or `gh release list`, not from the highest tag.
 
 The tag runs `.github/workflows/build-installers.yml`: tests, then the Windows installer and portable zip, then the Linux tarball (with a start-up smoke test under xvfb), then a GitHub release carrying all three files. A failure in either build stops the release. The app's update check reads that release, so a published tag is what users are offered.
 
