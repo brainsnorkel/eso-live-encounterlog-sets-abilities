@@ -22,7 +22,13 @@ A player who died in the fight gets a death-recap button beside their name
 
 A player's name is a link to their build window (see build_render): it looks
 like the plain bold name it replaces, and the fight view underlines it in the
-theme's link color while the pointer is over it.
+theme's link color while the pointer is over it. Their dps figure is the same
+kind of link to their damage window (see damage_render), and its hover text
+gives the dps time the figure divides by (see damage_stats).
+
+Dps and share cells read 'boss / total' in a fight with a boss: the dps
+against the units the game flags as bosses and against everything, and the
+player's share of the group's boss damage and of all its damage.
 """
 
 import html
@@ -42,6 +48,7 @@ DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
+DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 
 _THEMES = {
     # dark background: lighter accents
@@ -112,6 +119,57 @@ def build_tooltips(entry) -> dict:
     return tips
 
 
+def damage_href(unit_id) -> str:
+    return f"{DAMAGE_HREF}{unit_id}"
+
+
+def damage_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is a dps-figure link, else None."""
+    if href and href.startswith(DAMAGE_HREF):
+        return href[len(DAMAGE_HREF):]
+    return None
+
+
+def _dps_time_text(seconds: float) -> str:
+    """A dps time for the fight pane: never under its one-second floor."""
+    return _fmt_duration(max(float(seconds or 0), 1.0))
+
+
+def damage_tooltips(entry) -> dict:
+    """Hover text per dps-figure link: the dps time each figure divides by
+    (see damage_stats), the figures over the whole fight for comparison,
+    and that a click opens the damage window."""
+    e = html.escape
+    tips = {}
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
+    boss_fight = _is_boss_fight(entry)
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        if not unit_id:
+            continue
+        lines = []
+        damage = p.get("damage") if isinstance(p.get("damage"), dict) else None
+        if damage:
+            total = int(damage.get("total") or 0)
+            span_s = (damage.get("window") or {}).get("span_ms", 0) / 1000.0
+            lines.append(f"{total:,} damage in {_dps_time_text(span_s)} dps time "
+                         f"(first hit to last) of a {_fmt_duration(fight_s)} fight")
+            boss = int(damage.get("boss") or 0)
+            if boss_fight and boss:
+                boss_span_s = (damage.get("boss_window") or {}).get("span_ms", 0) / 1000.0
+                lines.append(f"{boss:,} to the bosses in {_dps_time_text(boss_span_s)}")
+            if fight_s > 0 and total:
+                whole = _fmt_dps(total / fight_s)
+                if boss_fight:
+                    whole = f"{_fmt_dps(boss / fight_s)} / {whole}"
+                lines.append(f"Over the whole fight: {whole}")
+        lines.append("Click for the damage breakdown by ability and target")
+        tips[damage_href(unit_id)] = (
+            f"<b>{e(_join(p.get('name', '')))}</b><br>"
+            f"<span style='font-size:85%'>{'<br>'.join(e(line) for line in lines)}</span>")
+    return tips
+
+
 def _join(value, sep=", ") -> str:
     """Lists/tuples joined for display; other values stringified."""
     if value is None:
@@ -151,6 +209,16 @@ def _dps_text(p, boss_fight: bool) -> str:
     if not boss_fight:
         return total
     return f"{_fmt_dps(float(p.get('boss_dps') or 0))} / {total}"
+
+
+def _pct_text(p, boss_fight: bool) -> str:
+    """A player's share cell: 'boss % / total %' in a fight with a boss (their
+    share of the group's boss damage, then of all its damage), the total
+    share alone in one without."""
+    total = f"{float(p.get('dmg_pct') or 0):.1f}%"
+    if not boss_fight:
+        return total
+    return f"{float(p.get('boss_pct') or 0):.1f}% / {total}"
 
 
 def _is_boss_fight(entry) -> bool:
@@ -483,7 +551,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
     gdps = _fmt_dps(entry.group_dps)
     if boss_fight:
         gdps = f"{_fmt_dps(entry.group_boss_dps)} / {gdps}"
-    stats = (f"{_fmt_duration(entry.duration_s)}"
+    # The fight time, and beside it the dps time the group figure divides
+    # by (first hit to last, see damage_stats) when the two read differently
+    duration = _fmt_duration(entry.duration_s)
+    dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
+    if entry.group_dps > 0 and _dps_time_text(dps_time) != duration:
+        duration = f"{duration} (dps time {_dps_time_text(dps_time)})"
+    stats = (f"{duration}"
              f" · {gdps} gdps"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
@@ -533,12 +607,16 @@ def render_html(entry, detailed: bool, dark: bool = False,
             beside = _mastery_text(p)
         subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
         dps = _dps_text(p, boss_fight)
-        pct = float(p.get("dmg_pct") or 0)
+        # The dps figure opens the player's damage window; like the name it
+        # keeps the look of plain text until it is hovered
+        if unit_id:
+            dps = (f'<a href="{e(damage_href(unit_id), quote=True)}" '
+                   f'style="text-decoration:none;color:{name_color}">{dps}</a>')
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
                f"{subclass_html}{recap_html}</td>"
                f"<td align='right'>{dps}</td>"
-               f"<td align='right'>{pct:.1f}%</td>"
+               f"<td align='right'>{_pct_text(p, boss_fight)}</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
         parts.append(row)
         if detailed:
@@ -626,11 +704,10 @@ def render_plain_text(entry) -> str:
     for p in entry.players:
         role = p.get("role") or "D"
         dps = _dps_text(p, boss_fight)
-        pct = float(p.get("dmg_pct") or 0)
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")
         lines.append(f"[{role}] {_join(p.get('name', ''))}{star} "
-                     f"{_join(p.get('class_abbr', ''))} — {dps} ({pct:.1f}%)")
+                     f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})")
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")

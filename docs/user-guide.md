@@ -14,9 +14,9 @@ A walk through the app, screen by screen. The pictures are taken from the app it
 
 - **Left**: the history, one line per completed fight: `boss · duration · group DPS · zone · time`. `vet` marks veteran difficulty and `(d)` a fight in which a player died. The newest fight is selected as it ends; select an older fight to read it, and the newest again to follow live fights.
 - **Right**: the selected fight. The header names the boss, the duration, the group DPS, the zone, the start time and the deaths. Under it the uptime line, one item per tracked-effect rule: a fresh install shows how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group, `Taunt:NN%`, how long each boss had a taunt on it, and seven boss debuffs. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`.
-- **One row per player**, ranked by damage to the bosses and then by all damage: the role letter (**T**ank, **H**ealer, **D**PS), the account name, the class, and when a build borrows skill lines from another class, those lines beside it with a plus sign (`NB +Herald`), read from the character's passives so a line taken for its passives alone shows too, or for a pure-class build its Class Mastery passives after a colon (`NB: An Eye for Exploitation, Above and Beyond`); then DPS, the share of the group's damage, and the player's health, magicka and stamina with the largest pool in bold. A `*` after a name marks the player who dealt the fight's first damage.
+- **One row per player**, ranked by damage to the bosses and then by all damage: the role letter (**T**ank, **H**ealer, **D**PS), the account name, the class, and when a build borrows skill lines from another class, those lines beside it with a plus sign (`NB +Herald`), read from the character's passives so a line taken for its passives alone shows too, or for a pure-class build its Class Mastery passives after a colon (`NB: An Eye for Exploitation, Above and Beyond`); then DPS and the player's share of the group's damage, each reading `boss / total` in a fight with a boss (against the units the game flags as bosses, then against everything), and the player's health, magicka and stamina with the largest pool in bold. A `*` after a name marks the player who dealt the fight's first damage. Click a DPS figure for the player's damage window; hover it for the time the figure divides by.
 
-The DPS numbers include what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. The ticks of damage-over-time effects are not counted.
+The DPS numbers count every hit of the player's and of their pets' (a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion): direct hits, damage-over-time ticks, what got through a block and what a damage shield absorbed, as Combat Metrics counts them. Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's. The header shows the fight time and, when it reads differently, the group's dps time beside it: `1:40 (dps time 1:32)`.
 
 ### A player's row in detail
 
@@ -47,6 +47,17 @@ Click a player's name to open their build for that fight. The window stays open 
 - **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken (none shown for a subclassed build).
 - **Bars**: as in the fight view, with the same hover names, ESO-Hub links and scribed-skill line.
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar. **Type** is the armor weight, or what a weapon is (Inferno Staff, Dagger, Greatsword, Shield). **Pcs** is how many pieces of that row's set are active: `5` on either bar; `5/3` means five on the front bar and three on the back, so the set's five-piece bonus is live on the front bar only. Quality, trait, enchant and the enchant's quality follow. A mythic piece is marked, a slotted poison gets a row under its bar, and a dash means the log did not say.
+
+## A player's damage
+
+Click a player's DPS figure to open their damage for that fight. The window stays open beside the main window and keeps the fight it was opened for; clicking another figure reuses it.
+
+![The damage window: one player's damage by ability, and by target below](screencaps/damage-window.png)
+
+- **Header**: the player, then the fight, then the total: the damage dealt, the dps time it was dealt in, the DPS, and the player's share of the group's damage. Under it, where the first and last hits fell in the fight, and what the DPS would read over the whole fight.
+- **Abilities**: one row per ability, largest damage first, with its icon: damage, share of the player's damage, hits, critical rate, largest hit, average hit, and DPS (that ability's damage over the player's dps time). A pet's ability says `(pet)`. A shield's absorb counts as damage, not as a hit.
+- **Targets**: each unit the player hit, with the damage, its share, the hits, the span from the player's first hit on it to their last, and the DPS over that span (what Combat Metrics calls the real DPS to that target). Bosses are marked.
+- **Boss targets only**: in a fight with a boss, the switch at the bottom narrows every figure to the units the game flags as bosses.
 
 ## Death recaps
 

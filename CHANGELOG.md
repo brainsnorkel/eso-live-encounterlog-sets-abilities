@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Damage window** (#21): click a player's DPS figure for their damage in that fight, broken down the way Combat Metrics breaks it down: one row per ability (a pet's marked `(pet)`), largest first, with damage, share, hits, crit %, largest and average hit and DPS; a table of the targets hit with the damage and span on each; and a *Boss targets only* switch in a fight with a boss. Hovering the figure shows the dps time it divides by and what the figures would read over the whole fight
+- **Shares beside both figures** (#21): the % column reads `boss % / total %` like the DPS column reads `boss / total`: the player's share of the group's damage to the bosses, then of all its damage. In the copied text too
+
+### Changed
+- **DPS divides by dps time, as in Combat Metrics** (#21): every DPS figure divides by the span of the hits it sums, first hit to last and a second at least, not by the fight time: a player's by the span of their own hits, their boss DPS by the span of their hits on the bosses, the group's by the span of the group's. The fight time stays on the history line and in the header, which adds the group's dps time when the two read differently: `1:40 (dps time 1:32)`. Measured on 113 of the maintainer's split logs (1,941 fights with damage, 564 with a boss), the group's figure rises by a median 1.0% in boss fights of a minute or more (p90 5.9%), a player's own by a median 5.8% (p90 41%) and their boss DPS by a median 9.7% (p90 75%); a lone hit now reads as its own value per second. Combat Metrics' own group DPS divides by the logging player's dps time, which differs from the group's by a median 8.5%; the group's own span is used here. What the engine never counted stays uncounted, all of it negligible: hits on units the log never added (0.07% of damage), on non-hostile units (0.00%), in the two seconds before BEGIN_COMBAT (0.04%) and in the 1.3 s after END_COMBAT (0.02%)
+
 ## [0.11.0] - 2026-10-15
 
 ### Added

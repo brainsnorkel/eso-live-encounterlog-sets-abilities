@@ -79,6 +79,12 @@ TOPICS = [
     ("What counts as damage", [
         "src/esolog_tail.py#What counts as damage",
     ]),
+    ("Dps time and the damage window: parity with Combat Metrics", [
+        "src/esolog_tail.py#Dps time",
+        "src/damage_stats.py",
+        "src/damage_stats.py:dps_time_s",
+        "src/gui/damage_render.py",
+    ]),
     ("Pets: whose damage and healing they are", [
         "src/esolog_tail.py:CombatEncounter.track_pet_ownership",
         "src/esolog_tail.py:CombatEncounter.add_damage_to_player",

@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1841](../src/esolog_tail.py#L1841)*
+*[src/esolog_tail.py:1867](../src/esolog_tail.py#L1867)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the experimental timeline, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1322](../src/esolog_tail.py#L1322)*
+*[src/esolog_tail.py:1344](../src/esolog_tail.py#L1344)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1337](../src/esolog_tail.py#L1337)*
+*[src/esolog_tail.py:1359](../src/esolog_tail.py#L1359)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2920](../src/esolog_tail.py#L2920)*
+*[src/esolog_tail.py:2972](../src/esolog_tail.py#L2972)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:330](../src/esolog_tail.py#L330)*
+*[src/esolog_tail.py:341](../src/esolog_tail.py#L341)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -578,7 +578,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:595](../src/esolog_tail.py#L595)*
+*[src/esolog_tail.py:617](../src/esolog_tail.py#L617)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -611,7 +611,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:380](../src/esolog_tail.py#L380)*
+*[src/esolog_tail.py:391](../src/esolog_tail.py#L391)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -626,11 +626,114 @@ Frost Clench, a separate id with the same icon).
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
+## Dps time and the damage window: parity with Combat Metrics
+
+### Dps time
+
+*[src/esolog_tail.py:110](../src/esolog_tail.py#L110)*
+
+Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
+
+### src/damage_stats.py
+
+*[src/damage_stats.py:1](../src/damage_stats.py#L1)*
+
+Damage accounting per fight, the way Combat Metrics does it.
+
+Combat Metrics (the LibCombat library behind it) is the addon ESO players
+quote dps from, so this app's figures follow its definitions. The parts
+that matter, read from LibCombat.lua and CombatMetrics.lua (October 2026):
+
+- **DPS time, not combat time.** A fight's ``dpstime`` is the time between
+  the player's first and last damage event, floored at one second
+  (``max((dpsend - dpsstart) / 1000, 1)``), and every dps figure divides by
+  it: ``DPSOut = damageOutTotal / dpstime``. The combat time (combat state
+  on to off) is kept beside it and shown, but divides nothing. The live
+  number during a fight is the same quotient, so it does not sink while
+  the player stands still: ``dpsend`` is the last hit, not now. Here the
+  fight time stays what the history line and header show (BEGIN_COMBAT to
+  END_COMBAT, with the game's cuts healed, see COMBAT_RESUME_MS), and each
+  dps figure divides by a dps time of its own: a player's by the span of
+  their own hits, the group's by the span of the group's, a boss figure by
+  the span of the hits on the bosses. That is what each player's own
+  Combat Metrics shows them, and what they post in chat.
+- **Boss dps** divides the damage dealt to the boss units by the span of the
+  hits on those units (``GetBossTargetDamage``: ``bossTime`` from the boss
+  units' own first and last event), and falls back to the fight's dps time
+  only when that span is empty.
+- **What counts** is the six results in DAMAGE_RESULTS (esolog_tail), from
+  the player and the player's pets, to any unit that is not a player pet.
+  Overkill is dropped: LibCombat overwrites the game's overflow value with
+  the shield amount it pairs to the hit. A damage shield's absorb is added
+  to the hit it absorbed (``DAMAGE_SHIELDED`` events buffered and matched on
+  source and target within 100 ms); the encounter log writes the absorb as
+  its own line, so summing those lines is the same total.
+- **Group dps** in Combat Metrics is the group's damage over the *logging
+  player's* dps time (``UpdateGrpStats``: ``groupDamageOut / self.dpstime``),
+  a limit of an addon that sees one client's combat state. The log sees
+  every player's hits, so here the group's dps time is the span of the
+  group's own hits, which is what that quotient means.
+- **The breakdown by ability** (``ProcessLogDamage`` / ``AccumulateStats``)
+  keys on the ability id and whether a pet cast it, and keeps per key the
+  damage by result (normal, critical, blocked, shielded), the hit counts by
+  result, and the largest and smallest hit; a row's dps is its damage over
+  the fight's dps time, its crit rate is critical hits over hits, and its
+  average is damage over hits. The window here keeps the same figures per
+  player, for all targets and for the boss units alone, and the damage per
+  target unit with its own first-to-last span ("the damage per second
+  between your first and your last hit to that target").
+
+Differences left in place, on purpose: a hit a shield absorbed in full is
+written as a DAMAGE line of value 0 beside its DAMAGE_SHIELDED line (two
+thirds of the shield lines in two logs of 2026; the rest sit beside a
+partial hit or alone), and the engine drops every zero hit, so such a hit
+counts as absorbed damage but not as a hit where Combat Metrics counts it
+as one; and dps figures are kept as floats where Combat Metrics rounds to
+the integer.
+
+Measured on 113 split logs of 2026 (1,941 fights with damage, 564 with a
+boss), dividing by the dps time instead of the fight time raises the group's
+dps by a median 1.0% in boss fights of a minute or more (p90 5.9%), each
+player's own dps by a median 5.8% (p90 41%) and their boss dps by a median
+9.7% (p90 75%): the group's first hit comes a median 0.5 s after
+BEGIN_COMBAT and END_COMBAT a median 0.5 s (p90 6 s) after its last, and a
+player's own span is more than 10% shorter than the group's in 29% of
+player-fights (died, arrived late, stopped hitting). What the engine does
+not count stays negligible: hits on units the log never added 0.07% of all
+damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
+0.04%, in the 1.3 s after END_COMBAT 0.02%.
+
+### dps_time_s
+
+*[src/damage_stats.py:79](../src/damage_stats.py#L79)*
+
+A dps time: the span in seconds, floored at a second like LibCombat.
+
+A span of 0 (one hit, or none) is a second, so a single hit reads as
+its own damage per second rather than infinity.
+
+### src/gui/damage_render.py
+
+*[src/gui/damage_render.py:1](../src/gui/damage_render.py#L1)*
+
+The damage window's HTML: one player's damage in a fight, broken down by
+ability and by target the way Combat Metrics' fight report breaks it down.
+
+The data is the fight entry's player dict, key 'damage', as
+damage_stats.PlayerDamage.snapshot built it: totals, the spans the dps
+figures divide by, one row per ability (and per pet ability), the same rows
+for the boss units alone, and the targets hit. The figures follow
+damage_stats: a row's dps is its damage over the player's dps time (over
+their boss dps time in the boss view), crit % is critical hits over hits,
+the average is damage over hits, and a target's dps divides by the span of
+the player's hits on that target. Colors are theme-aware like the rest of
+the fight pane.
+
 ## Pets: whose damage and healing they are
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:463](../src/esolog_tail.py#L463)*
+*[src/esolog_tail.py:477](../src/esolog_tail.py#L477)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -653,7 +756,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:554](../src/esolog_tail.py#L554)*
+*[src/esolog_tail.py:568](../src/esolog_tail.py#L568)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -661,6 +764,9 @@ track_pet_ownership). Damage from a unit that is neither is
 counted for nobody: a boss's summons, trial mechanics that hit
 other enemies, and the like. *to_boss* says the target is a unit
 the game flags as a boss, so the hit also counts as boss damage.
+With the hit's *timestamp*, *result*, *ability_id* and *target_id*
+the hit also goes into the fight's damage record (damage_stats):
+the spans the dps figures divide by, and the breakdowns.
 
 ## Death recaps
 
@@ -718,7 +824,7 @@ Engine modules never import Qt; this adapter is the only crossing point.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:424](../src/gui/main_window.py#L424)*
+*[src/gui/main_window.py:443](../src/gui/main_window.py#L443)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -728,7 +834,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:725](../src/gui/main_window.py#L725)*
+*[src/gui/main_window.py:758](../src/gui/main_window.py#L758)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -747,7 +853,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:199](../src/gui/fight_view.py#L199)*
+*[src/gui/fight_view.py:203](../src/gui/fight_view.py#L203)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and

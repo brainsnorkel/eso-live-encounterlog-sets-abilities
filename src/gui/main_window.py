@@ -22,12 +22,13 @@ from PySide6.QtWidgets import (
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from gui.build_dialog import BuildDialog
+from gui.damage_dialog import DamageDialog
 from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
-    anchor_names, anchor_tooltips, build_tooltips, link_color, muted_color,
-    render_html, render_plain_text, summary_line,
+    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, link_color,
+    muted_color, render_html, render_plain_text, summary_line,
 )
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
@@ -93,6 +94,7 @@ class MainWindow(QMainWindow):
         self._last_placeholder = ""
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
+        self._damage_dialog = None  # created on the first click on a player's dps
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
@@ -126,6 +128,8 @@ class MainWindow(QMainWindow):
             self._death_dialog.refresh(dark)
         if self._build_dialog is not None:
             self._build_dialog.refresh(dark)
+        if self._damage_dialog is not None:
+            self._damage_dialog.refresh(dark)
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if 0 <= row < len(fights):
@@ -213,6 +217,7 @@ class MainWindow(QMainWindow):
         self.fight_view = FightView()
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
+        self.fight_view.damage_requested.connect(self._show_damage)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -585,6 +590,7 @@ class MainWindow(QMainWindow):
         # player's name show in both views
         tooltips = death_tooltips(entry)
         tooltips.update(build_tooltips(entry))
+        tooltips.update(damage_tooltips(entry))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,
@@ -631,6 +637,19 @@ class MainWindow(QMainWindow):
         self._build_dialog.show()
         self._build_dialog.raise_()
         self._build_dialog.activateWindow()
+
+    def _show_damage(self, unit_id):
+        """A player's dps figure was clicked in the fight on screen."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if row < 0 or row >= len(fights):
+            return
+        if self._damage_dialog is None:
+            self._damage_dialog = DamageDialog(self, icons=self.fight_view.icons)
+        self._damage_dialog.show_damage(fights[row], unit_id, self._dark)
+        self._damage_dialog.show()
+        self._damage_dialog.raise_()
+        self._damage_dialog.activateWindow()
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text

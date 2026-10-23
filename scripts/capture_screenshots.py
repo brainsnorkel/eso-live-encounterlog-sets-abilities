@@ -17,6 +17,7 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
+    damage-window.png               one player's damage by ability and target
     death-recap.png                 one player's death recap
     settings.png                    the Settings dialog
     examples-dialog.png             the example tracking rules picker
@@ -148,6 +149,13 @@ def main():
         pump(1.5)
         save(win._build_dialog, "build-window.png")
         win._build_dialog.hide()
+
+    # Damage window for the same player
+    if players:
+        win._show_damage(players[0]["unit_id"])
+        pump(1.5)
+        save(win._damage_dialog, "damage-window.png")
+        win._damage_dialog.hide()
 
     # Death recap: the first fight with a death, its first death
     dead = next(((f, r) for f in fights for r in f.death_recaps), None)

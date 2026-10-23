@@ -163,7 +163,7 @@ class TestOtherReadersOfTheTarget(unittest.TestCase):
         ] + FIGHT_END)
         fight = analyzer.fight_history.fights[0]
         dps = {p['unit_id']: p['dps'] for p in fight.players}
-        self.assertEqual(dps, {'1': 5000.0, '2': 15000.0, '3': 0.0})
+        self.assertEqual(dps, {'1': 100000.0, '2': 300000.0, '3': 0.0})
         enc = analyzer.current_encounter
         self.assertEqual(enc.find_player_by_unit_id('1').unit_id, '1')
         self.assertEqual(enc.find_player_by_unit_id('2').unit_id, '2')

@@ -6,10 +6,11 @@ icon is hovered, and opens ESO-Hub links in the system browser.
 Links never navigate the document itself: every click is routed through
 anchorClicked, and only http(s) targets are opened externally. A click on a
 player's death-recap button is announced through death_recap_requested, a
-click on a player's name through build_requested.
+click on a player's name through build_requested, a click on their dps
+figure through damage_requested.
 
-A player's name looks like plain text, so the pane shows it can be clicked
-while the pointer is over it: the name is underlined in the link color. Qt
+A player's name and dps figure look like plain text, so the pane shows they
+can be clicked while the pointer is over them: the text is underlined in the link color. Qt
 rich text has no hover styling, so this is an extra selection, which restyles
 text at paint time without touching the document. The in-fight search's
 highlights are extra selections too, and setting one list replaces the
@@ -26,7 +27,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
-from gui.fight_render import BUILD_HREF, build_unit_from_href
+from gui.fight_render import (
+    BUILD_HREF, DAMAGE_HREF, build_unit_from_href, damage_unit_from_href,
+)
 from gui.icon_cache import PULSE_STEPS, IconCache
 
 ICON_SCHEME = "icon"
@@ -47,6 +50,7 @@ class FightView(QTextBrowser):
 
     death_recap_requested = Signal(str)  # unit id of the player who died
     build_requested = Signal(str)  # unit id of the player whose name was clicked
+    damage_requested = Signal(str)  # unit id of the player whose dps figure was clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -135,10 +139,10 @@ class FightView(QTextBrowser):
         return cursor
 
     def _show_hover_cue(self, href: str) -> None:
-        """Underline the hovered player name in the link color; any other
-        target, or none, clears the cue."""
+        """Underline the hovered player name or dps figure in the link color;
+        any other target, or none, clears the cue."""
         selections = []
-        if href.startswith(BUILD_HREF):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -237,6 +241,10 @@ class FightView(QTextBrowser):
         unit_id = build_unit_from_href(url.toString())
         if unit_id is not None:
             self.build_requested.emit(unit_id)
+            return
+        unit_id = damage_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.damage_requested.emit(unit_id)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

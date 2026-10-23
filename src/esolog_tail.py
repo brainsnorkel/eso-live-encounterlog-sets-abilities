@@ -107,8 +107,19 @@ ENEMY_HIT_RESULTS = frozenset(
 DAMAGE_RESULTS = frozenset(
     ('DAMAGE', 'CRITICAL_DAMAGE', 'DOT_TICK', 'DOT_TICK_CRITICAL',
      'BLOCKED_DAMAGE', 'DAMAGE_SHIELDED'))
+# Design: Dps time. Every dps figure divides by the span of the hits it
+# sums, first hit to last, floored at one second, and not by the fight time
+# (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition
+# (LibCombat's dpstime) and the number players compare against. A player's
+# dps is their damage over the span of their own hits, a boss figure the
+# boss damage over the span of the hits on the bosses, the group's over the
+# span of the group's. The fight time is still what the history line and
+# header show; the header adds the group's dps time when it differs. The
+# long form, with what Combat Metrics does about overkill, shields, pets
+# and the breakdown by ability, is damage_stats' module docstring.
 
 # Import our ESO analysis modules
+from damage_stats import FightDamage, dps as dps_over
 from eso_sets import ESOSubclassAnalyzer, lines_from_passives, mastery_of_effect, skill_lines_of
 
 # Known mythic item sets (these typically have only 1 piece and unique bonuses)
@@ -421,6 +432,9 @@ class CombatEncounter:
         # total: a trash fight has none
         self.boss_damage: int = 0
         self.player_boss_damage: Dict[str, int] = {}
+        # When the hits happened (the spans the dps figures divide by) and
+        # each player's breakdown by ability and target (damage_stats)
+        self.damage = FightDamage()
         self.player_healing: Dict[str, int] = {}  # Track healing done to OTHER players
         self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
         self.total_health_damaged: int = 0  # Track total health of all damaged enemies
@@ -551,13 +565,18 @@ class CombatEncounter:
         if short_unit_id in self.players:
             self.players[short_unit_id].add_long_unit_id(long_unit_id)
 
-    def add_damage_to_player(self, unit_id: str, damage: int, to_boss: bool = False):
+    def add_damage_to_player(self, unit_id: str, damage: int, to_boss: bool = False,
+                             timestamp: Optional[int] = None, result: str = 'DAMAGE',
+                             ability_id: str = '', target_id: str = ''):
         """Credit damage dealt by *unit_id* to the player it belongs to:
         the player themself, or the owner of a pet (see
         track_pet_ownership). Damage from a unit that is neither is
         counted for nobody: a boss's summons, trial mechanics that hit
         other enemies, and the like. *to_boss* says the target is a unit
-        the game flags as a boss, so the hit also counts as boss damage."""
+        the game flags as a boss, so the hit also counts as boss damage.
+        With the hit's *timestamp*, *result*, *ability_id* and *target_id*
+        the hit also goes into the fight's damage record (damage_stats):
+        the spans the dps figures divide by, and the breakdowns."""
         # Find the player this unit belongs to
         player = self.find_player_by_unit_id(unit_id)
         if player is None and unit_id in self.pet_ownership:
@@ -569,6 +588,9 @@ class CombatEncounter:
         if to_boss:
             self.player_boss_damage[player.unit_id] = (
                 self.player_boss_damage.get(player.unit_id, 0) + damage)
+        if timestamp is not None:
+            self.damage.note(player.unit_id, timestamp, damage, result, str(ability_id),
+                             not player.has_unit_id(unit_id), target_id, to_boss)
 
     def add_healing_to_player(self, source_unit_id: str, target_unit_id: str, heal_value: int):
         """Track healing done by source player to a DIFFERENT player."""
@@ -1758,9 +1780,13 @@ class ESOLogAnalyzer(ListenerMixin):
                                     if enemy.is_boss:
                                         self.current_encounter.boss_damage += hit_value
 
-                                    # Track individual player damage
+                                    # Track individual player damage, and
+                                    # the hit's time, result, ability and
+                                    # target for the dps time and breakdown
                                     self.current_encounter.add_damage_to_player(
-                                        source_unit_id, hit_value, to_boss=enemy.is_boss)
+                                        source_unit_id, hit_value, to_boss=enemy.is_boss,
+                                        timestamp=entry.timestamp, result=combat_event_type,
+                                        ability_id=entry.fields[6], target_id=target_unit_id)
                                     
                                     # Update the most damaged hostile monster
                                     self.current_encounter.update_most_damaged_hostile(target_unit_id)
@@ -2096,8 +2122,14 @@ class ESOLogAnalyzer(ListenerMixin):
 
         duration = (enc.end_time - enc.start_time) / 1000.0
         entry.duration_s = duration
-        entry.group_dps = enc.total_damage / duration if duration > 0 and enc.total_damage > 0 else 0
-        entry.group_boss_dps = enc.boss_damage / duration if duration > 0 and enc.boss_damage > 0 else 0
+        # Dps divides by dps time, the span of the hits, not the fight time
+        # (see "Dps time" by DAMAGE_RESULTS): the group's by the span of the
+        # group's hits, the boss figure by the span of the hits on the bosses
+        damage = enc.damage
+        entry.dps_time_s = damage.window.span_ms / 1000.0
+        entry.boss_dps_time_s = damage.boss_window.span_ms / 1000.0
+        entry.group_dps = dps_over(enc.total_damage, damage.window.span_ms)
+        entry.group_boss_dps = dps_over(enc.boss_damage, damage.boss_window.span_ms)
         entry.deaths = self.fight_deaths  # this fight's player deaths
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
@@ -2133,11 +2165,23 @@ class ESOLogAnalyzer(ListenerMixin):
         players_with_damage.sort(
             key=lambda x: (enc.player_boss_damage.get(x[0].unit_id, 0), x[1]), reverse=True)
 
+        def ability_name(ability_id):
+            return (self.ability_cache.get(ability_id)
+                    or self.log_parser.get_ability_name(ability_id)
+                    or f"Ability {ability_id}")
+
+        def ability_icon(ability_id):
+            return self.ability_icons.get(str(ability_id), '')
+
         for player, player_damage in players_with_damage:
-            player_dps = player_damage / duration if duration > 0 else 0
+            # Each player's dps over the span of their own hits, the boss
+            # figure over the span of their hits on the bosses
+            record = damage.player(player.unit_id)
+            player_dps = record.dps()
             boss_damage = enc.player_boss_damage.get(player.unit_id, 0)
-            player_boss_dps = boss_damage / duration if duration > 0 else 0
+            player_boss_dps = record.boss_dps()
             dmg_pct = (player_damage / enc.total_damage * 100) if enc.total_damage > 0 else 0
+            boss_pct = (boss_damage / enc.boss_damage * 100) if enc.boss_damage > 0 else 0
             player_healing = enc.player_healing.get(player.unit_id, 0)
 
             # The ability-based role, for the role fallback
@@ -2182,6 +2226,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 'dps': player_dps,
                 'boss_dps': player_boss_dps,
                 'dmg_pct': dmg_pct,
+                'boss_pct': boss_pct,
+                # The damage window's data: totals, the spans, and the
+                # breakdowns by ability and by target (damage_stats)
+                'damage': record.snapshot(ability_name, ability_icon,
+                                          self._resolve_timeline_name, enc.start_time),
                 'h': player.max_health,
                 'm': player.max_magicka,
                 's': player.max_stamina,
