@@ -70,6 +70,19 @@ def _decode_state(text) -> "QByteArray | None":
         return None
 
 
+def _hand_back(worker: EngineWorker, home: QThread, requests) -> None:
+    """Called on the worker's thread as it finishes: cut the window's
+    (signal, slot) *requests* to the worker, so an ended engine takes no more
+    work, and move the worker to *home*, the UI thread (see
+    gui/engine_worker.py). Disconnecting is safe from any thread."""
+    for signal, slot in requests:
+        try:
+            signal.disconnect(slot)
+        except (RuntimeError, TypeError):
+            pass  # not connected, or already gone
+    worker.leave_thread(home)
+
+
 class MainWindow(QMainWindow):
 
     request_archive = Signal()
@@ -100,12 +113,17 @@ class MainWindow(QMainWindow):
         self._build_worker()
 
         # Follow live theme switches (e.g. Windows auto dark mode after
-        # sunset): rendered HTML embeds theme colors, so it must re-render
+        # sunset): rendered HTML embeds theme colors, so it must re-render.
+        # A bound method, not a lambda: Qt drops the connection when the
+        # window is destroyed, where a lambda would keep the window alive
+        # from the application's style hints and later call into it dead
         try:
-            QGuiApplication.styleHints().colorSchemeChanged.connect(
-                lambda *_: self._on_theme_maybe_changed())
+            QGuiApplication.styleHints().colorSchemeChanged.connect(self._on_color_scheme_changed)
         except AttributeError:
             pass  # older Qt: changeEvent still covers palette changes
+
+    def _on_color_scheme_changed(self, *_):
+        self._on_theme_maybe_changed()
 
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
@@ -288,27 +306,30 @@ class MainWindow(QMainWindow):
         self.worker.update_ready.connect(self._on_update_ready)
         self.worker.update_failed.connect(self._on_update_failed)
 
-        self.request_archive.connect(self.worker.archive_now)
-        self.request_restart.connect(self.worker.restart_monitoring)
-        self.request_review.connect(self.worker.open_review)
-        self.request_update_download.connect(self.worker.download_update)
+        requests = ((self.request_archive, self.worker.archive_now),
+                    (self.request_restart, self.worker.restart_monitoring),
+                    (self.request_review, self.worker.open_review),
+                    (self.request_update_download, self.worker.download_update))
+        for signal, slot in requests:
+            signal.connect(slot)
 
         self.worker_thread.started.connect(self.worker.start)
-        # Worker teardown once its thread's event loop has finished, on the
-        # UI thread (_discard_worker): the worker is a Python-created
-        # QObject, and freeing one of those on another thread corrupts the
-        # interpreter (the Settings dialog did it in 0.6.x and aborted the
-        # app; in the tests, which quit the thread early, it surfaced as an
-        # access violation several tests later on GitHub's Windows runner,
-        # 2026-10-15). A finished thread leaves the worker with no thread
-        # affinity, so the UI thread may pull it over before deleting it.
+        # Teardown (see gui/engine_worker.py): as its thread finishes, still
+        # on that thread, the worker is cut off from the window's requests
+        # (an ended engine takes no more work) and moves itself to this, the
+        # UI thread, since only its own thread may move it; then
+        # _discard_worker deletes it here
+        home = self.thread()
+        worker = self.worker
+        self.worker_thread.finished.connect(lambda: _hand_back(worker, home, requests),
+                                            Qt.DirectConnection)
         self.worker_thread.finished.connect(self._discard_worker)
         self.worker_thread.start()
 
     @Slot()
     def _discard_worker(self):
+        """Delete the worker on the UI thread, where leave_thread put it."""
         try:
-            self.worker.moveToThread(self.thread())
             self.worker.deleteLater()
         except RuntimeError:
             pass  # already gone
@@ -319,8 +340,8 @@ class MainWindow(QMainWindow):
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
         # block as long as it takes rather than proceed with it running.
-        # (If the thread already finished, the worker has been deferred-
-        # deleted via finished->deleteLater and must not be touched.)
+        # (If the thread already finished, the worker has been handed to the
+        # UI thread and deleted there, and must not be touched.)
         if self.worker_thread.isRunning():
             from PySide6.QtCore import QMetaObject
             try:
