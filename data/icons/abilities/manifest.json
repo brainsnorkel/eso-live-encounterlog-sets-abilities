@@ -1,16 +1,22 @@
 {
- "generated": "2026-10-03T07:24:57+00:00",
+ "generated": "2026-10-23T22:38:11+00:00",
  "source": {
   "eso_mnf": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Zenimax Online\\The Elder Scrolls Online\\depot\\eso.mnf",
   "bytes": 50347872,
-  "modified": "2026-09-29T19:00:39"
+  "modified": "2026-10-20T18:12:24"
  },
  "size_px": 40,
  "prefixes": [
   "ability_",
   "death_recap_"
  ],
- "count": 1956,
+ "patterns": [
+  "u\\d+_ability_"
+ ],
+ "stems": [
+  "achievement_u26_skyrim_werewolfdevour100"
+ ],
+ "count": 2023,
  "icons": {
   "ability_1handed_001": {
    "dds_bytes": 16512,
@@ -7188,6 +7194,10 @@
    "dds_bytes": 16512,
    "dds_sha1": "847e2206c69768ee3fd50b8c6a7d2752a4d8246e"
   },
+  "achievement_u26_skyrim_werewolfdevour100": {
+   "dds_bytes": 21972,
+   "dds_sha1": "b4388ebf85e257dc23628cd028eed5bc27a9b99f"
+  },
   "death_recap_arcanist_aoe1": {
    "dds_bytes": 16512,
    "dds_sha1": "026f9a73c37f597b3d2745e0892516b0260161f2"
@@ -7835,6 +7845,270 @@
   "death_recap_volendrung": {
    "dds_bytes": 16512,
    "dds_sha1": "c33e7ae245d7599bfbfcc13da2bf72959bbe4482"
+  },
+  "u26_ability_digging_01": {
+   "dds_bytes": 16512,
+   "dds_sha1": "15385c223944c678bfce8527863da8fcc4a859fb"
+  },
+  "u26_ability_digging_02": {
+   "dds_bytes": 16512,
+   "dds_sha1": "19936c950c7c4d660ef7f507e14e8568e30eb0d2"
+  },
+  "u26_ability_digging_03": {
+   "dds_bytes": 16512,
+   "dds_sha1": "f1fb9d12a7a6ce6b8a955c5be0bdb5f74d7f379b"
+  },
+  "u26_ability_digging_04": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e85675bf9df22611edeb14c0e880488ffedc3da7"
+  },
+  "u26_ability_digging_05": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0b48cd53e188d6ab9b983851a1cf4c38e4edfb82"
+  },
+  "u26_ability_scrying_01": {
+   "dds_bytes": 16512,
+   "dds_sha1": "356a007d30590f94bfa073515bffa0931f6582ce"
+  },
+  "u26_ability_scrying_02": {
+   "dds_bytes": 16512,
+   "dds_sha1": "099dbca8f2e904626f320e9f7c654b0bf92a452f"
+  },
+  "u26_ability_scrying_03": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d6c8b734f0a30960a555d40e5fa5925c9bb0ea14"
+  },
+  "u26_ability_scrying_04": {
+   "dds_bytes": 16512,
+   "dds_sha1": "7e0c3e3b9e3bbd7ba86530dfcae3142e32021467"
+  },
+  "u26_ability_scrying_05a": {
+   "dds_bytes": 16512,
+   "dds_sha1": "74e782c57e607eaa8feb17d18b819bed73b700b0"
+  },
+  "u26_ability_scrying_05b": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ea9d13354f3f2e13b676a23bd8a589c32a122c67"
+  },
+  "u26_ability_scrying_05c": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a5c2857b219b8a87037ba18457f77203fe3a4a69"
+  },
+  "u26_ability_scrying_05d": {
+   "dds_bytes": 16512,
+   "dds_sha1": "737465b95acee91f105571b3d36a8fa8b14538d6"
+  },
+  "u26_ability_scrying_06a": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5ef23929147c7a91c8cd936a98b4b606fa381570"
+  },
+  "u26_ability_scrying_06b": {
+   "dds_bytes": 16512,
+   "dds_sha1": "23a4c06b9c97a702475c8a51fb1274b46be455d0"
+  },
+  "u26_ability_scrying_07a": {
+   "dds_bytes": 16512,
+   "dds_sha1": "52aa404d3e37a52b27e66531883576c379e19b3a"
+  },
+  "u26_ability_scrying_07b": {
+   "dds_bytes": 16512,
+   "dds_sha1": "cad04704937fb985e125d364d54a6eedb3b86ce0"
+  },
+  "u26_ability_scrying_07c": {
+   "dds_bytes": 16512,
+   "dds_sha1": "89c13addde5c55aacbebd1311ccd0137183eaae4"
+  },
+  "u26_ability_scrying_08a": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c4b80d76aabd893e56e7451a1607add1e09b848b"
+  },
+  "u26_ability_scrying_08b": {
+   "dds_bytes": 16512,
+   "dds_sha1": "af92c15a6f352f2b4e349472fa692924522b1bb6"
+  },
+  "u26_ability_scrying_09": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4defc543baf5e27a262c961d42ca5e4e7e627550"
+  },
+  "u38_ability_armor_ultimatetransfer": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ae3ad4a7e5e3e5595cdb25e5fc5c14184c5b7d67"
+  },
+  "u38_ability_circleofempowerment": {
+   "dds_bytes": 16512,
+   "dds_sha1": "8386773af36eb3f3de7a6445a71684ad10528a9a"
+  },
+  "u38_ability_commandingaura": {
+   "dds_bytes": 16512,
+   "dds_sha1": "87efc09751ed09874eeeba3a0721e6abff9fcc32"
+  },
+  "u38_ability_constellationgryphon": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a3fd21d325d6f9a9f4aa50cc9c9b70108a1da8cb"
+  },
+  "u38_ability_constellationlion": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0fd940873189795b700a7d5df0278f5b7d01c4e8"
+  },
+  "u38_ability_constellationwamasu": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3953a9be569eec85f78d2ad448f1ef11922da543"
+  },
+  "u38_ability_ghosteye": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c6d526f7a27037019f4f0f4a342327e945d1a80d"
+  },
+  "u38_ability_massivetentacle": {
+   "dds_bytes": 16512,
+   "dds_sha1": "759d8b1ebdceac3f988a0dcf55bd97bca00b7ebf"
+  },
+  "u38_ability_radiance": {
+   "dds_bytes": 16512,
+   "dds_sha1": "31e7cf536eddba4bc91da1decf5b8fff641fdacb"
+  },
+  "u38_ability_vaerminastack": {
+   "dds_bytes": 16512,
+   "dds_sha1": "903aab4b8889c9b8d8e980eb37ad0f5cd8527a95"
+  },
+  "u45_ability_dun1_condemn": {
+   "dds_bytes": 16512,
+   "dds_sha1": "dcba6c08ac99da06fa04816a9b31368f7294d0ea"
+  },
+  "u45_ability_dun1_execute": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9da38f5fcc880423ffc6e4c97c65d520a6b4b994"
+  },
+  "u45_ability_dun1_ironteeth": {
+   "dds_bytes": 16512,
+   "dds_sha1": "065dcea979a3f5f843e7c7dd04f3688fbde24eb8"
+  },
+  "u45_ability_dun1_shadowcleave": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d8293d38ef2aba6551dc7718cdb740e518bd9c45"
+  },
+  "u45_ability_dun1_swirlingdarkblade": {
+   "dds_bytes": 16512,
+   "dds_sha1": "37290b269ce85e95b8beafb68732e2b6095276e2"
+  },
+  "u49_ability_assault_vigor_dawn": {
+   "dds_bytes": 16512,
+   "dds_sha1": "90c12b8716af5ad9df27be3813c35fd5e2d775ee"
+  },
+  "u49_ability_assault_vigor_dusk": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5a91cc00cd76267a9a1cc589083cb471a7cdcc05"
+  },
+  "u49_ability_blessingofprotection": {
+   "dds_bytes": 16512,
+   "dds_sha1": "5b9370f97776d975858f79ef31dbe80dab5702fd"
+  },
+  "u49_ability_circleofprotection_fightersguild": {
+   "dds_bytes": 16512,
+   "dds_sha1": "bdb1d1ca942403e524c0d09276da791be10e2420"
+  },
+  "u49_ability_dragonknight_ashcloud": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3252aac7195c46700ee3b8b70cc0f41e0179fb1e"
+  },
+  "u49_ability_dragonknight_darktalons": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a754e8d95cc9efcb0c56a518bf634bb414cb5072"
+  },
+  "u49_ability_dragonknight_dragonblood": {
+   "dds_bytes": 16512,
+   "dds_sha1": "c850bde57ba2c1705fb22f28e6f4151056c36a50"
+  },
+  "u49_ability_dragonknight_dragonleap": {
+   "dds_bytes": 16512,
+   "dds_sha1": "9178dc015a896928e7ada4afd6c48eb19cf9cf70"
+  },
+  "u49_ability_dragonknight_fierygrip": {
+   "dds_bytes": 16512,
+   "dds_sha1": "da4f311e97b94c159ade5dbc32525946298ed817"
+  },
+  "u49_ability_dragonknight_inferno": {
+   "dds_bytes": 16512,
+   "dds_sha1": "879b87aa1310173cc5ecba1e53416f3bc26d0b39"
+  },
+  "u49_ability_dragonknight_inhale": {
+   "dds_bytes": 16512,
+   "dds_sha1": "e8aae11091b08bf3a48051dbd97b60df96facbec"
+  },
+  "u49_ability_dragonknight_obsidianshield": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1c86a6c509a03edd890b057ed85caa933de96d18"
+  },
+  "u49_ability_dragonknight_petrify": {
+   "dds_bytes": 16512,
+   "dds_sha1": "540df1ef2ad53074899eee0862d22e00680d2a72"
+  },
+  "u49_ability_dragonknight_protectivescale": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1faed1c6aaa37f8783317746bf753a5a946c71b7"
+  },
+  "u49_ability_dragonknight_searingstrike": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a33b5c6e657bf50d6a0433ff23e507d978920323"
+  },
+  "u49_ability_dragonknight_standard": {
+   "dds_bytes": 16512,
+   "dds_sha1": "35f4eae30e0c7df7ef0141fc4d17eb396bc4c3ce"
+  },
+  "u49_ability_dragonknight_stonefist": {
+   "dds_bytes": 16512,
+   "dds_sha1": "1e34f1777d4edcfa855f49c85df45dea4d3cefd7"
+  },
+  "u49_ability_dualwield_whirlwind_blacksands": {
+   "dds_bytes": 16512,
+   "dds_sha1": "413c023967fac32d793c5773e219bd7581edf3c8"
+  },
+  "u49_ability_heraldofthetome_tomebearersinspiration": {
+   "dds_bytes": 16512,
+   "dds_sha1": "ca7f70e96f07cdae28c97836c8aed1b93da53187"
+  },
+  "u49_ability_reverseslash_namirashunger": {
+   "dds_bytes": 16512,
+   "dds_sha1": "52848dfcd271d87bac8f037bc3b379bdaf97a358"
+  },
+  "u49_ability_shadowcloak_dawn": {
+   "dds_bytes": 16512,
+   "dds_sha1": "a63d2731b5ffae13094ac0c55673bcb17642a2dc"
+  },
+  "u49_ability_silverbolts_fightersguild": {
+   "dds_bytes": 16512,
+   "dds_sha1": "0e37003067e23804f332569dd858d84cd8b2cc84"
+  },
+  "u49_ability_stormcalling_lightningform_celestial": {
+   "dds_bytes": 16512,
+   "dds_sha1": "d0fe00b19a0ef31fc99b03490d65bde5765ab116"
+  },
+  "u49_ability_werewolf_piercinghowl_dusk": {
+   "dds_bytes": 16512,
+   "dds_sha1": "3ec0378f0807a1e01bb8aa83cfc44b23863a25ba"
+  },
+  "u50_ability_coldharboursvampirescion": {
+   "dds_bytes": 16512,
+   "dds_sha1": "4e509a954557417f6c8340f74e425d59a75d7534"
+  },
+  "u50_ability_werewolf_brutal_pounce": {
+   "dds_bytes": 16512,
+   "dds_sha1": "bbe3c1d8f0d6ca947a200a92cdeca0095230d4ee"
+  },
+  "u50_ability_werewolf_claws_of_anguish": {
+   "dds_bytes": 16512,
+   "dds_sha1": "02055b2be9d23ce52b59e054736a17164629373a"
+  },
+  "u50_ability_werewolf_feral_pounce": {
+   "dds_bytes": 16512,
+   "dds_sha1": "b57d41bec965bb97d6972e62ec9cde6f668bb40b"
+  },
+  "u50_ability_werewolf_pounce": {
+   "dds_bytes": 16512,
+   "dds_sha1": "36d0818364f16b9b534c6b66cb4cb7d78a88b79a"
+  },
+  "u50_ability_werewolf_raking_claws": {
+   "dds_bytes": 16512,
+   "dds_sha1": "bb5f71ad82c6e7ff77bc82dfda366fb39163e47a"
   }
  }
 }

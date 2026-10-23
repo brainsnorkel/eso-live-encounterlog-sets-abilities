@@ -28,6 +28,7 @@ from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
+import werewolf
 
 
 class _PlainAnsi:
@@ -677,6 +678,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.ability_cache: Dict[str, str] = {}  # ability_id -> ability_name
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
+        self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
         self.scribing_keys: Dict[str, str] = {}  # unit_id -> the tracker's key for that player
         self._scribing_characters: Dict[str, str] = {}  # tracker key -> character id last seen
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -1037,16 +1039,26 @@ class ESOLogAnalyzer(ListenerMixin):
                     self.hostile_monsters.append((unit_id, clean_name, enemy.unit_type))
 
     def _bar_slots(self, ability_ids: List[str],
-                   scribed: Optional[Dict[str, Dict]] = None) -> List[Dict[str, str]]:
+                   scribed: Optional[Dict[str, Dict]] = None,
+                   player_key: Optional[str] = None) -> List[Dict[str, str]]:
         """[{'id', 'name', 'icon'}] for a bar's ability ids, in slot order.
 
         Ids without a cached name are skipped, so the bar's name list (built
         from these slots) lines up with them one-to-one. *scribed* holds this
         player's scribing.slot_fields per scribed ability id: the id alone
-        gives neither the skill's name nor its scripts.
+        gives neither the skill's name nor its scripts. A Rampage, which the
+        game lists for the logging player caught at full Fury, is shown as
+        the werewolf morph it stands in for, its 'stand_in' naming what the
+        log listed (werewolf.py); *player_key* says whose morph.
         """
         slots = []
         for ability_id in ability_ids:
+            morph = self.werewolf.stand_in_for(player_key, str(ability_id)) if player_key else None
+            if morph:
+                slot = self._ability_slot(morph)
+                slot['stand_in'] = self.log_parser.get_ability_name(ability_id) or 'Rampage'
+                slots.append(slot)
+                continue
             name = self.log_parser.get_ability_name(ability_id)
             if name:
                 slot = {'id': str(ability_id), 'name': name,
@@ -1055,6 +1067,33 @@ class ESOLogAnalyzer(ListenerMixin):
                     slot.update(scribed.get(str(ability_id), {}))
                 slots.append(slot)
         return slots
+
+    def _ability_slot(self, ability_id: str) -> Dict[str, str]:
+        """A bar slot for *ability_id*: the log's name and icon for it, else
+        the bundled werewolf table's (werewolf.SKILLS)."""
+        name, icon = werewolf.SKILLS.get(ability_id, ("", ""))
+        return {'id': ability_id,
+                'name': self.log_parser.get_ability_name(ability_id) or name,
+                'icon': self.ability_icons.get(ability_id) or icon}
+
+    def _werewolf_fields(self, player, enc) -> Dict[str, object]:
+        """The fight entry's werewolf fields for *player*, {} for one never
+        in form during the fight: 'werewolf_share', the share of the fight
+        spent in form, and 'werewolf_bar_slots', the bar rebuilt from the
+        skills cast in form this session with the morph as its ultimate.
+        No bar is rebuilt when the log wrote it in place of a human bar."""
+        bar = self.werewolf.fight_bar(self._scribing_player_key(player.unit_id),
+                                      enc.start_time, enc.end_time)
+        if bar is None:
+            return {}
+        fields: Dict[str, object] = {'werewolf_share': bar.share}
+        if werewolf.logs_werewolf_bar(player.front_bar_slots, player.back_bar_slots):
+            return fields
+        slots = [dict(self._ability_slot(skill), werewolf=True) for skill in bar.skills]
+        if bar.ultimate:
+            slots.append(dict(self._ability_slot(bar.ultimate), werewolf=True, ultimate=True))
+        fields['werewolf_bar_slots'] = slots
+        return fields
 
     def _note_scribing_identity(self, unit_id: str, session_id: str, character_id: str):
         """Remember who a player unit is for the scribing tracker.
@@ -1138,9 +1177,14 @@ class ESOLogAnalyzer(ListenerMixin):
                     self._scribing_player_key(player_info.unit_id),
                     player_info.champion_points + player_info.additional_data,
                     player_info.timestamp).items()}
+            # A transformation ultimate in the bars is the player's werewolf
+            # morph, which a Rampage there stands in for (werewolf.py)
+            player_key = self._scribing_player_key(player_info.unit_id)
+            self.werewolf.note_bars(player_key,
+                                    player_info.champion_points + player_info.additional_data)
             # Per-slot detail (id, name, icon stem) for the front and back bar
-            front_bar_slots = self._bar_slots(player_info.champion_points, scribed)
-            back_bar_slots = self._bar_slots(player_info.additional_data, scribed)
+            front_bar_slots = self._bar_slots(player_info.champion_points, scribed, player_key)
+            back_bar_slots = self._bar_slots(player_info.additional_data, scribed, player_key)
             # Ability names per bar, and all equipped names
             front_bar_abilities = [slot['name'] for slot in front_bar_slots]
             back_bar_abilities = [slot['name'] for slot in back_bar_slots]
@@ -1432,6 +1476,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing.reset()
         self.scribing_keys.clear()
         self._scribing_characters.clear()
+        self.werewolf.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -1528,6 +1573,11 @@ class ESOLogAnalyzer(ListenerMixin):
             # _handle_combat_event)
             if caster_unit_id in self.current_encounter.players:
                 self._remember_cast(entry.fields[2], ability_id)
+                # Werewolf form: the skills of the bar the log never writes,
+                # and the morph (werewolf.py)
+                if ability_id in werewolf.CAST_IDS:
+                    self.werewolf.note_cast(self._scribing_player_key(caster_unit_id),
+                                            ability_id, entry.timestamp)
 
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
@@ -1891,6 +1941,13 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.timestamp, self._unit_kind(target_unit_id),
                     source_id=source_unit_id)
 
+            # Werewolf form begins and ends with these effects on the player
+            # (werewolf.py)
+            if (ability_id in werewolf.EFFECT_IDS and extracted is not None
+                    and self._unit_kind(target_unit_id) in ("self", "group")):
+                self.werewolf.note_effect(self._scribing_player_key(target_unit_id),
+                                          effect_type, ability_id, entry.timestamp)
+
             # A Class Mastery effect names its holder, the source: a proc
             # mastery is never in the PLAYER_INFO passive list (eso_sets).
             # Kept on the player and in their session for the rest of the
@@ -2208,12 +2265,16 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
                 self.ability_cache.get, self.ability_icons.get))
+            # The werewolf bar the log never writes, rebuilt from casts, and
+            # the share of the fight spent in form (werewolf.py)
+            entry.players[-1].update(self._werewolf_fields(player, enc))
             # The abilities this player taunted with, marked on their bars
             taunts = self._taunts_of(enc, player.unit_id)
             entry.players[-1]['taunts'] = taunts
             if taunts:
                 mark_taunt_slots(entry.players[-1]['front_bar_slots']
-                                 + entry.players[-1]['back_bar_slots'], taunts)
+                                 + entry.players[-1]['back_bar_slots']
+                                 + entry.players[-1].get('werewolf_bar_slots', []), taunts)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the

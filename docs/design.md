@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1841](../src/esolog_tail.py#L1841)*
+*[src/esolog_tail.py:1891](../src/esolog_tail.py#L1891)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the experimental timeline, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:66](../src/esolog_tail.py#L66)*
+*[src/esolog_tail.py:67](../src/esolog_tail.py#L67)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1322](../src/esolog_tail.py#L1322)*
+*[src/esolog_tail.py:1366](../src/esolog_tail.py#L1366)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1337](../src/esolog_tail.py#L1337)*
+*[src/esolog_tail.py:1381](../src/esolog_tail.py#L1381)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:60](../src/esolog_tail.py#L60)*
+*[src/esolog_tail.py:61](../src/esolog_tail.py#L61)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2924](../src/esolog_tail.py#L2924)*
+*[src/esolog_tail.py:2985](../src/esolog_tail.py#L2985)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:330](../src/esolog_tail.py#L330)*
+*[src/esolog_tail.py:331](../src/esolog_tail.py#L331)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -242,9 +242,14 @@ Extract ESO ability icons from the installed game and convert them to PNG.
 Why: the encounter log names every ability's icon
 (ABILITY_INFO ... "/esoui/art/icons/ability_arcanist_002_b.dds"), so the app
 can show icons offline if it ships one PNG per icon found in the game files.
-Two families are extracted: ability_*.dds (player skills, for the ability
-bars) and death_recap_*.dds (what monster attacks use, for death recaps).
-Run this after each ESO update to refresh that set.
+Three families are extracted: ability_*.dds (player skills, for the ability
+bars), death_recap_*.dds (what monster attacks use, for death recaps), and
+the skill icons an update named after itself, u<NN>_ability_*.dds: Update 50
+gave five werewolf skills u50_ability_werewolf_* icons, and Crypt Transfer
+has had u38_ability_armor_ultimatetransfer since Update 38. A slotted skill
+whose icon belongs to no such family is named in DEFAULT_STEMS: Rampage, what
+the werewolf ultimate becomes at full Fury, uses an achievement icon. Run
+this after each ESO update to refresh that set.
 
 Requirements (Windows):
   * EsoExtractData v0.53+ by UESP: https://en.uesp.net/wiki/ESO_Mod:EsoExtractData
@@ -316,6 +321,68 @@ show (225 ABILITY_INFO lines with scripts):
 
 The approach follows the ESO Log Tool (github.com/sheumais/logs), which
 renames scribed skills to "Name (Signature / Affix)" before uploading logs.
+
+## Werewolf form: the bar the log never writes
+
+### src/werewolf.py
+
+*[src/werewolf.py:1](../src/werewolf.py#L1)*
+
+Werewolf form: the bar the log never writes, and the ultimate it renames
+(engine side, no Qt). Issue #17.
+
+Design: since Update 50 a werewolf's skills sit on a bar of their own, which
+the game switches to on transforming. PLAYER_INFO writes only the two human
+bars, so a player who spends a fight in form shows bars they never used. Of
+1,068 PLAYER_INFO rows written while a player was in form (55 split logs of
+July to October 2026, client versions 12.0 and 12.1, about 25 characters),
+1,053 carry the human bars. The other 15, from two anonymous players on
+12.0, carry the werewolf bar in place of the front bar; ``logs_werewolf_bar``
+tells such a row, so the bar is not shown twice. Werewolf players spent
+1,234 of their 1,524 fights of 5 s or more wholly in form, 110 partly, and
+180 not at all.
+
+The bar is rebuilt from casts. Each werewolf skill is cast under the id of
+the skill its slot holds, one id for all four ranks, with one exception:
+within close range a Pounce morph becomes its Carnage version, cast from
+the same slot, so SLOT_SKILLS maps Carnage, Brutal Carnage and Feral
+Carnage to their Pounce. Feeding Frenzy is not a slot: it is Roar's
+synergy, which every group member activates. The light and heavy werewolf
+attacks and Devour are not slots either, though they prove the form. Of 58
+player sessions with werewolf casts, 55 cast exactly five distinct bar
+skills, three cast fewer, and none ever cast a sixth or two morphs of one
+skill, so the casts of a whole session can be pooled. A fight's own casts
+show the whole bar in only 58% of fights; the session's casts up to the
+fight's end show it in 94%, which is the rule here. In the only two cases
+where the game logged a werewolf bar, the rebuilt bar agreed with it. Casts
+say nothing of the slots' order, so the bar follows the skill line's order
+(LINE_POSITION): Pounce, Hircine's Bounty, Roar, Gnash, Rending Claws. A
+skill slotted but never cast stays unknown.
+
+The form itself is a hidden effect, 39038 "Werewolf Transformation", plus
+the morph's own effect (47083 Werewolf Berserker, 47069 Pack Leader, 47028
+for the unmorphed transformation in older logs). On client 12.1, 39038 is
+on for 99.9% of in-form casts and for none of the casts of human-bar
+skills. A log that starts mid-form has no GAINED: the werewolf casts are
+the only sign, and the form is taken to have begun with the session. Death
+does not end the form: after 241 of 251 deaths in form the player's next
+skill was a werewolf skill, with no new transformation logged.
+
+The ultimate: the unit state's werewolf field is Fury, from 0 to 1000. At
+full Fury the transformation ultimate becomes Rampage, or Enduring Rampage
+for Pack Leader, and PLAYER_INFO then lists that in the slot, but only for
+the player who writes the log. For that player, 170 of 171 fight starts in
+form with full Fury listed Rampage, and 1 of 181 other starts did. For
+group members, 0 of 424 such starts did. So Rampage in a bar is the morph
+caught at full Fury, and the bar shows the morph instead (``stand_in_for``):
+the player's active morph effect names it, else the morph slotted in their
+earlier rows, else STAND_INS. The client names more Rampage ids than the
+two seen in a slot; the unseen ones are left unmapped.
+
+Icons: five of the werewolf skills (Pounce, Brutal Pounce, Feral Pounce,
+Rending Claws, Claw Fury) carry Update 50 icons named u50_ability_*, and
+Rampage an achievement icon, all outside the ability_* family the app used
+to bundle (see scripts/extract_ability_icons.py).
 
 ## Builds: gear, weapon types, armor weights, mundus and food
 
@@ -557,7 +624,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:524](../src/effect_rules.py#L524)*
+*[src/effect_rules.py:528](../src/effect_rules.py#L528)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -578,7 +645,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:595](../src/esolog_tail.py#L595)*
+*[src/esolog_tail.py:596](../src/esolog_tail.py#L596)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -605,13 +672,13 @@ is saved with the next Save, and the top-up is harmless to repeat.
 
 ### Taunts
 
-*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
+*[src/esolog_tail.py:76](../src/esolog_tail.py#L76)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:380](../src/esolog_tail.py#L380)*
+*[src/esolog_tail.py:381](../src/esolog_tail.py#L381)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -622,7 +689,7 @@ Frost Clench, a separate id with the same icon).
 
 ### What counts as damage
 
-*[src/esolog_tail.py:92](../src/esolog_tail.py#L92)*
+*[src/esolog_tail.py:93](../src/esolog_tail.py#L93)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -630,7 +697,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:463](../src/esolog_tail.py#L463)*
+*[src/esolog_tail.py:464](../src/esolog_tail.py#L464)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -653,7 +720,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:554](../src/esolog_tail.py#L554)*
+*[src/esolog_tail.py:555](../src/esolog_tail.py#L555)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

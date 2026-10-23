@@ -17,6 +17,14 @@ under the bars as "Shocking Banner (Class Flourish / Heroism)", the hover on
 its icon names all four parts, and the plain-text copy uses the same label
 (see scribing.py for where the scripts come from and when they are unknown).
 
+Werewolf form: the log never writes a werewolf's own bar, so the engine
+rebuilds it from the skills the player cast in form (see werewolf.py). The
+build card shows it on a line of its own after the human bars, "Werewolf",
+with the share of the fight spent in form, and the plain-text copy adds the
+same line. A Rampage the log listed in a human bar is drawn as the morph it
+stands in for. The hover on either kind of slot says so, which is why such
+a slot's anchor carries a fragment of its own, as a scribed skill's does.
+
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
@@ -42,6 +50,13 @@ DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
+# A player's bars as the entry holds them: the two the log writes, then the
+# werewolf bar rebuilt from casts (werewolf.py)
+BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
+WEREWOLF_LABEL = "Werewolf"
+WEREWOLF_NOTE = ("Werewolf bar: the log does not record it, so it is rebuilt from the "
+                 "skills this player cast in werewolf form, in the skill line's order")
+STAND_IN_NOTE = "Listed as {stand_in} at the start of the fight, as the slot reads at full Fury"
 
 _THEMES = {
     # dark background: lighter accents
@@ -252,12 +267,33 @@ def _scribed_variant(slot: dict) -> str:
     return "scripts-unknown"
 
 
+def _slot_note(slot: dict) -> str:
+    """The hover's note on a slot the log did not list as drawn: a morph the
+    log listed as Rampage, or a skill of the rebuilt werewolf bar; '' for
+    any other slot."""
+    if slot.get("stand_in"):
+        return STAND_IN_NOTE.format(stand_in=slot["stand_in"])
+    if slot.get("werewolf"):
+        return WEREWOLF_NOTE
+    return ""
+
+
+def _note_variant(slot: dict) -> str:
+    """URL fragment for a slot whose hover carries a note (_slot_note), ''
+    for any other: hover text is looked up by anchor target."""
+    if slot.get("stand_in"):
+        return f"shown-as-{slugify(str(slot['stand_in']))}"
+    if slot.get("werewolf"):
+        return "werewolf-bar"
+    return ""
+
+
 def _ability_href(slot: dict, links) -> str:
     """Anchor target for a bar slot: the ESO-Hub skill page when *links*
     knows one, else an internal esolog: URL that only carries the hover."""
     url = links(str(slot.get("name", ""))) if links else None
     href = url or f"esolog:ability/{slot.get('id', '')}"
-    variant = _scribed_variant(slot)
+    variant = _scribed_variant(slot) or _note_variant(slot)
     return f"{href}#{variant}" if variant else href
 
 
@@ -270,8 +306,10 @@ def _taunt_mark(slot: dict, taunt_color: Optional[str]) -> str:
 def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
               taunt_color: Optional[str] = None) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
-    names otherwise, each inside an anchor; the sixth slot (the ultimate)
-    sits apart. With no icon cache the bar is the plain joined name list.
+    names otherwise, each inside an anchor; the ultimate sits apart: the
+    sixth slot, or one marked 'ultimate' (a rebuilt werewolf bar can have
+    fewer than five skills). With no icon cache the bar is the plain joined
+    name list.
     px: the icons' edge (the build window draws them larger). taunt_color:
     an ability the player taunted with gets a ring of it on its icon (see
     the view's loadResource) or its name in it."""
@@ -296,7 +334,7 @@ def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
             body = e(str(slot.get("name", "")))
         href = e(_ability_href(slot, links), quote=True)
         chunk = f'<a href="{href}" style="text-decoration:none">{body}</a>'
-        if index == 5:
+        if index == 5 or (index and slot.get("ultimate")):
             chunk = "&nbsp;&nbsp;&nbsp;" + chunk
         parts.append(chunk)
     return "&nbsp;".join(parts)
@@ -307,10 +345,42 @@ def anchor_names(entry, links=None) -> dict:
     search can match icons by the name they stand for."""
     names = {}
     for p in entry.players:
-        for key in ("front_bar_slots", "back_bar_slots"):
+        for key in BAR_KEYS:
             for slot in p.get(key) or []:
                 names.setdefault(_ability_href(slot, links), str(slot.get("name", "")))
     return names
+
+
+def form_share_text(share) -> str:
+    """'in form 100%': the share of a fight spent in werewolf form."""
+    pct = float(share or 0) * 100
+    return "in form <1%" if 0 < pct < 0.5 else f"in form {pct:.0f}%"
+
+
+def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:
+    """The rebuilt werewolf bar and 'in form 100%' for a player who spent
+    some of the fight in werewolf form, '' for any other. The bar is left
+    out when the log wrote it in place of a human bar."""
+    share = p.get("werewolf_share")
+    if not share:
+        return ""
+    muted = theme["muted"]
+    slots = p.get("werewolf_bar_slots") or []
+    bar = (_bar_html(slots, [str(slot.get("name", "")) for slot in slots], icons, links, e,
+                     px, taunt_color=theme["taunt"]) if slots else "")
+    note = f"<span style='color:{muted}'>{e(form_share_text(share))}</span>"
+    return f"{bar}&nbsp;&nbsp;&nbsp;{note}" if bar else note
+
+
+def _werewolf_text(p) -> str:
+    """'Werewolf (in form 100%): Feral Pounce, ..., Werewolf Berserker' for
+    the plain copy, '' for a player never in form."""
+    share = p.get("werewolf_share")
+    if not share:
+        return ""
+    head = f"{WEREWOLF_LABEL} ({form_share_text(share)})"
+    names = _join([str(slot.get("name", "")) for slot in p.get("werewolf_bar_slots") or []])
+    return f"{head}: {names}" if names else head
 
 
 def _link_note(href: str, e) -> str:
@@ -405,7 +475,7 @@ def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dic
     e = html.escape
     tips = {}
     for p in entry.players:
-        for key in ("front_bar_slots", "back_bar_slots"):
+        for key in BAR_KEYS:
             for slot in p.get(key) or []:
                 href = _ability_href(slot, links)
                 if href in tips:
@@ -414,8 +484,9 @@ def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dic
                 if _is_scribed(slot):
                     tips[href] = _scribed_tip(slot, href, e)
                 else:
-                    tips[href] = (_link_tip(name, href, e) if href.startswith("http")
-                                  else f"<b>{e(name)}</b>")
+                    note = _slot_note(slot)
+                    tip = f"<b>{e(name)}</b>" + (f"<br>{e(note)}" if note else "")
+                    tips[href] = tip + _link_note(href, e) if href.startswith("http") else tip
                 for kind, script in zip(SCRIPT_KINDS, slot.get("scripts") or []):
                     url = script_links(str(script)) if script_links and script else None
                     if url and url not in tips:
@@ -557,6 +628,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
                              f"&nbsp;&nbsp;&nbsp;{back}")
             else:
                 lines.extend(bar for bar in (front, back) if bar)
+            # A werewolf's own bar, which the log never writes (werewolf.py)
+            werewolf = werewolf_bar_html(p, icons, links, e, theme)
+            if werewolf:
+                lines.append(f"<span style='color:{muted}'>{WEREWOLF_LABEL}</span>"
+                             f"&nbsp;&nbsp;&nbsp;{werewolf}")
             # Under the bars: what each scribed skill was scribed with
             scribed = _scribed_html(p, icons, links, script_links, e, detail_color)
             if scribed:
@@ -643,6 +719,9 @@ def render_plain_text(entry) -> str:
             bar_text = _join([slot_label(slot) for slot in slots] if slots else bar)
             if bar_text:
                 lines.append(f"      {bar_text}")
+        werewolf = _werewolf_text(p)
+        if werewolf:
+            lines.append(f"      {werewolf}")
         taunts = p.get("taunts") or []
         if taunts:
             lines.append("      taunted with " + ", ".join(
