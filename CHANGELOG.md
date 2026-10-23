@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Who applied a buff and who had it** (#19): a click on any row of the buff timeline strip, label or bar, opens a summary of the whole fight: each caster's uptime, how much of it no other caster covered, and their spans; each receiver's uptime, and for a stacking rule its peak and the time at the peak; and a grid of caster against receiver when there are only a few of each. It closes on a click elsewhere or Esc. Tracked-effect rules now record who applied each span; replaying 110 fights from 6 split logs gives the same uptimes as before
+
+### Changed
+- **Documentation by reader** (#22): the README covers installing and turning on logging; the user guide holds every screen and setting, the tracked-effect rules, what the numbers are based on and troubleshooting; the development guide holds building, refreshing game data and the esobuild.com export. Corrected along the way: DoT ticks have counted in DPS since 0.10.0, a fresh install tracks six boss debuffs and Crux (not seven boss debuffs), the full default Off-Balance line, and the timeline's hover text does not show ability ids
+
 ## [0.11.0] - 2026-10-15
 
 ### Added
