@@ -192,6 +192,40 @@ class TestTracker(unittest.TestCase):
         [x] = t.snapshot(0, 2000)
         self.assertEqual(len(x["intervals"]), 1)
 
+    def test_each_span_names_who_last_applied_it(self):
+        """Issue #19: a tank's Alkosh is credited to that tank; another
+        caster's refresh starts a span of theirs, and the uptime is the
+        same as without casters."""
+        t = _tracker("Alkosh = 76667 on boss\n")
+        t.record("GAINED", "76667", "70", "1", 0, "boss", source_id="5")
+        t.record("UPDATED", "76667", "70", "1", 4000, "boss", source_id="5")
+        t.record("UPDATED", "76667", "70", "1", 6000, "boss", source_id="6")
+        # A line without a caster keeps the span's
+        t.record("UPDATED", "76667", "70", "1", 7000, "boss")
+        t.record("FADED", "76667", "70", "1", 10000, "boss", source_id="6")
+        names = {"5": "@tankA", "6": "@tankB", "70": "Boss"}
+        [alkosh] = t.snapshot(0, 20000, names.get)
+        self.assertEqual(alkosh["uptime_pct"], 50.0)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["source"], iv["target"])
+                          for iv in alkosh["intervals"]],
+                         [(0, 6000, "@tankA", "Boss"), (6000, 10000, "@tankB", "Boss")])
+        # Recorded without a caster: an empty source
+        t = _tracker("X = 5 on boss\n")
+        t.record("GAINED", "5", "70", "1", 0, "boss")
+        [x] = t.snapshot(0, 1000)
+        self.assertEqual(x["intervals"][0]["source"], "")
+
+    def test_another_casters_recast_within_the_gap_is_bridged_and_theirs(self):
+        t = _tracker("X = 5 on boss\n")
+        t.record("GAINED", "5", "70", "1", 0, "boss", source_id="5")
+        t.record("FADED", "5", "70", "1", 1000, "boss", source_id="5")
+        t.record("GAINED", "5", "70", "1", 1030, "boss", source_id="6")
+        t.record("FADED", "5", "70", "1", 2000, "boss", source_id="6")
+        [x] = t.snapshot(0, 2000)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["source"]) for iv in x["intervals"]],
+                         [(0, 1030, "5"), (1030, 2000, "6")])
+        self.assertEqual(x["uptime_pct"], 100.0)
+
     def test_an_empty_tracker_is_false_and_records_nothing(self):
         t = EffectTracker([])
         self.assertFalse(t)

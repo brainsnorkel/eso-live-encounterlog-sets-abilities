@@ -165,6 +165,50 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertIn("Major Vulnerability", text)
         self.assertIn("@caster", text)
         self.assertIn("Test Boss", text)
+        self.assertIn("Click for who applied it", text)
+
+    def test_a_click_on_a_row_opens_its_sources_and_targets(self):
+        """Issue #19: a single click, label or bar, opens a transient popup."""
+        from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+        from PySide6.QtTest import QTest
+        from gui.timeline_strip import SummaryPopup
+        self.strip.set_timeline(_sample_timeline())
+        self.strip.show()
+        y = int(self.strip._row_rect(0).center().y())  # Major Force
+        self.assertEqual(self.strip._row_at(QPointF(10, y)), "Major Force")
+        self.assertEqual(self.strip._row_at(QPointF(self.strip._x_for_ms(50_000), y)),
+                         "Major Force")
+        self.assertIsNone(self.strip._row_at(QPointF(10, self.strip.height() - 2)))
+        QTest.mouseClick(self.strip, Qt.LeftButton, pos=QPoint(10, y))
+        popups = self.strip.findChildren(SummaryPopup)
+        self.assertEqual(len(popups), 1)
+        popup = popups[0]
+        self.assertTrue(popup.isVisible())
+        self.assertTrue(popup.windowFlags() & Qt.Popup)
+        text = popup.label.text()
+        for name in ("Major Force", "@caster", "@other", "@receiver", "@receiver2"):
+            self.assertIn(name, text)
+        # Esc closes it, and it deletes itself
+        QTest.keyClick(popup, Qt.Key_Escape)
+        self.assertFalse(popup.isVisible())
+        QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.assertEqual(self.strip.findChildren(SummaryPopup), [])
+
+    def test_summary_text_for_a_dotted_row_and_a_stacking_rule(self):
+        tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
+                    "uptime_pct": 66.7, "max_stacks": 3, "intervals": [
+                        {"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me", "source": "@me"},
+                        {"start_ms": 20_000, "end_ms": 40_000, "stacks": 3, "target": "@me"}]}]
+        self.strip.set_timeline(_sample_timeline(), tracked)
+        force = self.strip.summary_html("Major Force")
+        self.assertIn("Dotted: reached only 2 receivers", force)
+        self.assertIn("Up 33%", force)
+        # Two casters on two receivers: the grid is shown
+        self.assertIn("On \\ by", force)
+        crux = self.strip.summary_html("Crux")
+        self.assertIn("×3", crux)
+        self.assertIn("unknown source", crux)  # a span saved without a caster
+        self.assertNotIn("Dotted", crux)
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')

@@ -1888,7 +1888,8 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.effect_tracker and extracted is not None:
                 self.effect_tracker.record(
                     effect_type, ability_id, target_unit_id, stack_count,
-                    entry.timestamp, self._unit_kind(target_unit_id))
+                    entry.timestamp, self._unit_kind(target_unit_id),
+                    source_id=source_unit_id)
 
             # A Class Mastery effect names its holder, the source: a proc
             # mastery is never in the PLAYER_INFO passive list (eso_sets).
