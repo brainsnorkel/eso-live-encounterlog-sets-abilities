@@ -13,6 +13,9 @@ LIBSETS_URL = "https://github.com/Baertram/LibSets"
 EXTRACTOR_URL = "https://en.uesp.net/wiki/ESO_Mod:EsoExtractData"
 UESP_URL = "https://en.uesp.net/wiki/Online:Online"
 LIBFOODDRINKBUFF_URL = "https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html"
+COMBATMETRICS_URL = "https://www.esoui.com/downloads/info1360-CombatMetrics.html"
+COMBATMETRICS_SOURCE_URL = "https://github.com/Solinur/CombatMetrics"
+LIBCOMBAT_URL = "https://github.com/Solinur/LibCombat"
 
 
 def about_html(version: str) -> str:
@@ -26,6 +29,13 @@ def about_html(version: str) -> str:
         f"<a href='{ESOHUB_URL}'>ESO-Hub</a>, and the hover text names those "
         f"targets. Thanks to the ESO-Hub team for supporting community tools "
         f"that link to their site.</li>"
+        f"<li><b>DPS definitions</b>: the dps time, the boss and per-target spans, "
+        f"what counts as damage, the breakdown by ability and the graph's curves "
+        f"follow <a href='{COMBATMETRICS_URL}'>Combat Metrics</a> by Solinur and its "
+        f"<a href='{LIBCOMBAT_URL}'>LibCombat</a> library, the addon ESO players "
+        f"measure dps with, so the figures here agree with it. Read from the "
+        f"<a href='{COMBATMETRICS_SOURCE_URL}'>Combat Metrics source</a>; no code "
+        f"is shared.</li>"
         f"<li><b>Game icons</b>: ability icons are extracted from your own game "
         f"installation. They are &copy; ZeniMax Online Studios and are not the "
         f"property of this application.</li>"
