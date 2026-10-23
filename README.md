@@ -4,30 +4,28 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app 
 
 ![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window-buff-timeline.png)
 
-New here? Read the [user guide](docs/user-guide.md). Curious how the numbers are made? The [design notes](docs/design.md) explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
+The **[user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md)** walks through every screen and setting. The **[design notes](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/design.md)** explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
 
 ## Features
 
-- **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time, and deaths, with every fight of the session kept in a history list.
-- **Players ranked by boss damage, then all damage**, with role (Tank/Healer/DPS), class, boss DPS beside total DPS, damage share, and resource pools (the largest in bold).
-- **Death recaps**: a player who died gets a **Death recap** button on their row. It opens the last 5 seconds before each of their deaths: every hit and heal with its source, the health left after it, and whether the hit was blocked, dodged, or absorbed by a shield.
-- **Builds at a glance**: both ability bars as the game's own icons, the skill lines a build borrows from another class (read from the character's passives, so a line taken for its passives alone shows too), and every equipped gear set with piece counts. Gear set identification uses the LibSets database (722 sets).
-- **Scribed skills with their scripts**: a grimoire's icon cannot show what was scribed into it, so each scribed skill is listed under the bars with its signature and affix scripts, for example `Chilling Contingency (Lingering Torment / Intellect and Endurance)`.
-- **Full build per player**: click a player's name for a window with their gear slot by slot (set, quality, trait, enchant, slotted poison), both ability bars, mundus stone, food and Class Mastery passives.
-- **ESO-Hub links**: hover an ability icon for its name, click it to open the skill on ESO-Hub; set names open their ESO-Hub set pages. Nothing is downloaded until you click.
-- **Group buff uptimes** (Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes, Pearlescent Ward) and **taunt uptime** on the boss, with the abilities each player taunted with marked on their bars; or an experimental per-fight buff timeline strip.
-- **Search within a fight** (Ctrl+F), including ability icons by name; copy any fight as plain text.
-- **Review any log file** without interrupting live monitoring.
-- **Log housekeeping**: per-encounter split files, automatic archiving of oversized logs (they grow into the tens of GB), and a freshness indicator so you can tell at a glance that logging is on.
-- **Zero-friction startup**: auto-detects the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and offers updates from GitHub.
-
-> **Upgrading from 0.2.x or earlier?** Versions up to 0.2.7 were terminal applications with command-line flags. Those are gone; see [Migrating from the terminal version](#migrating-from-the-terminal-version).
+- **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time and deaths, with every fight of the session kept in a history list.
+- **Players ranked by boss damage, then all damage**, with role (Tank/Healer/DPS), class and borrowed skill lines or Class Mastery passives, boss DPS beside total DPS, damage share, and resource pools.
+- **Builds at a glance**: both ability bars as the game's own icons, scribed skills with their scripts (`Chilling Contingency (Lingering Torment / Intellect and Endurance)`), and every equipped gear set with piece counts.
+- **Full build per player**: click a name for gear slot by slot (set, type, quality, trait, enchant, slotted poison), both bars, mundus stone, food and Class Mastery passives.
+- **Death recaps**: a ☠ on the row of a player who died opens the last 5 seconds before each death: every hit and heal with its source, the health left after it, and whether it was blocked, dodged or absorbed by a shield.
+- **Tracked effects you define**: the uptime line under each fight is a list of plain-text rules, `Off-Balance = 45902 62988 on boss`. It starts with the group buffs, the taunt on the boss and six boss debuffs; edit them, add any effect the log carries, share the rules as text, paste HyperTools trackers, or pick from the Examples list. In a trash pack, boss rules measure the pack.
+- **Taunts**: how long each boss had a taunt on it, and the abilities each player taunted with ringed on their bars.
+- **Buff timeline (experimental)**: the same rules as a strip across the fight. Hover for who cast what on whom; click a row for each caster's and receiver's share of the fight.
+- **ESO-Hub links**: hover an ability icon for its name, click it for the skill's ESO-Hub page; set names open their set pages. Nothing is sent to ESO-Hub until you click.
+- **Search within a fight** (Ctrl+F), including ability icons by name; **copy any fight** as plain text for Discord; **review any log file** without interrupting live monitoring.
+- **Log housekeeping**: per-encounter split files, automatic archiving of the ever-growing log, and a freshness indicator so you can tell at a glance that logging is on.
+- **Zero-friction startup**: finds the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and offers updates from GitHub.
 
 ## Installation
 
 ### Option 1: Installer (recommended)
 
-1. Download `esolog-tail-windows-setup-<version>.exe` from the [latest release](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/releases).
+1. Download `esolog-tail-windows-setup-<version>.exe` from the [latest release](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/releases/latest).
 2. Run it. No administrator rights are needed (per-user install). If Windows SmartScreen shows "unknown publisher", choose **More info → Run anyway**; the installer is not code-signed.
 3. Launch **ESO Log Tail** from the Start Menu. Installing a newer version later upgrades in place and keeps your settings.
 
@@ -37,20 +35,17 @@ Download `esolog-tail-windows-portable-<version>.zip`, extract it anywhere, and 
 
 ### Option 3: Linux tarball (experimental)
 
-The Linux build is new. It is built and start-tested automatically, but it has not been run against a live game, so treat it as a test build and please report what you find.
+The Linux build is built and start-tested automatically, but it has not been run against a live game, so treat it as a test build and please report what you find.
 
-1. Download `esolog-tail-linux-x86_64-<version>.tar.gz` from the [latest release](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/releases).
-2. Extract it and run the app:
-
-   ```bash
-   tar -xzf esolog-tail-linux-x86_64-<version>.tar.gz
-   ./esolog-tail-<version>/esolog-gui
-   ```
+```bash
+tar -xzf esolog-tail-linux-x86_64-<version>.tar.gz
+./esolog-tail-<version>/esolog-gui
+```
 
 It needs a 64-bit x86 desktop (X11 or Wayland) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36, or later. Nothing is installed; delete the folder to remove it. What differs from Windows:
 
-- **Finding the log**: the app looks in ESO's Steam (Proton) prefix, including Flatpak Steam, and in the default `~/.wine` prefix. For Lutris, Bottles, a Steam library on another drive, or any other prefix, set the path under Settings → Encounter log. See [ESO log file locations](#eso-log-file-locations).
-- **Updates**: there is no installer, so the update prompt opens the release page for you to download the new tarball.
+- **Finding the log**: the app looks in ESO's Steam (Proton) prefix, including Flatpak Steam, and in the default `~/.wine` prefix. For anything else, set the path under Settings → Encounter log.
+- **Updates**: the update prompt opens the release page for you to download the new tarball.
 - **Start at login** is not offered.
 - Settings and `crash.log` live in `~/.config/esolog-tail/`.
 
@@ -65,298 +60,32 @@ python src/esolog_gui.py
 
 ## Turn on encounter logging in ESO
 
-ESO only writes `Encounter.log` while encounter logging is on, and it is off by default. There is nothing for the app to show until it is enabled.
+ESO writes `Encounter.log` only while encounter logging is on, and it is off by default. There is nothing for the app to show until it is enabled.
 
-- **Recommended: the Easy Stalking addon.** Install [Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html) from ESOUI (or through Minion). It turns logging on and off for you by content type (trials, dungeons, arenas, PvP), shows an on-screen indicator while logging, and adds the `/ezlog` chat command. With it installed you never have to remember to start the log.
-- **Manual**: type `/encounterlog` in the chat box to toggle logging, or enable it under Settings → Combat → Combat Logging. You have to remember to do this before each run.
+- **Recommended: the [Easy Stalking - Encounterlog](https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html) addon** (ESOUI or Minion). It turns logging on and off for you by content type, shows an on-screen indicator while logging, and adds the `/ezlog` chat command.
+- **By hand**: type `/encounterlog` in chat, or enable it under Settings → Combat → Combat Logging, before each run.
 
-The status bar's **Last entry** indicator turns green while the log is being written, so you can confirm logging is on from the app.
-
-## Using the app
-
-The [user guide](docs/user-guide.md) walks through every screen with pictures; the sections below are the reference.
-
-Launch ESO Log Tail before or during play; both work. It picks the most recently updated `Encounter.log` across the known ESO locations. If there is no log yet, it waits and attaches automatically when the file appears. If a logging session is already under way, the app replays it on attach: the session's fights load into the history and the full roster, gear, and abilities are known, so starting mid-raid does not leave you with a half-empty group (sessions over 768 MB fall back to a faster roster-only sweep).
-
-### Fight history
-
-Each completed fight appears in the list on the left as `boss · duration · gdps · zone · timestamp` (`vet` marks veteran difficulty, and `(d)` after the name marks a fight in which a player died). The newest fight is selected automatically; selecting an older fight pauses that, and selecting the newest again resumes it.
-
-### Fight detail
-
-The right pane shows the selected fight.
-
-- **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt.
-- **One row per player**, ranked by damage to the bosses and then by all damage (so in a fight without a boss, by all damage): role letter (**T**ank, **H**ealer, **D**PS, inferred from resource pools, a restoration staff or healing output for healers, and taunt or heal abilities), name, class, DPS (`boss / total` in a fight with a boss, as in the header), damage share of all damage, and max Health, Magicka, and Stamina with the largest pool in bold. The player who dealt the fight's first damage is marked with `*`. When a build borrows a skill line from another class, the borrowed lines show beside the class with a plus sign, for example `NB +Aedric +Grave`; a pure-class build with Class Mastery passives names them there instead, `NB: An Eye for Exploitation, Above and Beyond`; a stock build without either shows just the class.
-- **Build card** (toggle with **Detail view** on the toolbar, or Tab): both ability bars as the game's icons, bar 1 on the left and bar 2 on the right, ultimate set apart. Hover an icon for the ability name; click it to open that skill's page on [ESO-Hub](https://eso-hub.com). Abilities without a bundled icon show their name instead. An ability the player taunted with in that fight is ringed in purple (or named in purple).
-- **Scribed skills**: under the bars, each scribed skill with the two scripts its name does not reveal, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
-- **Gear**: every equipped set with its piece count, for example `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`. Set names are links to their ESO-Hub pages; hover to see the target.
-- **Uptime line**: one item per tracked-effect rule (Settings → Tracked effects), on every fight whatever the group size. A fresh install shows the six group buffs (how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group), `Taunt:97%` (how long each boss had a taunt on it, averaged over the bosses when a fight has several, a boss killed before the end measured to its death) and seven boss debuffs. In a fight without a boss, a boss rule measures the pack instead and says how many of its mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. Every item is a rule you can edit or delete, and **Examples…** has them back. When the experimental timeline strip is on, the strip replaces this line.
-
-### Death recap
-
-A red skull (**☠**) appears beside each player who died in the fight, `☠ ×2` when they died twice. Hover it for when, and to what, they died. Click it to open the recap window, which stays open beside the fight view.
-
-For each of that player's deaths the window names the killing ability and who used it, then lists the last 5 seconds of damage and healing, oldest first:
-
-- **Time** before the death, and the player's **health** after the event (with its share of max health).
-- The **ability**, with the game's icon, and its **source**: the monster or player that hit or healed.
-- The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
-
-Heals that were pure overheal are left out. A death whose event the game writes just after combat ends (the last player standing in a wipe) is still counted and added to that fight.
-
-### Build window
-
-Click a player's name in the fight pane, in either view, to open their build for that fight. The name is underlined while the pointer is over it. The window stays open beside the fight view and keeps the fight it was opened for; clicking another name reuses it.
-
-![Build window: a player's mundus stone and food, both ability bars, and a gear grid with armor weight or weapon type, set, pieces, quality, trait and enchant per slot](docs/screencaps/build-window.png)
-
-- **Header**: account and character name, race, class, champion points and role, then the fight.
-- **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken. `no known food or drink` means none of their effects is a food or drink the app knows; no mastery part means the character has none (a subclassed build cannot).
-- **Bars**: front bar above back bar, ultimate set apart, with the fight view's hover text, ESO-Hub links and line of scribed skills.
-- **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
-- **Type** says whether an armor piece is light, medium or heavy, and what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, for example `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
-- **Pcs** is the number of pieces of the row's set that are active, counted per weapon bar: armor and jewelry count on both bars, and each bar adds its own weapons, a two-handed one as two. `5` means five on either bar. `5/3`, as on Soulcleaver in the picture, means five on the front bar and three on the back: that set's five-piece bonus is live on the front bar only.
-
-### Search, copy, review
-
-- **Search in fight** (Ctrl+F): type in the field above the fight pane to highlight every occurrence, with a live match count; Enter jumps between matches, Esc clears. Ability icons match by the name they stand for, so `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights.
-- **Copy fight** (Ctrl+C): copies the selected fight as plain text, names rather than icons, ready to paste into Discord. Scribed skills keep their scripts: `Leashing Soul (Druid's Resurgence / Cowardice)`. A player who taunted gets a line naming what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
-- **Open log for review**: load any log file, a split file or an unzipped archive, and browse its fights while live monitoring continues in the background. **Back to live** returns to the live session.
-- **About**: version, project link, and credits.
-
-### Status bar
-
-- **Last entry**: the time of the newest log line and how long ago it was: green while **live** (under 2 minutes), plain while idle, amber when **stale** (over 30 minutes), and red **No log file** when nothing is being monitored. A `~` prefix means the time came from the file clock rather than log content.
-- **Zone**: the current zone and difficulty.
-- A progress bar on the right while the app parses a reviewed log, catches up on a large backlog, archives, or downloads an update.
-
-## Settings
-
-Open **Settings…** from the toolbar.
-
-![Settings dialog: encounter log path, split files, archiving, startup, updates, experimental](docs/screencaps/settings.png)
-
-- **Encounter log**: a specific `Encounter.log`, or blank to auto-detect.
-- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder).
-- **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [Automatic log archiving](#automatic-log-archiving).
-- **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall.
-- **Updates**: check GitHub for a newer release at startup and offer to update.
-- **Tracked effects**: the uptime line, as text you can copy to others, and a checkbox that shows the same rules as a per-fight timeline strip in place of the line (see below). One rule per line: `Name = ability ids on self | group | pets | boss | enemies`, then `stacks` for an effect that stacks, or `each` for the mean over the units. `Off-Balance = 45902 62988 39077 on boss` is the share of the fight the boss was off balance under any of those ids; `Crux = 184220 on self stacks` is the mean and peak Crux count you held; `Taunt = 38254 on boss each` is the taunt's measure. The group buffs and the taunt are rules here like the rest, so you can rename or delete them. A line that starts with `$` is a [HyperTools](https://github.com/Hyperioxes/HyperTools) tracker export, pasted as is. The box says how many rules it holds and which lines it skips; **Examples…** opens a list of example rules to tick and add under yours, or to copy for sharing. See [Tracked effects](#tracked-effects) below.
-
-Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
-
-### Automatic updates
-
-At startup the app checks GitHub for a newer release (Settings → Updates to disable). When one exists you are prompted with **Update now / Later / Skip this version**. Updating downloads the installer with a progress bar, closes the app, and hands over to the installer; settings are kept and the app relaunches when it finishes. Nothing is ever installed without the prompt. On Linux the first button is **Open download page**: it opens the release page, where you download the new tarball.
-
-### Tracked effects
-
-Every item of the uptime line is a rule in Settings → Tracked effects, and the items appear on every fight, in the fight pane and in copied text, whatever the group size. A fresh install starts with these, and anything else the log carries you can add yourself:
-
-```
-# Name = ability ids on <scope> [stacks | each]
-Major Courage    = 109966 on group
-Major Force      = 61747 on group
-Major Slayer     = 93109 on group
-Powerful Assault = 61771 on group
-Lucent Echoes    = 220015 on group
-Pearlescent Ward = 172621 on group
-Taunt            = 38254 on boss each
-Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
-Touch of Z'en = 126597 on boss stacks
-Crux          = 184220 on self stacks
-Morag Tong    = 34384 on boss
-Minor Brittle = 145975 on boss
-Major Brittle = 263825 on boss
-Alkosh        = 76667 on boss
-```
-
-- A rule matches any of its ids: an effect such as Off-Balance has one id per skill that applies it.
-- The scope says whose effects count: `self` is the player whose client writes the log, `group` any group member, `pets` a group member's pet, `boss` an enemy the game flags as a boss, `enemies` any hostile.
-- `uptime` (the default) is the share of the fight the effect was on at least one unit of the scope, shown as `Off-Balance:17%`. `stacks` is the mean stack count while it was up and the peak, shown as `Crux:2.1/3`. `each` measures the effect on every unit of the scope separately, over the time that unit was alive in the fight, and shows the mean: the taunt's measure, where a fight with two bosses averages them and a boss killed early is measured to its death.
-- In a fight without a boss (a trash pack), a `boss` rule measures every hostile the group fought instead, and both it and an `enemies` rule say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. In a boss fight nothing changes.
-- The group buffs and the taunt are rules like the rest: delete the ones you do not want, rename them (`MCourage` if you prefer the short form), and **Examples…** has them back.
-- A line that starts with `$` is a tracker exported from the HyperTools addon: its name, ability ids and target become a rule; `stacks` or `on boss` after the string override it.
-- Ability ids are the ones the game logs; an addon such as HyperTools or LuiExtended shows them, as does the hover text of the buff timeline. A rule for an id the log never writes simply reads 0%.
-
-When the experimental timeline strip is on, each rule is a row of it as well, a stacking effect's bar rises and falls with the count, and a boss rule measured on a pack says `mobs` beside its label.
-
-### Experimental: buff timeline
-
-Settings → Tracked effects → *Show these as a per-fight timeline strip* (off by default) adds a compact strip above each fight: one thin line per tracked effect (Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability, Taunt), filled where the effect was active, with the uptime percentage in the row label and time ticks underneath. A group buff that only reached one or two people renders dotted rather than solid. Hover a segment to see who cast it and who received it. Beside each row's label a word says whose effect it is: `group` for the group buffs, `boss` for Major Vulnerability and the taunt, and the scope of each tracked rule (`mobs` for a boss rule measured on the pack of a fight without a boss). Rows for effects that never occurred are omitted, and the strip disappears when there is nothing to show. When the strip is shown it replaces the text uptime line. Being experimental, it may change or be removed.
-
-## Automatic log archiving
-
-ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds of MB a night and can reach tens of GB. ESO Log Tail archives it for you.
-
-- **When**: checked **once, at app startup**. ESO keeps the log file open for the whole game session (even between `/encounterlog` toggles), so start-up, typically before you launch ESO, is the safe moment.
-- **Trigger**: the log has grown by more than the configured threshold since the last archive. Default **1024 MB**, about five veteran trials (a vet trial run is typically 100 to 300 MB; a vet dungeon roughly 25 to 75 MB).
-- **What it does**: streams the log into `Encounter-YYMMDDHHMMSS.zip` (stamped from the newest log entry) in the archive folder, default next to the log, showing progress in the status bar. The archive is written as a `.partial` file and only renamed to `.zip` after it verifies, so an interrupted archive never leaves a corrupt zip behind.
-- **Safety**: the app takes exclusive access to the log for the whole operation. If ESO is running and holds the file, the archive is **skipped with a notification** and monitoring starts normally; nothing is ever zipped mid-write. Linux cannot lock a file that way, so there the app skips the archive when another process has the log open, and keeps the original if the log grew while it was being zipped.
-- **Your original log is kept** by default. If you enable *Delete Encounter.log after a verified archive*, the original is removed only after the zip verifies, and ESO starts a fresh, small log.
-- **Archive now** (toolbar) runs the same guarded archive at any moment, handy right after you close ESO.
-
-## What the analysis is based on
-
-The [design notes](docs/design.md), collected from the code itself, go into each of these in depth.
-
-- **Fights**: a fight runs from the game's `BEGIN_COMBAT` line to its `END_COMBAT` line. The game also writes that pair in the middle of a fight, a fraction of a second apart, most often as you are resurrected. When combat starts again within a second of ending and an enemy the group was hitting is still alive, the app carries on with the same fight. Its first part shows as a fight until the fight really ends, and that entry is then brought up to date.
-- **Builds**: `PLAYER_INFO` events carry each player's slotted abilities, gear and long-term effects. The class skill lines are read from the class passives among those effects (`data/skills/class_passives.json`, UESP's player skill table cut down by `scripts/generate_class_passives.py`), with the slotted abilities matched by exact name against the class skill tables filling in for a line whose passives a character has not learned; a build has at most three lines. The same table names the Class Mastery passives, from the list for a mastery whose effect is always on and from the effect a proc mastery fires (the player being its source) for the others, kept for the rest of the session. A few masteries fire their effect under the buff's name (a Dragonknight's Lead from the Front gives the group Major Berserk, a Warden's Tundra's Maw puts Major Brittle on enemies); those ids are mapped by hand and checked against the source's class.
-- **Gear sets**: item set ids are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database.
-- **Gear detail, mundus and food**: the same `PLAYER_INFO` line lists each equipped item with its trait, quality and enchant, and the player's long-term effects, among them the mundus boon and the food buff. A slotted poison is logged as an item id, named through UESP's item database; food is recognised by the buff list of the LibFoodDrinkBuff addon. The log does not say how heavy an armor piece is, so its item id is looked up in a table of every light, medium and heavy piece, also from UESP's item database.
-- **Ability icons**: the log names each ability's icon file, and the app ships those icons extracted from the game (see [Refreshing game data](#refreshing-game-data-after-an-eso-patch)).
-- **Tracked effects**: every buff and debuff is an `EFFECT_CHANGED` line naming the ability, the target and the stack count; a rule's uptime is the union of its ids' spans over the units of its scope, and its stacks the highest count among them, averaged over the time it was up.
-- **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills. The grimoire is read from the skill's icon.
-- **ESO-Hub links**: bundled maps from ESO-Hub's sitemaps; an ability name is matched to its skill page slug, a set name to its set page, a scribed skill and its scripts to their scribing pages.
-- **Damage**: a player's damage is every hit of theirs or their pets' on a hostile unit: direct hits, damage-over-time ticks, what got through a block and what an enemy's damage shield absorbed, the same results Combat Metrics sums. Overkill past the target's remaining health is not counted. Boss DPS is the part of that dealt to units the game flags as bosses; the Infinite Archive's arc bosses carry no such flag, so those fights show the total alone.
-- **Roles**: the largest resource pool decides. Health is a tank and stamina a DPS. A player whose largest pool is magicka is a healer when a restoration staff is equipped on either bar, or when they healed other players for more than the damage they dealt in that fight; otherwise a DPS. The log does not name weapon types, so the staff is recognised by its item id, from UESP's item database. When all three pools are within 10% of each other, taunt and heal abilities on the bars decide instead.
-- **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player (a shared mechanic, PvP). The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
-
-### Limitations
-
-- Players stay anonymous ("unknown" builds) until the log has produced `ABILITY_INFO` and `PLAYER_INFO` events for them.
-- Sets the bundled LibSets data does not know appear as `Set#<id>` and have no link.
-- A scribed skill's scripts are not always in the log, and the skill then shows `(scripts not in log)`. Two cases: the game sometimes writes a player's skill without scripts (they usually follow by a later fight, which then shows them); and it writes each script combination once per logging session, for the first player seen with it, so a later player whose combination was already written gets no line of their own. When that leaves more than one possibility, the skill shows under the grimoire's name. For the same reason, a player who re-scribes mid-session to a combination already written keeps showing their earlier scripts.
-- After an ESO patch, new skills show as text until the icon set is refreshed, and the ESO-Hub link maps use English page names, so logs from a non-English client will not link.
-- Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
-- Gear is logged per equipped slot: an empty slot (the off hand beside a two-handed weapon, say) has no entry. Item names, weapon types and armor weights are not in the log at all. Armor weights and weapon types are shown all the same, looked up by item id in bundled tables; a piece from a set newer than those tables shows a dash in the Type column until they are refreshed.
-- Roles are a heuristic. A healer whose largest pool is health or stamina shows as a tank or a DPS, and a restoration staff from a set newer than the bundled weapon table is not recognised until the table is refreshed (out-healing their own damage still marks them a healer).
-- The build window shows the build as combat started. The game writes it once per fight, so gear or skills swapped during the fight do not show.
-- A crafted poison is named by its primary effect (`Damage Health Poison IX`); its other effects are not in the log. A food added to the game after the bundled list was built reads as `no known food or drink` until the list is refreshed.
-
-## Migrating from the terminal version
-
-Versions up to 0.2.7 were terminal applications launched from `.BAT` files with CLI flags. Their behaviour moved into the GUI:
-
-| Old CLI flag | Where it went |
-|---|---|
-| `-f, --log-file PATH` | Settings → Encounter log |
-| `--tail-and-split` / `--split-dir` | Settings → Per-encounter split files |
-| `--save-reports` / `--reports-dir` | Removed; fight summaries live in the app (use Copy fight) |
-| `--read-all-then-tail` | Automatic: the app replays the current session on attach; use *Open log for review* for older fights |
-| `--read-all-then-stop` (replay) | *Open log for review* |
-| `--no-wait` | Removed: the app always waits and shows a waiting state |
-| `--replay-speed` | Not needed: review mode loads at full speed |
-| `--no-tui`, `--diagnostic`, `--list-hostiles` | Removed with the terminal output (diagnostics surface in the status bar) |
-| `-v, --version` | Window title, About, or Apps & Features |
-
-Delete your old `.BAT` files and `esolog-tail.exe`; the app is `esolog-gui.exe`.
-
-## ESO log file locations
-
-Auto-detection searches, and picks the most recently updated of:
-
-- `%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log`
-- `%USERPROFILE%\Documents\Elder Scrolls Online\Logs\Encounter.log`
-- `%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log`
-
-On Linux it uses the first of these that exists (each ends in `Documents/Elder Scrolls Online/live/Logs/Encounter.log`):
-
-- `~/.wine/drive_c/users/Public/` and `~/.wine/drive_c/users/<you>/`
-- `~/.steam/steam/steamapps/compatdata/306130/pfx/drive_c/users/steamuser/`
-- the same Steam path under `~/.local/share/Steam/` and, for Flatpak Steam, under `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/`
-
-## Building from source
-
-The [development guide](docs/development.md) describes the repository layout, the tests and the release process; the short version follows.
-
-Prerequisites: Python 3.14 on Windows, the version releases are built with. The tests also pass on 3.11 and 3.13.
-
-```cmd
-pip install -r requirements.txt
-pip install -r requirements-build.txt
-
-:: Tests
-python -m pytest tests/ -q
-
-:: GUI executable (onedir, windowed) -> dist/esolog-gui/
-python -m PyInstaller esolog-tail.spec --noconfirm
-
-:: Installer (requires Inno Setup 6) -> dist/esolog-tail-windows-setup-<version>.exe
-iscc /DAppVersion=0.11.0 installer\esolog-gui.iss
-```
-
-Tagged releases (`v*`) build the installer, the portable zip, and the Linux tarball automatically via GitHub Actions.
-
-On Linux the same tests and PyInstaller command apply, and `dist/esolog-gui/` is the folder the release job packs into the tarball. Build on the oldest distribution you want to support, with Qt's X11 libraries installed (the package list is in `.github/workflows/build-installers.yml`): PyInstaller bundles the ones it finds, and a build without them will not start on a desktop that lacks `libxcb-cursor0`.
-
-### Refreshing game data after an ESO patch
-
-The app bundles seven data sets that go stale when the game changes:
-
-```cmd
-:: Ability and death-recap icons from your installed game (needs UESP's
-:: EsoExtractData and Pillow; see the script's header for the paths it looks
-:: for). About 2.5 minutes.
-python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
-
-:: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
-python scripts\generate_esohub_links.py
-
-:: Gear set data, after dropping a new LibSets_SetData.xlsm into data/gear_sets/
-python scripts\generate_gear_data.py
-
-:: Poison names for the build window, from UESP's item database (network access)
-python scripts\generate_poison_names.py
-
-:: Food and drink buff ids for the build window, from the LibFoodDrinkBuff addon
-:: (your installed copy, else its ESOUI download)
-python scripts\generate_food_buffs.py
-
-:: Weapon types (inferno staff, dagger, shield, ...) for the build window and
-:: the healer role, from UESP's item database (network access; or --from a
-:: reply of theirs already saved)
-python scripts\generate_weapon_types.py
-
-:: Armor weights (light, medium, heavy) for the build window, from UESP's item
-:: database (network access)
-python scripts\generate_armor_weights.py
-```
-
-After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encounter.log>` lists food-style effects in a recent log that the bundled table does not know yet, so a new food is noticed before it reads as "no food" in the build window.
-
-The icon step is also packaged as the `refresh-ability-icons` skill for Claude Code users of this repository. The icon script reports which icons were added or removed and, with `--check-log`, verifies that every ability slotted in that log has an icon.
-
-### Exporting game data for esobuild.com
-
-[esobuild.com](https://esobuild.com) shows the game's ability icons and names each build by its class skill lines, so it needs the icons under the game's file names and tables keyed by the game's ids. `scripts/export_esobuild_assets.py` builds both into one zip after a patch: every `ability_*` icon at 64 px, an ability table (game ability id to name, icon, skill line and type), the skill lines, the mundus boons and the sets with their ESO-Hub pages.
-
-```cmd
-:: The ESO-Hub maps the bundle copies (network access)
-python scripts\generate_esohub_links.py
-
-:: Tables and checks only: no icons extracted, nothing written. About 15 seconds.
-python scripts\export_esobuild_assets.py --update u51 --dry-run
-
-:: The bundle, in build\esobuild-assets\. About 3 minutes. --previous lists what
-:: the patch added, removed and changed.
-python scripts\export_esobuild_assets.py --update u51 --previous <the last bundle.zip>
-```
-
-`--update` is the site's tag for the update the client is on; it is never guessed. The client version in the bundle's manifest comes from the game's own build stamp. Icons come from the installed game, as for the app's own icons. Abilities and sets come from [UESP's ESO log export](https://esolog.uesp.net) (CC-BY-SA 2.5): four requests per run, a few seconds apart, with the replies kept under `build\esobuild-assets\sources\` and reused for a day, so further runs ask UESP nothing; if UESP refuses a request the script stops and does not retry. `--check-fixtures <folder>` runs the site's hand-over checks against its fixture files, and `--check-log <Encounter.log>` compares the tables with what the client itself logged, which shows whether UESP has caught up with a new update.
-
-The bundle is not committed. It is published as a release asset under a tag of its own, `esobuild-assets-<update>-<date>`, created with `gh release create ... --latest=false`: the app's update check reads the repository's latest release, which must stay an app release. The steps are packaged as the `export-esobuild-assets` skill.
+Then start ESO Log Tail, before or during play. The status bar's **Last entry** turns green while the log is being written. The [user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#first-run) takes it from there.
 
 ## Troubleshooting
 
-**SmartScreen warning on the installer**: the installer is not code-signed; choose *More info → Run anyway*.
+- **SmartScreen warning on the installer**: the installer is not code-signed; choose *More info → Run anyway*.
+- **No fights appear**: make sure encounter logging is on in-game (**Last entry** turns green while the log is written). A fight appears once combat ends.
+- **"Waiting for Encounter.log"**: logging has never been enabled, or your log lives somewhere unusual: point Settings → Encounter log at it.
+- **DPS differs from Combat Metrics or ESO Logs**: the app counts the same results, leaves out overkill, and in a boss fight shows boss DPS first. See [what the numbers are based on](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#what-the-numbers-are-based-on).
+- **The app closed unexpectedly**: unhandled errors are written to `%LOCALAPPDATA%\esolog-tail\crash.log` (`~/.config/esolog-tail/crash.log` on Linux); please attach it to a [bug report](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/issues).
+- **Linux: the app does not start**: run `./esolog-gui` from a terminal to see Qt's message, and include it in a bug report with your distribution and whether the desktop is X11 or Wayland.
 
-**No fights appear**: make sure encounter logging is on in-game (the status bar's *Last entry* indicator turns green during combat). Fights appear once combat ends, since the analysis needs complete `BEGIN_COMBAT` / `END_COMBAT` events.
-
-**"Waiting for Encounter.log"**: logging has never been enabled, or your log lives somewhere unusual: point Settings → Encounter log at it directly.
-
-**Archive was skipped**: ESO was running and had the log open. Close ESO and use *Archive now*, or let the next app start handle it.
-
-**The app closed unexpectedly**: unhandled errors in the windowed build are written to `%LOCALAPPDATA%\esolog-tail\crash.log` (`~/.config/esolog-tail/crash.log` on Linux); please attach it to a bug report.
-
-**Linux: the app does not start**: run `./esolog-gui` from a terminal to see Qt's message, and include it in a bug report along with your distribution and whether the desktop is X11 or Wayland.
+More in the user guide under [When something looks wrong](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#when-something-looks-wrong).
 
 ## Requirements
 
 - Windows 10/11, or 64-bit Linux with glibc 2.35 or newer (experimental build)
-- Runtime: `PySide6-Essentials`, `platformdirs` (see `requirements.txt`)
 - ESO encounter logging enabled in-game
+
+## Contributing
+
+The [development guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/development.md) covers the repository layout, the tests, building the installer, refreshing game data after an ESO patch, and releasing.
 
 ## License
 
