@@ -43,6 +43,17 @@ that matter, read from LibCombat.lua and CombatMetrics.lua (October 2026):
   player, for all targets and for the boss units alone, and the damage per
   target unit with its own first-to-last span ("the damage per second
   between your first and your last hit to that target").
+- **The graph** (``CombatMetricsUI.lua``, ``Smoothed`` and ``Total``) works
+  from the damage summed into one bucket per second of the fight
+  (``calculated.graph``, filled by ``ProcessLogDamage``). Its dps curve is a
+  centred moving average over ``SmoothWindow`` seconds (5 by default): a
+  point at ``t + w/2`` with the mean of the buckets ``t .. t+w-1``, the
+  first and last points carried to the fight's edges. Its total curve is
+  the live figure as it stood: the damage so far over the dps time so far
+  (``sum / (min(dpsend, t) - dpsstart)``), from half a window after the
+  first hit on. The graph window draws both (smoothed_dps, running_dps),
+  for the group and for each player, from the same per-second buckets
+  (PlayerDamage.buckets, FightDamage.buckets).
 
 Differences left in place, on purpose: a hit a shield absorbed in full is
 written as a DAMAGE line of value 0 beside its DAMAGE_SHIELDED line (two
@@ -89,6 +100,74 @@ def dps(damage: int, span_ms: int) -> float:
     if damage <= 0:
         return 0.0
     return damage / dps_time_s(span_ms)
+
+
+def _bucket(buckets: Dict[int, int], ts: int, hit: int) -> None:
+    """Add a hit to the bucket of its log second."""
+    second = ts // 1000
+    buckets[second] = buckets.get(second, 0) + hit
+
+
+def series_of(buckets: Dict[int, int], origin_ms: Optional[int] = None) -> List[List[float]]:
+    """The buckets as a series for a fight entry: [[t, damage], ...] in time
+    order, t the bucket's start in seconds into the fight (from *origin_ms*,
+    the fight's start; log seconds when none), each bucket a second long."""
+    origin = (origin_ms or 0) / 1000.0
+    return sorted([float(second) - origin, damage] for second, damage in buckets.items())
+
+
+def per_second(series: List[List[float]], duration_s: float) -> List[int]:
+    """The series as damage per whole second of the fight: index k holds
+    the damage of the bucket nearest second k, for k = 0 .. ceil(duration);
+    a bucket before the fight's start counts in its first second."""
+    seconds = max(int(duration_s + 0.999999), 1)
+    values = [0] * (seconds + 1)
+    for t, damage in series:
+        k = min(max(int(round(t)), 0), seconds)
+        values[k] += int(damage)
+    return values
+
+
+def smoothed_dps(series: List[List[float]], window_s: int,
+                 duration_s: float) -> List[Tuple[float, float]]:
+    """Combat Metrics' smoothed curve: (x, dps) points, each the mean damage
+    per second over a centred window of *window_s* seconds, from the
+    fight's start to its end, the first and last values carried to the
+    edges. Empty for a fight without damage."""
+    if not series or duration_s <= 0:
+        return []
+    values = per_second(series, duration_s)
+    window = max(1, min(int(window_s), len(values)))
+    last_start = len(values) - window
+    points: List[Tuple[float, float]] = []
+    running = sum(values[:window])
+    for start in range(last_start + 1):
+        if start:
+            running += values[start + window - 1] - values[start - 1]
+        points.append((start + window / 2.0, running / window))
+    first_y, last_y = points[0][1], points[-1][1]
+    return [(0.0, first_y)] + points + [(float(duration_s), last_y)]
+
+
+def running_dps(series: List[List[float]], first_s: Optional[float],
+                last_s: Optional[float], duration_s: float) -> List[Tuple[float, float]]:
+    """Combat Metrics' total curve, the live figure as it stood: at each
+    second from a second after the first hit to the end, the damage so far
+    over the dps time so far (first hit to this second, or to the last hit
+    once past it; a second at least), so the last point is the fight's dps.
+    Empty for a fight without damage."""
+    if not series or duration_s <= 0 or first_s is None or last_s is None:
+        return []
+    values = per_second(series, duration_s)
+    points: List[Tuple[float, float]] = []
+    total = 0
+    for second, damage in enumerate(values):
+        total += damage
+        elapsed = min(float(last_s), float(second)) - float(first_s)
+        if second < first_s + 1 or total <= 0:
+            continue
+        points.append((float(second), total / max(elapsed, MIN_DPS_TIME_S)))
+    return points
 
 
 class Window:
@@ -193,7 +272,7 @@ class PlayerDamage:
     """One player's damage in a fight: totals, the spans their dps divides
     by, and the breakdowns the damage window shows."""
     __slots__ = ('damage', 'boss_damage', 'window', 'boss_window',
-                 'abilities', 'boss_abilities', 'targets')
+                 'abilities', 'boss_abilities', 'targets', 'buckets', 'boss_buckets')
 
     def __init__(self):
         self.damage = 0
@@ -203,11 +282,17 @@ class PlayerDamage:
         self.abilities: Dict[Tuple[str, bool], AbilityDamage] = {}
         self.boss_abilities: Dict[Tuple[str, bool], AbilityDamage] = {}
         self.targets: Dict[str, TargetDamage] = {}
+        # Damage per log second, for the graph (see series_of)
+        self.buckets: Dict[int, int] = {}
+        self.boss_buckets: Dict[int, int] = {}
 
     def note(self, ts: int, hit: int, result: str, ability_id: str, pet: bool,
              target_id: str, boss: bool) -> None:
         self.damage += hit
         self.window.note(ts)
+        _bucket(self.buckets, ts, hit)
+        if boss:
+            _bucket(self.boss_buckets, ts, hit)
         key = (ability_id, pet)
         row = self.abilities.get(key)
         if row is None:
@@ -236,7 +321,8 @@ class PlayerDamage:
         """Plain dicts and lists for a fight entry (the GUI reads it on its
         own thread): totals, both windows (with the hits' offsets into the
         fight when *origin_ms* is its start), the ability rows for all
-        targets and for the bosses, largest damage first, and the targets."""
+        targets and for the bosses, largest damage first, the targets, and
+        the damage per second of the fight for the graph (series_of)."""
         def rows(table: Dict[Tuple[str, bool], AbilityDamage]) -> List[dict]:
             out = [row.as_dict(name_of(row.ability_id), icon_of(row.ability_id))
                    for row in table.values()]
@@ -250,25 +336,32 @@ class PlayerDamage:
             'boss_window': self.boss_window.as_dict(origin_ms),
             'abilities': rows(self.abilities), 'boss_abilities': rows(self.boss_abilities),
             'targets': targets,
+            'series': series_of(self.buckets, origin_ms),
+            'boss_series': series_of(self.boss_buckets, origin_ms),
         }
 
 
 class FightDamage:
     """The fight's damage: the group's spans and each player's record. The
     totals live on the encounter (total_damage, boss_damage); this adds
-    the time they happened over and the breakdowns."""
-    __slots__ = ('window', 'boss_window', 'players')
+    the time they happened over, the breakdowns, and the group's damage
+    per second for the graph."""
+    __slots__ = ('window', 'boss_window', 'players', 'buckets', 'boss_buckets')
 
     def __init__(self):
         self.window = Window()
         self.boss_window = Window()
         self.players: Dict[str, PlayerDamage] = {}
+        self.buckets: Dict[int, int] = {}
+        self.boss_buckets: Dict[int, int] = {}
 
     def note(self, player_id: str, ts: int, hit: int, result: str, ability_id: str,
              pet: bool, target_id: str, boss: bool) -> None:
         self.window.note(ts)
+        _bucket(self.buckets, ts, hit)
         if boss:
             self.boss_window.note(ts)
+            _bucket(self.boss_buckets, ts, hit)
         player = self.players.get(player_id)
         if player is None:
             player = self.players[player_id] = PlayerDamage()
@@ -277,3 +370,14 @@ class FightDamage:
     def player(self, player_id: str) -> PlayerDamage:
         """The player's record, an empty one for a player who dealt nothing."""
         return self.players.get(player_id) or PlayerDamage()
+
+    def series(self, origin_ms: Optional[int] = None) -> dict:
+        """The group's damage per second for a fight entry, for the graph:
+        the series for all targets and for the bosses, and the spans the
+        running figures start and end at (see series_of, Window.as_dict)."""
+        return {
+            'all': series_of(self.buckets, origin_ms),
+            'boss': series_of(self.boss_buckets, origin_ms),
+            'window': self.window.as_dict(origin_ms),
+            'boss_window': self.boss_window.as_dict(origin_ms),
+        }

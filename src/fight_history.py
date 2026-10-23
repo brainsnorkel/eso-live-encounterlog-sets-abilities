@@ -12,7 +12,8 @@ class FightHistoryEntry:
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
-                 'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s']
+                 'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
+                 'damage_series']
 
     def __init__(self):
         self.timestamp = ""
@@ -25,6 +26,10 @@ class FightHistoryEntry:
         # the group to its last, and the same for the hits on the bosses
         self.dps_time_s = 0.0
         self.boss_dps_time_s = 0.0
+        # The group's damage per second of the fight for the graph window
+        # (damage_stats.FightDamage.series): {'all', 'boss', 'window',
+        # 'boss_window'}; None on an entry built without it
+        self.damage_series = None
         self.group_dps = 0.0
         # The group's dps against the units the game flags as bosses (0 in
         # a fight without one); each player's share is their 'boss_dps'

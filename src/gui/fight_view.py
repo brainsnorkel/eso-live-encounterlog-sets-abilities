@@ -7,7 +7,8 @@ Links never navigate the document itself: every click is routed through
 anchorClicked, and only http(s) targets are opened externally. A click on a
 player's death-recap button is announced through death_recap_requested, a
 click on a player's name through build_requested, a click on their dps
-figure through damage_requested.
+figure through damage_requested, a click on the header's group dps figure
+through graph_requested.
 
 A player's name and dps figure look like plain text, so the pane shows they
 can be clicked while the pointer is over them: the text is underlined in the link color. Qt
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, build_unit_from_href, damage_unit_from_href,
+    BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, build_unit_from_href, damage_unit_from_href,
 )
 from gui.icon_cache import PULSE_STEPS, IconCache
 
@@ -51,6 +52,7 @@ class FightView(QTextBrowser):
     death_recap_requested = Signal(str)  # unit id of the player who died
     build_requested = Signal(str)  # unit id of the player whose name was clicked
     damage_requested = Signal(str)  # unit id of the player whose dps figure was clicked
+    graph_requested = Signal()  # the header's group dps figure was clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -142,7 +144,7 @@ class FightView(QTextBrowser):
         """Underline the hovered player name or dps figure in the link color;
         any other target, or none, clears the cue."""
         selections = []
-        if href.startswith((BUILD_HREF, DAMAGE_HREF)):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -245,6 +247,9 @@ class FightView(QTextBrowser):
         unit_id = damage_unit_from_href(url.toString())
         if unit_id is not None:
             self.damage_requested.emit(unit_id)
+            return
+        if url.toString() == GRAPH_HREF:
+            self.graph_requested.emit()
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

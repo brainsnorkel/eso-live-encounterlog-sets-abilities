@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2972](../src/esolog_tail.py#L2972)*
+*[src/esolog_tail.py:2974](../src/esolog_tail.py#L2974)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -682,6 +682,17 @@ that matter, read from LibCombat.lua and CombatMetrics.lua (October 2026):
   player, for all targets and for the boss units alone, and the damage per
   target unit with its own first-to-last span ("the damage per second
   between your first and your last hit to that target").
+- **The graph** (``CombatMetricsUI.lua``, ``Smoothed`` and ``Total``) works
+  from the damage summed into one bucket per second of the fight
+  (``calculated.graph``, filled by ``ProcessLogDamage``). Its dps curve is a
+  centred moving average over ``SmoothWindow`` seconds (5 by default): a
+  point at ``t + w/2`` with the mean of the buckets ``t .. t+w-1``, the
+  first and last points carried to the fight's edges. Its total curve is
+  the live figure as it stood: the damage so far over the dps time so far
+  (``sum / (min(dpsend, t) - dpsstart)``), from half a window after the
+  first hit on. The graph window draws both (smoothed_dps, running_dps),
+  for the group and for each player, from the same per-second buckets
+  (PlayerDamage.buckets, FightDamage.buckets).
 
 Differences left in place, on purpose: a hit a shield absorbed in full is
 written as a DAMAGE line of value 0 beside its DAMAGE_SHIELDED line (two
@@ -705,7 +716,7 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 
 ### dps_time_s
 
-*[src/damage_stats.py:79](../src/damage_stats.py#L79)*
+*[src/damage_stats.py:90](../src/damage_stats.py#L90)*
 
 A dps time: the span in seconds, floored at a second like LibCombat.
 
@@ -728,6 +739,38 @@ their boss dps time in the boss view), crit % is critical hits over hits,
 the average is damage over hits, and a target's dps divides by the span of
 the player's hits on that target. Colors are theme-aware like the rest of
 the fight pane.
+
+### src/gui/dps_graph.py
+
+*[src/gui/dps_graph.py:1](../src/gui/dps_graph.py#L1)*
+
+DPS over time: a line chart of the group's and each player's dps across a
+fight, drawn the way Combat Metrics' graph tab draws it (see damage_stats
+for the two curves: the centred moving average over a window of seconds,
+Combat Metrics' default 5 s, and the running figure, the live dps as it
+stood at each second).
+
+The data is the fight entry's group series (FightHistoryEntry.damage_series)
+and each player's (the 'series' and 'boss_series' of their 'damage' dict),
+damage summed per second of the fight. The window offers the window length
+(1, 5, 10 or 30 s) or the running figure, the boss units alone in a fight
+with a boss, and a legend of checkboxes for the group and every player. The
+first eight players (in the fight's ranking) are on to begin with and the
+rest off, because eight is as many hues as can be told apart; a player past
+the eighth reuses a hue with a dashed line. A player's hue is their rank in
+the fight, so hiding others never repaints them.
+
+Two panels, one scale each: the group's figure is as many times a player's
+as there are players, so on one scale the players' lines lie flat along
+the floor, and a second axis on the same plot is the classic way to mislead.
+The group's line gets the upper panel and the players the lower, sharing
+the time axis, the crosshair and the tooltip. Drawing otherwise: hairline
+solid gridlines a step off the surface, 2 px lines with round joins, the
+group's heavier in the pane's text colour, the categorical hues in a fixed
+order (an eight-slot palette validated for colour-vision deficiency on both
+the light and the dark surface), text in the pane's own text colours and
+never in a series colour, and the end value of each line labelled when a
+panel shows four or fewer.
 
 ## Pets: whose damage and healing they are
 
@@ -824,7 +867,7 @@ Engine modules never import Qt; this adapter is the only crossing point.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:443](../src/gui/main_window.py#L443)*
+*[src/gui/main_window.py:452](../src/gui/main_window.py#L452)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -834,7 +877,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:758](../src/gui/main_window.py#L758)*
+*[src/gui/main_window.py:781](../src/gui/main_window.py#L781)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -853,7 +896,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:203](../src/gui/fight_view.py#L203)*
+*[src/gui/fight_view.py:205](../src/gui/fight_view.py#L205)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and

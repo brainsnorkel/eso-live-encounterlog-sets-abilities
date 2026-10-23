@@ -169,7 +169,8 @@ class TestBossDpsRendering(unittest.TestCase):
     def test_boss_fight_reads_boss_over_total(self):
         entry = _entry(10000.0)
         self.assertIn('10.0k / 11.0k', render_html(entry, detailed=False))
-        self.assertIn('15.0k / 17.5k gdps', render_html(entry, detailed=False))
+        # The group figure is the link to the dps over time graph
+        self.assertIn('15.0k / 17.5k</a> gdps', render_html(entry, detailed=False))
         # The share cell reads the same way: of the boss damage, of all damage
         self.assertIn('66.7% / 62.9%', render_html(entry, detailed=False))
         self.assertIn('— 10.0k / 11.0k (66.7% / 62.9%)', render_plain_text(entry))

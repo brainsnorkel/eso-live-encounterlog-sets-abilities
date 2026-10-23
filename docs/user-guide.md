@@ -59,6 +59,17 @@ Click a player's DPS figure to open their damage for that fight. The window stay
 - **Targets**: each unit the player hit, with the damage, its share, the hits, the span from the player's first hit on it to their last, and the DPS over that span (what Combat Metrics calls the real DPS to that target). Bosses are marked.
 - **Boss targets only**: in a fight with a boss, the switch at the bottom narrows every figure to the units the game flags as bosses.
 
+## DPS over time
+
+Click the group DPS figure in the fight header, or **DPS graph** on the toolbar, for a graph of the fight: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis.
+
+![The DPS graph: the group and the players over a fight](screencaps/dps-graph.png)
+
+- **Show** picks the curve: the average over a window of 1, 5 (the default, as in Combat Metrics), 10 or 30 seconds, or the running figure, which is the live dps as it stood at each second and ends at the fight's dps.
+- **Legend**: tick the group and the players to draw. The first eight players are on to begin with, and a player past the eighth draws dashed in a reused colour, since eight is as many colours as can be told apart. Each entry shows the player's dps (`boss / total` in a fight with a boss). The choices are kept from one fight to the next while the window is open.
+- **Hover** the chart for a crosshair with every drawn line's value at that second; with four lines or fewer, each line's end value is labelled.
+- **Boss targets only** narrows every line to the damage on the units the game flags as bosses.
+
 ## Death recaps
 
 A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deaths. Hover it for when and to what they died; click it for the recap window.

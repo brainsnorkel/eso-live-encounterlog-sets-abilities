@@ -42,7 +42,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/about.py` | The main window and its dialogs. |
 | `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
-| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build, damage and death recap windows, the buff timeline strip, the icon cache. |
+| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache. |
 
 ## Running from source
 

@@ -84,6 +84,7 @@ TOPICS = [
         "src/damage_stats.py",
         "src/damage_stats.py:dps_time_s",
         "src/gui/damage_render.py",
+        "src/gui/dps_graph.py",
     ]),
     ("Pets: whose damage and healing they are", [
         "src/esolog_tail.py:CombatEncounter.track_pet_ownership",

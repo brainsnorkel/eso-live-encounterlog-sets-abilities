@@ -49,6 +49,7 @@ SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
+GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
 
 _THEMES = {
     # dark background: lighter accents
@@ -138,11 +139,22 @@ def _dps_time_text(seconds: float) -> str:
 def damage_tooltips(entry) -> dict:
     """Hover text per dps-figure link: the dps time each figure divides by
     (see damage_stats), the figures over the whole fight for comparison,
-    and that a click opens the damage window."""
+    and that a click opens the damage window; for the header's group
+    figure, that a click opens the dps over time graph."""
     e = html.escape
     tips = {}
     fight_s = float(getattr(entry, "duration_s", 0) or 0)
     boss_fight = _is_boss_fight(entry)
+    if float(getattr(entry, "group_dps", 0) or 0) > 0:
+        dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
+        lines = [f"Group damage over {_dps_time_text(dps_time)} dps time (first hit to last) "
+                 f"of a {_fmt_duration(fight_s)} fight"]
+        if boss_fight:
+            boss_time = float(getattr(entry, "boss_dps_time_s", 0) or 0)
+            lines.append(f"Boss damage over {_dps_time_text(boss_time)} of hits on the bosses")
+        lines.append("Click for the dps over time graph")
+        tips[GRAPH_HREF] = (f"<b>Group dps</b><br><span style='font-size:85%'>"
+                            f"{'<br>'.join(e(line) for line in lines)}</span>")
     for p in entry.players:
         unit_id = str(p.get("unit_id", ""))
         if not unit_id:
@@ -555,8 +567,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
     # by (first hit to last, see damage_stats) when the two read differently
     duration = _fmt_duration(entry.duration_s)
     dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
-    if entry.group_dps > 0 and _dps_time_text(dps_time) != duration:
+    if entry.group_dps > 0 and dps_time > 0 and _dps_time_text(dps_time) != duration:
         duration = f"{duration} (dps time {_dps_time_text(dps_time)})"
+    # The group figure opens the dps over time graph; like the names it
+    # keeps the look of plain text until it is hovered
+    if entry.group_dps > 0:
+        gdps = (f'<a href="{GRAPH_HREF}" style="text-decoration:none;color:{muted}">'
+                f'{gdps}</a>')
     stats = (f"{duration}"
              f" · {gdps} gdps"
              f"{subline_zone}"

@@ -25,6 +25,7 @@ from gui.build_dialog import BuildDialog
 from gui.damage_dialog import DamageDialog
 from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
+from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, link_color,
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
+        self._graph_dialog = None  # created on the first DPS graph request
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
@@ -130,6 +132,8 @@ class MainWindow(QMainWindow):
             self._build_dialog.refresh(dark)
         if self._damage_dialog is not None:
             self._damage_dialog.refresh(dark)
+        if self._graph_dialog is not None:
+            self._graph_dialog.refresh(dark)
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if 0 <= row < len(fights):
@@ -154,6 +158,10 @@ class MainWindow(QMainWindow):
         copy_action.setShortcut(QKeySequence.Copy)
         copy_action.triggered.connect(self._copy_current)
         toolbar.addAction(copy_action)
+
+        self.graph_action = QAction("DPS graph", self)
+        self.graph_action.triggered.connect(self._show_graph)
+        toolbar.addAction(self.graph_action)
 
         toolbar.addSeparator()
 
@@ -218,6 +226,7 @@ class MainWindow(QMainWindow):
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
+        self.fight_view.graph_requested.connect(self._show_graph)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -650,6 +659,20 @@ class MainWindow(QMainWindow):
         self._damage_dialog.show()
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
+
+    def _show_graph(self):
+        """The toolbar's DPS graph, or the header's group dps figure, was
+        clicked: the dps over time graph of the fight on screen."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if row < 0 or row >= len(fights):
+            return
+        if self._graph_dialog is None:
+            self._graph_dialog = DpsGraphDialog(self)
+        self._graph_dialog.show_graph(fights[row], self._dark)
+        self._graph_dialog.show()
+        self._graph_dialog.raise_()
+        self._graph_dialog.activateWindow()
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text
