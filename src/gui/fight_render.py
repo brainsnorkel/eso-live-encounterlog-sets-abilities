@@ -352,9 +352,10 @@ def anchor_names(entry, links=None) -> dict:
 
 
 def form_share_text(share) -> str:
-    """'in form 100%': the share of a fight spent in werewolf form."""
+    """'in form 100%': the share of a fight spent in werewolf form. Any
+    share under 1% reads '<1%', never '0%' (format rounds 0.5 to 0)."""
     pct = float(share or 0) * 100
-    return "in form <1%" if 0 < pct < 0.5 else f"in form {pct:.0f}%"
+    return "in form <1%" if 0 < pct < 1 else f"in form {pct:.0f}%"
 
 
 def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:

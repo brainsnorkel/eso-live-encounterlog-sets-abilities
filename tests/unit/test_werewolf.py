@@ -310,6 +310,16 @@ class TestEngine(unittest.TestCase):
         third = _player(_fights(lines)[2], '@brainsnorkel')
         self.assertNotIn('werewolf_share', third)
 
+    def test_a_sliver_of_form_never_reads_zero(self):
+        from gui.fight_render import form_share_text
+        self.assertEqual(form_share_text(0.004), 'in form <1%')
+        # Exactly 0.5%: the format alone would round it to 0%
+        self.assertEqual(form_share_text(0.005), 'in form <1%')
+        self.assertEqual(form_share_text(0.0099), 'in form <1%')
+        self.assertEqual(form_share_text(0.01), 'in form 1%')
+        self.assertEqual(form_share_text(0.975), 'in form 98%')
+        self.assertEqual(form_share_text(1.0), 'in form 100%')
+
 
 class TestRender(unittest.TestCase):
     """The werewolf bar in the fight view, the plain copy and the build window."""
