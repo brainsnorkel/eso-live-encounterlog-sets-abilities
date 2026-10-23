@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:2920](../src/esolog_tail.py#L2920)*
+*[src/esolog_tail.py:2924](../src/esolog_tail.py#L2924)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -557,7 +557,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:512](../src/effect_rules.py#L512)*
+*[src/effect_rules.py:524](../src/effect_rules.py#L524)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -705,6 +705,46 @@ gate is off, record() is never called and nothing is retained.
 Interval times are raw log-relative milliseconds; snapshot_fight() clips them
 to a fight's [start, end] window and rebases them to fight-relative ms.
 
+### EffectTracker.record
+
+*[src/effect_rules.py:441](../src/effect_rules.py#L441)*
+
+An EFFECT_CHANGED line. *target_kind* is what the engine knows
+the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
+
+*source_id* is the caster, kept on the span so a row of the uptime
+strip can say who applied it ("" when unknown). Another caster
+refreshing the effect ends one span and starts the next, so each
+span is credited to whoever last applied it; the spans abut, and
+every measurement takes their union, so no number changes.
+
+### src/effect_summary.py
+
+*[src/effect_summary.py:1](../src/effect_summary.py#L1)*
+
+Who applied an effect and who had it, over a whole fight (issue #19).
+
+A row of the uptime strip is a list of intervals, each naming its caster
+('source') and receiver ('target'): the built-in rows from the buff
+timeline recorder, the tracked rows from the effect tracker. Hovering the
+strip shows the intervals at one instant; summarise() adds them up over
+the fight for the pop-up a click on the row opens.
+
+Every figure is a union of intervals as a share of the fight, the rule the
+row's own uptime uses (timeline_strip.uptime_pct), so the receivers' lines
+and the casters' lines each union back to the headline:
+
+- a caster's *uptime* is the time any of their intervals was up, and their
+  *sole* time the part of it no other caster's interval covered; two
+  supports keeping Major Courage up between them show the overlap in the
+  gap between the two;
+- a receiver's *uptime* is the time the effect was on that unit;
+- *spans* counts intervals, not casts: the recorders merge a recast that
+  follows a fade within moments into the span before it.
+
+An interval without a caster (an old saved fight, or a proc the log writes
+without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
+
 ## The GUI and the engine thread
 
 ### src/gui/engine_worker.py
@@ -718,7 +758,7 @@ Engine modules never import Qt; this adapter is the only crossing point.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:424](../src/gui/main_window.py#L424)*
+*[src/gui/main_window.py:438](../src/gui/main_window.py#L438)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -728,7 +768,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:725](../src/gui/main_window.py#L725)*
+*[src/gui/main_window.py:739](../src/gui/main_window.py#L739)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

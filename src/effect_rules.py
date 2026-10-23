@@ -423,9 +423,9 @@ class EffectTracker:
         for index, rule in enumerate(self.rules):
             for ability_id in rule.ids:
                 self._by_id.setdefault(ability_id, []).append(index)
-        # (rule index, target id, ability id) -> [start_ms, stacks, kind]
+        # (rule index, target id, ability id) -> [start_ms, stacks, kind, source_id]
         self._open: Dict[tuple, list] = {}
-        # rule index -> [[start_ms, end_ms, stacks, target_id, kind], ...]
+        # rule index -> [[start_ms, end_ms, stacks, target_id, kind, source_id], ...]
         self._closed: Dict[int, List[list]] = {}
         # unit id -> log ms it died or was removed (forget_unit)
         self._gone: Dict[str, int] = {}
@@ -439,9 +439,16 @@ class EffectTracker:
         self._gone.clear()
 
     def record(self, effect_type: str, ability_id: str, target_id: str,
-               stack_count, timestamp_ms: int, target_kind: Optional[str]) -> None:
+               stack_count, timestamp_ms: int, target_kind: Optional[str],
+               source_id: str = "") -> None:
         """An EFFECT_CHANGED line. *target_kind* is what the engine knows
-        the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None."""
+        the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
+
+        *source_id* is the caster, kept on the span so a row of the uptime
+        strip can say who applied it ("" when unknown). Another caster
+        refreshing the effect ends one span and starts the next, so each
+        span is credited to whoever last applied it; the spans abut, and
+        every measurement takes their union, so no number changes."""
         indexes = self._by_id.get(str(ability_id))
         if not indexes or target_kind is None:
             return
@@ -450,6 +457,7 @@ class EffectTracker:
         except (TypeError, ValueError):
             stacks = 1
         target_id = str(target_id)
+        source_id = str(source_id or "")
         for index in indexes:
             if target_kind not in _SCOPE_KINDS[self.rules[index].scope]:
                 continue
@@ -457,34 +465,38 @@ class EffectTracker:
             opened = self._open.get(key)
             if effect_type in ("GAINED", "UPDATED"):
                 if opened is None:
-                    self._open[key] = [timestamp_ms, stacks, target_kind]
-                elif opened[1] != stacks:
-                    # A stack change ends one span and starts the next
-                    self._close(index, opened[0], timestamp_ms, opened[1], target_id, opened[2])
-                    self._open[key] = [timestamp_ms, stacks, target_kind]
+                    self._open[key] = [timestamp_ms, stacks, target_kind, source_id]
+                elif opened[1] != stacks or (source_id and opened[3] != source_id):
+                    # A stack change, or another caster's refresh, ends one
+                    # span and starts the next
+                    self._close(index, opened[0], timestamp_ms, opened[1], target_id,
+                                opened[2], opened[3])
+                    self._open[key] = [timestamp_ms, stacks, target_kind,
+                                       source_id or opened[3]]
             elif effect_type == "FADED" and opened is not None:
                 del self._open[key]
-                self._close(index, opened[0], timestamp_ms, opened[1], target_id, opened[2])
+                self._close(index, opened[0], timestamp_ms, opened[1], target_id,
+                            opened[2], opened[3])
 
     def forget_unit(self, unit_id: str, timestamp_ms: int) -> None:
         """The unit died or was removed at *timestamp_ms*: its open spans
         end here, and an ``each`` rule measures it to this moment."""
         unit_id = str(unit_id)
         for key in [key for key in self._open if key[1] == unit_id]:
-            start, stacks, kind = self._open.pop(key)
-            self._close(key[0], start, timestamp_ms, stacks, unit_id, kind)
+            start, stacks, kind, source = self._open.pop(key)
+            self._close(key[0], start, timestamp_ms, stacks, unit_id, kind, source)
         self._gone.setdefault(unit_id, timestamp_ms)
 
     def zone_changed(self, timestamp_ms: int) -> None:
         """A new zone hands unit ids out afresh: open spans on hostiles and
         pets end here. A player's buffs carry over, and so do their spans."""
         for key in [key for key, span in self._open.items() if span[2] not in PLAYER_KINDS]:
-            start, stacks, kind = self._open.pop(key)
-            self._close(key[0], start, timestamp_ms, stacks, key[1], kind)
+            start, stacks, kind, source = self._open.pop(key)
+            self._close(key[0], start, timestamp_ms, stacks, key[1], kind, source)
         self._gone.clear()
 
     def _close(self, index: int, start: int, end: int, stacks: int,
-               target_id: str, kind: str) -> None:
+               target_id: str, kind: str, source_id: str = "") -> None:
         if end <= start:
             return
         spans = self._closed.setdefault(index, [])
@@ -492,19 +504,23 @@ class EffectTracker:
             last = spans[-1]
             if (last[3] == target_id and last[2] == stacks
                     and 0 <= start - last[1] <= MERGE_GAP_MS):
-                last[1] = max(last[1], end)
-                return
-        spans.append([start, end, stacks, target_id, kind])
+                if last[5] == source_id:
+                    last[1] = max(last[1], end)
+                    return
+                # Another caster's recast within the gap: the gap is bridged
+                # as for one caster, and the new span is theirs
+                last[1] = start
+        spans.append([start, end, stacks, target_id, kind, source_id])
 
     def _window(self, index: int, fight_start_ms: int, fight_end_ms: int) -> List[tuple]:
         """A rule's spans clipped to the fight: (start, end, stacks, target,
-        kind), open spans running to the fight's end."""
+        kind, source), open spans running to the fight's end."""
         spans = list(self._closed.get(index, []))
-        spans.extend([start, fight_end_ms, stacks, target, kind]
-                     for (ri, target, _aid), (start, stacks, kind) in self._open.items()
+        spans.extend([start, fight_end_ms, stacks, target, kind, source]
+                     for (ri, target, _aid), (start, stacks, kind, source) in self._open.items()
                      if ri == index)
-        clipped = [(max(s, fight_start_ms), min(e, fight_end_ms), stacks, target, kind)
-                   for s, e, stacks, target, kind in spans
+        clipped = [(max(s, fight_start_ms), min(e, fight_end_ms), stacks, target, kind, source)
+                   for s, e, stacks, target, kind, source in spans
                    if e > fight_start_ms and s < fight_end_ms]
         clipped.sort()
         return clipped
@@ -578,8 +594,9 @@ class EffectTracker:
                 "max_stacks": peak, "mobs_reached": reached, "mobs": mobs, "text": text,
                 "intervals": [{"start_ms": s - fight_start_ms, "end_ms": e - fight_start_ms,
                                "stacks": stacks,
-                               "target": name_of(target) if name_of else target}
-                              for s, e, stacks, target, _kind in spans],
+                               "target": name_of(target) if name_of else target,
+                               "source": (name_of(source) if name_of else source) if source else ""}
+                              for s, e, stacks, target, _kind, source in spans],
             })
         return out
 
@@ -672,7 +689,7 @@ def _unit_shares(spans, windows: Dict[str, Tuple[int, int]]) -> List[float]:
     was on it."""
     shares = []
     for unit_id, (start, end) in windows.items():
-        own = [(max(s, start), min(e, end)) for s, e, _n, target, _k in spans
+        own = [(max(s, start), min(e, end)) for s, e, _n, target, _k, _src in spans
                if target == unit_id and e > start and s < end]
         shares.append(_union_ms(own) / (end - start))
     return shares

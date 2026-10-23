@@ -88,6 +88,8 @@ TOPICS = [
     ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
+        "src/effect_rules.py:EffectTracker.record",
+        "src/effect_summary.py",
     ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",
