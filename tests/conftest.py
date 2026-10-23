@@ -2,7 +2,60 @@
 Pytest configuration and shared fixtures for ESO analyzer tests.
 """
 
+import gc
+
 import pytest
+
+
+def pytest_configure(config):
+    """The garbage collector runs only on the main thread, after each test
+    (see _free_test_widgets_on_the_ui_thread). Left automatic, it runs on
+    whichever thread is allocating, and the engine threads the GUI tests
+    start run Python: on Python 3.14 a run of the suite saw one or two
+    collections on an engine thread. One that found GUI objects would free
+    them off the UI thread."""
+    gc.disable()
+
+
+@pytest.fixture(autouse=True)
+def _free_test_widgets_on_the_ui_thread():
+    """Free the windows and widgets a test leaves behind before the next test
+    starts, on the UI thread (issue #18).
+
+    GUI tests close their windows but do not delete them, and several of the
+    app's objects sat in reference cycles, so by the end of the suite about
+    40 main windows and 50 fight views were still alive, waiting for Python's
+    garbage collector, which frees things on whichever thread is allocating.
+    Had a collection on an engine thread found GUI objects, it would have
+    freed them off the UI thread, the kind of fault the whole suite gave
+    GitHub's Windows runner on 2026-10-15. So after each test this closes any
+    window left open, which also stops its engine thread, deletes the app's
+    top-level widgets, runs the queued deletions and collects the garbage
+    here, where pytest_configure leaves the collector's only runs. Qt's own
+    top-level widgets (tooltips, popups) are left alone."""
+    yield
+    try:
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        QApplication = None
+    app = QApplication.instance() if QApplication is not None else None
+    ours = ([w for w in app.topLevelWidgets() if not type(w).__module__.startswith("PySide6")]
+            if app is not None else [])
+    for widget in ours:
+        thread = getattr(widget, "worker_thread", None)
+        if widget.isVisible() or (thread is not None and thread.isRunning()):
+            widget.close()
+        widget.deleteLater()
+    if ours:
+        # Queued calls first (a finished engine thread hands its worker
+        # over), then the deletions they and the loop above posted
+        for _ in range(3):
+            app.processEvents()
+            app.sendPostedEvents(None, QEvent.DeferredDelete)
+    # A full collection after a GUI test; the young generations otherwise,
+    # which keeps the suite's time (a full one after every test tripled it)
+    gc.collect() if ours else gc.collect(1)
 
 
 @pytest.fixture

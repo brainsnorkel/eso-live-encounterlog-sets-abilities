@@ -19,6 +19,7 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Fixed
 - **Rampage in place of the werewolf ultimate** (#17): at full Fury the game lists Rampage (Enduring Rampage for Pack Leader) in the logging player's ultimate slot, so that slot changed from fight to fight and showed as text. It now shows the morph, Werewolf Berserker or Pack Leader, and its hover says it was listed as Rampage. Group members' slots never read Rampage, so every player now looks alike
 - **Werewolf icons**: Update 50 gave Pounce, Brutal Pounce, Feral Pounce, Rending Claws and Claw Fury icons named `u50_ability_*`, and Rampage uses an achievement icon; none was bundled, so those skills showed as text. The icon extractor now also takes every update-named skill icon (`u<NN>_ability_*`, 66 icons including Crypt Transfer's) and Rampage's, 67 icons in all
+- **The engine worker is freed when the window closes** (#18): the window asked the UI thread to take over the worker after the engine thread had ended, which Qt refuses ("Cannot move to target thread", printed at every close), so the worker was never deleted and was left to Python's garbage collector, on whichever thread happened to be allocating. The worker now moves itself to the UI thread as its thread finishes, takes no more requests, and is deleted there. The test suite also frees each test's windows on the UI thread before the next test (about 40 main windows used to stay alive to the end), and runs as one process again on CI
 
 ## [0.11.0] - 2026-10-15
 
