@@ -1,5 +1,7 @@
 """
-EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
+Compact buff/debuff timeline strip (buff-timeline spec): the only view of
+the tracked effects in the fight pane since issue #25, the text uptime line
+surviving only in the plain-text copy.
 
 One thin colored row per tracked effect across the fight duration, with the
 effect's uptime % in its label, whose effect it is beside it (group, self,
@@ -18,8 +20,12 @@ Esc, and deletes itself on close: Qt owns it through its parent, and it
 holds nothing of the strip, so the garbage collector never frees it off
 the UI thread.
 
-Deliberately tiny: it must never crowd the fight summary. Hidden entirely
-when the displayed fight carries no timeline data.
+Buffs come first and debuffs after, with a divider between (issue #26).
+
+Deliberately tiny: it must never crowd the fight summary. A fight in which
+none of the built-in effects was up has no recorded timeline; its tracked
+rows are still drawn over the fight's duration (main_window passes it).
+Hidden entirely when nothing was up at all.
 """
 
 from html import escape
@@ -109,6 +115,16 @@ def _fmt_tick(ms: int) -> str:
     if total >= 60:
         return f"{total // 60}m{total % 60:02d}"
     return f"{total}s"
+
+
+def strip_timeline(entry):
+    """The timeline to draw for a fight entry: its recorded one, or, for a
+    fight in which none of the built-in effects was up (none was recorded),
+    an empty one over the fight's length, so its tracked rows still show."""
+    timeline = getattr(entry, "buff_timeline", None)
+    if timeline:
+        return timeline
+    return {"duration_ms": int((getattr(entry, "duration_s", 0) or 0) * 1000), "effects": {}}
 
 
 def uptime_pct(intervals, duration_ms: int) -> int:

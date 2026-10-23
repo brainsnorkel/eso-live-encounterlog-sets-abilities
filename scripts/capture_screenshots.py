@@ -12,8 +12,7 @@ guide expects (twelve players, a death, taunts). Output goes to
 docs/screencaps/ (--out to change), overwriting the same file names each
 time, so the pictures stay in step with the app:
 
-    main-window.png                 detail view, a boss fight selected
-    main-window-buff-timeline.png   the same with the experimental timeline strip
+    main-window.png                 detail view and timeline strip, a boss fight selected
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
@@ -74,7 +73,6 @@ def main():
         "log_path": str(log),
         "split": {"enabled": False},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
-        "experimental": {"buff_timeline": False},
         "update": {"check_enabled": False},
     }), encoding="utf-8")
 
@@ -192,18 +190,6 @@ def main():
     save(win, "review-mode.png")
     win._exit_review()
     pump(1)
-
-    # The experimental timeline strip: what Save does in Settings
-    win.config.set("experimental.buff_timeline", True)
-    win.config.save()
-    win._restart_pending = True
-    started["flag"] = False
-    win.request_restart.emit()
-    pump(600, until_started=True)
-    fights = win._current_fights()
-    win.history_list.setCurrentRow(pick(fights))
-    pump(9)  # the status message again, as above
-    save(win, "main-window-buff-timeline.png")
 
     win.close()
     pump(1)

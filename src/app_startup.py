@@ -40,8 +40,6 @@ def resolve_log_path(config: AppConfig) -> Optional[Path]:
 def build_analyzer(config: AppConfig,
                    listeners: List[AnalyzerListener]) -> ESOLogAnalyzer:
     analyzer = ESOLogAnalyzer()
-    analyzer.track_buff_timeline = bool(
-        config.get("experimental.buff_timeline", False))
     # The user's tracked effects; a line that will not parse is skipped
     # here and reported in Settings
     rules, _errors = parse_rules(config.get("tracking.rules", DEFAULT_RULES) or "")

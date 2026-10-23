@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offscreen tests for the experimental TimelineStrip widget."""
+"""Offscreen tests for the TimelineStrip widget."""
 
 import os
 import unittest
@@ -212,28 +212,48 @@ class TestTimelineStrip(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
-class TestSettingsToggle(unittest.TestCase):
-    """Task 3.1: experimental checkbox round-trips through AppConfig."""
+class TestStripIsAlwaysOn(unittest.TestCase):
+    """Issue #25: the strip is the only view of the rules, with no switch."""
 
-    def test_round_trip(self):
+    def test_the_old_switch_is_dropped_from_a_config_either_way(self):
+        import json
         import tempfile
         from pathlib import Path
         _ensure_app()
         from app_config import AppConfig
+        from app_startup import build_analyzer
         from gui.settings_dialog import SettingsDialog
-        with tempfile.TemporaryDirectory() as td:
-            config = AppConfig(path=Path(td) / 'config.json')
-            self.assertFalse(config.get('experimental.buff_timeline'))
+        for old in (False, True):
+            with tempfile.TemporaryDirectory() as td:
+                path = Path(td) / 'config.json'
+                path.write_text(json.dumps({"experimental": {"buff_timeline": old}}), encoding="utf-8")
+                config = AppConfig(path=path)
+                self.assertIsNone(config.get('experimental.buff_timeline'))
+                self.assertTrue(build_analyzer(config, []).track_buff_timeline)
+                dialog = SettingsDialog(config)
+                self.assertFalse(hasattr(dialog, 'buff_timeline'))  # no checkbox
+                dialog.apply_to_config()
+                config.save()
+                self.assertNotIn('experimental', json.loads(path.read_text(encoding="utf-8")))
+                dialog.deleteLater()
 
-            dialog = SettingsDialog(config)
-            self.assertFalse(dialog.buff_timeline.isChecked())  # default off
-            dialog.buff_timeline.setChecked(True)
-            dialog.apply_to_config()
-            config.save()
-
-            reloaded = AppConfig(path=config.path)
-            self.assertTrue(reloaded.get('experimental.buff_timeline'))
-            dialog.deleteLater()
+    def test_a_fight_without_a_recorded_timeline_still_draws_its_rules(self):
+        from fight_history import FightHistoryEntry
+        from gui.timeline_strip import TimelineStrip, strip_timeline
+        entry = FightHistoryEntry()
+        entry.duration_s = 60.0
+        entry.tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:1.0/1",
+                          "uptime_pct": 50.0, "max_stacks": 1,
+                          "intervals": [{"start_ms": 0, "end_ms": 30_000, "stacks": 1, "target": "@me"}]}]
+        self.assertEqual(strip_timeline(entry), {"duration_ms": 60_000, "effects": {}})
+        recorded = {"duration_ms": 60_000, "effects": {"Major Force": []}}
+        entry.buff_timeline = recorded
+        self.assertIs(strip_timeline(entry), recorded)
+        entry.buff_timeline = None
+        strip = TimelineStrip()
+        strip.set_timeline(strip_timeline(entry), entry.tracked)
+        self.assertEqual(strip._rows, ["Crux"])
+        strip.deleteLater()
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')

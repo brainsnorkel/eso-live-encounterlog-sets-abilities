@@ -35,9 +35,6 @@ DEFAULTS = {
     "history": {
         "load_recent_mb": 0,    # 0 -> attach at end; N -> parse trailing N MB
     },
-    "experimental": {
-        "buff_timeline": False,  # compact per-fight buff/debuff timeline strip
-    },
     "tracking": {
         "rules": DEFAULT_RULES,  # tracked effects, one rule per line (effect_rules)
         "version": TRACKING_VERSION,
@@ -83,6 +80,10 @@ class AppConfig:
         front of it, by name, so a rule the user had already written under
         the same name stays theirs. Nothing is written back; the version
         is saved with the next Save, and the top-up is harmless to repeat.
+
+        The timeline strip's old switch (experimental.buff_timeline, until
+        issue #25 made the strip the only view of the rules) is dropped
+        here, so the next Save leaves it out of the file.
         """
         try:
             stored = json.loads(self.path.read_text(encoding="utf-8"))
@@ -91,6 +92,11 @@ class AppConfig:
         if not isinstance(stored, dict):
             return
         self.data = _deep_merge(DEFAULTS, stored)
+        experimental = self.data.get("experimental")
+        if isinstance(experimental, dict):
+            experimental.pop("buff_timeline", None)
+            if not experimental:
+                del self.data["experimental"]
         tracking = stored.get("tracking")
         if (isinstance(tracking, dict) and isinstance(tracking.get("rules"), str)
                 and "version" not in tracking):

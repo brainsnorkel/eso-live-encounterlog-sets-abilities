@@ -1,5 +1,5 @@
 """Settings dialog: log path, split files, archiving, startup, updates, and
-the tracked effects with their timeline strip."""
+the tracked effects the timeline strip draws."""
 
 import sys
 from pathlib import Path
@@ -16,7 +16,7 @@ from effect_rules import DEFAULT_RULES, parse_rules
 
 RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
               "then stacks for a stacking effect, or each for the mean over the units "
-              "(the taunt's measure). Every item of the uptime line is a rule here, the group "
+              "(the taunt's measure). Every row of the timeline strip is a rule here, the group "
               "buffs and the taunt included: delete what you do not want, Examples… has them "
               "back. In a fight without a boss, a boss rule measures the pack and says how many "
               "mobs it reached. A line that starts with $ is a HyperTools tracker export. Copy "
@@ -141,9 +141,9 @@ class SettingsDialog(QDialog):
         update_form.addRow(self.update_check)
         layout.addWidget(update_group)
 
-        # Tracked effects: the rule text, with its parse result underneath,
-        # and the timeline strip that draws the same rules
-        tracking_group = QGroupBox("Tracked effects (the uptime line)")
+        # Tracked effects: the rule text, with its parse result underneath;
+        # the timeline strip above each fight draws them
+        tracking_group = QGroupBox("Tracked effects (the timeline strip)")
         tracking_layout = QVBoxLayout(tracking_group)
         help_label = QLabel(RULES_HELP)
         help_label.setWordWrap(True)
@@ -167,15 +167,6 @@ class SettingsDialog(QDialog):
         tracking_layout.addLayout(rules_row)
         self.rules_edit.textChanged.connect(self._check_rules)
         self._check_rules()
-        # The strip (the config key keeps its original name)
-        self.buff_timeline = QCheckBox(
-            "Show these as a per-fight timeline strip in place of the uptime line")
-        self.buff_timeline.setToolTip(
-            "One row per effect across the fight; hover a segment of the strip for "
-            "who cast the effect and who received it")
-        self.buff_timeline.setChecked(
-            bool(config.get("experimental.buff_timeline", False)))
-        tracking_layout.addWidget(self.buff_timeline)
         layout.addWidget(tracking_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -229,7 +220,6 @@ class SettingsDialog(QDialog):
         self.config.set("archive.size_threshold_mb", self.threshold.value())
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
-        self.config.set("experimental.buff_timeline", self.buff_timeline.isChecked())
         self.config.set("update.check_enabled", self.update_check.isChecked())
         if self.update_check.isChecked():
             # Re-enabling checks also clears any skipped version

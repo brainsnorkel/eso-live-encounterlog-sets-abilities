@@ -14,7 +14,7 @@ link under each note is where it lives.
 *[src/esolog_tail.py:1891](../src/esolog_tail.py#L1891)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
-(every item of the uptime line), the experimental timeline, and
+(every item of the uptime line), the timeline strip's built-in rows, and
 enemy health.
 
 Design: an EFFECT_CHANGED line is ``changeType, stackCount,
@@ -658,7 +658,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:78](../src/app_config.py#L78)*
+*[src/app_config.py:75](../src/app_config.py#L75)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -667,6 +667,10 @@ would lose those items on upgrade: the missing ones are put in
 front of it, by name, so a rule the user had already written under
 the same name stays theirs. Nothing is written back; the version
 is saved with the next Save, and the top-up is harmless to repeat.
+
+The timeline strip's old switch (experimental.buff_timeline, until
+issue #25 made the strip the only view of the rules) is dropped
+here, so the next Save leaves it out of the file.
 
 ## Taunts
 
@@ -762,12 +766,13 @@ logs):
 
 *[src/buff_timeline.py:1](../src/buff_timeline.py#L1)*
 
-EXPERIMENTAL buff/debuff timeline recording (buff-timeline spec).
+Buff/debuff timeline recording (buff-timeline spec).
 
 Records the active intervals of a handful of raid-defining effects with
-cast/receive attribution, so the GUI can draw a compact per-fight timeline
-strip. Recording is opt-in (`experimental.buff_timeline`); when the analyzer's
-gate is off, record() is never called and nothing is retained.
+cast/receive attribution, for the built-in rows of the per-fight timeline
+strip (the tracked-effect rules bring the rest, effect_rules). Recording is
+always on since the strip became the only view of the rules (issue #25);
+the analyzer's track_buff_timeline gate remains for tests.
 
 Interval times are raw log-relative milliseconds; snapshot_fight() clips them
 to a fight's [start, end] window and rebases them to fight-relative ms.
@@ -835,7 +840,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:739](../src/gui/main_window.py#L739)*
+*[src/gui/main_window.py:738](../src/gui/main_window.py#L738)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

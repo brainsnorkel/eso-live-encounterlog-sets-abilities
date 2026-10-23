@@ -707,9 +707,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self.player_sessions: Dict[str, Dict] = {}  # handle+name -> {unit_id, name, equipped_abilities, gear_data, last_seen}
         self.unit_id_to_handle: Dict[str, str] = {}  # unit_id -> handle
         
-        # EXPERIMENTAL: per-fight buff/debuff timeline (buff-timeline spec).
-        # Gated by experimental.buff_timeline; nothing is recorded when off.
-        self.track_buff_timeline = False
+        # The per-fight buff/debuff timeline the fight pane's strip draws
+        # (buff-timeline spec). Always on; a test may turn it off
+        self.track_buff_timeline = True
         self.buff_timeline_recorder = BuffTimelineRecorder()
         # The user's tracked effects (effect_rules); build_analyzer sets the
         # rules from the config, an empty tracker records nothing
@@ -1890,7 +1890,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def _handle_effect_changed(self, entry: ESOLogEntry):
         """A buff or debuff coming, going or refreshing: the tracked effects
-        (every item of the uptime line), the experimental timeline, and
+        (every item of the uptime line), the timeline strip's built-in rows, and
         enemy health.
 
         Design: an EFFECT_CHANGED line is ``changeType, stackCount,
@@ -1927,7 +1927,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.diagnostic and target_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
 
-            # EXPERIMENTAL timeline capture
+            # The timeline strip's built-in rows
             if self.track_buff_timeline and extracted is not None:
                 self.buff_timeline_recorder.record(
                     effect_type, ability_id, source_unit_id, target_unit_id,
@@ -2160,7 +2160,7 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
 
-        # EXPERIMENTAL buff/debuff timeline (None whenever the gate is off)
+        # The buff/debuff timeline (None when none of its effects was up)
         if self.track_buff_timeline:
             entry.buff_timeline = self.buff_timeline_recorder.snapshot_fight(
                 enc.start_time, enc.end_time, self._resolve_timeline_name)

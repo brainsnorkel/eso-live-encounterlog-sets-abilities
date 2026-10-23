@@ -1,10 +1,11 @@
 """
-EXPERIMENTAL buff/debuff timeline recording (buff-timeline spec).
+Buff/debuff timeline recording (buff-timeline spec).
 
 Records the active intervals of a handful of raid-defining effects with
-cast/receive attribution, so the GUI can draw a compact per-fight timeline
-strip. Recording is opt-in (`experimental.buff_timeline`); when the analyzer's
-gate is off, record() is never called and nothing is retained.
+cast/receive attribution, for the built-in rows of the per-fight timeline
+strip (the tracked-effect rules bring the rest, effect_rules). Recording is
+always on since the strip became the only view of the rules (issue #25);
+the analyzer's track_buff_timeline gate remains for tests.
 
 Interval times are raw log-relative milliseconds; snapshot_fight() clips them
 to a fight's [start, end] window and rebases them to fight-relative ms.
