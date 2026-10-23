@@ -29,6 +29,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `eso_log_parser.py`, `eso_log_structures.py` | Parsing of log lines into typed entries. |
 | `engine_events.py` | `AnalyzerListener`: the contract between the engine and a frontend. |
 | `fight_history.py` | `FightHistoryEntry`, the summary of one fight that the engine hands to the frontend. |
+| `damage_stats.py` | Dps time and each player's damage by ability and by target, as Combat Metrics defines them. |
 | `app_startup.py` | Startup order without Qt: config, log path, archive check, monitor. |
 | `app_config.py` | The per-user `config.json`. |
 | `player_build.py`, `scribing.py`, `death_recap.py`, `buff_timeline.py` | Per-fight detail: gear, mundus and food; scribed skills; death recaps; the experimental buff timeline. |
@@ -43,8 +44,8 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/about.py` | The main window and its dialogs. |
-| `gui/fight_render.py`, `gui/build_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build and a death recap. They take fight data and return strings, so they are tested without a window. |
-| `gui/build_dialog.py`, `gui/death_recap_dialog.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build and death recap windows, the buff timeline strip, the icon cache. |
+| `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
+| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache. |
 
 ## Running from source
 

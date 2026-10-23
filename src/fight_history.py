@@ -12,20 +12,33 @@ class FightHistoryEntry:
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
-                 'death_recaps', 'tracked']
+                 'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
+                 'damage_series']
 
     def __init__(self):
         self.timestamp = ""
         self.ended_at = 0.0  # time.time() when fight ended, for elapsed timer
         self.zone_name = ""
         self.is_vet = False
+        # The fight time: BEGIN_COMBAT to END_COMBAT
         self.duration_s = 0.0
+        # The spans the dps figures divide by (damage_stats): first hit of
+        # the group to its last, and the same for the hits on the bosses
+        self.dps_time_s = 0.0
+        self.boss_dps_time_s = 0.0
+        # The group's damage per second of the fight for the graph window
+        # (damage_stats.FightDamage.series): {'all', 'boss', 'window',
+        # 'boss_window'}; None on an entry built without it
+        self.damage_series = None
         self.group_dps = 0.0
         # The group's dps against the units the game flags as bosses (0 in
         # a fight without one); each player's share is their 'boss_dps'
         self.group_boss_dps = 0.0
         self.deaths = 0
-        # dicts with keys: role, name, class_abbr, dps, boss_dps, dmg_pct, h, m, s, unit_id, sets, skill_lines, front_bar, back_bar,
+        # dicts with keys: role, name, class_abbr, dps, boss_dps, dmg_pct, boss_pct (the player's
+        # share of the group's damage, and of its damage to the bosses), damage (the damage
+        # window's data, see damage_stats.PlayerDamage.snapshot), h, m, s, unit_id, sets,
+        # skill_lines, front_bar, back_bar,
         # front_bar_slots, back_bar_slots (a slot the player taunted with carries 'taunt': True),
         # taunts (the abilities they taunted with, see ESOLogAnalyzer._taunts_of),
         # and for the build window: character, race, gear, mundus, food (see player_build.build_fields)
