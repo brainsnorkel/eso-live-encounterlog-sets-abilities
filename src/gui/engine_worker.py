@@ -3,8 +3,27 @@ Engine worker: runs the analysis engine on a QThread and bridges
 AnalyzerListener callbacks to Qt signals (queued to the UI thread).
 
 Engine modules never import Qt; this adapter is the only crossing point.
+
+Design: the worker is a Python-created QObject, so it is freed on the UI
+thread and never by Python's garbage collector, which frees whatever is
+garbage on whichever thread happens to be allocating. As the worker's thread
+finishes, QThread.finished calls leave_thread on that thread (a direct
+connection): the timers stop and the worker moves itself to the UI thread,
+since only the thread an object lives in may move it. The window then
+deletes it there (MainWindow._discard_worker). The listener holds the worker
+weakly, so a worker nobody holds is freed at once.
+
+Until issue #18 the window tried to pull the worker over from the UI thread
+after the thread had ended. Qt refuses that ("Cannot move to target thread",
+printed at every close), so the deletion went to a thread that would never
+run it. The listener also held the worker in a reference cycle, so only the
+garbage collector could free it. In the test suite, where every GUI test
+leaves windows and workers behind, a collection was seen running on an
+engine thread; one that found GUI objects there would free them off the UI
+thread, which is how Settings crashed in 0.6.x.
 """
 
+import weakref
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
@@ -21,28 +40,35 @@ WAIT_FOR_LOG_INTERVAL_MS = 2000
 
 
 class SignalListener(AnalyzerListener):
-    """Forwards engine callbacks to the worker's Qt signals."""
+    """Forwards engine callbacks to the worker's Qt signals. It holds the
+    worker weakly: the worker holds it, and a cycle would leave the worker
+    to the garbage collector (see the module's design note)."""
 
     def __init__(self, worker: "EngineWorker"):
-        self._worker = worker
+        self._worker = weakref.ref(worker)
+
+    def _emit(self, signal: str, *args):
+        worker = self._worker()
+        if worker is not None:
+            getattr(worker, signal).emit(*args)
 
     def on_fight_completed(self, entry):
-        self._worker.fight_completed.emit(entry)
+        self._emit("fight_completed", entry)
 
     def on_fight_updated(self, entry):
-        self._worker.fight_updated.emit(entry)
+        self._emit("fight_updated", entry)
 
     def on_zone_changed(self, zone_name, difficulty):
-        self._worker.zone_changed.emit(zone_name, difficulty)
+        self._emit("zone_changed", zone_name, difficulty)
 
     def on_log_status(self, status):
-        self._worker.log_status.emit(status)
+        self._emit("log_status", status)
 
     def on_archive_event(self, event):
-        self._worker.archive_event.emit(event)
+        self._emit("archive_event", event)
 
     def on_diagnostic(self, message):
-        self._worker.diagnostic.emit(message)
+        self._emit("diagnostic", message)
 
 
 class EngineWorker(QObject):
@@ -90,6 +116,17 @@ class EngineWorker(QObject):
             self._poll_timer.stop()
         if self._wait_timer is not None:
             self._wait_timer.stop()
+
+    def leave_thread(self, home):
+        """Hand the worker to the *home* thread as its own thread finishes.
+        Runs on the worker's thread, from QThread.finished: only the thread
+        an object lives in may move it. The timers stop first, so none starts
+        again on the UI thread."""
+        try:
+            self.stop()
+            self.moveToThread(home)
+        except RuntimeError:
+            pass  # already deleted
 
     @Slot()
     def start(self):

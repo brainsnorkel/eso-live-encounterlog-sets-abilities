@@ -977,9 +977,27 @@ AnalyzerListener callbacks to Qt signals (queued to the UI thread).
 
 Engine modules never import Qt; this adapter is the only crossing point.
 
+Design: the worker is a Python-created QObject, so it is freed on the UI
+thread and never by Python's garbage collector, which frees whatever is
+garbage on whichever thread happens to be allocating. As the worker's thread
+finishes, QThread.finished calls leave_thread on that thread (a direct
+connection): the timers stop and the worker moves itself to the UI thread,
+since only the thread an object lives in may move it. The window then
+deletes it there (MainWindow._discard_worker). The listener holds the worker
+weakly, so a worker nobody holds is freed at once.
+
+Until issue #18 the window tried to pull the worker over from the UI thread
+after the thread had ended. Qt refuses that ("Cannot move to target thread",
+printed at every close), so the deletion went to a thread that would never
+run it. The listener also held the worker in a reference cycle, so only the
+garbage collector could free it. In the test suite, where every GUI test
+leaves windows and workers behind, a collection was seen running on an
+engine thread; one that found GUI objects there would free them off the UI
+thread, which is how Settings crashed in 0.6.x.
+
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:452](../src/gui/main_window.py#L452)*
+*[src/gui/main_window.py:473](../src/gui/main_window.py#L473)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -989,7 +1007,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:780](../src/gui/main_window.py#L780)*
+*[src/gui/main_window.py:801](../src/gui/main_window.py#L801)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
