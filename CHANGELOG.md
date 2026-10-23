@@ -6,9 +6,14 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ### Added
 - **Who applied a buff and who had it** (#19): a click on any row of the buff timeline strip, label or bar, opens a summary of the whole fight: each caster's uptime, how much of it no other caster covered, and their spans; each receiver's uptime, and for a stacking rule its peak and the time at the peak; and a grid of caster against receiver when there are only a few of each. It closes on a click elsewhere or Esc. Tracked-effect rules now record who applied each span; replaying 110 fights from 6 split logs gives the same uptimes as before
+- **The werewolf bar** (#17): since Update 50 a werewolf fights with a bar of its own, which the game never writes into the log, so the fight view, build window and plain copy showed only human bars the player did not use. A player who spent part of a fight in werewolf form now gets a third line, `Werewolf`, with the bar rebuilt from the werewolf skills they cast this session, in the skill line's order and with their morph as the ultimate, and the share of the fight spent in form, `in form 100%`. Feral Carnage and the other Carnage casts count as their Pounce's slot; Feeding Frenzy, the Roar synergy, does not count. Measured on 55 split logs of July to October 2026: of 58 player sessions with werewolf casts, 55 cast exactly five bar skills and none ever cast a sixth, and the session's casts up to a fight's end give the whole bar in 94% of fights. Werewolf players spent 1,234 of their 1,524 fights wholly in form
 
 ### Changed
 - **Documentation by reader** (#22): the README covers installing and turning on logging; the user guide holds every screen and setting, the tracked-effect rules, what the numbers are based on and troubleshooting; the development guide holds building, refreshing game data and the esobuild.com export. Corrected along the way: DoT ticks have counted in DPS since 0.10.0, a fresh install tracks six boss debuffs and Crux (not seven boss debuffs), the full default Off-Balance line, and the timeline's hover text does not show ability ids
+
+### Fixed
+- **Rampage in place of the werewolf ultimate** (#17): at full Fury the game lists Rampage (Enduring Rampage for Pack Leader) in the logging player's ultimate slot, so that slot changed from fight to fight and showed as text. It now shows the morph, Werewolf Berserker or Pack Leader, and its hover says it was listed as Rampage. Group members' slots never read Rampage, so every player now looks alike
+- **Werewolf icons**: Update 50 gave Pounce, Brutal Pounce, Feral Pounce, Rending Claws and Claw Fury icons named `u50_ability_*`, and Rampage uses an achievement icon; none was bundled, so those skills showed as text. The icon extractor now also takes every update-named skill icon (`u<NN>_ability_*`, 66 icons including Crypt Transfer's) and Rampage's, 67 icons in all
 
 ## [0.11.0] - 2026-10-15
 

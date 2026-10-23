@@ -3,8 +3,9 @@ The build window's HTML: one player's build for a fight, as the encounter
 log recorded it when combat started.
 
 Top to bottom: who it is and which fight; mundus stone, food and Class
-Mastery passives; both ability bars, front above back, with the fight
-view's line of scribed skills;
+Mastery passives; both ability bars, front above back, then a werewolf's
+own bar rebuilt from casts (see werewolf.py), with the fight view's line of
+scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
 poison row under a bar that has one slotted. The data is the fight entry's player dict as the
@@ -21,7 +22,8 @@ import html
 from typing import Optional
 
 from gui.fight_render import (
-    ROLE_NAMES, _bar_html, _join, _scribed_html, _subclass_text, _theme,
+    ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
+    werewolf_bar_html,
 )
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
@@ -157,7 +159,8 @@ def _mundus_food_html(p, theme, icons, e) -> str:
 
 
 def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
-    """Front bar above back bar in a framed card, then the scribed skills
+    """Front bar above back bar in a framed card, then a werewolf's own bar
+    when the player spent some of the fight in form, then the scribed skills
     with their scripts as the fight view lists them."""
     muted = theme["muted"]
     rows = []
@@ -168,6 +171,10 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
         if bar:
             rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{label}</td>"
                         f"<td valign='middle'>{bar}</td></tr>")
+    werewolf = werewolf_bar_html(p, icons, links, e, theme, BAR_ICON_PX)
+    if werewolf:
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{WEREWOLF_LABEL}</td>"
+                    f"<td valign='middle'>{werewolf}</td></tr>")
     if not rows:
         return ""
     card = (f"<table cellpadding='4' cellspacing='0' width='99%' "

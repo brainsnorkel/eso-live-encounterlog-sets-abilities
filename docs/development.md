@@ -32,6 +32,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `app_startup.py` | Startup order without Qt: config, log path, archive check, monitor. |
 | `app_config.py` | The per-user `config.json`. |
 | `player_build.py`, `scribing.py`, `death_recap.py`, `buff_timeline.py` | Per-fight detail: gear, mundus and food; scribed skills; death recaps; the experimental buff timeline. |
+| `werewolf.py` | Werewolf form: the bar the log never writes, rebuilt from the skills cast in form, the share of a fight spent in form, and the morph a Rampage in a bar stands in for. |
 | `effect_rules.py` | Tracked effects: the rule text format, the HyperTools import, the default and example rules, and `EffectTracker`, which measures each rule per fight. |
 | `effect_summary.py` | Who applied an effect and who had it over a fight, for the timeline strip's click popup. |
 | `eso_sets.py` | Skill line tables and the class passive data (`data/skills/class_passives.json`), for the skill lines and Class Mastery passives shown beside a class. |

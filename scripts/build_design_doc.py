@@ -56,6 +56,9 @@ TOPICS = [
     ("Scribed skills and their scripts", [
         "src/scribing.py",
     ]),
+    ("Werewolf form: the bar the log never writes", [
+        "src/werewolf.py",
+    ]),
     ("Builds: gear, weapon types, armor weights, mundus and food", [
         "src/player_build.py",
         "scripts/generate_weapon_types.py",

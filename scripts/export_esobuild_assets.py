@@ -108,7 +108,8 @@ BAR_SWAPS = {
     20824: "Flame Lash",                 # Power Lash, its off-balance proc
     77140: "Summon Twilight Tormentor",  # Twilight Tormentor Enrage, while the pet is out
     92163: "Eternal Guardian",           # Guardian's Savagery, while the bear is out
-    267416: "Werewolf Transformation",   # Rampage, while transformed
+    267416: "Werewolf Transformation",   # Rampage, while transformed with full Fury
+    267425: "Pack Leader",               # Enduring Rampage, the same for Pack Leader (cast in logs)
     195031: None,                        # Crypt Transfer, from the Cryptcanon Vestments mythic
 }
 PERFECTED_RE = re.compile(r"^Perfect(?:ed)? (.+)$")
