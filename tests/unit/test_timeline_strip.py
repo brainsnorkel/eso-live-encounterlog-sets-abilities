@@ -352,6 +352,61 @@ class TestTrackedRows(unittest.TestCase):
         self.strip.show()
         self.strip.grab()  # an empty track paints
 
+    def test_an_expected_row_at_zero_is_marked_missing_and_painted_red(self):
+        """An expected rule whose effect never came is marked missing, so
+        its label is painted red and bold; an expected rule that was up,
+        and an unexpected one at 0% that is shown anyway, are not."""
+        from PySide6.QtGui import QColor, QImage
+        tracked = [
+            {"name": "Lucent Echoes", "kind": "uptime", "scope": "group", "text": "Lucent Echoes:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": True, "shown": True,
+             "intervals": []},
+            {"name": "Major Courage", "kind": "uptime", "scope": "group", "text": "Major Courage:80%",
+             "uptime_pct": 80.0, "max_stacks": 1, "seen": True, "expected": True, "shown": True,
+             "intervals": [{"start_ms": 0, "end_ms": 48_000, "source": "@a", "target": "@b"}]},
+            {"name": "Nearly", "kind": "uptime", "scope": "group", "text": "Nearly:0%",
+             "uptime_pct": 0.4, "max_stacks": 1, "seen": True, "expected": True, "shown": True,
+             "intervals": [{"start_ms": 0, "end_ms": 240, "source": "@a", "target": "@b"}]},
+            {"name": "Alkosh", "kind": "uptime", "scope": "boss", "text": "Alkosh:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": False, "shown": True,
+             "intervals": []},
+        ]
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
+        self.assertTrue(self.strip._row_info["Lucent Echoes"]["missing"])
+        self.assertTrue(self.strip._row_info["Nearly"]["missing"], "rounds to 0%")
+        self.assertFalse(self.strip._row_info["Major Courage"]["missing"])
+        self.assertFalse(self.strip._row_info["Alkosh"]["missing"], "not expected")
+        # The label column of the missing row carries the red; the row that
+        # was up does not
+        self.strip.show()
+        image = self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+        red = self.strip.missing_color()
+
+        def has_red(row):
+            rect = self.strip._row_rect(row)
+            for y in range(int(rect.top()) - 1, int(rect.bottom()) + 2):
+                for x in range(int(rect.left())):
+                    if QColor(image.pixel(x, y)) == red:
+                        return True
+            return False
+
+        rows = self.strip._rows
+        self.assertTrue(has_red(rows.index("Lucent Echoes")))
+        self.assertFalse(has_red(rows.index("Major Courage")))
+
+    def test_missing_color_follows_the_palette(self):
+        """Dark red on a light pane, a lighter red on a dark one."""
+        from PySide6.QtGui import QColor
+
+        from gui.timeline_strip import MISSING_COLORS
+        palette = self.strip.palette()
+        palette.setColor(self.strip.backgroundRole(), QColor("#ffffff"))
+        self.strip.setPalette(palette)
+        self.assertEqual(self.strip.missing_color(), MISSING_COLORS[False])
+        palette.setColor(self.strip.backgroundRole(), QColor("#202020"))
+        self.strip.setPalette(palette)
+        self.assertEqual(self.strip.missing_color(), MISSING_COLORS[True])
+
     def test_a_dots_rule_is_drawn_against_five_with_zero_a_level(self):
         tracked = [{"name": "Zen", "kind": "dots", "scope": "boss", "text": "Zen:2.5/5",
                     "uptime_pct": 100.0, "max_stacks": 5, "shown": True, "intervals": [
