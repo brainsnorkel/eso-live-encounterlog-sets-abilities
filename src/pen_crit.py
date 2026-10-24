@@ -81,8 +81,18 @@ and no weapon of 2,292 builds is Sharpened; every Crusher glyph (302
 weapons) is gold at CP 160; Fated Fortune's proc fired 2,374 times, so its
 real uptime is measured, not assumed; the trial dummy applies the trial's
 own debuffs to itself (Crusher 120007, Alkosh 120018, Breach 120010 and
-120019), which is how a parse at a dummy is known to be against 18,200
-resistance in a house zone whose difficulty reads NONE.
+120019, Minor Brittle, Elemental Catalyst), which is how a parse at a
+dummy is known to be against 18,200 resistance in a house zone whose
+difficulty reads NONE. It applies them once, as it spawns, and keeps them,
+so a session begun after the spawn has no line for them and the log alone
+would read the player's own penetration against an overland cap; a fight
+against a unit named "Target Iron Atronach, Trial" therefore credits them
+for the whole fight (TRIAL_DUMMY_DEBUFFS), as Combat Metrics reads them
+from the game at the pull. Checked against a Combat Metrics report of a
+25 s parse (2026-10-24): own penetration 3,126 (one light piece, Aerie's
+Cry's two pieces, Piercing) plus the dummy's 17,030 is its maximum of
+20,156 exactly, damage and dps agreed within 0.5%, and the ability table
+row for row.
 """
 
 import math
@@ -205,6 +215,17 @@ STATUS_EFFECTS = {"178118": "Overcharged", "18084": "Burning", "95136": "Chilled
                   "178127": "Diseased", "148801": "Hemorrhaging"}
 # The debuffs a trial dummy puts on itself: a parse, against 18,200
 DUMMY_IDS = frozenset({"120007", "120018", "120010", "120019", "120030", "120011"})
+# The Trial dummy puts a trial group's debuffs on itself once, as it spawns,
+# and keeps them (a Dreadsail Reef log's eight spawns each wrote Crusher
+# 120007, Alkosh 120018, Major Breach 120010, Minor Breach 120019, Minor
+# Brittle 145975 and 148977 and Elemental Catalyst 181606 once, and never a
+# FADED). A session begun after the spawn has no line for them, so a fight
+# against a unit of this name credits them for the whole fight, as Combat
+# Metrics reads them from the game at the pull
+TRIAL_DUMMY_NAME = "Target Iron Atronach, Trial"
+TRIAL_DUMMY_DEBUFFS = ("Major Breach", "Minor Breach", "Crusher", "Roar of Alkosh",
+                       "Minor Brittle", "Elemental Catalyst")
+TRIAL_DUMMY_VIA = "the dummy's own"
 STATUS_PREFIX = "status:"
 
 PEN_DEBUFFS = tuple(name for name, _ids, pen, _crit in DEBUFFS if pen)
@@ -555,7 +576,8 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                  instanced: bool, dummy: bool = False,
                  set_table: dict[str, dict] | None = None,
                  kind_of: Callable[[str], str] | None = None,
-                 always_on: dict[str, dict[str, str]] | None = None) -> tuple[dict, dict[str, dict]]:
+                 always_on: dict[str, dict[str, str]] | None = None,
+                 permanent_debuffs: dict[str, list[str]] | None = None) -> tuple[dict, dict[str, dict]]:
     """The fight's group-provided penetration and critical damage.
 
     *units* is the engine's fight_units(); *group_target_buckets* the group's
@@ -563,7 +585,10 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     per player; *gear_of* a caster's gear for the Crusher value and the set
     behind a debuff; *always_on* the buffs a player's sets give at all
     times, player id -> {buff name: set name} (player_rows' 'gives'),
-    credited for the whole fight. Returns the entry's dict ('on': 'boss' or 'enemies',
+    credited for the whole fight; *permanent_debuffs* the debuffs a target
+    keeps on itself for good, target unit id -> [debuff names] (the Trial
+    dummy's, TRIAL_DUMMY_DEBUFFS), credited at 100% whether or not the
+    session saw them applied. Returns the entry's dict ('on': 'boss' or 'enemies',
     'cap', 'instanced', 'dummy', 'debuffs' rows with uptime and casters,
     'pen_hist' [[penetration, status effects, damage], ...], 'crit_hist'
     [[crit %, damage], ...], 'damage') and one dict per player ('buffs'
@@ -589,14 +614,25 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     status_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
     debuff_rows: list[dict] = []
     crusher_value: dict[str, int] = {}
+    permanent_debuffs = permanent_debuffs or {}
+    perm_pen: dict[str, float] = {}  # a target's permanent debuffs, summed
+    perm_crit: dict[str, float] = {}
     for name, _ids, pen, crit in DEBUFFS:
-        spans = spans_of(name, target_set)
-        if not spans:
+        # A debuff a target keeps for good counts in full there, and what
+        # the log shows of it on that target (another player's refresh of
+        # the same debuff) adds nothing
+        permanent_on = [t for t in targets if name in permanent_debuffs.get(t, ())]
+        spans = [s for s in spans_of(name, target_set) if s[3] not in permanent_on]
+        if not spans and not permanent_on:
             continue
+        for target in permanent_on:
+            perm_pen[target] = perm_pen.get(target, 0.0) + pen
+            perm_crit[target] = perm_crit.get(target, 0.0) + crit
         by_source: dict[str, list] = {}
         for span in spans:
             by_source.setdefault(str(span[5] or ""), []).append(span)
-        casters = []
+        casters = [{"name": name_of(t), "pct": 100, "via": TRIAL_DUMMY_VIA, "value": pen or None}
+                   for t in permanent_on]
         for source, own in sorted(by_source.items(), key=lambda kv: -_union_ms((s[0], s[1]) for s in kv[1])):
             via, value = caster_source(gear_of(source) if source else {}, name, set_table, kind_of)
             if name == "Crusher" and value:
@@ -625,7 +661,8 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                 if crit:
                     crit_by_target[target][second] = crit_by_target[target].get(second, 0.0) + crit * frac
         debuff_rows.append({"name": name, "pen": row_value if pen else 0, "crit": crit,
-                            "uptime_pct": _pct(_union_ms((s[0], s[1]) for s in spans), duration),
+                            "uptime_pct": (100 if permanent_on
+                                           else _pct(_union_ms((s[0], s[1]) for s in spans), duration)),
                             "casters": casters})
     for status in STATUS_EFFECTS.values():
         for target in targets:
@@ -644,9 +681,10 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                 if damage <= 0:
                     continue
                 total += damage
-                g_pen = round(pen_by_target[target].get(second, 0.0))
+                g_pen = round(pen_by_target[target].get(second, 0.0) + perm_pen.get(target, 0.0))
                 status = round(status_by_target[target].get(second, 0.0), 1)
-                g_crit = crit_by_target[target].get(second, 0.0) + permanent_crit
+                g_crit = (crit_by_target[target].get(second, 0.0) + perm_crit.get(target, 0.0)
+                          + permanent_crit)
                 if player_crit:
                     g_crit += player_crit.get(second, 0.0)
                 pen_keys[(g_pen, status)] = pen_keys.get((g_pen, status), 0) + damage

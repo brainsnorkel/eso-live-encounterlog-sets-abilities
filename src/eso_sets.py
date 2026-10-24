@@ -225,8 +225,11 @@ class ESOSubclassAnalyzer:
         
         # Warden Skill Lines
         'Animal Companions': [
-            # Ultimate
+            # Ultimate; while the bear is out, the slot reads as its attack
+            # (Guardian's Wrath, or Guardian's Savagery for Wild Guardian), and
+            # PLAYER_INFO writes that name when combat starts with it summoned
             'Feral Guardian', 'Eternal Guardian', 'Wild Guardian',
+            'Guardian\'s Wrath', 'Guardian\'s Savagery',
             # Active Skills
             'Dive', 'Cutting Dive', 'Screaming Cliff Racer',
             'Scorch', 'Subterranean Assault', 'Deep Fissure',

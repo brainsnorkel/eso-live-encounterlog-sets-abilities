@@ -47,15 +47,16 @@ Dps and share cells read 'boss / total' in a fight with a boss: the dps
 against the units the game flags as bosses and against everything, and the
 player's share of the group's boss damage and of all its damage.
 
-After the shares, 'pen 99% · crit 94%': how much of the penetration cap and
-of the critical damage cap the player's effective figures reached over
-this fight's damage (pen_crit.cap_shares, the same sums the build window's
-sections show, the Settings' assumed Champion Point rows included). It is
-muted and looks like text, as the dps figure does, and is a link to the
-build window opened at those sections; its hover text carries the figures
-behind the percentages. A player with no damage to weigh has none, and so
-does an entry built before the figures existed. The plain-text copy adds
-the same token to the player's line.
+After the shares, 'p:18199 cd:121%': the player's effective penetration and
+critical damage over this fight's damage (pen_crit.cap_shares, the same
+sums the build window's sections show, the Settings' assumed Champion Point
+rows included; each second capped, so a figure at the cap reads as the
+cap). It is muted and looks like text, as the dps figure does, and is a
+link to the build window opened at those sections; its hover text gives
+the caps, the shares of them and the share of damage dealt over them. A
+player with no damage to weigh has none, and so does an entry built before
+the figures existed. The plain-text copy adds the same token to the
+player's line.
 """
 
 import html
@@ -80,9 +81,9 @@ BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
-# + the player's unit id: the row's 'pen 99% · crit 94%' token, the share of
-# each cap their effective penetration and critical damage reached (pen_crit);
-# a click opens the build window at its Penetration and Critical damage sections
+# + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
+# penetration and critical damage over the fight (pen_crit); a click opens
+# the build window at its Penetration and Critical damage sections
 PEN_CRIT_HREF = "esolog:pencrit/"
 PEN_CRIT_TITLE = "Penetration and critical damage"
 # The cue itself, a circled i like the fight list's mark (ISSUES_LIST_CUE),
@@ -240,11 +241,12 @@ def pen_crit_shares(entry, p, options) -> Optional[dict]:
 
 
 def pen_crit_text(shares: Optional[dict]) -> str:
-    """'pen 99% · crit 94%': the share of each cap the player's effective
-    figures reached over this fight; '' without figures."""
+    """'p:18199 cd:121%': the player's effective penetration and critical
+    damage over this fight (Chris's format, 2026-10-24: the raw figures,
+    nothing spelled out); '' without figures."""
     if not shares:
         return ""
-    return f"pen {shares['pen_pct']}% · crit {shares['crit_pct']}%"
+    return f"p:{shares['pen']:.0f} cd:{shares['crit']:.0f}%"
 
 
 def pen_crit_tooltips(entry, options=None) -> dict:
@@ -874,11 +876,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
             dps = (f'<a href="{e(damage_href(unit_id), quote=True)}" '
                    f'style="text-decoration:none;color:{name_color}">{dps}&nbsp;'
                    f'{glyph_html(BREAKDOWN_GLYPH, muted, px)}</a>')
-        # The share of each cap the player's effective penetration and crit
-        # damage reached (pen_crit): muted, as plain-looking as the dps
-        # figure, and a link to the build window's sections; the hover
-        # tooltip carries the figures behind it. Empty for a player with no
-        # damage to weigh, and on an entry built before the figures
+        # The player's effective penetration and crit damage over the fight
+        # (pen_crit): muted, as plain-looking as the dps figure, and a link
+        # to the build window's sections; the hover tooltip carries the
+        # caps and shares. Empty for a player with no damage to weigh, and
+        # on an entry built before the figures
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         if caps and unit_id:
             caps = (f'<a href="{e(pen_crit_href(unit_id), quote=True)}" '

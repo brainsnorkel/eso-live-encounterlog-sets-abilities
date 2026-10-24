@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3166](../src/esolog_tail.py#L3166)*
+*[src/esolog_tail.py:3174](../src/esolog_tail.py#L3174)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -596,8 +596,18 @@ and no weapon of 2,292 builds is Sharpened; every Crusher glyph (302
 weapons) is gold at CP 160; Fated Fortune's proc fired 2,374 times, so its
 real uptime is measured, not assumed; the trial dummy applies the trial's
 own debuffs to itself (Crusher 120007, Alkosh 120018, Breach 120010 and
-120019), which is how a parse at a dummy is known to be against 18,200
-resistance in a house zone whose difficulty reads NONE.
+120019, Minor Brittle, Elemental Catalyst), which is how a parse at a
+dummy is known to be against 18,200 resistance in a house zone whose
+difficulty reads NONE. It applies them once, as it spawns, and keeps them,
+so a session begun after the spawn has no line for them and the log alone
+would read the player's own penetration against an overland cap; a fight
+against a unit named "Target Iron Atronach, Trial" therefore credits them
+for the whole fight (TRIAL_DUMMY_DEBUFFS), as Combat Metrics reads them
+from the game at the pull. Checked against a Combat Metrics report of a
+25 s parse (2026-10-24): own penetration 3,126 (one light piece, Aerie's
+Cry's two pieces, Piercing) plus the dummy's 17,030 is its maximum of
+20,156 exactly, damage and dps agreed within 0.5%, and the ability table
+row for row.
 
 ### scripts/generate_set_offense.py
 

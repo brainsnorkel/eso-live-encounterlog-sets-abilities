@@ -2444,12 +2444,19 @@ class ESOLogAnalyzer(ListenerMixin):
         on the bosses with uptime and casters, each player's buffs, and the
         damage-weighted histograms the build window reads against the cap.
         The content is instanced when the zone's difficulty is NORMAL or
-        VETERAN, or a trial dummy's own debuffs were seen in this zone."""
+        VETERAN, a trial dummy's own debuffs were seen in this zone, or the
+        fight is against the Trial dummy by name, whose permanent debuffs
+        are then credited in full (pen_crit.TRIAL_DUMMY_DEBUFFS)."""
         difficulty = (self.current_difficulty or "").upper()
         instanced = difficulty in ("NORMAL", "VETERAN")
         damage = enc.damage
         player_buckets = {p['unit_id']: damage.player(p['unit_id']).target_buckets
                           for p in entry.players}
+        units = enc.fight_units()
+        # The Trial dummy keeps a trial group's debuffs on itself from its
+        # spawn; a session begun later never sees them applied (pen_crit)
+        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in units
+                     if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME}
 
         def gear_of(unit_id: str):
             player = enc.players.get(unit_id)
@@ -2466,10 +2473,11 @@ class ESOLogAnalyzer(ListenerMixin):
                         player.gear, player.long_term_effects,
                         player.front_bar_abilities, player.back_bar_abilities)
             group, per_player = pen_crit.fight_fields(
-                self.pen_crit_tracker, enc.start_time, enc.end_time, enc.fight_units(),
+                self.pen_crit_tracker, enc.start_time, enc.end_time, units,
                 damage.target_buckets, player_buckets, self._resolve_timeline_name,
-                gear_of, instanced, self._dummy_seen,
-                always_on={uid: own["gives"] for uid, own in own_rows.items() if own.get("gives")})
+                gear_of, instanced, self._dummy_seen or bool(permanent),
+                always_on={uid: own["gives"] for uid, own in own_rows.items() if own.get("gives")},
+                permanent_debuffs=permanent)
         except Exception as exc:  # a figure must never cost the fight entry
             if self.diagnostic:
                 _console(f"pen_crit failed: {exc}")

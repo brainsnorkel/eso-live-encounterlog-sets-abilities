@@ -307,6 +307,28 @@ class TestFightFields(unittest.TestCase):
         self.assertEqual(two["buffs"], [])
         self.assertEqual(two["crit_hist"], [[0, 100]])
 
+    def test_a_targets_permanent_debuffs_count_in_full(self):
+        tracker = pen_crit.new_tracker()
+        # The log shows one player's Major Breach on the dummy for a while:
+        # it adds nothing to a debuff the dummy keeps for good
+        tracker.record("GAINED", "61743", "70", 1, 10000, "boss", source_id="1")
+        tracker.record("FADED", "61743", "70", 1, 12000, "boss", source_id="1")
+        units = {"1": ("self", None, None), "70": ("boss", None, None)}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 9990, 20000, units, {"70": {11: 100, 15: 100}}, {}, lambda u: "the dummy",
+            lambda u: {}, instanced=False, dummy=True, set_table=SETS,
+            permanent_debuffs={"70": list(pen_crit.TRIAL_DUMMY_DEBUFFS)})
+        rows = {d["name"]: d for d in entry["debuffs"]}
+        self.assertEqual(sorted(rows), sorted(pen_crit.TRIAL_DUMMY_DEBUFFS))
+        self.assertEqual(rows["Major Breach"]["uptime_pct"], 100)
+        self.assertEqual(rows["Major Breach"]["casters"],
+                         [{"name": "the dummy", "pct": 100, "via": "the dummy's own", "value": 5948}])
+        self.assertEqual(rows["Crusher"]["pen"], 2108)
+        self.assertEqual(rows["Elemental Catalyst"]["crit"], 15)
+        self.assertEqual(entry["pen_hist"], [[17030, 0.0, 200]])  # 5948 + 2974 + 2108 + 6000
+        self.assertEqual(entry["crit_hist"], [[25, 200]])  # Minor Brittle 10 + Elemental Catalyst 15
+        self.assertEqual(entry["cap"], 18200)
+
     def test_a_trash_fight_measures_every_hostile_hit(self):
         tracker = pen_crit.new_tracker()
         tracker.record("GAINED", "61742", "80", 1, 10000, "enemy", source_id="1")
@@ -360,6 +382,21 @@ class TestEngine(unittest.TestCase):
                          [{"name": "Lucent Echoes", "crit": 11, "uptime_pct": 100}])
         self.assertEqual(players["@dualwield"]["crit_hist"], [[11, 60000]])
         self.assertEqual(players["@brainsnorkel"]["buffs"], [])
+
+    def test_the_trial_dummy_is_known_by_name(self):
+        lines = [line.replace('"Scalecaller Peak",VETERAN', '"Elinhir Private Arena",NONE')
+                 .replace('"Test Boss"', f'"{pen_crit.TRIAL_DUMMY_NAME}"') for line in SESSION]
+        entry = fights(lines)[0]
+        self.assertTrue(entry.pen_crit["dummy"])
+        self.assertTrue(entry.pen_crit["instanced"])
+        self.assertEqual(entry.pen_crit["cap"], 18200)
+        rows = {d["name"]: d for d in entry.pen_crit["debuffs"]}
+        self.assertEqual(sorted(rows), sorted(pen_crit.TRIAL_DUMMY_DEBUFFS))
+        self.assertTrue(all(d["uptime_pct"] == 100 for d in rows.values()))
+        self.assertEqual(rows["Roar of Alkosh"]["casters"][0]["via"], "the dummy's own")
+        players = {p["name"]: p["pen_crit"] for p in entry.players}
+        self.assertEqual(players["@brainsnorkel"]["pen_hist"], [[17030, 0.0, 90000]])
+        self.assertEqual(players["@brainsnorkel"]["crit_hist"], [[25, 90000]])
 
     def test_a_trial_dummys_debuffs_make_a_house_zone_instanced(self):
         lines = [line.replace('"Scalecaller Peak",VETERAN', '"Elinhir Private Arena",NONE') for line in SESSION]
@@ -555,14 +592,14 @@ class TestRowToken(unittest.TestCase):
         from gui.fight_render import pen_crit_href, render_html, render_plain_text
         for detailed in (False, True):
             html = render_html(self.entry, detailed=detailed, pen_crit_options=ROW_OPTIONS)
-            # @brainsnorkel: Aerie's Cry 1,487 + Piercing 700 of 18,200 -> 12%; 50 + 8 of 125 -> 46%
+            # @brainsnorkel: Aerie's Cry 1,487 + Piercing 700; 50 + Fighting Finesse 8
             self.assertIn(f'<a href="{pen_crit_href("1")}" style="text-decoration:none;color:#5f6368">'
-                          'pen 12% · crit 46%</a>', html)
+                          'p:2187 cd:58%</a>', html)
             self.assertIn(pen_crit_href("2"), html)
         text = render_plain_text(self.entry, pen_crit_options=ROW_OPTIONS)
-        self.assertIn("@brainsnorkel * Warden — 90.0k (50.0%) · pen 12% · crit 46%", text)
+        self.assertIn("@brainsnorkel * Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
         plain = render_plain_text(self.entry)
-        self.assertIn("· pen 8% · crit 40%", plain)  # nothing assumed: 1,487 and the base 50
+        self.assertIn("· p:1487 cd:50%", plain)  # nothing assumed: 1,487 and the base 50
 
     def test_no_token_without_figures(self):
         import copy
@@ -573,7 +610,7 @@ class TestRowToken(unittest.TestCase):
             p.pop("pen_crit", None)
         entry.pen_crit = None
         self.assertNotIn(PEN_CRIT_HREF, render_html(entry, detailed=False, pen_crit_options=ROW_OPTIONS))
-        self.assertNotIn("pen ", render_plain_text(entry, pen_crit_options=ROW_OPTIONS))
+        self.assertNotIn("p:", render_plain_text(entry, pen_crit_options=ROW_OPTIONS))
         # A player with figures but no damage has no token either
         entry = copy.deepcopy(self.entry)
         entry.players[0]["pen_crit"]["pen_hist"] = []
