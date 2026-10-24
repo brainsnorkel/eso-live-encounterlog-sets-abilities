@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.13.1] - 2026-10-24
 
 ### Changed
 - **Buff timeline**: a tracked rule that is expected in a group of this size but never came reads `0%` with its label in dark red and bold, so a missing buff or debuff is seen at a glance; the dark theme uses a lighter red. The hover text still says why the row is there.
