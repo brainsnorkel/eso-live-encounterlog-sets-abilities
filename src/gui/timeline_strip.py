@@ -34,6 +34,7 @@ from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
+from effect_rules import DOTS_CAP
 from effect_summary import matrix, summarise
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
@@ -183,7 +184,13 @@ class TimelineStrip(QWidget):
                 }
             for index, item in enumerate(tracked or []):
                 name = item.get("name")
-                if not name or not item.get("intervals") or name in self._row_info:
+                # A shown item (seen, or expected in this group size, issue
+                # #13) has a row, an empty one when nothing was up; an item
+                # from before the flag has one when it has intervals
+                shown = item.get("shown")
+                if shown is None:
+                    shown = bool(item.get("intervals"))
+                if not name or not shown or name in self._row_info:
                     continue
                 self._tracked[name] = item
                 self._rows.append(name)
@@ -195,7 +202,12 @@ class TimelineStrip(QWidget):
                     # pack's mobs for a boss rule in a fight without a boss
                     "scope": item.get("units") or item.get("scope", ""),
                     "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
-                    "stacks_max": (item.get("max_stacks") or 0) if item.get("kind") == "stacks" else 0,
+                    # A stacking rule's bar is as high as its count over the
+                    # peak; a dots rule's over Z'en's five, where 0 is a level
+                    "stacks_max": (DOTS_CAP if item.get("kind") == "dots"
+                                   else (item.get("max_stacks") or 0) if item.get("kind") == "stacks"
+                                   else 0),
+                    "zero_level": item.get("kind") == "dots",
                 }
         buffs = [r for r in self._rows if self._row_info[r].get("scope") not in DEBUFF_SCOPES]
         debuffs = [r for r in self._rows if self._row_info[r].get("scope") in DEBUFF_SCOPES]
@@ -308,8 +320,11 @@ class TimelineStrip(QWidget):
                 x0 = self._x_for_ms(interval["start_ms"])
                 x1 = self._x_for_ms(interval["end_ms"])
                 if stacks_max:
-                    level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
-                    height = max(2.0, rect.height() * level / stacks_max)
+                    if info.get("zero_level"):
+                        level = max(0, min(stacks_max, int(interval.get("stacks") or 0)))
+                    else:
+                        level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
+                    height = max(1.0 if level == 0 else 2.0, rect.height() * level / stacks_max)
                     painter.fillRect(QRectF(x0, rect.bottom() - height,
                                             max(1.0, x1 - x0), height), color)
                 elif dotted:
@@ -405,6 +420,11 @@ class TimelineStrip(QWidget):
             receivers = len(summary["targets"])
             head.append(f"<i>Dotted: reached only {receivers} "
                         f"receiver{'s' if receivers != 1 else ''}</i>")
+        if not intervals:
+            # An expected rule whose effect never came (issue #13)
+            head.append("<i>Not up in this fight; shown because the rule is "
+                        "expected in a group this size</i>")
+            return "<br>".join(head)
 
         def table(title, columns, lines, cells):
             rows = [f"<tr><th align=left>{escape(title)}</th>"
@@ -496,7 +516,8 @@ class TimelineStrip(QWidget):
                     for iv in hits:
                         who = (f"{iv['source']} → {iv['target']}" if iv.get("source")
                                else f"on {iv.get('target', '')}")
-                        stacks = f" &nbsp; ×{iv['stacks']}" if iv.get("stacks") and effect in self._tracked else ""
+                        counted = iv.get("stacks") or (info.get("zero_level") and "stacks" in iv)
+                        stacks = f" &nbsp; ×{iv['stacks']}" if counted and effect in self._tracked else ""
                         lines.append(
                             f"{_fmt_tick(iv['start_ms'])}–{_fmt_tick(iv['end_ms'])}"
                             f" &nbsp; {who}{stacks}")

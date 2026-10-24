@@ -1696,7 +1696,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
         if len(entry.fields) >= 4:
             combat_event_type = entry.fields[0]  # DAMAGE/CRITICAL_DAMAGE is at index 0
-            
+
+            # A damage-over-time tick tells the tracked effects that its
+            # ability is a DoT, which a ``dots`` rule (Touch of Z'en) counts
+            if (combat_event_type in ('DOT_TICK', 'DOT_TICK_CRITICAL')
+                    and self.effect_tracker and len(entry.fields) > 6):
+                self.effect_tracker.dot_tick(entry.fields[6])
+
             if self.diagnostic and len(entry.fields) >= 10:
                 unit_id = entry.fields[0]
                 if unit_id == "31":
@@ -2333,7 +2339,9 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.tracked = (self.effect_tracker.snapshot(
             enc.start_time, enc.end_time, self._resolve_timeline_name, enc.fight_units())
             if self.effect_tracker else [])
-        entry.buff_summary = " ".join(item["text"] for item in entry.tracked)
+        # The copied line: the items shown, seen or expected (issue #13)
+        entry.buff_summary = " ".join(item["text"] for item in entry.tracked
+                                      if item.get("shown", True))
         if entry.tracked:
             # Not before the end: this fight's spans are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)

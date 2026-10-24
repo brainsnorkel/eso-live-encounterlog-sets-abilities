@@ -123,8 +123,8 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
         fight = analyzer.fight_history.fights[0]
         crux = _items(fight)["Crux"]
         self.assertEqual((crux["avg_stacks"], crux["max_stacks"], crux["uptime_pct"]), (2.0, 3, 75.0))
-        self.assertTrue(fight.buff_summary.endswith("Crux:2.0/3 Courage on pets:0% Everyone:0%"),
-                        fight.buff_summary)
+        # The only item seen, and none expected
+        self.assertEqual(fight.buff_summary, "Crux:2.0/3")
 
     def test_a_buff_on_a_pet_counts_for_pets_and_a_player_for_group(self):
         analyzer = _run(FIGHT_START + [
@@ -145,11 +145,25 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
         ] + FIGHT_END)
         self.assertEqual(_items(analyzer.fight_history.fights[0])["OB"]["uptime_pct"], 25.0)
 
-    def test_two_players_still_get_the_tracked_items(self):
-        # Fewer than three players: no built-in group buffs, but the rules
+    def test_an_item_is_shown_when_seen_or_expected(self):
+        """Issue #13: nothing seen and nothing expected gives no line; an
+        expected rule reads 0% in its group sizes only; a seen one always
+        shows. Two players here: a small group."""
         analyzer = _run(FIGHT_START + FIGHT_END)
         fight = analyzer.fight_history.fights[0]
-        self.assertEqual(fight.buff_summary, "OB:0% Crux:0 Courage on pets:0% Everyone:0%")
+        self.assertEqual(fight.buff_summary, "")
+        self.assertEqual([i["shown"] for i in fight.tracked], [False] * 4)
+        self.assertEqual(len(fight.tracked), 4)  # every rule is still in the entry
+        rules = ("OB = 45902 62988 on boss expected small\n"
+                 "Everyone = 109966 on group expected large\n"
+                 "Crux = 184220 on self stacks\n")
+        analyzer = _run(FIGHT_START + [
+            _effect(12000, 'GAINED', CRUX, _player(1), _player(1), stacks=2),
+        ] + FIGHT_END, rules=rules)
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.buff_summary, "OB:0% Crux:2.0/2")
+        self.assertEqual([(i["seen"], i["expected"]) for i in fight.tracked],
+                         [(False, True), (False, False), (True, False)])
 
     def test_no_rules_means_nothing_tracked(self):
         analyzer = _run(FIGHT_START + [
@@ -159,19 +173,18 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
         self.assertEqual((fight.tracked, fight.buff_summary), ([], ""))
 
     def test_the_default_rules_are_the_whole_uptime_line(self):
-        # The group buffs and the taunt are rules like the rest: a group of
-        # two gets them too, and one never seen reads 0%
+        # The group buffs and the taunt are rules like the rest. A group of
+        # two is small: the group buffs are expected only in a large group
+        # and the debuffs nowhere, so the line has what was seen, the taunt
+        # being expected here anyway
         analyzer = _run(FIGHT_START + [
             _effect(10000, 'GAINED', COURAGE, _player(1), _player(2)),
             _effect(20000, 'FADED', COURAGE, _player(1), _player(2)),
             _effect(10000, 'GAINED', TAUNT, _player(1), _unit(70)),
             _effect(22000, 'FADED', TAUNT, _player(1), _unit(70)),
         ] + FIGHT_END, rules=DEFAULT_RULES)
-        self.assertEqual(
-            analyzer.fight_history.fights[0].buff_summary,
-            "Major Courage:50% Major Force:0% Major Slayer:0% Powerful Assault:0% "
-            "Lucent Echoes:0% Pearlescent Ward:0% Taunt:60% Off-Balance:0% Touch of Z'en:0 "
-            "Crux:0 Morag Tong:0% Minor Brittle:0% Major Brittle:0% Alkosh:0%")
+        self.assertEqual(analyzer.fight_history.fights[0].buff_summary,
+                         "Major Courage:50% Taunt:60%")
 
 
 class TestFightsWithoutABoss(unittest.TestCase):

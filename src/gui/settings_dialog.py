@@ -15,8 +15,10 @@ from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
 
 RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
-              "then stacks for a stacking effect, or each for the mean over the units "
-              "(the taunt's measure). Every row of the timeline strip is a rule here, the group "
+              "then stacks for a stacking effect, each for the mean over the units "
+              "(the taunt's measure), or dots for Touch of Z'en's count. A rule shows when "
+              "its effect was up; add expected solo | small | large | all to show it at 0% "
+              "in those group sizes when it was not. Every row of the timeline strip is a rule here, the group "
               "buffs and the taunt included: delete what you do not want, Examples… has them "
               "back. In a fight without a boss, a boss rule measures the pack and says how many "
               "mobs it reached. A line that starts with $ is a HyperTools tracker export. Copy "

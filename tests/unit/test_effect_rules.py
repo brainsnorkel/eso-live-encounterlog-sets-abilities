@@ -37,6 +37,30 @@ class TestRuleText(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(rules[0], Rule("Z'en", frozenset({"126597"}), "enemies", "stacks"))
 
+    def test_expected_takes_group_sizes(self):
+        """Issue #13: 'expected' and the size words after it, anywhere
+        after the '='; alone or with 'all' it is every size."""
+        every = frozenset({"solo", "small", "large"})
+        rules, errors = parse_rules(
+            "Taunt = 38254 on boss each expected small large\n"
+            "Crux = 184220 on self stacks expected\n"
+            "Crux all = 184220 expected all on self stacks\n"
+            "Comma = 1 expected small, large on boss\n")
+        self.assertEqual(errors, [])
+        self.assertEqual([r.expected for r in rules],
+                         [frozenset({"small", "large"}), every, every, frozenset({"small", "large"})])
+        self.assertEqual((rules[2].scope, rules[2].kind), ("self", "stacks"))
+        rules, errors = parse_rules("Mine = 3 on boss large\n")
+        self.assertEqual(rules, [])
+        self.assertIn("line 1", errors[0])
+        self.assertIn("belongs after 'expected'", errors[0])
+
+    def test_expected_after_a_hypertools_string(self):
+        [rule] = hypertools_rules(HT + " expected solo")
+        self.assertEqual(rule.expected, frozenset({"solo"}))
+        [rule] = parse_rules(HT + " on boss expected\n")[0]
+        self.assertEqual((rule.scope, rule.expected), ("boss", frozenset({"solo", "small", "large"})))
+
     def test_bad_lines_are_reported_by_number_and_skipped(self):
         rules, errors = parse_rules(
             "Good = 1 on boss\n"
@@ -59,8 +83,14 @@ class TestRuleText(unittest.TestCase):
                           "Lucent Echoes", "Pearlescent Ward", "Taunt",
                           "Off-Balance", "Touch of Z'en", "Crux", "Morag Tong",
                           "Minor Brittle", "Major Brittle", "Alkosh"])
-        self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime"))
-        self.assertEqual(rules[6], Rule("Taunt", frozenset({"38254"}), "boss", "each"))
+        self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime",
+                                        frozenset({"large"})))
+        self.assertEqual(rules[6], Rule("Taunt", frozenset({"38254"}), "boss", "each",
+                                        frozenset({"small", "large"})))
+        self.assertEqual(rules[8], Rule("Touch of Z'en", frozenset({"126597"}), "boss", "dots"))
+        # The six group buffs are expected in a large group, the rest nowhere
+        self.assertEqual([sorted(r.expected) for r in rules],
+                         [["large"]] * 6 + [["large", "small"]] + [[]] * 7)
         self.assertEqual(rules[10], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
         self.assertEqual(rules[13], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
         self.assertIn("45902", rules[7].ids)
@@ -225,6 +255,70 @@ class TestTracker(unittest.TestCase):
         self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["source"]) for iv in x["intervals"]],
                          [(0, 1030, "5"), (1030, 2000, "6")])
         self.assertEqual(x["uptime_pct"], 100.0)
+
+    def test_shown_is_seen_or_expected_for_the_group_size(self):
+        """Issue #13: a rule expected large reads 0% in a twelve-player
+        fight and is hidden in a four-player one; a seen rule always shows;
+        without the engine's units every item shows."""
+        t = _tracker("Slayer = 93109 on group expected large\nOB = 45902 on boss\n")
+        t.record("GAINED", "45902", "70", "1", 0, "boss", source_id="1")
+
+        def players(n):
+            units = {str(i): ("self" if i == 1 else "group", None, None) for i in range(1, n + 1)}
+            units["70"] = ("boss", None, None)
+            return units
+
+        slayer, ob = t.snapshot(0, 10000, units=players(12))
+        self.assertEqual((slayer["seen"], slayer["expected"], slayer["shown"]), (False, True, True))
+        self.assertEqual(slayer["text"], "Slayer:0%")
+        self.assertEqual((ob["seen"], ob["shown"]), (True, True))
+        slayer, ob = t.snapshot(0, 10000, units=players(4))
+        self.assertEqual((slayer["shown"], ob["shown"]), (False, True))
+        self.assertTrue(all(item["shown"] for item in t.snapshot(0, 10000)))
+
+    def test_dots_counts_the_casters_damage_over_time_effects(self):
+        """Issue #27, the way Combat Metrics reads Touch of Z'en: while a
+        caster's Z'en is on the boss, how many of that caster's DoT effects
+        are on it, at most five; a non-damage debuff and another caster's
+        DoT do not count, and 0 is a reading."""
+        t = _tracker("Zen = 126597 on boss dots\n")
+        for dot in ("1", "2", "3", "4", "5", "6"):
+            t.dot_tick(dot)
+        # The wearer (5) puts Z'en on the boss for 0-10 s, refreshed at 4 s
+        t.record("GAINED", "126597", "70", "1", 0, "boss", source_id="5")
+        t.record("FADED", "126597", "70", "1", 4000, "boss", source_id="5")
+        t.record("GAINED", "126597", "70", "1", 4000, "boss", source_id="5")
+        t.record("FADED", "126597", "70", "1", 10000, "boss", source_id="5")
+        # Their DoTs: one 2-10 s, two more 4-10 s, three more 6-8 s (six then, capped at five)
+        for dot, start, end in (("1", 2000, 10000), ("2", 4000, 10000), ("3", 4000, 10000),
+                                ("4", 6000, 8000), ("5", 6000, 8000), ("6", 6000, 8000)):
+            t.record("GAINED", dot, "70", "1", start, "boss", source_id="5")
+            t.record("FADED", dot, "70", "1", end, "boss", source_id="5")
+        # A debuff that never ticks, and another player's DoT: not counted
+        t.record("GAINED", "99", "70", "1", 0, "boss", source_id="5")
+        t.record("GAINED", "1", "70", "1", 0, "boss", source_id="6")
+        [zen] = t.snapshot(0, 20000)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"]) for iv in zen["intervals"]],
+                         [(0, 2000, 0), (2000, 4000, 1), (4000, 6000, 3), (6000, 8000, 5), (8000, 10000, 3)])
+        # Mean over the 10 s up: (0*2 + 1*2 + 3*2 + 5*2 + 3*2) / 10 = 2.4, peak 5
+        self.assertEqual((zen["uptime_pct"], zen["avg_stacks"], zen["max_stacks"]), (50.0, 2.4, 5))
+        self.assertEqual(zen["text"], "Zen:2.4/5")
+        self.assertEqual(zen["intervals"][0]["source"], "5")
+
+    def test_dots_follows_each_wearer_on_their_own(self):
+        # Two wearers' Z'en on one boss: one fading does not end the other's
+        t = _tracker("Zen = 126597 on boss dots\n")
+        t.dot_tick("1")
+        t.record("GAINED", "126597", "70", "1", 0, "boss", source_id="5")
+        t.record("GAINED", "126597", "70", "1", 0, "boss", source_id="6")
+        t.record("GAINED", "1", "70", "1", 0, "boss", source_id="6")
+        t.record("FADED", "126597", "70", "1", 3000, "boss", source_id="5")
+        t.record("FADED", "126597", "70", "1", 10000, "boss", source_id="6")
+        [zen] = t.snapshot(0, 10000)
+        self.assertEqual(zen["uptime_pct"], 100.0)
+        self.assertEqual(sorted((iv["source"], iv["stacks"]) for iv in zen["intervals"]),
+                         [("5", 0), ("6", 1)])
+        self.assertEqual(zen["avg_stacks"], 1.0)  # the higher count while both are up
 
     def test_an_empty_tracker_is_false_and_records_nothing(self):
         t = EffectTracker([])

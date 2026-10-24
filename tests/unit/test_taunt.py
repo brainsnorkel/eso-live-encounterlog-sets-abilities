@@ -118,7 +118,8 @@ FIGHT = [
 def _fights(lines, base=None):
     analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
-    analyzer.effect_tracker = EffectTracker(parse_rules("Taunt = 38254 on boss each\n")[0])
+    # The default taunt rule: expected in small and large groups
+    analyzer.effect_tracker = EffectTracker(parse_rules("Taunt = 38254 on boss each expected small large\n")[0])
     analyzer.add_listener(RecordingListener())
     for line in (base if base is not None else _base()) + lines:
         entry = analyzer.log_parser.parse_line(line)

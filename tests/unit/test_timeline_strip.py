@@ -334,6 +334,47 @@ class TestTrackedRows(unittest.TestCase):
         self.assertEqual(self.strip._row_rect(1).top() - self.strip._row_rect(0).top(),
                          self.strip._row_rect(0).height() + 2)
 
+    def test_shown_items_get_rows_and_an_expected_absent_one_is_empty(self):
+        """Issue #13: a shown item has a row, empty when its effect never
+        came; an item not shown has none."""
+        tracked = [
+            {"name": "Lucent Echoes", "kind": "uptime", "scope": "group", "text": "Lucent Echoes:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": True, "shown": True,
+             "intervals": []},
+            {"name": "Alkosh", "kind": "uptime", "scope": "boss", "text": "Alkosh:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": False, "shown": False,
+             "intervals": []},
+        ]
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
+        self.assertEqual(self.strip._rows, ["Lucent Echoes"])
+        self.assertEqual(self.strip._row_info["Lucent Echoes"]["label"], "Lucent Echoes:0%")
+        self.assertIn("Not up in this fight", self.strip.summary_html("Lucent Echoes"))
+        self.strip.show()
+        self.strip.grab()  # an empty track paints
+
+    def test_a_dots_rule_is_drawn_against_five_with_zero_a_level(self):
+        tracked = [{"name": "Zen", "kind": "dots", "scope": "boss", "text": "Zen:2.5/5",
+                    "uptime_pct": 100.0, "max_stacks": 5, "shown": True, "intervals": [
+                        {"start_ms": 0, "end_ms": 30_000, "stacks": 0, "target": "Boss", "source": "@a"},
+                        {"start_ms": 30_000, "end_ms": 60_000, "stacks": 5, "target": "Boss", "source": "@a"}]}]
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
+        self.assertEqual(self.strip._row_info["Zen"]["stacks_max"], 5)
+        self.strip.show()
+        image = self.strip.grab().toImage()
+        rect = self.strip._row_rect(0)
+        color = self.strip._row_info["Zen"]["color"].rgb()
+
+        def filled(ms):
+            x = int(self.strip._x_for_ms(ms))
+            return sum(1 for y in range(int(rect.top()), int(rect.bottom()) + 1)
+                       if image.pixel(x, y) == color)
+
+        self.assertEqual(filled(45_000), int(rect.height()))
+        self.assertLessEqual(filled(15_000), 1)  # zero DoTs: a hairline at most
+        from PySide6.QtCore import QPoint
+        found = self.strip._intervals_at(QPoint(int(self.strip._x_for_ms(15_000)), int(rect.center().y())))
+        self.assertEqual([iv["stacks"] for iv in found[2]], [0])
+
     def test_a_stacking_rule_is_drawn_by_height(self):
         from gui.timeline_strip import TRACKED_COLORS
         tracked = [{"name": "Crux", "kind": "stacks", "text": "Crux:2.0/3", "uptime_pct": 100.0,

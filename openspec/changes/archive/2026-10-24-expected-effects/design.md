@@ -40,6 +40,13 @@ See proposal.md for the motivation. The state this builds on:
 - [The copied text and the strip disagree on a rule whose name matches a built-in strip row] → unchanged from today; the built-in row shows the recorder's union while the line shows the rule's measure.
 - [The line changes for everyone on upgrade] → only by omission of items that read 0 and are not expected; the changelog says which, and the survey numbers are in the design notes.
 
+## As built (2026-10-24)
+
+Two things changed between this design and its implementation:
+
+- **The strip is the only view.** Issue #25 (0.12, before this change was built) made the timeline strip always on and dropped the text uptime line from the fight pane; the line survives in Copy fight. "Shown on the uptime line" therefore means a row of the strip and an item of the copied text. The requirement below that read "when the timeline strip replaces the uptime line" applies always.
+- **Touch of Z'en counts DoTs (issue #27).** The log's stack count for 126597 is always 1, so the default `Touch of Z'en = 126597 on boss stacks` read `1.0/1`. A new measurement word, `dots`, counts the wearer's damage-over-time effects on the unit while their Z'en is on it, at most five, as Combat Metrics does (LibCombat's UpdateZenData); the default and the example use it, and the version-3 config upgrade turns a saved `Touch of Z'en = 126597 ... stacks` line into `dots` along with the `expected` words. See the module docstring of `effect_rules` (and `docs/design.md`) for the evidence.
+
 ## Migration Plan
 
 Config: `tracking.version` 3. A stored text with version 2 has its seven uptime-line lines given the default `expected` words on read, by name; a text without a version is topped up with the new lines and then versioned. Users who never saved Settings get the new defaults. Rollback: delete the words, or set a rule `expected all`.
