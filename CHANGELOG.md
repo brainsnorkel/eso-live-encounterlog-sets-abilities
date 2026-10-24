@@ -7,9 +7,6 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Added
 - **The dps figures look like links** (#34): the header's group DPS, which opens the dps over time graph, and each player's DPS, which opens their damage window, looked like plain text until hovered, and the damage window had no other way in. The group figure now ends in a small line of the graph's own kind in the link colour, and each player's figure in three small bars in the muted colour, inside the link, so hovering or clicking the mark works as on the figure. Names are unchanged. The marks are drawn by the app, follow the pane's font size and stay crisp on a scaled display; copied text is unchanged
 
-### Changed
-- **Dependency floors**: `PySide6-Essentials>=6.12.0` (6.10.1 still admitted Qt builds carrying the October 2026 advisories) and, for building, `Pillow>=13.0.0` (12.3.0 now carries 41 advisories). The release builds already shipped these versions
-
 ## [0.12.0] - 2026-10-24
 
 ### Added
