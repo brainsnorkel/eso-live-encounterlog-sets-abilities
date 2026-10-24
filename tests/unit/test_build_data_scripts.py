@@ -406,6 +406,90 @@ class TestGearSetNames(unittest.TestCase):
             self.assertEqual(SET_ID_TO_NAME.get(set_id), name)
 
 
+class TestWeaponSkillLines(unittest.TestCase):
+    """scripts/generate_weapon_skill_lines.py: the active weapon-line skills
+    of UESP's player skill table, by game id (build_issues)."""
+
+    # UESP playerSkills rows cut down: two ranks of a weapon skill, a scribed
+    # one with UESP's synthetic rank id, an internal rank -1 effect, a weapon
+    # passive, a class skill, a broken row
+    SAMPLE = {'playerSkills': [
+        {'id': '38788', 'name': 'Stampede', 'skillLine': 'Two Handed', 'rank': '1',
+         'isPassive': '0', 'isCrafted': '0'},
+        {'id': '39797', 'name': 'Stampede', 'skillLine': 'Two Handed', 'rank': '2',
+         'isPassive': '0', 'isCrafted': '0'},
+        {'id': '217228', 'name': 'Elemental Explosion', 'skillLine': 'Destruction Staff',
+         'rank': '1', 'isPassive': '0', 'isCrafted': '1'},
+        {'id': '20217228', 'name': 'Elemental Explosion', 'skillLine': 'Destruction Staff',
+         'rank': '2', 'isPassive': '0', 'isCrafted': '1'},
+        {'id': '21972', 'name': 'Bash', 'skillLine': 'One Hand and Shield', 'rank': '-1',
+         'isPassive': '0', 'isCrafted': '1'},
+        {'id': '29388', 'name': 'Forceful', 'skillLine': 'Two Handed', 'rank': '1',
+         'isPassive': '1', 'isCrafted': '0'},
+        {'id': '15540', 'name': 'Toppling Charge', 'skillLine': 'Aedric Spear', 'rank': '1',
+         'isPassive': '0', 'isCrafted': '0'},
+        {'id': '', 'name': 'No Id', 'skillLine': 'Bow', 'rank': '1', 'isPassive': '0'},
+        'not a row',
+    ]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_weapon_skill_lines.py')
+
+    def test_active_weapon_skills_by_id(self):
+        self.assertEqual(self.script.weapon_skill_lines(self.SAMPLE), {
+            '38788': {'line': 'Two Handed', 'name': 'Stampede'},
+            '39797': {'line': 'Two Handed', 'name': 'Stampede'},
+            '217228': {'line': 'Destruction Staff', 'name': 'Elemental Explosion'},
+        })
+        self.assertEqual(self.script.weapon_skill_lines({}), {})
+        self.assertEqual(self.script.weapon_skill_lines({'playerSkills': 'nope'}), {})
+
+    def test_a_short_response_would_not_overwrite(self):
+        self.assertLess(len(self.script.weapon_skill_lines(self.SAMPLE)), self.script.MIN_ROWS)
+
+    def test_file_is_json_one_skill_per_line(self):
+        skills = self.script.weapon_skill_lines(self.SAMPLE)
+        text = self.script.render(skills, '2026-10-24T00:00:00+00:00')
+        data = json.loads(text)
+        self.assertEqual(data['skills'], skills)
+        self.assertEqual(data['count'], 3)
+        self.assertIn('UESP', data['attribution'])
+        self.assertEqual(sum(1 for line in text.splitlines() if '"line":' in line), 3)
+
+    def test_a_saved_reply_is_read_in_place_of_the_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = Path(tmp) / 'reply.json'
+            saved.write_text(json.dumps(self.SAMPLE), encoding='utf-8')
+            with mock.patch.object(self.script, 'OUT_PATH', Path(tmp) / 'out.json'), \
+                    mock.patch.object(self.script, 'MIN_ROWS', 1):
+                self.assertEqual(self.script.main(['--from', str(saved)]), 0)
+                data = json.loads((Path(tmp) / 'out.json').read_text(encoding='utf-8'))
+            self.assertEqual(set(data['skills']), {'38788', '39797', '217228'})
+            saved.write_text('not json', encoding='utf-8')
+            with self.assertRaises(SystemExit):
+                self.script.main(['--from', str(saved)])
+
+    def test_committed_table(self):
+        data = json.loads(self.script.OUT_PATH.read_text(encoding='utf-8'))
+        skills = data['skills']
+        self.assertEqual(data['count'], len(skills))
+        self.assertGreaterEqual(len(skills), self.script.MIN_ROWS)
+        self.assertEqual(set(entry['line'] for entry in skills.values()),
+                         set(self.script.WEAPON_LINES))
+        # Skills slotted in real logs, at the rank the log wrote
+        for ability_id, line in (('38788', 'Two Handed'), ('39807', 'Two Handed'),
+                                 ('38689', 'Bow'), ('39011', 'Destruction Staff'),
+                                 ('41769', 'Destruction Staff'), ('38250', 'One Hand and Shield'),
+                                 ('37232', 'Restoration Staff'), ('28279', 'Two Handed'),
+                                 ('217228', 'Destruction Staff'), ('39095', 'Destruction Staff')):
+            self.assertEqual(skills[ability_id]['line'], line, ability_id)
+        # No passive, internal effect or synthetic id
+        self.assertNotIn('21972', skills)
+        self.assertNotIn('20217228', skills)
+        self.assertFalse(any(int(i) >= self.script.SYNTHETIC_ID for i in skills))
+
+
 class TestClassPassives(unittest.TestCase):
     """scripts/generate_class_passives.py: the class passives of UESP's
     player skill table, by game id."""

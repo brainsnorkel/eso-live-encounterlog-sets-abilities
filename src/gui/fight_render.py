@@ -28,6 +28,12 @@ a slot's anchor carries a fragment of its own, as a scribed skill's does.
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
+A player whose build has a possible issue (see build_issues) gets an "(i)"
+after their class, in the link color; hovering it lists the findings and
+clicking it opens a popup with each finding and the rule behind it
+(issues_html, which the build window shows too). A player without findings
+keeps a plain row.
+
 A player's name is a link to their build window (see build_render): it looks
 like the plain bold name it replaces, and the fight view underlines it in the
 theme's link color while the pointer is over it. Their dps figure is the same
@@ -58,6 +64,9 @@ SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
+ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the (i) of possible build issues
+ISSUES_CUE = "(i)"  # the cue itself, shown only on a player with a finding
+ISSUES_TITLE = "Possible build issues"
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -144,6 +153,64 @@ def damage_unit_from_href(href: str) -> Optional[str]:
     if href and href.startswith(DAMAGE_HREF):
         return href[len(DAMAGE_HREF):]
     return None
+
+
+def issues_href(unit_id) -> str:
+    return f"{ISSUES_HREF}{unit_id}"
+
+
+def issues_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is a build-issues (i), else None."""
+    if href and href.startswith(ISSUES_HREF):
+        return href[len(ISSUES_HREF):]
+    return None
+
+
+def issues_tooltips(entry) -> dict:
+    """Hover text per (i): the findings' titles, and that a click gives the
+    rules behind them (see build_issues)."""
+    e = html.escape
+    tips = {}
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        findings = p.get("build_issues") or []
+        if unit_id and findings:
+            titles = "<br>".join(f"• {e(str(f.get('title', '')))}" for f in findings)
+            tips[issues_href(unit_id)] = (
+                f"<b>{ISSUES_TITLE}</b><br>{titles}<br>"
+                f"<span style='font-size:85%'>Click for the rules behind them</span>")
+    return tips
+
+
+def issues_html(p, dark: bool = False, set_links=None, links=None,
+                base_pt: float = 9.0) -> str:
+    """A player's possible build issues as HTML: the heading, then each
+    finding's title in bold over the rule behind it, with an ESO-Hub link
+    for the set or skill it names when the maps know the page. '' for a
+    player without findings. Shown in the (i) popup and the build window."""
+    findings = (p or {}).get("build_issues") or []
+    if not findings:
+        return ""
+    theme = _theme(dark)
+    e = html.escape
+    rows = []
+    for finding in findings:
+        extras = []
+        for key, lookup in (("set", set_links), ("skill", links)):
+            name = str(finding.get(key) or "")
+            url = lookup(name) if lookup and name else None
+            if url:
+                extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
+                              f'{e(name)} on ESO-Hub</a>')
+        extra = (f"<br><span style='font-size:{base_pt * 0.85:.2f}pt'>"
+                 f"{' · '.join(extras)}</span>" if extras else "")
+        rows.append(
+            f"<tr><td valign='top' style='color:{theme['link']}'>{ISSUES_CUE}</td>"
+            f"<td style='padding-bottom:6px'><b>{e(str(finding.get('title', '')))}</b><br>"
+            f"<span style='color:{theme['detail']}'>{e(str(finding.get('detail', '')))}</span>"
+            f"{extra}</td></tr>")
+    return (f"<p style='margin:6px 0 2px 0'><b>{ISSUES_TITLE}</b></p>"
+            f"<table cellpadding='2' cellspacing='0'>{''.join(rows)}</table>")
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -692,6 +759,12 @@ def render_html(entry, detailed: bool, dark: bool = False,
             class_abbr += ":"
             beside = _mastery_text(p)
         subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
+        # The (i) of possible build issues (build_issues): only on a player
+        # with at least one, in the link color so it reads as a cue
+        issues_cue = ""
+        if unit_id and p.get("build_issues"):
+            issues_cue = (f' <a href="{e(issues_href(unit_id), quote=True)}" '
+                          f'style="text-decoration:none;color:{theme["link"]}">{ISSUES_CUE}</a>')
         dps = _dps_text(p, boss_fight)
         # The dps figure opens the player's damage window; like the name it
         # keeps the look of plain text until it is hovered
@@ -700,7 +773,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
                    f'style="text-decoration:none;color:{name_color}">{dps}</a>')
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
-               f"{subclass_html}{recap_html}</td>"
+               f"{subclass_html}{issues_cue}{recap_html}</td>"
                f"<td align='right'>{dps}</td>"
                f"<td align='right'>{_pct_text(p, boss_fight)}</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
