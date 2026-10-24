@@ -11,12 +11,11 @@ figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested.
 
-A player's name and dps figure look like plain text, so the pane shows they
-can be clicked while the pointer is over them: the text is underlined in the link color. Qt
-rich text has no hover styling, so this is an extra selection, which restyles
-text at paint time without touching the document. The in-fight search's
-highlights are extra selections too, and setting one list replaces the
-other; the pane therefore holds both and applies them together.
+A player's name and dps figure look like plain text (the dps figures carry
+a small glyph that says they can be clicked, see gui.glyphs; the names do
+not), so the pane shows they can be clicked while the pointer is over them:
+the text is underlined in the link color (see _show_hover_cue). The glyphs
+are images the page asks for by URL, served by loadResource like the icons.
 """
 
 from typing import Callable, Dict, List, Optional
@@ -30,9 +29,10 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, build_unit_from_href, damage_unit_from_href,
-    issues_unit_from_href,
+    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, build_unit_from_href,
+    damage_unit_from_href, issues_unit_from_href,
 )
+from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
 
 ICON_SCHEME = "icon"
@@ -40,13 +40,31 @@ _RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in th
 PULSE_INTERVAL_MS = 150  # a glow cycle is PULSE_STEPS of these: about a breath
 
 
-def _ring_color(url: QUrl) -> Optional[str]:
-    """'#rrggbb' when an icon URL asks for a ring (the fight render marks
-    the abilities a player taunted with that way), else None."""
-    value = QUrlQuery(url).queryItemValue(_RING_QUERY)
+def _query_color(url: QUrl, key: str) -> str | None:
+    """'#rrggbb' when the URL's query gives *key* as six hex digits, else None."""
+    value = QUrlQuery(url).queryItemValue(key)
     if len(value) == 6 and all(c in "0123456789abcdefABCDEF" for c in value):
         return f"#{value}"
     return None
+
+
+def _ring_color(url: QUrl) -> Optional[str]:
+    """'#rrggbb' when an icon URL asks for a ring (the fight render marks
+    the abilities a player taunted with that way), else None."""
+    return _query_color(url, _RING_QUERY)
+
+
+def _glyph(url: QUrl, dpr: float):
+    """The link glyph a glyph:<kind>?color=rrggbb&px=<n> URL asks for (see
+    gui.glyphs), drawn at device pixel ratio *dpr*; None for a bad URL."""
+    color = _query_color(url, "color")
+    try:
+        px = int(QUrlQuery(url).queryItemValue("px") or 0)
+    except ValueError:
+        return None
+    if color is None or px <= 0:
+        return None
+    return glyph_image(url.path(), color, px, dpr)
 
 
 class FightView(QTextBrowser):
@@ -138,14 +156,33 @@ class FightView(QTextBrowser):
             block = block.next()
         if start is None:
             return None
+        # Not the space that joins a dps figure to its glyph (fight_render
+        # puts an &nbsp; between them so they wrap together)
+        while end > start + 1 and document.characterAt(end - 1).isspace():
+            end -= 1
         cursor = QTextCursor(document)
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.KeepAnchor)
         return cursor
 
     def _show_hover_cue(self, href: str) -> None:
-        """Underline the hovered player name or dps figure in the link color;
-        any other target, or none, clears the cue."""
+        """Design: the hover cue. Underline the hovered player name or dps
+        figure in the link color; any other target, or none, clears the cue.
+
+        A name or dps figure keeps the look of plain text in the page (the
+        figures carry a glyph beside them, see gui.glyphs; the names do not,
+        since twelve underlined or blue names would be clutter). Qt rich text
+        has no hover styling, and changing the document's own character
+        format on hover would enter the undo stack, relayout the page and
+        invalidate the cursors the in-fight search holds. So the cue is an
+        extra selection: a format painted over a text range without touching
+        the document. The search's highlights are extra selections too, and
+        setting one list replaces the other, so the view owns both lists and
+        applies their union. The selection covers the anchor's text and stops
+        at its glyph, which is an image fragment of the same anchor; the
+        glyph still triggers the cue and the tooltip, since the pointer on it
+        is the pointer on the anchor.
+        """
         selections = []
         if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF)):
             cursor = self._text_anchor_cursor(href)
@@ -202,6 +239,10 @@ class FightView(QTextBrowser):
                     self._ring_urls[name.toString()] = QUrl(name)
                     if not self._pulse.isActive():
                         self._pulse.start()
+                return image
+        if resource_type == QTextDocument.ImageResource and name.scheme() == GLYPH_SCHEME:
+            image = _glyph(name, self.devicePixelRatioF())
+            if image is not None:
                 return image
         return super().loadResource(resource_type, name)
 

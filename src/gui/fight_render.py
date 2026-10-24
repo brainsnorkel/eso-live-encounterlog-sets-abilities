@@ -38,7 +38,9 @@ A player's name is a link to their build window (see build_render): it looks
 like the plain bold name it replaces, and the fight view underlines it in the
 theme's link color while the pointer is over it. Their dps figure is the same
 kind of link to their damage window (see damage_render), and its hover text
-gives the dps time the figure divides by (see damage_stats).
+gives the dps time the figure divides by (see damage_stats). The dps figures,
+a player's and the header's group figure, also carry a small glyph inside
+their anchor that says they can be clicked (see gui.glyphs); the names do not.
 
 Dps and share cells read 'boss / total' in a fight with a boss: the dps
 against the units the game flags as bosses and against everything, and the
@@ -67,6 +69,11 @@ GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the (i) of possible build issues
 ISSUES_CUE = "(i)"  # the cue itself, shown only on a player with a finding
 ISSUES_TITLE = "Possible build issues"
+# The glyph after a dps figure that says it can be clicked (see gui.glyphs):
+# glyph:<kind>?color=rrggbb&px=<n>, drawn by the fight view
+GLYPH_SCHEME = "glyph"
+GRAPH_GLYPH = "graph"  # after the header's group dps figure
+BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -142,6 +149,19 @@ def build_tooltips(entry) -> dict:
                 f"<span style='font-size:85%'>Click for the full build: bars, gear, "
                 f"mundus and food</span>")
     return tips
+
+
+def glyph_px(base_pt: float) -> int:
+    """Edge of a link glyph in a pane whose font is *base_pt* points: a
+    little taller than the x-height (13 px at 9 pt)."""
+    return max(8, round(float(base_pt) * 96 / 72 * 1.1))
+
+
+def glyph_html(kind: str, color: str, px: int) -> str:
+    """The <img> of a link glyph (see gui.glyphs) in *color* ('#rrggbb'),
+    *px* pixels square."""
+    return (f'<img src="{GLYPH_SCHEME}:{kind}?color={color.lstrip("#")}&amp;px={px}" '
+            f'style="vertical-align:middle">')
 
 
 def damage_href(unit_id) -> str:
@@ -708,13 +728,19 @@ def render_html(entry, detailed: bool, dark: bool = False,
     dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
     if entry.group_dps > 0 and dps_time > 0 and _dps_time_text(dps_time) != duration:
         duration = f"{duration} (dps time {_dps_time_text(dps_time)})"
-    # The group figure opens the dps over time graph; like the names it
-    # keeps the look of plain text until it is hovered
+    # The group figure opens the dps over time graph. It keeps the look of
+    # plain text, but a glyph of the graph's line in the link colour, inside
+    # the anchor, says it is one (see gui.glyphs); 'gdps' is in the anchor
+    # too, so the whole token is the hover and click target. The &nbsp;
+    # keeps the glyph on the figure's line when the header wraps
+    px = glyph_px(base_pt)
     if entry.group_dps > 0:
         gdps = (f'<a href="{GRAPH_HREF}" style="text-decoration:none;color:{muted}">'
-                f'{gdps}</a>')
+                f'{gdps} gdps&nbsp;{glyph_html(GRAPH_GLYPH, theme["link"], px)}</a>')
+    else:
+        gdps = f"{gdps} gdps"
     stats = (f"{duration}"
-             f" · {gdps} gdps"
+             f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
              f" · Deaths {entry.deaths}")
@@ -766,11 +792,14 @@ def render_html(entry, detailed: bool, dark: bool = False,
             issues_cue = (f' <a href="{e(issues_href(unit_id), quote=True)}" '
                           f'style="text-decoration:none;color:{theme["link"]}">{ISSUES_CUE}</a>')
         dps = _dps_text(p, boss_fight)
-        # The dps figure opens the player's damage window; like the name it
-        # keeps the look of plain text until it is hovered
+        # The dps figure opens the player's damage window. Like the name it
+        # keeps the look of plain text; unlike the name it carries a glyph
+        # (three bars, muted, as there may be twelve of them) that says it
+        # can be clicked, since the window has no other way in
         if unit_id:
             dps = (f'<a href="{e(damage_href(unit_id), quote=True)}" '
-                   f'style="text-decoration:none;color:{name_color}">{dps}</a>')
+                   f'style="text-decoration:none;color:{name_color}">{dps}&nbsp;'
+                   f'{glyph_html(BREAKDOWN_GLYPH, muted, px)}</a>')
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
                f"{subclass_html}{issues_cue}{recap_html}</td>"

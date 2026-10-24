@@ -305,6 +305,67 @@ class TestHoverCue(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_pointer_on_a_dps_glyph_cues_and_clicks_its_figure(self):
+        """The glyph after a dps figure (gui.glyphs) is part of the link:
+        the pointer on it cues the figure's text, without the space that
+        joins them, and a click on it opens the window (issue #34)."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+
+        from gui.fight_render import GRAPH_HREF
+        win = self._window(_entry(), show=True)
+        try:
+            view = win.fight_view
+
+            def glyph_point(href):
+                """Viewport point on the image fragment of the *href* anchor."""
+                document = view.document()
+                block = document.begin()
+                while block.isValid():
+                    it = block.begin()
+                    while not it.atEnd():
+                        fragment = it.fragment()
+                        fmt = fragment.charFormat()
+                        if fmt.isImageFormat() and fmt.isAnchor() and fmt.anchorHref() == href:
+                            before = QTextCursor(document)
+                            before.setPosition(fragment.position())
+                            after = QTextCursor(document)
+                            after.setPosition(fragment.position() + 1)
+                            left, right = view.cursorRect(before), view.cursorRect(after)
+                            return QPoint((left.left() + right.left()) // 2, left.center().y())
+                        it += 1
+                    block = block.next()
+                self.fail(f'no glyph in the {href} anchor')
+
+            self._leave(view)
+            QTest.mouseMove(view.viewport(), glyph_point(GRAPH_HREF))
+            _app.processEvents()
+            self.assertEqual(view.hovered_build_link, GRAPH_HREF)
+            cue = self._cue(view).cursor.selectedText()
+            self.assertTrue(cue.endswith(' gdps'), repr(cue))
+            self.assertIn('Click for the dps over time graph', view.current_tooltip)
+            self.assertEqual(view.viewport().cursor().shape(), Qt.PointingHandCursor)
+            # A player's figure: its glyph is the figure's link too
+            self._leave(view)
+            QTest.mouseMove(view.viewport(), glyph_point('esolog:damage/1'))
+            _app.processEvents()
+            self.assertEqual(view.hovered_build_link, 'esolog:damage/1')
+            cue = self._cue(view).cursor.selectedText()
+            self.assertFalse(cue.endswith('\xa0'), repr(cue))
+            self.assertIn('Click for the damage breakdown', view.current_tooltip)
+            # A click on the header's glyph opens the graph window
+            self.assertIsNone(win._graph_dialog)
+            QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier,
+                             glyph_point(GRAPH_HREF))
+            _app.processEvents()
+            self.assertIsNotNone(win._graph_dialog)
+            self.assertTrue(win._graph_dialog.isVisible())
+        finally:
+            if win._graph_dialog is not None:
+                win._graph_dialog.close()
+            win.close()
+
     def test_a_fight_drawn_while_a_name_is_hovered_starts_clean(self):
         win = self._window(_entry(), show=True)
         try:
