@@ -1326,6 +1326,29 @@ and the casters' lines each union back to the headline:
 An interval without a caster (an old saved fight, or a proc the log writes
 without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
+### paint_sparse_span
+
+*[src/gui/timeline_strip.py:169](../src/gui/timeline_strip.py#L169)*
+
+Paint one span of a group buff that reached only one or two receivers
+(issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
+full height, under a cross-hatch of the full colour, so the span is
+unbroken along the time axis and textured across it.
+
+Up to 0.13.1 such a span was a dotted line down the row's middle, and a
+row of dots is exactly what a solid bar looks like when the effect
+comes and goes every few seconds: at a glance, up the whole time on
+one person read as up half the time on everyone, and the two call for
+different fixes (whom the buff reaches against how long it lasts). A
+fill with no gaps keeps up reading as up; the hatch says not the whole
+group. The lines are drawn here rather than with one of Qt's pattern
+brushes so that their spacing suits a ten-pixel row (a step no larger
+than the row's height puts a line through every column) and so that
+they fall on a grid anchored at the track's left edge, the same
+wherever a span starts. The caller paints the union of the row's
+intervals, one call per merged span, so overlapping receivers do not
+double the translucent base and abutting spans show no seam.
+
 ## The GUI and the engine thread
 
 ### src/gui/engine_worker.py

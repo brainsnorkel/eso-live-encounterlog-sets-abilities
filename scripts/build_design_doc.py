@@ -110,6 +110,7 @@ TOPICS = [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",
         "src/effect_summary.py",
+        "src/gui/timeline_strip.py:paint_sparse_span",
     ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",

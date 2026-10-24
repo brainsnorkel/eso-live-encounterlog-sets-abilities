@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Buff timeline** (#45): a group buff that reached only one or two people is drawn as an unbroken, cross-hatched span rather than a dotted line. The dots read like a buff flickering at half uptime, which is a different problem (how long it lasted) from the one the row flags (whom it reached). The hatch is the effect's colour over the row's full height, so the span still reads as up, and spans that overlap or meet are drawn as one. The row's click summary says `Hatched` where it said `Dotted`
+
 ## [0.13.1] - 2026-10-24
 
 ### Changed
