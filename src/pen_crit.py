@@ -99,7 +99,7 @@ import math
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 
-from effect_rules import EffectTracker, Rule
+from effect_rules import PLAYER_KINDS, EffectTracker, Rule, group_size_class
 from player_build import (
     ARMOR_SLOTS,
     OFF_HAND_OF,
@@ -126,12 +126,15 @@ FRONT, BACK = 0, 1
 BAR_NAMES = ("front", "back")
 
 # Champion Point stars the log cannot show (see the module docstring): the
-# renderer adds them from the Settings. 'instanced_only' applies in
-# dungeons, trials and arenas, not overland (Chris's choice, 2026-10-24).
+# renderer adds them from the Settings. 'group_sizes' says in which group
+# sizes a star is assumed (effect_rules.group_size_class): Fighting Finesse
+# in solo and small-group fights, not in a trial's large group, where a
+# damage dealer's Warfare slots usually go elsewhere (Chris's choice,
+# 2026-10-24, after his own trial parse read without it).
 ASSUMED_STARS = {
     "piercing": {"name": "Piercing", "source": "Champion Point passive", "pen": 700},
     "fighting_finesse": {"name": "Fighting Finesse", "source": "Champion Point slottable",
-                         "crit": 8, "instanced_only": True},
+                         "crit": 8, "group_sizes": ("solo", "small")},
     "backstabber": {"name": "Backstabber", "source": "Champion Point slottable, while flanking",
                     "crit": 10},
 }
@@ -566,7 +569,7 @@ def _pct(ms: int, duration_ms: int) -> int:
 
 
 def _histogram(keys_damage: dict[tuple, int]) -> list[list]:
-    return [list(key) + [damage] for key, damage in sorted(keys_damage.items())]
+    return [[*key, damage] for key, damage in sorted(keys_damage.items())]
 
 
 def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
@@ -693,8 +696,11 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
         return _histogram(pen_keys), _histogram(crit_keys), total
 
     pen_hist, crit_hist, total = histograms(group_target_buckets, None)
+    # The fight's group size, for the Champion Point rows assumed per size
+    group_size = group_size_class(sum(1 for info in units.values() if info[0] in PLAYER_KINDS))
     entry = {"on": ("boss" if bosses else "enemies") if targets else "", "targets": len(targets),
              "cap": cap, "instanced": bool(instanced or dummy), "dummy": bool(dummy),
+             "group_size": group_size,
              "debuffs": debuff_rows, "pen_hist": pen_hist, "crit_hist": crit_hist, "damage": total}
 
     players: dict[str, dict] = {}
@@ -780,7 +786,7 @@ def player_totals(player_pc: dict | None, fight_pc: dict | None,
     cap_setting = options.get("cap", "auto")
     cap = pen_cap(instanced, None if cap_setting in (None, "", "auto") else cap_setting)
     crit_cap = int(data.get("crit_cap") or CRIT_CAP)
-    assumed = assumed_rows(options, instanced)
+    assumed = assumed_rows(options, instanced, group.get("group_size"))
     static_pen = [float(v) for v in (data.get("static_pen") or [0, 0])]
     static_crit = [float(v) for v in (data.get("static_crit") or [0, 0])]
     for row in assumed:
@@ -814,15 +820,19 @@ def cap_shares(player_pc: dict | None, fight_pc: dict | None, options: dict | No
             "crit_over_pct": crit["over_pct"]}
 
 
-def assumed_rows(options: dict | None, instanced: bool) -> list[dict]:
+def assumed_rows(options: dict | None, instanced: bool, group_size: str | None = None) -> list[dict]:
     """The Champion Point rows the Settings ask for, as source rows marked
-    assumed; Force of Nature is handled by the reader from the histogram."""
+    assumed; Force of Nature is handled by the reader from the histogram.
+    *group_size* is the fight's ('solo', 'small', 'large' or None when
+    unknown, which assumes): a star with 'group_sizes' is left out in the
+    others. *instanced* is kept for a star that may one day need it."""
     options = options or {}
     rows = []
     for key, star in ASSUMED_STARS.items():
         if not options.get(key):
             continue
-        if star.get("instanced_only") and not instanced:
+        sizes = star.get("group_sizes")
+        if sizes and group_size is not None and group_size not in sizes:
             continue
         row = _row(star["name"], star["source"], "assumed",
                    _pair(star["pen"]) if star.get("pen") else None,

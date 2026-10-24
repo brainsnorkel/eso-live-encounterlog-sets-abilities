@@ -50,7 +50,7 @@ DEFAULTS = {
     # 9,100 overland; or a number)
     "pen_crit": {
         "piercing": True,
-        "fighting_finesse": True,       # in dungeons, trials and arenas only
+        "fighting_finesse": True,       # in solo and small-group fights, never in a large group
         "backstabber": False,
         "force_of_nature": False,
         "force_of_nature_per_effect": 660,

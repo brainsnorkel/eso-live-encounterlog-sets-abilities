@@ -194,15 +194,26 @@ class TestCapsAndAssumptions(unittest.TestCase):
         self.assertEqual(pen_crit.pen_cap(True, "9100"), 9100)
         self.assertEqual(pen_crit.pen_cap(True, "auto"), 18200)
 
-    def test_assumed_rows_follow_the_options_and_the_zone(self):
+    def test_assumed_rows_follow_the_options_and_the_group_size(self):
         options = {"piercing": True, "fighting_finesse": True, "backstabber": True}
-        names = [r["name"] for r in pen_crit.assumed_rows(options, instanced=True)]
-        self.assertEqual(names, ["Piercing", "Fighting Finesse", "Backstabber"])
+        for size in ("solo", "small", None):
+            names = [r["name"] for r in pen_crit.assumed_rows(options, True, size)]
+            self.assertEqual(names, ["Piercing", "Fighting Finesse", "Backstabber"], size)
         self.assertTrue(all(r["kind"] == "assumed" for r in pen_crit.assumed_rows(options, True)))
-        names = [r["name"] for r in pen_crit.assumed_rows(options, instanced=False)]
-        self.assertEqual(names, ["Piercing", "Backstabber"])
-        self.assertEqual(pen_crit.assumed_rows({}, True), [])
+        # Not in a trial's group, whether the zone is instanced or not
+        for instanced in (True, False):
+            names = [r["name"] for r in pen_crit.assumed_rows(options, instanced, "large")]
+            self.assertEqual(names, ["Piercing", "Backstabber"])
+        self.assertEqual(pen_crit.assumed_rows({}, True, "solo"), [])
         self.assertEqual(pen_crit.assumed_rows(None, True), [])
+
+    def test_player_totals_take_the_fights_group_size(self):
+        options = {"fighting_finesse": True}
+        small = pen_crit.player_totals(CAP_PLAYER, dict(CAP_FIGHT, group_size="small"), options)
+        large = pen_crit.player_totals(CAP_PLAYER, dict(CAP_FIGHT, group_size="large"), options)
+        self.assertEqual([r["name"] for r in small["assumed"]], ["Fighting Finesse"])
+        self.assertEqual(large["assumed"], [])
+        self.assertEqual((small["static_crit"][0], large["static_crit"][0]), (18.0, 10.0))
 
 
 class TestEffective(unittest.TestCase):
@@ -355,6 +366,7 @@ class TestEngine(unittest.TestCase):
         entry = fights(lines)[0]
         self.assertEqual(entry.pen_crit["on"], "enemies")  # the fixture's boss carries no boss flag
         self.assertTrue(entry.pen_crit["instanced"])  # VETERAN zone
+        self.assertEqual(entry.pen_crit["group_size"], "small")  # three players
         self.assertFalse(entry.pen_crit["dummy"])
         breach = entry.pen_crit["debuffs"][0]
         self.assertEqual((breach["name"], breach["uptime_pct"]), ("Major Breach", 50))
