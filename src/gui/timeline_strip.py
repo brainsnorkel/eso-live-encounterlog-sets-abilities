@@ -22,6 +22,12 @@ the UI thread.
 
 Buffs come first and debuffs after, with a divider between (issue #26).
 
+A row a rule expects in this group size whose effect never came (issue
+#13) reads 0% with its label in dark red and bold, so the gap is seen at a
+glance (Chris's request, 2026-10-24); the dark theme gets a lighter red,
+since dark red vanishes on a dark pane. The hover text says why the row
+is there.
+
 Deliberately tiny: it must never crowd the fight summary. A fight in which
 none of the built-in effects was up has no recorded timeline; its tracked
 rows are still drawn over the fight's duration (main_window passes it).
@@ -69,6 +75,9 @@ SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 # a height that follows the stack count over the fight's peak
 TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
                   QColor("#a1887f"), QColor("#90a4ae"), QColor("#ffb74d")]
+# The label of an expected row that never came: dark red on a light pane, a
+# lighter red on a dark one (keyed by whether the pane is dark)
+MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
 
 # A group buff reaching at most this many distinct receivers renders dotted
 SPARSE_RECEIVER_LIMIT = 2
@@ -194,8 +203,12 @@ class TimelineStrip(QWidget):
                     continue
                 self._tracked[name] = item
                 self._rows.append(name)
+                pct = round(item.get("uptime_pct", 0))
                 self._row_info[name] = {
-                    "uptime_pct": int(round(item.get("uptime_pct", 0))),
+                    "uptime_pct": pct,
+                    # Expected in this group size and never up: the label is
+                    # painted in red, bold
+                    "missing": bool(item.get("expected")) and pct == 0,
                     "dotted": False,
                     "label": item.get("text", name),
                     # What the rule measured this fight: its scope, or the
@@ -290,7 +303,11 @@ class TimelineStrip(QWidget):
         track_bg = QColor(text_color)
         track_bg.setAlphaF(0.08)
 
-        painter.setFont(self._label_font())
+        label_font = self._label_font()
+        painter.setFont(label_font)
+        missing_font = QFont(label_font)
+        missing_font.setBold(True)
+        missing_color = self.missing_color()
 
         duration = self._timeline["duration_ms"]
 
@@ -299,12 +316,20 @@ class TimelineStrip(QWidget):
             info = self._row_info.get(effect, {})
             # Label with uptime % (a tracked rule shows its uptime-line text),
             # cut with an ellipsis when it does not fit; hovering it shows
-            # the whole label (see _label_at)
-            painter.setPen(dim)
+            # the whole label (see _label_at). An expected row that never
+            # came is red and bold, so the gap is seen at a glance
+            if info.get("missing"):
+                painter.setPen(missing_color)
+                painter.setFont(missing_font)
+            else:
+                painter.setPen(dim)
+                painter.setFont(label_font)
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter,
                              self._painted_label(effect, info, painter.fontMetrics()))
+            painter.setPen(dim)
+            painter.setFont(label_font)
             # Whose effect this row is
             painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
                                     SCOPE_WIDTH - 4, rect.height() + 2),
@@ -364,6 +389,12 @@ class TimelineStrip(QWidget):
         painter.end()
 
     # ---- labels ----
+
+    def missing_color(self) -> QColor:
+        """The red an expected-but-absent row's label is painted in: dark
+        red, or a lighter red when the pane's background is dark."""
+        dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        return MISSING_COLORS[dark]
 
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
