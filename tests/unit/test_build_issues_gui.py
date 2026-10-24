@@ -232,5 +232,49 @@ class TestBuildWindow(IssuesGuiTestCase):
             win.close()
 
 
+class TestHistoryListCue(IssuesGuiTestCase):
+    """The fight list marks a fight with a flagged player with a circled i,
+    after the skull of a fight with a death; the copied text has neither."""
+
+    def test_summary_line_marks_a_fight_with_a_flagged_player(self):
+        from gui.fight_render import (
+            DEATH_CUE,
+            ISSUES_LIST_CUE,
+            render_plain_text,
+            summary_line,
+        )
+        entry = _entry()
+        self.assertEqual(DEATH_CUE, '☠')
+        self.assertEqual(ISSUES_LIST_CUE, 'ⓘ')
+        line = summary_line(entry, death_cue=True, issue_cue=True)
+        self.assertTrue(line.startswith(f'Test Boss {ISSUES_LIST_CUE} · '), line)
+        self.assertNotIn(DEATH_CUE, line)
+        # A death too: skull first, then the i
+        entry.deaths = 1
+        self.assertTrue(summary_line(entry, death_cue=True, issue_cue=True)
+                        .startswith(f'Test Boss {DEATH_CUE} {ISSUES_LIST_CUE} · '))
+        # Neither cue in the copied text, nor without the flags
+        self.assertNotIn(ISSUES_LIST_CUE, summary_line(entry))
+        self.assertNotIn(ISSUES_LIST_CUE, render_plain_text(entry))
+        self.assertNotIn(ISSUES_LIST_CUE, summary_line(entry, death_cue=True))
+        # No flagged player, no mark
+        for p in entry.players:
+            p['build_issues'] = []
+        self.assertNotIn(ISSUES_LIST_CUE, summary_line(entry, death_cue=True, issue_cue=True))
+
+    def test_the_window_list_carries_it(self):
+        from gui.fight_render import ISSUES_LIST_CUE
+        win = self._window(_entry())
+        try:
+            self.assertIn(ISSUES_LIST_CUE, win.history_list.item(0).text())
+            clean = _entry()
+            for p in clean.players:
+                p['build_issues'] = []
+            win._on_fight_completed(clean)
+            self.assertNotIn(ISSUES_LIST_CUE, win.history_list.item(1).text())
+        finally:
+            win.close()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
             return  # from the analyzer Settings is replacing
         self._fights.append(entry)
         if self._review_fights is None:
-            item = QListWidgetItem(summary_line(entry, death_cue=True))
+            item = QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True))
             self.history_list.addItem(item)
             if self._follow_live:
                 self.history_list.setCurrentRow(self.history_list.count() - 1)
@@ -398,7 +398,7 @@ class MainWindow(QMainWindow):
         item = self.history_list.item(row) if row >= 0 else None
         if item is None:
             return
-        item.setText(summary_line(entry, death_cue=True))
+        item.setText(summary_line(entry, death_cue=True, issue_cue=True))
         if row == self.history_list.currentRow():
             self._show_fight(row)
 
@@ -604,7 +604,7 @@ class MainWindow(QMainWindow):
         self.history_list.clear()
         for entry in fights:
             self.history_list.addItem(
-                QListWidgetItem(summary_line(entry, death_cue=True)))
+                QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True)))
         if fights:
             self.history_list.setCurrentRow(len(fights) - 1)
 

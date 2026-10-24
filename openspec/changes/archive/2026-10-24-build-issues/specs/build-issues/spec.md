@@ -114,6 +114,26 @@ For Pearlescent Ward, Xoryn's Masterpiece and Lucent Echoes (perfected or not), 
 - **WHEN** Deadly Strike reaches five on the front bar and three on the back
 - **THEN** no finding
 
+### Requirement: A tank with no taunt or pull
+
+The app SHALL report a player who reads as a tank and holds neither a taunt nor a pull. A player reads as a tank when their role is tank, they hold a shield or an ice staff on a bar or five or more heavy pieces, they dealt at most half an equal share of the group's damage in the fight, no restoration staff is on their bars and they did not heal others for more than they dealt. A taunt is Puncture, Inner Fire or Runic Jolt or one of their morphs, Destructive Clench on a bar holding an ice staff, or a scribed skill with the Taunt focus; a pull is Chains of Flame or its morphs, Silver Leash, Frozen Gate or its morphs, or a scribed skill with the Pull focus. A player who taunted at any time in the logging session, or whose bars are not logged, SHALL NOT be reported. The finding SHALL say what made the player read as a tank and name the kinds of skill missing. (Added 2026-10-24 at the maintainer's request, after a survey in which real tanks dealt a median tenth of an equal share and the health pool alone misread healers and damage dealers as tanks.)
+
+#### Scenario: A shield tank with nothing to hold the boss
+- **WHEN** a player whose role is tank holds a shield, dealt a tenth of an equal share, has no taunt or pull on either bar and never taunted this session
+- **THEN** a finding says the tank has no taunt or pull
+
+#### Scenario: A pull is enough
+- **WHEN** the same player slots Chains of Flame
+- **THEN** no finding
+
+#### Scenario: A heavy-armor healer
+- **WHEN** a health-dominant player in seven heavy pieces holds a restoration staff and no taunt
+- **THEN** no finding
+
+#### Scenario: A damage dealer with a shield
+- **WHEN** a health-dominant player with a shield dealt one and a half times an equal share
+- **THEN** no finding
+
 ### Requirement: The (i) on the fight pane
 
 The fight pane SHALL show an `(i)` after the name and class of each player with at least one finding, in the theme's link color, and nothing for a player without one. Hovering the `(i)` SHALL list the findings' titles. Clicking it SHALL open a transient popup near the pointer listing each finding with its rule, where a set or skill the finding names links to its ESO-Hub page when one is known. The popup SHALL close on a click elsewhere or Esc.

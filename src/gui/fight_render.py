@@ -60,7 +60,8 @@ ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
 BAR_DIVIDER = "│"  # between bar 1 and bar 2 when both are icon rows
-DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
+DEATH_CUE = "☠"  # history-list mark on a fight in which a player died: skull and crossbones
+ISSUES_LIST_CUE = "ⓘ"  # history-list mark on a fight with a player whose build has a finding: circled i
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
@@ -394,12 +395,14 @@ def _mastery_text(p) -> str:
     return ", ".join(str(name) for name in (p.get("masteries") or []) if name)
 
 
-def summary_line(entry, death_cue: bool = False) -> str:
+def summary_line(entry, death_cue: bool = False, issue_cue: bool = False) -> str:
     """Fight line: boss · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
-    boss or mob name. The history list asks for it; the clipboard copy,
-    which is read without the app's legend, does not.
+    boss or mob name; issue_cue: mark a fight in which a player's build has
+    a possible issue (build_issues) with ISSUES_LIST_CUE after that. The
+    history list asks for both; the clipboard copy, which is read without
+    the app's legend, does not.
     """
     vet = " vet" if entry.is_vet else ""
     zone = entry.zone_name or "Unknown"
@@ -412,6 +415,8 @@ def summary_line(entry, death_cue: bool = False) -> str:
     parts.append(str(entry.timestamp))
     if death_cue and entry.deaths:
         parts[0] = f"{parts[0]} {DEATH_CUE}"
+    if issue_cue and any(p.get("build_issues") for p in entry.players):
+        parts[0] = f"{parts[0]} {ISSUES_LIST_CUE}"
     return " · ".join(parts)
 
 
