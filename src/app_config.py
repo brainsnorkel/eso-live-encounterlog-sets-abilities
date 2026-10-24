@@ -44,6 +44,18 @@ DEFAULTS = {
         "check_enabled": True,   # check GitHub releases at startup
         "skip_version": None,    # release the user chose to skip
     },
+    # The build window's Penetration and Critical damage sections (pen_crit):
+    # Champion Point stars the log cannot show, assumed or not, and the
+    # target's resistance ("auto": 18,200 in dungeons, trials and arenas,
+    # 9,100 overland; or a number)
+    "pen_crit": {
+        "piercing": True,
+        "fighting_finesse": True,       # in dungeons, trials and arenas only
+        "backstabber": False,
+        "force_of_nature": False,
+        "force_of_nature_per_effect": 660,
+        "cap": "auto",
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split

@@ -102,7 +102,7 @@ On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs 
 
 ## Refreshing game data after an ESO patch
 
-The app bundles eight data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
+The app bundles nine data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
 
 ```cmd
 :: Ability and death-recap icons from your installed game (needs UESP's
@@ -136,6 +136,11 @@ python scripts\generate_weapon_types.py
 :: Armor weights (light, medium, heavy) for the build window, from UESP's item
 :: database (network access)
 python scripts\generate_armor_weights.py
+
+:: What each set does for penetration and critical damage, for the build
+:: window's two sections, from UESP's set summary (network access; or --from a
+:: reply of theirs already saved)
+python scripts\generate_set_offense.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.

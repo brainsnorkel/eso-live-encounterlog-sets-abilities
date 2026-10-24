@@ -665,6 +665,33 @@ class EffectTracker:
                 last[1] = start
         spans.append([start, end, stacks, target_id, kind, source_id])
 
+    def spans_in(self, index: int, fight_start_ms: int, fight_end_ms: int) -> List[tuple]:
+        """The spans of the rule at *index* clipped to a fight window:
+        (start, end, stacks, target, kind, source), for a reader that does
+        its own measuring (pen_crit)."""
+        return self._window(index, fight_start_ms, fight_end_ms)
+
+    def seed(self, ability_ids, target_id: str, timestamp_ms: int,
+             target_kind: Optional[str], source_id: str = "") -> None:
+        """Effects already on *target_id* at *timestamp_ms* that had no GAINED
+        line of their own: the long-term list of a PLAYER_INFO line names the
+        buffs a player has as combat starts (Lucent Echoes at the pull, a
+        mythic's permanent buff). A span opens here for each id a rule
+        tracks, unless one is open; a later GAINED by a named caster takes
+        over as a refresh does, and a FADED closes it (pen_crit)."""
+        if target_kind is None:
+            return
+        target_id = str(target_id)
+        for ability_id in ability_ids or ():
+            ability_id = str(ability_id)
+            for index in self._by_id.get(ability_id, ()):
+                rule = self.rules[index]
+                if rule.kind == "dots" or target_kind not in _SCOPE_KINDS[rule.scope]:
+                    continue
+                key = (index, target_id, ability_id)
+                if key not in self._open:
+                    self._open[key] = [timestamp_ms, 1, target_kind, str(source_id or "")]
+
     def _window(self, index: int, fight_start_ms: int, fight_end_ms: int) -> List[tuple]:
         """A rule's spans clipped to the fight: (start, end, stacks, target,
         kind, source), open spans running to the fight's end."""

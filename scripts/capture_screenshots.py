@@ -16,6 +16,7 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
+    build-pen-crit.png              the same window scrolled to its penetration and crit sections
     damage-window.png               one player's damage by ability and target
     dps-graph.png                   the dps over time graph
     death-recap.png                 one player's death recap
@@ -147,6 +148,12 @@ def main():
         win._show_build(players[0]["unit_id"])
         pump(1.5)
         save(win._build_dialog, "build-window.png")
+        # The Penetration and Critical damage sections sit under the gear grid
+        from gui.build_render import PEN_CRIT_ANCHOR
+        win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
+        pump(0.5)
+        save(win._build_dialog, "build-pen-crit.png")
+        win._build_dialog.view.verticalScrollBar().setValue(0)
         win._build_dialog.hide()
 
     # Damage window for the same player

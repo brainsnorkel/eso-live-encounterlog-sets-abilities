@@ -1,18 +1,31 @@
-"""Settings dialog: log path, split files, archiving, startup, updates, and
-the tracked effects the timeline strip draws."""
+"""Settings dialog: log path, split files, archiving, startup, updates, the
+tracked effects the timeline strip draws, and the penetration and critical
+damage assumptions the build window's sections use."""
 
 import sys
 from pathlib import Path
 
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox,
     QVBoxLayout,
 )
 
 from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
+from pen_crit import FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND
+
+PEN_CRIT_HELP = ("The build window's Penetration and Critical damage sections read everything "
+                 "else from the log. Champion Point stars that only change a stat are never "
+                 "logged, so tick the ones to assume; they show as assumed rows. Fighting "
+                 "Finesse applies in dungeons, trials and arenas only. Force of Nature's value "
+                 "is its per-effect figure times the status effects measured on the boss.")
+BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} in dungeons, trials and arenas, "
+           f"{PEN_CAP_OVERLAND:,} overland")
+CAP_CHOICES = (("auto", BY_ZONE),
+               (str(PEN_CAP_INSTANCED), f"Always {PEN_CAP_INSTANCED:,}"),
+               (str(PEN_CAP_OVERLAND), f"Always {PEN_CAP_OVERLAND:,}"))
 
 RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
               "then stacks for a stacking effect, each for the mean over the units "
@@ -171,6 +184,48 @@ class SettingsDialog(QDialog):
         self._check_rules()
         layout.addWidget(tracking_group)
 
+        # Penetration and critical damage: the Champion Point rows the build
+        # window assumes, and the cap (pen_crit); read at render time, so no
+        # restart is needed for them
+        pen_group = QGroupBox("Penetration and critical damage (the build window)")
+        pen_form = QFormLayout(pen_group)
+        pen_help = QLabel(PEN_CRIT_HELP)
+        pen_help.setWordWrap(True)
+        pen_help.setStyleSheet("color: #888; font-size: 11px;")
+        pen_form.addRow(pen_help)
+        self.assume_piercing = QCheckBox("Assume Piercing (700 penetration, a passive star)")
+        self.assume_piercing.setChecked(bool(config.get("pen_crit.piercing", True)))
+        pen_form.addRow(self.assume_piercing)
+        self.assume_finesse = QCheckBox(
+            "Assume Fighting Finesse (8% critical damage) in dungeons, trials and arenas")
+        self.assume_finesse.setChecked(bool(config.get("pen_crit.fighting_finesse", True)))
+        pen_form.addRow(self.assume_finesse)
+        self.assume_backstabber = QCheckBox("Assume Backstabber (10% critical damage while flanking)")
+        self.assume_backstabber.setChecked(bool(config.get("pen_crit.backstabber", False)))
+        pen_form.addRow(self.assume_backstabber)
+        fon_row = QHBoxLayout()
+        self.assume_force_of_nature = QCheckBox("Assume Force of Nature: per status effect on the target")
+        self.assume_force_of_nature.setChecked(bool(config.get("pen_crit.force_of_nature", False)))
+        fon_row.addWidget(self.assume_force_of_nature)
+        self.force_of_nature_value = QSpinBox()
+        self.force_of_nature_value.setRange(1, 5000)
+        self.force_of_nature_value.setValue(
+            int(config.get("pen_crit.force_of_nature_per_effect", FORCE_OF_NATURE_PER_EFFECT)
+                or FORCE_OF_NATURE_PER_EFFECT))
+        self.force_of_nature_value.setToolTip(
+            "The tooltip's figure per unique status effect; Combat Metrics uses 660")
+        fon_row.addWidget(self.force_of_nature_value)
+        fon_row.addStretch(1)
+        pen_form.addRow(fon_row)
+        self.pen_cap = QComboBox()
+        for key, label in CAP_CHOICES:
+            self.pen_cap.addItem(label, key)
+        current = str(config.get("pen_crit.cap", "auto") or "auto")
+        index = next((i for i, (key, _label) in enumerate(CAP_CHOICES) if key == current), 0)
+        self.pen_cap.setCurrentIndex(index)
+        pen_form.addRow("Penetration cap:", self.pen_cap)
+        layout.addWidget(pen_group)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -223,6 +278,13 @@ class SettingsDialog(QDialog):
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
         self.config.set("update.check_enabled", self.update_check.isChecked())
+        self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())
+        self.config.set("pen_crit.fighting_finesse", self.assume_finesse.isChecked())
+        self.config.set("pen_crit.backstabber", self.assume_backstabber.isChecked())
+        self.config.set("pen_crit.force_of_nature", self.assume_force_of_nature.isChecked())
+        self.config.set("pen_crit.force_of_nature_per_effect", self.force_of_nature_value.value())
+        cap = self.pen_cap.currentData()
+        self.config.set("pen_crit.cap", cap if cap == "auto" else int(cap))
         if self.update_check.isChecked():
             # Re-enabling checks also clears any skipped version
             self.config.set("update.skip_version", None)

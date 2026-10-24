@@ -33,9 +33,11 @@ class BuildDialog(QDialog):
         buttons.rejected.connect(self.close)
         layout.addWidget(buttons)
 
-    def show_build(self, entry, unit_id: str, dark: bool) -> None:
-        """Show the build of the player *unit_id* in the fight *entry*."""
-        self._shown = (entry, unit_id)
+    def show_build(self, entry, unit_id: str, dark: bool, pen_crit_options=None) -> None:
+        """Show the build of the player *unit_id* in the fight *entry*.
+        *pen_crit_options* is the config's pen_crit section (the assumed
+        Champion Point rows and the cap the sections use)."""
+        self._shown = (entry, unit_id, pen_crit_options)
         self.setWindowTitle(build_title(entry, unit_id))
         # The window's anchors use the fight view's targets, so its hover
         # text serves here too
@@ -47,9 +49,10 @@ class BuildDialog(QDialog):
             links=esohub_ability_url, set_links=esohub_set_url,
             script_links=esohub_script_url,
             base_pt=self.view.font().pointSizeF(),
-            text_color=self.view.palette().color(QPalette.Text).name()))
+            text_color=self.view.palette().color(QPalette.Text).name(),
+            pen_crit_options=pen_crit_options))
 
     def refresh(self, dark: bool) -> None:
         """Re-render for a theme switch (the HTML embeds theme colors)."""
         if self._shown is not None and self.isVisible():
-            self.show_build(self._shown[0], self._shown[1], dark)
+            self.show_build(self._shown[0], self._shown[1], dark, self._shown[2])

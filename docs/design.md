@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1923](../src/esolog_tail.py#L1923)*
+*[src/esolog_tail.py:1943](../src/esolog_tail.py#L1943)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:67](../src/esolog_tail.py#L67)*
+*[src/esolog_tail.py:68](../src/esolog_tail.py#L68)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1388](../src/esolog_tail.py#L1388)*
+*[src/esolog_tail.py:1406](../src/esolog_tail.py#L1406)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1403](../src/esolog_tail.py#L1403)*
+*[src/esolog_tail.py:1421](../src/esolog_tail.py#L1421)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:61](../src/esolog_tail.py#L61)*
+*[src/esolog_tail.py:62](../src/esolog_tail.py#L62)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3044](../src/esolog_tail.py#L3044)*
+*[src/esolog_tail.py:3123](../src/esolog_tail.py#L3123)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:342](../src/esolog_tail.py#L342)*
+*[src/esolog_tail.py:343](../src/esolog_tail.py#L343)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -508,6 +508,161 @@ string table for each of those ids, and the script reports a correction
 the workbook no longer needs. ESO-Hub links for sets are looked up by the
 corrected name (see src/ability_icons.py).
 
+## Penetration and critical damage: the spreadsheet from the log
+
+### src/pen_crit.py
+
+*[src/pen_crit.py:1](../src/pen_crit.py#L1)*
+
+Penetration and critical damage: where each player's and the group's come
+from, against the caps (issue #37). Engine side, no Qt.
+
+Design. Two stats decide how much of a hit reaches a trial boss: Offensive
+Penetration, which cancels the target's resistance (18,200 on the bosses
+and mobs of dungeons, trials and arenas, 9,100 overland; a point past the
+cap does nothing), and Critical Damage, 50% to begin with and capped at
+125% (155% with the Nightblade mastery Above and Beyond). Raid leads check
+both with a spreadsheet of checkboxes (LunaCairu's PenCrit Calc, and the
+calculators at hyperioxes.com that skinnycheeks.gg recommends): every
+source has a fixed value and they add up. This module does the sum from
+the log, in two parts.
+
+The player's own part is read from PLAYER_INFO: the passives in the
+long-term list by id (Concentration 939 per light piece, Dexterity 2% per
+medium piece, Hemorrhage 10%, Piercing Spear 12%, Fated Fortune 12%,
+Advanced Species 5% per Animal Companions ability on the bar, Splintered
+Secrets 1,240 per Herald of the Tome ability, Dismember 3,271, Feline
+Ambush 12%, Hunter's Eye 950, Twin Blade and Blunt 6% per axe and 1,487
+per mace, Heavy Weapons 12% for a battle axe and 2,974 for a maul, Blessing
+at the Peak 10%, Above and Beyond 25%; every value is the game's own text
+on UESP's skill tree, and a lower rank's id carries that rank's value), the
+mundus boon with the Divines pieces that scale it (the Lover 2,744 and the
+Shadow 11%, each piece of gold Divines adding 9.085%, rounded down as the
+spreadsheet rounds), the sets at their worn piece counts
+(data/sets/offense.json, generated from UESP's set texts by
+scripts/generate_set_offense.py: "Adds 1487 Offensive Penetration",
+Velothi's 1,650, Order's Wrath's 8%, Malacath's -50%), a Sharpened weapon,
+and the weapon kinds and armor weights from the bundled item tables. A
+value that depends on the bar (weapons, slotted abilities, set pieces with
+a two-handed weapon) is kept per bar, so a total reads "14,095 / 11,121"
+when the bars differ. A conditional bonus (Sul-Xan's 12% after a soul,
+Stuhn's 5,312 against Off Balance, Dismember's 3,271 while a Grave Lord
+ability is active) is listed with its condition and never added. A set
+that gives a buff at all times (Medusa's or Velothi's Minor Force) is
+credited with that buff for the whole fight: the game writes neither a
+GAINED line nor a PLAYER_INFO entry for a mythic's permanent buff (four
+trial logs: Velothi's aura 193447 on 917 PLAYER_INFO rows, Minor Force
+61746 on none), so measuring it would read the other Minor Force sources
+alone. A set that gives a buff under a condition (Tzogvin's at ten stacks)
+is named as a possible source, and the buff measured like any other.
+
+The group's part is what was on the target and on the player during the
+fight, valued as Combat Metrics values the same debuffs (its StatDebuffs
+table in CombatMetrics.lua): Major Breach 5,948, Minor Breach 2,974,
+Crusher 2,108 (1,622 for the gold glyph, times 1.3 Infused, times 1.45
+Torug's Pact, read from the caster's weapon), Roar of Alkosh 6,000, Crimson
+Oath's Rive 3,541, Runic Sunder 2,200, Crystal Weapon 1,000, Tremorscale
+2,640; Minor Brittle 10%, Major Brittle 20%, each Elemental Weakness 5%;
+Major Force 20%, Minor Force 10%, Lucent Echoes 11%, Fated Fortune's 7 s
+proc 12%. Combat Metrics adds those to the player's stat at every hit and
+buckets the damage by the result, then shows the damage-weighted average
+with each hit capped, the maximum, and the share of damage dealt over the
+cap. The log has every hit with its time and target and every effect's
+span on every unit, so the same is done here per second: for each second
+and each target hit, the debuffs on that target (a fraction of the second
+counts as that fraction) and the buffs on the player, times the damage
+dealt that second, kept as a histogram of (penetration value, status
+effects on the target, damage), so a reader can add any static part and
+any cap and get the capped average (the effective figure) and the share
+over the cap. In a fight with a boss only the bosses are measured; in a
+trash fight every hostile hit.
+
+Not in the log, and the reason the renderer adds "assumed" rows from the
+Settings rather than this module: the Champion Point stars that only change
+a stat. Four trial logs (2,292 PLAYER_INFO rows) never list Piercing (700
+penetration), Fighting Finesse (8%), Deadly Aim or Master-at-Arms, and show
+Backstabber (10% while flanking) only as 35 self-applied GAINED lines;
+stars that are effects (Exploiter, Bulwark, Reaving Blows) are listed, so
+the game simply has no effect for a stat star. Force of Nature (660
+penetration per unique status effect on the target in Combat Metrics'
+table, the star it calls wrathCP) is the same, but the status effects on
+the target are logged (9,522 GAINED lines in one Sunspire log), so when the
+reader assumes the star its value is the measured count of effects times
+660. The Settings toggles only change the rendering, so a change needs no
+engine restart and a fight entry holds nothing but what the log said.
+
+What else the survey showed: Divines is the trait on 13,620 armor pieces
+and no weapon of 2,292 builds is Sharpened; every Crusher glyph (302
+weapons) is gold at CP 160; Fated Fortune's proc fired 2,374 times, so its
+real uptime is measured, not assumed; the trial dummy applies the trial's
+own debuffs to itself (Crusher 120007, Alkosh 120018, Breach 120010 and
+120019), which is how a parse at a dummy is known to be against 18,200
+resistance in a house zone whose difficulty reads NONE.
+
+### scripts/generate_set_offense.py
+
+*[scripts/generate_set_offense.py:1](../scripts/generate_set_offense.py#L1)*
+
+Generate data/sets/offense.json: what each gear set does for penetration and
+critical damage, by the set id the encounter log writes, for the build
+window's Penetration and Critical damage sections (pen_crit.py, issue #37).
+
+The log gives an equipped item's set id and nothing about the set's bonuses.
+UESP's set summary lists every set with its bonus texts, one request (714
+sets, 0.8 MB); the texts are the game's own. This script keeps, per set and
+per piece count, the lines that matter here:
+
+- a flat Offensive Penetration line ("(2 items) Adds 34-1487 Offensive
+  Penetration": the second figure is the value at CP 160), kept as 'pen';
+- a flat Critical Damage line ("(5 items) Increases your Critical Damage and
+  Critical Healing by 8%"), kept as 'crit' (Malacath's "decreases ... by 50%"
+  as -50); a sentence after it that doubles or adds to the bonus under a
+  condition is kept as 'note';
+- a buff the wearer always has ("Gain Minor Force at all times", Oakensoul's
+  list), kept under 'gives': the game writes no GAINED line and no PLAYER_INFO
+  entry for such a buff (four trial logs: Velothi's aura 193447 is listed on
+  917 rows, Minor Force 61746 on none), so the wearer is credited with it for
+  the whole fight; a buff the wearer gets under a condition ("After dealing
+  direct damage, you gain Minor Force", Tzogvin's at ten stacks) is kept
+  under 'gives_when' with the text as 'when', named but measured from the
+  log like any other buff;
+- a conditional bonus to the wearer ("When you deal damage to an enemy who is
+  Off Balance, your Offensive Penetration is increased by 123-5312 for 10
+  seconds"), kept as 'pen_up_to' or 'crit_up_to' with the text as 'when',
+  shown but never added to a total;
+- a debuff or group buff the set puts on others (Roar of Alkosh, Crimson
+  Oath's Rive and Tremorscale reducing Armor or Resistance, Night Mother's
+  Gaze's Major Breach, Nunatak's Major Brittle, Elemental Catalyst's
+  weaknesses, Lucent Echoes, Saxhleel Champion's Major Force), kept under
+  'provides' so a group row can name the wearer's set as its source.
+
+Of the 714 sets on the Update 51 export, 65 carry a flat 1487 line, seven
+arena weapons 1190, Spriggan's Thorns and Spinner's Garments 3460; 72 sets
+mention Offensive Penetration and 52 Critical Damage in some form. The
+texts are classified by sentence: a first sentence that is nothing but
+"Adds N Offensive Penetration" or "Increases your Critical Damage ... by N%"
+is flat; a sentence that opens with a condition (When, While, After,
+Whenever, Dealing, Touching, On, If, Each, Every) is conditional. A set the
+export does not describe, or a bonus worded in a way this script does not
+read, is simply absent: the section then shows nothing for it.
+
+Run after an ESO update that adds or changes sets (one request to UESP; UESP
+asks heavy users to go lightly, so do not loop it):
+    python scripts/generate_set_offense.py
+or from a reply already on disk, such as the one the esobuild export keeps:
+    python scripts/generate_set_offense.py --from build/esobuild-assets/sources/set_summary.json
+
+### _pen_crit_html
+
+*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
+
+The Penetration and Critical damage sections (pen_crit): the player's
+own rows and the assumed Champion Point rows, the fight's debuffs on
+the boss (uptime, value, casters) and the buffs on the player, then the
+totals: own, with every debuff at full uptime, and effective (each
+second of the player's damage capped, as Combat Metrics caps each
+hit), against the cap.
+
 ## Tracked effects: the uptime line as rules anyone can paste
 
 ### src/effect_rules.py
@@ -668,7 +823,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:681](../src/effect_rules.py#L681)*
+*[src/effect_rules.py:708](../src/effect_rules.py#L708)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -689,7 +844,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
+*[src/esolog_tail.py:619](../src/esolog_tail.py#L619)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -702,7 +857,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:76](../src/app_config.py#L76)*
+*[src/app_config.py:88](../src/app_config.py#L88)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -725,13 +880,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:76](../src/esolog_tail.py#L76)*
+*[src/esolog_tail.py:77](../src/esolog_tail.py#L77)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:392](../src/esolog_tail.py#L392)*
+*[src/esolog_tail.py:393](../src/esolog_tail.py#L393)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -742,7 +897,7 @@ Frost Clench, a separate id with the same icon).
 
 ### What counts as damage
 
-*[src/esolog_tail.py:93](../src/esolog_tail.py#L93)*
+*[src/esolog_tail.py:94](../src/esolog_tail.py#L94)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -750,7 +905,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:111](../src/esolog_tail.py#L111)*
+*[src/esolog_tail.py:112](../src/esolog_tail.py#L112)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -896,7 +1051,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:478](../src/esolog_tail.py#L478)*
+*[src/esolog_tail.py:479](../src/esolog_tail.py#L479)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -919,7 +1074,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:569](../src/esolog_tail.py#L569)*
+*[src/esolog_tail.py:570](../src/esolog_tail.py#L570)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1060,7 +1215,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:801](../src/gui/main_window.py#L801)*
+*[src/gui/main_window.py:804](../src/gui/main_window.py#L804)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
