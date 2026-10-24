@@ -26,6 +26,9 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
+from build_issues import (
+    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, structural_findings, worn_proc_sets,
+)
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
 import werewolf
@@ -465,6 +468,9 @@ class CombatEncounter:
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
         self.player_taunts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        # Proc-set effects by the unit that sourced them this fight, for the
+        # build-issue rule on a set that never fires (build_issues)
+        self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
@@ -615,6 +621,10 @@ class CombatEncounter:
         """A player taunted with an ability ('' when the log did not say which)."""
         self.player_taunts[player_unit_id][ability_id] += 1
 
+    def note_proc(self, source_unit_id: str, ability_id: str):
+        """A proc set's effect was sourced by a unit this fight (build_issues)."""
+        self.proc_effects[source_unit_id].add(ability_id)
+
     def fight_units(self) -> Dict[str, tuple]:
         """What effect_rules measures a fight's rules on, unit id -> (kind,
         since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -736,6 +746,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # The user's tracked effects (effect_rules); build_analyzer sets the
         # rules from the config, an empty tracker records nothing
         self.effect_tracker = EffectTracker([])
+        # The build-issue rules judged over the session: the proc sets that
+        # never fire, and who has taunted (build_issues)
+        self.build_issues = BuildIssueTracker()
 
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
@@ -1499,6 +1512,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing_keys.clear()
         self._scribing_characters.clear()
         self.werewolf.reset()
+        self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -1980,6 +1994,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.werewolf.note_effect(self._scribing_player_key(target_unit_id),
                                           effect_type, ability_id, entry.timestamp)
 
+            # A proc set's effect, sourced by its wearer: the build-issue
+            # rule for a set that never fires (build_issues)
+            if (effect_type == "GAINED" and ability_id in PROC_EFFECT_IDS
+                    and extracted is not None and self.current_encounter):
+                self.current_encounter.note_proc(source_unit_id, ability_id)
+
             # A Class Mastery effect names its holder, the source: a proc
             # mastery is never in the PLAYER_INFO passive list (eso_sets).
             # Kept on the player and in their session for the rest of the
@@ -2332,6 +2352,22 @@ class ESOLogAnalyzer(ListenerMixin):
                 mark_taunt_slots(entry.players[-1]['front_bar_slots']
                                  + entry.players[-1]['back_bar_slots']
                                  + entry.players[-1].get('werewolf_bar_slots', []), taunts)
+            # Possible build issues (build_issues): the per-fight rules on
+            # this build, then the proc sets judged over the session. Any
+            # taunt this fight, named or not, marks the player a taunter
+            # for the session first
+            player_key = self._scribing_player_key(player.unit_id)
+            if enc.player_taunts.get(player.unit_id):
+                self.build_issues.note_taunt(player_key)
+            worn = worn_proc_sets(player.gear)
+            self.build_issues.note_fight(
+                player_key, enc.start_time, duration, worn,
+                fired_proc_sets(worn, enc.proc_effects.get(player.unit_id, ())))
+            entry.players[-1]['build_issues'] = (
+                structural_findings(player.gear, player.front_bar_slots, player.back_bar_slots,
+                                    role, taunted=self.build_issues.has_taunted(player_key),
+                                    set_name_of=gear_set_db.get_set_name_by_set_id)
+                + self.build_issues.findings(player_key, worn))
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
