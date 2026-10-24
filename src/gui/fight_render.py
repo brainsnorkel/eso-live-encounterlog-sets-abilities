@@ -28,8 +28,9 @@ a slot's anchor carries a fragment of its own, as a scribed skill's does.
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
-A player whose build has a possible issue (see build_issues) gets an "(i)"
-after their class, in the link color; hovering it lists the findings and
+A player whose build has a possible issue (see build_issues) gets a circled
+i after their class, in the link color, the same mark the fight list puts
+on the fight; hovering it lists the findings and
 clicking it opens a popup with each finding and the rule behind it
 (issues_html, which the build window shows too). A player without findings
 keeps a plain row.
@@ -67,8 +68,10 @@ SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
-ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the (i) of possible build issues
-ISSUES_CUE = "(i)"  # the cue itself, shown only on a player with a finding
+ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
+# The cue itself, a circled i like the fight list's mark (ISSUES_LIST_CUE),
+# shown only on a player with a finding
+ISSUES_CUE = "ⓘ"
 ISSUES_TITLE = "Possible build issues"
 # The glyph after a dps figure that says it can be clicked (see gui.glyphs):
 # glyph:<kind>?color=rrggbb&px=<n>, drawn by the fight view
