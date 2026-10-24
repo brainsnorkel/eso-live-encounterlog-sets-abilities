@@ -24,7 +24,8 @@ NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
 COURAGE = '109966'
 FORCE = '61747'
 # The uptime line's items this file looks at
-RULES = "Major Courage = 109966 on group\nMajor Force = 61747 on group\nTaunt = 38254 on boss each\n"
+RULES = ("Major Courage = 109966 on group expected all\nMajor Force = 61747 on group expected all\n"
+         "Taunt = 38254 on boss each expected all\n")
 
 
 def _player(unit_id, health=20000):

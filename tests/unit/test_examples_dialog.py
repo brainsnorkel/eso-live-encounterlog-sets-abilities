@@ -49,7 +49,7 @@ class TestExamplesDialog(unittest.TestCase):
         # Only the ticked lines come back, in library order
         lines = dialog.selected_lines()
         self.assertNotIn("Crux = 184220 on self stacks", lines)
-        self.assertEqual(lines[0], "Major Courage = 109966 on group")
+        self.assertEqual(lines[0], "Major Courage = 109966 on group expected large")
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 

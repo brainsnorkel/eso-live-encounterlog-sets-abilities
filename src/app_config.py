@@ -12,13 +12,14 @@ from typing import Any, Optional
 
 import platformdirs
 
-from effect_rules import DEFAULT_RULES, UPTIME_LINE_RULES, lines_to_add
+from effect_rules import DEFAULT_RULES, UPTIME_LINE_RULES, lines_to_add, upgrade_rules_text
 
 APP_NAME = "esolog-tail"
 
 # The rules text's layout: 1 held the user's additions to a line whose
-# group buffs and taunt were built in; 2 has those as rules too
-TRACKING_VERSION = 2
+# group buffs and taunt were built in; 2 has those as rules too; 3 gives
+# them ``expected`` words and Touch of Z'en the ``dots`` measure
+TRACKING_VERSION = 3
 
 DEFAULTS = {
     "log_path": None,           # None -> auto-detect
@@ -78,8 +79,13 @@ class AppConfig:
         0.8.0 and earlier) kept only the user's own additions, so the line
         would lose those items on upgrade: the missing ones are put in
         front of it, by name, so a rule the user had already written under
-        the same name stays theirs. Nothing is written back; the version
-        is saved with the next Save, and the top-up is harmless to repeat.
+        the same name stays theirs. A text saved before version 3 then has
+        the seven default rules given their ``expected`` words and Touch of
+        Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
+        a renamed or already-flagged line is left alone), so a trial fight
+        still shows a missing group buff at 0% after the upgrade. Nothing
+        is written back; the version is saved with the next Save, and both
+        steps are harmless to repeat.
 
         The timeline strip's old switch (experimental.buff_timeline, until
         issue #25 made the strip the only view of the rules) is dropped
@@ -98,13 +104,17 @@ class AppConfig:
             if not experimental:
                 del self.data["experimental"]
         tracking = stored.get("tracking")
-        if (isinstance(tracking, dict) and isinstance(tracking.get("rules"), str)
-                and "version" not in tracking):
+        if not (isinstance(tracking, dict) and isinstance(tracking.get("rules"), str)):
+            return
+        if "version" not in tracking:
             missing = lines_to_add(UPTIME_LINE_RULES.splitlines(), tracking["rules"])
             if missing:
                 self.data["tracking"]["rules"] = ("\n".join(missing) + "\n"
                                                   + tracking["rules"])
-            self.data["tracking"]["version"] = TRACKING_VERSION
+        version = tracking.get("version", 0)
+        if not isinstance(version, int) or version < 3:
+            self.data["tracking"]["rules"] = upgrade_rules_text(self.data["tracking"]["rules"])
+        self.data["tracking"]["version"] = TRACKING_VERSION
 
     def save(self) -> None:
         try:

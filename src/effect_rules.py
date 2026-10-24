@@ -5,11 +5,11 @@ Design: every item on the uptime line is a rule. A rule names an effect by
 its ability ids and asks for its uptime or its stack count on a chosen kind
 of unit, in a plain text anyone can copy to others. One rule per line::
 
-    # Name = ability ids... on <scope> [stacks | each]
-    Major Courage = 109966 on group
-    Taunt         = 38254 on boss each
+    # Name = ability ids... on <scope> [stacks | each | dots] [expected <sizes>]
+    Major Courage = 109966 on group expected large
+    Taunt         = 38254 on boss each expected small large
     Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
-    Touch of Z'en = 126597 on boss stacks
+    Touch of Z'en = 126597 on boss dots
     Crux          = 184220 on self stacks
 
 A rule matches any of its ids (an effect such as Off-Balance has one id
@@ -36,7 +36,8 @@ DEFAULT_RULES now, so anyone can rename, edit or delete them, and the
 example picker holds them for whoever wants one back. As rules they read
 the same, with two differences: a group buff is measured whatever the
 group size (the code needed three players), and one that never appeared
-in a fight reads 0% rather than being left off the line. Replaying the
+in a fight read 0% rather than being left off the line (until 0.12, when
+``expected`` decided that per group size; see below). Replaying the
 twelve logs (376 fights) through both: the six buffs agreed in 690 of 745
 readings; in the other 55 (46 of them Major Courage, the buff refreshed
 most) the rule read higher, never lower, because the code ignored an
@@ -67,11 +68,54 @@ of the zone. The engine tells the tracker when a unit dies or is removed
 (forget_unit) and when the zone changes (zone_changed), which ends those
 spans there.
 
+Seen or expected (issue #13): an item is shown, as a row of the timeline
+strip and in the copied text, when its effect was on a unit in scope
+during the fight, or when its rule is ``expected`` in the fight's group
+size: ``solo`` (one player), ``small`` (two to four) or ``large`` (five or
+more), counted from the players the engine lists for the fight;
+``expected`` alone, or ``all``, is every size. An expected rule whose
+effect never came reads 0% on an empty row, so a missing Major Courage in
+a trial stands out; a rule that is neither seen nor expected is left off.
+The survey behind the defaults (2026-10-10, every tenth split log by name
+within 1.5 GB: 13 logs, 196 fights of 2026): of the fourteen default
+items, the number reading 0 per fight averaged 13.0 in the three solo
+fights, 10.0 in the 71 four-player fights and 5.9 in the 122 trial fights.
+In the trial fights the six group buffs were there most of the time
+(Major Courage 96%, Lucent Echoes 86%, Pearlescent Ward 82%, Major Slayer
+71%, Major Force and Powerful Assault 52%), in the four-player fights
+mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
+other three never), and the taunt in 70 of 71 four-player fights and every
+trial fight. So the six group buffs are ``expected large``, the taunt
+``expected small large``, and the boss debuffs and Crux nothing: they
+depend on who is in the group, and show when they happened. The tracker
+alone, without the engine's units, knows no group size and shows every
+item.
+
+Touch of Z'en (issue #27): the game never writes its stacks. Every
+EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
+four 2026 trial logs), refreshed as a FADED and a GAINED in the same
+millisecond each time the wearer applies a damage-over-time effect.
+Combat Metrics derives the count instead (LibCombat's UpdateZenData):
+while the player's own Z'en is on a unit, the number of that player's
+effects on the unit whose ability type is damage, GAINED up and FADED
+down, at most five, 0 being a reading (Z'en up, no bonus). The ``dots``
+measure does the same for every wearer the log shows. The log has no
+ability type, so an effect counts as damage over time when its ability id
+also ticks as DOT_TICK or DOT_TICK_CRITICAL (EffectTracker.dot_tick): on
+those four logs that picks out Burning, Poisoned, Hemorrhaging, Roar of
+Alkosh and the class and weapon DoTs, and leaves out Off-Balance, Breach,
+Brittle and the other debuffs that deal no damage. A ground area such as
+Stampede ticks without an effect on the target and counts for neither.
+Each wearer's Z'en is their own span (two wearers on one boss do not end
+each other's), and the reading at a moment is the highest count among
+them, as for ``stacks``.
+
 A line that starts with ``$`` is a HyperTools export string, pasted as
 is: HyperTools (the in-game tracker addon) serialises a tracker as nested
 ``$...&`` records, and its name, ability ids and target ("Yourself",
 "Group", "Boss", "Current Target") become a rule here; ``stacks`` or
-``on <scope>`` after the string override what it says.
+``on <scope>`` after the string override what it says, and ``expected
+<sizes>`` after it applies to every rule it gives.
 
 What the logs carry (nine trial and dungeon logs of 2026): the stack
 count is EFFECT_CHANGED's second field and changes arrive as UPDATED
@@ -88,11 +132,16 @@ independent scan of the lines gives; Crux on the logging Arcanist a mean
 of 1.5 to 2.9 with a peak of 3 in every fight.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
 SCOPES = ("self", "group", "pets", "boss", "enemies")
-KINDS = ("uptime", "stacks", "each")
+KINDS = ("uptime", "stacks", "each", "dots")
+# Group sizes a rule can be expected in (issue #13): one player, two to
+# four, five or more; ``all`` is the three
+SIZES = ("solo", "small", "large")
+DOTS_CAP = 5  # Touch of Z'en's bonus stops at five damage-over-time effects
 
 # Unit kinds the engine reports for an effect's target, per scope. A boss
 # rule keeps its spans on the other hostiles too: they are what it measures
@@ -110,27 +159,36 @@ PLAYER_KINDS = frozenset({"self", "group"})
 # The uptime line's own items, tracked in code until 0.8.0 (ids from the
 # BuffTheGroup addon; the taunt debuff's from the logs)
 UPTIME_LINE_RULES = """\
-Major Courage    = 109966 on group
-Major Force      = 61747 on group
-Major Slayer     = 93109 on group
-Powerful Assault = 61771 on group
-Lucent Echoes    = 220015 on group
-Pearlescent Ward = 172621 on group
-Taunt            = 38254 on boss each
+Major Courage    = 109966 on group expected large
+Major Force      = 61747 on group expected large
+Major Slayer     = 93109 on group expected large
+Powerful Assault = 61771 on group expected large
+Lucent Echoes    = 220015 on group expected large
+Pearlescent Ward = 172621 on group expected large
+Taunt            = 38254 on boss each expected small large
 """
+
+# The words a saved rules text from before ``expected`` gets on these
+# seven, by name (app_config's upgrade to tracking version 3)
+DEFAULT_EXPECTED = {
+    "major courage": "large", "major force": "large", "major slayer": "large",
+    "powerful assault": "large", "lucent echoes": "large", "pearlescent ward": "large",
+    "taunt": "small large",
+}
 
 # The rules a fresh install starts with: the uptime line's own items, then
 # the maintainer's boss debuffs (2026-10-09; the Off-Balance ids beyond the
 # first six are his list)
 DEFAULT_RULES = (
-    "# Tracked effects, one per line: Name = ability ids on <scope> [stacks | each]\n"
+    "# Tracked effects, one per line: Name = ability ids on <scope> [stacks | each | dots]\n"
     "# scope: self | group | pets | boss | enemies. Share these lines as text.\n"
+    "# expected solo | small | large | all: shown in those group sizes even when absent.\n"
     "# A line that starts with $ is a HyperTools tracker export, pasted as is.\n"
-    "# The uptime line's own items; delete what you do not want (Examples has them)\n"
+    "# The group buffs and the taunt; delete what you do not want (Examples has them)\n"
     + UPTIME_LINE_RULES
     + "# Boss debuffs; in a fight without a boss they measure the pack instead\n"
     "Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss\n"
-    "Touch of Z'en = 126597 on boss stacks\n"
+    "Touch of Z'en = 126597 on boss dots\n"
     "Crux          = 184220 on self stacks\n"
     "Morag Tong    = 34384 on boss\n"
     "Minor Brittle = 145975 on boss\n"
@@ -144,32 +202,33 @@ DEFAULT_RULES = (
 EXAMPLE_RULES = [
     ("Major Courage on the group",
      "Share of the fight Major Courage was on anyone in the group",
-     "Major Courage = 109966 on group"),
+     "Major Courage = 109966 on group expected large"),
     ("Major Force on the group",
      "Share of the fight Major Force was on anyone in the group",
-     "Major Force = 61747 on group"),
+     "Major Force = 61747 on group expected large"),
     ("Major Slayer on the group",
      "Share of the fight Major Slayer was on anyone in the group",
-     "Major Slayer = 93109 on group"),
+     "Major Slayer = 93109 on group expected large"),
     ("Powerful Assault on the group",
      "Uptime of the Powerful Assault set's buff on anyone in the group",
-     "Powerful Assault = 61771 on group"),
+     "Powerful Assault = 61771 on group expected large"),
     ("Lucent Echoes on the group",
      "Uptime of the Lucent Echoes set's buff on anyone in the group",
-     "Lucent Echoes = 220015 on group"),
+     "Lucent Echoes = 220015 on group expected large"),
     ("Pearlescent Ward on the group",
      "Uptime of the Pearlescent Ward set's buff on anyone in the group",
-     "Pearlescent Ward = 172621 on group"),
+     "Pearlescent Ward = 172621 on group expected large"),
     ("Taunt on the boss",
      "How long each boss had a taunt on it, averaged over the bosses, a boss "
      "killed early measured to its death; the pack's mobs when there is no boss",
-     "Taunt = 38254 on boss each"),
+     "Taunt = 38254 on boss each expected small large"),
     ("Off-Balance on the boss",
      "Share of the fight the boss was off balance, under any of the skills that cause it",
      "Off-Balance = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss"),
     ("Touch of Z'en stacks on the boss",
-     "Mean and peak stacks of Z'en's Redress's debuff while it was up",
-     "Touch of Z'en = 126597 on boss stacks"),
+     "Mean and peak stacks of Z'en's Redress's debuff while it was up: the wearer's "
+     "damage-over-time effects on the boss, at most five, counted as Combat Metrics does",
+     "Touch of Z'en = 126597 on boss dots"),
     ("Crux on yourself",
      "Mean and peak Crux an Arcanist held (the player writing the log)",
      "Crux = 184220 on self stacks"),
@@ -226,6 +285,17 @@ class Rule:
     ids: FrozenSet[str]
     scope: str = "group"
     kind: str = "uptime"
+    expected: FrozenSet[str] = frozenset()  # group sizes it shows in when absent
+
+
+def group_size_class(players: int) -> Optional[str]:
+    """'solo' for one player, 'small' for two to four, 'large' for five or
+    more; None when no player is known (every item is then shown)."""
+    if players <= 0:
+        return None
+    if players == 1:
+        return "solo"
+    return "small" if players <= 4 else "large"
 
 
 def parse_rules(text: str) -> Tuple[List[Rule], List[str]]:
@@ -252,8 +322,11 @@ def parse_rules(text: str) -> Tuple[List[Rule], List[str]]:
 
 
 def _parse_options(tokens: List[str], scope: str, kind: str):
-    """(ids, scope, kind) from the tokens after a rule's name, or raise."""
+    """(ids, scope, kind, expected sizes) from the tokens after a rule's
+    name, or raise. ``expected`` takes the size words after it and stops at
+    the first other word; ``expected`` alone, or ``all``, is every size."""
     ids: List[str] = []
+    expected: set = set()
     kind_given = None
     i = 0
     while i < len(tokens):
@@ -272,10 +345,19 @@ def _parse_options(tokens: List[str], scope: str, kind: str):
             if kind_given is not None and kind_given != low:
                 raise ValueError(f"'{kind_given}' and '{low}' are two measurements; a rule takes one")
             kind = kind_given = low
+        elif low == "expected":
+            sizes = []
+            while i + 1 < len(tokens) and tokens[i + 1].lower() in SIZES + ("all",):
+                sizes.append(tokens[i + 1].lower())
+                i += 1
+            expected |= set(SIZES) if not sizes or "all" in sizes else set(sizes)
+        elif low in SIZES + ("all",):
+            raise ValueError(f"'{token}' belongs after 'expected': write 'expected {low}'")
         else:
-            raise ValueError(f"'{token}' is not an ability id, 'on <scope>', 'stacks', 'each' or 'uptime'")
+            raise ValueError(f"'{token}' is not an ability id, 'on <scope>', 'stacks', "
+                             "'each', 'dots', 'uptime' or 'expected <sizes>'")
         i += 1
-    return ids, scope, kind
+    return ids, scope, kind, frozenset(expected)
 
 
 def rule_name(line: str) -> str:
@@ -295,15 +377,38 @@ def _parse_line(line: str):
     name, sep, rest = line.partition("=")
     name = name.strip()
     if not sep or not name:
-        return None, "expected: Name = ability ids on <scope> [stacks | each]"
+        return None, "expected: Name = ability ids on <scope> [stacks | each | dots]"
     tokens = rest.replace(",", " ").split()
     try:
-        ids, scope, kind = _parse_options(tokens, "group", "uptime")
+        ids, scope, kind, expected = _parse_options(tokens, "group", "uptime")
     except ValueError as exc:
         return None, str(exc)
     if not ids:
         return None, "no ability id (a number) after '='"
-    return Rule(name, frozenset(ids), scope, kind), None
+    return Rule(name, frozenset(ids), scope, kind, expected), None
+
+
+def upgrade_rules_text(text: str) -> str:
+    """A rules text saved before tracking version 3, brought up to date
+    once (app_config): each line naming one of the seven group-buff and
+    taunt rules that has no ``expected`` of its own gets the default's
+    words appended, and a ``Touch of Z'en = 126597 ... stacks`` line, whose
+    stack count the log never carries (issue #27), measures ``dots``
+    instead. The line's own spelling, ids and spacing are kept; any other
+    line is left exactly as written, so the upgrade is safe to repeat."""
+    out = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line and not line.startswith(("#", "$")):
+            rule, _error = _parse_line(line)
+            if rule is not None:
+                name = rule.name.lower()
+                if name in DEFAULT_EXPECTED and not rule.expected:
+                    raw = raw.rstrip() + " expected " + DEFAULT_EXPECTED[name]
+                elif name == "touch of z'en" and rule.kind == "stacks" and rule.ids == {"126597"}:
+                    raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
+        out.append(raw)
+    return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
 
 
 # ---- HyperTools export strings ----
@@ -372,7 +477,7 @@ def hypertools_rules(line: str) -> List[Rule]:
         raise ValueError("not a HyperTools export string")
     table = decode_hypertools(line[:end])
     tokens = line[end:].replace(",", " ").split()
-    _ids, scope_override, kind_override = _parse_options(tokens, "", "")
+    _ids, scope_override, kind_override, expected = _parse_options(tokens, "", "")
     if _ids:
         raise ValueError("ability ids belong in a rule of their own, not after a HyperTools string")
     rules: List[Rule] = []
@@ -386,7 +491,8 @@ def hypertools_rules(line: str) -> List[Rule]:
         if ids:
             name = str(tracker.get("name") or "HyperTools tracker")
             kind = "stacks" if _ht_shows_stacks(tracker) else "uptime"
-            rules.append(Rule(name, frozenset(ids), scope_override or scope, kind_override or kind))
+            rules.append(Rule(name, frozenset(ids), scope_override or scope,
+                              kind_override or kind, expected))
         for child in (tracker.get("children") or {}).values():
             walk(child, scope)
 
@@ -429,6 +535,14 @@ class EffectTracker:
         self._closed: Dict[int, List[list]] = {}
         # unit id -> log ms it died or was removed (forget_unit)
         self._gone: Dict[str, int] = {}
+        # For a ``dots`` rule (Touch of Z'en): every effect a caster has on
+        # a hostile, (source, target, ability id) -> start ms while open and
+        # (source, target) -> [[start, end, ability id], ...] once closed,
+        # and the ability ids seen ticking as damage over time (dot_tick)
+        self._counts_dots = any(rule.kind == "dots" for rule in self.rules)
+        self._effects_open: Dict[tuple, int] = {}
+        self._effects: Dict[tuple, List[list]] = {}
+        self._dot_ids: set = set()
 
     def __bool__(self):
         return bool(self.rules)
@@ -437,6 +551,36 @@ class EffectTracker:
         self._open.clear()
         self._closed.clear()
         self._gone.clear()
+        self._effects_open.clear()
+        self._effects.clear()
+        self._dot_ids.clear()
+
+    def dot_tick(self, ability_id: str) -> None:
+        """A DOT_TICK or DOT_TICK_CRITICAL hit under *ability_id*: that
+        effect is damage over time. The log has no ability type, which is
+        what Combat Metrics counts Z'en's stacks by (ABILITY_TYPE_DAMAGE);
+        an effect that ticks as damage is the closest the log comes."""
+        if self._counts_dots:
+            self._dot_ids.add(str(ability_id))
+
+    def _record_effect(self, effect_type: str, ability_id: str, source_id: str,
+                       target_id: str, timestamp_ms: int) -> None:
+        """Any effect a caster has on a hostile, for a ``dots`` rule."""
+        key = (source_id, target_id, ability_id)
+        if effect_type == "GAINED":
+            self._effects_open.setdefault(key, timestamp_ms)
+        elif effect_type == "FADED" and key in self._effects_open:
+            start = self._effects_open.pop(key)
+            if timestamp_ms > start:
+                self._effects.setdefault((source_id, target_id), []).append(
+                    [start, timestamp_ms, ability_id])
+
+    def _close_effects(self, timestamp_ms: int, unit_id: Optional[str] = None) -> None:
+        """End the open caster effects on *unit_id* (every hostile when None)."""
+        for key in [k for k in self._effects_open if unit_id is None or k[1] == unit_id]:
+            start = self._effects_open.pop(key)
+            if timestamp_ms > start:
+                self._effects.setdefault((key[0], key[1]), []).append([start, timestamp_ms, key[2]])
 
     def record(self, effect_type: str, ability_id: str, target_id: str,
                stack_count, timestamp_ms: int, target_kind: Optional[str],
@@ -448,7 +592,15 @@ class EffectTracker:
         strip can say who applied it ("" when unknown). Another caster
         refreshing the effect ends one span and starts the next, so each
         span is credited to whoever last applied it; the spans abut, and
-        every measurement takes their union, so no number changes."""
+        every measurement takes their union, so no number changes.
+
+        A ``dots`` rule's spans are kept per caster (each wearer's Touch of
+        Z'en is their own debuff), and while one is held every effect a
+        caster has on a hostile is followed too (_record_effect)."""
+        target_id = str(target_id)
+        source_id = str(source_id or "")
+        if self._counts_dots and source_id and target_kind in HOSTILE_KINDS:
+            self._record_effect(effect_type, str(ability_id), source_id, target_id, timestamp_ms)
         indexes = self._by_id.get(str(ability_id))
         if not indexes or target_kind is None:
             return
@@ -456,12 +608,11 @@ class EffectTracker:
             stacks = max(1, int(stack_count))
         except (TypeError, ValueError):
             stacks = 1
-        target_id = str(target_id)
-        source_id = str(source_id or "")
         for index in indexes:
             if target_kind not in _SCOPE_KINDS[self.rules[index].scope]:
                 continue
-            key = (index, target_id, str(ability_id))
+            key = (index, target_id, str(ability_id) if self.rules[index].kind != "dots"
+                   else f"{ability_id}@{source_id}")
             opened = self._open.get(key)
             if effect_type in ("GAINED", "UPDATED"):
                 if opened is None:
@@ -485,6 +636,7 @@ class EffectTracker:
         for key in [key for key in self._open if key[1] == unit_id]:
             start, stacks, kind, source = self._open.pop(key)
             self._close(key[0], start, timestamp_ms, stacks, unit_id, kind, source)
+        self._close_effects(timestamp_ms, unit_id)
         self._gone.setdefault(unit_id, timestamp_ms)
 
     def zone_changed(self, timestamp_ms: int) -> None:
@@ -493,6 +645,7 @@ class EffectTracker:
         for key in [key for key, span in self._open.items() if span[2] not in PLAYER_KINDS]:
             start, stacks, kind, source = self._open.pop(key)
             self._close(key[0], start, timestamp_ms, stacks, key[1], kind, source)
+        self._close_effects(timestamp_ms)
         self._gone.clear()
 
     def _close(self, index: int, start: int, end: int, stacks: int,
@@ -556,9 +709,11 @@ class EffectTracker:
         if units is not None:
             boss_fought = any(info[0] == "boss" for info in units.values())
             pack = {uid for uid, info in units.items() if info[0] == "enemy"}
+            size = group_size_class(sum(1 for info in units.values() if info[0] in PLAYER_KINDS))
         else:
             boss_fought = any(kind == "boss" for _uid, kind in hostiles_seen)
             pack = set()
+            size = None
         pack |= {uid for uid, kind in hostiles_seen if kind == "enemy"}
         for index, rule in enumerate(self.rules):
             spans = windows[index]
@@ -570,6 +725,8 @@ class EffectTracker:
                     measured = "mobs"
             elif rule.scope == "enemies" and not boss_fought:
                 measured = "mobs"
+            if rule.kind == "dots":
+                spans = self._dot_counts(rule, spans, fight_end_ms)
             up_ms, mean_stacks, peak = _measure(spans)
             if rule.kind == "each":
                 shares = _unit_shares(spans, self._unit_windows(
@@ -577,7 +734,7 @@ class EffectTracker:
                 uptime_pct = 100.0 * sum(shares) / len(shares) if shares else 0.0
             else:
                 uptime_pct = 100.0 * up_ms / duration
-            if rule.kind == "stacks":
+            if rule.kind in ("stacks", "dots"):
                 text = f"{rule.name}:{mean_stacks:.1f}/{peak}" if up_ms else f"{rule.name}:0"
             else:
                 text = f"{rule.name}:{uptime_pct:.0f}%"
@@ -587,8 +744,15 @@ class EffectTracker:
                 # An effect that reached nothing reads 0 on its own; "on 0
                 # of 7 mobs" after every such item made a pack's line noise
                 text += f" on {reached} of {mobs} mobs"
+            # Seen or expected (issue #13): an item is shown when its effect
+            # was on a unit in scope, or when the rule is expected in this
+            # fight's group size; an unknown size shows everything
+            seen = bool(spans)
+            expected = size is not None and size in rule.expected
             out.append({
                 "name": rule.name, "scope": rule.scope, "kind": rule.kind,
+                "seen": seen, "expected": expected,
+                "shown": seen or expected or size is None,
                 "units": measured,
                 "uptime_pct": round(uptime_pct, 1), "avg_stacks": round(mean_stacks, 2),
                 "max_stacks": peak, "mobs_reached": reached, "mobs": mobs, "text": text,
@@ -636,6 +800,40 @@ class EffectTracker:
                 del self._closed[index]
         for unit_id in [uid for uid, gone in self._gone.items() if gone < timestamp_ms]:
             del self._gone[unit_id]
+        for pair in list(self._effects):
+            kept = [span for span in self._effects[pair] if span[1] > timestamp_ms]
+            if kept:
+                self._effects[pair] = kept
+            else:
+                del self._effects[pair]
+
+    def _dot_counts(self, rule: Rule, spans, fight_end_ms: int) -> List[tuple]:
+        """A ``dots`` rule's spans split where the count changes: while a
+        caster's effect is on a unit, how many of that caster's damage-over-
+        time effects (dot_tick) are on it too, at most DOTS_CAP, which is
+        how Combat Metrics reads Touch of Z'en (LibCombat counts the
+        player's ABILITY_TYPE_DAMAGE effects on the unit, GAINED up, FADED
+        down, capped at five, and 0 is a reading). Each DoT's id counts
+        once however many of it run; the rule's own ids never count."""
+        out = []
+        for start, end, _stacks, target, kind, source in spans:
+            dots = [(max(s, start), min(e, end))
+                    for s, e, aid in self._effects.get((source, target), [])
+                    if aid in self._dot_ids and aid not in rule.ids and e > start and s < end]
+            dots += [(max(s, start), end) for (src, tgt, aid), s in self._effects_open.items()
+                     if src == source and tgt == target and aid in self._dot_ids
+                     and aid not in rule.ids and s < end]
+            cuts = sorted({start, end} | {t for pair in dots for t in pair})
+            for a, b in zip(cuts, cuts[1:]):
+                count = sum(1 for s, e in dots if s <= a and e >= b)
+                level = min(count, DOTS_CAP)
+                if out and out[-1][1] == a and out[-1][2] == level and out[-1][3] == target \
+                        and out[-1][5] == source:
+                    out[-1] = (out[-1][0], b) + out[-1][2:]
+                else:
+                    out.append((a, b, level, target, kind, source))
+        out.sort()
+        return out
 
 
 def _measure(spans) -> Tuple[int, float, int]:

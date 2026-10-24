@@ -21,7 +21,8 @@ COURAGE = '109966'
 FORCE = '61747'
 DEBUFF = 12345
 
-RULES = "Major Courage = 109966 on group\nMajor Force = 61747 on group\n"
+# Expected in every group size, so a buff never seen still reads 0%
+RULES = "Major Courage = 109966 on group expected all\nMajor Force = 61747 on group expected all\n"
 
 
 def _player(unit_id, health=20000, shield=0):

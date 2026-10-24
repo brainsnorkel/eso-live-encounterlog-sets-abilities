@@ -70,7 +70,7 @@ For each rule and fight, the app SHALL class the fight's group size as `solo` (o
 
 ### Requirement: The timeline strip shows the same items
 
-When the timeline strip replaces the uptime line, every item shown on the line SHALL be a row of the strip: a rule whose effect never occurred but is expected in the fight's group size SHALL have a row with an empty track and `0%` in its label, and a rule that is neither seen nor expected SHALL have no row.
+Every item shown SHALL be a row of the timeline strip (the only view of the rules in the fight pane since issue #25; the copied text keeps the line): a rule whose effect never occurred but is expected in the fight's group size SHALL have a row with an empty track and `0%` in its label, and a rule that is neither seen nor expected SHALL have no row.
 
 #### Scenario: An expected buff that never came
 - **WHEN** the strip is on AND a rule `Lucent Echoes = 220015 on group expected large` AND a twelve-player fight in which the buff never appeared

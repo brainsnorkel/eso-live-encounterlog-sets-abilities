@@ -34,7 +34,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `app_config.py` | The per-user `config.json`. |
 | `player_build.py`, `scribing.py`, `death_recap.py`, `buff_timeline.py` | Per-fight detail: gear, mundus and food; scribed skills; death recaps; the buff timeline's built-in rows. |
 | `werewolf.py` | Werewolf form: the bar the log never writes, rebuilt from the skills cast in form, the share of a fight spent in form, and the morph a Rampage in a bar stands in for. |
-| `effect_rules.py` | Tracked effects: the rule text format, the HyperTools import, the default and example rules, and `EffectTracker`, which measures each rule per fight. |
+| `effect_rules.py` | Tracked effects: the rule text format (scopes, measures, `expected` group sizes), the HyperTools import, the default and example rules, the once-only upgrade of a saved rules text, and `EffectTracker`, which measures each rule per fight, Touch of Z'en's DoT count included. |
 | `effect_summary.py` | Who applied an effect and who had it over a fight, for the timeline strip's click popup. |
 | `eso_sets.py` | Skill line tables and the class passive data (`data/skills/class_passives.json`), for the skill lines and Class Mastery passives shown beside a class. |
 | `gear_set_database.py`, `gear_set_data.py` | Gear set lookups. `gear_set_data.py` is generated; do not edit it. |
@@ -43,7 +43,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `update_check.py`, `autostart.py` | The GitHub release check; the start-at-login toggle. |
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
-| `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/about.py` | The main window and its dialogs. |
+| `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window and its dialogs, the example tracked-effect rules picker among them. |
 | `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
 | `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache. |
 

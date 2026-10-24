@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1917](../src/esolog_tail.py#L1917)*
+*[src/esolog_tail.py:1923](../src/esolog_tail.py#L1923)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3036](../src/esolog_tail.py#L3036)*
+*[src/esolog_tail.py:3044](../src/esolog_tail.py#L3044)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -522,11 +522,11 @@ its ability ids and asks for its uptime or its stack count on a chosen kind
 of unit, in a plain text anyone can copy to others. One rule per line::
 
 ```
-    # Name = ability ids... on <scope> [stacks | each]
-    Major Courage = 109966 on group
-    Taunt         = 38254 on boss each
+    # Name = ability ids... on <scope> [stacks | each | dots] [expected <sizes>]
+    Major Courage = 109966 on group expected large
+    Taunt         = 38254 on boss each expected small large
     Off-Balance   = 45902 62988 39077 34733 20806 130139 on boss
-    Touch of Z'en = 126597 on boss stacks
+    Touch of Z'en = 126597 on boss dots
     Crux          = 184220 on self stacks
 ```
 
@@ -554,7 +554,8 @@ DEFAULT_RULES now, so anyone can rename, edit or delete them, and the
 example picker holds them for whoever wants one back. As rules they read
 the same, with two differences: a group buff is measured whatever the
 group size (the code needed three players), and one that never appeared
-in a fight reads 0% rather than being left off the line. Replaying the
+in a fight read 0% rather than being left off the line (until 0.12, when
+``expected`` decided that per group size; see below). Replaying the
 twelve logs (376 fights) through both: the six buffs agreed in 690 of 745
 readings; in the other 55 (46 of them Major Courage, the buff refreshed
 most) the rule read higher, never lower, because the code ignored an
@@ -585,11 +586,54 @@ of the zone. The engine tells the tracker when a unit dies or is removed
 (forget_unit) and when the zone changes (zone_changed), which ends those
 spans there.
 
+Seen or expected (issue #13): an item is shown, as a row of the timeline
+strip and in the copied text, when its effect was on a unit in scope
+during the fight, or when its rule is ``expected`` in the fight's group
+size: ``solo`` (one player), ``small`` (two to four) or ``large`` (five or
+more), counted from the players the engine lists for the fight;
+``expected`` alone, or ``all``, is every size. An expected rule whose
+effect never came reads 0% on an empty row, so a missing Major Courage in
+a trial stands out; a rule that is neither seen nor expected is left off.
+The survey behind the defaults (2026-10-10, every tenth split log by name
+within 1.5 GB: 13 logs, 196 fights of 2026): of the fourteen default
+items, the number reading 0 per fight averaged 13.0 in the three solo
+fights, 10.0 in the 71 four-player fights and 5.9 in the 122 trial fights.
+In the trial fights the six group buffs were there most of the time
+(Major Courage 96%, Lucent Echoes 86%, Pearlescent Ward 82%, Major Slayer
+71%, Major Force and Powerful Assault 52%), in the four-player fights
+mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
+other three never), and the taunt in 70 of 71 four-player fights and every
+trial fight. So the six group buffs are ``expected large``, the taunt
+``expected small large``, and the boss debuffs and Crux nothing: they
+depend on who is in the group, and show when they happened. The tracker
+alone, without the engine's units, knows no group size and shows every
+item.
+
+Touch of Z'en (issue #27): the game never writes its stacks. Every
+EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
+four 2026 trial logs), refreshed as a FADED and a GAINED in the same
+millisecond each time the wearer applies a damage-over-time effect.
+Combat Metrics derives the count instead (LibCombat's UpdateZenData):
+while the player's own Z'en is on a unit, the number of that player's
+effects on the unit whose ability type is damage, GAINED up and FADED
+down, at most five, 0 being a reading (Z'en up, no bonus). The ``dots``
+measure does the same for every wearer the log shows. The log has no
+ability type, so an effect counts as damage over time when its ability id
+also ticks as DOT_TICK or DOT_TICK_CRITICAL (EffectTracker.dot_tick): on
+those four logs that picks out Burning, Poisoned, Hemorrhaging, Roar of
+Alkosh and the class and weapon DoTs, and leaves out Off-Balance, Breach,
+Brittle and the other debuffs that deal no damage. A ground area such as
+Stampede ticks without an effect on the target and counts for neither.
+Each wearer's Z'en is their own span (two wearers on one boss do not end
+each other's), and the reading at a moment is the highest count among
+them, as for ``stacks``.
+
 A line that starts with ``$`` is a HyperTools export string, pasted as
 is: HyperTools (the in-game tracker addon) serialises a tracker as nested
 ``$...&`` records, and its name, ability ids and target ("Yourself",
 "Group", "Boss", "Current Target") become a rule here; ``stacks`` or
-``on <scope>`` after the string override what it says.
+``on <scope>`` after the string override what it says, and ``expected
+<sizes>`` after it applies to every rule it gives.
 
 What the logs carry (nine trial and dungeon logs of 2026): the stack
 count is EFFECT_CHANGED's second field and changes arrive as UPDATED
@@ -607,7 +651,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:406](../src/effect_rules.py#L406)*
+*[src/effect_rules.py:512](../src/effect_rules.py#L512)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -624,7 +668,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:528](../src/effect_rules.py#L528)*
+*[src/effect_rules.py:681](../src/effect_rules.py#L681)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -658,15 +702,20 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:75](../src/app_config.py#L75)*
+*[src/app_config.py:76](../src/app_config.py#L76)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
 0.8.0 and earlier) kept only the user's own additions, so the line
 would lose those items on upgrade: the missing ones are put in
 front of it, by name, so a rule the user had already written under
-the same name stays theirs. Nothing is written back; the version
-is saved with the next Save, and the top-up is harmless to repeat.
+the same name stays theirs. A text saved before version 3 then has
+the seven default rules given their ``expected`` words and Touch of
+Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
+a renamed or already-flagged line is left alone), so a trial fight
+still shows a missing group buff at 0% after the upgrade. Nothing
+is written back; the version is saved with the next Save, and both
+steps are harmless to repeat.
 
 The timeline strip's old switch (experimental.buff_timeline, until
 issue #25 made the strip the only view of the rules) is dropped
@@ -928,7 +977,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:441](../src/effect_rules.py#L441)*
+*[src/effect_rules.py:585](../src/effect_rules.py#L585)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
@@ -938,6 +987,10 @@ strip can say who applied it ("" when unknown). Another caster
 refreshing the effect ends one span and starts the next, so each
 span is credited to whoever last applied it; the spans abut, and
 every measurement takes their union, so no number changes.
+
+A ``dots`` rule's spans are kept per caster (each wearer's Touch of
+Z'en is their own debuff), and while one is held every effect a
+caster has on a hostile is followed too (_record_effect).
 
 ### src/effect_summary.py
 
