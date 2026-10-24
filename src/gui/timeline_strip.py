@@ -1,5 +1,7 @@
 """
-EXPERIMENTAL compact buff/debuff timeline strip (buff-timeline spec).
+Compact buff/debuff timeline strip (buff-timeline spec): the only view of
+the tracked effects in the fight pane since issue #25, the text uptime line
+surviving only in the plain-text copy.
 
 One thin colored row per tracked effect across the fight duration, with the
 effect's uptime % in its label, whose effect it is beside it (group, self,
@@ -18,8 +20,12 @@ Esc, and deletes itself on close: Qt owns it through its parent, and it
 holds nothing of the strip, so the garbage collector never frees it off
 the UI thread.
 
-Deliberately tiny: it must never crowd the fight summary. Hidden entirely
-when the displayed fight carries no timeline data.
+Buffs come first and debuffs after, with a divider between (issue #26).
+
+Deliberately tiny: it must never crowd the fight summary. A fight in which
+none of the built-in effects was up has no recorded timeline; its tracked
+rows are still drawn over the fight's duration (main_window passes it).
+Hidden entirely when nothing was up at all.
 """
 
 from html import escape
@@ -77,6 +83,14 @@ SCOPE_WIDTH = 46
 BUILTIN_SCOPES = {"Major Vulnerability": "boss", "Taunt": "boss"}
 MARGIN = 4
 
+# Buffs above, debuffs below (issue #26): a row is a debuff when its scope
+# word is one of these, the effects on hostile units; anything else, a row
+# without a scope word included, is a buff. Each side keeps the order the
+# rows come in, built-in rows first, then the rules in Settings order, and
+# a divider this many pixels high parts the two when both have rows
+DEBUFF_SCOPES = {"boss", "enemies", "mobs"}
+DIVIDER_GAP = 5
+
 # The pop-up lists at most this many casters or receivers, then "+N more"
 # (a pack's mobs can run to dozens); a caster x receiver grid is added when
 # both sides are this small
@@ -101,6 +115,16 @@ def _fmt_tick(ms: int) -> str:
     if total >= 60:
         return f"{total // 60}m{total % 60:02d}"
     return f"{total}s"
+
+
+def strip_timeline(entry):
+    """The timeline to draw for a fight entry: its recorded one, or, for a
+    fight in which none of the built-in effects was up (none was recorded),
+    an empty one over the fight's length, so its tracked rows still show."""
+    timeline = getattr(entry, "buff_timeline", None)
+    if timeline:
+        return timeline
+    return {"duration_ms": int((getattr(entry, "duration_s", 0) or 0) * 1000), "effects": {}}
 
 
 def uptime_pct(intervals, duration_ms: int) -> int:
@@ -129,6 +153,7 @@ class TimelineStrip(QWidget):
         self._rows = []       # ordered effect names present in the timeline
         self._row_info = {}   # effect -> {'uptime_pct': int, 'dotted': bool}
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
+        self._divider = None  # index of the first debuff row below buff rows, or None
         self.setVisible(False)
         self.setCursor(Qt.PointingHandCursor)
 
@@ -172,6 +197,10 @@ class TimelineStrip(QWidget):
                     "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
                     "stacks_max": (item.get("max_stacks") or 0) if item.get("kind") == "stacks" else 0,
                 }
+        buffs = [r for r in self._rows if self._row_info[r].get("scope") not in DEBUFF_SCOPES]
+        debuffs = [r for r in self._rows if self._row_info[r].get("scope") in DEBUFF_SCOPES]
+        self._rows = buffs + debuffs
+        self._divider = len(buffs) if buffs and debuffs else None
         self.setVisible(bool(self._rows))
         self.updateGeometry()
         self.update()
@@ -187,8 +216,12 @@ class TimelineStrip(QWidget):
     def _strip_height(self) -> int:
         if not self._rows:
             return 0
-        return (MARGIN + len(self._rows) * (ROW_HEIGHT + ROW_GAP)
-                + AXIS_HEIGHT + MARGIN)
+        return MARGIN + self._rows_height() + AXIS_HEIGHT + MARGIN
+
+    def _rows_height(self) -> int:
+        """The rows' height, the divider between buffs and debuffs included."""
+        return (len(self._rows) * (ROW_HEIGHT + ROW_GAP)
+                + (DIVIDER_GAP if self._divider is not None else 0))
 
     def sizeHint(self):
         from PySide6.QtCore import QSize
@@ -202,12 +235,20 @@ class TimelineStrip(QWidget):
         left = LABEL_WIDTH + SCOPE_WIDTH
         return QRectF(left, MARGIN,
                       max(1, self.width() - left - MARGIN),
-                      len(self._rows) * (ROW_HEIGHT + ROW_GAP))
+                      self._rows_height())
 
     def _row_rect(self, row: int) -> QRectF:
         track = self._track_rect()
-        return QRectF(track.left(), MARGIN + row * (ROW_HEIGHT + ROW_GAP),
+        below = DIVIDER_GAP if self._divider is not None and row >= self._divider else 0
+        return QRectF(track.left(), MARGIN + row * (ROW_HEIGHT + ROW_GAP) + below,
                       track.width(), ROW_HEIGHT)
+
+    def _divider_y(self):
+        """The y of the line between the buff and the debuff rows, or None."""
+        if self._divider is None:
+            return None
+        above = self._row_rect(self._divider - 1).bottom()
+        return (above + self._row_rect(self._divider).top()) / 2
 
     def _x_for_ms(self, ms: int) -> float:
         track = self._track_rect()
@@ -282,6 +323,13 @@ class TimelineStrip(QWidget):
                     painter.fillRect(QRectF(x0, rect.top(),
                                             max(1.0, x1 - x0), rect.height()),
                                      color)
+
+        # The line between the buffs above and the debuffs below
+        divider_y = self._divider_y()
+        if divider_y is not None:
+            painter.setPen(QPen(dim, 1))
+            painter.drawLine(int(MARGIN), int(divider_y),
+                             int(self._track_rect().right()), int(divider_y))
 
         # Axis with tick marks
         track = self._track_rect()

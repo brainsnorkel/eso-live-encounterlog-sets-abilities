@@ -7,7 +7,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [A player's build](#a-players-build)
 - [Death recaps](#death-recaps)
 - [Tracked effects](#tracked-effects)
-- [The buff timeline (experimental)](#the-buff-timeline-experimental)
+- [The buff timeline](#the-buff-timeline)
 - [Reviewing and copying fights](#reviewing-and-copying-fights)
 - [Settings](#settings)
 - [The status bar](#the-status-bar)
@@ -37,7 +37,7 @@ The list on the left has one line per completed fight: `boss · duration · grou
 ### The fight
 
 - **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. Click the group DPS, or **DPS graph** on the toolbar, for the [dps over time graph](#dps-over-time).
-- **Uptime line**: one item per [tracked-effect rule](#tracked-effects), on every fight whatever the group size. A fresh install shows how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; six boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Alkosh); and Crux, the mean and peak Crux you held. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. When the [buff timeline](#the-buff-timeline-experimental) is on, the strip replaces this line.
+- **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; six boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Alkosh); and Crux, the mean and peak Crux you held. Every row is a [tracked-effect rule](#tracked-effects), on every fight whatever the group size. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
   - the role letter, **T**ank, **H**ealer or **D**PS (see [Roles](#what-the-numbers-are-based-on));
   - the account name, with `*` after the player who dealt the fight's first damage;
@@ -117,7 +117,7 @@ Heals that were pure overheal are left out. A death the game writes just after c
 
 ## Tracked effects
 
-Every item of the uptime line is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these:
+Every row of the buff timeline is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these:
 
 ```
 Major Courage    = 109966 on group
@@ -144,24 +144,21 @@ A rule is `Name = ability ids on <scope>`, then optionally `stacks` or `each`:
 - **Trash packs**: in a fight without a boss, a `boss` rule measures every hostile the group fought instead, and both it and an `enemies` rule say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. In a boss fight nothing changes.
 - **HyperTools**: a line that starts with `$` is a tracker exported from the [HyperTools](https://github.com/Hyperioxes/HyperTools) addon, pasted as is. Its name, ability ids and target become a rule; `stacks` or `on boss` after the string override it.
 
-Delete the lines you do not want and rename the rest as you like (`MCourage` if you prefer the short form). The box tells you how many rules it holds and which lines it cannot read. **Examples…** opens a list of example rules, each with what it tells you and its line, the uptime line's own items first: tick the ones you want and **Add to rules** puts them under yours, or **Copy** puts the ticked lines on the clipboard to share. A rule you already have starts unticked.
+Delete the lines you do not want and rename the rest as you like (`MCourage` if you prefer the short form). The box tells you how many rules it holds and which lines it cannot read. **Examples…** opens a list of example rules, each with what it tells you and its line, the default rules first: tick the ones you want and **Add to rules** puts them under yours, or **Copy** puts the ticked lines on the clipboard to share. A rule you already have starts unticked.
 
 ![The example rules picker: a checkbox per rule with what it tells you and its line](screencaps/examples-dialog.png)
 
 Saving restarts monitoring, so new rules apply to the session's fights at once.
 
-## The buff timeline (experimental)
+## The buff timeline
 
-Settings → Tracked effects → **Show these as a per-fight timeline strip** (off by default) adds a compact strip above the fight in place of the text uptime line.
+A compact strip above each fight shows every tracked effect across the fight's length (see the [main window picture](#the-main-window)).
 
-![The main window with the buff timeline strip](screencaps/main-window-buff-timeline.png)
-
-- **Rows**: the strip's built-in rows, Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability and Taunt, then one row for each of your [tracked-effect rules](#tracked-effects) (a rule with the same name as a built-in row does not get a second one). Major Berserk and Major Vulnerability appear only here, never on the text line. A row for an effect that never occurred is left out, and the strip disappears when there is nothing to show.
+- **Rows**: the strip's built-in rows, Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability and Taunt, then one row for each of your [tracked-effect rules](#tracked-effects) (a rule with the same name as a built-in row does not get a second one). Major Berserk and Major Vulnerability are built-in rows only; they are not in the copied text line. A row for an effect that never occurred is left out, and the strip disappears when there is nothing to show.
+- **Buffs above, debuffs below**: rows whose effect is on your side (`group`, `self`, `pets`) come first, then the rows on the enemy (`boss`, `enemies`, `mobs`), with a thin line between the two. Each side keeps the order its rows come in: built-in rows first, then your rules in the order you wrote them.
 - **Each row** is filled where the effect was up, with its uptime in the label and time ticks underneath. Beside the label a word says whose effect it is: `group`, `boss` for Major Vulnerability and the taunt, and each rule's scope (`self`, `pets`, `enemies`, or `mobs` for a boss rule measured on the pack of a fight without a boss). A stacking rule's bar rises and falls with the count. A group buff that reached only one or two people is dotted rather than solid.
 - **Hover** a segment for who cast it and who received it at that moment. Hover a label for its full text when it is cut short.
 - **Click** a row, label or bar, for a summary of the whole fight: who applied the effect (each caster's uptime, how much of it no other caster covered, and how many spans), who had it (each receiver's uptime, and for a stacking rule its peak and the time at the peak), and, when there are only a few of each, a grid of caster against receiver. A click elsewhere or Esc closes it.
-
-Being experimental, the strip may change or be removed.
 
 ## Reviewing and copying fights
 
@@ -169,7 +166,7 @@ Being experimental, the strip may change or be removed.
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
-**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the uptime line, each player with their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
+**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
 
 **About** shows the version, the project link and the credits.
 
@@ -184,7 +181,7 @@ Open **Settings…** from the toolbar.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and offer to install it. See [below](#automatic-updates).
-- **Tracked effects**: the uptime line's rules, and the checkbox for the timeline strip. See [Tracked effects](#tracked-effects).
+- **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 
 Saving restarts monitoring: the history clears and the current session is replayed with the new settings. Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 

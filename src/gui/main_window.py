@@ -33,7 +33,7 @@ from gui.fight_render import (
 )
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
-from gui.timeline_strip import TimelineStrip
+from gui.timeline_strip import TimelineStrip, strip_timeline
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -612,8 +612,7 @@ class MainWindow(QMainWindow):
         self._follow_live = (self._review_fights is None
                              and row == len(fights) - 1)
         entry = fights[row]
-        self.timeline_strip.set_timeline(getattr(entry, 'buff_timeline', None),
-                                         getattr(entry, 'tracked', None))
+        self.timeline_strip.set_timeline(strip_timeline(entry), getattr(entry, 'tracked', None))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each

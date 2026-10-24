@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offscreen tests for the experimental TimelineStrip widget."""
+"""Offscreen tests for the TimelineStrip widget."""
 
 import os
 import unittest
@@ -212,28 +212,48 @@ class TestTimelineStrip(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
-class TestSettingsToggle(unittest.TestCase):
-    """Task 3.1: experimental checkbox round-trips through AppConfig."""
+class TestStripIsAlwaysOn(unittest.TestCase):
+    """Issue #25: the strip is the only view of the rules, with no switch."""
 
-    def test_round_trip(self):
+    def test_the_old_switch_is_dropped_from_a_config_either_way(self):
+        import json
         import tempfile
         from pathlib import Path
         _ensure_app()
         from app_config import AppConfig
+        from app_startup import build_analyzer
         from gui.settings_dialog import SettingsDialog
-        with tempfile.TemporaryDirectory() as td:
-            config = AppConfig(path=Path(td) / 'config.json')
-            self.assertFalse(config.get('experimental.buff_timeline'))
+        for old in (False, True):
+            with tempfile.TemporaryDirectory() as td:
+                path = Path(td) / 'config.json'
+                path.write_text(json.dumps({"experimental": {"buff_timeline": old}}), encoding="utf-8")
+                config = AppConfig(path=path)
+                self.assertIsNone(config.get('experimental.buff_timeline'))
+                self.assertTrue(build_analyzer(config, []).track_buff_timeline)
+                dialog = SettingsDialog(config)
+                self.assertFalse(hasattr(dialog, 'buff_timeline'))  # no checkbox
+                dialog.apply_to_config()
+                config.save()
+                self.assertNotIn('experimental', json.loads(path.read_text(encoding="utf-8")))
+                dialog.deleteLater()
 
-            dialog = SettingsDialog(config)
-            self.assertFalse(dialog.buff_timeline.isChecked())  # default off
-            dialog.buff_timeline.setChecked(True)
-            dialog.apply_to_config()
-            config.save()
-
-            reloaded = AppConfig(path=config.path)
-            self.assertTrue(reloaded.get('experimental.buff_timeline'))
-            dialog.deleteLater()
+    def test_a_fight_without_a_recorded_timeline_still_draws_its_rules(self):
+        from fight_history import FightHistoryEntry
+        from gui.timeline_strip import TimelineStrip, strip_timeline
+        entry = FightHistoryEntry()
+        entry.duration_s = 60.0
+        entry.tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:1.0/1",
+                          "uptime_pct": 50.0, "max_stacks": 1,
+                          "intervals": [{"start_ms": 0, "end_ms": 30_000, "stacks": 1, "target": "@me"}]}]
+        self.assertEqual(strip_timeline(entry), {"duration_ms": 60_000, "effects": {}})
+        recorded = {"duration_ms": 60_000, "effects": {"Major Force": []}}
+        entry.buff_timeline = recorded
+        self.assertIs(strip_timeline(entry), recorded)
+        entry.buff_timeline = None
+        strip = TimelineStrip()
+        strip.set_timeline(strip_timeline(entry), entry.tracked)
+        self.assertEqual(strip._rows, ["Crux"])
+        strip.deleteLater()
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -251,25 +271,68 @@ class TestTrackedRows(unittest.TestCase):
 
     def test_tracked_effects_are_rows_after_the_built_in_ones(self):
         tracked = [
-            {"name": "Crux", "kind": "stacks", "text": "Crux:2.0/3", "uptime_pct": 75.0,
-             "max_stacks": 3, "intervals": [
+            {"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
+             "uptime_pct": 75.0, "max_stacks": 3, "intervals": [
                  {"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me"},
                  {"start_ms": 20_000, "end_ms": 40_000, "stacks": 3, "target": "@me"}]},
-            {"name": "Never", "kind": "uptime", "text": "Never:0%", "uptime_pct": 0.0,
+            {"name": "Never", "kind": "uptime", "scope": "group", "text": "Never:0%", "uptime_pct": 0.0,
              "max_stacks": 0, "intervals": []},
-            {"name": "OB", "kind": "uptime", "text": "OB:17%", "uptime_pct": 16.7,
+            {"name": "OB", "kind": "uptime", "scope": "boss", "text": "OB:17%", "uptime_pct": 16.7,
              "max_stacks": 0, "intervals": [
                  {"start_ms": 30_000, "end_ms": 40_000, "stacks": 1, "target": "Test Boss"}]},
         ]
         self.strip.set_timeline(_sample_timeline(), tracked)
-        # A rule that never occurred has no row, as for a built-in effect
-        self.assertEqual(self.strip._rows, ["Major Force", "Major Vulnerability", "Crux", "OB"])
+        # A rule that never occurred has no row, as for a built-in effect;
+        # the rules follow the built-in rows on their side
+        self.assertEqual(self.strip._rows, ["Major Force", "Crux", "Major Vulnerability", "OB"])
         self.assertEqual(self.strip._row_info["Crux"]["label"], "Crux:2.0/3")
         self.assertEqual(self.strip._row_info["OB"]["uptime_pct"], 17)
         # Hover on a tracked row names the unit and the stacks
-        found = self.strip._intervals_at(self.strip._row_rect(2).center())
+        found = self.strip._intervals_at(self.strip._row_rect(self.strip._rows.index("Crux")).center())
         self.assertEqual(found[0], "Crux")
         self.assertEqual([iv["stacks"] for iv in found[2]], [3])
+
+    def test_buffs_above_debuffs_with_a_divider_between(self):
+        """Issue #26: our side's effects first, the enemy's after, each in
+        the order it came in, a divider only when both sides have rows."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from gui.timeline_strip import DIVIDER_GAP, SummaryPopup
+
+        def rule(name, scope, units=None):
+            item = {"name": name, "kind": "uptime", "scope": scope, "text": f"{name}:10%",
+                    "uptime_pct": 10.0, "max_stacks": 0,
+                    "intervals": [{"start_ms": 0, "end_ms": 6_000, "stacks": 1, "target": "x"}]}
+            if units:
+                item["units"] = units
+            return item
+
+        timeline = _sample_timeline()
+        timeline["effects"]["Taunt"] = [{"start_ms": 0, "end_ms": 1_000, "source": "@t", "target": "B"}]
+        tracked = [rule("Echoes", "group"), rule("OB", "boss"), rule("Crux", "self"),
+                   rule("Alkosh", "boss", units="mobs"), rule("Pets", "pets"), rule("Hostile", "enemies")]
+        self.strip.set_timeline(timeline, tracked)
+        self.assertEqual(self.strip._rows, ["Major Force", "Echoes", "Crux", "Pets",
+                                            "Major Vulnerability", "Taunt", "OB", "Alkosh", "Hostile"])
+        self.assertEqual(self.strip._divider, 4)
+        # The first debuff row sits a divider's height lower than a row would
+        above, below = self.strip._row_rect(3), self.strip._row_rect(4)
+        self.assertEqual(below.top() - above.top(), above.height() + 2 + DIVIDER_GAP)
+        self.assertTrue(above.bottom() < self.strip._divider_y() < below.top())
+        # A click on the first debuff row opens that row's summary
+        self.strip.resize(600, self.strip.sizeHint().height())
+        self.strip.show()
+        QTest.mouseClick(self.strip, Qt.LeftButton, pos=below.center().toPoint())
+        [popup] = self.strip.findChildren(SummaryPopup)
+        self.assertIn("Major Vulnerability", popup.label.text())
+        popup.close()
+        self.strip.grab()  # paints the divider without error
+        # One side alone: no divider, no gap
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, [rule("OB", "boss"), rule("Alkosh", "boss")])
+        self.assertIsNone(self.strip._divider)
+        self.assertIsNone(self.strip._divider_y())
+        self.assertEqual(self.strip._row_rect(1).top() - self.strip._row_rect(0).top(),
+                         self.strip._row_rect(0).height() + 2)
 
     def test_a_stacking_rule_is_drawn_by_height(self):
         from gui.timeline_strip import TRACKED_COLORS
@@ -280,7 +343,7 @@ class TestTrackedRows(unittest.TestCase):
         self.strip.set_timeline(_sample_timeline(), tracked)
         self.strip.show()
         image = self.strip.grab().toImage()
-        rect = self.strip._row_rect(2)
+        rect = self.strip._row_rect(self.strip._rows.index("Crux"))
         color = TRACKED_COLORS[0].rgb()
 
         def filled_height(ms):

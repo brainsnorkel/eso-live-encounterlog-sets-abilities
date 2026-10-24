@@ -658,12 +658,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
     ]
-    # Text uptime line only when there is no timeline strip to show it
-    # (the graph carries the uptimes when the experiment is on)
-    has_timeline = bool(getattr(entry, "buff_timeline", None)
-                        and entry.buff_timeline.get("effects"))
-    if entry.buff_summary and not has_timeline:
-        parts.append(f"<p style='margin:2px 0'>{e(_join(entry.buff_summary))}</p>")
+    # No text uptime line: the timeline strip above the pane shows every
+    # tracked rule, its label the rule's text (issue #25). The plain copy
+    # keeps the line, since text is all a paste can carry
 
     parts.append("<table cellpadding='3' cellspacing='0' width='100%'>")
     first_dealer = str(entry.first_damage_dealer or "")

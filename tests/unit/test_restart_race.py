@@ -61,7 +61,7 @@ class TestSaveDuringAReplay(unittest.TestCase):
         def accept():
             dialog = next((w for w in self.app.topLevelWidgets()
                            if isinstance(w, QDialog) and w.isVisible()
-                           and hasattr(w, "buff_timeline")), None)
+                           and hasattr(w, "rules_edit")), None)
             if dialog is None:
                 QTimer.singleShot(10, accept)
             else:

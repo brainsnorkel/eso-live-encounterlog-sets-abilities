@@ -2,7 +2,7 @@
 
 Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app for Windows, with an experimental Linux build. ESO Log Tail watches your `Encounter.log` and, the moment combat ends, shows who was in the group, how each player was built, and how they performed.
 
-![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window-buff-timeline.png)
+![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window.png)
 
 The **[user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md)** walks through every screen and setting. The **[design notes](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/design.md)** explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
 
@@ -13,9 +13,9 @@ The **[user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-ab
 - **Builds at a glance**: both ability bars as the game's own icons, scribed skills with their scripts (`Chilling Contingency (Lingering Torment / Intellect and Endurance)`), and every equipped gear set with piece counts.
 - **Full build per player**: click a name for gear slot by slot (set, type, quality, trait, enchant, slotted poison), both bars, mundus stone, food and Class Mastery passives.
 - **Death recaps**: a ☠ on the row of a player who died opens the last 5 seconds before each death: every hit and heal with its source, the health left after it, and whether it was blocked, dodged or absorbed by a shield.
-- **Tracked effects you define**: the uptime line under each fight is a list of plain-text rules, `Off-Balance = 45902 62988 on boss`. It starts with the group buffs, the taunt on the boss and six boss debuffs; edit them, add any effect the log carries, share the rules as text, paste HyperTools trackers, or pick from the Examples list. In a trash pack, boss rules measure the pack.
+- **Buff and debuff timeline**: a strip across each fight, buffs above and debuffs below, one row per effect with its uptime. Hover for who cast what on whom; click a row for each caster's and receiver's share of the fight.
+- **Tracked effects you define**: the strip's rows are plain-text rules, `Off-Balance = 45902 62988 on boss`. They start with the group buffs, the taunt on the boss and six boss debuffs; edit them, add any effect the log carries, share the rules as text, paste HyperTools trackers, or pick from the Examples list. In a trash pack, boss rules measure the pack.
 - **Taunts**: how long each boss had a taunt on it, and the abilities each player taunted with ringed on their bars.
-- **Buff timeline (experimental)**: the same rules as a strip across the fight. Hover for who cast what on whom; click a row for each caster's and receiver's share of the fight.
 - **ESO-Hub links**: hover an ability icon for its name, click it for the skill's ESO-Hub page; set names open their set pages. Nothing is sent to ESO-Hub until you click.
 - **Search within a fight** (Ctrl+F), including ability icons by name; **copy any fight** as plain text for Discord; **review any log file** without interrupting live monitoring.
 - **Log housekeeping**: per-encounter split files, automatic archiving of the ever-growing log, and a freshness indicator so you can tell at a glance that logging is on.
