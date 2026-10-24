@@ -83,7 +83,7 @@ class TestTimelineStrip(unittest.TestCase):
             {"start_ms": 0, "end_ms": 45_000, "source": "@tank", "target": "Test Boss"}]
         self.strip.set_timeline(timeline)
         self.assertEqual(self.strip._rows[-1], "Taunt")
-        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "dotted": False, "scope": "boss"})
+        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "sparse": False, "scope": "boss"})
 
     def test_uptime_percentages(self):
         from gui.timeline_strip import uptime_pct
@@ -98,20 +98,83 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertEqual(uptime_pct(
             [{"start_ms": 0, "end_ms": 60_000}], 60_000), 100)
 
-    def test_dotted_for_sparse_receivers(self):
+    def test_sparse_receivers_are_marked(self):
         timeline = _sample_timeline()
-        # Force reaches 2 distinct receivers -> dotted
+        # Force reaches 2 distinct receivers -> sparse, drawn hatched
         self.strip.set_timeline(timeline)
-        self.assertTrue(self.strip._row_info["Major Force"]["dotted"])
-        # Vulnerability is single-target by nature -> never dotted
+        self.assertTrue(self.strip._row_info["Major Force"]["sparse"])
+        # Vulnerability is single-target by nature -> never sparse
         self.assertFalse(
-            self.strip._row_info["Major Vulnerability"]["dotted"])
+            self.strip._row_info["Major Vulnerability"]["sparse"])
         # A buff reaching 3+ receivers renders solid
         timeline["effects"]["Major Courage"] = [
             {"start_ms": 0, "end_ms": 10_000, "source": "@h", "target": f"@p{i}"}
             for i in range(4)]
         self.strip.set_timeline(timeline)
-        self.assertFalse(self.strip._row_info["Major Courage"]["dotted"])
+        self.assertFalse(self.strip._row_info["Major Courage"]["sparse"])
+
+    def test_merged_spans(self):
+        from gui.timeline_strip import merged_spans
+        self.assertEqual(merged_spans([]), [])
+        self.assertEqual(merged_spans([{"start_ms": 20, "end_ms": 30}, {"start_ms": 0, "end_ms": 10}]),
+                         [(0, 10), (20, 30)])
+        # Abutting and overlapping spans are joined
+        self.assertEqual(merged_spans([{"start_ms": 0, "end_ms": 10}, {"start_ms": 10, "end_ms": 20},
+                                       {"start_ms": 15, "end_ms": 30}, {"start_ms": 40, "end_ms": 50}]),
+                         [(0, 30), (40, 50)])
+
+    def test_a_sparse_row_is_hatched_without_gaps(self):
+        """Issue #45: a buff that reached one or two people is an unbroken,
+        cross-hatched span, not the dotted line that read like a buff
+        flickering at half uptime; a buff on the whole group is solid."""
+        from PySide6.QtGui import QImage
+
+        from gui.timeline_strip import EFFECT_COLORS, ROW_HEIGHT
+        timeline = _sample_timeline()
+        timeline["effects"]["Major Courage"] = [
+            {"start_ms": 10_000, "end_ms": 30_000, "source": "@h", "target": f"@p{i}"}
+            for i in range(4)]
+        self.strip.set_timeline(timeline)
+        self.strip.resize(600, self.strip.sizeHint().height())
+        self.strip.show()
+        image = self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+
+        def coloured(effect, x):
+            rect = self.strip._row_rect(self.strip._rows.index(effect))
+            rgb = EFFECT_COLORS[effect].rgb()
+            return sum(1 for y in range(int(rect.top()), int(rect.top()) + ROW_HEIGHT)
+                       if image.pixel(x, y) == rgb)
+
+        # Force (two receivers, up 10-30s as a union): every column of the
+        # span carries the colour and none is solid; Courage (four
+        # receivers, the same span) is solid; outside the span, nothing
+        x_from = int(self.strip._x_for_ms(10_000)) + 1
+        x_to = int(self.strip._x_for_ms(30_000)) - 1
+        force = [coloured("Major Force", x) for x in range(x_from, x_to + 1)]
+        self.assertTrue(all(1 <= n < ROW_HEIGHT for n in force), force)
+        self.assertTrue(all(coloured("Major Courage", x) == ROW_HEIGHT
+                            for x in range(x_from, x_to + 1)))
+        self.assertEqual(coloured("Major Force", int(self.strip._x_for_ms(40_000))), 0)
+
+    def test_abutting_and_overlapping_sparse_spans_hatch_as_one(self):
+        """The union of a sparse row's intervals is painted, so two spans
+        that meet or overlap look exactly like the one span they cover: no
+        seam, and no darker patch where the translucent base would double."""
+        from PySide6.QtGui import QImage
+
+        def rendered(intervals):
+            self.strip.set_timeline({"duration_ms": 60_000, "effects": {"Major Force": intervals}})
+            self.strip.resize(600, self.strip.sizeHint().height())
+            self.strip.show()
+            return self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+
+        one = rendered([{"start_ms": 10_000, "end_ms": 30_000, "source": "@a", "target": "@r1"}])
+        two = rendered([{"start_ms": 10_000, "end_ms": 20_000, "source": "@a", "target": "@r1"},
+                        {"start_ms": 20_000, "end_ms": 30_000, "source": "@a", "target": "@r2"}])
+        lapped = rendered([{"start_ms": 10_000, "end_ms": 25_000, "source": "@a", "target": "@r1"},
+                           {"start_ms": 15_000, "end_ms": 30_000, "source": "@b", "target": "@r2"}])
+        self.assertEqual(two, one)
+        self.assertEqual(lapped, one)
 
     def test_paint_smoke(self):
         from PySide6.QtGui import QPixmap
@@ -194,21 +257,21 @@ class TestTimelineStrip(unittest.TestCase):
         QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.assertEqual(self.strip.findChildren(SummaryPopup), [])
 
-    def test_summary_text_for_a_dotted_row_and_a_stacking_rule(self):
+    def test_summary_text_for_a_sparse_row_and_a_stacking_rule(self):
         tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
                     "uptime_pct": 66.7, "max_stacks": 3, "intervals": [
                         {"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me", "source": "@me"},
                         {"start_ms": 20_000, "end_ms": 40_000, "stacks": 3, "target": "@me"}]}]
         self.strip.set_timeline(_sample_timeline(), tracked)
         force = self.strip.summary_html("Major Force")
-        self.assertIn("Dotted: reached only 2 receivers", force)
+        self.assertIn("Hatched: reached only 2 receivers", force)
         self.assertIn("Up 33%", force)
         # Two casters on two receivers: the grid is shown
         self.assertIn("On \\ by", force)
         crux = self.strip.summary_html("Crux")
         self.assertIn("×3", crux)
         self.assertIn("unknown source", crux)  # a span saved without a caster
-        self.assertNotIn("Dotted", crux)
+        self.assertNotIn("Hatched", crux)
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
