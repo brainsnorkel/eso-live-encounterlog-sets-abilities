@@ -725,6 +725,57 @@ def effective_crit(crit_hist: list[list], static: float, cap: int) -> dict:
             "over_pct": 100.0 * over / total, "damage": int(total)}
 
 
+def player_totals(player_pc: dict | None, fight_pc: dict | None,
+                  options: dict | None) -> dict | None:
+    """A player's figures with the Settings applied, for any reader: the
+    assumed Champion Point rows, the static sums per bar with them added,
+    the caps, Force of Nature's per-effect value, and the effective figures
+    over the player's damage ('pen' and 'crit', see effective_pen and
+    effective_crit, computed on the front bar's static part). None when the
+    entry carries no figures at all (one built before them)."""
+    data = player_pc or {}
+    group = fight_pc or {}
+    if not data and not group:
+        return None
+    options = dict(options or {})
+    instanced = bool(group.get("instanced"))
+    cap_setting = options.get("cap", "auto")
+    cap = pen_cap(instanced, None if cap_setting in (None, "", "auto") else cap_setting)
+    crit_cap = int(data.get("crit_cap") or CRIT_CAP)
+    assumed = assumed_rows(options, instanced)
+    static_pen = [float(v) for v in (data.get("static_pen") or [0, 0])]
+    static_crit = [float(v) for v in (data.get("static_crit") or [0, 0])]
+    for row in assumed:
+        for bar in (FRONT, BACK):
+            static_pen[bar] += (row.get("pen") or [0, 0])[bar]
+            static_crit[bar] += (row.get("crit") or [0, 0])[bar]
+    per_status = (float(options.get("force_of_nature_per_effect") or FORCE_OF_NATURE_PER_EFFECT)
+                  if options.get("force_of_nature") else 0.0)
+    pen = effective_pen(data.get("pen_hist") or [], static_pen[FRONT], cap, per_status)
+    crit = effective_crit(data.get("crit_hist") or [], CRIT_BASE + static_crit[FRONT], crit_cap)
+    return {"assumed": assumed, "static_pen": static_pen, "static_crit": static_crit,
+            "cap": cap, "crit_cap": crit_cap, "per_status": per_status, "instanced": instanced,
+            "pen": pen, "crit": crit}
+
+
+def cap_shares(player_pc: dict | None, fight_pc: dict | None, options: dict | None) -> dict | None:
+    """The figures a player's row shows: how much of each cap their effective
+    penetration and critical damage reached over this fight's damage, as
+    whole percentages ('pen_pct', 'crit_pct', never above 100 since each
+    second is capped), with the figures behind them ('pen', 'pen_cap',
+    'pen_over_pct', 'crit', 'crit_cap', 'crit_over_pct'). None for a player
+    with no damage to weigh, or an entry without the figures."""
+    totals = player_totals(player_pc, fight_pc, options)
+    if totals is None or not totals["pen"].get("damage"):
+        return None
+    pen, crit = totals["pen"], totals["crit"]
+    return {"pen_pct": round(100.0 * pen["effective"] / totals["cap"]) if totals["cap"] else 0,
+            "crit_pct": round(100.0 * crit["effective"] / totals["crit_cap"]),
+            "pen": pen["effective"], "pen_cap": totals["cap"], "pen_over_pct": pen["over_pct"],
+            "crit": crit["effective"], "crit_cap": totals["crit_cap"],
+            "crit_over_pct": crit["over_pct"]}
+
+
 def assumed_rows(options: dict | None, instanced: bool) -> list[dict]:
     """The Champion Point rows the Settings ask for, as source rows marked
     assumed; Force of Nature is handled by the reader from the histogram."""

@@ -23,7 +23,7 @@ from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
-from gui.build_render import player_for
+from gui.build_render import PEN_CRIT_ANCHOR, player_for
 from gui.damage_dialog import DamageDialog
 from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
@@ -31,7 +31,8 @@ from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, muted_color, render_html, render_plain_text, summary_line,
+    issues_tooltips, link_color, muted_color, pen_crit_tooltips, render_html, render_plain_text,
+    summary_line,
 )
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
         self.fight_view.damage_requested.connect(self._show_damage)
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
+        self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -620,10 +622,14 @@ class MainWindow(QMainWindow):
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
         # player's name show in both views
+        # The Settings' assumed Champion Point rows and cap, read at render
+        # time (pen_crit): the row tokens and their hover text follow them
+        pen_crit_options = self.config.get("pen_crit") or {}
         tooltips = death_tooltips(entry)
         tooltips.update(build_tooltips(entry))
         tooltips.update(damage_tooltips(entry))
         tooltips.update(issues_tooltips(entry))
+        tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,
@@ -642,8 +648,14 @@ class MainWindow(QMainWindow):
                                             set_links=esohub_set_url,
                                             base_pt=self.fight_view.font().pointSizeF(),
                                             script_links=esohub_script_url,
-                                            text_color=text_color))
+                                            text_color=text_color,
+                                            pen_crit_options=pen_crit_options))
         self._apply_search()
+
+    def _show_pen_crit(self, unit_id):
+        """A player's pen/crit token was clicked: their build window, open
+        at its Penetration and Critical damage sections."""
+        self._show_build(unit_id, scroll_to=PEN_CRIT_ANCHOR)
 
     def _show_death_recap(self, unit_id):
         """A player's death-recap button was clicked in the fight on screen."""
@@ -658,8 +670,9 @@ class MainWindow(QMainWindow):
         self._death_dialog.raise_()
         self._death_dialog.activateWindow()
 
-    def _show_build(self, unit_id):
-        """A player's name was clicked in the fight on screen."""
+    def _show_build(self, unit_id, scroll_to=None):
+        """A player's name was clicked in the fight on screen (*scroll_to*:
+        the anchor the window opens at, for the pen/crit token)."""
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if row < 0 or row >= len(fights):
@@ -669,7 +682,8 @@ class MainWindow(QMainWindow):
         # The Settings' assumed Champion Point rows and cap, read at render
         # time so a change applies to the next build window without a restart
         self._build_dialog.show_build(fights[row], unit_id, self._dark,
-                                      pen_crit_options=self.config.get("pen_crit") or {})
+                                      pen_crit_options=self.config.get("pen_crit") or {},
+                                      scroll_to=scroll_to)
         self._build_dialog.show()
         self._build_dialog.raise_()
         self._build_dialog.activateWindow()
@@ -789,7 +803,8 @@ class MainWindow(QMainWindow):
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if 0 <= row < len(fights):
-            QGuiApplication.clipboard().setText(render_plain_text(fights[row]))
+            QGuiApplication.clipboard().setText(render_plain_text(
+                fights[row], pen_crit_options=self.config.get("pen_crit") or {}))
             self.statusBar().showMessage("Fight summary copied to clipboard", 3000)
 
     # ---- actions ----

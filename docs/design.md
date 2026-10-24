@@ -654,7 +654,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:335](../src/gui/build_render.py#L335)*
+*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1347,7 +1347,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:476](../src/gui/main_window.py#L476)*
+*[src/gui/main_window.py:478](../src/gui/main_window.py#L478)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1357,7 +1357,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:822](../src/gui/main_window.py#L822)*
+*[src/gui/main_window.py:837](../src/gui/main_window.py#L837)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -1376,7 +1376,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:249](../src/gui/fight_view.py#L249)*
+*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1391,7 +1391,7 @@ runs only while the page holds a ringed icon and the view is shown.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:168](../src/gui/fight_view.py#L168)*
+*[src/gui/fight_view.py:170](../src/gui/fight_view.py#L170)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

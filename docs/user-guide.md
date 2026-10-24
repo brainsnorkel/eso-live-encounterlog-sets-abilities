@@ -58,6 +58,7 @@ With **Detail view** on (the default; Tab toggles it), each row shows the player
 - A werewolf gets a third line, **Werewolf**: the bar they fought with in werewolf form and how much of the fight they spent transformed, `in form 100%`. The game never writes that bar into its log, so the app rebuilds it from the werewolf skills the player cast, in the skill line's order; a skill they slotted but never cast cannot show. At full Fury the game lists Rampage in place of the transformation ultimate for the player writing the log, and the bar shows the morph, Werewolf Berserker or Pack Leader, instead. Hovering either kind of icon says so.
 - The line under the bars lists every equipped set with its piece count, `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`; each name opens the set's ESO-Hub page.
 - A `ⓘ` after a player's class means the app found a [possible build issue](#possible-build-issues) in the build they pulled with. Hover it for the list; click it for each finding with the rule behind it. A player without one has no `ⓘ`, in either view.
+- After the shares, `pen 99% · crit 94%`: the estimated share of the penetration cap and of the critical damage cap the player reached over this fight, from their build and the fight's effects, with the Champion Point rows Settings assumes (see [Penetration and critical damage](#penetration-and-critical-damage)). Hover it for the figures behind the percentages; click it for every source. A player who dealt no damage has no token. Shown in both views.
 
 With Detail view off, the rows are one line each, for a quick ranking:
 
@@ -208,7 +209,7 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
-**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
+**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares and cap shares (`— 61.8k / 63.0k (12.4% / 12.1%) · pen 99% · crit 95%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
 
 **About** shows the version, the project link and the credits.
 

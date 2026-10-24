@@ -7,6 +7,7 @@ player's build reuses the same window. It keeps the fight it was opened for:
 a new fight arriving, or another one being selected, does not change it.
 """
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout
 
@@ -33,10 +34,12 @@ class BuildDialog(QDialog):
         buttons.rejected.connect(self.close)
         layout.addWidget(buttons)
 
-    def show_build(self, entry, unit_id: str, dark: bool, pen_crit_options=None) -> None:
+    def show_build(self, entry, unit_id: str, dark: bool, pen_crit_options=None,
+                   scroll_to: str = None) -> None:
         """Show the build of the player *unit_id* in the fight *entry*.
         *pen_crit_options* is the config's pen_crit section (the assumed
-        Champion Point rows and the cap the sections use)."""
+        Champion Point rows and the cap the sections use); *scroll_to* names
+        an anchor in the page to open at (build_render.PEN_CRIT_ANCHOR)."""
         self._shown = (entry, unit_id, pen_crit_options)
         self.setWindowTitle(build_title(entry, unit_id))
         # The window's anchors use the fight view's targets, so its hover
@@ -51,6 +54,10 @@ class BuildDialog(QDialog):
             base_pt=self.view.font().pointSizeF(),
             text_color=self.view.palette().color(QPalette.Text).name(),
             pen_crit_options=pen_crit_options))
+        if scroll_to:
+            # Now, and once the view has laid the document out
+            self.view.scrollToAnchor(scroll_to)
+            QTimer.singleShot(0, lambda: self.view.scrollToAnchor(scroll_to))
 
     def refresh(self, dark: bool) -> None:
         """Re-render for a theme switch (the HTML embeds theme colors)."""

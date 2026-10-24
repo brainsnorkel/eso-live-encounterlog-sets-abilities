@@ -32,10 +32,7 @@ from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     issues_html, werewolf_bar_html,
 )
-from pen_crit import (
-    CRIT_BASE, CRIT_CAP, FORCE_OF_NATURE_PER_EFFECT, assumed_rows, effective_crit, effective_pen,
-    pen_cap,
-)
+from pen_crit import CRIT_BASE, CRIT_CAP, player_totals
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
     WEAPON_SLOTS, WEIGHT_LABELS, display_quality, enchant_label, level_label,
@@ -343,29 +340,17 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> s
     group = getattr(entry, "pen_crit", None) or {}
     if not data and not group:
         return ""
-    options = dict(options or {})
     muted, rule = theme["muted"], _RULES[bool(dark)]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
     heading = f"padding-top:7px;color:{muted};font-weight:bold"
     under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
-    instanced = bool(group.get("instanced"))
-    cap_setting = options.get("cap", "auto")
-    cap = pen_cap(instanced, None if cap_setting in (None, "", "auto") else cap_setting)
-    crit_cap = int(data.get("crit_cap") or CRIT_CAP)
-    rows = list(data.get("rows") or []) + assumed_rows(options, instanced)
-    static_pen = [float(v) for v in (data.get("static_pen") or [0, 0])]
-    static_crit = [float(v) for v in (data.get("static_crit") or [0, 0])]
-    for row in rows:
-        if row.get("kind") == "assumed":
-            for bar in (0, 1):
-                static_pen[bar] += (row.get("pen") or [0, 0])[bar]
-                static_crit[bar] += (row.get("crit") or [0, 0])[bar]
-    pen_hist = data.get("pen_hist") or []
-    crit_hist = data.get("crit_hist") or []
-    per_status = (float(options.get("force_of_nature_per_effect") or FORCE_OF_NATURE_PER_EFFECT)
-                  if options.get("force_of_nature") else 0.0)
-    eff_pen = effective_pen(pen_hist, static_pen[0], cap, per_status)
-    eff_crit = effective_crit(crit_hist, CRIT_BASE + static_crit[0], crit_cap)
+    # The same sums and effective figures the fight pane's row shows
+    totals = player_totals(data, group, options)
+    instanced, cap, crit_cap = totals["instanced"], totals["cap"], totals["crit_cap"]
+    rows = list(data.get("rows") or []) + totals["assumed"]
+    static_pen, static_crit = totals["static_pen"], totals["static_crit"]
+    per_status = totals["per_status"]
+    eff_pen, eff_crit = totals["pen"], totals["crit"]
     debuffs = group.get("debuffs") or []
     buffs = data.get("buffs") or []
     on = group.get("on") or ""
