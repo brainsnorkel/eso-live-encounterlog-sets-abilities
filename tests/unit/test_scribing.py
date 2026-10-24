@@ -521,7 +521,7 @@ class TestScribedSkillRendering(unittest.TestCase):
 
     def test_text_bars_get_the_scripts_line_too(self):
         html = self._html()
-        self.assertNotIn('<img', html)
+        self.assertNotIn('<img src="icon:', html)
         self.assertIn('Damage Ability, Shocking Banner', html)
         self.assertIn('>Shocking Banner</a> (', html)
 
