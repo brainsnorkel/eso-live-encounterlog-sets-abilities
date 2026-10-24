@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.12.0] - 2026-10-24
 
 ### Added
 - **Expected effects** (#13): a tracked-effect rule shows when its effect was up, or, with `expected solo | small | large | all`, at `0%` in those group sizes when it was not (one player, two to four, five or more; `expected` alone is all). A rule neither seen nor expected has no row on the strip and no item in the copied text. The defaults expect the six group buffs in a large group and the taunt in small and large groups; the boss debuffs and Crux show when they happened. Replaying 16 split logs (241 fights, every tenth log by name) through the old and new engine: a fight now shows 1.0 item solo, 4.0 in a small group and 9.7 in a trial, of which 1.5 are expected buffs reading 0%; every item left off had read 0, was not seen and was not expected, and nothing else on the line changed. A strip row that is expected but empty says so when clicked
