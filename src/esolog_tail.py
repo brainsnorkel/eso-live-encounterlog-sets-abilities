@@ -2363,10 +2363,17 @@ class ESOLogAnalyzer(ListenerMixin):
             self.build_issues.note_fight(
                 player_key, enc.start_time, duration, worn,
                 fired_proc_sets(worn, enc.proc_effects.get(player.unit_id, ())))
+            # The tank rule reads the player's damage against an equal share
+            # of the group's, and whether they healed others for more than
+            # they dealt (a healer whose largest pool is health)
+            damage_ratio = ((player_damage / enc.total_damage) * len(players_with_damage)
+                            if enc.total_damage > 0 and players_with_damage else None)
             entry.players[-1]['build_issues'] = (
                 structural_findings(player.gear, player.front_bar_slots, player.back_bar_slots,
                                     role, taunted=self.build_issues.has_taunted(player_key),
-                                    set_name_of=gear_set_db.get_set_name_by_set_id)
+                                    set_name_of=gear_set_db.get_set_name_by_set_id,
+                                    damage_ratio=damage_ratio,
+                                    out_heals=player_healing > player_damage)
                 + self.build_issues.findings(player_key, worn))
 
         # The uptime line: every item is a rule (effect_rules), measured on

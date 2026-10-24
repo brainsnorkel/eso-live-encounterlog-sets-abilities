@@ -34,7 +34,7 @@ Joining mid-raid, the app replays the logging session already in the file: the s
 
 ### Fight history
 
-The list on the left has one line per completed fight: `boss · duration · group DPS · zone · time`. `vet` marks veteran difficulty and `(d)` a fight in which a player died. A fight appears when combat ends. The newest fight is selected as it ends; select an older fight to read it (following pauses), and select the newest again to follow live fights.
+The list on the left has one line per completed fight: `boss · duration · group DPS · zone · time`. `vet` marks veteran difficulty, `☠` a fight in which a player died, and `ⓘ` a fight with a player whose build has a [possible issue](#possible-build-issues). A fight appears when combat ends. The newest fight is selected as it ends; select an older fight to read it (following pauses), and select the newest again to follow live fights.
 
 ### The fight
 
@@ -78,6 +78,7 @@ The rules:
 - **Elemental Drain slotted.** The finding states both morphs: Drain applies Major Breach and Minor Magickasteal, Elemental Susceptibility applies Major Breach and the Burning, Chilled and Concussion status effects every 7.5 seconds.
 - **Roar of Alkosh or Roaring Opportunist worn and never firing.** Alkosh's shockwave needs the wearer to activate a synergy, Roaring Opportunist's Major Slayer a fully charged heavy attack. The app counts, over the logging session, the fights of a minute or more the player wore the set in; when the set's effect never came from them in any fight of the session, the finding says how many such fights have passed. One fire anywhere in the session clears it.
 - **Pearlescent Ward, Xoryn's Masterpiece or Lucent Echoes complete on one bar only.** Their five-piece bonus is a buff for the whole group that holds only while five pieces are active, so the group loses it every time the player swaps bars. A build with no back-bar weapon, or wearing Oakensoul Ring, is not judged.
+- **A tank with no taunt or pull.** The player reads as a tank on more than the health pool: a shield, an ice staff or five heavy pieces, and under half an equal share of the group's damage in the fight. Yet neither bar holds a taunt (Puncture and its morphs, Inner Fire and its morphs, Destructive Clench on an ice staff, Runic Jolt and its morphs, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no taunt of theirs was logged this session. A restoration staff, or more healing than damage, marks a healer, who is not judged.
 
 The rules are fixed in this version; what each finding says is meant to be enough to act on, or to disagree with.
 

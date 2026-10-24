@@ -68,9 +68,9 @@ def _slot(ability_id, name='Skill', icon='ability_test'):
     return {'id': str(ability_id), 'name': name, 'icon': icon}
 
 
-def _findings(gear, front=(), back=(), role='D', taunted=False):
+def _findings(gear, front=(), back=(), role='D', taunted=False, **kw):
     return structural_findings(gear, list(front), list(back), role, taunted,
-                               weights=WEIGHTS, types=TYPES, skills=SKILLS)
+                               weights=WEIGHTS, types=TYPES, skills=SKILLS, **kw)
 
 
 def _rules(findings):
@@ -323,6 +323,89 @@ class TestGroupSetOnOneBar(unittest.TestCase):
         self.assertEqual(set(GROUP_SETS), {'648', '651', '768', '771', '769', '770'})
 
 
+class TestTankWithoutTaunt(unittest.TestCase):
+    """A tank with no taunt or pull: the role, tank gear, a small share of
+    the damage and no healer sign, and nothing on the bars that holds a
+    boss, with no taunt logged this session."""
+
+    def _tank(self, main='sword', off='shield', back='ice', weights='hmmmmmm'):
+        gear = _body(weights)
+        gear['MAIN_HAND'] = _weapon('MAIN_HAND', main, 'WEAPON_DEFENDING', 'REDUCE_ARMOR')
+        if off == 'shield':
+            gear['OFF_HAND'] = _item('OFF_HAND', 'shield', 'ARMOR_STURDY', '0', 'HEALTH')
+        elif off:
+            gear['OFF_HAND'] = _weapon('OFF_HAND', off, enchant='POISONED_WEAPON')
+        if back:
+            gear['BACKUP_MAIN'] = _weapon('BACKUP_MAIN', back, 'WEAPON_INFUSED', 'REDUCE_ARMOR')
+        return gear
+
+    def _tank_findings(self, gear, front=(), back=(), **kw):
+        kw.setdefault('role', 'T')
+        kw.setdefault('damage_ratio', 0.2)
+        return _findings(gear, front or [_slot('1', 'Heroic Slash')],
+                         back or [_slot('2', 'Class Skill')], **kw)
+
+    def test_a_shield_tank_with_nothing_to_hold_the_boss(self):
+        findings = self._tank_findings(self._tank())
+        self.assertEqual(_rules(findings), ['tank-no-taunt'])
+        self.assertEqual(findings[0]['title'], 'Tank with no taunt or pull on either bar')
+        self.assertIn('they hold a shield', findings[0]['detail'])
+        self.assertIn('20% of an equal share', findings[0]['detail'])
+        self.assertIn('no taunt of theirs was logged this session', findings[0]['detail'])
+
+    def test_any_taunt_or_pull_on_either_bar_clears_it(self):
+        gear = self._tank()
+        grimoire = 'ability_grimoire_1handed'
+        for slot in (_slot('38250', 'Pierce Armor'),            # a taunt by id
+                     _slot('x', 'Inner Rage'),                  # by name, an id the tables lack
+                     _slot('43393', 'Skill'),                   # a rank id, name unknown
+                     _slot('20492', 'Chains of Flame'),         # a pull
+                     _slot('x', 'Silver Leash'),
+                     _slot('86175', 'Frozen Gate'),
+                     _slot('x', 'Leashing Soul'),               # a scribed pull by name
+                     {'id': '222966', 'name': 'Goading Throw', 'icon': grimoire,
+                      'scripts': ['Taunt', 'Anchorite', 'Heroism']},
+                     {'id': 'y', 'name': 'Shield Throw', 'icon': grimoire,
+                      'scripts': ['Pull', 'Anchorite', 'Heroism']},
+                     {'id': 'z', 'name': 'Shield Throw', 'icon': grimoire,
+                      'script_options': [['Shield Throw', 'Physical Damage', 'a', 'b'],
+                                         ['Goading Throw', 'Taunt', 'a', 'b']]}):
+            # Either bar clears it (a weapon skill on the wrong bar may draw
+            # that rule's own finding, which is right)
+            self.assertNotIn('tank-no-taunt', _rules(self._tank_findings(gear, front=[slot])), slot)
+            self.assertNotIn('tank-no-taunt', _rules(self._tank_findings(gear, back=[slot])), slot)
+        # Destructive Clench taunts with the ice staff in hand, not otherwise
+        clench = _slot('38984', 'Destructive Clench')
+        self.assertEqual(self._tank_findings(gear, back=[clench]), [])
+        self.assertEqual(_rules(self._tank_findings(gear, front=[clench])), ['tank-no-taunt'])
+        self.assertEqual(_rules(self._tank_findings(self._tank(back='inferno'), back=[clench])),
+                         ['tank-no-taunt'])
+        self.assertEqual(build_issues.taunts_and_pulls(gear, [_slot('38250')], [_slot('20492')], TYPES),
+                         {'taunt', 'pull'})
+
+    def test_the_gates(self):
+        gear = self._tank()
+        self.assertEqual(self._tank_findings(gear, role='D'), [])
+        self.assertEqual(self._tank_findings(gear, role='H'), [])
+        self.assertEqual(self._tank_findings(gear, taunted=True), [])
+        self.assertEqual(self._tank_findings(gear, damage_ratio=0.9), [])
+        self.assertEqual(self._tank_findings(gear, damage_ratio=None), [])
+        self.assertEqual(self._tank_findings(gear, out_heals=True), [])
+        self.assertEqual(_findings(gear, [], [], role='T', damage_ratio=0.2), [])  # bars not logged
+        self.assertEqual(self._tank_findings(self._tank(back='resto')), [])  # a healer's staff
+        # No tank gear: two daggers, an inferno staff, one heavy piece
+        plain = self._tank(main='dagger', off='dagger', back='inferno')
+        self.assertEqual(self._tank_findings(plain), [])
+        self.assertEqual(build_issues.tank_gear(plain, WEIGHTS, TYPES), '')
+        # Each tank sign alone is enough
+        ice = self._tank(main='dagger', off='dagger', back='ice')
+        self.assertIn('they hold an ice staff', self._tank_findings(ice)[0]['detail'])
+        heavy = self._tank(main='dagger', off='dagger', back='inferno', weights='hhhhhmm')
+        self.assertIn('they hold 5 heavy pieces', self._tank_findings(heavy)[0]['detail'])
+        self.assertEqual(self._tank_findings(self._tank(weights='hhhhmmm', main='dagger', off='dagger',
+                                                        back='inferno')), [])
+
+
 class TestTracker(unittest.TestCase):
 
     def test_a_long_fight_without_the_proc_is_a_finding(self):
@@ -543,6 +626,36 @@ class TestEngine(unittest.TestCase):
         # The same build after a taunt in an earlier fight: a tank, whatever the pools say
         entries = _fights(_session(fight(10000, 30000, taunts=True), fight(50000, 70000, taunts=False)))
         self.assertEqual([self._players(e)['@nirn']['build_issues'] for e in entries], [[], []])
+
+    def test_a_tank_with_no_taunt_or_pull_until_they_taunt(self):
+        # A dagger and a shield (139, Webspinner's Brace), health the largest pool
+        tank = _gear([_item('HEAD', '95044'),
+                      _weapon('MAIN_HAND', '200834', 'WEAPON_DEFENDING', 'REDUCE_ARMOR', '0'),
+                      _item('OFF_HAND', '139', 'ARMOR_STURDY', '0', 'HEALTH')])
+
+        def fight(begin, end, taunts):
+            lines = [f'{begin},BEGIN_COMBAT',
+                     f'{begin + 1},PLAYER_INFO,1,[],[],{NIRN_GEAR},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,2,[],[],{tank},[12345],[12345]',
+                     _cast(begin + 900, 1, stamina=30000),
+                     _hit(begin + 1000, 1, 90000, stamina=30000),
+                     _cast(begin + 1900, 2, health=45000),
+                     _hit(begin + 2000, 2, 1000, health=45000)]
+            if taunts:
+                lines.append(_taunt(begin + 2500, 2))
+            lines.append(f'{end},END_COMBAT')
+            return lines
+
+        entries = _fights(_session(fight(10000, 40000, taunts=False)))
+        player = self._players(entries[0])['@alkosh']
+        self.assertEqual(player['role'], 'T')
+        self.assertEqual([f['rule'] for f in player['build_issues']], ['tank-no-taunt'])
+        # 1,000 of 91,000 damage between two players: 2% of an equal share
+        self.assertIn('they hold a shield, and they dealt 2% of an equal share',
+                      player['build_issues'][0]['detail'])
+        # A taunt in the first fight clears it for the session
+        entries = _fights(_session(fight(10000, 40000, taunts=True), fight(50000, 80000, taunts=False)))
+        self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in entries], [[], []])
 
     def test_the_shared_fixture_session_is_clean(self):
         for player in _fights()[0].players:

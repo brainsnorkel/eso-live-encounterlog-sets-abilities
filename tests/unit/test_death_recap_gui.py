@@ -146,24 +146,24 @@ class TestDeathButtonInFightView(DeathRecapGuiTestCase):
 
 
 class TestDeathCueInHistoryList(DeathRecapGuiTestCase):
-    """Fights in which a player died carry "(d)" after their name."""
+    """Fights in which a player died carry "☠" after their name."""
 
     def test_cue_follows_the_boss_name_only_when_someone_died(self):
         from gui.fight_render import summary_line
         died, clean = _entry_with_deaths(), _entry_no_deaths()
-        self.assertTrue(summary_line(died, death_cue=True).startswith('Sharpfang (d) · '))
-        self.assertEqual(summary_line(died, death_cue=True).count('(d)'), 1)
-        self.assertNotIn('(d)', summary_line(clean, death_cue=True))
+        self.assertTrue(summary_line(died, death_cue=True).startswith('Sharpfang ☠ · '))
+        self.assertEqual(summary_line(died, death_cue=True).count('☠'), 1)
+        self.assertNotIn('☠', summary_line(clean, death_cue=True))
         # A fight with no boss or mob name: the cue follows the duration
         died.boss_name = ''
         died.duration_s = 39.0
-        self.assertTrue(summary_line(died, death_cue=True).startswith('39s (d) · '))
+        self.assertTrue(summary_line(died, death_cue=True).startswith('39s ☠ · '))
 
     def test_clipboard_copy_carries_no_cue(self):
         from gui.fight_render import render_plain_text, summary_line
         died = _entry_with_deaths()
-        self.assertNotIn('(d)', summary_line(died))
-        self.assertNotIn('(d)', render_plain_text(died))
+        self.assertNotIn('☠', summary_line(died))
+        self.assertNotIn('☠', render_plain_text(died))
 
     def test_history_list_marks_fights_with_deaths(self):
         from app_config import AppConfig
@@ -177,13 +177,13 @@ class TestDeathCueInHistoryList(DeathRecapGuiTestCase):
             win._on_fight_completed(_entry_no_deaths())
             win._on_fight_completed(_entry_with_deaths())
             texts = [win.history_list.item(i).text() for i in range(2)]
-            self.assertNotIn('(d)', texts[0])
-            self.assertTrue(texts[1].startswith('Sharpfang (d) · '))
+            self.assertNotIn('☠', texts[0])
+            self.assertTrue(texts[1].startswith('Sharpfang ☠ · '))
             # Review mode builds its list the same way
             win._on_review_loaded('old.log', [_entry_with_deaths(), _entry_no_deaths()])
             texts = [win.history_list.item(i).text() for i in range(2)]
-            self.assertIn('(d)', texts[0])
-            self.assertNotIn('(d)', texts[1])
+            self.assertIn('☠', texts[0])
+            self.assertNotIn('☠', texts[1])
         finally:
             win.close()
 
@@ -361,14 +361,14 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win.history_list.setCurrentRow(0)
             self.assertNotIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 0', win.fight_view.toPlainText())
-            self.assertNotIn('(d)', win.history_list.item(0).text())
+            self.assertNotIn('☠', win.history_list.item(0).text())
 
             entry.deaths = 1
             entry.death_recaps = [_death('1', '@tester', 20085, 'Sharpfang', 'Slap', [])]
             win._on_fight_updated(entry)
             self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 1', win.fight_view.toPlainText())
-            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang (d) '))
+            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang ☠ '))
 
             # An update for a fight that is not on screen leaves the pane
             # alone, but its history line still gets the cue
@@ -379,13 +379,13 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win.history_list.item(0).setText('stale')
             win._on_fight_updated(entry)
             self.assertEqual(win.fight_view.toHtml(), shown)
-            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang (d) '))
-            self.assertNotIn('(d)', win.history_list.item(1).text())
+            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang ☠ '))
+            self.assertNotIn('☠', win.history_list.item(1).text())
 
             # A fight the list does not hold (the live one, while reviewing
             # another log) is ignored
             win._on_fight_updated(_entry_with_deaths())
-            self.assertNotIn('(d)', win.history_list.item(1).text())
+            self.assertNotIn('☠', win.history_list.item(1).text())
         finally:
             win.close()
 
@@ -405,7 +405,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             self.assertEqual(win.history_list.count(), 1)
             self.assertEqual(win.history_list.currentRow(), 0)
             self.assertTrue(win.history_list.item(0).text().startswith(
-                'Sharpfang (d) · 2:10 · 559.0k gdps · '))
+                'Sharpfang ☠ · 2:10 · 559.0k gdps · '))
             shown = win.fight_view.toPlainText()
             self.assertIn('2:10', shown)
             self.assertNotIn('1:07', shown)

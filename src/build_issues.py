@@ -70,10 +70,31 @@ rule, player-fights / distinct characters in that survey:
   Piece counts per bar come from player_build.piece_counts (a two-hander
   counts as two). A build without a back-bar weapon, or wearing Oakensoul
   Ring, is not reported.
+- **A tank with no taunt or pull** (95 / 3 with the gates below; added the
+  same day at the maintainer's request). The health pool alone is not a
+  tank: of 3,154 health-dominant player-fights in the same logs, 762 had
+  neither a taunt nor a pull on their bars and never taunted, but 519 of
+  those wore at most one heavy piece and were damage dealers or healers
+  whose health happened to be their largest pool, and 40 more taunted
+  through the Tormentor set's charges and chains. Real tanks (a taunt
+  slotted and taunting) dealt a median 0.10 of an equal share of the
+  group's damage, 0.22 at the 90th percentile and 0.27 at the 95th. So
+  besides the role, the bars and the session's taunts the rule asks for
+  tank gear (a shield, an ice staff or five heavy pieces), at most half an
+  equal share of the damage, and no healer sign (a restoration staff on a
+  bar, or more healing to others than damage dealt: a heavy-armor healer in
+  Sunspire would otherwise be flagged). Taunt and pull ids are UESP's for
+  every rank plus the ids the bars carried in the logs; names count too,
+  since the game now calls the chains Chains of Flame, Dominance and
+  Devastation and the Arcanist's rank ids differ from UESP's. A scribed
+  skill taunts or pulls by its focus script, Taunt or Pull, which names it
+  Goading or Leashing. Destructive Clench taunts only with an ice staff in
+  hand, when it is cast as Frost Clench.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
-OAKENSOUL_SET_ID, the weapon lines table. The checks themselves are code.
+OAKENSOUL_SET_ID, the taunt and pull tables, the weapon lines table. The
+checks themselves are code.
 """
 
 import json
@@ -118,6 +139,48 @@ GROUP_SETS = {
     "768": "Lucent Echoes", "771": "Perfected Lucent Echoes",
     "769": "Xoryn's Masterpiece", "770": "Perfected Xoryn's Masterpiece",
 }
+
+# Taunts and pulls, by the ids a bar can carry (UESP playerSkills for every
+# rank, plus the ids the bars held in the September and October 2026 logs)
+# and by name, for a rank id neither list has
+TAUNT_SKILL_IDS = frozenset({
+    "28306", "41473", "41475", "41477",  # Puncture
+    "38256", "41479", "41483", "41487",  # Ransack
+    "38250", "41491", "41494", "41497",  # Pierce Armor
+    "39475", "43353", "43358", "43363",  # Inner Fire
+    "42056", "43368", "43373", "43378",  # Inner Rage
+    "42060", "43383", "43388", "43393",  # Inner Beast
+    "183165", "178447",                  # Runic Jolt
+    "183430", "187741", "187742",        # Runic Sunder
+    "186531",                            # Runic Embrace
+})
+TAUNT_SKILL_NAMES = frozenset({
+    "Puncture", "Ransack", "Pierce Armor", "Inner Fire", "Inner Rage", "Inner Beast",
+    "Runic Jolt", "Runic Sunder", "Runic Embrace",
+})
+# Destructive Clench taunts with an ice staff in hand (it is cast as Frost
+# Clench then), and does nothing of the kind with another staff
+CLENCH_SKILL_IDS = frozenset({"38984", "40977", "40995", "41006"})
+CLENCH_SKILL_NAMES = frozenset({"Destructive Clench"})
+PULL_SKILL_IDS = frozenset({
+    "20492", "23736", "23740", "23744", "29446",  # Chains of Flame
+    "20496", "23770", "23774", "23778",           # Chains of Dominance
+    "20499", "32215", "32222", "32229",           # Chains of Devastation
+    "40336", "42677", "42687", "42696", "40340",  # Silver Leash
+    "86175", "86176", "86177", "86178",           # Frozen Gate
+    "86179", "86180", "86181", "86182",           # Frozen Device
+    "86183", "86184", "86185", "86186",           # Frozen Retreat
+})
+PULL_SKILL_NAMES = frozenset({
+    "Chains of Flame", "Chains of Dominance", "Chains of Devastation",
+    "Fiery Grip", "Unrelenting Grip", "Empowering Chains",  # the chains' older names
+    "Silver Leash", "Frozen Gate", "Frozen Device", "Frozen Retreat",
+})
+# A scribed skill taunts or pulls by its focus script, which names it
+TAUNT_FOCUS, TAUNT_PREFIX = "Taunt", "Goading "
+PULL_FOCUS, PULL_PREFIX = "Pull", "Leashing "
+TANK_HEAVY_PIECES = 5  # heavy pieces that read as a tank's armor
+TANK_DAMAGE_RATIO = 0.5  # of an equal share of the group's damage; real tanks sit near 0.1
 
 
 class ProcSet(NamedTuple):
@@ -169,6 +232,14 @@ ONE_BAR_DETAIL = (
 PROC_DETAIL = (
     "{set}'s five-piece bonus fires when {trigger}; this player's {effect} never appeared "
     "this session, so the set is dead weight until that changes.")
+TANK_TITLE = "Tank with no taunt or pull on either bar"
+TANK_DETAIL = (
+    "This player reads as a tank: health is the largest pool, they hold {gear}, and they "
+    "dealt {share} of an equal share of the group's damage. Yet neither bar holds a taunt "
+    "(Puncture, Inner Fire or Runic Jolt and their morphs, Destructive Clench on an ice "
+    "staff, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, "
+    "Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no "
+    "taunt of theirs was logged this session, so nothing holds the boss on them.")
 
 
 def _finding(rule: str, title: str, detail: str, set_name: str = "", skill: str = "") -> dict:
@@ -258,6 +329,66 @@ def wears_oakensoul(gear: Dict[str, List[str]]) -> bool:
     return any(len(item) > 6 and str(item[6]) == OAKENSOUL_SET_ID for item in gear.values())
 
 
+def _slot_is(slot: dict, names: frozenset, ids: frozenset, focus: str, prefix: str) -> bool:
+    """Whether a bar slot is one of the skills *ids* or *names*, or a
+    scribed skill whose focus script is *focus* (which gives it a name
+    starting with *prefix*); a scribed skill with several possible lines
+    counts when any of them has that focus."""
+    name = str(slot.get("name") or "")
+    if str(slot.get("id", "")) in ids or name in names or name.startswith(prefix):
+        return True
+    scripts = slot.get("scripts") or []
+    if scripts and str(scripts[0]) == focus:
+        return True
+    return any(len(option) > 1 and str(option[1]) == focus
+               for option in slot.get("script_options") or [])
+
+
+def taunts_and_pulls(gear: Dict[str, List[str]], front_slots: Optional[List[dict]],
+                     back_slots: Optional[List[dict]],
+                     types: Optional[Dict[str, str]] = None) -> Set[str]:
+    """{'taunt', 'pull'}, those of the two the bars hold: a taunt skill, a
+    Destructive Clench on a bar whose main hand is an ice staff, a pull skill,
+    or a scribed skill with the Taunt or Pull focus."""
+    found: Set[str] = set()
+    for (_bar, main_slot, _off_slot), slots in zip(BARS, (front_slots, back_slots)):
+        main = gear.get(main_slot)
+        ice = bool(main) and len(main) > 1 and weapon_type(main[1], types) == "ice_staff"
+        for slot in slots or []:
+            clench = (str(slot.get("id", "")) in CLENCH_SKILL_IDS
+                      or str(slot.get("name") or "") in CLENCH_SKILL_NAMES)
+            if (_slot_is(slot, TAUNT_SKILL_NAMES, TAUNT_SKILL_IDS, TAUNT_FOCUS, TAUNT_PREFIX)
+                    or (ice and clench)):
+                found.add("taunt")
+            elif _slot_is(slot, PULL_SKILL_NAMES, PULL_SKILL_IDS, PULL_FOCUS, PULL_PREFIX):
+                found.add("pull")
+    return found
+
+
+def tank_gear(gear: Dict[str, List[str]], weights: Optional[Dict[str, str]] = None,
+              types: Optional[Dict[str, str]] = None) -> str:
+    """What makes the gear a tank's, for the finding: 'a shield', 'an ice
+    staff' or '5 heavy pieces'; '' when nothing does."""
+    for _bar, _main_slot, off_slot in BARS:
+        off = gear.get(off_slot)
+        if off and len(off) > 4 and (weapon_type(off[1], types) == "shield"
+                                     or str(off[4]).startswith("ARMOR_")):
+            return "a shield"
+    for _bar, main_slot, _off_slot in BARS:
+        main = gear.get(main_slot)
+        if main and len(main) > 1 and weapon_type(main[1], types) == "ice_staff":
+            return "an ice staff"
+    heavy = heavy_pieces(gear, weights)
+    return f"{heavy} heavy pieces" if heavy >= TANK_HEAVY_PIECES else ""
+
+
+def _has_restoration_staff(gear: Dict[str, List[str]],
+                           types: Optional[Dict[str, str]] = None) -> bool:
+    return any(len(gear.get(main_slot, ())) > 1
+               and weapon_type(gear[main_slot][1], types) == "restoration_staff"
+               for _bar, main_slot, _off_slot in BARS)
+
+
 def worn_proc_sets(gear: Dict[str, List[str]]) -> Set[str]:
     """The proc sets (PROC_SETS ids) this build has at five pieces on
     either bar."""
@@ -279,14 +410,20 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
                         set_name_of: Optional[Callable[[str], Optional[str]]] = None,
                         weights: Optional[Dict[str, str]] = None,
                         types: Optional[Dict[str, str]] = None,
-                        skills: Optional[Dict[str, dict]] = None) -> List[dict]:
+                        skills: Optional[Dict[str, dict]] = None,
+                        damage_ratio: Optional[float] = None,
+                        out_heals: bool = False) -> List[dict]:
     """The per-fight rules on one build: Nirnhoned off hand, duplicate
-    glyph, heavy armor on a DPS who has not taunted, weapon skill on the
-    wrong bar, Elemental Drain, a group set on one bar; in that order.
+    glyph, heavy armor on a DPS who has not taunted, a tank with no taunt
+    or pull, weapon skill on the wrong bar, Elemental Drain, a group set on
+    one bar; in that order.
 
     *gear* is slot -> the item's eleven log fields, the bar slots the
     engine's {'id', 'name', 'icon'} dicts, *role* the app's 'T', 'H' or
-    'D', *taunted* whether the player taunted this session. *set_name_of*
+    'D', *taunted* whether the player taunted this session, *damage_ratio*
+    the player's damage this fight over an equal share of the group's (1.0
+    is an equal share; None when the fight had no damage), *out_heals*
+    whether they healed others for more than they dealt. *set_name_of*
     names a set id (the bundled set data by default); *weights*, *types*
     and *skills* override the bundled tables for tests.
     """
@@ -319,6 +456,18 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
         if heavy >= HEAVY_PIECES_FLAGGED:
             findings.append(_finding(
                 "heavy-armor", f"{heavy} heavy armor pieces on a damage dealer", HEAVY_DETAIL))
+
+    # A tank with nothing to hold the boss. The role's health pool alone is
+    # not a tank (see the module notes), so tank gear, a small share of the
+    # damage and no healer sign are asked for as well
+    gear_sign = tank_gear(gear, weights, types) if role == "T" and not taunted else ""
+    if (gear_sign and (front_slots or back_slots)
+            and damage_ratio is not None and damage_ratio <= TANK_DAMAGE_RATIO
+            and not out_heals and not _has_restoration_staff(gear, types)
+            and not taunts_and_pulls(gear, front_slots, back_slots, types)):
+        findings.append(_finding(
+            "tank-no-taunt", TANK_TITLE,
+            TANK_DETAIL.format(gear=gear_sign, share=f"{damage_ratio:.0%}")))
 
     for (bar, main_slot, off_slot), slots in zip(BARS, (front_slots, back_slots)):
         if bar == "back" and oakensoul:

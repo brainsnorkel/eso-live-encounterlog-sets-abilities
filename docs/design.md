@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3080](../src/esolog_tail.py#L3080)*
+*[src/esolog_tail.py:3087](../src/esolog_tail.py#L3087)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -585,14 +585,35 @@ rule, player-fights / distinct characters in that survey:
   Piece counts per bar come from player_build.piece_counts (a two-hander
   counts as two). A build without a back-bar weapon, or wearing Oakensoul
   Ring, is not reported.
+- **A tank with no taunt or pull** (95 / 3 with the gates below; added the
+  same day at the maintainer's request). The health pool alone is not a
+  tank: of 3,154 health-dominant player-fights in the same logs, 762 had
+  neither a taunt nor a pull on their bars and never taunted, but 519 of
+  those wore at most one heavy piece and were damage dealers or healers
+  whose health happened to be their largest pool, and 40 more taunted
+  through the Tormentor set's charges and chains. Real tanks (a taunt
+  slotted and taunting) dealt a median 0.10 of an equal share of the
+  group's damage, 0.22 at the 90th percentile and 0.27 at the 95th. So
+  besides the role, the bars and the session's taunts the rule asks for
+  tank gear (a shield, an ice staff or five heavy pieces), at most half an
+  equal share of the damage, and no healer sign (a restoration staff on a
+  bar, or more healing to others than damage dealt: a heavy-armor healer in
+  Sunspire would otherwise be flagged). Taunt and pull ids are UESP's for
+  every rank plus the ids the bars carried in the logs; names count too,
+  since the game now calls the chains Chains of Flame, Dominance and
+  Devastation and the Arcanist's rank ids differ from UESP's. A scribed
+  skill taunts or pulls by its focus script, Taunt or Pull, which names it
+  Goading or Leashing. Destructive Clench taunts only with an ice staff in
+  hand, when it is cast as Frost Clench.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
-OAKENSOUL_SET_ID, the weapon lines table. The checks themselves are code.
+OAKENSOUL_SET_ID, the taunt and pull tables, the weapon lines table. The
+checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:357](../src/build_issues.py#L357)*
+*[src/build_issues.py:506](../src/build_issues.py#L506)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's
