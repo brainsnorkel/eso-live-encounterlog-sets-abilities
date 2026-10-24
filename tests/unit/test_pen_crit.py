@@ -194,15 +194,26 @@ class TestCapsAndAssumptions(unittest.TestCase):
         self.assertEqual(pen_crit.pen_cap(True, "9100"), 9100)
         self.assertEqual(pen_crit.pen_cap(True, "auto"), 18200)
 
-    def test_assumed_rows_follow_the_options_and_the_zone(self):
+    def test_assumed_rows_follow_the_options_and_the_group_size(self):
         options = {"piercing": True, "fighting_finesse": True, "backstabber": True}
-        names = [r["name"] for r in pen_crit.assumed_rows(options, instanced=True)]
-        self.assertEqual(names, ["Piercing", "Fighting Finesse", "Backstabber"])
+        for size in ("solo", "small", None):
+            names = [r["name"] for r in pen_crit.assumed_rows(options, True, size)]
+            self.assertEqual(names, ["Piercing", "Fighting Finesse", "Backstabber"], size)
         self.assertTrue(all(r["kind"] == "assumed" for r in pen_crit.assumed_rows(options, True)))
-        names = [r["name"] for r in pen_crit.assumed_rows(options, instanced=False)]
-        self.assertEqual(names, ["Piercing", "Backstabber"])
-        self.assertEqual(pen_crit.assumed_rows({}, True), [])
+        # Not in a trial's group, whether the zone is instanced or not
+        for instanced in (True, False):
+            names = [r["name"] for r in pen_crit.assumed_rows(options, instanced, "large")]
+            self.assertEqual(names, ["Piercing", "Backstabber"])
+        self.assertEqual(pen_crit.assumed_rows({}, True, "solo"), [])
         self.assertEqual(pen_crit.assumed_rows(None, True), [])
+
+    def test_player_totals_take_the_fights_group_size(self):
+        options = {"fighting_finesse": True}
+        small = pen_crit.player_totals(CAP_PLAYER, dict(CAP_FIGHT, group_size="small"), options)
+        large = pen_crit.player_totals(CAP_PLAYER, dict(CAP_FIGHT, group_size="large"), options)
+        self.assertEqual([r["name"] for r in small["assumed"]], ["Fighting Finesse"])
+        self.assertEqual(large["assumed"], [])
+        self.assertEqual((small["static_crit"][0], large["static_crit"][0]), (18.0, 10.0))
 
 
 class TestEffective(unittest.TestCase):
@@ -307,6 +318,28 @@ class TestFightFields(unittest.TestCase):
         self.assertEqual(two["buffs"], [])
         self.assertEqual(two["crit_hist"], [[0, 100]])
 
+    def test_a_targets_permanent_debuffs_count_in_full(self):
+        tracker = pen_crit.new_tracker()
+        # The log shows one player's Major Breach on the dummy for a while:
+        # it adds nothing to a debuff the dummy keeps for good
+        tracker.record("GAINED", "61743", "70", 1, 10000, "boss", source_id="1")
+        tracker.record("FADED", "61743", "70", 1, 12000, "boss", source_id="1")
+        units = {"1": ("self", None, None), "70": ("boss", None, None)}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 9990, 20000, units, {"70": {11: 100, 15: 100}}, {}, lambda u: "the dummy",
+            lambda u: {}, instanced=False, dummy=True, set_table=SETS,
+            permanent_debuffs={"70": list(pen_crit.TRIAL_DUMMY_DEBUFFS)})
+        rows = {d["name"]: d for d in entry["debuffs"]}
+        self.assertEqual(sorted(rows), sorted(pen_crit.TRIAL_DUMMY_DEBUFFS))
+        self.assertEqual(rows["Major Breach"]["uptime_pct"], 100)
+        self.assertEqual(rows["Major Breach"]["casters"],
+                         [{"name": "the dummy", "pct": 100, "via": "the dummy's own", "value": 5948}])
+        self.assertEqual(rows["Crusher"]["pen"], 2108)
+        self.assertEqual(rows["Elemental Catalyst"]["crit"], 15)
+        self.assertEqual(entry["pen_hist"], [[17030, 0.0, 200]])  # 5948 + 2974 + 2108 + 6000
+        self.assertEqual(entry["crit_hist"], [[25, 200]])  # Minor Brittle 10 + Elemental Catalyst 15
+        self.assertEqual(entry["cap"], 18200)
+
     def test_a_trash_fight_measures_every_hostile_hit(self):
         tracker = pen_crit.new_tracker()
         tracker.record("GAINED", "61742", "80", 1, 10000, "enemy", source_id="1")
@@ -333,6 +366,7 @@ class TestEngine(unittest.TestCase):
         entry = fights(lines)[0]
         self.assertEqual(entry.pen_crit["on"], "enemies")  # the fixture's boss carries no boss flag
         self.assertTrue(entry.pen_crit["instanced"])  # VETERAN zone
+        self.assertEqual(entry.pen_crit["group_size"], "small")  # three players
         self.assertFalse(entry.pen_crit["dummy"])
         breach = entry.pen_crit["debuffs"][0]
         self.assertEqual((breach["name"], breach["uptime_pct"]), ("Major Breach", 50))
@@ -360,6 +394,21 @@ class TestEngine(unittest.TestCase):
                          [{"name": "Lucent Echoes", "crit": 11, "uptime_pct": 100}])
         self.assertEqual(players["@dualwield"]["crit_hist"], [[11, 60000]])
         self.assertEqual(players["@brainsnorkel"]["buffs"], [])
+
+    def test_the_trial_dummy_is_known_by_name(self):
+        lines = [line.replace('"Scalecaller Peak",VETERAN', '"Elinhir Private Arena",NONE')
+                 .replace('"Test Boss"', f'"{pen_crit.TRIAL_DUMMY_NAME}"') for line in SESSION]
+        entry = fights(lines)[0]
+        self.assertTrue(entry.pen_crit["dummy"])
+        self.assertTrue(entry.pen_crit["instanced"])
+        self.assertEqual(entry.pen_crit["cap"], 18200)
+        rows = {d["name"]: d for d in entry.pen_crit["debuffs"]}
+        self.assertEqual(sorted(rows), sorted(pen_crit.TRIAL_DUMMY_DEBUFFS))
+        self.assertTrue(all(d["uptime_pct"] == 100 for d in rows.values()))
+        self.assertEqual(rows["Roar of Alkosh"]["casters"][0]["via"], "the dummy's own")
+        players = {p["name"]: p["pen_crit"] for p in entry.players}
+        self.assertEqual(players["@brainsnorkel"]["pen_hist"], [[17030, 0.0, 90000]])
+        self.assertEqual(players["@brainsnorkel"]["crit_hist"], [[25, 90000]])
 
     def test_a_trial_dummys_debuffs_make_a_house_zone_instanced(self):
         lines = [line.replace('"Scalecaller Peak",VETERAN', '"Elinhir Private Arena",NONE') for line in SESSION]
@@ -502,6 +551,112 @@ class TestSetOffenseGenerator(unittest.TestCase):
         flat = [b["pen"] for s in sets.values() for b in s["bonuses"] if "pen" in b]
         self.assertGreater(flat.count(1487), 50)
         self.assertEqual(pen_crit.set_offense_table()["286"]["name"], "Spriggan's Thorns")
+
+
+CAP_PLAYER = {"static_pen": [1000, 1000], "static_crit": [10.0, 10.0], "crit_cap": 125,
+              "pen_hist": [[5948, 0.0, 100], [0, 0.0, 100]], "crit_hist": [[30, 100], [0, 100]]}
+CAP_FIGHT = {"instanced": True, "cap": 18200}
+CAP_OPTIONS = {"piercing": True, "fighting_finesse": True, "backstabber": False}
+
+
+class TestCapShares(unittest.TestCase):
+
+    def test_shares_of_each_cap(self):
+        shares = pen_crit.cap_shares(CAP_PLAYER, CAP_FIGHT, CAP_OPTIONS)
+        # pen: (1000 + 700 + 5948) * 100 + 1700 * 100 over 200 = 4674 of 18200
+        self.assertEqual(shares["pen_pct"], 26)
+        self.assertAlmostEqual(shares["pen"], 4674)
+        self.assertEqual(shares["pen_cap"], 18200)
+        # crit: 50 + 10 + 8 = 68 own; (98 + 68) / 2 = 83 of 125
+        self.assertEqual(shares["crit_pct"], 66)
+        self.assertAlmostEqual(shares["crit"], 83)
+        self.assertEqual(shares["crit_cap"], 125)
+        self.assertEqual(shares["pen_over_pct"], 0)
+
+    def test_without_options_nothing_is_assumed(self):
+        shares = pen_crit.cap_shares(CAP_PLAYER, CAP_FIGHT, None)
+        self.assertAlmostEqual(shares["pen"], 3974)
+        self.assertAlmostEqual(shares["crit"], 75)
+
+    def test_capped_seconds_never_pass_the_cap(self):
+        player = dict(CAP_PLAYER, static_pen=[20000, 20000], static_crit=[90.0, 90.0])
+        shares = pen_crit.cap_shares(player, CAP_FIGHT, None)
+        self.assertEqual((shares["pen_pct"], shares["crit_pct"]), (100, 100))
+        self.assertEqual(shares["pen_over_pct"], 100)
+
+    def test_nothing_to_weigh(self):
+        self.assertIsNone(pen_crit.cap_shares(dict(CAP_PLAYER, pen_hist=[], crit_hist=[]), CAP_FIGHT, None))
+        self.assertIsNone(pen_crit.cap_shares(None, None, None))
+        self.assertIsNone(pen_crit.cap_shares({}, {}, {"piercing": True}))
+
+
+ROW_OPTIONS = {"piercing": True, "fighting_finesse": True}
+
+
+class TestRowToken(unittest.TestCase):
+    """The 'pen 99% · crit 94%' token on a player's row (fight_render)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.entry = fights()[0]
+
+    def test_token_in_both_views_and_the_copy(self):
+        from gui.fight_render import pen_crit_href, render_html, render_plain_text
+        for detailed in (False, True):
+            html = render_html(self.entry, detailed=detailed, pen_crit_options=ROW_OPTIONS)
+            # @brainsnorkel: Aerie's Cry 1,487 + Piercing 700; 50 + Fighting Finesse 8
+            self.assertIn(f'<a href="{pen_crit_href("1")}" style="text-decoration:none;color:#5f6368">'
+                          'p:2187 cd:58%</a>', html)
+            self.assertIn(pen_crit_href("2"), html)
+        text = render_plain_text(self.entry, pen_crit_options=ROW_OPTIONS)
+        self.assertIn("@brainsnorkel * Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
+        plain = render_plain_text(self.entry)
+        self.assertIn("· p:1487 cd:50%", plain)  # nothing assumed: 1,487 and the base 50
+
+    def test_no_token_without_figures(self):
+        import copy
+
+        from gui.fight_render import PEN_CRIT_HREF, render_html, render_plain_text
+        entry = copy.deepcopy(self.entry)
+        for p in entry.players:
+            p.pop("pen_crit", None)
+        entry.pen_crit = None
+        self.assertNotIn(PEN_CRIT_HREF, render_html(entry, detailed=False, pen_crit_options=ROW_OPTIONS))
+        self.assertNotIn("p:", render_plain_text(entry, pen_crit_options=ROW_OPTIONS))
+        # A player with figures but no damage has no token either
+        entry = copy.deepcopy(self.entry)
+        entry.players[0]["pen_crit"]["pen_hist"] = []
+        entry.players[0]["pen_crit"]["crit_hist"] = []
+        html = render_html(entry, detailed=False, pen_crit_options=ROW_OPTIONS)
+        self.assertNotIn(f"{PEN_CRIT_HREF}1\"", html)
+        self.assertIn(f"{PEN_CRIT_HREF}2\"", html)
+
+    def test_tooltips_carry_the_figures(self):
+        from gui.fight_render import pen_crit_href, pen_crit_tooltips
+        tips = pen_crit_tooltips(self.entry, ROW_OPTIONS)
+        self.assertEqual(set(tips), {pen_crit_href("1"), pen_crit_href("2"), pen_crit_href("3")})
+        tip = tips[pen_crit_href("1")]
+        self.assertIn("Effective penetration 2,187 of 18,200 (12% of the cap)", tip)
+        self.assertIn("Effective critical damage 58.0% of 125% (46% of the cap)", tip)
+        self.assertIn("Click for every source", tip)
+
+    def test_a_click_asks_for_the_sections(self):
+        try:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtWidgets import QApplication
+        except ImportError:
+            self.skipTest("PySide6 not installed")
+        QApplication.instance() or QApplication([])
+        from gui.fight_render import pen_crit_href
+        from gui.fight_view import FightView
+        view = FightView()
+        try:
+            asked = []
+            view.pen_crit_requested.connect(asked.append)
+            view.anchorClicked.emit(QUrl(pen_crit_href("7")))
+            self.assertEqual(asked, ["7"])
+        finally:
+            view.deleteLater()
 
 
 if __name__ == "__main__":

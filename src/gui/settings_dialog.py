@@ -19,8 +19,9 @@ from pen_crit import FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVER
 PEN_CRIT_HELP = ("The build window's Penetration and Critical damage sections read everything "
                  "else from the log. Champion Point stars that only change a stat are never "
                  "logged, so tick the ones to assume; they show as assumed rows. Fighting "
-                 "Finesse applies in dungeons, trials and arenas only. Force of Nature's value "
-                 "is its per-effect figure times the status effects measured on the boss.")
+                 "Finesse is assumed in solo and small-group fights (up to four players), never "
+                 "in a group of five or more. Force of Nature's value is its per-effect figure "
+                 "times the status effects measured on the boss.")
 BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} in dungeons, trials and arenas, "
            f"{PEN_CAP_OVERLAND:,} overland")
 CAP_CHOICES = (("auto", BY_ZONE),
@@ -197,7 +198,7 @@ class SettingsDialog(QDialog):
         self.assume_piercing.setChecked(bool(config.get("pen_crit.piercing", True)))
         pen_form.addRow(self.assume_piercing)
         self.assume_finesse = QCheckBox(
-            "Assume Fighting Finesse (8% critical damage) in dungeons, trials and arenas")
+            "Assume Fighting Finesse (8% critical damage) in solo and small-group fights")
         self.assume_finesse.setChecked(bool(config.get("pen_crit.fighting_finesse", True)))
         pen_form.addRow(self.assume_finesse)
         self.assume_backstabber = QCheckBox("Assume Backstabber (10% critical damage while flanking)")

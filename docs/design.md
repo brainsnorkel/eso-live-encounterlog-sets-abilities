@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3166](../src/esolog_tail.py#L3166)*
+*[src/esolog_tail.py:3174](../src/esolog_tail.py#L3174)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -596,8 +596,18 @@ and no weapon of 2,292 builds is Sharpened; every Crusher glyph (302
 weapons) is gold at CP 160; Fated Fortune's proc fired 2,374 times, so its
 real uptime is measured, not assumed; the trial dummy applies the trial's
 own debuffs to itself (Crusher 120007, Alkosh 120018, Breach 120010 and
-120019), which is how a parse at a dummy is known to be against 18,200
-resistance in a house zone whose difficulty reads NONE.
+120019, Minor Brittle, Elemental Catalyst), which is how a parse at a
+dummy is known to be against 18,200 resistance in a house zone whose
+difficulty reads NONE. It applies them once, as it spawns, and keeps them,
+so a session begun after the spawn has no line for them and the log alone
+would read the player's own penetration against an overland cap; a fight
+against a unit named "Target Iron Atronach, Trial" therefore credits them
+for the whole fight (TRIAL_DUMMY_DEBUFFS), as Combat Metrics reads them
+from the game at the pull. Checked against a Combat Metrics report of a
+25 s parse (2026-10-24): own penetration 3,126 (one light piece, Aerie's
+Cry's two pieces, Piercing) plus the dummy's 17,030 is its maximum of
+20,156 exactly, damage and dps agreed within 0.5%, and the ability table
+row for row.
 
 ### scripts/generate_set_offense.py
 
@@ -654,7 +664,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:335](../src/gui/build_render.py#L335)*
+*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1347,7 +1357,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:476](../src/gui/main_window.py#L476)*
+*[src/gui/main_window.py:478](../src/gui/main_window.py#L478)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1357,7 +1367,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:822](../src/gui/main_window.py#L822)*
+*[src/gui/main_window.py:837](../src/gui/main_window.py#L837)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -1376,7 +1386,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:249](../src/gui/fight_view.py#L249)*
+*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1391,7 +1401,7 @@ runs only while the page holds a ringed icon and the view is shown.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:168](../src/gui/fight_view.py#L168)*
+*[src/gui/fight_view.py:170](../src/gui/fight_view.py#L170)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
