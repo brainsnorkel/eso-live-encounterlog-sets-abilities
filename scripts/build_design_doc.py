@@ -68,6 +68,11 @@ TOPICS = [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
     ]),
+    ("Possible build issues: what the log proves about a build", [
+        "src/build_issues.py",
+        "src/build_issues.py:BuildIssueTracker",
+        "scripts/generate_weapon_skill_lines.py",
+    ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
         "src/effect_rules.py",
         "src/effect_rules.py:EffectTracker",
