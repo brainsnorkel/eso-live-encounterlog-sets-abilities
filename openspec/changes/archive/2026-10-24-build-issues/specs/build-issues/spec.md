@@ -134,16 +134,16 @@ The app SHALL report a player who reads as a tank and holds neither a taunt nor 
 - **WHEN** a health-dominant player with a shield dealt one and a half times an equal share
 - **THEN** no finding
 
-### Requirement: The (i) on the fight pane
+### Requirement: The ⓘ on the fight pane
 
-The fight pane SHALL show an `(i)` after the name and class of each player with at least one finding, in the theme's link color, and nothing for a player without one. Hovering the `(i)` SHALL list the findings' titles. Clicking it SHALL open a transient popup near the pointer listing each finding with its rule, where a set or skill the finding names links to its ESO-Hub page when one is known. The popup SHALL close on a click elsewhere or Esc.
+The fight pane SHALL show a `ⓘ` after the name and class of each player with at least one finding, in the theme's link color, and nothing for a player without one. Hovering the `ⓘ` SHALL list the findings' titles. Clicking it SHALL open a transient popup near the pointer listing each finding with its rule, where a set or skill the finding names links to its ESO-Hub page when one is known. The popup SHALL close on a click elsewhere or Esc.
 
 #### Scenario: One flagged player among three
 - **WHEN** a fight lists three players and one has findings
-- **THEN** that player's row carries the `(i)` AND the other two rows do not
+- **THEN** that player's row carries the `ⓘ` AND the other two rows do not
 
 #### Scenario: Opening the popup
-- **WHEN** the `(i)` is clicked
+- **WHEN** the `ⓘ` is clicked
 - **THEN** a popup shows every finding of that player with its rule text
 
 ### Requirement: The build window repeats the findings

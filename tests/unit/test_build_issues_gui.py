@@ -97,7 +97,10 @@ class TestCue(IssuesGuiTestCase):
             # After the class text of that row, before the next row
             row = html[html.index('@dualwield'):html.index('</tr>', html.index('@dualwield'))]
             self.assertIn('esolog:issues/2', row)
-        self.assertIn('color:#8ab4f8">(i)</a>', render_html(entry, detailed=True, dark=True))
+        self.assertIn(f'color:#8ab4f8">{ISSUES_CUE}</a>', render_html(entry, detailed=True, dark=True))
+        # The same mark as the fight list's
+        from gui.fight_render import ISSUES_LIST_CUE
+        self.assertEqual(ISSUES_CUE, ISSUES_LIST_CUE)
 
     def test_no_findings_no_cue(self):
         from gui.fight_render import render_html

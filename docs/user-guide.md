@@ -57,7 +57,7 @@ With **Detail view** on (the default; Tab toggles it), each row shows the player
 - A scribed skill is listed under the bars with the two scripts its name does not show, as `Skill (Signature / Affix)`: `Shocking Banner (Class Flourish / Heroism)`. The skill's name already says which grimoire and focus script it is; hover its icon on the bar for all four parts. The skill and the scripts link to their ESO-Hub pages. `(scripts not in log)` means the log does not say which scripts this player uses (see [Limitations](#limitations)); the hover says why, and lists the combinations it can be when the log narrows it down.
 - A werewolf gets a third line, **Werewolf**: the bar they fought with in werewolf form and how much of the fight they spent transformed, `in form 100%`. The game never writes that bar into its log, so the app rebuilds it from the werewolf skills the player cast, in the skill line's order; a skill they slotted but never cast cannot show. At full Fury the game lists Rampage in place of the transformation ultimate for the player writing the log, and the bar shows the morph, Werewolf Berserker or Pack Leader, instead. Hovering either kind of icon says so.
 - The line under the bars lists every equipped set with its piece count, `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`; each name opens the set's ESO-Hub page.
-- An `(i)` after a player's class means the app found a [possible build issue](#possible-build-issues) in the build they pulled with. Hover it for the list; click it for each finding with the rule behind it. A player without one has no `(i)`, in either view.
+- A `ⓘ` after a player's class means the app found a [possible build issue](#possible-build-issues) in the build they pulled with. Hover it for the list; click it for each finding with the rule behind it. A player without one has no `ⓘ`, in either view.
 
 With Detail view off, the rows are one line each, for a quick ranking:
 
@@ -65,9 +65,9 @@ With Detail view off, the rows are one line each, for a quick ranking:
 
 ### Possible build issues
 
-The `(i)` points out things in a build that are usually mistakes, read from what the log recorded as the fight began. Each finding states its rule, so you can judge it yourself; the popup links the set or skill concerned to ESO-Hub.
+The `ⓘ` points out things in a build that are usually mistakes, read from what the log recorded as the fight began. Each finding states its rule, so you can judge it yourself; the popup links the set or skill concerned to ESO-Hub.
 
-![The (i) popup: a player's possible build issues, each with its rule](screencaps/build-issues.png)
+![The ⓘ popup: a player's possible build issues, each with its rule](screencaps/build-issues.png)
 
 The rules:
 
@@ -96,7 +96,7 @@ Click a player's name, in either view, to open their build for that fight. The n
 
 - **Header**: account and character name, race, class, champion points and role, then the fight.
 - **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken. `no known food or drink` means none of their effects is a food or drink the app knows; no mastery part means the character has none (a subclassed build cannot).
-- **Possible build issues**: the same findings the fight pane's `(i)` opens, each with its rule, under the header; nothing there for a build without one.
+- **Possible build issues**: the same findings the fight pane's `ⓘ` opens, each with its rule, under the header; nothing there for a build without one.
 - **Bars**: front bar above back bar, ultimate set apart, with the same hover names, ESO-Hub links and scribed-skill line as the fight view, and for a werewolf the rebuilt werewolf bar under them.
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
 - **Type** is the armor weight, or what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
@@ -244,7 +244,7 @@ The [design notes](design.md), collected from the code itself, go into each of t
 - **Werewolf form**: the game writes only a player's two human bars, never the bar a werewolf fights with. The app tells a player is in werewolf form from the effects the game puts on them as they transform, and rebuilds their werewolf bar from the werewolf skills they cast in form; a Carnage counts as its Pounce, which it replaces at close range.
 - **Gear sets** are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database. Each equipped item comes with its trait, quality and enchant. The log does not say how heavy an armor piece is or what a weapon is, so both are looked up by item id in tables from UESP's item database. A slotted poison is named the same way. Food is recognised by the buff list of the LibFoodDrinkBuff addon.
 - **Tracked effects**: every buff and debuff is an `EFFECT_CHANGED` line naming the ability, the caster, the target and the stack count. A rule's uptime is the union of its ids' spans over the units of its scope, and its stacks the highest count among them, averaged over the time it was up. The game never logs Touch of Z'en's stacks, so `dots` counts the wearer's effects that tick as damage over time, as Combat Metrics does. A rule shows when its effect was up, or when it is `expected` in the fight's group size, counted from the players in the fight.
-- **Build issues**: the `(i)` rules read the same `PLAYER_INFO` gear and bars, with the weights, weapon types and weapon skill lines looked up in the bundled tables, and the role the heuristic above gives. Whether a proc set ever fired is read from the `EFFECT_CHANGED` lines the wearer is the source of, over the whole logging session.
+- **Build issues**: the `ⓘ` rules read the same `PLAYER_INFO` gear and bars, with the weights, weapon types and weapon skill lines looked up in the bundled tables, and the role the heuristic above gives. Whether a proc set ever fired is read from the `EFFECT_CHANGED` lines the wearer is the source of, over the whole logging session.
 - **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills.
 - **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player. The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
 - **Icons and links**: the log names each ability's icon file, and the app ships those icons extracted from the game. ESO-Hub links come from bundled maps of ESO-Hub's sitemaps; nothing is sent to ESO-Hub until you click.
