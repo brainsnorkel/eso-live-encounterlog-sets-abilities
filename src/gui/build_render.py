@@ -10,9 +10,14 @@ own bar rebuilt from casts (see werewolf.py), with the fight view's line of
 scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
-poison row under a bar that has one slotted. The data is the fight entry's player dict as the
-engine's player_build module filled it in, and the labels come from that
-module too.
+poison row under a bar that has one slotted; then the Penetration and
+Critical damage sections (issue #37): the player's own sources from the
+build, the Champion Point rows the Settings assume, the fight's debuffs on
+the boss with uptime and casters and the buffs on the player, and the
+totals against the caps, the effective figure being the damage-weighted
+one pen_crit computes the way Combat Metrics does. The data is the fight
+entry's player dict as the engine's player_build and pen_crit modules
+filled it in, and the labels come from those modules too.
 
 The anchors here (ability icons, scribed skills and their scripts, set names)
 use the same targets as the fight view, so fight_render.anchor_tooltips
@@ -26,6 +31,10 @@ from typing import Optional
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     issues_html, werewolf_bar_html,
+)
+from pen_crit import (
+    CRIT_BASE, CRIT_CAP, FORCE_OF_NATURE_PER_EFFECT, assumed_rows, effective_crit, effective_pen,
+    pen_cap,
 )
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
@@ -45,6 +54,18 @@ POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
                "front bar / back bar, for a set whose weapons sit on one bar only.")
 UNKNOWN_WEIGHT = "unknown"  # in the armor tally, a piece the bundled table lacks
+PEN_TITLE = "Penetration"
+CRIT_TITLE = "Critical damage"
+PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
+ASSUMED_MARK = "assumed"
+NO_PEN_CRIT = "No penetration or critical damage figures for this fight."
+NO_DAMAGE_MEASURED = "no damage of this player's to weigh the fight's effects by"
+PEN_CRIT_NOTE = ("After LunaCairu's PenCrit Calc sheet and the Hyperioxes calculators that "
+                 "skinnycheeks.gg recommends; debuffs valued as Combat Metrics (Solinur) values them; "
+                 "passive and set texts from UESP (CC-BY-SA). Assumed rows are Champion Point stars "
+                 "the log cannot show, chosen in Settings. Effective figures weigh each second's "
+                 "debuffs by this player's damage that second, as Combat Metrics weighs each hit; a "
+                 "two-bar total reads front / back, and the effective figure uses the front bar.")
 # Type: an armor piece's weight, a weapon's or shield's kind
 COLUMNS = (("Slot", 9, "left"), ("Type", 12, "left"), ("Set", 23, "left"),
            ("Pcs", 5, "center"), ("Quality", 13, "left"), ("Trait", 11, "left"),
@@ -280,9 +301,193 @@ def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float,
     return "".join(parts)
 
 
+def _num(value, pct: bool = False) -> str:
+    """'14,095', or '82%' / '0.5%' for a percentage."""
+    if value is None:
+        return DASH
+    if pct:
+        text = f"{value:.1f}".rstrip("0").rstrip(".")
+        return f"{text}%"
+    return f"{value:,.0f}"
+
+
+def _pair_text(values, pct: bool = False) -> str:
+    """One figure when both bars agree, else 'front / back'."""
+    if not values:
+        return DASH
+    front, back = values[0], values[1] if len(values) > 1 else values[0]
+    if back is None or abs(float(back) - float(front)) < 0.05:
+        return _num(front, pct)
+    return f"{_num(front, pct)} / {_num(back, pct)}"
+
+
+def _casters_text(casters, e) -> str:
+    """'@tank via Infused Inferno Staff (back bar) 70%, @healer via Elemental Susceptibility 40%'."""
+    parts = []
+    for caster in casters or []:
+        text = e(str(caster.get("name") or "unknown"))
+        if caster.get("via"):
+            text += f" <span style='opacity:0.8'>via {e(str(caster['via']))}</span>"
+        parts.append(f"{text} {int(caster.get('pct') or 0)}%")
+    return ", ".join(parts)
+
+
+def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> str:
+    """The Penetration and Critical damage sections (pen_crit): the player's
+    own rows and the assumed Champion Point rows, the fight's debuffs on
+    the boss (uptime, value, casters) and the buffs on the player, then the
+    totals: own, with every debuff at full uptime, and effective (each
+    second of the player's damage capped, as Combat Metrics caps each
+    hit), against the cap."""
+    data = p.get("pen_crit") or {}
+    group = getattr(entry, "pen_crit", None) or {}
+    if not data and not group:
+        return ""
+    options = dict(options or {})
+    muted, rule = theme["muted"], _RULES[bool(dark)]
+    small = f"font-size:{base_pt * 0.85:.2f}pt"
+    heading = f"padding-top:7px;color:{muted};font-weight:bold"
+    under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
+    instanced = bool(group.get("instanced"))
+    cap_setting = options.get("cap", "auto")
+    cap = pen_cap(instanced, None if cap_setting in (None, "", "auto") else cap_setting)
+    crit_cap = int(data.get("crit_cap") or CRIT_CAP)
+    rows = list(data.get("rows") or []) + assumed_rows(options, instanced)
+    static_pen = [float(v) for v in (data.get("static_pen") or [0, 0])]
+    static_crit = [float(v) for v in (data.get("static_crit") or [0, 0])]
+    for row in rows:
+        if row.get("kind") == "assumed":
+            for bar in (0, 1):
+                static_pen[bar] += (row.get("pen") or [0, 0])[bar]
+                static_crit[bar] += (row.get("crit") or [0, 0])[bar]
+    pen_hist = data.get("pen_hist") or []
+    crit_hist = data.get("crit_hist") or []
+    per_status = (float(options.get("force_of_nature_per_effect") or FORCE_OF_NATURE_PER_EFFECT)
+                  if options.get("force_of_nature") else 0.0)
+    eff_pen = effective_pen(pen_hist, static_pen[0], cap, per_status)
+    eff_crit = effective_crit(crit_hist, CRIT_BASE + static_crit[0], crit_cap)
+    debuffs = group.get("debuffs") or []
+    buffs = data.get("buffs") or []
+    on = group.get("on") or ""
+    on_text = {"boss": "on the boss", "enemies": "on the enemies"}.get(on, "")
+
+    assumed_tag = f" <span style='color:{muted};{small}'>({ASSUMED_MARK})</span>"
+
+    def cell(text, align="left", color=None, extra=""):
+        style = ";".join(s for s in (f"color:{color}" if color else "", extra) if s)
+        return f"<td align='{align}' style='{style}'>{text}</td>"
+
+    def own_cells(row, stat):
+        values = row.get(stat)
+        name = e(str(row.get("name", "")))
+        source = e(str(row.get("source", "")))
+        note = e(str(row.get("note", "")))
+        if row.get("kind") == "assumed":
+            name += assumed_tag
+        detail = " · ".join(part for part in (source, note) if part)
+        gives = values is not None and not any(values) and "give" in str(row.get("note", ""))
+        if gives:
+            # The set is the reason for a buff counted or measured below
+            value = ""
+            if row.get("when"):
+                detail = " · ".join(part for part in (source, note, e(str(row["when"]))) if part)
+        elif row.get("when"):
+            value = f"<span style='color:{muted}'>up to {_pair_text(values, stat == 'crit')}</span>"
+            detail = f"{source} · {e(str(row['when']))}"
+        elif row.get("measured"):
+            value = f"<span style='color:{muted}'>{_pair_text(values, stat == 'crit')} × uptime, below</span>"
+        elif values is None:
+            value = ""
+        else:
+            value = _pair_text(values, stat == "crit")
+        return (f"<tr>{cell(name)}{cell(value, 'right')}"
+                f"{cell(detail, color=muted, extra=small)}</tr>")
+
+    def table(title, cap_text, columns, body, totals):
+        head = (f"<tr><td colspan='3' style='{heading};{under}'>{title}"
+                f" <span style='font-weight:normal'>· {cap_text}</span></td></tr>")
+        parts = ["<table cellpadding='3' cellspacing='0' width='99%'>", head]
+        parts.extend(body)
+        parts.append(f"<tr><td colspan='3' style='padding-top:6px'>{'<br>'.join(totals)}</td></tr>")
+        parts.append("</table>")
+        return "".join(parts)
+
+    def group_header(label):
+        return (f"<tr><td style='{heading}'>{label}</td>"
+                f"<td align='right' style='color:{muted};{small}'>value</td>"
+                f"<td style='color:{muted};{small}'>uptime · who</td></tr>")
+
+    def group_row(d, stat, pct: bool):
+        who = f"{int(d.get('uptime_pct') or 0)}% · {_casters_text(d.get('casters'), e)}"
+        return (f"<tr>{cell(e(str(d['name'])))}{cell(_num(d[stat], pct), 'right')}"
+                f"{cell(who, color=muted, extra=small)}</tr>")
+
+    # Penetration
+    pen_body = [own_cells(row, "pen") for row in rows if row.get("pen") is not None]
+    if per_status and eff_pen.get("damage"):
+        status = eff_pen.get("status") or 0.0
+        fon_note = e(f"{per_status:,.0f} × {status:.1f} status effects on the target, "
+                     f"averaged over this player's damage")
+        pen_body.append(f"<tr>{cell('Force of Nature' + assumed_tag)}{cell(_num(per_status * status), 'right')}"
+                        f"{cell(fon_note, color=muted, extra=small)}</tr>")
+    pen_debuffs = [d for d in debuffs if d.get("pen")]
+    if pen_debuffs:
+        pen_body.append(group_header(f"Group {on_text}".strip()))
+        pen_body.extend(group_row(d, "pen", False) for d in pen_debuffs)
+    full_pen = static_pen[0] + sum(d["pen"] for d in pen_debuffs if d.get("uptime_pct"))
+    pen_totals = [f"Own {_pair_text(static_pen)}"]
+    if pen_debuffs:
+        gap = full_pen - cap
+        pen_totals.append(f"With the group's debuffs at full uptime {_num(full_pen)}, "
+                          + (f"over the cap by {_num(gap)}" if gap >= 0 else f"missing {_num(-gap)}"))
+    if eff_pen.get("damage"):
+        pen_totals.append(f"<b>Effective {_num(eff_pen['effective'])} of {_num(cap)}</b> over this player's damage, "
+                          f"{eff_pen['over_pct']:.0f}% of it dealt over the cap")
+    elif not pen_debuffs:
+        pen_totals.append(f"<span style='color:{muted}'>{NO_DAMAGE_MEASURED}</span>")
+    cap_text = f"cap {_num(cap)}" + (" at a trial dummy" if group.get("dummy") else
+                                     (" in instanced content" if instanced else " overland"))
+    pen_table = table(PEN_TITLE, cap_text, 3, pen_body, pen_totals)
+
+    # Critical damage
+    crit_body = [f"<tr>{cell('Base')}{cell(_num(CRIT_BASE, True), 'right')}{cell('every character', color=muted, extra=small)}</tr>"]
+    crit_body.extend(own_cells(row, "crit") for row in rows if row.get("crit") is not None)
+    if buffs:
+        crit_body.append(group_header("Buffs on this player"))
+        for b in buffs:
+            uptime = f"{int(b.get('uptime_pct') or 0)}%"
+            if b.get("via"):
+                uptime += f" · {e(str(b['via']))}"
+            crit_body.append(f"<tr>{cell(e(str(b['name'])))}{cell(_num(b['crit'], True), 'right')}"
+                             f"{cell(uptime, color=muted, extra=small)}</tr>")
+    crit_debuffs = [d for d in debuffs if d.get("crit")]
+    if crit_debuffs:
+        crit_body.append(group_header(f"Group {on_text}".strip()))
+        crit_body.extend(group_row(d, "crit", True) for d in crit_debuffs)
+    own_crit = [CRIT_BASE + v for v in static_crit]
+    full_crit = own_crit[0] + sum(b["crit"] for b in buffs if b.get("uptime_pct")) \
+        + sum(d["crit"] for d in crit_debuffs if d.get("uptime_pct"))
+    crit_totals = [f"Own {_pair_text(own_crit, True)}"]
+    if buffs or crit_debuffs:
+        gap = full_crit - crit_cap
+        crit_totals.append(f"With every buff and debuff at full uptime {_num(full_crit, True)}, "
+                           + (f"over the cap by {_num(gap, True)}" if gap >= 0 else f"missing {_num(-gap, True)}"))
+    if eff_crit.get("damage"):
+        crit_totals.append(f"<b>Effective {_num(eff_crit['effective'], True)} of {_num(crit_cap, True)}</b> over this player's damage, "
+                           f"{eff_crit['over_pct']:.0f}% of it dealt over the cap")
+    elif not (buffs or crit_debuffs):
+        crit_totals.append(f"<span style='color:{muted}'>{NO_DAMAGE_MEASURED}</span>")
+    crit_cap_text = f"cap {_num(crit_cap, True)}" + (" with Above and Beyond" if crit_cap != CRIT_CAP else "")
+    crit_table = table(CRIT_TITLE, crit_cap_text, 3, crit_body, crit_totals)
+
+    # The named anchor lets a reader (the screenshot script) scroll to here
+    return (f"<a name='{PEN_CRIT_ANCHOR}'></a>" + pen_table + crit_table
+            + f"<p style='margin:6px 0;color:{muted};{small}'>{PEN_CRIT_NOTE}</p>")
+
+
 def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None,
                       set_links=None, script_links=None, base_pt: float = 9.0,
-                      text_color: Optional[str] = None) -> str:
+                      text_color: Optional[str] = None, pen_crit_options: Optional[dict] = None) -> str:
     """One player's build in a fight as HTML for the build window.
 
     icons: object with has(stem) -> bool (the view's IconCache); None draws
@@ -290,7 +495,9 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     ESO-Hub URL or None, as for fight_render.render_html. base_pt: the pane's
     font size, which the title and the small print are scaled from (Qt rich
     text ignores percentage sizes). text_color: the pane's own text color,
-    which set names keep although they are links.
+    which set names keep although they are links. pen_crit_options: the
+    config's pen_crit section (the assumed Champion Point rows and the cap);
+    None assumes nothing and takes the cap from the zone.
     """
     theme = _theme(dark)
     e = html.escape
@@ -305,4 +512,5 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
+        _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e),
     ))

@@ -272,7 +272,8 @@ class PlayerDamage:
     """One player's damage in a fight: totals, the spans their dps divides
     by, and the breakdowns the damage window shows."""
     __slots__ = ('damage', 'boss_damage', 'window', 'boss_window',
-                 'abilities', 'boss_abilities', 'targets', 'buckets', 'boss_buckets')
+                 'abilities', 'boss_abilities', 'targets', 'buckets', 'boss_buckets',
+                 'target_buckets')
 
     def __init__(self):
         self.damage = 0
@@ -285,12 +286,17 @@ class PlayerDamage:
         # Damage per log second, for the graph (see series_of)
         self.buckets: Dict[int, int] = {}
         self.boss_buckets: Dict[int, int] = {}
+        # And per target unit, for the penetration and crit figures
+        # (pen_crit weighs the debuffs on each target by the damage dealt
+        # to it that second)
+        self.target_buckets: Dict[str, Dict[int, int]] = {}
 
     def note(self, ts: int, hit: int, result: str, ability_id: str, pet: bool,
              target_id: str, boss: bool) -> None:
         self.damage += hit
         self.window.note(ts)
         _bucket(self.buckets, ts, hit)
+        _bucket(self.target_buckets.setdefault(target_id, {}), ts, hit)
         if boss:
             _bucket(self.boss_buckets, ts, hit)
         key = (ability_id, pet)
@@ -346,7 +352,8 @@ class FightDamage:
     totals live on the encounter (total_damage, boss_damage); this adds
     the time they happened over, the breakdowns, and the group's damage
     per second for the graph."""
-    __slots__ = ('window', 'boss_window', 'players', 'buckets', 'boss_buckets')
+    __slots__ = ('window', 'boss_window', 'players', 'buckets', 'boss_buckets',
+                 'target_buckets')
 
     def __init__(self):
         self.window = Window()
@@ -354,11 +361,14 @@ class FightDamage:
         self.players: Dict[str, PlayerDamage] = {}
         self.buckets: Dict[int, int] = {}
         self.boss_buckets: Dict[int, int] = {}
+        # The group's damage per log second per target unit (pen_crit)
+        self.target_buckets: Dict[str, Dict[int, int]] = {}
 
     def note(self, player_id: str, ts: int, hit: int, result: str, ability_id: str,
              pet: bool, target_id: str, boss: bool) -> None:
         self.window.note(ts)
         _bucket(self.buckets, ts, hit)
+        _bucket(self.target_buckets.setdefault(target_id, {}), ts, hit)
         if boss:
             self.boss_window.note(ts)
             _bucket(self.boss_buckets, ts, hit)

@@ -666,7 +666,10 @@ class MainWindow(QMainWindow):
             return
         if self._build_dialog is None:
             self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
-        self._build_dialog.show_build(fights[row], unit_id, self._dark)
+        # The Settings' assumed Champion Point rows and cap, read at render
+        # time so a change applies to the next build window without a restart
+        self._build_dialog.show_build(fights[row], unit_id, self._dark,
+                                      pen_crit_options=self.config.get("pen_crit") or {})
         self._build_dialog.show()
         self._build_dialog.raise_()
         self._build_dialog.activateWindow()

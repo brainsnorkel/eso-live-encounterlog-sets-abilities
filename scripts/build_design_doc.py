@@ -68,6 +68,11 @@ TOPICS = [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
     ]),
+    ("Penetration and critical damage: the spreadsheet from the log", [
+        "src/pen_crit.py",
+        "scripts/generate_set_offense.py",
+        "src/gui/build_render.py:_pen_crit_html",
+    ]),
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
         "src/build_issues.py:BuildIssueTracker",

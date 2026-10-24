@@ -13,7 +13,7 @@ class FightHistoryEntry:
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
-                 'damage_series']
+                 'damage_series', 'pen_crit']
 
     def __init__(self):
         self.timestamp = ""
@@ -63,6 +63,12 @@ class FightHistoryEntry:
         # uptime line's item) and intervals (see
         # effect_rules.EffectTracker.snapshot); [] when there are no rules
         self.tracked = []
+        # The group-provided penetration and critical damage of the fight
+        # (pen_crit.fight_fields): the cap, the debuffs on the bosses with
+        # uptime and casters, and the damage-weighted histograms; each
+        # player's own part is their 'pen_crit' dict. None on an entry built
+        # without it
+        self.pen_crit = None
 
 
 class FightHistory:

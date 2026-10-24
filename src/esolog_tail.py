@@ -31,6 +31,7 @@ from build_issues import (
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
+import pen_crit
 import werewolf
 
 
@@ -746,6 +747,14 @@ class ESOLogAnalyzer(ListenerMixin):
         # The user's tracked effects (effect_rules); build_analyzer sets the
         # rules from the config, an empty tracker records nothing
         self.effect_tracker = EffectTracker([])
+        # The penetration and crit debuffs, buffs and status effects
+        # (pen_crit): fixed rules of their own, so the user's rules text
+        # cannot break the build window's figures. Fed wherever
+        # effect_tracker is
+        self.pen_crit_tracker = pen_crit.new_tracker()
+        # A trial dummy's own debuffs were seen in this zone: a parse, so
+        # the target has a trial boss's 18,200 resistance (pen_crit)
+        self._dummy_seen = False
         # The build-issue rules judged over the session: the proc sets that
         # never fire, and who has taunted (build_issues)
         self.build_issues = BuildIssueTracker()
@@ -883,6 +892,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if entry.fields:
                 self._enemy_last_hit.pop(entry.fields[0], None)
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
+                self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     self.current_encounter.pet_ownership.pop(entry.fields[0], None)
                     enemy = self.current_encounter.enemies.get(entry.fields[0])
@@ -1235,6 +1245,12 @@ class ESOLogAnalyzer(ListenerMixin):
                                                     front_bar_slots, back_bar_slots)
                 player.set_gear(player_info.gear_data)
                 player.long_term_effects = list(player_info.ability_ids)
+                # Buffs on the player as combat starts, with no GAINED line
+                # of their own (Lucent Echoes at the pull): the pen/crit
+                # tracker opens their spans here (pen_crit)
+                self.pen_crit_tracker.seed(player_info.ability_ids, player_info.unit_id,
+                                           player_info.timestamp,
+                                           self._unit_kind(player_info.unit_id))
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
             else:
@@ -1319,6 +1335,8 @@ class ESOLogAnalyzer(ListenerMixin):
             # Unit ids are handed out afresh in each zone: the tracked
             # effects on hostiles and pets end here
             self.effect_tracker.zone_changed(entry.timestamp)
+            self.pen_crit_tracker.zone_changed(entry.timestamp)
+            self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
@@ -1501,6 +1519,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Relative-ms offsets restart with each BEGIN_LOG session
         self.buff_timeline_recorder.reset()
         self.effect_tracker.reset()
+        self.pen_crit_tracker.reset()
         self.death_recap_recorder.reset()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
@@ -1790,6 +1809,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     # Its effects end with it: the game does not always
                     # write FADED for a corpse's (see effect_rules)
                     self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
+                    self.pen_crit_tracker.forget_unit(dying_unit_id, entry.timestamp)
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -1986,6 +2006,15 @@ class ESOLogAnalyzer(ListenerMixin):
                     effect_type, ability_id, target_unit_id, stack_count,
                     entry.timestamp, self._unit_kind(target_unit_id),
                     source_id=source_unit_id)
+            # The penetration and crit effects, for the build window's
+            # sections (pen_crit); a trial dummy's own debuffs mark a parse
+            if extracted is not None:
+                self.pen_crit_tracker.record(
+                    effect_type, ability_id, target_unit_id, stack_count,
+                    entry.timestamp, self._unit_kind(target_unit_id),
+                    source_id=source_unit_id)
+                if ability_id in pen_crit.DUMMY_IDS:
+                    self._dummy_seen = True
 
             # Werewolf form begins and ends with these effects on the player
             # (werewolf.py)
@@ -2390,6 +2419,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.effect_tracker.prune_before(enc.start_time)
 
+        # Penetration and critical damage (pen_crit): each player's own
+        # sources from their build, and the fight's debuffs and buffs
+        # weighed by the damage dealt while they were up
+        self._pen_crit_fields(entry, enc)
+        self.pen_crit_tracker.prune_before(enc.start_time)
+
         if enc.trial_info and enc.trial_info.get('completed'):
             trial = enc.trial_info
             trial_name = trial.get('trial_name', 'Unknown')
@@ -2402,6 +2437,50 @@ class ESOLogAnalyzer(ListenerMixin):
 
         return entry
 
+
+    def _pen_crit_fields(self, entry: FightHistoryEntry, enc: 'CombatEncounter') -> None:
+        """Set entry.pen_crit and each player's 'pen_crit' (pen_crit.py): the
+        player's own rows from their PLAYER_INFO line, the fight's debuffs
+        on the bosses with uptime and casters, each player's buffs, and the
+        damage-weighted histograms the build window reads against the cap.
+        The content is instanced when the zone's difficulty is NORMAL or
+        VETERAN, or a trial dummy's own debuffs were seen in this zone."""
+        difficulty = (self.current_difficulty or "").upper()
+        instanced = difficulty in ("NORMAL", "VETERAN")
+        damage = enc.damage
+        player_buckets = {p['unit_id']: damage.player(p['unit_id']).target_buckets
+                          for p in entry.players}
+
+        def gear_of(unit_id: str):
+            player = enc.players.get(unit_id)
+            return player.gear if player is not None else {}
+
+        try:
+            # Each player's own rows first: the buffs their sets give at all
+            # times are credited for the whole fight by the group part
+            own_rows = {}
+            for row in entry.players:
+                player = enc.players.get(row['unit_id'])
+                if player is not None:
+                    own_rows[row['unit_id']] = pen_crit.player_rows(
+                        player.gear, player.long_term_effects,
+                        player.front_bar_abilities, player.back_bar_abilities)
+            group, per_player = pen_crit.fight_fields(
+                self.pen_crit_tracker, enc.start_time, enc.end_time, enc.fight_units(),
+                damage.target_buckets, player_buckets, self._resolve_timeline_name,
+                gear_of, instanced, self._dummy_seen,
+                always_on={uid: own["gives"] for uid, own in own_rows.items() if own.get("gives")})
+        except Exception as exc:  # a figure must never cost the fight entry
+            if self.diagnostic:
+                _console(f"pen_crit failed: {exc}")
+            return
+        entry.pen_crit = group
+        for row in entry.players:
+            own = own_rows.get(row['unit_id'])
+            if own is None:
+                continue
+            own.update(per_player.get(row['unit_id'], {}))
+            row['pen_crit'] = own
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0, long_term_effects: List[str] = None, masteries: List[str] = None):
         """Update or create a player session with their current data."""
