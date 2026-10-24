@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1943](../src/esolog_tail.py#L1943)*
+*[src/esolog_tail.py:1957](../src/esolog_tail.py#L1957)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:68](../src/esolog_tail.py#L68)*
+*[src/esolog_tail.py:71](../src/esolog_tail.py#L71)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1406](../src/esolog_tail.py#L1406)*
+*[src/esolog_tail.py:1419](../src/esolog_tail.py#L1419)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1421](../src/esolog_tail.py#L1421)*
+*[src/esolog_tail.py:1434](../src/esolog_tail.py#L1434)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:62](../src/esolog_tail.py#L62)*
+*[src/esolog_tail.py:65](../src/esolog_tail.py#L65)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3123](../src/esolog_tail.py#L3123)*
+*[src/esolog_tail.py:3166](../src/esolog_tail.py#L3166)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:343](../src/esolog_tail.py#L343)*
+*[src/esolog_tail.py:346](../src/esolog_tail.py#L346)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -654,7 +654,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
+*[src/gui/build_render.py:335](../src/gui/build_render.py#L335)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -662,6 +662,148 @@ the boss (uptime, value, casters) and the buffs on the player, then the
 totals: own, with every debuff at full uptime, and effective (each
 second of the player's damage capped, as Combat Metrics caps each
 hit), against the cap.
+
+## Possible build issues: what the log proves about a build
+
+### src/build_issues.py
+
+*[src/build_issues.py:1](../src/build_issues.py#L1)*
+
+Possible build issues: what a player's logged build and their fights say
+about likely mistakes, shown behind an (i) on their row of the fight pane
+and repeated in the build window (engine side, no Qt). Issue #16.
+
+Design: a finding is something the log proves about the build the player
+pulled with, and every finding carries the rule it comes from in plain
+words, so the reader learns the rule from the finding. The rules are the
+maintainer's (decided 2026-10-24), checked against 83 split logs of
+September and October 2026 (1,615 fights, 13,998 player-fights, 393
+characters); with them, 17% of the characters seen would carry a note. Per
+rule, player-fights / distinct characters in that survey:
+
+- **Nirnhoned on an off-hand weapon** (429 / 17, every one a DPS; the
+  classic form is a Precise main hand beside a Nirnhoned off hand). The
+  trait raises the damage of the weapon it is on, and UESP's Dual Wield
+  page gives Dual Wield Expert as Weapon and Spell Damage equal to 6% of
+  the off-hand weapon's damage, so an off-hand Nirnhoned is worth about a
+  sixteenth of a main-hand one. A shield's Nirnhoned (ARMOR_NIRNHONED, 4
+  tank fights) is the armor trait and is not reported.
+- **The same glyph on both weapons of a bar** (421 / 22: Absorb Stamina,
+  Berserker, Poisoned, Weakening, Absorb Health), whatever the glyph.
+  Identical glyphs share one cooldown: measured on every dual-wield front
+  bar of those logs, the same glyph from one player never fired twice
+  within 4.0 s whether the bar carried it once or twice, and the proc rate
+  was the same (Absorb Stamina 6.0 against 6.5 per minute, Poisoned 6.2
+  against 7.2, Berserker 9 s gaps either way), so the second glyph never
+  fires. The same glyph on both bars (112 / 7: a tank's Hardening or
+  Crusher on both bars, Berserker on both bars of a DPS) is not reported:
+  with a cooldown twice the buff's duration, a copy on the other bar fills
+  the gap after a swap.
+- **Two or more heavy armor pieces on a damage dealer** (218 / 9; five or
+  more 103 / 4). Heavy Armor's passives add nothing to damage. One heavy
+  piece is the usual Undaunted Mettle split (618 of 8,766 DPS
+  player-fights) and is not reported. The role is the app's heuristic
+  (infer_player_role), which reads the dominant resource, so a
+  health-stacked DPS reads as a tank and a stamina-heavy fake tank as a
+  DPS: 363 "tank" player-fights wore no heavy at all. The rule therefore
+  asks for the DPS role and that the player has not taunted this session.
+- **A weapon skill on a bar holding another weapon** (235 / 14 with the
+  bar in use; Stampede left on a staff back bar is the commonest). The
+  skill's line comes from the bundled weapon_skill_lines.json (UESP's
+  player skill table, scripts/generate_weapon_skill_lines.py), or from the
+  grimoire a scribed skill's icon names; the bar's line from the weapon
+  types of its two slots. The back bar under Oakensoul Ring (set 658; 55
+  more player-fights) is skipped, since the ring forbids swapping, and a
+  bar whose weapon the bundled table does not know is not judged.
+- **Elemental Drain** (124 / 5: tanks 69, healers 50, DPS 5, all in
+  trials), per player, the maintainer's decision. The finding states both
+  morphs: Drain (ids 39095, 41559, 41563, 41567) applies Major Breach and
+  Minor Magickasteal; Elemental Susceptibility applies Major Breach and
+  the Burning, Chilled and Concussion status effects every 7.5 seconds.
+- **A proc set that never fires** (Roar of Alkosh 12 / 3 and Roaring
+  Opportunist 19 / 8 at the 60 s floor). Judged per logging session, not
+  per fight: in fights of 90 s or more Alkosh fired for 112 of 117
+  wearer-fights, yet 30 of 219 wearer-fights under 30 s had no proc though
+  the set worked. So the tracker counts, per player and set, the fights of
+  a minute or more the set was worn in, and whether the set's effect was
+  ever sourced by the player in any fight of the session; one fire clears
+  the finding for the session. In those logs Alkosh wearers sourced Roar
+  of Alkosh as 76667 and 75751, Roaring Opportunist wearers Major Slayer as
+  93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
+  came from other sets). The one wearer who never fired Alkosh never used a
+  synergy through a whole Halls of Fabrication run, 240 s fight included.
+- **A group buff set complete on one bar only** (80 / 3), for Pearlescent
+  Ward, Xoryn's Masterpiece and Lucent Echoes, whose five-piece bonus is a
+  buff for the whole group that holds only while five pieces are active.
+  The rule cannot be general: 38% of all five-piece wearings in the survey
+  were one-bar, which is normal for proc sets and front-bar damage sets.
+  Piece counts per bar come from player_build.piece_counts (a two-hander
+  counts as two). A build without a back-bar weapon, or wearing Oakensoul
+  Ring, is not reported.
+- **A tank with no taunt or pull** (95 / 3 with the gates below; added the
+  same day at the maintainer's request). The health pool alone is not a
+  tank: of 3,154 health-dominant player-fights in the same logs, 762 had
+  neither a taunt nor a pull on their bars and never taunted, but 519 of
+  those wore at most one heavy piece and were damage dealers or healers
+  whose health happened to be their largest pool, and 40 more taunted
+  through the Tormentor set's charges and chains. Real tanks (a taunt
+  slotted and taunting) dealt a median 0.10 of an equal share of the
+  group's damage, 0.22 at the 90th percentile and 0.27 at the 95th. So
+  besides the role, the bars and the session's taunts the rule asks for
+  tank gear (a shield, an ice staff or five heavy pieces), at most half an
+  equal share of the damage, and no healer sign (a restoration staff on a
+  bar, or more healing to others than damage dealt: a heavy-armor healer in
+  Sunspire would otherwise be flagged). Taunt and pull ids are UESP's for
+  every rank plus the ids the bars carried in the logs; names count too,
+  since the game now calls the chains Chains of Flame, Dominance and
+  Devastation and the Arcanist's rank ids differ from UESP's. A scribed
+  skill taunts or pulls by its focus script, Taunt or Pull, which names it
+  Goading or Leashing. Destructive Clench taunts only with an ice staff in
+  hand, when it is cast as Frost Clench.
+
+The lists a later rules text could lift out (the maintainer's separate
+issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
+OAKENSOUL_SET_ID, the taunt and pull tables, the weapon lines table. The
+checks themselves are code.
+
+### BuildIssueTracker
+
+*[src/build_issues.py:506](../src/build_issues.py#L506)*
+
+The rules judged over a logging session rather than a fight: the
+proc sets that never fire, and who has taunted (the heavy-armor rule's
+guard). Keyed by the engine's per-session player key; a fight is keyed
+by its start, so a fight the game cut in two and republished replaces
+its own record instead of counting twice. reset() at BEGIN_LOG.
+
+### scripts/generate_weapon_skill_lines.py
+
+*[scripts/generate_weapon_skill_lines.py:1](../scripts/generate_weapon_skill_lines.py#L1)*
+
+Generate data/skills/weapon_skill_lines.json: every active skill of the six
+weapon skill lines (Two Handed, One Hand and Shield, Dual Wield, Bow,
+Destruction Staff, Restoration Staff) by game ability id, with its line and
+name, for the build-issue rule that spots a weapon skill slotted on a bar
+holding another weapon (build_issues.py).
+
+The encounter log lists a bar's skills by ability id and never says which
+skill line a skill belongs to. UESP's player skill table does: one request
+(about 4,400 rows, 2 MB) lists every player skill with its line, rank and
+whether it is a passive. The rows kept here are the non-passive rows of
+the six lines with a rank of 1 or more: every rank of every morph (the log
+writes the id of the rank the player has: Stampede is 38788, 39797, 39802
+or 39807), the scribed grimoire skills of those lines included (Elemental
+Explosion is logged as 217228 and a dozen other ids, one per focus script).
+Left out: the passives (never in a bar), the rank -1 rows, which are
+internal effects such as Bash and Follow Up, and UESP's own rank ids for
+crafted skills (20217228 for rank 2 of 217228), which no log ever carries.
+605 ids on the Update 51 client.
+
+Run after an ESO update that adds a weapon skill or a grimoire (one request
+to UESP, which asks heavy users to go lightly, so do not loop it):
+    python scripts/generate_weapon_skill_lines.py
+or from a reply already on disk, such as the one the esobuild export keeps:
+    python scripts/generate_weapon_skill_lines.py --from build/esobuild-assets/sources/player_skills.json
 
 ## Tracked effects: the uptime line as rules anyone can paste
 
@@ -844,7 +986,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:619](../src/esolog_tail.py#L619)*
+*[src/esolog_tail.py:629](../src/esolog_tail.py#L629)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -880,13 +1022,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:77](../src/esolog_tail.py#L77)*
+*[src/esolog_tail.py:80](../src/esolog_tail.py#L80)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:393](../src/esolog_tail.py#L393)*
+*[src/esolog_tail.py:396](../src/esolog_tail.py#L396)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -897,7 +1039,7 @@ Frost Clench, a separate id with the same icon).
 
 ### What counts as damage
 
-*[src/esolog_tail.py:94](../src/esolog_tail.py#L94)*
+*[src/esolog_tail.py:97](../src/esolog_tail.py#L97)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -905,7 +1047,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:112](../src/esolog_tail.py#L112)*
+*[src/esolog_tail.py:115](../src/esolog_tail.py#L115)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1051,7 +1193,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:479](../src/esolog_tail.py#L479)*
+*[src/esolog_tail.py:485](../src/esolog_tail.py#L485)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1074,7 +1216,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:570](../src/esolog_tail.py#L570)*
+*[src/esolog_tail.py:576](../src/esolog_tail.py#L576)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1205,7 +1347,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:473](../src/gui/main_window.py#L473)*
+*[src/gui/main_window.py:476](../src/gui/main_window.py#L476)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1215,7 +1357,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:804](../src/gui/main_window.py#L804)*
+*[src/gui/main_window.py:822](../src/gui/main_window.py#L822)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -1234,7 +1376,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:247](../src/gui/fight_view.py#L247)*
+*[src/gui/fight_view.py:249](../src/gui/fight_view.py#L249)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1249,7 +1391,7 @@ runs only while the page holds a ringed icon and the view is shown.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:166](../src/gui/fight_view.py#L166)*
+*[src/gui/fight_view.py:168](../src/gui/fight_view.py#L168)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

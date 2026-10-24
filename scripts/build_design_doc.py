@@ -73,6 +73,11 @@ TOPICS = [
         "scripts/generate_set_offense.py",
         "src/gui/build_render.py:_pen_crit_html",
     ]),
+    ("Possible build issues: what the log proves about a build", [
+        "src/build_issues.py",
+        "src/build_issues.py:BuildIssueTracker",
+        "scripts/generate_weapon_skill_lines.py",
+    ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
         "src/effect_rules.py",
         "src/effect_rules.py:EffectTracker",

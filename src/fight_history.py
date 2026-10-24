@@ -41,6 +41,7 @@ class FightHistoryEntry:
         # skill_lines, front_bar, back_bar,
         # front_bar_slots, back_bar_slots (a slot the player taunted with carries 'taunt': True),
         # taunts (the abilities they taunted with, see ESOLogAnalyzer._taunts_of),
+        # build_issues (the possible build issues behind the row's (i), see build_issues),
         # and for the build window: character, race, gear, mundus, food (see player_build.build_fields)
         self.players = []
         self.buff_summary = ""

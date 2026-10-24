@@ -3,7 +3,9 @@ The build window's HTML: one player's build for a fight, as the encounter
 log recorded it when combat started.
 
 Top to bottom: who it is and which fight; mundus stone, food and Class
-Mastery passives; both ability bars, front above back, then a werewolf's
+Mastery passives; the possible build issues the fight pane's (i) lists,
+when there are any (build_issues, fight_render.issues_html); both ability
+bars, front above back, then a werewolf's
 own bar rebuilt from casts (see werewolf.py), with the fight view's line of
 scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
@@ -28,7 +30,7 @@ from typing import Optional
 
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
-    werewolf_bar_html,
+    issues_html, werewolf_bar_html,
 )
 from pen_crit import (
     CRIT_BASE, CRIT_CAP, FORCE_OF_NATURE_PER_EFFECT, assumed_rows, effective_crit, effective_pen,
@@ -505,6 +507,9 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     return "".join((
         _header_html(entry, p, theme, base_pt, e),
         _mundus_food_html(p, theme, icons, e),
+        # The possible build issues the fight pane's (i) shows, repeated
+        # here where the build is read (build_issues)
+        issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
         _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e),

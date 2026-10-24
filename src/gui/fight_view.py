@@ -8,7 +8,8 @@ anchorClicked, and only http(s) targets are opened externally. A click on a
 player's death-recap button is announced through death_recap_requested, a
 click on a player's name through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
-through graph_requested.
+through graph_requested, a click on a player's build-issues (i) through
+issues_requested.
 
 A player's name and dps figure look like plain text (the dps figures carry
 a small glyph that says they can be clicked, see gui.glyphs; the names do
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 from gui.death_render import unit_from_href
 from gui.fight_render import (
     BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, build_unit_from_href,
-    damage_unit_from_href,
+    damage_unit_from_href, issues_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -72,6 +73,7 @@ class FightView(QTextBrowser):
     build_requested = Signal(str)  # unit id of the player whose name was clicked
     damage_requested = Signal(str)  # unit id of the player whose dps figure was clicked
     graph_requested = Signal()  # the header's group dps figure was clicked
+    issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -292,6 +294,10 @@ class FightView(QTextBrowser):
             return
         if url.toString() == GRAPH_HREF:
             self.graph_requested.emit()
+            return
+        unit_id = issues_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.issues_requested.emit(unit_id)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

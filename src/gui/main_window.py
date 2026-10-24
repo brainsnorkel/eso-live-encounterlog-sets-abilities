@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence, QPalette,
-    QShortcut, QTextCharFormat, QTextCursor,
+    QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -22,14 +22,16 @@ from PySide6.QtWidgets import (
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from gui.build_dialog import BuildDialog
+from gui.build_issues_popup import BuildIssuesPopup
+from gui.build_render import player_for
 from gui.damage_dialog import DamageDialog
 from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
 from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
-    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, link_color,
-    muted_color, render_html, render_plain_text, summary_line,
+    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    issues_tooltips, link_color, muted_color, render_html, render_plain_text, summary_line,
 )
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
@@ -245,6 +247,7 @@ class MainWindow(QMainWindow):
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
         self.fight_view.graph_requested.connect(self._show_graph)
+        self.fight_view.issues_requested.connect(self._show_issues)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -375,7 +378,7 @@ class MainWindow(QMainWindow):
             return  # from the analyzer Settings is replacing
         self._fights.append(entry)
         if self._review_fights is None:
-            item = QListWidgetItem(summary_line(entry, death_cue=True))
+            item = QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True))
             self.history_list.addItem(item)
             if self._follow_live:
                 self.history_list.setCurrentRow(self.history_list.count() - 1)
@@ -395,7 +398,7 @@ class MainWindow(QMainWindow):
         item = self.history_list.item(row) if row >= 0 else None
         if item is None:
             return
-        item.setText(summary_line(entry, death_cue=True))
+        item.setText(summary_line(entry, death_cue=True, issue_cue=True))
         if row == self.history_list.currentRow():
             self._show_fight(row)
 
@@ -601,7 +604,7 @@ class MainWindow(QMainWindow):
         self.history_list.clear()
         for entry in fights:
             self.history_list.addItem(
-                QListWidgetItem(summary_line(entry, death_cue=True)))
+                QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True)))
         if fights:
             self.history_list.setCurrentRow(len(fights) - 1)
 
@@ -620,6 +623,7 @@ class MainWindow(QMainWindow):
         tooltips = death_tooltips(entry)
         tooltips.update(build_tooltips(entry))
         tooltips.update(damage_tooltips(entry))
+        tooltips.update(issues_tooltips(entry))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,
@@ -682,6 +686,20 @@ class MainWindow(QMainWindow):
         self._damage_dialog.show()
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
+
+    def _show_issues(self, unit_id):
+        """A player's (i) was clicked in the fight on screen: their possible
+        build issues, each with its rule, in a popup at the pointer. The
+        popup owns itself (Qt.Popup, deleted on close), so nothing here
+        keeps a reference to it."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if row < 0 or row >= len(fights):
+            return
+        text = issues_html(player_for(fights[row], unit_id), self._dark,
+                           set_links=esohub_set_url, links=esohub_ability_url)
+        if text:
+            BuildIssuesPopup(text, self).show_at(QCursor.pos())
 
     def _show_graph(self):
         """The toolbar's DPS graph, or the header's group dps figure, was
