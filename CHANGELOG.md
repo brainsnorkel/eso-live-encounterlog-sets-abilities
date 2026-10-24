@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.13.0] - 2026-10-24
 
 ### Added
 - **Effective penetration and crit damage on every player's row** (#37): after the damage shares, `p:18199 cd:121%` gives the player's effective penetration and critical damage over the fight, computed as the build window's sections compute them (each second capped, the Settings' assumed Champion Point rows included), in both views and in the copied text. Hovering it gives the caps, the shares of them and the share of damage dealt over each; clicking it opens the build window at the two sections. A player who dealt no damage has no token
