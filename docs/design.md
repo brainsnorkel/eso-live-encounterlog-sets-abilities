@@ -1079,7 +1079,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:205](../src/gui/fight_view.py#L205)*
+*[src/gui/fight_view.py:247](../src/gui/fight_view.py#L247)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1089,3 +1089,57 @@ of the glow (IconCache keeps PULSE_STEPS images per ring colour) and
 the viewport repainted: a few small images and a repaint every
 PULSE_INTERVAL_MS, no layout, so the page never moves. The timer
 runs only while the page holds a ringed icon and the view is shown.
+
+## Links in the fight pane: the hover cue and the dps glyphs
+
+### FightView._show_hover_cue
+
+*[src/gui/fight_view.py:166](../src/gui/fight_view.py#L166)*
+
+Design: the hover cue. Underline the hovered player name or dps
+figure in the link color; any other target, or none, clears the cue.
+
+A name or dps figure keeps the look of plain text in the page (the
+figures carry a glyph beside them, see gui.glyphs; the names do not,
+since twelve underlined or blue names would be clutter). Qt rich text
+has no hover styling, and changing the document's own character
+format on hover would enter the undo stack, relayout the page and
+invalidate the cursors the in-fight search holds. So the cue is an
+extra selection: a format painted over a text range without touching
+the document. The search's highlights are extra selections too, and
+setting one list replaces the other, so the view owns both lists and
+applies their union. The selection covers the anchor's text and stops
+at its glyph, which is an image fragment of the same anchor; the
+glyph still triggers the cue and the tooltip, since the pointer on it
+is the pointer on the anchor.
+
+### src/gui/glyphs.py
+
+*[src/gui/glyphs.py:1](../src/gui/glyphs.py#L1)*
+
+Design: Link glyphs. The fight pane has three kinds of link that are not
+ESO-Hub pages: a player's name opens their build window, their dps figure
+their damage window, and the header's group dps figure the dps over time
+graph. All three are drawn as plain text in the pane's own colours, by
+choice: twelve underlined or blue names in a trial fight would be clutter,
+and the name is the row's identity. The cost is that nothing says they can
+be clicked until the pointer is on them (the hover cue, see
+FightView._show_hover_cue), and the two dps figures suffered most: the
+group figure sits in the muted stats line where nothing else is clickable,
+and the damage window has no other way in at all (issue #34).
+
+So the two figures carry a small glyph inside their anchor, drawn here with
+QPainter rather than shipped as a file: after the group figure, a short
+polyline in the graph's own line style (about 2 px, round joins) in the
+theme's link colour, the one coloured mark in that grey line; after each
+player's figure, three bars, longest on top, in the muted colour, since
+there are up to twelve of them. Being inside the anchor, a glyph is part
+of the click target and of the hover: the view underlines the text beside
+it and shows the same tooltip. The glyph follows the pane's font size and
+is drawn at the view's device pixel ratio, so it stays crisp on a scaled
+display (Qt lays out an image that carries a device pixel ratio at its
+logical size). Names stay plain, with their hover cue.
+
+The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
+(fight_render.glyph_html), which FightView.loadResource answers from here:
+one image per kind, colour, size and ratio, kept for the session.
