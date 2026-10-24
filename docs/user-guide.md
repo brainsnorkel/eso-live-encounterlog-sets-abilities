@@ -5,6 +5,8 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [First run](#first-run)
 - [The main window](#the-main-window)
 - [A player's build](#a-players-build)
+- [A player's damage](#a-players-damage)
+- [DPS over time](#dps-over-time)
 - [Death recaps](#death-recaps)
 - [Tracked effects](#tracked-effects)
 - [The buff timeline](#the-buff-timeline)
@@ -37,14 +39,14 @@ The list on the left has one line per completed fight: `boss · duration · grou
 ### The fight
 
 - **Header**: boss or mob name, then duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. Click the group DPS, or **DPS graph** on the toolbar, for the [dps over time graph](#dps-over-time).
-- **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; six boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Alkosh); and Crux, the mean and peak Crux you held. Every row is a [tracked-effect rule](#tracked-effects), on every fight whatever the group size. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
+- **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; six boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Alkosh); and Crux, the mean and peak Crux you held. Each of these is a [tracked-effect rule](#tracked-effects) and has a row when its effect was up; the group buffs also show at `0%` in a group of five or more when nobody had them, and the taunt in any group. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
   - the role letter, **T**ank, **H**ealer or **D**PS (see [Roles](#what-the-numbers-are-based-on));
   - the account name, with `*` after the player who dealt the fight's first damage;
   - the class. A build that borrows skill lines from another class shows those lines after a plus sign, `NB +Aedric +Grave`, read from the character's passives, so a line taken for its passives alone shows too. A pure-class build names its Class Mastery passives after a colon instead, `NB: An Eye for Exploitation, Above and Beyond`. A stock build shows just the class;
   - DPS and the share of the group's damage, each `boss / total` in a fight with a boss (against the units the game flags as bosses, then against everything), and max health, magicka and stamina with the largest pool in bold. Click a DPS figure for the player's [damage window](#a-players-damage); hover it for the time the figure divides by.
 
-DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on). Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's. The header shows the fight time and, when it reads differently, the group's dps time beside it: `1:40 (dps time 1:32)`.
+DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on). Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's.
 
 ### A player's row in detail
 
@@ -120,15 +122,15 @@ Heals that were pure overheal are left out. A death the game writes just after c
 Every row of the buff timeline is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these:
 
 ```
-Major Courage    = 109966 on group
-Major Force      = 61747 on group
-Major Slayer     = 93109 on group
-Powerful Assault = 61771 on group
-Lucent Echoes    = 220015 on group
-Pearlescent Ward = 172621 on group
-Taunt            = 38254 on boss each
+Major Courage    = 109966 on group expected large
+Major Force      = 61747 on group expected large
+Major Slayer     = 93109 on group expected large
+Powerful Assault = 61771 on group expected large
+Lucent Echoes    = 220015 on group expected large
+Pearlescent Ward = 172621 on group expected large
+Taunt            = 38254 on boss each expected small large
 Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss
-Touch of Z'en = 126597 on boss stacks
+Touch of Z'en = 126597 on boss dots
 Crux          = 184220 on self stacks
 Morag Tong    = 34384 on boss
 Minor Brittle = 145975 on boss
@@ -136,13 +138,17 @@ Major Brittle = 263825 on boss
 Alkosh        = 76667 on boss
 ```
 
-A rule is `Name = ability ids on <scope>`, then optionally `stacks` or `each`:
+A rule is `Name = ability ids on <scope>`, then optionally a measure (`stacks`, `each` or `dots`) and `expected <sizes>`, in any order:
 
-- **Ids**: a rule matches any of its ids, since an effect such as Off-Balance has one id per skill that applies it. They are the ids the game logs; an addon such as HyperTools or LuiExtended shows them. A rule for an id the log never writes reads 0%.
+- **Ids**: a rule matches any of its ids, since an effect such as Off-Balance has one id per skill that applies it. They are the ids the game logs; an addon such as HyperTools or LuiExtended shows them.
 - **Scope** says whose effects count: `self` is the player whose client writes the log, `group` any group member, `pets` a group member's pet, `boss` an enemy the game flags as a boss, `enemies` any hostile.
 - **Measure**: by default, the share of the fight the effect was on at least one unit of the scope, `Off-Balance:17%`. `stacks` gives the mean stack count while it was up and the peak, `Crux:2.1/3`. `each` measures every unit of the scope separately, over the time that unit was alive in the fight, and shows the mean. That is the taunt's measure: a fight with two bosses averages them, and a boss killed early is measured to its death.
+- **`dots`** is for Touch of Z'en, whose stacks the game never writes to the log: while a wearer's Z'en is on the boss, it counts that wearer's damage-over-time effects on it, at most five, and shows the mean and peak, `Touch of Z'en:4.3/5`. This is how Combat Metrics counts it. An effect counts when the log shows it ticking as damage over time, so Burning, Poisoned, bleeds and set DoTs count, a ground area such as Stampede does not, and 0 means Z'en was up with no bonus.
+- **When a rule shows**: a rule's row, and its item in the copied text, shows whenever its effect was up in the fight. `expected` makes it show at `0%` even when the effect never came, in the group sizes you name: `solo` (one player), `small` (two to four), `large` (five or more), or `all`; `expected` alone means all. The defaults expect the six group buffs in a large group and the taunt in small and large groups, so a missing Major Courage in a trial stands out, while a dungeon run is not a column of zeros. The boss debuffs show when someone applied them.
 - **Trash packs**: in a fight without a boss, a `boss` rule measures every hostile the group fought instead, and both it and an `enemies` rule say how many of the pack's mobs the effect reached: `Alkosh:45% on 7 of 12 mobs`. In a boss fight nothing changes.
-- **HyperTools**: a line that starts with `$` is a tracker exported from the [HyperTools](https://github.com/Hyperioxes/HyperTools) addon, pasted as is. Its name, ability ids and target become a rule; `stacks` or `on boss` after the string override it.
+- **HyperTools**: a line that starts with `$` is a tracker exported from the [HyperTools](https://github.com/Hyperioxes/HyperTools) addon, pasted as is. Its name, ability ids and target become a rule; `stacks`, `on boss` or `expected <sizes>` after the string apply to it.
+
+Rules saved by an earlier version are brought up to date once, when the app starts: the seven default group-buff and taunt lines get their `expected` words, and a `Touch of Z'en … stacks` line becomes `dots`. A line you renamed, or gave your own `expected`, is left as you wrote it.
 
 Delete the lines you do not want and rename the rest as you like (`MCourage` if you prefer the short form). The box tells you how many rules it holds and which lines it cannot read. **Examples…** opens a list of example rules, each with what it tells you and its line, the default rules first: tick the ones you want and **Add to rules** puts them under yours, or **Copy** puts the ticked lines on the clipboard to share. A rule you already have starts unticked.
 
@@ -154,9 +160,9 @@ Saving restarts monitoring, so new rules apply to the session's fights at once.
 
 A compact strip above each fight shows every tracked effect across the fight's length (see the [main window picture](#the-main-window)).
 
-- **Rows**: the strip's built-in rows, Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability and Taunt, then one row for each of your [tracked-effect rules](#tracked-effects) (a rule with the same name as a built-in row does not get a second one). Major Berserk and Major Vulnerability are built-in rows only; they are not in the copied text line. A row for an effect that never occurred is left out, and the strip disappears when there is nothing to show.
+- **Rows**: the strip's built-in rows, Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability and Taunt, then one row for each of your [tracked-effect rules](#tracked-effects) (a rule with the same name as a built-in row does not get a second one). Major Berserk and Major Vulnerability are built-in rows only; they are not in the copied text line. A rule whose effect never occurred has a row only when it is [expected](#tracked-effects) in a group of that size, an empty one reading `0%`; otherwise it is left out, and the strip disappears when there is nothing to show.
 - **Buffs above, debuffs below**: rows whose effect is on your side (`group`, `self`, `pets`) come first, then the rows on the enemy (`boss`, `enemies`, `mobs`), with a thin line between the two. Each side keeps the order its rows come in: built-in rows first, then your rules in the order you wrote them.
-- **Each row** is filled where the effect was up, with its uptime in the label and time ticks underneath. Beside the label a word says whose effect it is: `group`, `boss` for Major Vulnerability and the taunt, and each rule's scope (`self`, `pets`, `enemies`, or `mobs` for a boss rule measured on the pack of a fight without a boss). A stacking rule's bar rises and falls with the count. A group buff that reached only one or two people is dotted rather than solid.
+- **Each row** is filled where the effect was up, with its uptime in the label and time ticks underneath. Beside the label a word says whose effect it is: `group`, `boss` for Major Vulnerability and the taunt, and each rule's scope (`self`, `pets`, `enemies`, or `mobs` for a boss rule measured on the pack of a fight without a boss). A stacking rule's bar rises and falls with the count, and Touch of Z'en's against its five DoTs. A group buff that reached only one or two people is dotted rather than solid.
 - **Hover** a segment for who cast it and who received it at that moment. Hover a label for its full text when it is cut short.
 - **Click** a row, label or bar, for a summary of the whole fight: who applied the effect (each caster's uptime, how much of it no other caster covered, and how many spans), who had it (each receiver's uptime, and for a stacking rule its peak and the time at the peak), and, when there are only a few of each, a grid of caster against receiver. A click elsewhere or Esc closes it.
 
@@ -216,7 +222,7 @@ The [design notes](design.md), collected from the code itself, go into each of t
 - **Builds**: `PLAYER_INFO` events carry each player's slotted abilities, gear and long-term effects. The class skill lines are read from the class passives among those effects, with the slotted abilities filling in for a line whose passives a character has not learned; a build has at most three lines. The same table names the Class Mastery passives: from the passive list for a mastery whose effect is always on, and from the effect a proc mastery fires (the player being its source) for the others, kept for the rest of the session.
 - **Werewolf form**: the game writes only a player's two human bars, never the bar a werewolf fights with. The app tells a player is in werewolf form from the effects the game puts on them as they transform, and rebuilds their werewolf bar from the werewolf skills they cast in form; a Carnage counts as its Pounce, which it replaces at close range.
 - **Gear sets** are mapped through the [LibSets](https://github.com/Baertram/LibSets/tree/LibSets-reworked/LibSets) database. Each equipped item comes with its trait, quality and enchant. The log does not say how heavy an armor piece is or what a weapon is, so both are looked up by item id in tables from UESP's item database. A slotted poison is named the same way. Food is recognised by the buff list of the LibFoodDrinkBuff addon.
-- **Tracked effects**: every buff and debuff is an `EFFECT_CHANGED` line naming the ability, the caster, the target and the stack count. A rule's uptime is the union of its ids' spans over the units of its scope, and its stacks the highest count among them, averaged over the time it was up.
+- **Tracked effects**: every buff and debuff is an `EFFECT_CHANGED` line naming the ability, the caster, the target and the stack count. A rule's uptime is the union of its ids' spans over the units of its scope, and its stacks the highest count among them, averaged over the time it was up. The game never logs Touch of Z'en's stacks, so `dots` counts the wearer's effects that tick as damage over time, as Combat Metrics does. A rule shows when its effect was up, or when it is `expected` in the fight's group size, counted from the players in the fight.
 - **Scribed skills**: the log names a scribed skill's focus, signature and affix scripts on its `ABILITY_INFO` line, directly before the `PLAYER_INFO` of the player who uses it. That is how scripts are tied to players: the ability id alone covers several focus scripts of a grimoire, so two players with the same id can run different skills.
 - **Deaths**: player `DIED` events during the fight, and `KILLING_BLOW` events on a player, which is how the log records a player killed by another player. The recap comes from the `COMBAT_EVENT` lines that hit or healed that player in the 5 seconds before.
 - **Icons and links**: the log names each ability's icon file, and the app ships those icons extracted from the game. ESO-Hub links come from bundled maps of ESO-Hub's sitemaps; nothing is sent to ESO-Hub until you click.
@@ -238,8 +244,8 @@ The [design notes](design.md), collected from the code itself, go into each of t
 
 - **No fights appear**: logging is off in-game (see [First run](#first-run)); **Last entry** turns green while the log is being written. A fight appears only once combat ends.
 - **"Waiting for Encounter.log"**: logging has never been enabled, or the log lives somewhere unusual: point Settings → Encounter log at it.
-- **DPS differs from Combat Metrics or ESO Logs**: the app counts the same results Combat Metrics does, but leaves out overkill, and in a fight with a boss shows boss DPS first (`boss / total`). Compare like with like; see [Damage](#what-the-numbers-are-based-on). A fight the game split in two around a resurrection is one fight here.
-- **A set shows as `Set#123`**: the set is newer than the bundled set table; it will be named after the next release.
+- **DPS differs from Combat Metrics or ESO Logs**: a player's own figure counts the same hits over the same dps time as Combat Metrics, so it should agree. Check three things. In a fight with a boss, the first figure is boss DPS (`boss / total`). The group's DPS divides by the group's own first-to-last span, where Combat Metrics divides the group's damage by *your* dps time. And a fight the game split in two around a resurrection is one fight here. See [Damage](#what-the-numbers-are-based-on).
+- **A set shows as `Set#123`**: the set is newer than the bundled set table, so it has no name or link until the table is refreshed in a later release.
 - **An ability shows as text instead of an icon**: the icon is not in the bundled set; the name still links to ESO-Hub.
 - **A weapon's Type is a dash**: the weapon is from a set newer than the bundled weapon table.
 - **Archive was skipped**: ESO was running and had the log open. Close ESO and use **Archive now**, or let the next app start handle it.
