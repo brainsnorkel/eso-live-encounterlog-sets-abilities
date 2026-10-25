@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1957](../src/esolog_tail.py#L1957)*
+*[src/esolog_tail.py:1962](../src/esolog_tail.py#L1962)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1419](../src/esolog_tail.py#L1419)*
+*[src/esolog_tail.py:1424](../src/esolog_tail.py#L1424)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1434](../src/esolog_tail.py#L1434)*
+*[src/esolog_tail.py:1439](../src/esolog_tail.py#L1439)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3174](../src/esolog_tail.py#L3174)*
+*[src/esolog_tail.py:3179](../src/esolog_tail.py#L3179)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -337,10 +337,20 @@ bars, so a player who spends a fight in form shows bars they never used. Of
 1,068 PLAYER_INFO rows written while a player was in form (55 split logs of
 July to October 2026, client versions 12.0 and 12.1, about 25 characters),
 1,053 carry the human bars. The other 15, from two anonymous players on
-12.0, carry the werewolf bar in place of the front bar; ``logs_werewolf_bar``
-tells such a row, so the bar is not shown twice. Werewolf players spent
-1,234 of their 1,524 fights of 5 s or more wholly in form, 110 partly, and
-180 not at all.
+12.0, carry the werewolf bar in place of the front bar, in the slots' real
+order and agreeing with their casts. A Rockgrove log of 2026-10-24 (client
+12.1, issue #49) showed a third shape: all 11 rows of one player list a
+single bar as both the front and the back bar, three werewolf skills beside
+Razor Caltrops and Inner Fire, while the player, in form the whole log,
+cast Hircine's Rage and Ferocious Roar in every fight and never those two.
+The form is one bar of five skills with no swap, so that bar was stale. A
+logged bar holding three or more werewolf skills (``is_werewolf_bar``) is
+therefore no human bar and no trusted werewolf bar: the engine drops it
+before anything reads it, and the werewolf bar is rebuilt from casts for
+every werewolf alike. A human bar can hold one werewolf skill for its
+while-slotted bonus (Hircine's Fortitude on one player's front bar, 18
+rows), which the threshold spares. Werewolf players spent 1,234 of their
+1,524 fights of 5 s or more wholly in form, 110 partly, and 180 not at all.
 
 The bar is rebuilt from casts. Each werewolf skill is cast under the id of
 the skill its slot holds, one id for all four ranks, with one exception:
@@ -353,8 +363,9 @@ player sessions with werewolf casts, 55 cast exactly five distinct bar
 skills, three cast fewer, and none ever cast a sixth or two morphs of one
 skill, so the casts of a whole session can be pooled. A fight's own casts
 show the whole bar in only 58% of fights; the session's casts up to the
-fight's end show it in 94%, which is the rule here. In the only two cases
-where the game logged a werewolf bar, the rebuilt bar agreed with it. Casts
+fight's end show it in 94%, which is the rule here. In the two 12.0 cases
+where the game logged the werewolf bar, the rebuilt bar agreed with it; in
+the 12.1 case the casts were right and the log was not. Casts
 say nothing of the slots' order, so the bar follows the skill line's order
 (LINE_POSITION): Pounce, Hircine's Bounty, Roar, Gnash, Rending Claws. A
 skill slotted but never cast stays unknown.

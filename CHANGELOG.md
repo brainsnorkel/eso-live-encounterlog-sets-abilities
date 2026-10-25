@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Werewolf bar** (#49): the game sometimes writes a werewolf bar in place of a player's human bars, and the Rockgrove log of 2026-10-24 showed that bar can be stale: one bar written as both human bars, three werewolf skills beside Razor Caltrops and Inner Fire, for a player in form the whole log who cast Hircine's Rage and Ferocious Roar in every fight and never those two. The app took the logged bar for the werewolf bar, drew it as both human bars and left the Werewolf line empty. A logged bar holding three or more werewolf skills is now dropped before anything reads it, the build-issue rules included, and the Werewolf line is rebuilt from the player's casts for every werewolf alike. Over the September and October split logs this changes three players: that one, and two anonymous players on client 12.0 whose werewolf bar was logged as the front bar and no longer shows twice.
+
 ## [0.13.2] - 2026-10-24
 
 ### Changed

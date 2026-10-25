@@ -601,8 +601,7 @@ def form_share_text(share) -> str:
 
 def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:
     """The rebuilt werewolf bar and 'in form 100%' for a player who spent
-    some of the fight in werewolf form, '' for any other. The bar is left
-    out when the log wrote it in place of a human bar."""
+    some of the fight in werewolf form, '' for any other."""
     share = p.get("werewolf_share")
     if not share:
         return ""
