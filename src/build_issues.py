@@ -283,7 +283,7 @@ ONE_BAR_DETAIL = (
     "pieces are active, so the group loses it every time this player swaps to the other "
     "bar. Five body pieces, or three with the two weapons of each bar, keep it on both.")
 PROC_DETAIL = (
-    "{set}'s {bonus} fires when {trigger}; this player's {effect} never appeared "
+    "The {bonus} of {set} fires when {trigger}; this player's {effect} never appeared "
     "this session, so the set is dead weight until that changes.")
 TANK_TITLE = "Tank with no taunt or pull on either bar"
 TANK_DETAIL = (
@@ -612,8 +612,11 @@ def food_findings(food: Optional[dict], state: Optional[dict], fight_start_ms: i
     if food is None and (ate is not None or empty_since is None):
         detail = FOOD_DETAIL
         if ate is not None:
-            detail += FOOD_ATE_NOTE.format(food=named(state.get("up")) or "a meal",
-                                           at=_clock(ate - fight_start_ms))
+            # Named from every id the record saw, so a meal that faded again
+            # before the end still has its name
+            detail += FOOD_ATE_NOTE.format(
+                food=named(state.get("seen") or state.get("up")) or "a meal",
+                at=_clock(ate - fight_start_ms))
         return [_finding("no-food", FOOD_TITLE, detail)]
     if empty_since is not None:
         if food is not None:

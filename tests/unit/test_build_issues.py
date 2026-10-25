@@ -433,6 +433,10 @@ class TestFood(unittest.TestCase):
         unknown = {'up': {'1'}, 'empty_since': None, 'ate': 10000}
         found = food_findings(None, unknown, 10000, self.NAMES.get, self.TABLE)
         self.assertTrue(found[0]['detail'].endswith('They ate a meal at 0s.'))
+        # A meal eaten and gone again before the end is still named, from the ids seen
+        gone = {'up': set(), 'seen': {'61257'}, 'empty_since': 50000, 'ate': 20000}
+        found = food_findings(None, gone, 10000, self.NAMES.get, self.TABLE)
+        self.assertTrue(found[0]['detail'].endswith('They ate Grilled Vegetables at 10s.'))
 
     def test_food_present_and_kept_is_clean(self):
         self.assertEqual(food_findings(self.FOOD, None, 10000), [])
@@ -527,7 +531,7 @@ class TestTracker(unittest.TestCase):
         found = tracker.findings('p', {'845'})
         self.assertEqual([f['title'] for f in found],
                          ["Huntsman's Warmask never fired in 1 fight of a minute or more"])
-        self.assertIn("Huntsman's Warmask's mark fires when the wearer deals damage with a bash "
+        self.assertIn("The mark of Huntsman's Warmask fires when the wearer deals damage with a bash "
                       "or a fully charged heavy attack; this player's Mark of Hircine never appeared",
                       found[0]['detail'])
         self.assertEqual(found[0]['set'], "Huntsman's Warmask")
