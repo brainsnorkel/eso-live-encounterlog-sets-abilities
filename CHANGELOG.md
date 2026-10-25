@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Dependency floors**: `PySide6-Essentials` 6.12.0 or newer, the first release past Qt's October 2026 security advisories, which affect every release from 6.9.0 to 6.11.2; and `Pillow` 13.0.0 or newer, since 12.3.0, the old floor, is among the 41 advisories that 13.0.0 closed, one of them critical. Neither changes what a build installs: the 0.12.0 builds already resolved to both
+
 ## [0.13.3] - 2026-10-25
 
 ### Added

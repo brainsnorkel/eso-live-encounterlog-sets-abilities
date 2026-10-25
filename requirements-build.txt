@@ -1,6 +1,7 @@
 # Build-time dependencies (gear data generation, icon, packaging)
 openpyxl>=3.1.5
-# Releases before 12.3.0 have known vulnerabilities
-Pillow>=12.3.0
+# Releases before 13.0.0 have known vulnerabilities: 13.0.0 (2026-10-16)
+# closed 41 advisories, one of them critical
+Pillow>=13.0.0
 # 6.15.0 is the first release that supports Python 3.14
 pyinstaller>=6.15.0
