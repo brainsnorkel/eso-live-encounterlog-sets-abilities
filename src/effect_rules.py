@@ -95,6 +95,24 @@ was seen, like the debuffs (tracking version 4 takes the words off a
 saved line again, see upgrade_rules_text). The tracker alone, without the
 engine's units, knows no group size and shows every item.
 
+Elemental Catalyst (issue #53): the set's three weaknesses (Flame 142610,
+Frost 142652, Shock 142653; critical damage taken up 5% each, as pen_crit
+values them) are one default rule on the boss, shown when someone applied
+them and not expected. The set is an alternative to Lucent Echoes for a
+group's critical damage, run where Echoes is not, so a group running it
+should see it; in these logs it is rare. Every split log of 2026 (891 log
+files with a fight, 607 of them veteran trials): the weaknesses appear in
+4 files, two Kyne's Aegis sessions (three files are the splitter's copies
+of one), both also running Lucent Echoes, which 515 of the 607 trial logs
+have; no dungeon or arena log has them, and none of the 92 trial logs
+without Echoes has Catalyst instead. In the two sessions the wearer was a
+DPS in January (22 of 24 fights, median uptime 53%, all three weaknesses
+up together 7% of a fight) and a tank in May (one fight, 78% and 51%): the
+rule's uptime, any weakness up, is well above the time the full 15% is in
+effect, one weakness being the usual state. A measure counting the ids up
+at once, and a way to say a group needs one of Echoes and Catalyst, are
+left for when the logs show the set in use.
+
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
 four 2026 trial logs), refreshed as a FADED and a GAINED in the same
@@ -198,11 +216,12 @@ DEFAULT_RULES = (
     "Morag Tong    = 34384 on boss\n"
     "Minor Brittle = 145975 on boss\n"
     "Major Brittle = 263825 on boss\n"
+    "Elemental Catalyst = 142610 142652 142653 on boss\n"
     "Alkosh        = 76667 on boss\n"
 )
 
 # The example library Settings offers to paste from: (title, what it tells
-# you, the rule line). The first fourteen are DEFAULT_RULES; the other ids
+# you, the rule line). The first fifteen are DEFAULT_RULES; the other ids
 # were seen in the 2026 logs.
 EXAMPLE_RULES = [
     ("Major Courage on the group",
@@ -246,6 +265,10 @@ EXAMPLE_RULES = [
     ("Major Brittle on the boss",
      "Uptime of Major Brittle",
      "Major Brittle = 263825 on boss"),
+    ("Elemental Catalyst on the boss",
+     ("Uptime of any of the set's three weaknesses, Flame, Frost and Shock "
+      "(critical damage taken up 5% each)"),
+     "Elemental Catalyst = 142610 142652 142653 on boss"),
     ("Roar of Alkosh on the boss",
      "Uptime of the Roar of Alkosh set's debuff",
      "Alkosh = 76667 on boss"),

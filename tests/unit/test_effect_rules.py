@@ -83,7 +83,7 @@ class TestRuleText(unittest.TestCase):
                          ["Major Courage", "Major Force", "Major Slayer", "Powerful Assault",
                           "Lucent Echoes", "Pearlescent Ward", "Taunt",
                           "Off-Balance", "Touch of Z'en", "Crux", "Morag Tong",
-                          "Minor Brittle", "Major Brittle", "Alkosh"])
+                          "Minor Brittle", "Major Brittle", "Elemental Catalyst", "Alkosh"])
         self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime",
                                         frozenset({"large"})))
         self.assertEqual(rules[6], Rule("Taunt", frozenset({"38254"}), "boss", "each",
@@ -92,9 +92,12 @@ class TestRuleText(unittest.TestCase):
         # Five group buffs are expected in a large group; Powerful Assault
         # (issue #48) and the rest nowhere
         self.assertEqual([sorted(r.expected) for r in rules],
-                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] + [[]] * 7)
+                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] + [[]] * 8)
         self.assertEqual(rules[10], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
-        self.assertEqual(rules[13], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
+        # Elemental Catalyst's three weaknesses, one rule
+        self.assertEqual(rules[13], Rule("Elemental Catalyst", frozenset({"142610", "142652", "142653"}),
+                                         "boss", "uptime"))
+        self.assertEqual(rules[14], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
         self.assertIn("45902", rules[7].ids)
         self.assertEqual((rules[9].scope, rules[9].kind), ("self", "stacks"))
         self.assertTrue(DEFAULT_RULES.startswith("#"))

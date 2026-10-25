@@ -920,6 +920,24 @@ was seen, like the debuffs (tracking version 4 takes the words off a
 saved line again, see upgrade_rules_text). The tracker alone, without the
 engine's units, knows no group size and shows every item.
 
+Elemental Catalyst (issue #53): the set's three weaknesses (Flame 142610,
+Frost 142652, Shock 142653; critical damage taken up 5% each, as pen_crit
+values them) are one default rule on the boss, shown when someone applied
+them and not expected. The set is an alternative to Lucent Echoes for a
+group's critical damage, run where Echoes is not, so a group running it
+should see it; in these logs it is rare. Every split log of 2026 (891 log
+files with a fight, 607 of them veteran trials): the weaknesses appear in
+4 files, two Kyne's Aegis sessions (three files are the splitter's copies
+of one), both also running Lucent Echoes, which 515 of the 607 trial logs
+have; no dungeon or arena log has them, and none of the 92 trial logs
+without Echoes has Catalyst instead. In the two sessions the wearer was a
+DPS in January (22 of 24 fights, median uptime 53%, all three weaknesses
+up together 7% of a fight) and a tank in May (one fight, 78% and 51%): the
+rule's uptime, any weakness up, is well above the time the full 15% is in
+effect, one weakness being the usual state. A measure counting the ids up
+at once, and a way to say a group needs one of Echoes and Catalyst, are
+left for when the logs show the set in use.
+
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
 four 2026 trial logs), refreshed as a FADED and a GAINED in the same
@@ -962,7 +980,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:524](../src/effect_rules.py#L524)*
+*[src/effect_rules.py:547](../src/effect_rules.py#L547)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -979,7 +997,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:720](../src/effect_rules.py#L720)*
+*[src/effect_rules.py:743](../src/effect_rules.py#L743)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1291,7 +1309,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:597](../src/effect_rules.py#L597)*
+*[src/effect_rules.py:620](../src/effect_rules.py#L620)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
