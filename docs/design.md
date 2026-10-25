@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2004](../src/esolog_tail.py#L2004)*
+*[src/esolog_tail.py:2010](../src/esolog_tail.py#L2010)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1466](../src/esolog_tail.py#L1466)*
+*[src/esolog_tail.py:1472](../src/esolog_tail.py#L1472)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1481](../src/esolog_tail.py#L1481)*
+*[src/esolog_tail.py:1487](../src/esolog_tail.py#L1487)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3235](../src/esolog_tail.py#L3235)*
+*[src/esolog_tail.py:3241](../src/esolog_tail.py#L3241)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -753,6 +753,27 @@ rule, player-fights / distinct characters in that survey:
   93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
   came from other sets). The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
+- **Huntsman's Warmask that never fires** (issue #47, the same session
+  rule, the mythic's one piece being the set): its Mark of Hircine
+  (252048, GAINED with the wearer as source) is placed by a bash or a fully
+  charged heavy attack, and a wearer who places none has a mythic doing
+  nothing. The issue was filed the other way round, as a flag on a wearer
+  who bashes (a bash can move the mark from the boss to an add, where it
+  halves the wearer's damage to everything else for up to a minute), and
+  the survey over the same 91 logs of September and October 2026 decided
+  it: 29 of the 30 wearers bash, in 96% of their fights of a minute or
+  more (393 of 515 wearer-fights had a damaging bash, a median 3 a fight),
+  1,292 of the 1,401 marks followed a bash and 55 a heavy attack, and in
+  132 of 396 boss wearer-fights (18 of 29 wearers) the mark sat on a unit
+  that is not a boss for a median 11% of the fight. Half of those units
+  were Sunspire's Eternal Servants and Kyne's Aegis's Lieutenant Njordal,
+  which a group kills on purpose, so a flag on bashing would have been a
+  permanent note on every wearer and a wrong verdict a third of the time;
+  the maintainer chose the inverse on 2026-10-26, and the mark, which a
+  heavy attack places too, is the fact the log carries (his own Aetherian
+  Archive session marked by heavy attacks alone). In those logs no
+  wearer-session with a fight of a minute or more was without a mark, so
+  the rule is quiet until a wearer who never triggers the set turns up.
 - **A group buff set complete on one bar only** (80 / 3), for Pearlescent
   Ward, Xoryn's Masterpiece and Lucent Echoes, whose five-piece bonus is a
   buff for the whole group that holds only while five pieces are active.
@@ -813,7 +834,7 @@ checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:588](../src/build_issues.py#L588)*
+*[src/build_issues.py:629](../src/build_issues.py#L629)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's
@@ -1053,7 +1074,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:663](../src/esolog_tail.py#L663)*
+*[src/esolog_tail.py:669](../src/esolog_tail.py#L669)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1263,7 +1284,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:492](../src/esolog_tail.py#L492)*
+*[src/esolog_tail.py:493](../src/esolog_tail.py#L493)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1286,7 +1307,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:583](../src/esolog_tail.py#L583)*
+*[src/esolog_tail.py:584](../src/esolog_tail.py#L584)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

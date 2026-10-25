@@ -512,8 +512,27 @@ class TestTracker(unittest.TestCase):
         self.assertEqual(fired_proc_sets({'232', '496'}, {'76667', '1'}), {'232'})
         self.assertEqual(fired_proc_sets({'232', '496'}, {'135923'}), {'496'})
         self.assertEqual(fired_proc_sets({'232'}, []), set())
-        self.assertTrue({'76667', '75751', '93109', '135923'} <= PROC_EFFECT_IDS)
-        self.assertEqual(set(PROC_SETS), {'232', '496', '497'})
+        self.assertTrue({'76667', '75751', '93109', '135923', '252048'} <= PROC_EFFECT_IDS)
+        self.assertEqual(set(PROC_SETS), {'232', '496', '497', '845'})
+        # A mythic is the set at one piece (Huntsman's Warmask on the head)
+        helmet = _body()
+        helmet['HEAD'] = _item('HEAD', 'm', set_id='845')
+        self.assertEqual(worn_proc_sets(helmet), {'845'})
+        self.assertEqual(fired_proc_sets({'845'}, {'252048'}), {'845'})
+        self.assertEqual(fired_proc_sets({'845'}, {'76667'}), set())
+
+    def test_the_warmask_finding_names_the_mark(self):
+        tracker = BuildIssueTracker()
+        tracker.note_fight('p', 10000, 90.0, {'845'}, set())
+        found = tracker.findings('p', {'845'})
+        self.assertEqual([f['title'] for f in found],
+                         ["Huntsman's Warmask never fired in 1 fight of a minute or more"])
+        self.assertIn("Huntsman's Warmask's mark fires when the wearer deals damage with a bash "
+                      "or a fully charged heavy attack; this player's Mark of Hircine never appeared",
+                      found[0]['detail'])
+        self.assertEqual(found[0]['set'], "Huntsman's Warmask")
+        tracker.note_fight('p', 200000, 90.0, {'845'}, {'845'})
+        self.assertEqual(tracker.findings('p', {'845'}), [])
 
 
 # ---- the engine ----
@@ -724,6 +743,32 @@ class TestEngine(unittest.TestCase):
         # A taunt in the first fight clears it for the session
         entries = _fights(_session(fight(10000, 40000, taunts=True), fight(50000, 80000, taunts=False)))
         self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in entries], [[], []])
+
+    def test_a_warmask_wearer_who_never_marks_is_judged_like_a_proc_set(self):
+        # @nirn wears the mythic on the head; the mark's GAINED has the
+        # wearer as source and the boss as target
+        warmask = _gear([_item('HEAD', '95044', set_id='845'),
+                         _weapon('MAIN_HAND', '200834', 'WEAPON_PRECISE', 'POISONED_WEAPON', '0')])
+
+        def fight(begin, end, marks=False):
+            lines = [f'{begin},BEGIN_COMBAT',
+                     f'{begin + 1},PLAYER_INFO,1,{FED},{warmask},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,2,{FED},{ALKOSH_GEAR},[12345],[12345]',
+                     _cast(begin + 900, 1, stamina=30000),
+                     _hit(begin + 1000, 1, 90000, stamina=30000),
+                     _cast(begin + 1900, 2), _hit(begin + 2000, 2, 60000)]
+            if marks:
+                lines.append(_gained(begin + 3000, 1, '252048'))
+            lines.append(f'{end},END_COMBAT')
+            return lines
+
+        entries = _fights(_session(fight(10000, 100000), fight(200000, 300000, marks=True)))
+        titles = [[f['title'] for f in self._players(e)['@nirn']['build_issues']] for e in entries]
+        self.assertEqual(titles, [["Huntsman's Warmask never fired in 1 fight of a minute or more"],
+                                  []])
+        # A short fight never counts
+        entries = _fights(_session(fight(10000, 30000)))
+        self.assertEqual(self._players(entries[0])['@nirn']['build_issues'], [])
 
     def test_no_food_at_combat_start_notes_a_meal_eaten_later(self):
         def fight(effects_2, *extra):

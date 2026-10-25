@@ -62,6 +62,27 @@ rule, player-fights / distinct characters in that survey:
   93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
   came from other sets). The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
+- **Huntsman's Warmask that never fires** (issue #47, the same session
+  rule, the mythic's one piece being the set): its Mark of Hircine
+  (252048, GAINED with the wearer as source) is placed by a bash or a fully
+  charged heavy attack, and a wearer who places none has a mythic doing
+  nothing. The issue was filed the other way round, as a flag on a wearer
+  who bashes (a bash can move the mark from the boss to an add, where it
+  halves the wearer's damage to everything else for up to a minute), and
+  the survey over the same 91 logs of September and October 2026 decided
+  it: 29 of the 30 wearers bash, in 96% of their fights of a minute or
+  more (393 of 515 wearer-fights had a damaging bash, a median 3 a fight),
+  1,292 of the 1,401 marks followed a bash and 55 a heavy attack, and in
+  132 of 396 boss wearer-fights (18 of 29 wearers) the mark sat on a unit
+  that is not a boss for a median 11% of the fight. Half of those units
+  were Sunspire's Eternal Servants and Kyne's Aegis's Lieutenant Njordal,
+  which a group kills on purpose, so a flag on bashing would have been a
+  permanent note on every wearer and a wrong verdict a third of the time;
+  the maintainer chose the inverse on 2026-10-26, and the mark, which a
+  heavy attack places too, is the fact the log carries (his own Aetherian
+  Archive session marked by heavy attacks alone). In those logs no
+  wearer-session with a fight of a minute or more was without a mark, so
+  the rule is quiet until a wearer who never triggers the set turns up.
 - **A group buff set complete on one bar only** (80 / 3), for Pearlescent
   Ward, Xoryn's Masterpiece and Lucent Echoes, whose five-piece bonus is a
   buff for the whole group that holds only while five pieces are active.
@@ -214,10 +235,13 @@ class ProcSet(NamedTuple):
     effect_ids: frozenset  # the effect ids the wearer sources when the set fires
     effect: str  # the effect's name, for the finding
     trigger: str  # what makes the set fire, for the finding
+    pieces: int = 5  # worn pieces that make the bonus active (a mythic's one)
+    bonus: str = "five-piece bonus"  # how the finding names the bonus
 
 
 _ALKOSH_EFFECTS = frozenset({"76667", "75751", "75752", "120018"})
 _SLAYER_EFFECTS = frozenset({"93109", "135923"})
+MARK_OF_HIRCINE_ID = "252048"  # the debuff a Huntsman's Warmask wearer puts on their target
 # The proc sets judged over the session, by set id
 PROC_SETS = {
     "232": ProcSet("Roar of Alkosh", _ALKOSH_EFFECTS, "Roar of Alkosh",
@@ -226,6 +250,9 @@ PROC_SETS = {
                    "the wearer completes a fully charged heavy attack"),
     "497": ProcSet("Perfected Roaring Opportunist", _SLAYER_EFFECTS, "Major Slayer",
                    "the wearer completes a fully charged heavy attack"),
+    "845": ProcSet("Huntsman's Warmask", frozenset({MARK_OF_HIRCINE_ID}), "Mark of Hircine",
+                   "the wearer deals damage with a bash or a fully charged heavy attack",
+                   pieces=1, bonus="mark"),
 }
 PROC_EFFECT_IDS = frozenset().union(*(proc.effect_ids for proc in PROC_SETS.values()))
 
@@ -256,7 +283,7 @@ ONE_BAR_DETAIL = (
     "pieces are active, so the group loses it every time this player swaps to the other "
     "bar. Five body pieces, or three with the two weapons of each bar, keep it on both.")
 PROC_DETAIL = (
-    "{set}'s five-piece bonus fires when {trigger}; this player's {effect} never appeared "
+    "{set}'s {bonus} fires when {trigger}; this player's {effect} never appeared "
     "this session, so the set is dead weight until that changes.")
 TANK_TITLE = "Tank with no taunt or pull on either bar"
 TANK_DETAIL = (
@@ -436,11 +463,12 @@ def _has_restoration_staff(gear: Dict[str, List[str]],
 
 
 def worn_proc_sets(gear: Dict[str, List[str]]) -> Set[str]:
-    """The proc sets (PROC_SETS ids) this build has at five pieces on
-    either bar."""
+    """The proc sets (PROC_SETS ids) this build has active on either bar:
+    five pieces, or a mythic's one."""
     counts = piece_counts(gear or {})
     return {set_id for set_id, (front, back) in counts.items()
-            if set_id in PROC_SETS and (front >= 5 or (back or 0) >= 5)}
+            if set_id in PROC_SETS
+            and (front >= PROC_SETS[set_id].pieces or (back or 0) >= PROC_SETS[set_id].pieces)}
 
 
 def fired_proc_sets(worn: Iterable[str], sourced_effect_ids: Iterable[str]) -> Set[str]:
@@ -651,6 +679,7 @@ class BuildIssueTracker:
             out.append(_finding(
                 "set-never-fired",
                 f"{proc.name} never fired in {long} fight{plural} of a minute or more",
-                PROC_DETAIL.format(set=proc.name, trigger=proc.trigger, effect=proc.effect),
+                PROC_DETAIL.format(set=proc.name, bonus=proc.bonus, trigger=proc.trigger,
+                                   effect=proc.effect),
                 set_name=proc.name))
         return out
