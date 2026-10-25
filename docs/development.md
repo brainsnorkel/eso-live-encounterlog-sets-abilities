@@ -45,7 +45,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window and its dialogs, the example tracked-effect rules picker among them. |
 | `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
-| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache. |
+| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache, and the small glyphs drawn after the dps figures to show they can be clicked. |
 
 ## Running from source
 
@@ -102,7 +102,7 @@ On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs 
 
 ## Refreshing game data after an ESO patch
 
-The app bundles eight data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
+The app bundles nine data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
 
 ```cmd
 :: Ability and death-recap icons from your installed game (needs UESP's
@@ -136,6 +136,11 @@ python scripts\generate_weapon_types.py
 :: Armor weights (light, medium, heavy) for the build window, from UESP's item
 :: database (network access)
 python scripts\generate_armor_weights.py
+
+:: What each set does for penetration and critical damage, for the build
+:: window's two sections, from UESP's set summary (network access; or --from a
+:: reply of theirs already saved)
+python scripts\generate_set_offense.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.

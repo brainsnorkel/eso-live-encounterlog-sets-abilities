@@ -126,8 +126,10 @@ class TestBarRendering(FightViewTestCase):
         player['back_bar'] = ['Biting Jabs']
         player['back_bar_slots'] = [{'id': '26792', 'name': 'Biting Jabs', 'icon': 'ability_test_001'}]
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links)
-        self.assertEqual(html.count('<img '), 2)
-        first_img, second_img = html.index('<img '), html.rindex('<img ')
+        # Two ability icons (the dps figure's link glyph is an image too)
+        icon = '<img src="icon:'
+        self.assertEqual(html.count(icon), 2)
+        first_img, second_img = html.index(icon), html.rindex(icon)
         divider = html.index(BAR_DIVIDER)
         self.assertLess(first_img, divider)
         self.assertLess(divider, second_img)
@@ -211,7 +213,7 @@ class TestBarRendering(FightViewTestCase):
         from gui.fight_render import render_html, render_plain_text
         entry = _entry_with_bars()
         html = render_html(entry, detailed=True)
-        self.assertNotIn('<img', html)
+        self.assertNotIn('<img src="icon:', html)
         self.assertIn('Biting Jabs, Unknown Thing', html)
         self.assertIn('Biting Jabs, Unknown Thing', render_plain_text(entry))
 
@@ -470,6 +472,107 @@ class TestTauntPulse(FightViewTestCase):
         self.assertFalse(view._pulse.isActive())
         view._pulse_step()
         self.assertFalse(view._pulse.isActive())
+        view.close()
+
+
+class TestLinkGlyphs(FightViewTestCase):
+    """The glyphs that say the dps figures can be clicked (issue #34)."""
+
+    def test_dps_figures_carry_a_glyph_inside_their_anchor_in_both_themes(self):
+        import re
+
+        from gui.fight_render import (
+            link_color,
+            muted_color,
+            render_html,
+            render_plain_text,
+        )
+        entry = _entry_with_bars()
+        entry.group_dps = 1000.0
+        for dark in (False, True):
+            html = render_html(entry, detailed=False, dark=dark)
+            link = link_color(dark).lstrip('#')
+            muted = muted_color(dark).lstrip('#')
+            # The header's figure, its unit, then the graph glyph in the
+            # link colour, all inside the anchor
+            header = re.search(r'<a href="esolog:graph/"[^>]*>(.*?)</a>', html).group(1)
+            self.assertTrue(header.endswith(
+                f'gdps&nbsp;<img src="glyph:graph?color={link}&amp;px=13" '
+                f'style="vertical-align:middle">'), header)
+            self.assertTrue(header.startswith('1.0k gdps'), header)
+            # A player's figure, then the breakdown glyph in the muted colour
+            row = re.search(r'<a href="esolog:damage/1"[^>]*>(.*?)</a>', html).group(1)
+            self.assertEqual(row, f'1.0k&nbsp;<img src="glyph:breakdown?color={muted}'
+                                  f'&amp;px=13" style="vertical-align:middle">')
+            self.assertEqual(html.count('glyph:'), 2)
+        # The names keep their plain look, and copied text has no glyph
+        self.assertIn('color:#202124">@tester</a>', render_html(entry, detailed=False))
+        self.assertNotIn('glyph', render_plain_text(entry))
+        # The glyph follows the pane's font size
+        self.assertIn('&amp;px=18"', render_html(entry, detailed=False, base_pt=12.0))
+        # A fight without damage has no graph to open: no link, no glyph
+        entry.group_dps = 0.0
+        html = render_html(entry, detailed=False)
+        self.assertNotIn('esolog:graph/', html)
+        self.assertNotIn('glyph:graph', html)
+        self.assertIn(' · 0 gdps · ', html)
+
+    def test_glyph_images_are_drawn_in_the_asked_colour_and_size(self):
+        from gui.glyphs import glyph_image
+        for kind in ('graph', 'breakdown'):
+            image = glyph_image(kind, '#1a73e8', 13)
+            self.assertEqual((image.width(), image.height()), (13, 13))
+            self.assertEqual(image.pixelColor(0, 0).alpha(), 0)  # a transparent corner
+            solid = {image.pixelColor(x, y).name() for x in range(13) for y in range(13)
+                     if image.pixelColor(x, y).alpha() == 255}
+            self.assertEqual(solid, {'#1a73e8'}, kind)
+            self.assertIs(glyph_image(kind, '#1a73e8', 13), image)  # drawn once
+        # On a scaled display the image has more pixels and the same logical size
+        hidpi = glyph_image('graph', '#1a73e8', 13, dpr=2.0)
+        self.assertEqual((hidpi.width(), hidpi.devicePixelRatio()), (26, 2.0))
+        self.assertIsNone(glyph_image('sparkle', '#1a73e8', 13))
+        self.assertIsNone(glyph_image('graph', 'no-such-colour', 13))
+        self.assertIsNone(glyph_image('graph', '#1a73e8', 0))
+
+    def test_the_view_serves_glyphs_and_the_page_draws_them(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QColor, QImage, QPainter, QTextDocument
+
+        from gui.fight_render import render_html
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        image = view.loadResource(QTextDocument.ImageResource,
+                                  QUrl('glyph:graph?color=1a73e8&px=13'))
+        self.assertEqual(image.width(), 13)
+        for bad in ('glyph:graph?color=blue&px=13', 'glyph:graph?px=13',
+                    'glyph:graph?color=1a73e8&px=x', 'glyph:graph?color=1a73e8',
+                    'glyph:sparkle?color=1a73e8&px=13'):
+            served = view.loadResource(QTextDocument.ImageResource, QUrl(bad))
+            self.assertFalse(isinstance(served, QImage) and not served.isNull(), bad)
+        entry = _entry_with_bars()
+        entry.group_dps = 1000.0
+        view.resize(520, 120)
+        view.show()
+        _app.processEvents()
+        for dark in (False, True):
+            view.setHtml(render_html(entry, detailed=False, dark=dark))
+            _app.processEvents()
+            self.assertFalse(view.grab().isNull())
+        view.setHtml(render_html(entry, detailed=False))
+        _app.processEvents()
+        # The document resolves both glyph URLs through the view
+        for url in ('glyph:graph?color=1a73e8&px=13', 'glyph:breakdown?color=5f6368&px=13'):
+            self.assertEqual(QImage(view.document().resource(
+                QTextDocument.ImageResource, QUrl(url))).width(), 13)
+        # ...and the laid-out page really draws the link-coloured graph glyph
+        out = QImage(520, 120, QImage.Format_ARGB32)
+        out.fill(QColor('white'))
+        painter = QPainter(out)
+        view.document().drawContents(painter)
+        painter.end()
+        blues = sum(1 for x in range(520) for y in range(120)
+                    if out.pixelColor(x, y).blue() > 180 and out.pixelColor(x, y).red() < 90)
+        self.assertGreater(blues, 8)
         view.close()
 
 

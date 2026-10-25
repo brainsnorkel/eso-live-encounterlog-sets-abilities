@@ -9,9 +9,10 @@ pets, boss, enemies, or mobs for a boss rule measured on the pack of a
 fight without a boss), time tick marks, and hover tooltips naming caster
 and receiver. A label wider than its column is cut with an ellipsis, and
 hovering any label shows it whole. A group buff that only ever reached one or two
-receivers renders dotted rather than solid (Major Vulnerability and Taunt
-are exempt: they target the boss, so a single receiver is their normal
-case).
+receivers is drawn cross-hatched rather than solid (Major Vulnerability and
+Taunt are exempt: they target the boss, so a single receiver is their
+normal case); paint_sparse_span says why a hatch, and not the dotted line
+it replaced.
 
 A single click on a row, label or bar, opens a pop-up summing the row up
 over the whole fight: who applied the effect and who had it (issue #19,
@@ -22,15 +23,22 @@ the UI thread.
 
 Buffs come first and debuffs after, with a divider between (issue #26).
 
+A row a rule expects in this group size whose effect never came (issue
+#13) reads 0% with its label in dark red and bold, so the gap is seen at a
+glance (Chris's request, 2026-10-24); the dark theme gets a lighter red,
+since dark red vanishes on a dark pane. The hover text says why the row
+is there.
+
 Deliberately tiny: it must never crowd the fight summary. A fight in which
 none of the built-in effects was up has no recorded timeline; its tracked
 rows are still drawn over the fight's duration (main_window passes it).
 Hidden entirely when nothing was up at all.
 """
 
+import math
 from html import escape
 
-from PySide6.QtCore import QEvent, QRectF, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
@@ -61,7 +69,7 @@ EFFECT_SHORT = {
     "Taunt": "Taunt",
 }
 
-# Effects whose normal case is a single receiver (never rendered dotted)
+# Effects whose normal case is a single receiver (never hatched)
 SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 
 # The user's tracked effects (effect_rules) get rows after the built-in
@@ -69,9 +77,19 @@ SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 # a height that follows the stack count over the fight's peak
 TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
                   QColor("#a1887f"), QColor("#90a4ae"), QColor("#ffb74d")]
+# The label of an expected row that never came: dark red on a light pane, a
+# lighter red on a dark one (keyed by whether the pane is dark)
+MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
 
-# A group buff reaching at most this many distinct receivers renders dotted
+# A group buff reaching at most this many distinct receivers is drawn
+# cross-hatched (paint_sparse_span)
 SPARSE_RECEIVER_LIMIT = 2
+# The hatched fill: the effect's colour at this opacity over the whole
+# span, under diagonal lines of the full colour both ways, one every this
+# many pixels along the row (never more than the row's height, so that no
+# column of the span is without a line)
+SPARSE_BASE_ALPHA = 0.35
+SPARSE_HATCH_STEP = 8
 
 ROW_HEIGHT = 10
 ROW_GAP = 2
@@ -128,21 +146,60 @@ def strip_timeline(entry):
     return {"duration_ms": int((getattr(entry, "duration_s", 0) or 0) * 1000), "effects": {}}
 
 
+def merged_spans(intervals):
+    """The union of intervals: sorted (start_ms, end_ms) pairs that neither
+    overlap nor touch, abutting and overlapping ones joined."""
+    merged = []
+    for start, end in sorted((iv["start_ms"], iv["end_ms"]) for iv in intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [(start, end) for start, end in merged]
+
+
 def uptime_pct(intervals, duration_ms: int) -> int:
     """Union coverage of intervals as a whole percentage of the fight."""
     if duration_ms <= 0 or not intervals:
         return 0
-    spans = sorted((iv["start_ms"], iv["end_ms"]) for iv in intervals)
-    covered = 0
-    cur_start, cur_end = spans[0]
-    for start, end in spans[1:]:
-        if start <= cur_end:
-            cur_end = max(cur_end, end)
-        else:
-            covered += cur_end - cur_start
-            cur_start, cur_end = start, end
-    covered += cur_end - cur_start
+    covered = sum(end - start for start, end in merged_spans(intervals))
     return min(100, round(100 * covered / duration_ms))
+
+
+def paint_sparse_span(painter, rect: QRectF, color: QColor, grid_left: float) -> None:
+    """Paint one span of a group buff that reached only one or two receivers
+    (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
+    full height, under a cross-hatch of the full colour, so the span is
+    unbroken along the time axis and textured across it.
+
+    Up to 0.13.1 such a span was a dotted line down the row's middle, and a
+    row of dots is exactly what a solid bar looks like when the effect
+    comes and goes every few seconds: at a glance, up the whole time on
+    one person read as up half the time on everyone, and the two call for
+    different fixes (whom the buff reaches against how long it lasts). A
+    fill with no gaps keeps up reading as up; the hatch says not the whole
+    group. The lines are drawn here rather than with one of Qt's pattern
+    brushes so that their spacing suits a ten-pixel row (a step no larger
+    than the row's height puts a line through every column) and so that
+    they fall on a grid anchored at the track's left edge, the same
+    wherever a span starts. The caller paints the union of the row's
+    intervals, one call per merged span, so overlapping receivers do not
+    double the translucent base and abutting spans show no seam.
+    """
+    base = QColor(color)
+    base.setAlphaF(SPARSE_BASE_ALPHA)
+    painter.fillRect(rect, base)
+    painter.save()
+    painter.setClipRect(rect)
+    painter.setPen(QPen(color, 1))
+    height = rect.height()
+    step = min(SPARSE_HATCH_STEP, height)
+    x = grid_left + math.floor((rect.left() - height - grid_left) / step) * step
+    while x < rect.right():
+        painter.drawLine(QPointF(x, rect.bottom()), QPointF(x + height, rect.top()))
+        painter.drawLine(QPointF(x, rect.top()), QPointF(x + height, rect.bottom()))
+        x += step
+    painter.restore()
 
 
 class TimelineStrip(QWidget):
@@ -152,7 +209,7 @@ class TimelineStrip(QWidget):
         super().__init__(parent)
         self._timeline = None
         self._rows = []       # ordered effect names present in the timeline
-        self._row_info = {}   # effect -> {'uptime_pct': int, 'dotted': bool}
+        self._row_info = {}   # effect -> {'uptime_pct': int, 'sparse': bool}
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
         self._divider = None  # index of the first debuff row below buff rows, or None
         self.setVisible(False)
@@ -178,7 +235,7 @@ class TimelineStrip(QWidget):
                 receivers = {iv.get("target") for iv in intervals}
                 self._row_info[effect] = {
                     "uptime_pct": uptime_pct(intervals, duration),
-                    "dotted": (effect not in SINGLE_TARGET_EFFECTS
+                    "sparse": (effect not in SINGLE_TARGET_EFFECTS
                                and len(receivers) <= SPARSE_RECEIVER_LIMIT),
                     "scope": BUILTIN_SCOPES.get(effect, "group"),
                 }
@@ -194,9 +251,13 @@ class TimelineStrip(QWidget):
                     continue
                 self._tracked[name] = item
                 self._rows.append(name)
+                pct = round(item.get("uptime_pct", 0))
                 self._row_info[name] = {
-                    "uptime_pct": int(round(item.get("uptime_pct", 0))),
-                    "dotted": False,
+                    "uptime_pct": pct,
+                    # Expected in this group size and never up: the label is
+                    # painted in red, bold
+                    "missing": bool(item.get("expected")) and pct == 0,
+                    "sparse": False,
                     "label": item.get("text", name),
                     # What the rule measured this fight: its scope, or the
                     # pack's mobs for a boss rule in a fight without a boss
@@ -290,54 +351,68 @@ class TimelineStrip(QWidget):
         track_bg = QColor(text_color)
         track_bg.setAlphaF(0.08)
 
-        painter.setFont(self._label_font())
+        label_font = self._label_font()
+        painter.setFont(label_font)
+        missing_font = QFont(label_font)
+        missing_font.setBold(True)
+        missing_color = self.missing_color()
 
         duration = self._timeline["duration_ms"]
+        track_left = self._track_rect().left()
 
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
             info = self._row_info.get(effect, {})
             # Label with uptime % (a tracked rule shows its uptime-line text),
             # cut with an ellipsis when it does not fit; hovering it shows
-            # the whole label (see _label_at)
-            painter.setPen(dim)
+            # the whole label (see _label_at). An expected row that never
+            # came is red and bold, so the gap is seen at a glance
+            if info.get("missing"):
+                painter.setPen(missing_color)
+                painter.setFont(missing_font)
+            else:
+                painter.setPen(dim)
+                painter.setFont(label_font)
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
                                     LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter,
                              self._painted_label(effect, info, painter.fontMetrics()))
+            painter.setPen(dim)
+            painter.setFont(label_font)
             # Whose effect this row is
             painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
                                     SCOPE_WIDTH - 4, rect.height() + 2),
                              Qt.AlignLeft | Qt.AlignVCenter, info.get("scope", ""))
             # Track background
             painter.fillRect(rect, track_bg)
-            # Fill segments (dotted when the buff reached <=2 receivers; a
-            # stacking rule's bar as high as its count over the peak)
+            # Fill segments: the union of the spans, cross-hatched, when the
+            # buff reached <=2 receivers (paint_sparse_span); otherwise each
+            # interval, a stacking rule's bar as high as its count over the
+            # peak
             color = info.get("color") or EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
-            dotted = info.get("dotted", False)
             stacks_max = info.get("stacks_max", 0)
-            for interval in self._intervals(effect):
-                x0 = self._x_for_ms(interval["start_ms"])
-                x1 = self._x_for_ms(interval["end_ms"])
-                if stacks_max:
-                    if info.get("zero_level"):
-                        level = max(0, min(stacks_max, int(interval.get("stacks") or 0)))
+            if info.get("sparse"):
+                for start_ms, end_ms in merged_spans(self._intervals(effect)):
+                    x0, x1 = self._x_for_ms(start_ms), self._x_for_ms(end_ms)
+                    paint_sparse_span(painter,
+                                      QRectF(x0, rect.top(), max(1.0, x1 - x0), rect.height()),
+                                      color, track_left)
+            else:
+                for interval in self._intervals(effect):
+                    x0 = self._x_for_ms(interval["start_ms"])
+                    x1 = self._x_for_ms(interval["end_ms"])
+                    if stacks_max:
+                        if info.get("zero_level"):
+                            level = max(0, min(stacks_max, int(interval.get("stacks") or 0)))
+                        else:
+                            level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
+                        height = max(1.0 if level == 0 else 2.0, rect.height() * level / stacks_max)
+                        painter.fillRect(QRectF(x0, rect.bottom() - height,
+                                                max(1.0, x1 - x0), height), color)
                     else:
-                        level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
-                    height = max(1.0 if level == 0 else 2.0, rect.height() * level / stacks_max)
-                    painter.fillRect(QRectF(x0, rect.bottom() - height,
-                                            max(1.0, x1 - x0), height), color)
-                elif dotted:
-                    pen = QPen(color, max(2.0, ROW_HEIGHT - 4.0),
-                               Qt.DotLine, Qt.FlatCap)
-                    painter.setPen(pen)
-                    mid_y = rect.center().y()
-                    painter.drawLine(int(x0), int(mid_y),
-                                     int(max(x0 + 1, x1)), int(mid_y))
-                else:
-                    painter.fillRect(QRectF(x0, rect.top(),
-                                            max(1.0, x1 - x0), rect.height()),
-                                     color)
+                        painter.fillRect(QRectF(x0, rect.top(),
+                                                max(1.0, x1 - x0), rect.height()),
+                                         color)
 
         # The line between the buffs above and the debuffs below
         divider_y = self._divider_y()
@@ -364,6 +439,12 @@ class TimelineStrip(QWidget):
         painter.end()
 
     # ---- labels ----
+
+    def missing_color(self) -> QColor:
+        """The red an expected-but-absent row's label is painted in: dark
+        red, or a lighter red when the pane's background is dark."""
+        dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        return MISSING_COLORS[dark]
 
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
@@ -416,9 +497,9 @@ class TimelineStrip(QWidget):
         head = [f"<b>{escape(self._full_label(effect, info))}</b>"
                 + (f" ({escape(scope)})" if scope else ""),
                 f"Up {summary['uptime_pct']}% of {_fmt_tick(duration)} on any unit"]
-        if info.get("dotted"):
+        if info.get("sparse"):
             receivers = len(summary["targets"])
-            head.append(f"<i>Dotted: reached only {receivers} "
+            head.append(f"<i>Hatched: reached only {receivers} "
                         f"receiver{'s' if receivers != 1 else ''}</i>")
         if not intervals:
             # An expected rule whose effect never came (issue #13)

@@ -28,15 +28,35 @@ a slot's anchor carries a fragment of its own, as a scribed skill's does.
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
+A player whose build has a possible issue (see build_issues) gets a circled
+i after their class, in the link color, the same mark the fight list puts
+on the fight; hovering it lists the findings and
+clicking it opens a popup with each finding and the rule behind it
+(issues_html, which the build window shows too). A player without findings
+keeps a plain row.
+
 A player's name is a link to their build window (see build_render): it looks
 like the plain bold name it replaces, and the fight view underlines it in the
 theme's link color while the pointer is over it. Their dps figure is the same
 kind of link to their damage window (see damage_render), and its hover text
-gives the dps time the figure divides by (see damage_stats).
+gives the dps time the figure divides by (see damage_stats). The dps figures,
+a player's and the header's group figure, also carry a small glyph inside
+their anchor that says they can be clicked (see gui.glyphs); the names do not.
 
 Dps and share cells read 'boss / total' in a fight with a boss: the dps
 against the units the game flags as bosses and against everything, and the
 player's share of the group's boss damage and of all its damage.
+
+After the shares, 'p:18199 cd:121%': the player's effective penetration and
+critical damage over this fight's damage (pen_crit.cap_shares, the same
+sums the build window's sections show, the Settings' assumed Champion Point
+rows included; each second capped, so a figure at the cap reads as the
+cap). It is muted and looks like text, as the dps figure does, and is a
+link to the build window opened at those sections; its hover text gives
+the caps, the shares of them and the share of damage dealt over them. A
+player with no damage to weigh has none, and so does an entry built before
+the figures existed. The plain-text copy adds the same token to the
+player's line.
 """
 
 import html
@@ -45,6 +65,7 @@ from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
+from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
@@ -52,12 +73,28 @@ ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
 BAR_DIVIDER = "│"  # between bar 1 and bar 2 when both are icon rows
-DEATH_CUE = "(d)"  # history-list mark on a fight in which a player died
+DEATH_CUE = "☠"  # history-list mark on a fight in which a player died: skull and crossbones
+ISSUES_LIST_CUE = "ⓘ"  # history-list mark on a fight with a player whose build has a finding: circled i
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
+ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
+# + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
+# penetration and critical damage over the fight (pen_crit); a click opens
+# the build window at its Penetration and Critical damage sections
+PEN_CRIT_HREF = "esolog:pencrit/"
+PEN_CRIT_TITLE = "Penetration and critical damage"
+# The cue itself, a circled i like the fight list's mark (ISSUES_LIST_CUE),
+# shown only on a player with a finding
+ISSUES_CUE = "ⓘ"
+ISSUES_TITLE = "Possible build issues"
+# The glyph after a dps figure that says it can be clicked (see gui.glyphs):
+# glyph:<kind>?color=rrggbb&px=<n>, drawn by the fight view
+GLYPH_SCHEME = "glyph"
+GRAPH_GLYPH = "graph"  # after the header's group dps figure
+BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -135,6 +172,19 @@ def build_tooltips(entry) -> dict:
     return tips
 
 
+def glyph_px(base_pt: float) -> int:
+    """Edge of a link glyph in a pane whose font is *base_pt* points: a
+    little taller than the x-height (13 px at 9 pt)."""
+    return max(8, round(float(base_pt) * 96 / 72 * 1.1))
+
+
+def glyph_html(kind: str, color: str, px: int) -> str:
+    """The <img> of a link glyph (see gui.glyphs) in *color* ('#rrggbb'),
+    *px* pixels square."""
+    return (f'<img src="{GLYPH_SCHEME}:{kind}?color={color.lstrip("#")}&amp;px={px}" '
+            f'style="vertical-align:middle">')
+
+
 def damage_href(unit_id) -> str:
     return f"{DAMAGE_HREF}{unit_id}"
 
@@ -144,6 +194,113 @@ def damage_unit_from_href(href: str) -> Optional[str]:
     if href and href.startswith(DAMAGE_HREF):
         return href[len(DAMAGE_HREF):]
     return None
+
+
+def issues_href(unit_id) -> str:
+    return f"{ISSUES_HREF}{unit_id}"
+
+
+def issues_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is a build-issues (i), else None."""
+    if href and href.startswith(ISSUES_HREF):
+        return href[len(ISSUES_HREF):]
+    return None
+
+
+def issues_tooltips(entry) -> dict:
+    """Hover text per (i): the findings' titles, and that a click gives the
+    rules behind them (see build_issues)."""
+    e = html.escape
+    tips = {}
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        findings = p.get("build_issues") or []
+        if unit_id and findings:
+            titles = "<br>".join(f"• {e(str(f.get('title', '')))}" for f in findings)
+            tips[issues_href(unit_id)] = (
+                f"<b>{ISSUES_TITLE}</b><br>{titles}<br>"
+                f"<span style='font-size:85%'>Click for the rules behind them</span>")
+    return tips
+
+
+def pen_crit_href(unit_id) -> str:
+    return f"{PEN_CRIT_HREF}{unit_id}"
+
+
+def pen_crit_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is a row's pen/crit token, else None."""
+    if href and href.startswith(PEN_CRIT_HREF):
+        return href[len(PEN_CRIT_HREF):]
+    return None
+
+
+def pen_crit_shares(entry, p, options) -> Optional[dict]:
+    """The row's cap shares for a player (pen_crit.cap_shares), None when
+    the entry has no figures or the player dealt no damage."""
+    return cap_shares(p.get("pen_crit"), getattr(entry, "pen_crit", None), options)
+
+
+def pen_crit_text(shares: Optional[dict]) -> str:
+    """'p:18199 cd:121%': the player's effective penetration and critical
+    damage over this fight (Chris's format, 2026-10-24: the raw figures,
+    nothing spelled out); '' without figures."""
+    if not shares:
+        return ""
+    return f"p:{shares['pen']:.0f} cd:{shares['crit']:.0f}%"
+
+
+def pen_crit_tooltips(entry, options=None) -> dict:
+    """Hover text per row token: the effective figures against the caps and
+    the share of damage dealt over each, that they are estimates, and that
+    a click opens the build window's sections."""
+    tips = {}
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        shares = pen_crit_shares(entry, p, options) if unit_id else None
+        if not shares:
+            continue
+        tips[pen_crit_href(unit_id)] = (
+            f"<b>{PEN_CRIT_TITLE}</b><br>"
+            f"Effective penetration {shares['pen']:,.0f} of {shares['pen_cap']:,} "
+            f"({shares['pen_pct']}% of the cap), {shares['pen_over_pct']:.0f}% of the damage "
+            f"dealt over it<br>"
+            f"Effective critical damage {shares['crit']:.1f}% of {shares['crit_cap']}% "
+            f"({shares['crit_pct']}% of the cap), {shares['crit_over_pct']:.0f}% of the damage "
+            f"dealt over it<br>"
+            f"<span style='font-size:85%'>Estimated from the build, the fight's effects and "
+            f"the Champion Point rows Settings assumes. Click for every source</span>")
+    return tips
+
+
+def issues_html(p, dark: bool = False, set_links=None, links=None,
+                base_pt: float = 9.0) -> str:
+    """A player's possible build issues as HTML: the heading, then each
+    finding's title in bold over the rule behind it, with an ESO-Hub link
+    for the set or skill it names when the maps know the page. '' for a
+    player without findings. Shown in the (i) popup and the build window."""
+    findings = (p or {}).get("build_issues") or []
+    if not findings:
+        return ""
+    theme = _theme(dark)
+    e = html.escape
+    rows = []
+    for finding in findings:
+        extras = []
+        for key, lookup in (("set", set_links), ("skill", links)):
+            name = str(finding.get(key) or "")
+            url = lookup(name) if lookup and name else None
+            if url:
+                extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
+                              f'{e(name)} on ESO-Hub</a>')
+        extra = (f"<br><span style='font-size:{base_pt * 0.85:.2f}pt'>"
+                 f"{' · '.join(extras)}</span>" if extras else "")
+        rows.append(
+            f"<tr><td valign='top' style='color:{theme['link']}'>{ISSUES_CUE}</td>"
+            f"<td style='padding-bottom:6px'><b>{e(str(finding.get('title', '')))}</b><br>"
+            f"<span style='color:{theme['detail']}'>{e(str(finding.get('detail', '')))}</span>"
+            f"{extra}</td></tr>")
+    return (f"<p style='margin:6px 0 2px 0'><b>{ISSUES_TITLE}</b></p>"
+            f"<table cellpadding='2' cellspacing='0'>{''.join(rows)}</table>")
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -307,12 +464,14 @@ def _mastery_text(p) -> str:
     return ", ".join(str(name) for name in (p.get("masteries") or []) if name)
 
 
-def summary_line(entry, death_cue: bool = False) -> str:
+def summary_line(entry, death_cue: bool = False, issue_cue: bool = False) -> str:
     """Fight line: boss · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
-    boss or mob name. The history list asks for it; the clipboard copy,
-    which is read without the app's legend, does not.
+    boss or mob name; issue_cue: mark a fight in which a player's build has
+    a possible issue (build_issues) with ISSUES_LIST_CUE after that. The
+    history list asks for both; the clipboard copy, which is read without
+    the app's legend, does not.
     """
     vet = " vet" if entry.is_vet else ""
     zone = entry.zone_name or "Unknown"
@@ -325,6 +484,8 @@ def summary_line(entry, death_cue: bool = False) -> str:
     parts.append(str(entry.timestamp))
     if death_cue and entry.deaths:
         parts[0] = f"{parts[0]} {DEATH_CUE}"
+    if issue_cue and any(p.get("build_issues") for p in entry.players):
+        parts[0] = f"{parts[0]} {ISSUES_LIST_CUE}"
     return " · ".join(parts)
 
 
@@ -440,8 +601,7 @@ def form_share_text(share) -> str:
 
 def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:
     """The rebuilt werewolf bar and 'in form 100%' for a player who spent
-    some of the fight in werewolf form, '' for any other. The bar is left
-    out when the log wrote it in place of a human bar."""
+    some of the fight in werewolf form, '' for any other."""
     share = p.get("werewolf_share")
     if not share:
         return ""
@@ -602,7 +762,7 @@ def _sets_html(p, set_links, e, color: str) -> str:
 def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
-                text_color: Optional[str] = None) -> str:
+                text_color: Optional[str] = None, pen_crit_options=None) -> str:
     """Render one fight as HTML for a QTextBrowser.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
@@ -610,6 +770,8 @@ def render_html(entry, detailed: bool, dark: bool = False,
     name -> ESO-Hub URL or None for abilities / gear sets / the scripts of
     scribed skills. base_pt: the pane's font size, which the scripts and gear
     lines are scaled from (Qt rich text ignores percentage sizes).
+    pen_crit_options: the config's pen_crit section, for the row's cap
+    shares (pen_crit.cap_shares); None assumes no Champion Point rows.
     text_color: the pane's own text color, which a player's name keeps
     although it is a link; the theme's default when not given.
     """
@@ -641,13 +803,19 @@ def render_html(entry, detailed: bool, dark: bool = False,
     dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
     if entry.group_dps > 0 and dps_time > 0 and _dps_time_text(dps_time) != duration:
         duration = f"{duration} (dps time {_dps_time_text(dps_time)})"
-    # The group figure opens the dps over time graph; like the names it
-    # keeps the look of plain text until it is hovered
+    # The group figure opens the dps over time graph. It keeps the look of
+    # plain text, but a glyph of the graph's line in the link colour, inside
+    # the anchor, says it is one (see gui.glyphs); 'gdps' is in the anchor
+    # too, so the whole token is the hover and click target. The &nbsp;
+    # keeps the glyph on the figure's line when the header wraps
+    px = glyph_px(base_pt)
     if entry.group_dps > 0:
         gdps = (f'<a href="{GRAPH_HREF}" style="text-decoration:none;color:{muted}">'
-                f'{gdps}</a>')
+                f'{gdps} gdps&nbsp;{glyph_html(GRAPH_GLYPH, theme["link"], px)}</a>')
+    else:
+        gdps = f"{gdps} gdps"
     stats = (f"{duration}"
-             f" · {gdps} gdps"
+             f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
              f" · Deaths {entry.deaths}")
@@ -692,17 +860,36 @@ def render_html(entry, detailed: bool, dark: bool = False,
             class_abbr += ":"
             beside = _mastery_text(p)
         subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
+        # The (i) of possible build issues (build_issues): only on a player
+        # with at least one, in the link color so it reads as a cue
+        issues_cue = ""
+        if unit_id and p.get("build_issues"):
+            issues_cue = (f' <a href="{e(issues_href(unit_id), quote=True)}" '
+                          f'style="text-decoration:none;color:{theme["link"]}">{ISSUES_CUE}</a>')
         dps = _dps_text(p, boss_fight)
-        # The dps figure opens the player's damage window; like the name it
-        # keeps the look of plain text until it is hovered
+        # The dps figure opens the player's damage window. Like the name it
+        # keeps the look of plain text; unlike the name it carries a glyph
+        # (three bars, muted, as there may be twelve of them) that says it
+        # can be clicked, since the window has no other way in
         if unit_id:
             dps = (f'<a href="{e(damage_href(unit_id), quote=True)}" '
-                   f'style="text-decoration:none;color:{name_color}">{dps}</a>')
+                   f'style="text-decoration:none;color:{name_color}">{dps}&nbsp;'
+                   f'{glyph_html(BREAKDOWN_GLYPH, muted, px)}</a>')
+        # The player's effective penetration and crit damage over the fight
+        # (pen_crit): muted, as plain-looking as the dps figure, and a link
+        # to the build window's sections; the hover tooltip carries the
+        # caps and shares. Empty for a player with no damage to weigh, and
+        # on an entry built before the figures
+        caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
+        if caps and unit_id:
+            caps = (f'<a href="{e(pen_crit_href(unit_id), quote=True)}" '
+                    f'style="text-decoration:none;color:{muted}">{caps}</a>')
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
-               f"{subclass_html}{recap_html}</td>"
+               f"{subclass_html}{issues_cue}{recap_html}</td>"
                f"<td align='right'>{dps}</td>"
                f"<td align='right'>{_pct_text(p, boss_fight)}</td>"
+               f"<td align='right' style='color:{muted}'>{caps}</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
         parts.append(row)
         if detailed:
@@ -749,7 +936,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
             sets = _sets_html(p, set_links, e, detail_color)
             gear = (f"<span style='font-size:{base_pt * 0.75:.2f}pt'>{sets}</span>"
                     if sets else "")
-            detail = (f"<tr><td></td><td colspan='4' "
+            detail = (f"<tr><td></td><td colspan='5' "
                       f"style='color:{detail_color};padding-top:0'>"
                       f"{card}"
                       f"{gear}"
@@ -785,8 +972,10 @@ def _sets_text(sets_value) -> str:
         return str(sets_value)
 
 
-def render_plain_text(entry) -> str:
-    """Plain-text rendering for clipboard copy."""
+def render_plain_text(entry, pen_crit_options=None) -> str:
+    """Plain-text rendering for clipboard copy. *pen_crit_options* is the
+    config's pen_crit section, so the cap shares on each line match the
+    pane's."""
     lines = [summary_line(entry)]
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
@@ -797,8 +986,10 @@ def render_plain_text(entry) -> str:
         dps = _dps_text(p, boss_fight)
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")
+        caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         lines.append(f"[{role}] {_join(p.get('name', ''))}{star} "
-                     f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})")
+                     f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
+                     + (f" · {caps}" if caps else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")

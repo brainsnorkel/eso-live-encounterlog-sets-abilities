@@ -26,8 +26,12 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
+from build_issues import (
+    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, structural_findings, worn_proc_sets,
+)
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
+import pen_crit
 import werewolf
 
 
@@ -465,6 +469,9 @@ class CombatEncounter:
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
         self.player_taunts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        # Proc-set effects by the unit that sourced them this fight, for the
+        # build-issue rule on a set that never fires (build_issues)
+        self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
@@ -615,6 +622,10 @@ class CombatEncounter:
         """A player taunted with an ability ('' when the log did not say which)."""
         self.player_taunts[player_unit_id][ability_id] += 1
 
+    def note_proc(self, source_unit_id: str, ability_id: str):
+        """A proc set's effect was sourced by a unit this fight (build_issues)."""
+        self.proc_effects[source_unit_id].add(ability_id)
+
     def fight_units(self) -> Dict[str, tuple]:
         """What effect_rules measures a fight's rules on, unit id -> (kind,
         since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -736,6 +747,17 @@ class ESOLogAnalyzer(ListenerMixin):
         # The user's tracked effects (effect_rules); build_analyzer sets the
         # rules from the config, an empty tracker records nothing
         self.effect_tracker = EffectTracker([])
+        # The penetration and crit debuffs, buffs and status effects
+        # (pen_crit): fixed rules of their own, so the user's rules text
+        # cannot break the build window's figures. Fed wherever
+        # effect_tracker is
+        self.pen_crit_tracker = pen_crit.new_tracker()
+        # A trial dummy's own debuffs were seen in this zone: a parse, so
+        # the target has a trial boss's 18,200 resistance (pen_crit)
+        self._dummy_seen = False
+        # The build-issue rules judged over the session: the proc sets that
+        # never fire, and who has taunted (build_issues)
+        self.build_issues = BuildIssueTracker()
 
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
@@ -870,6 +892,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if entry.fields:
                 self._enemy_last_hit.pop(entry.fields[0], None)
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
+                self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     self.current_encounter.pet_ownership.pop(entry.fields[0], None)
                     enemy = self.current_encounter.enemies.get(entry.fields[0])
@@ -1103,14 +1126,13 @@ class ESOLogAnalyzer(ListenerMixin):
         in form during the fight: 'werewolf_share', the share of the fight
         spent in form, and 'werewolf_bar_slots', the bar rebuilt from the
         skills cast in form this session with the morph as its ultimate.
-        No bar is rebuilt when the log wrote it in place of a human bar."""
+        A werewolf bar the log wrote is never used; _handle_player_info
+        drops it."""
         bar = self.werewolf.fight_bar(self._scribing_player_key(player.unit_id),
                                       enc.start_time, enc.end_time)
         if bar is None:
             return {}
         fields: Dict[str, object] = {'werewolf_share': bar.share}
-        if werewolf.logs_werewolf_bar(player.front_bar_slots, player.back_bar_slots):
-            return fields
         slots = [dict(self._ability_slot(skill), werewolf=True) for skill in bar.skills]
         if bar.ultimate:
             slots.append(dict(self._ability_slot(bar.ultimate), werewolf=True, ultimate=True))
@@ -1204,13 +1226,22 @@ class ESOLogAnalyzer(ListenerMixin):
             player_key = self._scribing_player_key(player_info.unit_id)
             self.werewolf.note_bars(player_key,
                                     player_info.champion_points + player_info.additional_data)
-            # Per-slot detail (id, name, icon stem) for the front and back bar
-            front_bar_slots = self._bar_slots(player_info.champion_points, scribed, player_key)
-            back_bar_slots = self._bar_slots(player_info.additional_data, scribed, player_key)
-            # Ability names per bar, and all equipped names
+            # Per-slot detail (id, name, icon stem) for the front and back
+            # bar. A werewolf bar the game wrote in place of a human bar is
+            # no human bar, and can be stale: it is dropped here, before any
+            # reader of the bars sees it, and the werewolf bar is rebuilt
+            # from casts as for every werewolf (werewolf.py, issue #49)
+            logged_front = self._bar_slots(player_info.champion_points, scribed, player_key)
+            logged_back = self._bar_slots(player_info.additional_data, scribed, player_key)
+            front_bar_slots = [] if werewolf.is_werewolf_bar(player_info.champion_points) else logged_front
+            back_bar_slots = [] if werewolf.is_werewolf_bar(player_info.additional_data) else logged_back
+            # Ability names per bar, and all equipped names. The equipped
+            # names keep every slot the log wrote, dropped bar included: a
+            # player with none is one the log has not described, and is
+            # left out of the fight entry
             front_bar_abilities = [slot['name'] for slot in front_bar_slots]
             back_bar_abilities = [slot['name'] for slot in back_bar_slots]
-            equipped_ability_names = set(front_bar_abilities + back_bar_abilities)
+            equipped_ability_names = {slot['name'] for slot in logged_front + logged_back}
 
             # Find the player and set their equipped abilities and gear
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:
@@ -1222,6 +1253,12 @@ class ESOLogAnalyzer(ListenerMixin):
                                                     front_bar_slots, back_bar_slots)
                 player.set_gear(player_info.gear_data)
                 player.long_term_effects = list(player_info.ability_ids)
+                # Buffs on the player as combat starts, with no GAINED line
+                # of their own (Lucent Echoes at the pull): the pen/crit
+                # tracker opens their spans here (pen_crit)
+                self.pen_crit_tracker.seed(player_info.ability_ids, player_info.unit_id,
+                                           player_info.timestamp,
+                                           self._unit_kind(player_info.unit_id))
                 # Store equipped ability IDs for gear set detection (both bars)
                 player._equipped_ability_ids = set(player_info.champion_points + player_info.additional_data)
             else:
@@ -1306,6 +1343,8 @@ class ESOLogAnalyzer(ListenerMixin):
             # Unit ids are handed out afresh in each zone: the tracked
             # effects on hostiles and pets end here
             self.effect_tracker.zone_changed(entry.timestamp)
+            self.pen_crit_tracker.zone_changed(entry.timestamp)
+            self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
@@ -1488,6 +1527,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Relative-ms offsets restart with each BEGIN_LOG session
         self.buff_timeline_recorder.reset()
         self.effect_tracker.reset()
+        self.pen_crit_tracker.reset()
         self.death_recap_recorder.reset()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
@@ -1499,6 +1539,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing_keys.clear()
         self._scribing_characters.clear()
         self.werewolf.reset()
+        self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """Handle TRIAL_INIT events to track trial initialization."""
@@ -1776,6 +1817,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     # Its effects end with it: the game does not always
                     # write FADED for a corpse's (see effect_rules)
                     self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
+                    self.pen_crit_tracker.forget_unit(dying_unit_id, entry.timestamp)
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -1972,6 +2014,15 @@ class ESOLogAnalyzer(ListenerMixin):
                     effect_type, ability_id, target_unit_id, stack_count,
                     entry.timestamp, self._unit_kind(target_unit_id),
                     source_id=source_unit_id)
+            # The penetration and crit effects, for the build window's
+            # sections (pen_crit); a trial dummy's own debuffs mark a parse
+            if extracted is not None:
+                self.pen_crit_tracker.record(
+                    effect_type, ability_id, target_unit_id, stack_count,
+                    entry.timestamp, self._unit_kind(target_unit_id),
+                    source_id=source_unit_id)
+                if ability_id in pen_crit.DUMMY_IDS:
+                    self._dummy_seen = True
 
             # Werewolf form begins and ends with these effects on the player
             # (werewolf.py)
@@ -1979,6 +2030,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     and self._unit_kind(target_unit_id) in ("self", "group")):
                 self.werewolf.note_effect(self._scribing_player_key(target_unit_id),
                                           effect_type, ability_id, entry.timestamp)
+
+            # A proc set's effect, sourced by its wearer: the build-issue
+            # rule for a set that never fires (build_issues)
+            if (effect_type == "GAINED" and ability_id in PROC_EFFECT_IDS
+                    and extracted is not None and self.current_encounter):
+                self.current_encounter.note_proc(source_unit_id, ability_id)
 
             # A Class Mastery effect names its holder, the source: a proc
             # mastery is never in the PLAYER_INFO passive list (eso_sets).
@@ -2332,6 +2389,29 @@ class ESOLogAnalyzer(ListenerMixin):
                 mark_taunt_slots(entry.players[-1]['front_bar_slots']
                                  + entry.players[-1]['back_bar_slots']
                                  + entry.players[-1].get('werewolf_bar_slots', []), taunts)
+            # Possible build issues (build_issues): the per-fight rules on
+            # this build, then the proc sets judged over the session. Any
+            # taunt this fight, named or not, marks the player a taunter
+            # for the session first
+            player_key = self._scribing_player_key(player.unit_id)
+            if enc.player_taunts.get(player.unit_id):
+                self.build_issues.note_taunt(player_key)
+            worn = worn_proc_sets(player.gear)
+            self.build_issues.note_fight(
+                player_key, enc.start_time, duration, worn,
+                fired_proc_sets(worn, enc.proc_effects.get(player.unit_id, ())))
+            # The tank rule reads the player's damage against an equal share
+            # of the group's, and whether they healed others for more than
+            # they dealt (a healer whose largest pool is health)
+            damage_ratio = ((player_damage / enc.total_damage) * len(players_with_damage)
+                            if enc.total_damage > 0 and players_with_damage else None)
+            entry.players[-1]['build_issues'] = (
+                structural_findings(player.gear, player.front_bar_slots, player.back_bar_slots,
+                                    role, taunted=self.build_issues.has_taunted(player_key),
+                                    set_name_of=gear_set_db.get_set_name_by_set_id,
+                                    damage_ratio=damage_ratio,
+                                    out_heals=player_healing > player_damage)
+                + self.build_issues.findings(player_key, worn))
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -2347,6 +2427,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.effect_tracker.prune_before(enc.start_time)
 
+        # Penetration and critical damage (pen_crit): each player's own
+        # sources from their build, and the fight's debuffs and buffs
+        # weighed by the damage dealt while they were up
+        self._pen_crit_fields(entry, enc)
+        self.pen_crit_tracker.prune_before(enc.start_time)
+
         if enc.trial_info and enc.trial_info.get('completed'):
             trial = enc.trial_info
             trial_name = trial.get('trial_name', 'Unknown')
@@ -2359,6 +2445,58 @@ class ESOLogAnalyzer(ListenerMixin):
 
         return entry
 
+
+    def _pen_crit_fields(self, entry: FightHistoryEntry, enc: 'CombatEncounter') -> None:
+        """Set entry.pen_crit and each player's 'pen_crit' (pen_crit.py): the
+        player's own rows from their PLAYER_INFO line, the fight's debuffs
+        on the bosses with uptime and casters, each player's buffs, and the
+        damage-weighted histograms the build window reads against the cap.
+        The content is instanced when the zone's difficulty is NORMAL or
+        VETERAN, a trial dummy's own debuffs were seen in this zone, or the
+        fight is against the Trial dummy by name, whose permanent debuffs
+        are then credited in full (pen_crit.TRIAL_DUMMY_DEBUFFS)."""
+        difficulty = (self.current_difficulty or "").upper()
+        instanced = difficulty in ("NORMAL", "VETERAN")
+        damage = enc.damage
+        player_buckets = {p['unit_id']: damage.player(p['unit_id']).target_buckets
+                          for p in entry.players}
+        units = enc.fight_units()
+        # The Trial dummy keeps a trial group's debuffs on itself from its
+        # spawn; a session begun later never sees them applied (pen_crit)
+        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in units
+                     if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME}
+
+        def gear_of(unit_id: str):
+            player = enc.players.get(unit_id)
+            return player.gear if player is not None else {}
+
+        try:
+            # Each player's own rows first: the buffs their sets give at all
+            # times are credited for the whole fight by the group part
+            own_rows = {}
+            for row in entry.players:
+                player = enc.players.get(row['unit_id'])
+                if player is not None:
+                    own_rows[row['unit_id']] = pen_crit.player_rows(
+                        player.gear, player.long_term_effects,
+                        player.front_bar_abilities, player.back_bar_abilities)
+            group, per_player = pen_crit.fight_fields(
+                self.pen_crit_tracker, enc.start_time, enc.end_time, units,
+                damage.target_buckets, player_buckets, self._resolve_timeline_name,
+                gear_of, instanced, self._dummy_seen or bool(permanent),
+                always_on={uid: own["gives"] for uid, own in own_rows.items() if own.get("gives")},
+                permanent_debuffs=permanent)
+        except Exception as exc:  # a figure must never cost the fight entry
+            if self.diagnostic:
+                _console(f"pen_crit failed: {exc}")
+            return
+        entry.pen_crit = group
+        for row in entry.players:
+            own = own_rows.get(row['unit_id'])
+            if own is None:
+                continue
+            own.update(per_player.get(row['unit_id'], {}))
+            row['pen_crit'] = own
 
     def _update_player_session(self, unit_id: str, name: str, handle: str, equipped_abilities: List[str] = None, gear_data: List = None, class_id: str = None, champion_points: int = 0, long_term_effects: List[str] = None, masteries: List[str] = None):
         """Update or create a player session with their current data."""

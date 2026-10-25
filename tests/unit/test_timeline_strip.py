@@ -83,7 +83,7 @@ class TestTimelineStrip(unittest.TestCase):
             {"start_ms": 0, "end_ms": 45_000, "source": "@tank", "target": "Test Boss"}]
         self.strip.set_timeline(timeline)
         self.assertEqual(self.strip._rows[-1], "Taunt")
-        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "dotted": False, "scope": "boss"})
+        self.assertEqual(self.strip._row_info["Taunt"], {"uptime_pct": 75, "sparse": False, "scope": "boss"})
 
     def test_uptime_percentages(self):
         from gui.timeline_strip import uptime_pct
@@ -98,20 +98,83 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertEqual(uptime_pct(
             [{"start_ms": 0, "end_ms": 60_000}], 60_000), 100)
 
-    def test_dotted_for_sparse_receivers(self):
+    def test_sparse_receivers_are_marked(self):
         timeline = _sample_timeline()
-        # Force reaches 2 distinct receivers -> dotted
+        # Force reaches 2 distinct receivers -> sparse, drawn hatched
         self.strip.set_timeline(timeline)
-        self.assertTrue(self.strip._row_info["Major Force"]["dotted"])
-        # Vulnerability is single-target by nature -> never dotted
+        self.assertTrue(self.strip._row_info["Major Force"]["sparse"])
+        # Vulnerability is single-target by nature -> never sparse
         self.assertFalse(
-            self.strip._row_info["Major Vulnerability"]["dotted"])
+            self.strip._row_info["Major Vulnerability"]["sparse"])
         # A buff reaching 3+ receivers renders solid
         timeline["effects"]["Major Courage"] = [
             {"start_ms": 0, "end_ms": 10_000, "source": "@h", "target": f"@p{i}"}
             for i in range(4)]
         self.strip.set_timeline(timeline)
-        self.assertFalse(self.strip._row_info["Major Courage"]["dotted"])
+        self.assertFalse(self.strip._row_info["Major Courage"]["sparse"])
+
+    def test_merged_spans(self):
+        from gui.timeline_strip import merged_spans
+        self.assertEqual(merged_spans([]), [])
+        self.assertEqual(merged_spans([{"start_ms": 20, "end_ms": 30}, {"start_ms": 0, "end_ms": 10}]),
+                         [(0, 10), (20, 30)])
+        # Abutting and overlapping spans are joined
+        self.assertEqual(merged_spans([{"start_ms": 0, "end_ms": 10}, {"start_ms": 10, "end_ms": 20},
+                                       {"start_ms": 15, "end_ms": 30}, {"start_ms": 40, "end_ms": 50}]),
+                         [(0, 30), (40, 50)])
+
+    def test_a_sparse_row_is_hatched_without_gaps(self):
+        """Issue #45: a buff that reached one or two people is an unbroken,
+        cross-hatched span, not the dotted line that read like a buff
+        flickering at half uptime; a buff on the whole group is solid."""
+        from PySide6.QtGui import QImage
+
+        from gui.timeline_strip import EFFECT_COLORS, ROW_HEIGHT
+        timeline = _sample_timeline()
+        timeline["effects"]["Major Courage"] = [
+            {"start_ms": 10_000, "end_ms": 30_000, "source": "@h", "target": f"@p{i}"}
+            for i in range(4)]
+        self.strip.set_timeline(timeline)
+        self.strip.resize(600, self.strip.sizeHint().height())
+        self.strip.show()
+        image = self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+
+        def coloured(effect, x):
+            rect = self.strip._row_rect(self.strip._rows.index(effect))
+            rgb = EFFECT_COLORS[effect].rgb()
+            return sum(1 for y in range(int(rect.top()), int(rect.top()) + ROW_HEIGHT)
+                       if image.pixel(x, y) == rgb)
+
+        # Force (two receivers, up 10-30s as a union): every column of the
+        # span carries the colour and none is solid; Courage (four
+        # receivers, the same span) is solid; outside the span, nothing
+        x_from = int(self.strip._x_for_ms(10_000)) + 1
+        x_to = int(self.strip._x_for_ms(30_000)) - 1
+        force = [coloured("Major Force", x) for x in range(x_from, x_to + 1)]
+        self.assertTrue(all(1 <= n < ROW_HEIGHT for n in force), force)
+        self.assertTrue(all(coloured("Major Courage", x) == ROW_HEIGHT
+                            for x in range(x_from, x_to + 1)))
+        self.assertEqual(coloured("Major Force", int(self.strip._x_for_ms(40_000))), 0)
+
+    def test_abutting_and_overlapping_sparse_spans_hatch_as_one(self):
+        """The union of a sparse row's intervals is painted, so two spans
+        that meet or overlap look exactly like the one span they cover: no
+        seam, and no darker patch where the translucent base would double."""
+        from PySide6.QtGui import QImage
+
+        def rendered(intervals):
+            self.strip.set_timeline({"duration_ms": 60_000, "effects": {"Major Force": intervals}})
+            self.strip.resize(600, self.strip.sizeHint().height())
+            self.strip.show()
+            return self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+
+        one = rendered([{"start_ms": 10_000, "end_ms": 30_000, "source": "@a", "target": "@r1"}])
+        two = rendered([{"start_ms": 10_000, "end_ms": 20_000, "source": "@a", "target": "@r1"},
+                        {"start_ms": 20_000, "end_ms": 30_000, "source": "@a", "target": "@r2"}])
+        lapped = rendered([{"start_ms": 10_000, "end_ms": 25_000, "source": "@a", "target": "@r1"},
+                           {"start_ms": 15_000, "end_ms": 30_000, "source": "@b", "target": "@r2"}])
+        self.assertEqual(two, one)
+        self.assertEqual(lapped, one)
 
     def test_paint_smoke(self):
         from PySide6.QtGui import QPixmap
@@ -194,21 +257,21 @@ class TestTimelineStrip(unittest.TestCase):
         QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.assertEqual(self.strip.findChildren(SummaryPopup), [])
 
-    def test_summary_text_for_a_dotted_row_and_a_stacking_rule(self):
+    def test_summary_text_for_a_sparse_row_and_a_stacking_rule(self):
         tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
                     "uptime_pct": 66.7, "max_stacks": 3, "intervals": [
                         {"start_ms": 0, "end_ms": 20_000, "stacks": 1, "target": "@me", "source": "@me"},
                         {"start_ms": 20_000, "end_ms": 40_000, "stacks": 3, "target": "@me"}]}]
         self.strip.set_timeline(_sample_timeline(), tracked)
         force = self.strip.summary_html("Major Force")
-        self.assertIn("Dotted: reached only 2 receivers", force)
+        self.assertIn("Hatched: reached only 2 receivers", force)
         self.assertIn("Up 33%", force)
         # Two casters on two receivers: the grid is shown
         self.assertIn("On \\ by", force)
         crux = self.strip.summary_html("Crux")
         self.assertIn("×3", crux)
         self.assertIn("unknown source", crux)  # a span saved without a caster
-        self.assertNotIn("Dotted", crux)
+        self.assertNotIn("Hatched", crux)
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -351,6 +414,61 @@ class TestTrackedRows(unittest.TestCase):
         self.assertIn("Not up in this fight", self.strip.summary_html("Lucent Echoes"))
         self.strip.show()
         self.strip.grab()  # an empty track paints
+
+    def test_an_expected_row_at_zero_is_marked_missing_and_painted_red(self):
+        """An expected rule whose effect never came is marked missing, so
+        its label is painted red and bold; an expected rule that was up,
+        and an unexpected one at 0% that is shown anyway, are not."""
+        from PySide6.QtGui import QColor, QImage
+        tracked = [
+            {"name": "Lucent Echoes", "kind": "uptime", "scope": "group", "text": "Lucent Echoes:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": True, "shown": True,
+             "intervals": []},
+            {"name": "Major Courage", "kind": "uptime", "scope": "group", "text": "Major Courage:80%",
+             "uptime_pct": 80.0, "max_stacks": 1, "seen": True, "expected": True, "shown": True,
+             "intervals": [{"start_ms": 0, "end_ms": 48_000, "source": "@a", "target": "@b"}]},
+            {"name": "Nearly", "kind": "uptime", "scope": "group", "text": "Nearly:0%",
+             "uptime_pct": 0.4, "max_stacks": 1, "seen": True, "expected": True, "shown": True,
+             "intervals": [{"start_ms": 0, "end_ms": 240, "source": "@a", "target": "@b"}]},
+            {"name": "Alkosh", "kind": "uptime", "scope": "boss", "text": "Alkosh:0%",
+             "uptime_pct": 0.0, "max_stacks": 0, "seen": False, "expected": False, "shown": True,
+             "intervals": []},
+        ]
+        self.strip.set_timeline({"duration_ms": 60_000, "effects": {}}, tracked)
+        self.assertTrue(self.strip._row_info["Lucent Echoes"]["missing"])
+        self.assertTrue(self.strip._row_info["Nearly"]["missing"], "rounds to 0%")
+        self.assertFalse(self.strip._row_info["Major Courage"]["missing"])
+        self.assertFalse(self.strip._row_info["Alkosh"]["missing"], "not expected")
+        # The label column of the missing row carries the red; the row that
+        # was up does not
+        self.strip.show()
+        image = self.strip.grab().toImage().convertToFormat(QImage.Format_ARGB32)
+        red = self.strip.missing_color()
+
+        def has_red(row):
+            rect = self.strip._row_rect(row)
+            for y in range(int(rect.top()) - 1, int(rect.bottom()) + 2):
+                for x in range(int(rect.left())):
+                    if QColor(image.pixel(x, y)) == red:
+                        return True
+            return False
+
+        rows = self.strip._rows
+        self.assertTrue(has_red(rows.index("Lucent Echoes")))
+        self.assertFalse(has_red(rows.index("Major Courage")))
+
+    def test_missing_color_follows_the_palette(self):
+        """Dark red on a light pane, a lighter red on a dark one."""
+        from PySide6.QtGui import QColor
+
+        from gui.timeline_strip import MISSING_COLORS
+        palette = self.strip.palette()
+        palette.setColor(self.strip.backgroundRole(), QColor("#ffffff"))
+        self.strip.setPalette(palette)
+        self.assertEqual(self.strip.missing_color(), MISSING_COLORS[False])
+        palette.setColor(self.strip.backgroundRole(), QColor("#202020"))
+        self.strip.setPalette(palette)
+        self.assertEqual(self.strip.missing_color(), MISSING_COLORS[True])
 
     def test_a_dots_rule_is_drawn_against_five_with_zero_a_level(self):
         tracked = [{"name": "Zen", "kind": "dots", "scope": "boss", "text": "Zen:2.5/5",

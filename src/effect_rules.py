@@ -85,11 +85,33 @@ In the trial fights the six group buffs were there most of the time
 71%, Major Force and Powerful Assault 52%), in the four-player fights
 mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
-trial fight. So the six group buffs are ``expected large``, the taunt
-``expected small large``, and the boss debuffs and Crux nothing: they
-depend on who is in the group, and show when they happened. The tracker
-alone, without the engine's units, knows no group size and shows every
-item.
+trial fight. So five of the six group buffs are ``expected large``, the
+taunt ``expected small large``, and the boss debuffs and Crux nothing:
+they depend on who is in the group, and show when they happened.
+Powerful Assault was expected too until issue #48: the set's buff is
+usual in a trial group, but no role has to bring it, so a fight without
+it is not a mistake worth a red 0% row, and its rule shows when the buff
+was seen, like the debuffs (tracking version 4 takes the words off a
+saved line again, see upgrade_rules_text). The tracker alone, without the
+engine's units, knows no group size and shows every item.
+
+Elemental Catalyst (issue #53): the set's three weaknesses (Flame 142610,
+Frost 142652, Shock 142653; critical damage taken up 5% each, as pen_crit
+values them) are one default rule on the boss, shown when someone applied
+them and not expected. The set is an alternative to Lucent Echoes for a
+group's critical damage, run where Echoes is not, so a group running it
+should see it; in these logs it is rare. Every split log of 2026 (891 log
+files with a fight, 607 of them veteran trials): the weaknesses appear in
+4 files, two Kyne's Aegis sessions (three files are the splitter's copies
+of one), both also running Lucent Echoes, which 515 of the 607 trial logs
+have; no dungeon or arena log has them, and none of the 92 trial logs
+without Echoes has Catalyst instead. In the two sessions the wearer was a
+DPS in January (22 of 24 fights, median uptime 53%, all three weaknesses
+up together 7% of a fight) and a tank in May (one fight, 78% and 51%): the
+rule's uptime, any weakness up, is well above the time the full 15% is in
+effect, one weakness being the usual state. A measure counting the ids up
+at once, and a way to say a group needs one of Echoes and Catalyst, are
+left for when the logs show the set in use.
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -162,17 +184,18 @@ UPTIME_LINE_RULES = """\
 Major Courage    = 109966 on group expected large
 Major Force      = 61747 on group expected large
 Major Slayer     = 93109 on group expected large
-Powerful Assault = 61771 on group expected large
+Powerful Assault = 61771 on group
 Lucent Echoes    = 220015 on group expected large
 Pearlescent Ward = 172621 on group expected large
 Taunt            = 38254 on boss each expected small large
 """
 
 # The words a saved rules text from before ``expected`` gets on these
-# seven, by name (app_config's upgrade to tracking version 3)
+# six, by name (app_config's upgrade to tracking version 3); Powerful
+# Assault gets none since issue #48
 DEFAULT_EXPECTED = {
     "major courage": "large", "major force": "large", "major slayer": "large",
-    "powerful assault": "large", "lucent echoes": "large", "pearlescent ward": "large",
+    "lucent echoes": "large", "pearlescent ward": "large",
     "taunt": "small large",
 }
 
@@ -193,11 +216,12 @@ DEFAULT_RULES = (
     "Morag Tong    = 34384 on boss\n"
     "Minor Brittle = 145975 on boss\n"
     "Major Brittle = 263825 on boss\n"
+    "Elemental Catalyst = 142610 142652 142653 on boss\n"
     "Alkosh        = 76667 on boss\n"
 )
 
 # The example library Settings offers to paste from: (title, what it tells
-# you, the rule line). The first fourteen are DEFAULT_RULES; the other ids
+# you, the rule line). The first fifteen are DEFAULT_RULES; the other ids
 # were seen in the 2026 logs.
 EXAMPLE_RULES = [
     ("Major Courage on the group",
@@ -211,7 +235,7 @@ EXAMPLE_RULES = [
      "Major Slayer = 93109 on group expected large"),
     ("Powerful Assault on the group",
      "Uptime of the Powerful Assault set's buff on anyone in the group",
-     "Powerful Assault = 61771 on group expected large"),
+     "Powerful Assault = 61771 on group"),
     ("Lucent Echoes on the group",
      "Uptime of the Lucent Echoes set's buff on anyone in the group",
      "Lucent Echoes = 220015 on group expected large"),
@@ -241,6 +265,10 @@ EXAMPLE_RULES = [
     ("Major Brittle on the boss",
      "Uptime of Major Brittle",
      "Major Brittle = 263825 on boss"),
+    ("Elemental Catalyst on the boss",
+     ("Uptime of any of the set's three weaknesses, Flame, Frost and Shock "
+      "(critical damage taken up 5% each)"),
+     "Elemental Catalyst = 142610 142652 142653 on boss"),
     ("Roar of Alkosh on the boss",
      "Uptime of the Roar of Alkosh set's debuff",
      "Alkosh = 76667 on boss"),
@@ -388,14 +416,18 @@ def _parse_line(line: str):
     return Rule(name, frozenset(ids), scope, kind, expected), None
 
 
-def upgrade_rules_text(text: str) -> str:
-    """A rules text saved before tracking version 3, brought up to date
-    once (app_config): each line naming one of the seven group-buff and
-    taunt rules that has no ``expected`` of its own gets the default's
-    words appended, and a ``Touch of Z'en = 126597 ... stacks`` line, whose
-    stack count the log never carries (issue #27), measures ``dots``
-    instead. The line's own spelling, ids and spacing are kept; any other
-    line is left exactly as written, so the upgrade is safe to repeat."""
+def upgrade_rules_text(text: str, version: int) -> str:
+    """A rules text saved at tracking *version* (0 when the file has none),
+    brought up to date once (app_config). Before version 3: each line
+    naming one of the default group-buff and taunt rules that has no
+    ``expected`` of its own gets the default's words appended, and a
+    ``Touch of Z'en = 126597 ... stacks`` line, whose stack count the log
+    never carries (issue #27), measures ``dots`` instead. Before version 4:
+    a Powerful Assault line reading ``expected large``, the words version 3
+    put on every such line, loses them again (issue #48); a line with other
+    sizes, ``expected all`` say, is the user's own and is kept. The line's
+    own spelling, ids and spacing are kept; any other line is left exactly
+    as written, so the upgrade is safe to repeat."""
     out = []
     for raw in (text or "").splitlines():
         line = raw.strip()
@@ -403,10 +435,13 @@ def upgrade_rules_text(text: str) -> str:
             rule, _error = _parse_line(line)
             if rule is not None:
                 name = rule.name.lower()
-                if name in DEFAULT_EXPECTED and not rule.expected:
-                    raw = raw.rstrip() + " expected " + DEFAULT_EXPECTED[name]
-                elif name == "touch of z'en" and rule.kind == "stacks" and rule.ids == {"126597"}:
-                    raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
+                if version < 3:
+                    if name in DEFAULT_EXPECTED and not rule.expected:
+                        raw = raw.rstrip() + " expected " + DEFAULT_EXPECTED[name]
+                    elif name == "touch of z'en" and rule.kind == "stacks" and rule.ids == {"126597"}:
+                        raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
+                if version < 4 and name == "powerful assault" and rule.expected == {"large"}:
+                    raw = re.sub(r"\s+expected\s+large\b", "", raw, count=1, flags=re.IGNORECASE)
         out.append(raw)
     return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
 
@@ -664,6 +699,33 @@ class EffectTracker:
                 # as for one caster, and the new span is theirs
                 last[1] = start
         spans.append([start, end, stacks, target_id, kind, source_id])
+
+    def spans_in(self, index: int, fight_start_ms: int, fight_end_ms: int) -> List[tuple]:
+        """The spans of the rule at *index* clipped to a fight window:
+        (start, end, stacks, target, kind, source), for a reader that does
+        its own measuring (pen_crit)."""
+        return self._window(index, fight_start_ms, fight_end_ms)
+
+    def seed(self, ability_ids, target_id: str, timestamp_ms: int,
+             target_kind: Optional[str], source_id: str = "") -> None:
+        """Effects already on *target_id* at *timestamp_ms* that had no GAINED
+        line of their own: the long-term list of a PLAYER_INFO line names the
+        buffs a player has as combat starts (Lucent Echoes at the pull, a
+        mythic's permanent buff). A span opens here for each id a rule
+        tracks, unless one is open; a later GAINED by a named caster takes
+        over as a refresh does, and a FADED closes it (pen_crit)."""
+        if target_kind is None:
+            return
+        target_id = str(target_id)
+        for ability_id in ability_ids or ():
+            ability_id = str(ability_id)
+            for index in self._by_id.get(ability_id, ()):
+                rule = self.rules[index]
+                if rule.kind == "dots" or target_kind not in _SCOPE_KINDS[rule.scope]:
+                    continue
+                key = (index, target_id, ability_id)
+                if key not in self._open:
+                    self._open[key] = [timestamp_ms, 1, target_kind, str(source_id or "")]
 
     def _window(self, index: int, fight_start_ms: int, fight_end_ms: int) -> List[tuple]:
         """A rule's spans clipped to the fight: (start, end, stacks, target,

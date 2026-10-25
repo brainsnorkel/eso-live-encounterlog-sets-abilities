@@ -68,6 +68,16 @@ TOPICS = [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
     ]),
+    ("Penetration and critical damage: the spreadsheet from the log", [
+        "src/pen_crit.py",
+        "scripts/generate_set_offense.py",
+        "src/gui/build_render.py:_pen_crit_html",
+    ]),
+    ("Possible build issues: what the log proves about a build", [
+        "src/build_issues.py",
+        "src/build_issues.py:BuildIssueTracker",
+        "scripts/generate_weapon_skill_lines.py",
+    ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
         "src/effect_rules.py",
         "src/effect_rules.py:EffectTracker",
@@ -100,6 +110,7 @@ TOPICS = [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",
         "src/effect_summary.py",
+        "src/gui/timeline_strip.py:paint_sparse_span",
     ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",
@@ -109,6 +120,10 @@ TOPICS = [
     ("Taunt marks that pulse in a text page", [
         "src/gui/icon_cache.py:ringed",
         "src/gui/fight_view.py:FightView._pulse_step",
+    ]),
+    ("Links in the fight pane: the hover cue and the dps glyphs", [
+        "src/gui/fight_view.py:FightView._show_hover_cue",
+        "src/gui/glyphs.py",
     ]),
 ]
 

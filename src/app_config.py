@@ -18,8 +18,9 @@ APP_NAME = "esolog-tail"
 
 # The rules text's layout: 1 held the user's additions to a line whose
 # group buffs and taunt were built in; 2 has those as rules too; 3 gives
-# them ``expected`` words and Touch of Z'en the ``dots`` measure
-TRACKING_VERSION = 3
+# them ``expected`` words and Touch of Z'en the ``dots`` measure; 4 takes
+# Powerful Assault's ``expected`` off again (issue #48)
+TRACKING_VERSION = 4
 
 DEFAULTS = {
     "log_path": None,           # None -> auto-detect
@@ -43,6 +44,18 @@ DEFAULTS = {
     "update": {
         "check_enabled": True,   # check GitHub releases at startup
         "skip_version": None,    # release the user chose to skip
+    },
+    # The build window's Penetration and Critical damage sections (pen_crit):
+    # Champion Point stars the log cannot show, assumed or not, and the
+    # target's resistance ("auto": 18,200 in dungeons, trials and arenas,
+    # 9,100 overland; or a number)
+    "pen_crit": {
+        "piercing": True,
+        "fighting_finesse": True,       # in solo and small-group fights, never in a large group
+        "backstabber": False,
+        "force_of_nature": False,
+        "force_of_nature_per_effect": 660,
+        "cap": "auto",
     },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
@@ -80,12 +93,15 @@ class AppConfig:
         would lose those items on upgrade: the missing ones are put in
         front of it, by name, so a rule the user had already written under
         the same name stays theirs. A text saved before version 3 then has
-        the seven default rules given their ``expected`` words and Touch of
-        Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
+        the default rules that are expected given their ``expected`` words
+        and Touch of Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
         a renamed or already-flagged line is left alone), so a trial fight
-        still shows a missing group buff at 0% after the upgrade. Nothing
-        is written back; the version is saved with the next Save, and both
-        steps are harmless to repeat.
+        still shows a missing group buff at 0% after the upgrade. A text
+        saved before version 4 has the ``expected large`` that version 3
+        put on its Powerful Assault line taken off again (issue #48: the
+        one default no longer expected). Nothing is written back; the
+        version is saved with the next Save, and every step is harmless to
+        repeat.
 
         The timeline strip's old switch (experimental.buff_timeline, until
         issue #25 made the strip the only view of the rules) is dropped
@@ -112,8 +128,10 @@ class AppConfig:
                 self.data["tracking"]["rules"] = ("\n".join(missing) + "\n"
                                                   + tracking["rules"])
         version = tracking.get("version", 0)
-        if not isinstance(version, int) or version < 3:
-            self.data["tracking"]["rules"] = upgrade_rules_text(self.data["tracking"]["rules"])
+        if not isinstance(version, int):
+            version = 0
+        if version < TRACKING_VERSION:
+            self.data["tracking"]["rules"] = upgrade_rules_text(self.data["tracking"]["rules"], version)
         self.data["tracking"]["version"] = TRACKING_VERSION
 
     def save(self) -> None:

@@ -112,12 +112,13 @@ class TestDpsFigureInFightView(DamageWindowTestCase):
         from gui.fight_render import render_html, render_plain_text
         html = render_html(_entry(), detailed=False)
         self.assertIn('href="esolog:damage/1"', html)
-        self.assertIn('>10.0k / 10.0k</a>', html)
+        # The figure, then the breakdown glyph, inside the anchor
+        self.assertIn('>10.0k / 10.0k&nbsp;<img src="glyph:breakdown?', html)
         self.assertIn('66.7% / 62.9%', html)
         self.assertIn('— 10.0k / 10.0k (66.7% / 62.9%)', render_plain_text(_entry()))
         # A fight without a boss keeps the single figures
         html = render_html(_entry(boss=False), detailed=False)
-        self.assertIn('>10.0k</a>', html)
+        self.assertIn('>10.0k&nbsp;<img src="glyph:breakdown?', html)
         self.assertIn('>62.9%<', html)
         self.assertNotIn('66.7%', html)
         self.assertIn('— 10.0k (62.9%)', render_plain_text(_entry(boss=False)))
