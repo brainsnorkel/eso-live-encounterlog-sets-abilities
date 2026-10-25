@@ -4,6 +4,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Added
+- **Build issues: no food or drink** (#54): a player with no food or drink buff as the fight began gets the `ⓘ`, with the rule stated: the long-term effects the log lists for them are matched against the app's table of the game's 92 food and drink effects, the one the build window's Food line uses, so a consumable newer than the table reads the same way (the finding says so). A meal eaten during the fight is noted with its time, and a food that was up at the pull and faded before the end, with nothing eaten after it, gets its own finding naming it and the time; a drink the game logs as several effects is out only when all of them have faded. Over 91 split logs of September and October 2026 (1,681 fights, 14,895 player-fights) 535 player-fights (3.6%) pulled without, 39 named characters among them, and 13 saw their food run out mid-fight; no player without a match carried anything that looked like an unknown consumable, so the gap was a missing meal every time
+
 ### Changed
 - **Dependency floors**: `PySide6-Essentials` 6.12.0 or newer, the first release past Qt's October 2026 security advisories, which affect every release from 6.9.0 to 6.11.2; and `Pillow` 13.0.0 or newer, since 12.3.0, the old floor, is among the 41 advisories that 13.0.0 closed, one of them critical. Neither changes what a build installs: the 0.12.0 builds already resolved to both
 

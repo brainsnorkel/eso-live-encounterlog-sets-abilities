@@ -66,7 +66,7 @@ With Detail view off, the rows are one line each, for a quick ranking:
 
 ### Possible build issues
 
-The `ⓘ` points out things in a build that are usually mistakes, read from what the log recorded as the fight began. Each finding states its rule, so you can judge it yourself; the popup links the set or skill concerned to ESO-Hub.
+The `ⓘ` points out things in a build that are usually mistakes, read from what the log recorded as the fight began (and, for a meal that ran out, during it). Each finding states its rule, so you can judge it yourself; the popup links the set or skill concerned to ESO-Hub.
 
 ![The ⓘ popup: a player's possible build issues, each with its rule](screencaps/build-issues.png)
 
@@ -80,6 +80,8 @@ The rules:
 - **Roar of Alkosh or Roaring Opportunist worn and never firing.** Alkosh's shockwave needs the wearer to activate a synergy, Roaring Opportunist's Major Slayer a fully charged heavy attack. The app counts, over the logging session, the fights of a minute or more the player wore the set in; when the set's effect never came from them in any fight of the session, the finding says how many such fights have passed. One fire anywhere in the session clears it.
 - **Pearlescent Ward, Xoryn's Masterpiece or Lucent Echoes complete on one bar only.** Their five-piece bonus is a buff for the whole group that holds only while five pieces are active, so the group loses it every time the player swaps bars. A build with no back-bar weapon, or wearing Oakensoul Ring, is not judged.
 - **A tank with no taunt or pull.** The player reads as a tank on more than the health pool: a shield, an ice staff or five heavy pieces, and under half an equal share of the group's damage in the fight. Yet neither bar holds a taunt (Puncture and its morphs, Inner Fire and its morphs, Destructive Clench on an ice staff, Runic Jolt and its morphs, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no taunt of theirs was logged this session. A restoration staff, or more healing than damage, marks a healer, who is not judged.
+- **No food or drink at combat start.** Nothing on the player's buff list as the fight began matched the app's list of the game's food and drink effects (the one the build window's Food line uses), so they fought without a consumable's maximum stats or recovery. A meal eaten during the fight is noted with its time. A consumable newer than the bundled list reads the same way; the list is refreshed with the game data.
+- **Food that ran out.** The player's food or drink was up as the fight began and faded during it, with nothing eaten before the end. The finding names it and says when. A drink the game logs as several effects counts as gone only when all of them have faded.
 
 The rules are fixed in this version; what each finding says is meant to be enough to act on, or to disagree with.
 

@@ -25,6 +25,7 @@ from build_issues import (
     BuildIssueTracker,
     bar_weapon_line,
     fired_proc_sets,
+    food_findings,
     heavy_pieces,
     skill_line_of_slot,
     structural_findings,
@@ -406,6 +407,59 @@ class TestTankWithoutTaunt(unittest.TestCase):
                                                         back='inferno')), [])
 
 
+class TestFood(unittest.TestCase):
+    TABLE = {'61257': {'kind': 'food', 'type': 'MAX_HEALTH_MAGICKA'},
+             '84731': {'kind': 'drink', 'type': 'MAX_HEALTH_MAGICKA_REGEN_MAGICKA'},
+             '84732': {'kind': 'drink', 'type': 'REGEN_HEALTH'}}
+    NAMES = {'61257': 'Grilled Vegetables', '84731': "Witchmother's Potent Brew",
+             '84732': 'Increase Health Regen'}
+    FOOD = {'id': '61257', 'name': 'Grilled Vegetables', 'kind': 'food'}
+
+    def test_none_at_combat_start(self):
+        found = food_findings(None, None, 10000)
+        self.assertEqual([(f['rule'], f['title']) for f in found],
+                         [('no-food', 'No food or drink at combat start')])
+        self.assertEqual(set(found[0]), {'rule', 'title', 'detail', 'set', 'skill'})
+        self.assertIn('LibFoodDrinkBuff', found[0]['detail'])
+        self.assertNotIn('They ate', found[0]['detail'])
+
+    def test_a_meal_eaten_during_the_fight_is_noted(self):
+        # The drink's three effects are up now; the consumable itself names the note
+        state = {'up': {'84731', '84732'}, 'empty_since': None, 'ate': 75000}
+        found = food_findings(None, state, 10000, self.NAMES.get, self.TABLE)
+        self.assertEqual([f['rule'] for f in found], ['no-food'])
+        self.assertTrue(found[0]['detail'].endswith("They ate Witchmother's Potent Brew at 1m05."),
+                        found[0]['detail'])
+        unknown = {'up': {'1'}, 'empty_since': None, 'ate': 10000}
+        found = food_findings(None, unknown, 10000, self.NAMES.get, self.TABLE)
+        self.assertTrue(found[0]['detail'].endswith('They ate a meal at 0s.'))
+
+    def test_food_present_and_kept_is_clean(self):
+        self.assertEqual(food_findings(self.FOOD, None, 10000), [])
+        self.assertEqual(food_findings(self.FOOD, {'up': {'61257'}, 'empty_since': None,
+                                                   'ate': None}, 10000), [])
+
+    def test_food_that_ran_out(self):
+        found = food_findings(self.FOOD, {'up': set(), 'empty_since': 130000, 'ate': None}, 10000)
+        self.assertEqual([(f['rule'], f['title']) for f in found],
+                         [('food-ran-out', 'Grilled Vegetables ran out 2m into the fight')])
+        self.assertIn('faded at 2m and nothing was eaten', found[0]['detail'])
+        drink = {'id': '84731', 'name': '', 'kind': 'drink'}
+        found = food_findings(drink, {'up': set(), 'empty_since': 15500, 'ate': None}, 10000)
+        self.assertEqual(found[0]['title'], 'drink ran out 5s into the fight')
+        # A fight cut in two lists no food on its second line, though the
+        # record saw the first half's food fade: still ran out, named from
+        # the ids the record saw (the drink's three effects name the brew)
+        state = {'up': set(), 'seen': {'84731', '84732'}, 'empty_since': 40000, 'ate': None}
+        found = food_findings(None, state, 10000, self.NAMES.get, self.TABLE)
+        self.assertEqual([(f['rule'], f['title']) for f in found],
+                         [('food-ran-out', "Witchmother's Potent Brew ran out 30s into the fight")])
+        # ... unless the meal was one eaten during the fight: no food at the start is the fact
+        state = {'up': set(), 'seen': {'61257'}, 'empty_since': 40000, 'ate': 20000}
+        found = food_findings(None, state, 10000, self.NAMES.get, self.TABLE)
+        self.assertEqual([f['rule'] for f in found], ['no-food'])
+
+
 class TestTracker(unittest.TestCase):
 
     def test_a_long_fight_without_the_proc_is_a_finding(self):
@@ -487,6 +541,11 @@ def _gained(ts, unit_id, ability_id):
     return f'{ts},EFFECT_CHANGED,GAINED,1,4021668,{ability_id},{_unit(unit_id)},{BOSS}'
 
 
+def _self_effect(ts, unit_id, change, ability_id):
+    """An effect on the player themselves: the log writes '*' for the target."""
+    return f'{ts},EFFECT_CHANGED,{change},1,4021668,{ability_id},{_unit(unit_id)},*'
+
+
 def _taunt(ts, unit_id):
     return f'{ts},COMBAT_EVENT,TAUNTED,GENERIC,0,0,0,4021669,38254,{_unit(unit_id)},{BOSS}'
 
@@ -530,16 +589,25 @@ def _session(*fights, zone='"Scalecaller Peak",VETERAN'):
         '2600,ABILITY_INFO,12345,"Damage Ability","/esoui/art/icons/ability_weapon_001.dds",F,F',
         '2600,ABILITY_INFO,38788,"Stampede","/esoui/art/icons/ability_2handed_005.dds",F,F',
         '2600,ABILITY_INFO,76667,"Roar of Alkosh","/esoui/art/icons/ability_alkosh.dds",T,T',
+        '2600,ABILITY_INFO,61257,"Increase Max Health & Magicka","/esoui/art/icons/crafting_cooking_grilled_vegetables.dds",T,T',
+        '2600,ABILITY_INFO,84731,"Witchmother\'s Potent Brew","/esoui/art/icons/event_halloween_2016_iron_cup_bones.dds",T,T',
+        '2600,ABILITY_INFO,84732,"Increase Health Regen","/esoui/art/icons/store_magickafood_001.dds",T,T',
+        '2600,ABILITY_INFO,84733,"Increase Health Regen","/esoui/art/icons/store_magickafood_001.dds",T,T',
     ]
     for fight in fights:
         lines.extend(fight)
     return lines
 
 
+# Both players' lines list a food (61257), so the food rules stay quiet
+# unless a test says otherwise
+FED = '[61257],[1]'
+
+
 def _fight(begin, end, alkosh_fires=False, player1_bars='[12345],[38788]'):
     lines = [f'{begin},BEGIN_COMBAT',
-             f'{begin + 1},PLAYER_INFO,1,[],[],{NIRN_GEAR},{player1_bars}',
-             f'{begin + 1},PLAYER_INFO,2,[],[],{ALKOSH_GEAR},[12345],[12345]',
+             f'{begin + 1},PLAYER_INFO,1,{FED},{NIRN_GEAR},{player1_bars}',
+             f'{begin + 1},PLAYER_INFO,2,{FED},{ALKOSH_GEAR},[12345],[12345]',
              _cast(begin + 900, 1, stamina=30000),
              _hit(begin + 1000, 1, 90000, stamina=30000),
              _cast(begin + 1900, 2),
@@ -588,12 +656,12 @@ class TestEngine(unittest.TestCase):
 
     def test_a_fight_the_game_cut_in_two_counts_once(self):
         first = ['10000,BEGIN_COMBAT',
-                 f'10001,PLAYER_INFO,1,[],[],{NIRN_GEAR},[12345],[12345]',
-                 f'10001,PLAYER_INFO,2,[],[],{ALKOSH_GEAR},[12345],[12345]',
+                 f'10001,PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[12345]',
+                 f'10001,PLAYER_INFO,2,{FED},{ALKOSH_GEAR},[12345],[12345]',
                  _hit(11000, 2, 60000), _hit(39000, 2, 1000), '40000,END_COMBAT']
         second = [_hit(40020, 2, 1000), '40050,BEGIN_COMBAT',
-                  f'40051,PLAYER_INFO,1,[],[],{NIRN_GEAR},[12345],[12345]',
-                  f'40051,PLAYER_INFO,2,[],[],{ALKOSH_GEAR},[12345],[12345]',
+                  f'40051,PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[12345]',
+                  f'40051,PLAYER_INFO,2,{FED},{ALKOSH_GEAR},[12345],[12345]',
                   _hit(50000, 2, 1000), '90000,END_COMBAT']
         entries = _fights(_session(first + second))
         self.assertEqual(len(entries), 1)
@@ -611,7 +679,7 @@ class TestEngine(unittest.TestCase):
                       + [_weapon('MAIN_HAND', '200834', 'WEAPON_PRECISE', 'POISONED_WEAPON', '0')])
         def fight(begin, end, taunts):
             lines = [f'{begin},BEGIN_COMBAT',
-                     f'{begin + 1},PLAYER_INFO,1,[],[],{heavy},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,1,{FED},{heavy},[12345],[12345]',
                      _cast(begin + 900, 1, stamina=40000),
                      _hit(begin + 1000, 1, 90000, stamina=40000)]
             if taunts:
@@ -635,8 +703,8 @@ class TestEngine(unittest.TestCase):
 
         def fight(begin, end, taunts):
             lines = [f'{begin},BEGIN_COMBAT',
-                     f'{begin + 1},PLAYER_INFO,1,[],[],{NIRN_GEAR},[12345],[12345]',
-                     f'{begin + 1},PLAYER_INFO,2,[],[],{tank},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,2,{FED},{tank},[12345],[12345]',
                      _cast(begin + 900, 1, stamina=30000),
                      _hit(begin + 1000, 1, 90000, stamina=30000),
                      _cast(begin + 1900, 2, health=45000),
@@ -657,11 +725,82 @@ class TestEngine(unittest.TestCase):
         entries = _fights(_session(fight(10000, 40000, taunts=True), fight(50000, 80000, taunts=False)))
         self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in entries], [[], []])
 
+    def test_no_food_at_combat_start_notes_a_meal_eaten_later(self):
+        def fight(effects_2, *extra):
+            return ['10000,BEGIN_COMBAT',
+                    f'10001,PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[38788]',
+                    f'10001,PLAYER_INFO,2,{effects_2},{ALKOSH_GEAR},[12345],[12345]',
+                    _cast(10900, 1, stamina=30000), _hit(11000, 1, 90000, stamina=30000),
+                    _cast(11900, 2), _hit(12000, 2, 60000), *extra, '50000,END_COMBAT']
+        entries = _fights(_session(fight('[],[]')))
+        players = self._players(entries[0])
+        alkosh = players['@alkosh']['build_issues']
+        self.assertEqual([f['rule'] for f in alkosh], ['no-food'])
+        self.assertEqual(alkosh[0]['title'], 'No food or drink at combat start')
+        self.assertIn('LibFoodDrinkBuff', alkosh[0]['detail'])
+        self.assertNotIn('They ate', alkosh[0]['detail'])
+        self.assertNotIn('no-food', [f['rule'] for f in players['@nirn']['build_issues']])
+        # The same player eats 55 s in: the finding stands, and says so
+        entries = _fights(_session(fight('[],[]', _self_effect(65000, 2, 'GAINED', '61257'))))
+        alkosh = self._players(entries[0])['@alkosh']['build_issues']
+        self.assertEqual([f['rule'] for f in alkosh], ['no-food'])
+        self.assertTrue(alkosh[0]['detail'].endswith(
+            'They ate Increase Max Health & Magicka at 55s.'), alkosh[0]['detail'])
+        # A food effect on the boss (not a player) is nobody's meal
+        entries = _fights(_session(fight('[],[]', _gained(65000, 2, '61257'))))
+        alkosh = self._players(entries[0])['@alkosh']['build_issues']
+        self.assertNotIn('They ate', alkosh[0]['detail'])
+
+    def test_a_meal_that_runs_out_during_the_fight(self):
+        def fight(*extra):
+            return ['10000,BEGIN_COMBAT',
+                    f'10001,PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[12345]',
+                    f'10001,PLAYER_INFO,2,[84731,84732,84733],[1,1,1],{ALKOSH_GEAR},[12345],[12345]',
+                    _cast(10900, 1, stamina=30000), _hit(11000, 1, 90000, stamina=30000),
+                    _cast(11900, 2), _hit(12000, 2, 60000), *extra, '50000,END_COMBAT']
+
+        def food_rules(entry, name):
+            return [f for f in self._players(entry)[name]['build_issues']
+                    if f['rule'] in ('no-food', 'food-ran-out')]
+
+        # @nirn's food fades 30 s in and nothing replaces it
+        entries = _fights(_session(fight(_self_effect(40000, 1, 'FADED', '61257'))))
+        self.assertEqual([f['title'] for f in food_rules(entries[0], '@nirn')],
+                         ['Increase Max Health & Magicka ran out 30s into the fight'])
+        self.assertEqual(food_rules(entries[0], '@alkosh'), [])
+        # Another meal after it clears the finding
+        entries = _fights(_session(fight(_self_effect(40000, 1, 'FADED', '61257'),
+                                         _self_effect(45000, 1, 'GAINED', '84731'))))
+        self.assertEqual(food_rules(entries[0], '@nirn'), [])
+        # A drink logged as three effects is out only when all have faded
+        entries = _fights(_session(fight(_self_effect(30000, 2, 'FADED', '84732'))))
+        self.assertEqual(food_rules(entries[0], '@alkosh'), [])
+        entries = _fights(_session(fight(_self_effect(30000, 2, 'FADED', '84732'),
+                                         _self_effect(30000, 2, 'FADED', '84733'),
+                                         _self_effect(45000, 2, 'FADED', '84731'))))
+        self.assertEqual([f['title'] for f in food_rules(entries[0], '@alkosh')],
+                         ["Witchmother's Potent Brew ran out 35s into the fight"])
+        # A fight the game cut in two keeps the first half's record
+        first = (fight(_self_effect(40000, 1, 'FADED', '61257'))[:-1]
+                 + [_hit(40900, 1, 1000), '41000,END_COMBAT'])
+        second = [_hit(41020, 1, 1000), '41050,BEGIN_COMBAT',
+                  f'41051,PLAYER_INFO,1,[],[],{NIRN_GEAR},[12345],[12345]',
+                  f'41051,PLAYER_INFO,2,[84731,84732,84733],[1,1,1],{ALKOSH_GEAR},[12345],[12345]',
+                  _hit(45000, 1, 1000), '80000,END_COMBAT']
+        entries = _fights(_session(first + second))
+        self.assertEqual(len(entries), 1)
+        self.assertEqual([f['title'] for f in food_rules(entries[0], '@nirn')],
+                         ['Increase Max Health & Magicka ran out 30s into the fight'])
+
     def test_the_shared_fixture_session_is_clean(self):
         for player in _fights()[0].players:
             self.assertIn('build_issues', player)
         self.assertEqual([p['build_issues'] for p in _fights()[0].players if p['name'] == '@brainsnorkel'],
                          [[]])
+        # The fixture's anonymous third player pulls without food
+        self.assertEqual([[f['rule'] for f in p['build_issues']] for p in _fights()[0].players
+                          if p['name'] not in ('@brainsnorkel', '@dualwield')],
+                         [['no-food']])
 
 
 if __name__ == '__main__':

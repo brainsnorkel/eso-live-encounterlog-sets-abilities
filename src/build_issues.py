@@ -90,6 +90,30 @@ rule, player-fights / distinct characters in that survey:
   skill taunts or pulls by its focus script, Taunt or Pull, which names it
   Goading or Leashing. Destructive Clench taunts only with an ice staff in
   hand, when it is cast as Frost Clench.
+- **No food or drink at combat start** (issue #54; 535 player-fights, 3.6%,
+  and 39 named characters in 91 split logs of September and October 2026
+  with 1,681 fights and 14,895 player-fights, the maintainer's own character
+  the most frequent case, in casual content). The long-term effects the
+  PLAYER_INFO line lists are matched against the bundled LibFoodDrinkBuff
+  table (player_build.food_buff, data/buffs/food_drink.json, 92 ids), the
+  way the build window's Food line is; a player with no match fought
+  without a consumable's maximum stats or recovery. The check is by id, not
+  icon: the foods in those logs carried 18 different icon stems
+  (crafting_cooking_, crafting_meat_, plate_of_sugarskulls, event_jester_,
+  store_magickafood_, crafting_poisonmaking_reagent_troll_fat...), unlike
+  mundus boons, so a consumable newer than the table reads as none, which
+  the finding says. No player without a match carried an effect with a
+  consumable-looking icon, so the gap was a missing meal every time. A meal
+  eaten during the fight is noted with its time. A player whose food was
+  listed at combat start and faded during the fight, with nothing eaten
+  before the end, gets the second form, "{food} ran out 2m10 into the
+  fight" (13 player-fights in those logs): the engine keeps each player's
+  food ids as combat starts and follows their GAINED and FADED lines
+  (CombatEncounter.note_food), and a drink logged as several effects
+  (Witchmother's Potent Brew) is only out when all of them have faded.
+  Judged per fight with no floor: the fact is about combat start, and the
+  cue clears once the player eats. Not judged when the table cannot be
+  loaded (the player dict then has no 'food' key).
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
@@ -107,6 +131,8 @@ from player_build import (
     NO_VALUE,
     armor_weight,
     enchant_label,
+    food_buff,
+    food_table,
     piece_counts,
     weapon_type,
     weapon_type_label,
@@ -240,6 +266,26 @@ TANK_DETAIL = (
     "staff, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, "
     "Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no "
     "taunt of theirs was logged this session, so nothing holds the boss on them.")
+FOOD_TITLE = "No food or drink at combat start"
+FOOD_DETAIL = (
+    "No food or drink buff was on this player as the fight began, so they fought without a "
+    "consumable's maximum stats or recovery. The check is against the app's list of the "
+    "game's food and drink effects (LibFoodDrinkBuff); a consumable newer than that list "
+    "reads the same way.")
+FOOD_ATE_NOTE = " They ate {food} at {at}."
+FOOD_RAN_OUT_TITLE = "{food} ran out {at} into the fight"
+FOOD_RAN_OUT_DETAIL = (
+    "The player's {food} faded at {at} and nothing was eaten before the fight ended, so the "
+    "rest of it was fought without the consumable's maximum stats or recovery.")
+
+
+def _clock(ms: int) -> str:
+    """A moment of the fight as the timeline strip's ticks read it: '45s',
+    '1m05', '2m'."""
+    total = max(0, int(ms)) // 1000
+    if total < 60:
+        return f"{total}s"
+    return f"{total // 60}m" if total % 60 == 0 else f"{total // 60}m{total % 60:02d}"
 
 
 def _finding(rule: str, title: str, detail: str, set_name: str = "", skill: str = "") -> dict:
@@ -501,6 +547,55 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
                 f"{name} is complete only on the {bar} bar ({front}/{back} pieces)",
                 ONE_BAR_DETAIL.format(set=name), set_name=name))
     return findings
+
+
+def food_findings(food: Optional[dict], state: Optional[dict], fight_start_ms: int,
+                  name_of: Optional[Callable[[str], Optional[str]]] = None,
+                  table: Optional[Dict[str, dict]] = None) -> List[dict]:
+    """The food rules on one player's fight: no food or drink at combat
+    start, or a meal that ran out during it.
+
+    *food* is the player dict's 'food' as player_build.build_fields set it:
+    the consumable listed at combat start, or None when none matched the
+    table (the caller does not call when the table could not be loaded).
+    *state* is the encounter's record of the player's food effects during
+    the fight (CombatEncounter.note_food): {'up': the food ids on them now,
+    'seen': every food id on them at any point, 'empty_since': the log ms
+    the last of them faded, None while one is up or none ever was, 'ate':
+    the log ms a food was gained while none had been up since combat
+    start, else None}; None when nothing was recorded. *name_of* names an
+    ability id, *table* overrides the bundled food table; both name a meal
+    the record knows only by its ids.
+
+    A fight the game cut in two lists the player's effects again on its
+    second line, and a food that ran out in the first half is gone from
+    it, so *food* is None there although the record saw it fade: the
+    ran-out form is used, named from the ids the record saw.
+    """
+    state = state or {}
+    ate = state.get("ate")
+    empty_since = state.get("empty_since")
+    known = food_table() if table is None else table
+
+    def named(ids):
+        meal = food_buff(ids or (), name_of or (lambda _id: None), known or {})
+        return meal["name"] if meal else ""
+
+    if food is None and (ate is not None or empty_since is None):
+        detail = FOOD_DETAIL
+        if ate is not None:
+            detail += FOOD_ATE_NOTE.format(food=named(state.get("up")) or "a meal",
+                                           at=_clock(ate - fight_start_ms))
+        return [_finding("no-food", FOOD_TITLE, detail)]
+    if empty_since is not None:
+        if food is not None:
+            name = str(food.get("name") or ("drink" if food.get("kind") == "drink" else "food"))
+        else:
+            name = named(state.get("seen")) or "food"
+        at = _clock(empty_since - fight_start_ms)
+        return [_finding("food-ran-out", FOOD_RAN_OUT_TITLE.format(food=name, at=at),
+                         FOOD_RAN_OUT_DETAIL.format(food=name, at=at))]
+    return []
 
 
 class BuildIssueTracker:
