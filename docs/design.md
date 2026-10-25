@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1965](../src/esolog_tail.py#L1965)*
+*[src/esolog_tail.py:2010](../src/esolog_tail.py#L2010)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:71](../src/esolog_tail.py#L71)*
+*[src/esolog_tail.py:72](../src/esolog_tail.py#L72)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1427](../src/esolog_tail.py#L1427)*
+*[src/esolog_tail.py:1472](../src/esolog_tail.py#L1472)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1442](../src/esolog_tail.py#L1442)*
+*[src/esolog_tail.py:1487](../src/esolog_tail.py#L1487)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:65](../src/esolog_tail.py#L65)*
+*[src/esolog_tail.py:66](../src/esolog_tail.py#L66)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3182](../src/esolog_tail.py#L3182)*
+*[src/esolog_tail.py:3241](../src/esolog_tail.py#L3241)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:346](../src/esolog_tail.py#L346)*
+*[src/esolog_tail.py:347](../src/esolog_tail.py#L347)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -753,6 +753,27 @@ rule, player-fights / distinct characters in that survey:
   93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
   came from other sets). The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
+- **Huntsman's Warmask that never fires** (issue #47, the same session
+  rule, the mythic's one piece being the set): its Mark of Hircine
+  (252048, GAINED with the wearer as source) is placed by a bash or a fully
+  charged heavy attack, and a wearer who places none has a mythic doing
+  nothing. The issue was filed the other way round, as a flag on a wearer
+  who bashes (a bash can move the mark from the boss to an add, where it
+  halves the wearer's damage to everything else for up to a minute), and
+  the survey over the same 91 logs of September and October 2026 decided
+  it: 29 of the 30 wearers bash, in 96% of their fights of a minute or
+  more (393 of 515 wearer-fights had a damaging bash, a median 3 a fight),
+  1,292 of the 1,401 marks followed a bash and 55 a heavy attack, and in
+  132 of 396 boss wearer-fights (18 of 29 wearers) the mark sat on a unit
+  that is not a boss for a median 11% of the fight. Half of those units
+  were Sunspire's Eternal Servants and Kyne's Aegis's Lieutenant Njordal,
+  which a group kills on purpose, so a flag on bashing would have been a
+  permanent note on every wearer and a wrong verdict a third of the time;
+  the maintainer chose the inverse on 2026-10-26, and the mark, which a
+  heavy attack places too, is the fact the log carries (his own Aetherian
+  Archive session marked by heavy attacks alone). In those logs no
+  wearer-session with a fight of a minute or more was without a mark, so
+  the rule is quiet until a wearer who never triggers the set turns up.
 - **A group buff set complete on one bar only** (80 / 3), for Pearlescent
   Ward, Xoryn's Masterpiece and Lucent Echoes, whose five-piece bonus is a
   buff for the whole group that holds only while five pieces are active.
@@ -781,6 +802,30 @@ rule, player-fights / distinct characters in that survey:
   skill taunts or pulls by its focus script, Taunt or Pull, which names it
   Goading or Leashing. Destructive Clench taunts only with an ice staff in
   hand, when it is cast as Frost Clench.
+- **No food or drink at combat start** (issue #54; 535 player-fights, 3.6%,
+  and 39 named characters in 91 split logs of September and October 2026
+  with 1,681 fights and 14,895 player-fights, the maintainer's own character
+  the most frequent case, in casual content). The long-term effects the
+  PLAYER_INFO line lists are matched against the bundled LibFoodDrinkBuff
+  table (player_build.food_buff, data/buffs/food_drink.json, 92 ids), the
+  way the build window's Food line is; a player with no match fought
+  without a consumable's maximum stats or recovery. The check is by id, not
+  icon: the foods in those logs carried 18 different icon stems
+  (crafting_cooking_, crafting_meat_, plate_of_sugarskulls, event_jester_,
+  store_magickafood_, crafting_poisonmaking_reagent_troll_fat...), unlike
+  mundus boons, so a consumable newer than the table reads as none, which
+  the finding says. No player without a match carried an effect with a
+  consumable-looking icon, so the gap was a missing meal every time. A meal
+  eaten during the fight is noted with its time. A player whose food was
+  listed at combat start and faded during the fight, with nothing eaten
+  before the end, gets the second form, "{food} ran out 2m10 into the
+  fight" (13 player-fights in those logs): the engine keeps each player's
+  food ids as combat starts and follows their GAINED and FADED lines
+  (CombatEncounter.note_food), and a drink logged as several effects
+  (Witchmother's Potent Brew) is only out when all of them have faded.
+  Judged per fight with no floor: the fact is about combat start, and the
+  cue clears once the player eats. Not judged when the table cannot be
+  loaded (the player dict then has no 'food' key).
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
@@ -789,7 +834,7 @@ checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:506](../src/build_issues.py#L506)*
+*[src/build_issues.py:629](../src/build_issues.py#L629)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's
@@ -1029,7 +1074,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:629](../src/esolog_tail.py#L629)*
+*[src/esolog_tail.py:669](../src/esolog_tail.py#L669)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1068,13 +1113,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:80](../src/esolog_tail.py#L80)*
+*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:396](../src/esolog_tail.py#L396)*
+*[src/esolog_tail.py:397](../src/esolog_tail.py#L397)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1085,7 +1130,7 @@ Frost Clench, a separate id with the same icon).
 
 ### What counts as damage
 
-*[src/esolog_tail.py:97](../src/esolog_tail.py#L97)*
+*[src/esolog_tail.py:98](../src/esolog_tail.py#L98)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1093,7 +1138,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:115](../src/esolog_tail.py#L115)*
+*[src/esolog_tail.py:116](../src/esolog_tail.py#L116)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1239,7 +1284,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:485](../src/esolog_tail.py#L485)*
+*[src/esolog_tail.py:493](../src/esolog_tail.py#L493)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1262,7 +1307,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:576](../src/esolog_tail.py#L576)*
+*[src/esolog_tail.py:584](../src/esolog_tail.py#L584)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

@@ -62,6 +62,27 @@ rule, player-fights / distinct characters in that survey:
   93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
   came from other sets). The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
+- **Huntsman's Warmask that never fires** (issue #47, the same session
+  rule, the mythic's one piece being the set): its Mark of Hircine
+  (252048, GAINED with the wearer as source) is placed by a bash or a fully
+  charged heavy attack, and a wearer who places none has a mythic doing
+  nothing. The issue was filed the other way round, as a flag on a wearer
+  who bashes (a bash can move the mark from the boss to an add, where it
+  halves the wearer's damage to everything else for up to a minute), and
+  the survey over the same 91 logs of September and October 2026 decided
+  it: 29 of the 30 wearers bash, in 96% of their fights of a minute or
+  more (393 of 515 wearer-fights had a damaging bash, a median 3 a fight),
+  1,292 of the 1,401 marks followed a bash and 55 a heavy attack, and in
+  132 of 396 boss wearer-fights (18 of 29 wearers) the mark sat on a unit
+  that is not a boss for a median 11% of the fight. Half of those units
+  were Sunspire's Eternal Servants and Kyne's Aegis's Lieutenant Njordal,
+  which a group kills on purpose, so a flag on bashing would have been a
+  permanent note on every wearer and a wrong verdict a third of the time;
+  the maintainer chose the inverse on 2026-10-26, and the mark, which a
+  heavy attack places too, is the fact the log carries (his own Aetherian
+  Archive session marked by heavy attacks alone). In those logs no
+  wearer-session with a fight of a minute or more was without a mark, so
+  the rule is quiet until a wearer who never triggers the set turns up.
 - **A group buff set complete on one bar only** (80 / 3), for Pearlescent
   Ward, Xoryn's Masterpiece and Lucent Echoes, whose five-piece bonus is a
   buff for the whole group that holds only while five pieces are active.
@@ -90,6 +111,30 @@ rule, player-fights / distinct characters in that survey:
   skill taunts or pulls by its focus script, Taunt or Pull, which names it
   Goading or Leashing. Destructive Clench taunts only with an ice staff in
   hand, when it is cast as Frost Clench.
+- **No food or drink at combat start** (issue #54; 535 player-fights, 3.6%,
+  and 39 named characters in 91 split logs of September and October 2026
+  with 1,681 fights and 14,895 player-fights, the maintainer's own character
+  the most frequent case, in casual content). The long-term effects the
+  PLAYER_INFO line lists are matched against the bundled LibFoodDrinkBuff
+  table (player_build.food_buff, data/buffs/food_drink.json, 92 ids), the
+  way the build window's Food line is; a player with no match fought
+  without a consumable's maximum stats or recovery. The check is by id, not
+  icon: the foods in those logs carried 18 different icon stems
+  (crafting_cooking_, crafting_meat_, plate_of_sugarskulls, event_jester_,
+  store_magickafood_, crafting_poisonmaking_reagent_troll_fat...), unlike
+  mundus boons, so a consumable newer than the table reads as none, which
+  the finding says. No player without a match carried an effect with a
+  consumable-looking icon, so the gap was a missing meal every time. A meal
+  eaten during the fight is noted with its time. A player whose food was
+  listed at combat start and faded during the fight, with nothing eaten
+  before the end, gets the second form, "{food} ran out 2m10 into the
+  fight" (13 player-fights in those logs): the engine keeps each player's
+  food ids as combat starts and follows their GAINED and FADED lines
+  (CombatEncounter.note_food), and a drink logged as several effects
+  (Witchmother's Potent Brew) is only out when all of them have faded.
+  Judged per fight with no floor: the fact is about combat start, and the
+  cue clears once the player eats. Not judged when the table cannot be
+  loaded (the player dict then has no 'food' key).
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
@@ -107,6 +152,8 @@ from player_build import (
     NO_VALUE,
     armor_weight,
     enchant_label,
+    food_buff,
+    food_table,
     piece_counts,
     weapon_type,
     weapon_type_label,
@@ -188,10 +235,13 @@ class ProcSet(NamedTuple):
     effect_ids: frozenset  # the effect ids the wearer sources when the set fires
     effect: str  # the effect's name, for the finding
     trigger: str  # what makes the set fire, for the finding
+    pieces: int = 5  # worn pieces that make the bonus active (a mythic's one)
+    bonus: str = "five-piece bonus"  # how the finding names the bonus
 
 
 _ALKOSH_EFFECTS = frozenset({"76667", "75751", "75752", "120018"})
 _SLAYER_EFFECTS = frozenset({"93109", "135923"})
+MARK_OF_HIRCINE_ID = "252048"  # the debuff a Huntsman's Warmask wearer puts on their target
 # The proc sets judged over the session, by set id
 PROC_SETS = {
     "232": ProcSet("Roar of Alkosh", _ALKOSH_EFFECTS, "Roar of Alkosh",
@@ -200,6 +250,9 @@ PROC_SETS = {
                    "the wearer completes a fully charged heavy attack"),
     "497": ProcSet("Perfected Roaring Opportunist", _SLAYER_EFFECTS, "Major Slayer",
                    "the wearer completes a fully charged heavy attack"),
+    "845": ProcSet("Huntsman's Warmask", frozenset({MARK_OF_HIRCINE_ID}), "Mark of Hircine",
+                   "the wearer deals damage with a bash or a fully charged heavy attack",
+                   pieces=1, bonus="mark"),
 }
 PROC_EFFECT_IDS = frozenset().union(*(proc.effect_ids for proc in PROC_SETS.values()))
 
@@ -230,7 +283,7 @@ ONE_BAR_DETAIL = (
     "pieces are active, so the group loses it every time this player swaps to the other "
     "bar. Five body pieces, or three with the two weapons of each bar, keep it on both.")
 PROC_DETAIL = (
-    "{set}'s five-piece bonus fires when {trigger}; this player's {effect} never appeared "
+    "The {bonus} of {set} fires when {trigger}; this player's {effect} never appeared "
     "this session, so the set is dead weight until that changes.")
 TANK_TITLE = "Tank with no taunt or pull on either bar"
 TANK_DETAIL = (
@@ -240,6 +293,26 @@ TANK_DETAIL = (
     "staff, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, "
     "Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no "
     "taunt of theirs was logged this session, so nothing holds the boss on them.")
+FOOD_TITLE = "No food or drink at combat start"
+FOOD_DETAIL = (
+    "No food or drink buff was on this player as the fight began, so they fought without a "
+    "consumable's maximum stats or recovery. The check is against the app's list of the "
+    "game's food and drink effects (LibFoodDrinkBuff); a consumable newer than that list "
+    "reads the same way.")
+FOOD_ATE_NOTE = " They ate {food} at {at}."
+FOOD_RAN_OUT_TITLE = "{food} ran out {at} into the fight"
+FOOD_RAN_OUT_DETAIL = (
+    "The player's {food} faded at {at} and nothing was eaten before the fight ended, so the "
+    "rest of it was fought without the consumable's maximum stats or recovery.")
+
+
+def _clock(ms: int) -> str:
+    """A moment of the fight as the timeline strip's ticks read it: '45s',
+    '1m05', '2m'."""
+    total = max(0, int(ms)) // 1000
+    if total < 60:
+        return f"{total}s"
+    return f"{total // 60}m" if total % 60 == 0 else f"{total // 60}m{total % 60:02d}"
 
 
 def _finding(rule: str, title: str, detail: str, set_name: str = "", skill: str = "") -> dict:
@@ -390,11 +463,12 @@ def _has_restoration_staff(gear: Dict[str, List[str]],
 
 
 def worn_proc_sets(gear: Dict[str, List[str]]) -> Set[str]:
-    """The proc sets (PROC_SETS ids) this build has at five pieces on
-    either bar."""
+    """The proc sets (PROC_SETS ids) this build has active on either bar:
+    five pieces, or a mythic's one."""
     counts = piece_counts(gear or {})
     return {set_id for set_id, (front, back) in counts.items()
-            if set_id in PROC_SETS and (front >= 5 or (back or 0) >= 5)}
+            if set_id in PROC_SETS
+            and (front >= PROC_SETS[set_id].pieces or (back or 0) >= PROC_SETS[set_id].pieces)}
 
 
 def fired_proc_sets(worn: Iterable[str], sourced_effect_ids: Iterable[str]) -> Set[str]:
@@ -503,6 +577,58 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
     return findings
 
 
+def food_findings(food: Optional[dict], state: Optional[dict], fight_start_ms: int,
+                  name_of: Optional[Callable[[str], Optional[str]]] = None,
+                  table: Optional[Dict[str, dict]] = None) -> List[dict]:
+    """The food rules on one player's fight: no food or drink at combat
+    start, or a meal that ran out during it.
+
+    *food* is the player dict's 'food' as player_build.build_fields set it:
+    the consumable listed at combat start, or None when none matched the
+    table (the caller does not call when the table could not be loaded).
+    *state* is the encounter's record of the player's food effects during
+    the fight (CombatEncounter.note_food): {'up': the food ids on them now,
+    'seen': every food id on them at any point, 'empty_since': the log ms
+    the last of them faded, None while one is up or none ever was, 'ate':
+    the log ms a food was gained while none had been up since combat
+    start, else None}; None when nothing was recorded. *name_of* names an
+    ability id, *table* overrides the bundled food table; both name a meal
+    the record knows only by its ids.
+
+    A fight the game cut in two lists the player's effects again on its
+    second line, and a food that ran out in the first half is gone from
+    it, so *food* is None there although the record saw it fade: the
+    ran-out form is used, named from the ids the record saw.
+    """
+    state = state or {}
+    ate = state.get("ate")
+    empty_since = state.get("empty_since")
+    known = food_table() if table is None else table
+
+    def named(ids):
+        meal = food_buff(ids or (), name_of or (lambda _id: None), known or {})
+        return meal["name"] if meal else ""
+
+    if food is None and (ate is not None or empty_since is None):
+        detail = FOOD_DETAIL
+        if ate is not None:
+            # Named from every id the record saw, so a meal that faded again
+            # before the end still has its name
+            detail += FOOD_ATE_NOTE.format(
+                food=named(state.get("seen") or state.get("up")) or "a meal",
+                at=_clock(ate - fight_start_ms))
+        return [_finding("no-food", FOOD_TITLE, detail)]
+    if empty_since is not None:
+        if food is not None:
+            name = str(food.get("name") or ("drink" if food.get("kind") == "drink" else "food"))
+        else:
+            name = named(state.get("seen")) or "food"
+        at = _clock(empty_since - fight_start_ms)
+        return [_finding("food-ran-out", FOOD_RAN_OUT_TITLE.format(food=name, at=at),
+                         FOOD_RAN_OUT_DETAIL.format(food=name, at=at))]
+    return []
+
+
 class BuildIssueTracker:
     """The rules judged over a logging session rather than a fight: the
     proc sets that never fire, and who has taunted (the heavy-armor rule's
@@ -556,6 +682,7 @@ class BuildIssueTracker:
             out.append(_finding(
                 "set-never-fired",
                 f"{proc.name} never fired in {long} fight{plural} of a minute or more",
-                PROC_DETAIL.format(set=proc.name, trigger=proc.trigger, effect=proc.effect),
+                PROC_DETAIL.format(set=proc.name, bonus=proc.bonus, trigger=proc.trigger,
+                                   effect=proc.effect),
                 set_name=proc.name))
         return out
