@@ -27,6 +27,7 @@ BERSERKER, BERSERKER_FORM, FORM, RAMPAGE = '39076', '47083', '39038', '267416'
 FERAL_POUNCE, FERAL_CARNAGE, BLOODY_GNASH = '39104', '137164', '58798'
 HIRCINES_RAGE, FEROCIOUS_ROAR, BLOODCLAWS = '58317', '39113', '58879'
 FEEDING_FRENZY, WEREWOLF_LIGHT_ATTACK = '58775', '32464'
+CALTROPS, INNER_FIRE = '40242', '39475'
 
 
 def _unit(unit_id, health=20000):
@@ -78,6 +79,8 @@ BASE = [
     _ability(BLOODCLAWS, "Bloodclaws", "ability_werewolf_006_c"),
     _ability(FEEDING_FRENZY, "Feeding Frenzy", "ability_werewolf_005_b"),
     _ability(WEREWOLF_LIGHT_ATTACK, "Light Attack (Werewolf)", "death_recap_monster_melee_base"),
+    _ability(CALTROPS, "Razor Caltrops", "ability_ava_003_a"),
+    _ability(INNER_FIRE, "Inner Fire", "ability_undaunted_002"),
 ]
 
 HUMAN_FRONT = f"{CONCEALED},{KILLERS},{BERSERKER}"
@@ -222,12 +225,17 @@ class TestTracker(unittest.TestCase):
         self.assertIsNone(tracker.morph_of('p'))
 
     def test_a_logged_bar_of_werewolf_skills_is_the_werewolf_bar(self):
-        self.assertTrue(werewolf.logs_werewolf_bar(
-            [HIT], [BLOODY_GNASH, BLOODCLAWS, HIRCINES_RAGE, FEROCIOUS_ROAR, FERAL_POUNCE, BERSERKER]))
-        self.assertTrue(werewolf.logs_werewolf_bar(
+        self.assertTrue(werewolf.is_werewolf_bar(
+            [BLOODY_GNASH, BLOODCLAWS, HIRCINES_RAGE, FEROCIOUS_ROAR, FERAL_POUNCE, BERSERKER]))
+        self.assertTrue(werewolf.is_werewolf_bar(
             [{'id': BLOODY_GNASH}, {'id': BLOODCLAWS}, {'id': HIRCINES_RAGE}]))
+        # The stale bar of issue #49: three werewolf skills beside two others
+        self.assertTrue(werewolf.is_werewolf_bar(
+            [FERAL_POUNCE, BLOODY_GNASH, CALTROPS, INNER_FIRE, BLOODCLAWS, BERSERKER]))
         # One werewolf skill on a human bar, for its while-slotted bonus
-        self.assertFalse(werewolf.logs_werewolf_bar([CONCEALED, '58325', BERSERKER], [HIT]))
+        self.assertFalse(werewolf.is_werewolf_bar([CONCEALED, '58325', BERSERKER]))
+        self.assertFalse(werewolf.is_werewolf_bar([HIT]))
+        self.assertFalse(werewolf.is_werewolf_bar([]))
 
 
 class TestEngine(unittest.TestCase):
@@ -285,20 +293,56 @@ class TestEngine(unittest.TestCase):
         self.assertNotIn('werewolf_share', third)
         self.assertNotIn('werewolf_bar_slots', third)
 
-    def test_a_bar_the_log_wrote_is_not_rebuilt_again(self):
-        # An anonymous player's front bar logged as the werewolf bar itself
+    def test_a_werewolf_bar_the_log_wrote_as_the_front_bar_is_dropped(self):
+        # An anonymous player's front bar logged as the werewolf bar itself,
+        # in the slots' order, beside a human back bar (client 12.0)
         logged = f"{BLOODY_GNASH},{BLOODCLAWS},{HIRCINES_RAGE},{FEROCIOUS_ROAR},{FERAL_CARNAGE},{BERSERKER}"
         lines = [
             '10000,BEGIN_COMBAT',
-            _info(10001, 1, logged),
+            _info(10001, 1, logged, f"{CONCEALED},{KILLERS}"),
             _effect(10002, 'GAINED', 1, FORM),
             _cast(12000, 1, BLOODY_GNASH),
             _hit(13000, 1),
             '30000,END_COMBAT',
         ]
         player = _player(_fights(lines)[0], '@brainsnorkel')
+        self.assertEqual(player['front_bar_slots'], [])
+        self.assertEqual(player['front_bar'], [])
+        self.assertEqual(_names(player['back_bar_slots']), ['Concealed Weapon', "Killer's Blade"])
         self.assertGreater(player['werewolf_share'], 0.9)
-        self.assertNotIn('werewolf_bar_slots', player)
+        # Rebuilt from the casts as for any werewolf; the morph from the logged ultimate
+        self.assertEqual(_names(player['werewolf_bar_slots']), ['Bloody Gnash', 'Werewolf Berserker'])
+
+    def test_a_stale_werewolf_bar_written_as_both_bars_is_dropped(self):
+        # Issue #49: one bar as both the front and the back bar, three
+        # werewolf skills beside two the player never cast, while the casts
+        # show Hircine's Rage and Ferocious Roar in their place
+        stale = f"{FERAL_POUNCE},{BLOODY_GNASH},{CALTROPS},{INNER_FIRE},{BLOODCLAWS},{BERSERKER}"
+        lines = [
+            '10000,BEGIN_COMBAT',
+            _info(10001, 1, stale, stale),
+            _effect(10002, 'GAINED', 1, FORM),
+            _cast(12000, 1, HIRCINES_RAGE),
+            _cast(13000, 1, FEROCIOUS_ROAR),
+            _cast(14000, 1, BLOODY_GNASH),
+            _hit(15000, 1),
+            '30000,END_COMBAT',
+        ]
+        fight = _fights(lines)[0]
+        player = _player(fight, '@brainsnorkel')
+        self.assertEqual(player['front_bar_slots'], [])
+        self.assertEqual(player['back_bar_slots'], [])
+        self.assertEqual(_names(player['werewolf_bar_slots']),
+                         ["Hircine's Rage", 'Ferocious Roar', 'Bloody Gnash', 'Werewolf Berserker'])
+        text = render_plain_text(fight)
+        self.assertIn("Werewolf (in form 100%): Hircine's Rage, Ferocious Roar, Bloody Gnash, "
+                      "Werewolf Berserker", text)
+        self.assertNotIn('Inner Fire', text)
+        page = render_html(fight, detailed=True)
+        self.assertIn('Werewolf</span>', page)
+        self.assertNotIn('Razor Caltrops', page)
+        self.assertIn('Werewolf</td>', render_build_html(fight, '1', icons=_AllIcons()))
+        self.assertNotIn('>Front</td>', render_build_html(fight, '1', icons=_AllIcons()))
 
     def test_a_new_log_session_starts_afresh(self):
         lines = FIGHTS + BASE + [

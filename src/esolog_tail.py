@@ -1126,14 +1126,13 @@ class ESOLogAnalyzer(ListenerMixin):
         in form during the fight: 'werewolf_share', the share of the fight
         spent in form, and 'werewolf_bar_slots', the bar rebuilt from the
         skills cast in form this session with the morph as its ultimate.
-        No bar is rebuilt when the log wrote it in place of a human bar."""
+        A werewolf bar the log wrote is never used; _handle_player_info
+        drops it."""
         bar = self.werewolf.fight_bar(self._scribing_player_key(player.unit_id),
                                       enc.start_time, enc.end_time)
         if bar is None:
             return {}
         fields: Dict[str, object] = {'werewolf_share': bar.share}
-        if werewolf.logs_werewolf_bar(player.front_bar_slots, player.back_bar_slots):
-            return fields
         slots = [dict(self._ability_slot(skill), werewolf=True) for skill in bar.skills]
         if bar.ultimate:
             slots.append(dict(self._ability_slot(bar.ultimate), werewolf=True, ultimate=True))
@@ -1227,13 +1226,22 @@ class ESOLogAnalyzer(ListenerMixin):
             player_key = self._scribing_player_key(player_info.unit_id)
             self.werewolf.note_bars(player_key,
                                     player_info.champion_points + player_info.additional_data)
-            # Per-slot detail (id, name, icon stem) for the front and back bar
-            front_bar_slots = self._bar_slots(player_info.champion_points, scribed, player_key)
-            back_bar_slots = self._bar_slots(player_info.additional_data, scribed, player_key)
-            # Ability names per bar, and all equipped names
+            # Per-slot detail (id, name, icon stem) for the front and back
+            # bar. A werewolf bar the game wrote in place of a human bar is
+            # no human bar, and can be stale: it is dropped here, before any
+            # reader of the bars sees it, and the werewolf bar is rebuilt
+            # from casts as for every werewolf (werewolf.py, issue #49)
+            logged_front = self._bar_slots(player_info.champion_points, scribed, player_key)
+            logged_back = self._bar_slots(player_info.additional_data, scribed, player_key)
+            front_bar_slots = [] if werewolf.is_werewolf_bar(player_info.champion_points) else logged_front
+            back_bar_slots = [] if werewolf.is_werewolf_bar(player_info.additional_data) else logged_back
+            # Ability names per bar, and all equipped names. The equipped
+            # names keep every slot the log wrote, dropped bar included: a
+            # player with none is one the log has not described, and is
+            # left out of the fight entry
             front_bar_abilities = [slot['name'] for slot in front_bar_slots]
             back_bar_abilities = [slot['name'] for slot in back_bar_slots]
-            equipped_ability_names = set(front_bar_abilities + back_bar_abilities)
+            equipped_ability_names = {slot['name'] for slot in logged_front + logged_back}
 
             # Find the player and set their equipped abilities and gear
             if self.current_encounter and player_info.unit_id in self.current_encounter.players:

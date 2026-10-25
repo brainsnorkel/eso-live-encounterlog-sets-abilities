@@ -8,10 +8,20 @@ bars, so a player who spends a fight in form shows bars they never used. Of
 1,068 PLAYER_INFO rows written while a player was in form (55 split logs of
 July to October 2026, client versions 12.0 and 12.1, about 25 characters),
 1,053 carry the human bars. The other 15, from two anonymous players on
-12.0, carry the werewolf bar in place of the front bar; ``logs_werewolf_bar``
-tells such a row, so the bar is not shown twice. Werewolf players spent
-1,234 of their 1,524 fights of 5 s or more wholly in form, 110 partly, and
-180 not at all.
+12.0, carry the werewolf bar in place of the front bar, in the slots' real
+order and agreeing with their casts. A Rockgrove log of 2026-10-24 (client
+12.1, issue #49) showed a third shape: all 11 rows of one player list a
+single bar as both the front and the back bar, three werewolf skills beside
+Razor Caltrops and Inner Fire, while the player, in form the whole log,
+cast Hircine's Rage and Ferocious Roar in every fight and never those two.
+The form is one bar of five skills with no swap, so that bar was stale. A
+logged bar holding three or more werewolf skills (``is_werewolf_bar``) is
+therefore no human bar and no trusted werewolf bar: the engine drops it
+before anything reads it, and the werewolf bar is rebuilt from casts for
+every werewolf alike. A human bar can hold one werewolf skill for its
+while-slotted bonus (Hircine's Fortitude on one player's front bar, 18
+rows), which the threshold spares. Werewolf players spent 1,234 of their
+1,524 fights of 5 s or more wholly in form, 110 partly, and 180 not at all.
 
 The bar is rebuilt from casts. Each werewolf skill is cast under the id of
 the skill its slot holds, one id for all four ranks, with one exception:
@@ -24,8 +34,9 @@ player sessions with werewolf casts, 55 cast exactly five distinct bar
 skills, three cast fewer, and none ever cast a sixth or two morphs of one
 skill, so the casts of a whole session can be pooled. A fight's own casts
 show the whole bar in only 58% of fights; the session's casts up to the
-fight's end show it in 94%, which is the rule here. In the only two cases
-where the game logged a werewolf bar, the rebuilt bar agreed with it. Casts
+fight's end show it in 94%, which is the rule here. In the two 12.0 cases
+where the game logged the werewolf bar, the rebuilt bar agreed with it; in
+the 12.1 case the casts were right and the log was not. Casts
 say nothing of the slots' order, so the bar follows the skill line's order
 (LINE_POSITION): Pounce, Hircine's Bounty, Roar, Gnash, Rending Claws. A
 skill slotted but never cast stays unknown.
@@ -137,21 +148,18 @@ SKILLS: dict[str, tuple] = {
     "58879": ("Bloodclaws", "ability_werewolf_006_c"),
 }
 
-# A logged bar holding this many werewolf skills is the werewolf bar itself;
-# one or two are human-bar picks for a skill's while-slotted bonus
+# A logged bar holding this many werewolf skills is the werewolf bar itself,
+# stale or not; one or two are human-bar picks for a skill's while-slotted bonus
 LOGGED_BAR_SKILLS = 3
 
 
-def logs_werewolf_bar(*bars) -> bool:
-    """Whether one of the logged bars (lists of slot dicts or of ids) is the
-    werewolf bar, which the game wrote in place of a human bar for two
-    anonymous players."""
-    for bar in bars:
-        ids = [str(slot.get("id", "")) if isinstance(slot, dict) else str(slot)
-               for slot in bar or []]
-        if sum(1 for ability_id in ids if ability_id in SLOT_SKILLS) >= LOGGED_BAR_SKILLS:
-            return True
-    return False
+def is_werewolf_bar(bar) -> bool:
+    """Whether a logged bar (a list of slot dicts or of ids) is the werewolf
+    bar, which the game writes in place of a human bar for a few players
+    and which the engine drops unread (see the module notes)."""
+    ids = [str(slot.get("id", "")) if isinstance(slot, dict) else str(slot)
+           for slot in bar or []]
+    return sum(1 for ability_id in ids if ability_id in SLOT_SKILLS) >= LOGGED_BAR_SKILLS
 
 
 @dataclass
