@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.13.3] - 2026-10-25
 
 ### Added
 - **Elemental Catalyst tracked** (#53): a default rule `Elemental Catalyst = 142610 142652 142653 on boss`, the share of the fight any of the set's three weaknesses (Flame, Frost, Shock: critical damage taken up 5% each) was on the boss, shown when someone applied it like the other boss debuffs, and in the Examples list. The set is an alternative to Lucent Echoes for a group's critical damage. In all 891 split logs of 2026 it appears in two Kyne's Aegis sessions, both also running Lucent Echoes, with a DPS wearer in one (22 of 24 fights, median uptime 53%) and a tank in the other (one fight, 78%); all three weaknesses were up together for 7% and 51% of those fights, so the row usually shows one weakness, not the full 15%. A saved rules text is not given the line; tick it in Examples

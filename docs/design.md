@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1962](../src/esolog_tail.py#L1962)*
+*[src/esolog_tail.py:1965](../src/esolog_tail.py#L1965)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1424](../src/esolog_tail.py#L1424)*
+*[src/esolog_tail.py:1427](../src/esolog_tail.py#L1427)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1439](../src/esolog_tail.py#L1439)*
+*[src/esolog_tail.py:1442](../src/esolog_tail.py#L1442)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3179](../src/esolog_tail.py#L3179)*
+*[src/esolog_tail.py:3182](../src/esolog_tail.py#L3182)*
 
 Replay the log's most recent session up to the attach point.
 
