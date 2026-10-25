@@ -9,6 +9,8 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ### Changed
 - **Tracked effects** (#48): Powerful Assault is no longer expected in a large group. The set's buff is usual in a trial, but nobody has to bring it, so a fight without it is not a mistake worth a red `0%` row; its row now appears only when someone had it, like the boss debuffs. The other five group buffs and the taunt are expected as before. A saved rules text has the `expected large` that 0.12.0 put on its Powerful Assault line taken off again when the app starts; a line you gave other sizes (`expected all`, say) or renamed is left as written. The Examples list offers the line without the words
+### Fixed
+- **Werewolf bar** (#49): the game sometimes writes a werewolf bar in place of a player's human bars, and the Rockgrove log of 2026-10-24 showed that bar can be stale: one bar written as both human bars, three werewolf skills beside Razor Caltrops and Inner Fire, for a player in form the whole log who cast Hircine's Rage and Ferocious Roar in every fight and never those two. The app took the logged bar for the werewolf bar, drew it as both human bars and left the Werewolf line empty. A logged bar holding three or more werewolf skills is now dropped before anything reads it, the build-issue rules included, and the Werewolf line is rebuilt from the player's casts for every werewolf alike. Over the September and October split logs this changes three players: that one, and two anonymous players on client 12.0 whose werewolf bar was logged as the front bar and no longer shows twice.
 
 ## [0.13.2] - 2026-10-24
 
