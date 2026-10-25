@@ -207,6 +207,14 @@ class TestCapsAndAssumptions(unittest.TestCase):
         self.assertEqual(pen_crit.assumed_rows({}, True, "solo"), [])
         self.assertEqual(pen_crit.assumed_rows(None, True), [])
 
+    def test_player_totals_take_the_fights_own_cap_when_auto(self):
+        hist = {"pen_hist": [[0, 0.0, 100]]}
+        self.assertEqual(pen_crit.player_totals(hist, {"instanced": True, "cap": 27300}, {})["cap"], 27300)
+        # An entry from before the fights carried a cap of their own: the zone's
+        self.assertEqual(pen_crit.player_totals(hist, {"instanced": True}, {})["cap"], 18200)
+        self.assertEqual(pen_crit.player_totals(hist, {"instanced": True, "cap": 27300}, {"cap": 9100})["cap"],
+                         9100)
+
     def test_player_totals_take_the_fights_group_size(self):
         options = {"fighting_finesse": True}
         small = pen_crit.player_totals(CAP_PLAYER, dict(CAP_FIGHT, group_size="small"), options)
@@ -268,7 +276,7 @@ class TestFightFields(unittest.TestCase):
         names = {"1": "@one", "2": "@two", "3": "@three"}
         entry, players = pen_crit.fight_fields(
             tracker, start, end, units, group_buckets, player_buckets,
-            lambda uid: names.get(uid, uid), lambda uid: {}, instanced=True, set_table=SETS)
+            lambda uid: names.get(uid, uid), lambda uid: {}, zone="instanced", set_table=SETS)
         self.assertEqual(entry["on"], "boss")
         self.assertEqual(entry["cap"], 18200)
         self.assertEqual(entry["pen_hist"], [[0, 1.0, 1000], [5948, 1.0, 2000]])
@@ -293,7 +301,7 @@ class TestFightFields(unittest.TestCase):
         gear = {"2": {"BACKUP_MAIN": _item("BACKUP_MAIN", "205", "WEAPON_INFUSED", "0", "REDUCE_ARMOR")}}
         entry, _players = pen_crit.fight_fields(
             tracker, 9990, 20000, units, {"70": {15: 100}}, {}, lambda u: u,
-            lambda u: gear.get(u, {}), instanced=True, set_table=SETS,
+            lambda u: gear.get(u, {}), zone="instanced", set_table=SETS,
             kind_of=lambda i: KINDS.get(i, ""))
         row = entry["debuffs"][0]
         self.assertEqual(row["pen"], 2108)
@@ -308,7 +316,7 @@ class TestFightFields(unittest.TestCase):
         buckets = {"1": {"70": {12: 100, 18: 100}}, "2": {"70": {12: 100}}}
         _entry, players = pen_crit.fight_fields(
             tracker, 9990, 20000, units, {"70": {12: 200, 18: 100}}, buckets, lambda u: u,
-            lambda u: {}, instanced=True, set_table=SETS,
+            lambda u: {}, zone="instanced", set_table=SETS,
             always_on={"1": {"Minor Force": "Velothi Ur-Mage's Amulet"}})
         one = players["1"]
         self.assertEqual(one["buffs"], [{"name": "Minor Force", "crit": 10, "uptime_pct": 100,
@@ -327,7 +335,7 @@ class TestFightFields(unittest.TestCase):
         units = {"1": ("self", None, None), "70": ("boss", None, None)}
         entry, _players = pen_crit.fight_fields(
             tracker, 9990, 20000, units, {"70": {11: 100, 15: 100}}, {}, lambda u: "the dummy",
-            lambda u: {}, instanced=False, dummy=True, set_table=SETS,
+            lambda u: {}, zone="overland", dummy=True, set_table=SETS,
             permanent_debuffs={"70": list(pen_crit.TRIAL_DUMMY_DEBUFFS)})
         rows = {d["name"]: d for d in entry["debuffs"]}
         self.assertEqual(sorted(rows), sorted(pen_crit.TRIAL_DUMMY_DEBUFFS))
@@ -346,14 +354,140 @@ class TestFightFields(unittest.TestCase):
         units = {"1": ("self", None, None), "80": ("enemy", None, None), "81": ("enemy", None, None)}
         entry, _players = pen_crit.fight_fields(
             tracker, 9990, 20000, units, {"80": {12: 100}, "81": {12: 300}}, {}, lambda u: u,
-            lambda u: {}, instanced=False)
+            lambda u: {}, zone="overland")
         self.assertEqual(entry["on"], "enemies")
         self.assertEqual(entry["cap"], 9100)
         self.assertEqual(entry["pen_hist"], [[0, 0.0, 300], [2974, 0.0, 100]])
 
 
+class TestZones(unittest.TestCase):
+    """The zone's kind and the armour it gives a target (issue #55)."""
+
+    def test_zone_kind_and_target_armour(self):
+        self.assertEqual(pen_crit.zone_kind("1592", "NONE"), "solo_dungeon")
+        self.assertEqual(pen_crit.zone_kind(1592, ""), "solo_dungeon")
+        self.assertEqual(pen_crit.zone_kind("1055", "VETERAN"), "instanced")
+        self.assertEqual(pen_crit.zone_kind("1126", "NONE", dummy=True), "instanced")
+        self.assertEqual(pen_crit.zone_kind("382", "NONE"), "overland")
+        self.assertEqual(pen_crit.zone_kind(None, None), "overland")
+        self.assertEqual(pen_crit.target_armour("solo_dungeon", True), 27300)
+        self.assertEqual(pen_crit.target_armour("solo_dungeon", False), 18200)
+        self.assertEqual(pen_crit.target_armour("instanced", True), 18200)
+        self.assertEqual(pen_crit.target_armour("instanced", False), 18200)
+        self.assertEqual(pen_crit.target_armour("overland", True), 9100)
+
+    def test_the_armour_series_follows_the_debuffs_on_the_most_damaged_target(self):
+        tracker = pen_crit.new_tracker()
+        start, end = 10000, 15000
+        tracker.record("GAINED", "61743", "70", 1, 11000, "boss", source_id="2")  # Major Breach 11-13 s
+        tracker.record("FADED", "61743", "70", 1, 13000, "boss", source_id="2")
+        tracker.record("GAINED", "61742", "70", 1, 12000, "boss", source_id="2")  # Minor Breach from 12 s
+        tracker.record("GAINED", "61743", "71", 1, 10000, "boss", source_id="2")  # the other boss
+        units = {"2": ("group", None, None), "70": ("boss", None, None), "71": ("boss", None, None)}
+        names = {"70": "Big", "71": "Small"}
+        entry, _players = pen_crit.fight_fields(
+            tracker, start, end, units, {"70": {11: 500}, "71": {11: 100}}, {},
+            lambda u: names.get(u, u), lambda u: {}, zone="solo_dungeon", set_table=SETS)
+        self.assertEqual((entry["kind"], entry["cap"], entry["instanced"]), ("solo_dungeon", 27300, True))
+        armour = entry["armour"]
+        self.assertEqual((armour["estimate"], armour["target"], armour["boss"],
+                          armour["final_boss_armour"], armour["game_cap"]),
+                         (27300, "Big", True, 36400, 25000))
+        self.assertEqual(armour["spans"], [
+            [0, 1000, 0, ""],
+            [1000, 2000, 5948, "Major Breach"],
+            [2000, 3000, 8922, "Major Breach, Minor Breach"],
+            [3000, 5000, 2974, "Minor Breach"]])
+        # A trash fight: the most-damaged mob at an instance's 18,200
+        entry, _players = pen_crit.fight_fields(
+            tracker, start, end, {"2": ("group", None, None), "80": ("enemy", None, None)},
+            {"80": {11: 100}}, {}, lambda u: u, lambda u: {}, zone="solo_dungeon", set_table=SETS)
+        self.assertEqual((entry["cap"], entry["armour"]["boss"], entry["armour"]["final_boss_armour"],
+                          entry["armour"]["spans"]),
+                         (18200, False, None, [[0, 5000, 0, ""]]))
+        # No target at all: no series
+        entry, _players = pen_crit.fight_fields(
+            tracker, start, end, {"2": ("group", None, None)}, {}, {}, lambda u: u, lambda u: {},
+            zone="overland", set_table=SETS)
+        self.assertIsNone(entry["armour"])
+        self.assertEqual((entry["kind"], entry["cap"], entry["instanced"]), ("overland", 9100, False))
+
+    def test_a_dummys_permanent_debuffs_are_in_the_series(self):
+        tracker = pen_crit.new_tracker()
+        units = {"1": ("self", None, None), "70": ("enemy", None, None)}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 12000, units, {"70": {10: 100}}, {}, lambda u: u, lambda u: {},
+            zone="overland", dummy=True, set_table=SETS,
+            permanent_debuffs={"70": ["Major Breach", "Crusher"]})
+        self.assertEqual((entry["kind"], entry["cap"]), ("instanced", 18200))
+        self.assertEqual(entry["armour"]["spans"], [[0, 2000, 8056, "Major Breach, Crusher"]])
+
+
+class TestArmourRow(unittest.TestCase):
+    """The timeline's Armour row from a fight's group part (issue #55)."""
+
+    GROUP = {"instanced": True, "cap": 27300, "kind": "solo_dungeon", "dummy": False,
+             "armour": {"estimate": 27300, "kind": "solo_dungeon", "target": "Balorgh", "boss": True,
+                        "final_boss_armour": 36400, "game_cap": 25000,
+                        "spans": [[0, 10000, 0, ""],
+                                  [10000, 20000, 8922, "Major Breach, Minor Breach"],
+                                  [20000, 30000, 30000, "Major Breach, Minor Breach, Crusher, Roar of Alkosh"]]}}
+
+    def test_row_shape_and_figures(self):
+        row = pen_crit.armour_row(self.GROUP)
+        self.assertEqual((row["name"], row["scope"], row["estimate"], row["stacks_max"], row["game_cap"]),
+                         ("Armour", "boss", 27300, 27300, 25000))
+        self.assertEqual([iv["stacks"] for iv in row["intervals"]], [27300, 18378, 0])
+        self.assertEqual((row["intervals"][1]["debuffs"], row["intervals"][1]["debuff_pen"],
+                          row["intervals"][1]["target"]),
+                         ("Major Breach, Minor Breach", 8922, "Balorgh"))
+        # Averaged over time: (27,300 + 18,378 + 0) / 3
+        self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (15226, 0, 33))
+        self.assertEqual(row["label"], "Armour 27,300 · 15,226 left")
+        self.assertIn("final boss 36,400", row["explain"])
+        self.assertIn("averaged over time", row["explain"])
+
+    def test_the_settings_override_the_zone_and_a_trash_row(self):
+        row = pen_crit.armour_row(self.GROUP, {"cap": 18200})
+        self.assertEqual((row["estimate"], row["game_cap"]), (18200, None))
+        self.assertEqual([iv["stacks"] for iv in row["intervals"]], [18200, 9278, 0])
+        self.assertIn("Settings", row["explain"])
+        self.assertEqual(pen_crit.armour_row(self.GROUP, {"cap": "auto"})["estimate"], 27300)
+        trash = dict(self.GROUP, cap=18200,
+                     armour=dict(self.GROUP["armour"], boss=False, final_boss_armour=None, estimate=18200))
+        self.assertEqual((pen_crit.armour_row(trash)["scope"], pen_crit.armour_row(trash)["game_cap"]),
+                         ("mobs", None))
+        self.assertIn("trash", pen_crit.armour_row(trash)["explain"])
+
+    def test_nothing_without_the_series(self):
+        self.assertIsNone(pen_crit.armour_row({"cap": 18200, "instanced": True}))
+        self.assertIsNone(pen_crit.armour_row({"armour": None}))
+        self.assertIsNone(pen_crit.armour_row(None))
+
+
 class TestEngine(unittest.TestCase):
     """The fields on a fight entry, through the whole engine."""
+
+    def test_a_solo_dungeon_is_known_by_its_zone_id(self):
+        lines = [line.replace('1055,"Scalecaller Peak",VETERAN', '1592,"March of Sacrifices",NONE')
+                 for line in SESSION]
+        self.assertNotEqual(lines, list(SESSION))
+        entry = fights(lines)[0]
+        # The fixture's boss carries no boss flag: a pack at an instance's 18,200
+        self.assertEqual((entry.pen_crit["kind"], entry.pen_crit["cap"], entry.pen_crit["instanced"]),
+                         ("solo_dungeon", 18200, True))
+        self.assertEqual(entry.pen_crit["armour"]["boss"], False)
+        boss = [line.replace(',105634,F,0,0,"Test Boss"', ',105634,T,0,0,"Test Boss"') for line in lines]
+        self.assertNotEqual(boss, lines)
+        entry = fights(boss)[0]
+        armour = entry.pen_crit["armour"]
+        self.assertEqual((entry.pen_crit["cap"], armour["estimate"], armour["target"], armour["boss"],
+                          armour["final_boss_armour"]),
+                         (27300, 27300, "Test Boss", True, 36400))
+        self.assertTrue(armour["spans"])
+        # The row token reads against the fight's own cap
+        totals = pen_crit.player_totals(entry.players[0]["pen_crit"], entry.pen_crit, {})
+        self.assertEqual(totals["cap"], 27300)
 
     def test_entry_and_player_fields(self):
         lines = list(SESSION)

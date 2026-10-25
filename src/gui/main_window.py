@@ -37,6 +37,7 @@ from gui.fight_render import (
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
+from pen_crit import armour_row
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -617,14 +618,17 @@ class MainWindow(QMainWindow):
         self._follow_live = (self._review_fights is None
                              and row == len(fights) - 1)
         entry = fights[row]
-        self.timeline_strip.set_timeline(strip_timeline(entry), getattr(entry, 'tracked', None))
+        # The Settings' assumed Champion Point rows and cap, read at render
+        # time (pen_crit): the row tokens, their hover text and the strip's
+        # Armour row follow them
+        pen_crit_options = self.config.get("pen_crit") or {}
+        self.timeline_strip.set_timeline(
+            strip_timeline(entry), getattr(entry, 'tracked', None),
+            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
         # player's name show in both views
-        # The Settings' assumed Champion Point rows and cap, read at render
-        # time (pen_crit): the row tokens and their hover text follow them
-        pen_crit_options = self.config.get("pen_crit") or {}
         tooltips = death_tooltips(entry)
         tooltips.update(build_tooltips(entry))
         tooltips.update(damage_tooltips(entry))

@@ -93,6 +93,28 @@ from the game at the pull. Checked against a Combat Metrics report of a
 Cry's two pieces, Piercing) plus the dummy's 17,030 is its maximum of
 20,156 exactly, damage and dps agreed within 0.5%, and the ability table
 row for row.
+
+Solo dungeons and the Armour row (issue #55). The solo dungeons of October
+2026 are the group dungeons' layouts and bosses at a zone id of their own,
+with the dungeon's name and difficulty NONE on the ZONE_CHANGED line (the
+solo March of Sacrifices is zone 1592, the group dungeon 1055, logged on
+2026-10-25 and 2026-09-22); nothing else in the log says solo, and the
+run's Misfortunes, picked at the door, did not appear in that log. Read by
+difficulty alone a solo dungeon is overland, 9,100, so SOLO_DUNGEON_ZONES
+names the ids and zone_kind reads it first; the figures are the
+hyperioxes.com Moon Hunter Keep guide's: trash 18,200 like any instance,
+bosses 27,300, the final boss 36,400, and the game's cap of 25,000 on an
+enemy's armour, above which penetration changes nothing until the debuffs
+bring the armour under. Every boss is taken at 27,300 (the maintainer's
+choice, 2026-10-26); the labels say the final boss has more. The buff
+timeline's Armour row (armour_row) draws the target's armour less the
+group's armour debuffs on it, second by second, from a series fight_fields
+keeps on the target the group damaged most: spans of equal debuff sum and
+names, the sum rather than the remainder so the Settings' cap override
+can restate the estimate. The remainder is averaged over time for the
+label, where the build window's effective figures weigh each second by
+the damage dealt; the two are different questions (how long the armour
+was down, and how much of the damage met it down).
 """
 
 import math
@@ -114,6 +136,25 @@ from player_build import (
 
 PEN_CAP_INSTANCED = 18200
 PEN_CAP_OVERLAND = 9100
+# Solo dungeons (October 2026): the group dungeons' layouts and bosses at
+# a zone id of their own, with the dungeon's name and difficulty NONE on
+# the ZONE_CHANGED line, which is the log's only marker (the solo March of
+# Sacrifices is 1592, the group dungeon 1055). The figures are the
+# hyperioxes.com Moon Hunter Keep guide's (October 2026): trash 18,200
+# like any instance, bosses 27,300, the final boss 36,400 (Balorgh, Vykosa
+# the Ascendant), and the game caps an enemy's armour at 25,000 (50%
+# damage reduction), so against a boss the first 2,300 of penetration
+# changes nothing until the debuffs bring the armour under the cap. Every
+# boss is taken at 27,300 (the maintainer's choice, 2026-10-26): no
+# per-boss table, the labels say the final boss has more. Moon Hunter
+# Keep's solo zone id is in no log yet: read it off the ZONE_CHANGED line
+# of a solo run and add it here.
+SOLO_DUNGEON_ZONES = {"1592": "March of Sacrifices"}
+SOLO_BOSS_ARMOUR = 27300
+SOLO_FINAL_BOSS_ARMOUR = 36400
+ENEMY_ARMOUR_CAP = 25000
+ZONE_KINDS = ("solo_dungeon", "instanced", "overland")
+ARMOUR_ROW = "Armour"  # the buff timeline's row name
 CRIT_BASE = 50
 CRIT_CAP = 125
 DIVINES_PER_PIECE = 0.09085  # gold Divines, the spreadsheet's factor
@@ -259,6 +300,26 @@ def pen_cap(instanced: bool, setting=None) -> int:
     if isinstance(setting, str) and setting.strip().isdigit():
         return int(setting.strip())
     return PEN_CAP_INSTANCED if instanced else PEN_CAP_OVERLAND
+
+
+def zone_kind(zone_id, difficulty, dummy: bool = False) -> str:
+    """What the zone says of its enemies' armour: 'solo_dungeon' for a solo
+    dungeon's zone id (SOLO_DUNGEON_ZONES), 'instanced' when the difficulty
+    is NORMAL or VETERAN or a trial dummy's own debuffs were seen (*dummy*),
+    else 'overland'."""
+    if str(zone_id or "") in SOLO_DUNGEON_ZONES:
+        return "solo_dungeon"
+    if dummy or str(difficulty or "").upper() in ("NORMAL", "VETERAN"):
+        return "instanced"
+    return "overland"
+
+
+def target_armour(kind: str, boss: bool) -> int:
+    """The resistance a target is taken to have: a solo dungeon's boss
+    27,300 and its trash 18,200, instanced 18,200, overland 9,100."""
+    if kind == "solo_dungeon":
+        return SOLO_BOSS_ARMOUR if boss else PEN_CAP_INSTANCED
+    return PEN_CAP_INSTANCED if kind == "instanced" else PEN_CAP_OVERLAND
 
 
 # ---- the player's own sources ----
@@ -576,7 +637,7 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                  units: dict[str, tuple], group_target_buckets: dict[str, dict[int, int]],
                  player_target_buckets: dict[str, dict[str, dict[int, int]]],
                  name_of: Callable[[str], str], gear_of: Callable[[str], dict[str, list[str]]],
-                 instanced: bool, dummy: bool = False,
+                 zone: str = "overland", dummy: bool = False,
                  set_table: dict[str, dict] | None = None,
                  kind_of: Callable[[str], str] | None = None,
                  always_on: dict[str, dict[str, str]] | None = None,
@@ -586,23 +647,32 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     *units* is the engine's fight_units(); *group_target_buckets* the group's
     damage per log second per target unit, *player_target_buckets* the same
     per player; *gear_of* a caster's gear for the Crusher value and the set
-    behind a debuff; *always_on* the buffs a player's sets give at all
-    times, player id -> {buff name: set name} (player_rows' 'gives'),
-    credited for the whole fight; *permanent_debuffs* the debuffs a target
-    keeps on itself for good, target unit id -> [debuff names] (the Trial
-    dummy's, TRIAL_DUMMY_DEBUFFS), credited at 100% whether or not the
-    session saw them applied. Returns the entry's dict ('on': 'boss' or 'enemies',
-    'cap', 'instanced', 'dummy', 'debuffs' rows with uptime and casters,
-    'pen_hist' [[penetration, status effects, damage], ...], 'crit_hist'
-    [[crit %, damage], ...], 'damage') and one dict per player ('buffs'
-    rows, their own 'pen_hist' and 'crit_hist' with their buffs folded in,
-    'damage')."""
+    behind a debuff; *zone* the zone's kind (zone_kind: 'solo_dungeon',
+    'instanced' or 'overland'), *dummy* whether a trial dummy's own debuffs
+    were seen (an instance whatever the zone says); *always_on* the buffs a
+    player's sets give at all times, player id -> {buff name: set name}
+    (player_rows' 'gives'), credited for the whole fight;
+    *permanent_debuffs* the debuffs a target keeps on itself for good,
+    target unit id -> [debuff names] (the Trial dummy's,
+    TRIAL_DUMMY_DEBUFFS), credited at 100% whether or not the session saw
+    them applied. Returns the entry's dict ('on': 'boss' or 'enemies',
+    'kind', 'cap' (the target's armour, target_armour), 'instanced',
+    'dummy', 'debuffs' rows with uptime and casters, 'pen_hist'
+    [[penetration, status effects, damage], ...], 'crit_hist' [[crit %,
+    damage], ...], 'damage', and 'armour', the timeline row's series on the
+    most-damaged target: {'estimate', 'kind', 'target', 'boss',
+    'final_boss_armour', 'game_cap', 'spans': [[start_ms, end_ms, armour
+    debuffs' sum, 'Major Breach, Crusher'], ...]} fight-relative, one span
+    per run of seconds with the same sum and debuffs, None without a
+    target) and one dict per player ('buffs' rows, their own 'pen_hist' and
+    'crit_hist' with their buffs folded in, 'damage')."""
     duration = max(0, end_ms - start_ms)
     index_of = {rule.name: i for i, rule in enumerate(tracker.rules)}
     bosses = [u for u, info in units.items() if info[0] == "boss"]
     targets = bosses or [u for u, info in units.items() if info[0] == "enemy"]
     target_set = set(targets)
-    cap = pen_cap(instanced or dummy)
+    kind = "instanced" if dummy and zone != "solo_dungeon" else (zone or "overland")
+    cap = target_armour(kind, bool(bosses))
 
     def spans_of(name: str, want_targets: set | None) -> list[tuple]:
         index = index_of.get(name)
@@ -615,6 +685,9 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     pen_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
     crit_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
     status_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
+    # The armour debuffs covering at least half of each second, for the
+    # timeline row's hover text
+    names_by_target: dict[str, dict[int, set]] = {t: {} for t in targets}
     debuff_rows: list[dict] = []
     crusher_value: dict[str, int] = {}
     permanent_debuffs = permanent_debuffs or {}
@@ -655,12 +728,16 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                     value = crusher_value.get(source, pen)
                     for second, frac in _coverage((s[0], s[1]) for s in source_spans if s[3] == target).items():
                         weighted[second] = max(weighted.get(second, 0.0), value * frac)
+                        if frac >= 0.5:
+                            names_by_target[target].setdefault(second, set()).add(name)
                 for second, value in weighted.items():
                     pen_by_target[target][second] = pen_by_target[target].get(second, 0.0) + value
                 continue
             for second, frac in _coverage((s[0], s[1]) for s in own).items():
                 if pen:
                     pen_by_target[target][second] = pen_by_target[target].get(second, 0.0) + pen * frac
+                    if frac >= 0.5:
+                        names_by_target[target].setdefault(second, set()).add(name)
                 if crit:
                     crit_by_target[target][second] = crit_by_target[target].get(second, 0.0) + crit * frac
         debuff_rows.append({"name": name, "pen": row_value if pen else 0, "crit": crit,
@@ -698,10 +775,23 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     pen_hist, crit_hist, total = histograms(group_target_buckets, None)
     # The fight's group size, for the Champion Point rows assumed per size
     group_size = group_size_class(sum(1 for info in units.values() if info[0] in PLAYER_KINDS))
+    # The timeline row's series: the armour debuffs on the target the group
+    # damaged most, second by second (issue #55)
+    armour = None
+    if targets:
+        main = max(targets, key=lambda t: (sum((group_target_buckets.get(t) or {}).values()), t))
+        permanent_names = [n for n in PEN_DEBUFFS if n in permanent_debuffs.get(main, ())]
+        armour = {"estimate": cap, "kind": kind, "target": name_of(main), "boss": main in bosses,
+                  "final_boss_armour": (SOLO_FINAL_BOSS_ARMOUR
+                                        if kind == "solo_dungeon" and bosses else None),
+                  "game_cap": ENEMY_ARMOUR_CAP,
+                  "spans": _armour_spans(start_ms, end_ms, pen_by_target[main], names_by_target[main],
+                                         perm_pen.get(main, 0.0), permanent_names)}
     entry = {"on": ("boss" if bosses else "enemies") if targets else "", "targets": len(targets),
-             "cap": cap, "instanced": bool(instanced or dummy), "dummy": bool(dummy),
+             "kind": kind, "cap": cap, "instanced": kind != "overland", "dummy": bool(dummy),
              "group_size": group_size,
-             "debuffs": debuff_rows, "pen_hist": pen_hist, "crit_hist": crit_hist, "damage": total}
+             "debuffs": debuff_rows, "pen_hist": pen_hist, "crit_hist": crit_hist, "damage": total,
+             "armour": armour}
 
     players: dict[str, dict] = {}
     for player_id, buckets in player_target_buckets.items():
@@ -727,6 +817,109 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
         p_pen, p_crit, p_total = histograms(buckets, own_crit, permanent_crit)
         players[player_id] = {"buffs": buff_rows, "pen_hist": p_pen, "crit_hist": p_crit, "damage": p_total}
     return entry, players
+
+
+def _armour_spans(start_ms: int, end_ms: int, pen_by_second: dict[int, float],
+                  names_by_second: dict[int, set], permanent: float,
+                  permanent_names: list[str]) -> list[list]:
+    """The armour debuffs on one target through the fight as spans
+    [start_ms, end_ms, sum, 'Major Breach, Crusher'] (fight-relative ms, the
+    sum rounded, the names in DEBUFFS order), one per run of seconds with
+    the same sum and the same debuffs; a second with none is a span with 0
+    and ''. The fight's first and last seconds are clipped to its window."""
+    spans: list[list] = []
+    if end_ms <= start_ms:
+        return spans
+    first, last = start_ms // 1000, (end_ms - 1) // 1000
+    for second in range(first, last + 1):
+        value = round(pen_by_second.get(second, 0.0) + permanent)
+        present = names_by_second.get(second, ())
+        names = ", ".join(n for n in PEN_DEBUFFS if n in present or n in permanent_names)
+        s = max(start_ms, second * 1000) - start_ms
+        e = min(end_ms, second * 1000 + 1000) - start_ms
+        if e <= s:
+            continue
+        if spans and spans[-1][1] == s and spans[-1][2] == value and spans[-1][3] == names:
+            spans[-1][1] = e
+        else:
+            spans.append([s, e, value, names])
+    return spans
+
+
+# ---- the timeline's Armour row ----
+
+_ZONE_EXPLAIN = {
+    "overland": "Overland enemies have 9,100 armour.",
+    "instanced": "The bosses and mobs of dungeons, trials and arenas have 18,200 armour.",
+    "dummy": "A trial dummy has a trial boss's 18,200 armour.",
+    "solo_boss": ("A solo dungeon's bosses have 27,300 armour and its final boss 36,400, so "
+                  "the estimate is low on the final boss; the game caps an enemy's armour at "
+                  "25,000, and nothing above the line counts until the debuffs bring it under."),
+    "solo_trash": "A solo dungeon's trash has 18,200 armour, like any instance's.",
+}
+_ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs each second, "
+                "averaged over time; the build window's effective figures weigh each second "
+                "by the damage dealt instead.")
+
+
+def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
+    """The buff timeline's Armour row for a fight entry's group part
+    (fight_fields' 'armour'): the estimate (the fight's target armour, or
+    the Settings' cap override when it is a number), a label 'Armour 18,200
+    · 9,400 left' with the time-averaged remainder, the scope word
+    ('boss' or 'mobs'), intervals shaped like a stacking rule's with
+    'stacks' the armour left that second plus 'debuff_pen' and 'debuffs'
+    for the hover, 'stacks_max' the estimate, 'game_cap' 25,000 when the
+    estimate is above it (a line on the row), the summary figures
+    ('average_left', 'lowest_left', 'no_debuff_pct') and 'explain', the
+    reason for the estimate. None for an entry without the series."""
+    group = group or {}
+    data = group.get("armour")
+    if not data or not data.get("spans"):
+        return None
+    options = options or {}
+    setting = options.get("cap", "auto")
+    overridden = setting not in (None, "", "auto")
+    estimate = pen_cap(True, setting) if overridden else int(data.get("estimate") or 0)
+    if estimate <= 0:
+        return None
+    intervals = []
+    duration = 0
+    left_ms = 0.0
+    lowest = estimate
+    no_debuff_ms = 0
+    target = str(data.get("target") or "")
+    for s, e, value, names in data["spans"]:
+        s, e, value = int(s), int(e), int(value)
+        remaining = max(0, estimate - value)
+        intervals.append({"start_ms": s, "end_ms": e, "stacks": remaining, "debuff_pen": value,
+                          "debuffs": str(names or ""), "target": target, "source": ""})
+        duration = max(duration, e)
+        left_ms += remaining * (e - s)
+        lowest = min(lowest, remaining)
+        if not value:
+            no_debuff_ms += e - s
+    average = round(left_ms / duration) if duration else estimate
+    kind = str(data.get("kind") or ("instanced" if group.get("instanced") else "overland"))
+    boss = bool(data.get("boss"))
+    if overridden:
+        reason = f"The estimate is the Settings' penetration cap, {estimate:,}."
+    elif group.get("dummy"):
+        reason = _ZONE_EXPLAIN["dummy"]
+    elif kind == "solo_dungeon":
+        reason = _ZONE_EXPLAIN["solo_boss" if boss else "solo_trash"]
+    else:
+        reason = _ZONE_EXPLAIN.get(kind, _ZONE_EXPLAIN["overland"])
+    return {"name": ARMOUR_ROW, "estimate": estimate,
+            # Short enough for the strip's label column: the hover and the
+            # click say the figure is an estimate and why
+            "label": f"{ARMOUR_ROW} {estimate:,} · {average:,} left",
+            "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
+            "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
+            "average_left": average, "lowest_left": lowest,
+            "no_debuff_pct": round(100.0 * no_debuff_ms / duration) if duration else 100,
+            "kind": kind, "target": target, "final_boss_armour": data.get("final_boss_armour"),
+            "explain": f"{reason} {_ROW_EXPLAIN}"}
 
 
 # ---- reading the histograms, with any static part and cap ----
@@ -784,7 +977,12 @@ def player_totals(player_pc: dict | None, fight_pc: dict | None,
     options = dict(options or {})
     instanced = bool(group.get("instanced"))
     cap_setting = options.get("cap", "auto")
-    cap = pen_cap(instanced, None if cap_setting in (None, "", "auto") else cap_setting)
+    if cap_setting in (None, "", "auto"):
+        # The fight's own figure (a solo dungeon's boss 27,300; every entry
+        # carries it), the zone's when an entry predates it
+        cap = int(group.get("cap") or pen_cap(instanced))
+    else:
+        cap = pen_cap(instanced, cap_setting)
     crit_cap = int(data.get("crit_cap") or CRIT_CAP)
     assumed = assumed_rows(options, instanced, group.get("group_size"))
     static_pen = [float(v) for v in (data.get("static_pen") or [0, 0])]

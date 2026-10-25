@@ -716,6 +716,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters: Dict[str, str] = {}  # tracker key -> character id last seen
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
         self.current_zone: Optional[str] = None  # Track current zone name
+        # The zone's id from ZONE_CHANGED: a solo dungeon is known by it
+        # alone, its name being the group dungeon's (pen_crit.zone_kind)
+        self.current_zone_id: str = ""
         self.current_difficulty: Optional[str] = None  # Track current difficulty
         self.zone_deaths: int = 0  # Track total deaths since entering current zone
         self.fight_deaths: int = 0  # Player deaths in the current fight (reset at BEGIN_COMBAT)
@@ -732,7 +735,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self.diagnostic = diagnostic
 
         # Zone history tracking for rewind functionality
-        self.zone_history: List[Tuple[int, str]] = []  # (timestamp, zone_name)
+        # (timestamp, zone_name, zone_id, difficulty)
+        self.zone_history: List[Tuple[int, str, str, str]] = []
         self.max_zone_history = 10  # Keep last 10 zone changes
         
         
@@ -797,9 +801,10 @@ class ESOLogAnalyzer(ListenerMixin):
         seconds = int(duration_sec % 60)
         return f"{minutes}m {seconds}s"
 
-    def _add_zone_to_history(self, timestamp: int, zone_name: str):
+    def _add_zone_to_history(self, timestamp: int, zone_name: str, zone_id: str = "",
+                             difficulty: str = ""):
         """Add a zone change to the history for rewind functionality."""
-        self.zone_history.append((timestamp, zone_name))
+        self.zone_history.append((timestamp, zone_name, str(zone_id or ""), str(difficulty or "")))
         # Keep only the most recent zone changes
         if len(self.zone_history) > self.max_zone_history:
             self.zone_history.pop(0)
@@ -808,14 +813,16 @@ class ESOLogAnalyzer(ListenerMixin):
         """Rewind to the last known zone when combat events are encountered without current zone."""
         if not self.zone_history:
             return False
-        
-        # Get the most recent zone
-        last_timestamp, last_zone = self.zone_history[-1]
-        
+
+        # Get the most recent zone, with its id and difficulty
+        last_timestamp, last_zone, last_zone_id, last_difficulty = self.zone_history[-1]
+
         _console(f"{Fore.YELLOW}No current zone detected. Rewinding to last zone: {last_zone}{Style.RESET_ALL}")
-        
+
         # Set the current zone to the last known zone
         self.current_zone = last_zone
+        self.current_zone_id = last_zone_id
+        self.current_difficulty = last_difficulty
         
         # Create a new encounter for this zone
         self.current_encounter = CombatEncounter()
@@ -1325,11 +1332,12 @@ class ESOLogAnalyzer(ListenerMixin):
             
             # Update current zone and difficulty after processing previous zone's combat
             self.current_zone = zone_name
+            self.current_zone_id = zone_id
             self.current_difficulty = difficulty
             self._notify('on_zone_changed', zone_name, difficulty)
-            
+
             # Add this zone change to history for rewind functionality
-            self._add_zone_to_history(entry.timestamp, zone_name)
+            self._add_zone_to_history(entry.timestamp, zone_name, zone_id, difficulty)
             
             # Clean up offline players
             self._cleanup_offline_players()
@@ -2451,12 +2459,12 @@ class ESOLogAnalyzer(ListenerMixin):
         player's own rows from their PLAYER_INFO line, the fight's debuffs
         on the bosses with uptime and casters, each player's buffs, and the
         damage-weighted histograms the build window reads against the cap.
-        The content is instanced when the zone's difficulty is NORMAL or
-        VETERAN, a trial dummy's own debuffs were seen in this zone, or the
-        fight is against the Trial dummy by name, whose permanent debuffs
-        are then credited in full (pen_crit.TRIAL_DUMMY_DEBUFFS)."""
-        difficulty = (self.current_difficulty or "").upper()
-        instanced = difficulty in ("NORMAL", "VETERAN")
+        The zone's kind (pen_crit.zone_kind) sets the target's armour: a
+        solo dungeon by its zone id, instanced content when the difficulty
+        is NORMAL or VETERAN, a trial dummy's own debuffs seen in this zone,
+        or the fight against the Trial dummy by name, whose permanent
+        debuffs are then credited in full (pen_crit.TRIAL_DUMMY_DEBUFFS)."""
+        zone = pen_crit.zone_kind(self.current_zone_id, self.current_difficulty)
         damage = enc.damage
         player_buckets = {p['unit_id']: damage.player(p['unit_id']).target_buckets
                           for p in entry.players}
@@ -2483,7 +2491,7 @@ class ESOLogAnalyzer(ListenerMixin):
             group, per_player = pen_crit.fight_fields(
                 self.pen_crit_tracker, enc.start_time, enc.end_time, units,
                 damage.target_buckets, player_buckets, self._resolve_timeline_name,
-                gear_of, instanced, self._dummy_seen or bool(permanent),
+                gear_of, zone, self._dummy_seen or bool(permanent),
                 always_on={uid: own["gives"] for uid, own in own_rows.items() if own.get("gives")},
                 permanent_debuffs=permanent)
         except Exception as exc:  # a figure must never cost the fight entry
@@ -3302,16 +3310,17 @@ class LogFileMonitor:
                 zone_id = entry.fields[0].strip('"')
                 zone_name = entry.fields[1].strip('"')
                 difficulty = entry.fields[2].strip('"')
-                self.analyzer._add_zone_to_history(entry.timestamp, zone_name)
-                latest_zone = (zone_name, difficulty)
+                self.analyzer._add_zone_to_history(entry.timestamp, zone_name, zone_id, difficulty)
+                latest_zone = (zone_name, difficulty, zone_id)
                 if not zone_found:
                     _console(f"{Fore.GREEN}Found recent zone: {zone_name}{Style.RESET_ALL}")
                     zone_found = True
 
         if latest_zone is not None:
             # Seed current zone from the lookback and tell frontends
-            self.analyzer.current_zone, self.analyzer.current_difficulty = latest_zone
-            self.analyzer._notify('on_zone_changed', *latest_zone)
+            (self.analyzer.current_zone, self.analyzer.current_difficulty,
+             self.analyzer.current_zone_id) = latest_zone
+            self.analyzer._notify('on_zone_changed', latest_zone[0], latest_zone[1])
         else:
             _console(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
 

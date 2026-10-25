@@ -29,6 +29,18 @@ glance (Chris's request, 2026-10-24); the dark theme gets a lighter red,
 since dark red vanishes on a dark pane. The hover text says why the row
 is there.
 
+The last row, "Armour" (issue #55, pen_crit.armour_row), is not an effect
+but an estimate: the target's armour (18,200 in an instance, 9,100
+overland, 27,300 on a solo dungeon's boss) less the group's armour debuffs
+on it, second by second, drawn by height like Touch of Z'en's row so the
+bar drops as Breach, Crusher and Alkosh land and climbs back as they fall
+off; the label carries the estimate and the time-averaged remainder. The
+row's intervals carry the debuffs' names and sum for the hover, and its
+click summary is its own (the sources-and-receivers popup makes no sense
+for it). When the estimate is above the game's 25,000 cap on an enemy's
+armour (a solo dungeon's boss) a dashed line marks the cap: armour above
+it changes nothing until the debuffs bring it under.
+
 Deliberately tiny: it must never crowd the fight summary. A fight in which
 none of the built-in effects was up has no recorded timeline; its tracked
 rows are still drawn over the fight's duration (main_window passes it).
@@ -80,6 +92,8 @@ TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
 # The label of an expected row that never came: dark red on a light pane, a
 # lighter red on a dark one (keyed by whether the pane is dark)
 MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
+# The Armour row's bar: a blue-grey of its own, so the rules keep theirs
+ARMOUR_COLORS = {False: QColor("#546e7a"), True: QColor("#b0bec5")}
 
 # A group buff reaching at most this many distinct receivers is drawn
 # cross-hatched (paint_sparse_span)
@@ -217,10 +231,11 @@ class TimelineStrip(QWidget):
 
     # ---- data ----
 
-    def set_timeline(self, timeline, tracked=None) -> None:
+    def set_timeline(self, timeline, tracked=None, armour=None) -> None:
         """timeline: {'duration_ms', 'effects': {...}} or None to hide.
         tracked: the fight's tracked effects (FightHistoryEntry.tracked),
-        rows after the built-in ones; a rule that never occurred has none."""
+        rows after the built-in ones; a rule that never occurred has none.
+        armour: the Armour row (pen_crit.armour_row), last of all, or None."""
         valid = bool(timeline and timeline.get("duration_ms", 0) > 0
                      and (timeline.get("effects") or tracked))
         self._timeline = timeline if valid else None
@@ -272,6 +287,23 @@ class TimelineStrip(QWidget):
                 }
         buffs = [r for r in self._rows if self._row_info[r].get("scope") not in DEBUFF_SCOPES]
         debuffs = [r for r in self._rows if self._row_info[r].get("scope") in DEBUFF_SCOPES]
+        # The Armour row, last of all: the target's armour less the group's
+        # debuffs, by height against the estimate (issue #55)
+        if valid and armour and armour.get("intervals") and armour.get("stacks_max"):
+            name = str(armour.get("name") or "Armour")
+            if name not in self._row_info:
+                self._tracked[name] = armour
+                self._row_info[name] = {
+                    "uptime_pct": 100,
+                    "sparse": False,
+                    "label": armour.get("label", name),
+                    "scope": armour.get("scope", "boss"),
+                    "color": self.armour_color(),
+                    "stacks_max": int(armour["stacks_max"]),
+                    "zero_level": True,
+                    "armour": armour,
+                }
+                debuffs.append(name)
         self._rows = buffs + debuffs
         self._divider = len(buffs) if buffs and debuffs else None
         self.setVisible(bool(self._rows))
@@ -413,6 +445,14 @@ class TimelineStrip(QWidget):
                         painter.fillRect(QRectF(x0, rect.top(),
                                                 max(1.0, x1 - x0), rect.height()),
                                          color)
+            # The game's cap on an enemy's armour, when the estimate is
+            # above it: a dashed line across the Armour row at that level
+            game_cap = (info.get("armour") or {}).get("game_cap")
+            if game_cap and stacks_max and game_cap < stacks_max:
+                y = rect.bottom() - rect.height() * game_cap / stacks_max
+                painter.setPen(QPen(dim, 1, Qt.DashLine))
+                painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+                painter.setPen(dim)
 
         # The line between the buffs above and the debuffs below
         divider_y = self._divider_y()
@@ -445,6 +485,11 @@ class TimelineStrip(QWidget):
         red, or a lighter red when the pane's background is dark."""
         dark = self.palette().color(self.backgroundRole()).lightness() < 128
         return MISSING_COLORS[dark]
+
+    def armour_color(self) -> QColor:
+        """The Armour row's blue-grey, lighter on a dark pane."""
+        dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        return ARMOUR_COLORS[dark]
 
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
@@ -489,6 +534,8 @@ class TimelineStrip(QWidget):
         """The pop-up's text for a row: a header, the casters, the
         receivers, and a caster x receiver grid when both are few."""
         info = self._row_info.get(effect, {})
+        if info.get("armour"):
+            return self._armour_summary(effect, info)
         intervals = self._intervals(effect)
         duration = self._timeline["duration_ms"]
         stacks = bool(info.get("stacks_max"))
@@ -542,6 +589,22 @@ class TimelineStrip(QWidget):
         return "<br>".join(head) + "".join(
             f"<p style='margin-top:6px'>{section}</p>" for section in sections)
 
+    def _armour_summary(self, effect: str, info: dict) -> str:
+        """The Armour row's pop-up: the estimate and its reason, the armour
+        left on average and at the lowest, and how much of the fight had no
+        armour debuff at all."""
+        armour = info["armour"]
+        duration = self._timeline["duration_ms"]
+        scope = info.get("scope", "")
+        head = (f"<b>{escape(self._full_label(effect, info), quote=False)}</b>"
+                + (f" ({escape(scope)})" if scope else ""))
+        figures = (f"On {escape(str(armour.get('target') or ''), quote=False)} over "
+                   f"{_fmt_tick(duration)}: {int(armour.get('average_left', 0)):,} armour left "
+                   f"on average, {int(armour.get('lowest_left', 0)):,} at the lowest; no armour "
+                   f"debuff on it for {int(armour.get('no_debuff_pct', 0))}% of the fight")
+        explain = f"<i>{escape(str(armour.get('explain') or ''), quote=False)}</i>"
+        return "<br>".join((head, figures, explain))
+
     def show_summary(self, effect: str, global_pos) -> "SummaryPopup":
         """Open the pop-up for *effect*'s row at *global_pos*."""
         QToolTip.hideText()
@@ -582,16 +645,30 @@ class TimelineStrip(QWidget):
             labelled = self._label_at(pos)
             if labelled:
                 label, scope = labelled
-                QToolTip.showText(ev.globalPos(),
-                                  (f"<b>{label}</b> ({scope})" if scope else f"<b>{label}</b>")
-                                  + CLICK_HINT,
-                                  self)
+                text = f"<b>{label}</b> ({scope})" if scope else f"<b>{label}</b>"
+                # The Armour row's label says where its estimate comes from
+                armour = self._row_info.get(self._row_at(pos) or "", {}).get("armour")
+                if armour and armour.get("explain"):
+                    text += f"<br>{escape(str(armour['explain']), quote=False)}"
+                QToolTip.showText(ev.globalPos(), text + CLICK_HINT, self)
                 return True
             found = self._intervals_at(pos)
             if found:
                 effect, ms, hits = found
+                info = self._row_info.get(effect, {})
+                if hits and info.get("armour"):
+                    # The armour left at that moment and the debuffs behind it
+                    estimate = int(info["armour"].get("estimate") or info.get("stacks_max") or 0)
+                    iv = hits[-1]
+                    debuffs = str(iv.get("debuffs") or "") or "no armour debuff"
+                    taken = int(iv.get("debuff_pen") or 0)
+                    lines = [(f"<b>{effect}</b> ({info.get('scope', '')}) @ {_fmt_tick(ms)}"
+                              f" &nbsp;·&nbsp; {int(iv.get('stacks') or 0):,} of {estimate:,} left"),
+                             escape(debuffs, quote=False)
+                             + (f" &nbsp;·&nbsp; {taken:,} off" if taken else "")]
+                    QToolTip.showText(ev.globalPos(), "<br>".join(lines) + CLICK_HINT, self)
+                    return True
                 if hits:
-                    info = self._row_info.get(effect, {})
                     lines = [f"<b>{effect}</b> ({info.get('scope', '')}) @ {_fmt_tick(ms)}"
                              f" &nbsp;·&nbsp; uptime {info.get('uptime_pct', 0)}%"]
                     for iv in hits:

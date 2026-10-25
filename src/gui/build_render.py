@@ -32,7 +32,7 @@ from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     issues_html, werewolf_bar_html,
 )
-from pen_crit import CRIT_BASE, CRIT_CAP, player_totals
+from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
     WEAPON_SLOTS, WEIGHT_LABELS, display_quality, enchant_label, level_label,
@@ -430,8 +430,19 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> s
                           f"{eff_pen['over_pct']:.0f}% of it dealt over the cap")
     elif not pen_debuffs:
         pen_totals.append(f"<span style='color:{muted}'>{NO_DAMAGE_MEASURED}</span>")
-    cap_text = f"cap {_num(cap)}" + (" at a trial dummy" if group.get("dummy") else
-                                     (" in instanced content" if instanced else " overland"))
+    kind = group.get("kind") or ("instanced" if instanced else "overland")
+    if group.get("dummy"):
+        where = " at a trial dummy"
+    elif kind == "solo_dungeon":
+        # Every boss at 27,300 (pen_crit.SOLO_BOSS_ARMOUR); the final boss has more
+        where = (f" on a solo dungeon's boss (the final boss has {SOLO_FINAL_BOSS_ARMOUR:,}; "
+                 f"the game caps enemy armour at {ENEMY_ARMOUR_CAP:,})"
+                 if on == "boss" else " on a solo dungeon's trash")
+    elif instanced:
+        where = " in instanced content"
+    else:
+        where = " overland"
+    cap_text = f"cap {_num(cap)}{where}"
     pen_table = table(PEN_TITLE, cap_text, 3, pen_body, pen_totals)
 
     # Critical damage

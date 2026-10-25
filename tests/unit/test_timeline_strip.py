@@ -211,6 +211,70 @@ class TestTimelineStrip(unittest.TestCase):
         effect, ms, hits = found
         self.assertEqual(hits, [])
 
+    def test_the_armour_row_is_last_drawn_by_height_with_its_own_hover_and_summary(self):
+        """Issue #55: the target's armour less the group's debuffs, by height."""
+        from PySide6.QtCore import QEvent, QPoint
+        from PySide6.QtGui import QHelpEvent
+        from PySide6.QtWidgets import QToolTip
+        from gui.timeline_strip import LABEL_WIDTH
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 15,000 left",
+                  "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 15000,
+                  "lowest_left": 0, "no_debuff_pct": 33, "target": "Balorgh",
+                  "explain": "A solo dungeon's bosses have 27,300 armour.", "intervals": [
+                      {"start_ms": 0, "end_ms": 20_000, "stacks": 27300, "debuff_pen": 0,
+                       "debuffs": "", "target": "Balorgh", "source": ""},
+                      {"start_ms": 20_000, "end_ms": 40_000, "stacks": 18378, "debuff_pen": 8922,
+                       "debuffs": "Major Breach, Minor Breach", "target": "Balorgh", "source": ""},
+                      {"start_ms": 40_000, "end_ms": 60_000, "stacks": 0, "debuff_pen": 30000,
+                       "debuffs": "Major Breach, Crusher", "target": "Balorgh", "source": ""}]}
+        tracked = [{"name": "OB", "kind": "uptime", "scope": "boss", "text": "OB:17%",
+                    "uptime_pct": 16.7, "max_stacks": 0, "intervals": [
+                        {"start_ms": 30_000, "end_ms": 40_000, "stacks": 1, "target": "Test Boss"}]}]
+        self.strip.set_timeline(_sample_timeline(), tracked, armour)
+        # Last of all, under the debuff rows, with the row's own colour
+        self.assertEqual(self.strip._rows, ["Major Force", "Major Vulnerability", "OB", "Armour"])
+        info = self.strip._row_info["Armour"]
+        self.assertEqual((info["scope"], info["stacks_max"], info["zero_level"]), ("boss", 27300, True))
+        self.assertEqual(info["color"], self.strip.armour_color())
+        self.strip.show()
+        image = self.strip.grab().toImage()
+        rect = self.strip._row_rect(3)
+        color = info["color"].rgb()
+
+        def filled(ms):
+            x = int(self.strip._x_for_ms(ms))
+            return sum(1 for y in range(int(rect.top()), int(rect.bottom()) + 1)
+                       if image.pixel(x, y) == color)
+
+        full, part, none = filled(10_000), filled(30_000), filled(50_000)
+        self.assertEqual(full, int(rect.height()))
+        self.assertTrue(2 <= part < full, (part, full))
+        self.assertLessEqual(none, 1)  # no armour left: a hairline at most
+        # Hover on the bar: the armour left at that moment and the debuffs
+        pos = QPoint(int(self.strip._x_for_ms(30_000)), int(rect.center().y()))
+        self.assertTrue(self.strip.event(QHelpEvent(QEvent.ToolTip, pos, self.strip.mapToGlobal(pos))))
+        text = QToolTip.text()
+        self.assertIn("18,378 of 27,300 left", text)
+        self.assertIn("Major Breach, Minor Breach", text)
+        self.assertIn("8,922 off", text)
+        # Hover on the label: the whole label and where the estimate comes from
+        pos = QPoint(int(LABEL_WIDTH / 2), int(rect.center().y()))
+        self.assertTrue(self.strip.event(QHelpEvent(QEvent.ToolTip, pos, self.strip.mapToGlobal(pos))))
+        text = QToolTip.text()
+        self.assertIn("Armour 27,300 · 15,000 left", text)
+        self.assertIn("solo dungeon's bosses", text)
+        # The click summary is the row's own
+        html = self.strip.summary_html("Armour")
+        self.assertIn("15,000 armour left on average", html)
+        self.assertIn("0 at the lowest", html)
+        self.assertIn("33% of the fight", html)
+        self.assertIn("Balorgh", html)
+        # Without the series there is no row
+        self.strip.set_timeline(_sample_timeline(), tracked, None)
+        self.assertNotIn("Armour", self.strip._rows)
+        self.strip.set_timeline(_sample_timeline(), tracked, dict(armour, intervals=[]))
+        self.assertNotIn("Armour", self.strip._rows)
+
     def test_help_event_shows_tooltip(self):
         """QHelpEvent path end-to-end (task 2.2)."""
         from PySide6.QtCore import QEvent, QPoint
