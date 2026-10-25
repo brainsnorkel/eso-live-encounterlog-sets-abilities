@@ -282,6 +282,13 @@ def food_table() -> Optional[Dict[str, dict]]:
     return _bundled_food()
 
 
+@lru_cache(maxsize=1)
+def food_ids() -> frozenset:
+    """The table's ids, for the engine's effect hook (a food gained or
+    faded during a fight, build_issues); empty when the table is absent."""
+    return frozenset(str(k) for k in (food_table() or ()))
+
+
 def _stats_named(buff_type: str) -> int:
     """How many stats a LibFoodDrinkBuff type names: MAX_HEALTH_REGEN_ALL -> 4."""
     return sum(_FOOD_STATS.get(part, 0) for part in str(buff_type or "").split("_"))

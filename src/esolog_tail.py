@@ -27,10 +27,11 @@ from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from build_issues import (
-    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, structural_findings, worn_proc_sets,
+    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, food_findings, structural_findings,
+    worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
-from player_build import build_fields, has_restoration_staff, is_two_handed, race_name
+from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
 import pen_crit
 import werewolf
 
@@ -472,6 +473,13 @@ class CombatEncounter:
         # Proc-set effects by the unit that sourced them this fight, for the
         # build-issue rule on a set that never fires (build_issues)
         self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
+        # Each player's food and drink effects through the fight, for the
+        # build-issue rules on a meal (build_issues.food_findings): unit id
+        # -> {'up': the food ids on them, 'seen': every food id on them at
+        # any point of the fight, 'empty_since': the log ms the last faded
+        # (None while one is up or none ever was), 'ate': the log ms one
+        # was gained while none had been up since combat start}
+        self.food: Dict[str, dict] = {}
 
     def add_player(self, unit_id: str, name: str, handle: str, class_id: str = None, champion_points: int = 0):
         """Add a player to this encounter."""
@@ -625,6 +633,38 @@ class CombatEncounter:
     def note_proc(self, source_unit_id: str, ability_id: str):
         """A proc set's effect was sourced by a unit this fight (build_issues)."""
         self.proc_effects[source_unit_id].add(ability_id)
+
+    def _food_record(self, unit_id: str) -> dict:
+        return self.food.setdefault(
+            unit_id, {"up": set(), "seen": set(), "empty_since": None, "ate": None})
+
+    def seed_food(self, unit_id: str, ability_ids) -> None:
+        """The food ids a PLAYER_INFO line lists on a player as combat
+        starts. A fight the game cut in two writes the line again on the
+        same encounter: the ids are added to the record, which keeps what
+        it saw of the first half (build_issues)."""
+        record = self._food_record(unit_id)
+        ids = {str(a) for a in ability_ids}
+        record["up"].update(ids)
+        record["seen"].update(ids)
+
+    def note_food(self, unit_id: str, change: str, ability_id: str, timestamp_ms: int) -> None:
+        """A food or drink effect gained or faded on a player during the
+        fight. A consumable logged as several effects is out only when the
+        last of them has faded; a meal gained while none had been up since
+        combat start is the one the no-food finding notes (build_issues)."""
+        record = self._food_record(unit_id)
+        up = record["up"]
+        if change == "GAINED":
+            if not up and record["ate"] is None and record["empty_since"] is None:
+                record["ate"] = timestamp_ms
+            up.add(str(ability_id))
+            record["seen"].add(str(ability_id))
+            record["empty_since"] = None
+        elif change == "FADED":
+            up.discard(str(ability_id))
+            if not up and record["empty_since"] is None:
+                record["empty_since"] = timestamp_ms
 
     def fight_units(self) -> Dict[str, tuple]:
         """What effect_rules measures a fight's rules on, unit id -> (kind,
@@ -1260,6 +1300,11 @@ class ESOLogAnalyzer(ListenerMixin):
                                                     front_bar_slots, back_bar_slots)
                 player.set_gear(player_info.gear_data)
                 player.long_term_effects = list(player_info.ability_ids)
+                # The food and drink effects on the player as combat starts,
+                # for the rule on a meal that runs out (build_issues)
+                self.current_encounter.seed_food(
+                    player_info.unit_id,
+                    [a for a in player_info.ability_ids if str(a) in food_ids()])
                 # Buffs on the player as combat starts, with no GAINED line
                 # of their own (Lucent Echoes at the pull): the pen/crit
                 # tracker opens their spans here (pen_crit)
@@ -2045,6 +2090,14 @@ class ESOLogAnalyzer(ListenerMixin):
                     and extracted is not None and self.current_encounter):
                 self.current_encounter.note_proc(source_unit_id, ability_id)
 
+            # A food or drink effect coming or going on a player: the
+            # build-issue rules on a meal (build_issues.food_findings)
+            if (effect_type in ("GAINED", "FADED") and ability_id in food_ids()
+                    and extracted is not None and self.current_encounter
+                    and self._unit_kind(target_unit_id) in ("self", "group")):
+                self.current_encounter.note_food(target_unit_id, effect_type, ability_id,
+                                                entry.timestamp)
+
             # A Class Mastery effect names its holder, the source: a proc
             # mastery is never in the PLAYER_INFO passive list (eso_sets).
             # Kept on the player and in their session for the rest of the
@@ -2420,6 +2473,12 @@ class ESOLogAnalyzer(ListenerMixin):
                                     damage_ratio=damage_ratio,
                                     out_heals=player_healing > player_damage)
                 + self.build_issues.findings(player_key, worn))
+            # The rules on a meal: none at combat start, or one that ran out
+            # (build_issues); not judged when the food table could not load
+            if 'food' in entry.players[-1]:
+                entry.players[-1]['build_issues'] += food_findings(
+                    entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
+                    name_of=ability_name)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
