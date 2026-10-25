@@ -85,11 +85,15 @@ In the trial fights the six group buffs were there most of the time
 71%, Major Force and Powerful Assault 52%), in the four-player fights
 mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
-trial fight. So the six group buffs are ``expected large``, the taunt
-``expected small large``, and the boss debuffs and Crux nothing: they
-depend on who is in the group, and show when they happened. The tracker
-alone, without the engine's units, knows no group size and shows every
-item.
+trial fight. So five of the six group buffs are ``expected large``, the
+taunt ``expected small large``, and the boss debuffs and Crux nothing:
+they depend on who is in the group, and show when they happened.
+Powerful Assault was expected too until issue #48: the set's buff is
+usual in a trial group, but no role has to bring it, so a fight without
+it is not a mistake worth a red 0% row, and its rule shows when the buff
+was seen, like the debuffs (tracking version 4 takes the words off a
+saved line again, see upgrade_rules_text). The tracker alone, without the
+engine's units, knows no group size and shows every item.
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -162,17 +166,18 @@ UPTIME_LINE_RULES = """\
 Major Courage    = 109966 on group expected large
 Major Force      = 61747 on group expected large
 Major Slayer     = 93109 on group expected large
-Powerful Assault = 61771 on group expected large
+Powerful Assault = 61771 on group
 Lucent Echoes    = 220015 on group expected large
 Pearlescent Ward = 172621 on group expected large
 Taunt            = 38254 on boss each expected small large
 """
 
 # The words a saved rules text from before ``expected`` gets on these
-# seven, by name (app_config's upgrade to tracking version 3)
+# six, by name (app_config's upgrade to tracking version 3); Powerful
+# Assault gets none since issue #48
 DEFAULT_EXPECTED = {
     "major courage": "large", "major force": "large", "major slayer": "large",
-    "powerful assault": "large", "lucent echoes": "large", "pearlescent ward": "large",
+    "lucent echoes": "large", "pearlescent ward": "large",
     "taunt": "small large",
 }
 
@@ -211,7 +216,7 @@ EXAMPLE_RULES = [
      "Major Slayer = 93109 on group expected large"),
     ("Powerful Assault on the group",
      "Uptime of the Powerful Assault set's buff on anyone in the group",
-     "Powerful Assault = 61771 on group expected large"),
+     "Powerful Assault = 61771 on group"),
     ("Lucent Echoes on the group",
      "Uptime of the Lucent Echoes set's buff on anyone in the group",
      "Lucent Echoes = 220015 on group expected large"),
@@ -388,14 +393,18 @@ def _parse_line(line: str):
     return Rule(name, frozenset(ids), scope, kind, expected), None
 
 
-def upgrade_rules_text(text: str) -> str:
-    """A rules text saved before tracking version 3, brought up to date
-    once (app_config): each line naming one of the seven group-buff and
-    taunt rules that has no ``expected`` of its own gets the default's
-    words appended, and a ``Touch of Z'en = 126597 ... stacks`` line, whose
-    stack count the log never carries (issue #27), measures ``dots``
-    instead. The line's own spelling, ids and spacing are kept; any other
-    line is left exactly as written, so the upgrade is safe to repeat."""
+def upgrade_rules_text(text: str, version: int) -> str:
+    """A rules text saved at tracking *version* (0 when the file has none),
+    brought up to date once (app_config). Before version 3: each line
+    naming one of the default group-buff and taunt rules that has no
+    ``expected`` of its own gets the default's words appended, and a
+    ``Touch of Z'en = 126597 ... stacks`` line, whose stack count the log
+    never carries (issue #27), measures ``dots`` instead. Before version 4:
+    a Powerful Assault line reading ``expected large``, the words version 3
+    put on every such line, loses them again (issue #48); a line with other
+    sizes, ``expected all`` say, is the user's own and is kept. The line's
+    own spelling, ids and spacing are kept; any other line is left exactly
+    as written, so the upgrade is safe to repeat."""
     out = []
     for raw in (text or "").splitlines():
         line = raw.strip()
@@ -403,10 +412,13 @@ def upgrade_rules_text(text: str) -> str:
             rule, _error = _parse_line(line)
             if rule is not None:
                 name = rule.name.lower()
-                if name in DEFAULT_EXPECTED and not rule.expected:
-                    raw = raw.rstrip() + " expected " + DEFAULT_EXPECTED[name]
-                elif name == "touch of z'en" and rule.kind == "stacks" and rule.ids == {"126597"}:
-                    raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
+                if version < 3:
+                    if name in DEFAULT_EXPECTED and not rule.expected:
+                        raw = raw.rstrip() + " expected " + DEFAULT_EXPECTED[name]
+                    elif name == "touch of z'en" and rule.kind == "stacks" and rule.ids == {"126597"}:
+                        raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
+                if version < 4 and name == "powerful assault" and rule.expected == {"large"}:
+                    raw = re.sub(r"\s+expected\s+large\b", "", raw, count=1, flags=re.IGNORECASE)
         out.append(raw)
     return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
 

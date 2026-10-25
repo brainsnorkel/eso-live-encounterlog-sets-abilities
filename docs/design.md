@@ -910,11 +910,15 @@ In the trial fights the six group buffs were there most of the time
 71%, Major Force and Powerful Assault 52%), in the four-player fights
 mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
-trial fight. So the six group buffs are ``expected large``, the taunt
-``expected small large``, and the boss debuffs and Crux nothing: they
-depend on who is in the group, and show when they happened. The tracker
-alone, without the engine's units, knows no group size and shows every
-item.
+trial fight. So five of the six group buffs are ``expected large``, the
+taunt ``expected small large``, and the boss debuffs and Crux nothing:
+they depend on who is in the group, and show when they happened.
+Powerful Assault was expected too until issue #48: the set's buff is
+usual in a trial group, but no role has to bring it, so a fight without
+it is not a mistake worth a red 0% row, and its rule shows when the buff
+was seen, like the debuffs (tracking version 4 takes the words off a
+saved line again, see upgrade_rules_text). The tracker alone, without the
+engine's units, knows no group size and shows every item.
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -958,7 +962,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:512](../src/effect_rules.py#L512)*
+*[src/effect_rules.py:524](../src/effect_rules.py#L524)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -975,7 +979,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:708](../src/effect_rules.py#L708)*
+*[src/effect_rules.py:720](../src/effect_rules.py#L720)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1009,7 +1013,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:88](../src/app_config.py#L88)*
+*[src/app_config.py:89](../src/app_config.py#L89)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1017,12 +1021,15 @@ line's group buffs and taunt became rules (tracking.version absent,
 would lose those items on upgrade: the missing ones are put in
 front of it, by name, so a rule the user had already written under
 the same name stays theirs. A text saved before version 3 then has
-the seven default rules given their ``expected`` words and Touch of
-Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
+the default rules that are expected given their ``expected`` words
+and Touch of Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
 a renamed or already-flagged line is left alone), so a trial fight
-still shows a missing group buff at 0% after the upgrade. Nothing
-is written back; the version is saved with the next Save, and both
-steps are harmless to repeat.
+still shows a missing group buff at 0% after the upgrade. A text
+saved before version 4 has the ``expected large`` that version 3
+put on its Powerful Assault line taken off again (issue #48: the
+one default no longer expected). Nothing is written back; the
+version is saved with the next Save, and every step is harmless to
+repeat.
 
 The timeline strip's old switch (experimental.buff_timeline, until
 issue #25 made the strip the only view of the rules) is dropped
@@ -1284,7 +1291,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:585](../src/effect_rules.py#L585)*
+*[src/effect_rules.py:597](../src/effect_rules.py#L597)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.

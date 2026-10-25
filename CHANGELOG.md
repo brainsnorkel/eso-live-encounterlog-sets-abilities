@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Tracked effects** (#48): Powerful Assault is no longer expected in a large group. The set's buff is usual in a trial, but nobody has to bring it, so a fight without it is not a mistake worth a red `0%` row; its row now appears only when someone had it, like the boss debuffs. The other five group buffs and the taunt are expected as before. A saved rules text has the `expected large` that 0.12.0 put on its Powerful Assault line taken off again when the app starts; a line you gave other sizes (`expected all`, say) or renamed is left as written. The Examples list offers the line without the words
+
 ## [0.13.2] - 2026-10-24
 
 ### Changed
