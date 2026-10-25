@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3249](../src/esolog_tail.py#L3249)*
+*[src/esolog_tail.py:3250](../src/esolog_tail.py#L3250)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -848,15 +848,42 @@ rule, player-fights / distinct characters in that survey:
   Judged per fight with no floor: the fact is about combat start, and the
   cue clears once the player eats. Not judged when the table cannot be
   loaded (the player dict then has no 'food' key).
+- **No Minor Slayer in a veteran trial group** (issue #62; 787 of 10,572
+  veteran DPS player-fights, 7%, and 29 of 225 characters, in the 84 newest
+  trial split logs of May to October 2026 with 1,581 fights and 18,684
+  player-fights). Minor Slayer is 5% more damage to dungeon, trial and
+  arena monsters. Every trial's sets grant it at three pieces, so do Ossein
+  Cage's four, and Oakensoul Ring grants it outright: SLAYER_SETS holds the
+  38 three-piece sets by game set id, from UESP's set summary (the
+  esobuild asset export's set_summary.json, its gameId field), and the ring
+  is OAKENSOUL_SET_ID. The maintainer's scope (2026-10-26): damage dealers
+  only, since healers carried a source in 47% of their player-fights and
+  tanks in 13%; large groups only (five or more players,
+  effect_rules.group_size_class, the class the uptime line's "expected
+  large" reads); veteran difficulty only, since in the 113 normal-difficulty
+  fights 46% of the DPS lacked one; and a listed set at three pieces on
+  one bar is enough (1% of DPS player-fights: a body piece of Relequen with
+  a back-bar staff). With the heavy-armor rule's never-taunted guard, for
+  the same reason. Judged from the gear, not the effect: the set bonus is
+  ability 147226 in the PLAYER_INFO effects (listed for 10,935 of the
+  10,936 wearers with three pieces on both bars), but the ring's is not
+  (1,110 of 1,349 ring wearers listed no 147226; the 45596 "Slayer" they
+  carry is the Fighters Guild passive). A PLAYER_INFO with an empty gear
+  list (130 player-fights, 58 of them listing 147226: the empty-equipped-set
+  trap of issue #49) is not judged. Per fight, no floor: the gear at combat
+  start is the fact, and a changed build clears it next fight. The builds
+  without were Deadly Strike with Tide-Born Wildstalker or Spattering
+  Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
+  Order's Wrath, so the finding names the complete sets worn instead.
 
 The lists a later rules text could lift out (the maintainer's separate
-issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
-OAKENSOUL_SET_ID, the taunt and pull tables, the weapon lines table. The
-checks themselves are code.
+issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
+ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables, the
+weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:632](../src/build_issues.py#L632)*
+*[src/build_issues.py:735](../src/build_issues.py#L735)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's

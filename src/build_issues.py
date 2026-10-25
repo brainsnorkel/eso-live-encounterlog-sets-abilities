@@ -135,11 +135,38 @@ rule, player-fights / distinct characters in that survey:
   Judged per fight with no floor: the fact is about combat start, and the
   cue clears once the player eats. Not judged when the table cannot be
   loaded (the player dict then has no 'food' key).
+- **No Minor Slayer in a veteran trial group** (issue #62; 787 of 10,572
+  veteran DPS player-fights, 7%, and 29 of 225 characters, in the 84 newest
+  trial split logs of May to October 2026 with 1,581 fights and 18,684
+  player-fights). Minor Slayer is 5% more damage to dungeon, trial and
+  arena monsters. Every trial's sets grant it at three pieces, so do Ossein
+  Cage's four, and Oakensoul Ring grants it outright: SLAYER_SETS holds the
+  38 three-piece sets by game set id, from UESP's set summary (the
+  esobuild asset export's set_summary.json, its gameId field), and the ring
+  is OAKENSOUL_SET_ID. The maintainer's scope (2026-10-26): damage dealers
+  only, since healers carried a source in 47% of their player-fights and
+  tanks in 13%; large groups only (five or more players,
+  effect_rules.group_size_class, the class the uptime line's "expected
+  large" reads); veteran difficulty only, since in the 113 normal-difficulty
+  fights 46% of the DPS lacked one; and a listed set at three pieces on
+  one bar is enough (1% of DPS player-fights: a body piece of Relequen with
+  a back-bar staff). With the heavy-armor rule's never-taunted guard, for
+  the same reason. Judged from the gear, not the effect: the set bonus is
+  ability 147226 in the PLAYER_INFO effects (listed for 10,935 of the
+  10,936 wearers with three pieces on both bars), but the ring's is not
+  (1,110 of 1,349 ring wearers listed no 147226; the 45596 "Slayer" they
+  carry is the Fighters Guild passive). A PLAYER_INFO with an empty gear
+  list (130 player-fights, 58 of them listing 147226: the empty-equipped-set
+  trap of issue #49) is not judged. Per fight, no floor: the gear at combat
+  start is the fact, and a changed build clears it next fight. The builds
+  without were Deadly Strike with Tide-Born Wildstalker or Spattering
+  Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
+  Order's Wrath, so the finding names the complete sets worn instead.
 
 The lists a later rules text could lift out (the maintainer's separate
-issue) are module data: GROUP_SETS, PROC_SETS, ELEMENTAL_DRAIN_IDS,
-OAKENSOUL_SET_ID, the taunt and pull tables, the weapon lines table. The
-checks themselves are code.
+issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
+ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables, the
+weapon lines table. The checks themselves are code.
 """
 
 import json
@@ -147,6 +174,7 @@ from functools import lru_cache
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
 from ability_icons import bundle_root
+from effect_rules import group_size_class
 from player_build import (
     ARMOR_SLOTS,
     NO_VALUE,
@@ -186,6 +214,32 @@ GROUP_SETS = {
     "768": "Lucent Echoes", "771": "Perfected Lucent Echoes",
     "769": "Xoryn's Masterpiece", "770": "Perfected Xoryn's Masterpiece",
 }
+# The sets whose three-piece bonus is Minor Slayer, by set id (UESP's set
+# summary by game id): every trial's sets and Ossein Cage's. Oakensoul Ring
+# (OAKENSOUL_SET_ID) grants the buff at one piece
+SLAYER_PIECES = 3
+SLAYER_SETS = {
+    "172": "Infallible Mage", "173": "Vicious Serpent",
+    "230": "Moondancer", "232": "Roar of Alkosh",
+    "331": "War Machine", "332": "Master Architect",
+    "389": "Arms of Relequen", "393": "Perfected Arms of Relequen",
+    "390": "Mantle of Siroria", "394": "Perfected Mantle of Siroria",
+    "444": "False God's Devotion", "449": "Perfected False God's Devotion",
+    "445": "Tooth of Lokkestiiz", "450": "Perfected Tooth of Lokkestiiz",
+    "496": "Roaring Opportunist", "497": "Perfected Roaring Opportunist",
+    "498": "Yandir's Might", "499": "Perfected Yandir's Might",
+    "586": "Sul-Xan's Torment", "590": "Perfected Sul-Xan's Torment",
+    "587": "Bahsei's Mania", "591": "Perfected Bahsei's Mania",
+    "646": "Whorl of the Depths", "653": "Perfected Whorl of the Depths",
+    "647": "Coral Riptide", "652": "Perfected Coral Riptide",
+    "701": "Peace and Serenity", "708": "Perfected Peace and Serenity",
+    "702": "Ansuul's Torment", "707": "Perfected Ansuul's Torment",
+    "766": "Mora Scribe's Thesis", "773": "Perfected Mora Scribe's Thesis",
+    "767": "Slivers of the Null Arca", "772": "Perfected Slivers of the Null Arca",
+    "814": "Harmony in Chaos", "821": "Perfected Harmony in Chaos",
+    "815": "Kazpian's Cruel Signet", "820": "Perfected Kazpian's Cruel Signet",
+}
+COMPLETE_PIECES = 5  # a set worn complete, for naming what a build has instead
 
 # Taunts and pulls, by the ids a bar can carry (UESP playerSkills for every
 # rank, plus the ids the bars held in the September and October 2026 logs)
@@ -304,6 +358,15 @@ FOOD_RAN_OUT_TITLE = "{food} ran out {at} into the fight"
 FOOD_RAN_OUT_DETAIL = (
     "The player's {food} faded at {at} and nothing was eaten before the fight ended, so the "
     "rest of it was fought without the consumable's maximum stats or recovery.")
+SLAYER_TITLE = "No Minor Slayer in a veteran trial group"
+SLAYER_DETAIL = (
+    "Minor Slayer is 5% more damage to dungeon, trial and arena monsters for as long as it "
+    "is up. Every trial's sets grant it at three pieces, so do Ossein Cage's, and Oakensoul "
+    "Ring grants it outright; nothing on this build does.{wore} The rule judges damage "
+    "dealers in a veteran group of five or more, from the gear logged at combat start; a "
+    "listed set at three pieces on one bar is enough.")
+SLAYER_WORE_ONE = " The complete set here, {sets}, gives other things."
+SLAYER_WORE = " The complete sets here, {sets}, give other things."
 
 
 def _clock(ms: int) -> str:
@@ -402,6 +465,29 @@ def wears_oakensoul(gear: Dict[str, List[str]]) -> bool:
     return any(len(item) > 6 and str(item[6]) == OAKENSOUL_SET_ID for item in gear.values())
 
 
+def slayer_sets(gear: Dict[str, List[str]]) -> Set[str]:
+    """The SLAYER_SETS ids this build has at three or more active pieces on
+    either bar: each is a Minor Slayer source, on that bar at least."""
+    return {set_id for set_id, (front, back) in piece_counts(gear or {}).items()
+            if set_id in SLAYER_SETS
+            and (front >= SLAYER_PIECES or (back or 0) >= SLAYER_PIECES)}
+
+
+def complete_sets(gear: Dict[str, List[str]],
+                  set_name_of: Optional[Callable[[str], Optional[str]]] = None) -> List[str]:
+    """The names of the sets this build wears complete (five pieces on
+    either bar), sorted; a set the names do not know is 'set <id>'."""
+    return sorted(
+        (set_name_of(set_id) if set_name_of else None) or SLAYER_SETS.get(set_id) or f"set {set_id}"
+        for set_id, (front, back) in piece_counts(gear or {}).items()
+        if front >= COMPLETE_PIECES or (back or 0) >= COMPLETE_PIECES)
+
+
+def _join(names: List[str]) -> str:
+    """'A', 'A and B', 'A, B and C'."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def _slot_is(slot: dict, names: frozenset, ids: frozenset, focus: str, prefix: str) -> bool:
     """Whether a bar slot is one of the skills *ids* or *names*, or a
     scribed skill whose focus script is *focus* (which gives it a name
@@ -486,20 +572,24 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
                         types: Optional[Dict[str, str]] = None,
                         skills: Optional[Dict[str, dict]] = None,
                         damage_ratio: Optional[float] = None,
-                        out_heals: bool = False) -> List[dict]:
+                        out_heals: bool = False, players: Optional[int] = None,
+                        veteran: bool = False) -> List[dict]:
     """The per-fight rules on one build: Nirnhoned off hand, duplicate
-    glyph, heavy armor on a DPS who has not taunted, a tank with no taunt
-    or pull, weapon skill on the wrong bar, Elemental Drain, a group set on
-    one bar; in that order.
+    glyph, heavy armor on a DPS who has not taunted, no Minor Slayer on a
+    DPS in a veteran trial group, a tank with no taunt or pull, weapon
+    skill on the wrong bar, Elemental Drain, a group set on one bar; in
+    that order.
 
     *gear* is slot -> the item's eleven log fields, the bar slots the
     engine's {'id', 'name', 'icon'} dicts, *role* the app's 'T', 'H' or
     'D', *taunted* whether the player taunted this session, *damage_ratio*
     the player's damage this fight over an equal share of the group's (1.0
     is an equal share; None when the fight had no damage), *out_heals*
-    whether they healed others for more than they dealt. *set_name_of*
-    names a set id (the bundled set data by default); *weights*, *types*
-    and *skills* override the bundled tables for tests.
+    whether they healed others for more than they dealt, *players* how
+    many players the fight's group had (None when unknown), *veteran*
+    whether the zone is at veteran difficulty. *set_name_of* names a set
+    id (the bundled set data by default); *weights*, *types* and *skills*
+    override the bundled tables for tests.
     """
     gear = gear or {}
     findings: List[dict] = []
@@ -530,6 +620,19 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
         if heavy >= HEAVY_PIECES_FLAGGED:
             findings.append(_finding(
                 "heavy-armor", f"{heavy} heavy armor pieces on a damage dealer", HEAVY_DETAIL))
+
+    # No Minor Slayer on a damage dealer in a veteran trial group (see the
+    # module notes): judged from the gear, since Oakensoul's buff is not in
+    # the PLAYER_INFO effects, and never on an empty gear list
+    if (role == "D" and not taunted and veteran and gear
+            and group_size_class(players or 0) == "large"
+            and not oakensoul and not slayer_sets(gear)):
+        complete = complete_sets(gear, set_name_of)
+        wore = ("" if not complete
+                else (SLAYER_WORE_ONE if len(complete) == 1 else SLAYER_WORE)
+                .format(sets=_join(complete)))
+        findings.append(_finding(
+            "no-minor-slayer", SLAYER_TITLE, SLAYER_DETAIL.format(wore=wore)))
 
     # A tank with nothing to hold the boss. The role's health pool alone is
     # not a tank (see the module notes), so tank gear, a small share of the

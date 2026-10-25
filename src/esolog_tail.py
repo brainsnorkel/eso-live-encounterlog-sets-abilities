@@ -2471,7 +2471,8 @@ class ESOLogAnalyzer(ListenerMixin):
                                     role, taunted=self.build_issues.has_taunted(player_key),
                                     set_name_of=gear_set_db.get_set_name_by_set_id,
                                     damage_ratio=damage_ratio,
-                                    out_heals=player_healing > player_damage)
+                                    out_heals=player_healing > player_damage,
+                                    players=len(enc.players), veteran=entry.is_vet)
                 + self.build_issues.findings(player_key, worn))
             # The rules on a meal: none at combat start, or one that ran out
             # (build_issues); not judged when the food table could not load
