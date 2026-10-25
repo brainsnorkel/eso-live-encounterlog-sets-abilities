@@ -489,6 +489,32 @@ class TestEngine(unittest.TestCase):
         totals = pen_crit.player_totals(entry.players[0]["pen_crit"], entry.pen_crit, {})
         self.assertEqual(totals["cap"], 27300)
 
+    def test_the_rewind_and_the_startup_lookback_keep_the_zone_id(self):
+        import tempfile
+
+        from esolog_tail import ESOLogAnalyzer, LogFileMonitor
+        analyzer = ESOLogAnalyzer()
+        analyzer.process_log_entry(analyzer.log_parser.parse_line(
+            '1000,ZONE_CHANGED,1592,"March of Sacrifices",NONE'))
+        self.assertEqual((analyzer.current_zone, analyzer.current_zone_id, analyzer.current_difficulty),
+                         ("March of Sacrifices", "1592", "NONE"))
+        # A rewind restores the three together (it restored the name alone before)
+        analyzer.current_zone, analyzer.current_zone_id, analyzer.current_difficulty = None, "", None
+        self.assertTrue(analyzer._rewind_to_last_zone())
+        self.assertEqual((analyzer.current_zone, analyzer.current_zone_id, analyzer.current_difficulty),
+                         ("March of Sacrifices", "1592", "NONE"))
+        # The startup lookback over a log's tail seeds the id too
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / "Encounter.log"
+            log.write_text('1,BEGIN_LOG,1759600000000,15,"NA Megaserver","en","eso.live.12.1"\n'
+                           '5,ZONE_CHANGED,1055,"March of Sacrifices",VETERAN\n'
+                           '9,ZONE_CHANGED,1592,"March of Sacrifices",NONE\n', encoding="utf-8")
+            fresh = ESOLogAnalyzer()
+            LogFileMonitor(fresh, log)._initialize_zone_history()
+            self.assertEqual((fresh.current_zone, fresh.current_zone_id, fresh.current_difficulty),
+                             ("March of Sacrifices", "1592", "NONE"))
+            self.assertEqual(fresh.zone_history[-1][1:], ("March of Sacrifices", "1592", "NONE"))
+
     def test_entry_and_player_fields(self):
         lines = list(SESSION)
         extra = [_effect(10000, "GAINED", 61743, _player_state(2), _unit_state(70)),

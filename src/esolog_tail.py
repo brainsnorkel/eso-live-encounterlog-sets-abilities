@@ -3311,16 +3311,16 @@ class LogFileMonitor:
                 zone_name = entry.fields[1].strip('"')
                 difficulty = entry.fields[2].strip('"')
                 self.analyzer._add_zone_to_history(entry.timestamp, zone_name, zone_id, difficulty)
-                latest_zone = (zone_name, difficulty, zone_id)
+                latest_zone = (zone_name, zone_id, difficulty)  # zone_history's order
                 if not zone_found:
                     _console(f"{Fore.GREEN}Found recent zone: {zone_name}{Style.RESET_ALL}")
                     zone_found = True
 
         if latest_zone is not None:
             # Seed current zone from the lookback and tell frontends
-            (self.analyzer.current_zone, self.analyzer.current_difficulty,
-             self.analyzer.current_zone_id) = latest_zone
-            self.analyzer._notify('on_zone_changed', latest_zone[0], latest_zone[1])
+            (self.analyzer.current_zone, self.analyzer.current_zone_id,
+             self.analyzer.current_difficulty) = latest_zone
+            self.analyzer._notify('on_zone_changed', latest_zone[0], latest_zone[2])
         else:
             _console(f"{Fore.YELLOW}No recent zone changes found in log{Style.RESET_ALL}")
 
