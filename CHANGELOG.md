@@ -2,8 +2,13 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.13.3] - 2026-10-25
 
+### Added
+- **Elemental Catalyst tracked** (#53): a default rule `Elemental Catalyst = 142610 142652 142653 on boss`, the share of the fight any of the set's three weaknesses (Flame, Frost, Shock: critical damage taken up 5% each) was on the boss, shown when someone applied it like the other boss debuffs, and in the Examples list. The set is an alternative to Lucent Echoes for a group's critical damage. In all 891 split logs of 2026 it appears in two Kyne's Aegis sessions, both also running Lucent Echoes, with a DPS wearer in one (22 of 24 fights, median uptime 53%) and a tank in the other (one fight, 78%); all three weaknesses were up together for 7% and 51% of those fights, so the row usually shows one weakness, not the full 15%. A saved rules text is not given the line; tick it in Examples
+
+### Changed
+- **Tracked effects** (#48): Powerful Assault is no longer expected in a large group. The set's buff is usual in a trial, but nobody has to bring it, so a fight without it is not a mistake worth a red `0%` row; its row now appears only when someone had it, like the boss debuffs. The other five group buffs and the taunt are expected as before. A saved rules text has the `expected large` that 0.12.0 put on its Powerful Assault line taken off again when the app starts; a line you gave other sizes (`expected all`, say) or renamed is left as written. The Examples list offers the line without the words
 ### Fixed
 - **Werewolf bar** (#49): the game sometimes writes a werewolf bar in place of a player's human bars, and the Rockgrove log of 2026-10-24 showed that bar can be stale: one bar written as both human bars, three werewolf skills beside Razor Caltrops and Inner Fire, for a player in form the whole log who cast Hircine's Rage and Ferocious Roar in every fight and never those two. The app took the logged bar for the werewolf bar, drew it as both human bars and left the Werewolf line empty. A logged bar holding three or more werewolf skills is now dropped before anything reads it, the build-issue rules included, and the Werewolf line is rebuilt from the player's casts for every werewolf alike. Over the September and October split logs this changes three players: that one, and two anonymous players on client 12.0 whose werewolf bar was logged as the front bar and no longer shows twice.
 

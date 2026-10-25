@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:1962](../src/esolog_tail.py#L1962)*
+*[src/esolog_tail.py:1965](../src/esolog_tail.py#L1965)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1424](../src/esolog_tail.py#L1424)*
+*[src/esolog_tail.py:1427](../src/esolog_tail.py#L1427)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1439](../src/esolog_tail.py#L1439)*
+*[src/esolog_tail.py:1442](../src/esolog_tail.py#L1442)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3179](../src/esolog_tail.py#L3179)*
+*[src/esolog_tail.py:3182](../src/esolog_tail.py#L3182)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -921,11 +921,33 @@ In the trial fights the six group buffs were there most of the time
 71%, Major Force and Powerful Assault 52%), in the four-player fights
 mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
-trial fight. So the six group buffs are ``expected large``, the taunt
-``expected small large``, and the boss debuffs and Crux nothing: they
-depend on who is in the group, and show when they happened. The tracker
-alone, without the engine's units, knows no group size and shows every
-item.
+trial fight. So five of the six group buffs are ``expected large``, the
+taunt ``expected small large``, and the boss debuffs and Crux nothing:
+they depend on who is in the group, and show when they happened.
+Powerful Assault was expected too until issue #48: the set's buff is
+usual in a trial group, but no role has to bring it, so a fight without
+it is not a mistake worth a red 0% row, and its rule shows when the buff
+was seen, like the debuffs (tracking version 4 takes the words off a
+saved line again, see upgrade_rules_text). The tracker alone, without the
+engine's units, knows no group size and shows every item.
+
+Elemental Catalyst (issue #53): the set's three weaknesses (Flame 142610,
+Frost 142652, Shock 142653; critical damage taken up 5% each, as pen_crit
+values them) are one default rule on the boss, shown when someone applied
+them and not expected. The set is an alternative to Lucent Echoes for a
+group's critical damage, run where Echoes is not, so a group running it
+should see it; in these logs it is rare. Every split log of 2026 (891 log
+files with a fight, 607 of them veteran trials): the weaknesses appear in
+4 files, two Kyne's Aegis sessions (three files are the splitter's copies
+of one), both also running Lucent Echoes, which 515 of the 607 trial logs
+have; no dungeon or arena log has them, and none of the 92 trial logs
+without Echoes has Catalyst instead. In the two sessions the wearer was a
+DPS in January (22 of 24 fights, median uptime 53%, all three weaknesses
+up together 7% of a fight) and a tank in May (one fight, 78% and 51%): the
+rule's uptime, any weakness up, is well above the time the full 15% is in
+effect, one weakness being the usual state. A measure counting the ids up
+at once, and a way to say a group needs one of Echoes and Catalyst, are
+left for when the logs show the set in use.
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -969,7 +991,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:512](../src/effect_rules.py#L512)*
+*[src/effect_rules.py:547](../src/effect_rules.py#L547)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -986,7 +1008,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:708](../src/effect_rules.py#L708)*
+*[src/effect_rules.py:743](../src/effect_rules.py#L743)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1020,7 +1042,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:88](../src/app_config.py#L88)*
+*[src/app_config.py:89](../src/app_config.py#L89)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1028,12 +1050,15 @@ line's group buffs and taunt became rules (tracking.version absent,
 would lose those items on upgrade: the missing ones are put in
 front of it, by name, so a rule the user had already written under
 the same name stays theirs. A text saved before version 3 then has
-the seven default rules given their ``expected`` words and Touch of
-Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
+the default rules that are expected given their ``expected`` words
+and Touch of Z'en's ``stacks`` turned into ``dots``, by name (upgrade_rules_text:
 a renamed or already-flagged line is left alone), so a trial fight
-still shows a missing group buff at 0% after the upgrade. Nothing
-is written back; the version is saved with the next Save, and both
-steps are harmless to repeat.
+still shows a missing group buff at 0% after the upgrade. A text
+saved before version 4 has the ``expected large`` that version 3
+put on its Powerful Assault line taken off again (issue #48: the
+one default no longer expected). Nothing is written back; the
+version is saved with the next Save, and every step is harmless to
+repeat.
 
 The timeline strip's old switch (experimental.buff_timeline, until
 issue #25 made the strip the only view of the rules) is dropped
@@ -1295,7 +1320,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:585](../src/effect_rules.py#L585)*
+*[src/effect_rules.py:620](../src/effect_rules.py#L620)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.

@@ -51,11 +51,13 @@ class TestTrackingRulesUpgrade(unittest.TestCase):
                                frozenset({"small", "large"}))])
 
     def test_a_version_2_text_gains_expected_words_and_zen_counts_dots(self):
-        """Issue #13 and #27: the seven defaults get their words by name,
-        Touch of Z'en's stacks become dots; a renamed or already-flagged
-        line, and every other line, stays as written."""
+        """Issue #13 and #27: the expected defaults get their words by name
+        (Powerful Assault, not expected since #48, gets none), Touch of
+        Z'en's stacks become dots; a renamed or already-flagged line, and
+        every other line, stays as written."""
         text = ("# my rules\n"
                 "Major Courage = 109966 on group\n"
+                "Powerful Assault = 61771 on group\n"
                 "Taunt  =  38254 on boss each\n"
                 "Touch of Z'en = 126597 on boss stacks\n"
                 "Courage = 109966 on group\n"
@@ -65,15 +67,46 @@ class TestTrackingRulesUpgrade(unittest.TestCase):
         self.assertEqual(config.get("tracking.rules"),
                          "# my rules\n"
                          "Major Courage = 109966 on group expected large\n"
+                         "Powerful Assault = 61771 on group\n"
                          "Taunt  =  38254 on boss each expected small large\n"
                          "Touch of Z'en = 126597 on boss dots\n"
                          "Courage = 109966 on group\n"
                          "Major Force = 61747 on group expected all\n"
                          "Mine = 1 on boss\n")
         self.assertEqual(config.get("tracking.version"), TRACKING_VERSION)
-        # Already at version 3: left alone, whatever it says
+        # Already at version 3, and nothing for version 4 to take off: left alone
         config = self._stored({"tracking": {"rules": text, "version": 3}})
         self.assertEqual(config.get("tracking.rules"), text)
+
+    def test_a_version_3_text_loses_powerful_assaults_expected_large(self):
+        """Issue #48: Powerful Assault is no longer expected, so the words
+        version 3 put on its line come off again, in the user's own
+        spelling of the line; a line with its own sizes, a renamed line, a
+        comment and every other line stay as written."""
+        text = ("Powerful Assault = 61771 on group expected large\n"
+                "powerful assault = expected Large 61771 61772 group\n"
+                "Powerful Assault = 61771 on group expected all\n"
+                "Powerful Assault = 61771 on group expected small large\n"
+                "PA = 61771 on group expected large\n"
+                "Major Courage = 109966 on group expected large\n"
+                "# Powerful Assault = 61771 on group expected large\n")
+        config = self._stored({"tracking": {"rules": text, "version": 3}})
+        self.assertEqual(config.get("tracking.rules"),
+                         "Powerful Assault = 61771 on group\n"
+                         "powerful assault = 61771 61772 group\n"
+                         "Powerful Assault = 61771 on group expected all\n"
+                         "Powerful Assault = 61771 on group expected small large\n"
+                         "PA = 61771 on group expected large\n"
+                         "Major Courage = 109966 on group expected large\n"
+                         "# Powerful Assault = 61771 on group expected large\n")
+        self.assertEqual(config.get("tracking.version"), TRACKING_VERSION)
+        # Already at version 4: left alone, whatever it says
+        config = self._stored({"tracking": {"rules": text, "version": 4}})
+        self.assertEqual(config.get("tracking.rules"), text)
+        # A text from before version 3 is not given the words it would lose
+        config = self._stored({"tracking": {"rules": "Powerful Assault = 61771 on group\n"}})
+        self.assertNotIn("Powerful Assault = 61771 on group expected", config.get("tracking.rules"))
+        self.assertEqual(config.get("tracking.version"), TRACKING_VERSION)
 
     def test_a_current_config_is_left_alone(self):
         config = self._stored({"tracking": {"rules": "Mine = 1 on boss\n", "version": TRACKING_VERSION}})
