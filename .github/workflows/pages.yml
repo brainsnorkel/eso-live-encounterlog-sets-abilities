@@ -1,0 +1,73 @@
+name: Pages
+
+# Publishes the home page (site/, built by scripts/build_site.py) with
+# GitHub Pages. The page's download buttons name the latest release, so it
+# is rebuilt after every release as well as after every change to its
+# sources. Settings > Pages must have "GitHub Actions" as the source.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'site/**'
+      - 'scripts/build_site.py'
+      - 'docs/screencaps/**'
+      - '.github/workflows/pages.yml'
+  # A release is created by the Build Installers run of a tag with the
+  # workflow's own token, and GitHub starts no workflow for events that
+  # token raises, so `on: release` would never fire; the completion of
+  # that run does (a person pushed the tag)
+  workflow_run:
+    workflows: [ "Build Installers" ]
+    types: [ completed ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one half way
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Build Installers also runs for pull requests, which release nothing;
+    # only a successful run of a push (a tag) changes the latest release
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      # Standard library only; the token lifts the API's rate limit
+      - name: Build the site
+        run: python scripts/build_site.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

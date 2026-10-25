@@ -4,7 +4,7 @@ Live fight summaries from Elder Scrolls Online encounter logs, in a desktop app 
 
 ![Main window: fight history on the left; on the right the buff timeline strip, a fight header, and one row per player with ability-bar icons and gear sets](docs/screencaps/main-window.png)
 
-The **[user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md)** walks through every screen and setting. The **[design notes](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/design.md)** explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
+The **[home page](https://xop.co/eso-live-encounterlog-sets-abilities/)** is the short version of this README, with the downloads. The **[user guide](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md)** walks through every screen and setting. The **[design notes](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/design.md)** explain what the log carries and how buffs, taunts, pets, roles, skill lines, icons and set names are worked out.
 
 ## Features
 
