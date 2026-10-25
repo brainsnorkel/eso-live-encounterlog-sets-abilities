@@ -39,7 +39,14 @@ row's intervals carry the debuffs' names and sum for the hover, and its
 click summary is its own (the sources-and-receivers popup makes no sense
 for it). When the estimate is above the game's 25,000 cap on an enemy's
 armour (a solo dungeon's boss) a dashed line marks the cap: armour above
-it changes nothing until the debuffs bring it under.
+it changes nothing until the debuffs bring it under. The row covers the
+time the group was hitting its target, not the whole fight (issue #64;
+the reasons are with pen_crit's design note): nothing is drawn before the
+first hit, after the last, or through a long gap between hits, so a
+gauntlet reads as blank until the boss; the hover over a blank stretch
+says so, and the label's average and the click summary's figures are over
+the drawn time, the summary naming the window when it is not the whole
+fight and giving the damage-weighted remainder beside the time average.
 
 Deliberately tiny: it must never crowd the fight summary. A fight in which
 none of the built-in effects was up has no recorded timeline; its tracked
@@ -590,18 +597,32 @@ class TimelineStrip(QWidget):
             f"<p style='margin-top:6px'>{section}</p>" for section in sections)
 
     def _armour_summary(self, effect: str, info: dict) -> str:
-        """The Armour row's pop-up: the estimate and its reason, the armour
-        left on average and at the lowest, and how much of the fight had no
-        armour debuff at all."""
+        """The Armour row's pop-up: the estimate and its reason, the window
+        the row covers when it is not the whole fight (issue #64), the
+        armour left on average and at the lowest, how much of that time had
+        no armour debuff at all, and the damage-weighted remainder."""
         armour = info["armour"]
-        duration = self._timeline["duration_ms"]
+        duration = int(armour.get("fight_ms") or self._timeline["duration_ms"])
         scope = info.get("scope", "")
         head = (f"<b>{escape(self._full_label(effect, info), quote=False)}</b>"
                 + (f" ({escape(scope)})" if scope else ""))
-        figures = (f"On {escape(str(armour.get('target') or ''), quote=False)} over "
-                   f"{_fmt_tick(duration)}: {int(armour.get('average_left', 0)):,} armour left "
-                   f"on average, {int(armour.get('lowest_left', 0)):,} at the lowest; no armour "
-                   f"debuff on it for {int(armour.get('no_debuff_pct', 0))}% of the fight")
+        target = escape(str(armour.get('target') or ''), quote=False)
+        window = armour.get("window_ms") or [0, duration]
+        drawn = int(armour.get("drawn_ms") or duration)
+        if int(window[0]) <= 0 and int(window[1]) >= duration and drawn >= duration:
+            when = f"On {target} over {_fmt_tick(duration)}"
+            of_what = "of the fight"
+        else:
+            when = (f"On {target} from {_fmt_tick(int(window[0]))} to {_fmt_tick(int(window[1]))}, "
+                    f"{_fmt_tick(drawn)} of the {_fmt_tick(duration)} fight")
+            of_what = "of that time"
+        figures = (f"{when}: {int(armour.get('average_left', 0)):,} armour left on average, "
+                   f"{int(armour.get('lowest_left', 0)):,} at the lowest; no armour debuff on it "
+                   f"for {int(armour.get('no_debuff_pct', 0))}% {of_what}")
+        weighted = armour.get("weighted_left")
+        if weighted is not None:
+            figures += (f". Weighed by the damage dealt, as the build window does: "
+                        f"{int(weighted):,} left")
         explain = f"<i>{escape(str(armour.get('explain') or ''), quote=False)}</i>"
         return "<br>".join((head, figures, explain))
 
@@ -680,6 +701,21 @@ class TimelineStrip(QWidget):
                             f"{_fmt_tick(iv['start_ms'])}–{_fmt_tick(iv['end_ms'])}"
                             f" &nbsp; {who}{stacks}")
                     QToolTip.showText(ev.globalPos(), "<br>".join(lines) + CLICK_HINT, self)
+                    return True
+                if info.get("armour"):
+                    # A blank stretch of the Armour row: the group was not
+                    # hitting the target then (issue #64)
+                    ranges = info["armour"].get("window") or []
+                    target = str(info["armour"].get("target") or "the target")
+                    if ranges and ms < int(ranges[0][0]):
+                        why = f"{target} not yet engaged"
+                    elif ranges and ms > int(ranges[-1][1]):
+                        why = f"after the last hit on {target}"
+                    else:
+                        why = f"no hits on {target} for this stretch"
+                    text = (f"<b>{effect}</b> ({info.get('scope', '')}) @ {_fmt_tick(ms)}"
+                            f" &nbsp;·&nbsp; {escape(why, quote=False)}")
+                    QToolTip.showText(ev.globalPos(), text + CLICK_HINT, self)
                     return True
             QToolTip.hideText()
             return True

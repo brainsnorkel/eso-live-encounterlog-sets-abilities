@@ -115,6 +115,34 @@ can restate the estimate. The remainder is averaged over time for the
 label, where the build window's effective figures weigh each second by
 the damage dealt; the two are different questions (how long the armour
 was down, and how much of the damage met it down).
+
+The row's window (issue #64). A fight runs from BEGIN_COMBAT to
+END_COMBAT, and the target the row follows need not be there for all of
+it: the combat that ends at Xoryn starts at the Defense Prisms and runs
+through Baron Rize and the gauntlet, and over 33 Lucent Citadel logs
+Xoryn was added a median 435 s into a median 549 s fight; Nahviintaas
+lands as a new unit id each time and is hit for about 20 s per landing;
+a trash pack's mob lives for a third of its fight. Drawn over the whole
+fight the row stood full for the time before the boss, the label read
+14,500 to 16,000 left on Xoryn pulls and the click said 77 to 83% without
+a debuff, when over the time the group was hitting him it was 2,565 to
+5,978 and 0 to 1%. So the row is measured over the seconds the group
+damaged its target (the hits the engine buckets per target per second,
+_armour_window), a gap of up to ARMOUR_GAP_S seconds between hits bridged
+and a longer one left blank (a dragon in the air), and nothing is drawn
+before the first hit or after the last; the label's average, the lowest
+point and the no-debuff share are over the drawn time, the click summary
+names the window, and the damage-weighted figure (weighted_pen) sits
+beside it so the row and the build window can be seen to agree. A boss in
+several unit ids shares the row: every boss-flagged unit of the row
+target's name, each second read on the one hit hardest that second
+(_armour_series). Among a pack's equal-damage mobs (each takes its
+health) the row follows the one hit over the longest window, then the
+first hit (_row_target), where the largest unit id, the last spawned, was
+taken before. The boss-scoped uptime rows above it still measure over the
+whole fight (issue #64 lists that choice), and the engine's boss_window
+is no window for the row: the Prisms and the Baron carry the game's boss
+flag too, so on a Xoryn pull it spans the gauntlet.
 """
 
 import math
@@ -155,6 +183,10 @@ SOLO_FINAL_BOSS_ARMOUR = 36400
 ENEMY_ARMOUR_CAP = 25000
 ZONE_KINDS = ("solo_dungeon", "instanced", "overland")
 ARMOUR_ROW = "Armour"  # the buff timeline's row name
+# The Armour row is drawn over the seconds the group was hitting its
+# target; a run of this many seconds or fewer without a hit is bridged,
+# a longer one (a dragon in the air) is left blank (issue #64)
+ARMOUR_GAP_S = 5
 CRIT_BASE = 50
 CRIT_CAP = 125
 DIVINES_PER_PIECE = 0.09085  # gold Divines, the spreadsheet's factor
@@ -663,8 +695,10 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     most-damaged target: {'estimate', 'kind', 'target', 'boss',
     'final_boss_armour', 'game_cap', 'spans': [[start_ms, end_ms, armour
     debuffs' sum, 'Major Breach, Crusher'], ...]} fight-relative, one span
-    per run of seconds with the same sum and debuffs, None without a
-    target) and one dict per player ('buffs' rows, their own 'pen_hist' and
+    per run of seconds with the same sum and debuffs, 'window': [[start_ms,
+    end_ms], ...] the time the group was hitting the target
+    (_armour_window), 'weighted_pen' the debuffs' sum weighed by the damage
+    dealt over those hits, None without a target) and one dict per player ('buffs' rows, their own 'pen_hist' and
     'crit_hist' with their buffs folded in, 'damage')."""
     duration = max(0, end_ms - start_ms)
     index_of = {rule.name: i for i, rule in enumerate(tracker.rules)}
@@ -776,17 +810,23 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     # The fight's group size, for the Champion Point rows assumed per size
     group_size = group_size_class(sum(1 for info in units.values() if info[0] in PLAYER_KINDS))
     # The timeline row's series: the armour debuffs on the target the group
-    # damaged most, second by second (issue #55)
+    # damaged most, second by second, over the time the group was hitting
+    # it (issues #55 and #64)
     armour = None
     if targets:
-        main = max(targets, key=lambda t: (sum((group_target_buckets.get(t) or {}).values()), t))
-        permanent_names = [n for n in PEN_DEBUFFS if n in permanent_debuffs.get(main, ())]
+        main = _row_target(targets, group_target_buckets)
+        # A boss in several unit ids (Nahviintaas lands as a new unit each
+        # time) shares the row: every boss-flagged unit of the same name
+        row_units = [main] + [t for t in targets if t != main and main in bosses
+                              and name_of(t) == name_of(main)]
+        spans, window, weighted = _armour_series(
+            start_ms, end_ms, main, row_units, group_target_buckets, pen_by_target,
+            names_by_target, perm_pen, permanent_debuffs)
         armour = {"estimate": cap, "kind": kind, "target": name_of(main), "boss": main in bosses,
                   "final_boss_armour": (SOLO_FINAL_BOSS_ARMOUR
                                         if kind == "solo_dungeon" and bosses else None),
-                  "game_cap": ENEMY_ARMOUR_CAP,
-                  "spans": _armour_spans(start_ms, end_ms, pen_by_target[main], names_by_target[main],
-                                         perm_pen.get(main, 0.0), permanent_names)}
+                  "game_cap": ENEMY_ARMOUR_CAP, "spans": spans, "window": window,
+                  "weighted_pen": weighted}
     entry = {"on": ("boss" if bosses else "enemies") if targets else "", "targets": len(targets),
              "kind": kind, "cap": cap, "instanced": kind != "overland", "dummy": bool(dummy),
              "group_size": group_size,
@@ -846,6 +886,85 @@ def _armour_spans(start_ms: int, end_ms: int, pen_by_second: dict[int, float],
     return spans
 
 
+def _row_target(targets: list[str], group_target_buckets: dict[str, dict[int, int]]) -> str:
+    """The unit the Armour row follows: the most damaged of *targets*;
+    among equals (a pack's mobs each take their health) the one hit over
+    the longest window, then the one hit first. The largest unit id, the
+    last spawned and the one alive for the least of the fight, was the
+    tie-break before issue #64."""
+    def key(unit: str) -> tuple:
+        buckets = group_target_buckets.get(unit) or {}
+        seconds = sorted(s for s, d in buckets.items() if d > 0)
+        span = seconds[-1] - seconds[0] + 1 if seconds else 0
+        first = -seconds[0] if seconds else 0
+        return (sum(buckets.values()), span, first, unit)
+    return max(targets, key=key)
+
+
+def _armour_window(start_ms: int, end_ms: int, hit_seconds: Iterable[int],
+                   gap_s: int = ARMOUR_GAP_S) -> list[list[int]]:
+    """The time the Armour row is drawn over, as fight-relative [start_ms,
+    end_ms] ranges: the log seconds the group hit the row's units, a gap of
+    at most *gap_s* seconds between hits bridged, a longer gap and the time
+    before the first hit and after the last left out; clipped to the fight
+    as _armour_spans clips its seconds."""
+    ranges: list[list[int]] = []
+    for second in sorted(set(hit_seconds)):
+        s = max(start_ms, second * 1000) - start_ms
+        e = min(end_ms, second * 1000 + 1000) - start_ms
+        if e <= s:
+            continue
+        if ranges and s - ranges[-1][1] <= gap_s * 1000:
+            ranges[-1][1] = e
+        else:
+            ranges.append([s, e])
+    return ranges
+
+
+def _armour_series(start_ms: int, end_ms: int, main: str, units: list[str],
+                   group_target_buckets: dict[str, dict[int, int]],
+                   pen_by_target: dict[str, dict[int, float]], names_by_target: dict[str, dict[int, set]],
+                   perm_pen: dict[str, float],
+                   permanent_debuffs: dict[str, list[str]]) -> tuple[list[list], list[list[int]], int | None]:
+    """The Armour row's series over its *units* (the row's target *main* and
+    any other unit sharing its row): the spans of _armour_spans, each
+    second read on the unit the group hit hardest that second (the last
+    one hit, or *main*, in a second without a hit); the window of
+    _armour_window over every hit on them; and the damage-weighted sum of
+    the armour debuffs over those hits, the build window's way of weighing
+    (None without damage)."""
+    hit: dict[int, tuple[str, int]] = {}
+    for unit in units:
+        for second, damage in (group_target_buckets.get(unit) or {}).items():
+            if damage <= 0:
+                continue
+            current = hit.get(second)
+            if current is None or damage > current[1] or (damage == current[1] and unit == main):
+                hit[second] = (unit, damage)
+    permanent_names = {u: [n for n in PEN_DEBUFFS if n in permanent_debuffs.get(u, ())] for u in units}
+    pen_by_second: dict[int, float] = {}
+    names_by_second: dict[int, set] = {}
+    current_unit = main
+    for second in range(start_ms // 1000, max(start_ms // 1000, (end_ms - 1) // 1000) + 1):
+        if second in hit:
+            current_unit = hit[second][0]
+        pen_by_second[second] = (pen_by_target[current_unit].get(second, 0.0)
+                                 + perm_pen.get(current_unit, 0.0))
+        names_by_second[second] = (set(names_by_target[current_unit].get(second, ()))
+                                   | set(permanent_names[current_unit]))
+    spans = _armour_spans(start_ms, end_ms, pen_by_second, names_by_second, 0.0, [])
+    weighted_sum = 0.0
+    weighted_damage = 0
+    for unit in units:
+        for second, damage in (group_target_buckets.get(unit) or {}).items():
+            if damage <= 0:
+                continue
+            weighted_sum += damage * (pen_by_target[unit].get(second, 0.0) + perm_pen.get(unit, 0.0))
+            weighted_damage += damage
+    weighted = round(weighted_sum / weighted_damage) if weighted_damage else None
+    return spans, _armour_window(start_ms, end_ms, hit), weighted
+
+
 # ---- the timeline's Armour row ----
 
 _ZONE_EXPLAIN = {
@@ -857,9 +976,10 @@ _ZONE_EXPLAIN = {
                   "25,000, and nothing above the line counts until the debuffs bring it under."),
     "solo_trash": "A solo dungeon's trash has 18,200 armour, like any instance's.",
 }
-_ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs each second, "
-                "averaged over time; the build window's effective figures weigh each second "
-                "by the damage dealt instead.")
+_ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs each second "
+                "while the group was hitting the target, averaged over time; the click "
+                "summary and the build window's effective figures weigh each second by the "
+                "damage dealt instead.")
 
 
 def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
@@ -872,7 +992,15 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     for the hover, 'stacks_max' the estimate, 'game_cap' 25,000 when the
     estimate is above it (a line on the row), the summary figures
     ('average_left', 'lowest_left', 'no_debuff_pct') and 'explain', the
-    reason for the estimate. None for an entry without the series."""
+    reason for the estimate. The row covers the series' 'window', the time
+    the group was hitting the target (issue #64): the intervals, the
+    average, the lowest point and the no-debuff share are over the drawn
+    time alone, 'window' is the ranges drawn, 'window_ms' their first start
+    and last end, 'drawn_ms' their sum, 'fight_ms' the fight's length, and
+    'weighted_left' the remainder weighed by the damage dealt (None when
+    the series has no figure). A series from before the window (or one
+    whose target was never hit) is drawn over the whole fight as before.
+    None for an entry without the series."""
     group = group or {}
     data = group.get("armour")
     if not data or not data.get("spans"):
@@ -884,7 +1012,11 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     if estimate <= 0:
         return None
     intervals = []
-    duration = 0
+    fight_ms = max(int(span[1]) for span in data["spans"])
+    window = [[int(s), int(e)] for s, e in (data.get("window") or []) if int(e) > int(s)]
+    if not window:
+        window = [[0, fight_ms]]
+    drawn = 0
     left_ms = 0.0
     lowest = estimate
     no_debuff_ms = 0
@@ -892,14 +1024,20 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     for s, e, value, names in data["spans"]:
         s, e, value = int(s), int(e), int(value)
         remaining = max(0, estimate - value)
-        intervals.append({"start_ms": s, "end_ms": e, "stacks": remaining, "debuff_pen": value,
-                          "debuffs": str(names or ""), "target": target, "source": ""})
-        duration = max(duration, e)
-        left_ms += remaining * (e - s)
-        lowest = min(lowest, remaining)
-        if not value:
-            no_debuff_ms += e - s
-    average = round(left_ms / duration) if duration else estimate
+        for window_start, window_end in window:
+            a, b = max(s, window_start), min(e, window_end)
+            if b <= a:
+                continue
+            intervals.append({"start_ms": a, "end_ms": b, "stacks": remaining, "debuff_pen": value,
+                              "debuffs": str(names or ""), "target": target, "source": ""})
+            drawn += b - a
+            left_ms += remaining * (b - a)
+            lowest = min(lowest, remaining)
+            if not value:
+                no_debuff_ms += b - a
+    average = round(left_ms / drawn) if drawn else estimate
+    weighted_pen = data.get("weighted_pen")
+    weighted_left = max(0, estimate - int(weighted_pen)) if weighted_pen is not None else None
     kind = str(data.get("kind") or ("instanced" if group.get("instanced") else "overland"))
     boss = bool(data.get("boss"))
     if overridden:
@@ -917,7 +1055,9 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
             "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
             "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
             "average_left": average, "lowest_left": lowest,
-            "no_debuff_pct": round(100.0 * no_debuff_ms / duration) if duration else 100,
+            "no_debuff_pct": round(100.0 * no_debuff_ms / drawn) if drawn else 100,
+            "window": window, "window_ms": [window[0][0], window[-1][1]],
+            "drawn_ms": drawn, "fight_ms": fight_ms, "weighted_left": weighted_left,
             "kind": kind, "target": target, "final_boss_armour": data.get("final_boss_armour"),
             "explain": f"{reason} {_ROW_EXPLAIN}"}
 

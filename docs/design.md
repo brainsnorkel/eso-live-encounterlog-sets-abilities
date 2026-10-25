@@ -642,6 +642,34 @@ label, where the build window's effective figures weigh each second by
 the damage dealt; the two are different questions (how long the armour
 was down, and how much of the damage met it down).
 
+The row's window (issue #64). A fight runs from BEGIN_COMBAT to
+END_COMBAT, and the target the row follows need not be there for all of
+it: the combat that ends at Xoryn starts at the Defense Prisms and runs
+through Baron Rize and the gauntlet, and over 33 Lucent Citadel logs
+Xoryn was added a median 435 s into a median 549 s fight; Nahviintaas
+lands as a new unit id each time and is hit for about 20 s per landing;
+a trash pack's mob lives for a third of its fight. Drawn over the whole
+fight the row stood full for the time before the boss, the label read
+14,500 to 16,000 left on Xoryn pulls and the click said 77 to 83% without
+a debuff, when over the time the group was hitting him it was 2,565 to
+5,978 and 0 to 1%. So the row is measured over the seconds the group
+damaged its target (the hits the engine buckets per target per second,
+_armour_window), a gap of up to ARMOUR_GAP_S seconds between hits bridged
+and a longer one left blank (a dragon in the air), and nothing is drawn
+before the first hit or after the last; the label's average, the lowest
+point and the no-debuff share are over the drawn time, the click summary
+names the window, and the damage-weighted figure (weighted_pen) sits
+beside it so the row and the build window can be seen to agree. A boss in
+several unit ids shares the row: every boss-flagged unit of the row
+target's name, each second read on the one hit hardest that second
+(_armour_series). Among a pack's equal-damage mobs (each takes its
+health) the row follows the one hit over the longest window, then the
+first hit (_row_target), where the largest unit id, the last spawned, was
+taken before. The boss-scoped uptime rows above it still measure over the
+whole fight (issue #64 lists that choice), and the engine's boss_window
+is no window for the row: the Prisms and the Baron carry the game's boss
+flag too, so on a Xoryn pull it spans the gauntlet.
+
 ### scripts/generate_set_offense.py
 
 *[scripts/generate_set_offense.py:1](../scripts/generate_set_offense.py#L1)*
@@ -1458,7 +1486,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:183](../src/gui/timeline_strip.py#L183)*
+*[src/gui/timeline_strip.py:190](../src/gui/timeline_strip.py#L190)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's

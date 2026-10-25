@@ -398,6 +398,8 @@ class TestZones(unittest.TestCase):
             [1000, 2000, 5948, "Major Breach"],
             [2000, 3000, 8922, "Major Breach, Minor Breach"],
             [3000, 5000, 2974, "Minor Breach"]])
+        # Drawn over the second the group hit Big, and weighed by that hit
+        self.assertEqual((armour["window"], armour["weighted_pen"]), ([[1000, 2000]], 5948))
         # A trash fight: the most-damaged mob at an instance's 18,200
         entry, _players = pen_crit.fight_fields(
             tracker, start, end, {"2": ("group", None, None), "80": ("enemy", None, None)},
@@ -405,6 +407,7 @@ class TestZones(unittest.TestCase):
         self.assertEqual((entry["cap"], entry["armour"]["boss"], entry["armour"]["final_boss_armour"],
                           entry["armour"]["spans"]),
                          (18200, False, None, [[0, 5000, 0, ""]]))
+        self.assertEqual((entry["armour"]["window"], entry["armour"]["weighted_pen"]), ([[1000, 2000]], 0))
         # No target at all: no series
         entry, _players = pen_crit.fight_fields(
             tracker, start, end, {"2": ("group", None, None)}, {}, {}, lambda u: u, lambda u: {},
@@ -421,6 +424,73 @@ class TestZones(unittest.TestCase):
             permanent_debuffs={"70": ["Major Breach", "Crusher"]})
         self.assertEqual((entry["kind"], entry["cap"]), ("instanced", 18200))
         self.assertEqual(entry["armour"]["spans"], [[0, 2000, 8056, "Major Breach, Crusher"]])
+
+    def test_the_series_window_is_the_time_the_group_hit_the_target(self):
+        """Issue #64: a boss reached late (Xoryn after the gauntlet) is drawn
+        from the first hit on it; a gap of more than ARMOUR_GAP_S seconds
+        between hits (a dragon in the air) is left blank, a shorter one
+        bridged."""
+        tracker = pen_crit.new_tracker()
+        tracker.record("GAINED", "61743", "70", 1, 13000, "boss", source_id="2")  # Major Breach from 13 s
+        units = {"2": ("group", None, None), "70": ("boss", None, None)}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 30000, units, {"70": {13: 100, 14: 100, 25: 300}}, {},
+            lambda u: u, lambda u: {}, zone="instanced", set_table=SETS)
+        armour = entry["armour"]
+        self.assertEqual(armour["spans"], [[0, 3000, 0, ""], [3000, 20000, 5948, "Major Breach"]])
+        # Seconds 15 to 24 have no hit: ten seconds, more than the gap bridged
+        self.assertEqual(armour["window"], [[3000, 5000], [15000, 16000]])
+        self.assertEqual(armour["weighted_pen"], 5948)
+        row = pen_crit.armour_row(entry)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"]) for iv in row["intervals"]],
+                         [(3000, 5000, 12252), (15000, 16000, 12252)])
+        self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (12252, 12252, 0))
+        self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
+                         ([3000, 16000], 3000, 20000, 12252))
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")
+        # Hits four seconds apart are bridged into one range
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 30000, units, {"70": {13: 100, 18: 100}}, {},
+            lambda u: u, lambda u: {}, zone="instanced", set_table=SETS)
+        self.assertEqual(entry["armour"]["window"], [[3000, 9000]])
+
+    def test_a_boss_in_several_unit_ids_shares_the_row(self):
+        """Issue #64: Nahviintaas lands as a new unit each time; every
+        boss-flagged unit of the row target's name is read, each second on
+        the one hit hardest."""
+        tracker = pen_crit.new_tracker()
+        tracker.record("GAINED", "61743", "71", 1, 20000, "boss", source_id="2")  # Major Breach on the second unit
+        tracker.record("FADED", "61743", "71", 1, 21000, "boss", source_id="2")
+        units = {"2": ("group", None, None), "70": ("boss", None, None), "71": ("boss", None, None),
+                 "72": ("boss", None, None)}
+        names = {"70": "Nahviintaas", "71": "Nahviintaas", "72": "Eternal Servant"}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 25000, units, {"70": {11: 500}, "71": {20: 500}, "72": {12: 200}}, {},
+            lambda u: names.get(u, u), lambda u: {}, zone="instanced", set_table=SETS)
+        armour = entry["armour"]
+        self.assertEqual(armour["target"], "Nahviintaas")
+        self.assertEqual(armour["window"], [[1000, 2000], [10000, 11000]])
+        self.assertEqual(armour["spans"], [[0, 10000, 0, ""], [10000, 11000, 5948, "Major Breach"],
+                                           [11000, 15000, 0, ""]])
+        self.assertEqual(armour["weighted_pen"], 2974)
+
+    def test_a_packs_equal_mobs_break_the_tie_on_the_longest_hit_window_then_the_first_hit(self):
+        """Issue #64: a pack's mobs each take their health; the row follows
+        the one fought longest, where the last spawned (the largest unit
+        id) was taken before."""
+        buckets = {"80": {11: 300}, "81": {12: 100, 14: 200}, "82": {11: 150, 12: 150}}
+        self.assertEqual(pen_crit._row_target(["80", "81", "82"], buckets), "81")
+        buckets = {"80": {12: 300}, "83": {11: 300}}
+        self.assertEqual(pen_crit._row_target(["80", "83"], buckets), "83")
+        # The most damaged first, whatever its window
+        buckets = {"80": {12: 400}, "83": {11: 100, 19: 100}}
+        self.assertEqual(pen_crit._row_target(["80", "83"], buckets), "80")
+        tracker = pen_crit.new_tracker()
+        units = {"2": ("group", None, None), "80": ("enemy", None, None), "81": ("enemy", None, None)}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 20000, units, {"80": {11: 300}, "81": {12: 100, 14: 200}}, {},
+            lambda u: u, lambda u: {}, zone="instanced", set_table=SETS)
+        self.assertEqual((entry["armour"]["target"], entry["armour"]["window"]), ("81", [[2000, 5000]]))
 
 
 class TestArmourRow(unittest.TestCase):
@@ -446,6 +516,34 @@ class TestArmourRow(unittest.TestCase):
         self.assertEqual(row["label"], "Armour 27,300 · 15,226 left")
         self.assertIn("final boss 36,400", row["explain"])
         self.assertIn("averaged over time", row["explain"])
+        # A series from before the window (issue #64) covers the whole fight
+        self.assertEqual((row["window"], row["window_ms"], row["drawn_ms"], row["fight_ms"],
+                          row["weighted_left"]),
+                         ([[0, 30000]], [0, 30000], 30000, 30000, None))
+
+    def test_the_row_covers_the_window_alone(self):
+        """Issue #64: the intervals, the average, the lowest point and the
+        no-debuff share are over the time the group was hitting the target."""
+        late = dict(self.GROUP, armour=dict(self.GROUP["armour"], window=[[10000, 30000]], weighted_pen=20000))
+        row = pen_crit.armour_row(late)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"]) for iv in row["intervals"]],
+                         [(10000, 20000, 18378), (20000, 30000, 0)])
+        self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (9189, 0, 0))
+        self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
+                         ([10000, 30000], 20000, 30000, 7300))
+        self.assertEqual(row["label"], "Armour 27,300 · 9,189 left")
+        # Two ranges with a blank between: a span is cut at the range's edge
+        split = dict(self.GROUP, armour=dict(self.GROUP["armour"], window=[[0, 5000], [25000, 30000]]))
+        row = pen_crit.armour_row(split)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"]) for iv in row["intervals"]],
+                         [(0, 5000, 27300), (25000, 30000, 0)])
+        self.assertEqual((row["average_left"], row["no_debuff_pct"], row["window_ms"], row["drawn_ms"]),
+                         (13650, 50, [0, 30000], 10000))
+        # The Settings' cap restates the weighted figure too
+        self.assertEqual(pen_crit.armour_row(late, {"cap": 18200})["weighted_left"], 0)
+        # An empty window (a target never hit) is drawn over the whole fight
+        never = dict(self.GROUP, armour=dict(self.GROUP["armour"], window=[]))
+        self.assertEqual(pen_crit.armour_row(never)["drawn_ms"], 30000)
 
     def test_the_settings_override_the_zone_and_a_trash_row(self):
         row = pen_crit.armour_row(self.GROUP, {"cap": 18200})
