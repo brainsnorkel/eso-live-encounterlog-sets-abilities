@@ -324,6 +324,74 @@ class TestGroupSetOnOneBar(unittest.TestCase):
         self.assertEqual(set(GROUP_SETS), {'648', '651', '768', '771', '769', '770'})
 
 
+class TestMinorSlayer(unittest.TestCase):
+    """A damage dealer in a veteran group of five or more with no Minor
+    Slayer source: no listed set at three pieces on either bar, no Oakensoul."""
+
+    def _deadly(self):
+        # Five pieces of set 429 on the body and front bar, a back-bar bow
+        # of set 809 (two pieces): nothing listed
+        gear = _body('mmmmmmm', set_id='429')
+        for slot in ('NECK', 'RING1', 'RING2', 'HAND', 'WAIST', 'LEGS', 'FEET'):
+            gear[slot] = _item(slot, 'm', set_id='0')
+        gear['MAIN_HAND'] = _weapon('MAIN_HAND', set_id='429')
+        gear['OFF_HAND'] = _weapon('OFF_HAND', set_id='429', enchant='POISONED_WEAPON')
+        gear['BACKUP_MAIN'] = _weapon('BACKUP_MAIN', 'bow', set_id='809')
+        return gear
+
+    def test_no_source_in_a_veteran_trial_group(self):
+        names = {'429': 'Deadly Strike', '809': 'Tide-Born Wildstalker'}.get
+        findings = _findings(self._deadly(), players=12, veteran=True, set_name_of=names)
+        self.assertEqual(_rules(findings), ['no-minor-slayer'])
+        self.assertEqual(findings[0]['title'], 'No Minor Slayer in a veteran trial group')
+        self.assertIn('5% more damage to dungeon, trial and arena monsters', findings[0]['detail'])
+        self.assertIn('The complete set here, Deadly Strike, gives other things.', findings[0]['detail'])
+        self.assertIn('three pieces on one bar is enough', findings[0]['detail'])
+        self.assertEqual(findings[0]['set'], '')
+        # Two complete sets are both named; an unnamed set reads by its id
+        gear = self._deadly()
+        for slot in ('HAND', 'WAIST', 'LEGS', 'FEET', 'NECK'):
+            gear[slot][6] = '809'
+        findings = _findings(gear, players=12, veteran=True, set_name_of=names)
+        self.assertIn('The complete sets here, Deadly Strike and Tide-Born Wildstalker, give',
+                      findings[0]['detail'])
+        findings = _findings(self._deadly(), players=12, veteran=True)
+        self.assertIn('The complete set here, set 429, gives', findings[0]['detail'])
+
+    def test_a_listed_set_at_three_pieces_on_either_bar_or_oakensoul_is_a_source(self):
+        judged = {'players': 12, 'veteran': True}
+        gear = self._deadly()
+        for slot in ('HAND', 'WAIST', 'LEGS'):
+            gear[slot][6] = '586'  # three body pieces of Sul-Xan's Torment: on both bars
+        self.assertEqual(_findings(gear, **judged), [])
+        gear['LEGS'][6] = '0'  # two pieces are not a source
+        self.assertEqual(_rules(_findings(gear, **judged)), ['no-minor-slayer'])
+        gear['BACKUP_MAIN'][6] = '586'  # the bow counts as two: three on the back bar only
+        self.assertEqual(_findings(gear, **judged), [])
+        self.assertEqual(build_issues.slayer_sets(gear), {'586'})
+        oakensoul = self._deadly()
+        oakensoul['RING1'] = _item('RING1', 'j', 'JEWELRY_ARCANE', OAKENSOUL_SET_ID)
+        self.assertEqual(_findings(oakensoul, **judged), [])
+        # The list: 38 three-piece sets, the ring apart
+        self.assertEqual(len(build_issues.SLAYER_SETS), 38)
+        self.assertNotIn(OAKENSOUL_SET_ID, build_issues.SLAYER_SETS)
+        self.assertTrue({'232', '496', '586', '767', '814'} <= set(build_issues.SLAYER_SETS))
+
+    def test_the_gates(self):
+        gear = self._deadly()
+        self.assertEqual(_rules(_findings(gear, players=5, veteran=True)), ['no-minor-slayer'])
+        # Healers, tanks and a player who has taunted this session are not judged
+        self.assertEqual(_findings(gear, role='H', players=12, veteran=True), [])
+        self.assertEqual(_findings(gear, role='T', players=12, veteran=True), [])
+        self.assertEqual(_findings(gear, taunted=True, players=12, veteran=True), [])
+        # Nor a normal-difficulty run, a group of four, an unknown group size
+        self.assertEqual(_findings(gear, players=12, veteran=False), [])
+        self.assertEqual(_findings(gear, players=4, veteran=True), [])
+        self.assertEqual(_findings(gear, veteran=True), [])
+        # Nor a build the log wrote with no gear
+        self.assertEqual(_findings({}, players=12, veteran=True), [])
+
+
 class TestTankWithoutTaunt(unittest.TestCase):
     """A tank with no taunt or pull: the role, tank gear, a small share of
     the damage and no healer sign, and nothing on the bars that holds a
@@ -840,6 +908,31 @@ class TestEngine(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual([f['title'] for f in food_rules(entries[0], '@nirn')],
                          ['Increase Max Health & Magicka ran out 30s into the fight'])
+
+    def test_a_damage_dealer_in_a_veteran_trial_group_without_minor_slayer(self):
+        # Three more players make the group large; @nirn's sets (270, 781,
+        # 726, 361) give no Minor Slayer, @alkosh wears five of Roar of Alkosh
+        more = [f'2000,UNIT_ADDED,{uid},PLAYER,F,{uid},0,F,3,4,"P{uid}","@p{uid}",100{uid},50,3224,0,PLAYER_ALLY,T'
+                for uid in (3, 4, 5)]
+
+        def session(zone):
+            lines = _session(_fight(10000, 30000), zone=zone)
+            lines[4:4] = more
+            return lines
+
+        players = self._players(_fights(session('"Sunspire",VETERAN'))[0])
+        self.assertEqual([f['rule'] for f in players['@nirn']['build_issues']],
+                         ['nirnhoned-off-hand', 'no-minor-slayer', 'wrong-weapon'])
+        self.assertEqual(players['@nirn']['build_issues'][1]['title'],
+                         'No Minor Slayer in a veteran trial group')
+        self.assertEqual(players['@alkosh']['build_issues'], [])
+        # The same group on normal difficulty, and the two-player group, are not judged
+        players = self._players(_fights(session('"Sunspire",NORMAL'))[0])
+        self.assertEqual([f['rule'] for f in players['@nirn']['build_issues']],
+                         ['nirnhoned-off-hand', 'wrong-weapon'])
+        players = self._players(_fights(_session(_fight(10000, 30000), zone='"Sunspire",VETERAN'))[0])
+        self.assertEqual([f['rule'] for f in players['@nirn']['build_issues']],
+                         ['nirnhoned-off-hand', 'wrong-weapon'])
 
     def test_the_shared_fixture_session_is_clean(self):
         for player in _fights()[0].players:
