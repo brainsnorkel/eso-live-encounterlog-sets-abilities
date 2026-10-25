@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.14.0] - 2026-10-26
 
 ### Added
 - **The boss's armour on the buff timeline** (#55): a last row, `Armour`, draws the target's estimated armour less the group's armour debuffs on it, second by second, by height like Touch of Z'en's row: full while nothing is on the boss, dropping as Major and Minor Breach, Crusher, Roar of Alkosh and the rest land, so what is left is what each player's own penetration has to cover. The label gives the estimate and the armour left averaged over the fight (`Armour 27,300 · 15,900 left`); hovering the bar gives the figure at that moment and the debuffs behind it, hovering the label where the estimate comes from, and a click the average, the lowest point and the share of the fight with no armour debuff at all. The row follows the penetration cap in Settings when it is set to a number, and is drawn on the target the group damaged most (the mobs of a trash fight at 18,200)
