@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2010](../src/esolog_tail.py#L2010)*
+*[src/esolog_tail.py:2018](../src/esolog_tail.py#L2018)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1472](../src/esolog_tail.py#L1472)*
+*[src/esolog_tail.py:1480](../src/esolog_tail.py#L1480)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1487](../src/esolog_tail.py#L1487)*
+*[src/esolog_tail.py:1495](../src/esolog_tail.py#L1495)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3241](../src/esolog_tail.py#L3241)*
+*[src/esolog_tail.py:3249](../src/esolog_tail.py#L3249)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -620,6 +620,28 @@ Cry's two pieces, Piercing) plus the dummy's 17,030 is its maximum of
 20,156 exactly, damage and dps agreed within 0.5%, and the ability table
 row for row.
 
+Solo dungeons and the Armour row (issue #55). The solo dungeons of October
+2026 are the group dungeons' layouts and bosses at a zone id of their own,
+with the dungeon's name and difficulty NONE on the ZONE_CHANGED line (the
+solo March of Sacrifices is zone 1592, the group dungeon 1055, logged on
+2026-10-25 and 2026-09-22); nothing else in the log says solo, and the
+run's Misfortunes, picked at the door, did not appear in that log. Read by
+difficulty alone a solo dungeon is overland, 9,100, so SOLO_DUNGEON_ZONES
+names the ids and zone_kind reads it first; the figures are the
+hyperioxes.com Moon Hunter Keep guide's: trash 18,200 like any instance,
+bosses 27,300, the final boss 36,400, and the game's cap of 25,000 on an
+enemy's armour, above which penetration changes nothing until the debuffs
+bring the armour under. Every boss is taken at 27,300 (the maintainer's
+choice, 2026-10-26); the labels say the final boss has more. The buff
+timeline's Armour row (armour_row) draws the target's armour less the
+group's armour debuffs on it, second by second, from a series fight_fields
+keeps on the target the group damaged most: spans of equal debuff sum and
+names, the sum rather than the remainder so the Settings' cap override
+can restate the estimate. The remainder is averaged over time for the
+label, where the build window's effective figures weigh each second by
+the damage dealt; the two are different questions (how long the armour
+was down, and how much of the damage met it down).
+
 ### scripts/generate_set_offense.py
 
 *[scripts/generate_set_offense.py:1](../scripts/generate_set_offense.py#L1)*
@@ -834,7 +856,7 @@ checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:629](../src/build_issues.py#L629)*
+*[src/build_issues.py:632](../src/build_issues.py#L632)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's
@@ -1409,7 +1431,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:169](../src/gui/timeline_strip.py#L169)*
+*[src/gui/timeline_strip.py:183](../src/gui/timeline_strip.py#L183)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -1461,7 +1483,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:478](../src/gui/main_window.py#L478)*
+*[src/gui/main_window.py:479](../src/gui/main_window.py#L479)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1471,7 +1493,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:837](../src/gui/main_window.py#L837)*
+*[src/gui/main_window.py:841](../src/gui/main_window.py#L841)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

@@ -14,16 +14,19 @@ from PySide6.QtWidgets import (
 
 from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
-from pen_crit import FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND
+from pen_crit import (
+    FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND, SOLO_BOSS_ARMOUR,
+)
 
 PEN_CRIT_HELP = ("The build window's Penetration and Critical damage sections read everything "
                  "else from the log. Champion Point stars that only change a stat are never "
                  "logged, so tick the ones to assume; they show as assumed rows. Fighting "
                  "Finesse is assumed in solo and small-group fights (up to four players), never "
                  "in a group of five or more. Force of Nature's value is its per-effect figure "
-                 "times the status effects measured on the boss.")
+                 "times the status effects measured on the boss. The penetration cap is also "
+                 "the armour estimate behind the buff timeline's Armour row.")
 BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} in dungeons, trials and arenas, "
-           f"{PEN_CAP_OVERLAND:,} overland")
+           f"{SOLO_BOSS_ARMOUR:,} on a solo dungeon's bosses, {PEN_CAP_OVERLAND:,} overland")
 CAP_CHOICES = (("auto", BY_ZONE),
                (str(PEN_CAP_INSTANCED), f"Always {PEN_CAP_INSTANCED:,}"),
                (str(PEN_CAP_OVERLAND), f"Always {PEN_CAP_OVERLAND:,}"))
