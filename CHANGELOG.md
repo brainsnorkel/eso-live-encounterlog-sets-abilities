@@ -4,6 +4,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Added
+- **Home page** (#58): a one-page site at https://xop.co/eso-live-encounterlog-sets-abilities/, published by GitHub Pages from `site/`: the icon and the tagline, download buttons for the current release (installer, portable zip, Linux tarball), the user guide link, the main-window screenshot, nine feature cards with their screenshots, the three get-started steps, the credits, and a "Fork me on GitHub" ribbon. The page has no JavaScript and loads nothing from outside the site. Its Open Graph and Twitter card tags name a 1280×640 social card (`site/social-card.png`, drawn by `scripts/build_social_card.py` from the icon and the main-window screenshot) so a pasted link unfurls with a picture; the same file is the repository's social preview. `scripts/build_site.py` fills the version and the three asset links from the latest release and copies the screenshots the page uses, and `.github/workflows/pages.yml` publishes the result after every change to the page and after every release
+
 ### Changed
 - **Dependency floors**: `PySide6-Essentials` 6.12.0 or newer, the first release past Qt's October 2026 security advisories, which affect every release from 6.9.0 to 6.11.2; and `Pillow` 13.0.0 or newer, since 12.3.0, the old floor, is among the 41 advisories that 13.0.0 closed, one of them critical. Neither changes what a build installs: the 0.12.0 builds already resolved to both
 
