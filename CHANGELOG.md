@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.14.1] - 2026-10-26
 
 ### Added
 - **Build issues: no Minor Slayer in a veteran trial group** (#62): a damage dealer pulling in a veteran group of five or more with no Minor Slayer source gets the `ⓘ`. Minor Slayer is 5% more damage to dungeon, trial and arena monsters; every trial's sets grant it at three pieces, so do Ossein Cage's, and Oakensoul Ring grants it outright, so the rule looks for one of those 38 sets at three pieces on either bar, or the ring, in the gear logged at combat start, and the finding names the complete sets worn instead (`The complete sets here, Deadly Strike and Tide-Born Wildstalker, give other things`). Healers, tanks and a player who has taunted this session are not judged, nor a normal run, a group of four, or a build the log wrote with no gear. Over the 84 newest trial split logs (May to October 2026, 1,581 fights) 7% of the veteran damage-dealer player-fights and 29 of 225 characters lacked a source, against 46% in normal runs, which is why normal runs are left alone; the ring's buff is not in the log's effect list, which is why the rule reads gear
