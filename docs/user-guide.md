@@ -62,7 +62,7 @@ With **Detail view** on (the default; Tab toggles it), each row shows the player
 
 ### Companions
 
-A companion that is out during a fight (Mirri, Bastian, Ember, Isobel, Sharp-as-Night, Azandar, Tanlorin, Zerith-var) has a row of its own straight under the player it belongs to, marked `↳` with `C` in the role column and its level where a player's class goes. Its DPS, share and health are its own, and its DPS opens the damage window like a player's. Its name opens a short window with its level, its owner and the companion skills it was seen casting this session: the game writes no bar, gear or perks for a companion into its log, so in Detail view the row's bar is those skills, in the order first cast. A `☠` after its name means it died in the fight; that is not counted in the fight's Deaths, which are players', and has no recap.
+A companion that is out during a fight (Mirri, Bastian, Ember, Isobel, Sharp-as-Night, Azandar, Tanlorin, Zerith-var) has a row of its own straight under the player it belongs to, marked `↳` with `C` in the role column and its level where a player's class goes. Its DPS, share and health are its own, and its DPS opens the damage window like a player's. Its name opens a short window with its level, its owner and the companion skills it was seen casting this session: the game writes no bar, gear or perks for a companion into its log, so in Detail view the row's bar is those skills, in the order first cast. Under the skills, the window ends with the same **Damage dealt** bars a player's build window has (direct against over time, area against single target, Martial against Magical), over the companion's own hits. A `☠` after its name means it died in the fight; that is not counted in the fight's Deaths, which are players', and has no recap.
 
 By default the owner's figures are their own, as in Combat Metrics, which never counts a companion as the player's. Turn on **Count a companion's damage and healing as its owner's too** under Companions in Settings for the old way: the owner's DPS and share then include the companion's, its abilities show `(pet)` in the owner's damage window, and the shares add up to more than 100%. A companion of a player who has no row, or whose owner the log never named, has no row either; its damage is still in the group's.
 
@@ -111,7 +111,10 @@ Click a player's name, in either view, to open their build for that fight. The n
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
 - **Type** is the armor weight, or what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
 - **Pcs** is the number of pieces of the row's set that are active, counted per weapon bar: armor and jewelry count on both bars, and each bar adds its own weapons, a two-handed one as two. `5` means five on either bar. `5/3` means five on the front bar and three on the back: that set's five-piece bonus is live on the front bar only.
+- **Damage dealt**: the kinds of the player's damage in the fight, the same three bars as the [death recap](#death-recaps) draws for damage taken: direct against over time (Master-at-Arms, Thaumaturge), area against single target (Biting Aura, Deadly Aim), Martial against Magical (Mighty, War Mage), with the damage types under them and what enemy shields absorbed named apart. For a player's own skills the area side comes from the casts (a cast that struck two or more units) and, against a lone boss where every cast strikes one unit, from UESP's skill table (Impulse is an area skill, Crystal Fragments single target); a line under the bars says how much of the damage the table classed. A side's label links to its star on ESO-Hub and names it on hover.
 - **Penetration** and **Critical damage**: where the player's figures come from and how they stand against the caps, see below.
+
+![The Damage dealt section of the build window](screencaps/build-damage-dealt.png)
 
 ### Penetration and critical damage
 
@@ -157,13 +160,23 @@ A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deat
 
 ![The death recap window: the last seconds before a death](screencaps/death-recap.png)
 
-For each death the window names the killing ability and who used it, then lists the last 5 seconds of damage and healing, oldest first:
+The window opens with **Damage taken this fight**: everything that reached the player's health over the whole fight, summed by kind, then the abilities that did most of it. For each death it then names the killing ability and who used it, sums the last 5 seconds the same way, and lists those seconds of damage and healing, oldest first.
+
+The kinds are the splits the Warfare champion point stars act on, each a two-colour bar with the amounts and percentages on either side:
+
+- **direct** against **over time**: a hit or a tick (Ironclad and Enduring Resolve reduce them for damage taken).
+- **area** against **single target** (Unassailable and Duelist's Rebuff). The log does not say whether an attack was an area attack, so the app reads the cast: a cast that struck two or more players in the fight is area, and the row says `area · hit 8 players`. An ability that struck a group earlier in the session reads as area on a lone hit too; a cast that struck one player, of an ability never seen on two, reads as single target.
+- **Martial** against **Magical** (Hardy and Elemental Aegis): physical, bleed, poison and disease damage on one side; magic, fire, frost and shock on the other. Under the bar, the damage types behind them, `fire 64% · physical 19% · frost 17%`. Oblivion damage, fall damage and drowning belong to neither and are named apart.
+
+Under the bars: what got through while blocking (the log writes what a block let through, never what it saved), what damage shields absorbed, hits dodged or missed, the healing that landed against the overheal (with direct heals and heals over time apart: Focused Mending and Swift Renewal), and the killing blow's overkill. Each side's label links to the first star's ESO-Hub page, and hovering it names every Warfare star for that side with the game's text. The app never knows which stars a player has: the log does not carry them.
+
+The event table:
 
 - **Time** before the death, and the player's **health** after the event (with its share of max health).
 - The **ability**, with the game's icon, and its **source**: the monster or player that hit or healed.
-- The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
+- The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT, with the damage type after it (`Hit · fire`) and `area · hit N players` for an area hit. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
 
-Heals that were pure overheal are left out. A death the game writes just after combat ends (the last player standing in a wipe) still counts and is added to that fight.
+Heals that were pure overheal are left out of the table and counted in the overheal figure. A death the game writes just after combat ends (the last player standing in a wipe) still counts and is added to that fight. A fight recorded by an older version says `Damage kinds were not recorded for this fight` where the summaries would be.
 
 ## Tracked effects
 
@@ -307,7 +320,7 @@ The [design notes](design.md), collected from the code itself, go into each of t
 - Sets the bundled LibSets data does not know appear as `Set#<id>` and have no link.
 - A scribed skill's scripts are not always in the log, and the skill then shows `(scripts not in log)`. The game sometimes writes a player's skill without scripts (they usually follow by a later fight), and it writes each script combination once per logging session, for the first player seen with it, so a later player with the same combination gets no line of their own. When that leaves more than one possibility, the skill shows under the grimoire's name. For the same reason, a player who re-scribes mid-session to a combination already written keeps showing their earlier scripts.
 - After an ESO patch, new skills show as text until the icon set is refreshed. The ESO-Hub link maps use English page names, so logs from a non-English client will not link.
-- Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor and resistances mitigated is not in the log, and neither are health costs the player paid themselves, which appear only as a drop in the health column.
+- Death recaps show what the log records: damage that reached health, blocks, dodges, and shield absorption. What armor, resistances or a block mitigated is not in the log (a blocked hit's figure is what got through), and neither are health costs the player paid themselves, which appear only as a drop in the health column. The kinds of damage read the log's damage type and result; whether an attack was an area attack is not logged and is read from its cast (two or more units struck), so an area attack that only ever caught one player reads as single target, and a chain that bounced through the group reads as area. Melee against ranged is not shown: the log has no range, and its positions are map coordinates whose scale differs by map. Critical hits taken are not shown either: monsters do not crit players.
 - Gear is logged per equipped slot: an empty slot (the off hand beside a two-handed weapon, say) has no entry. A piece from a set newer than the bundled tables shows a dash in the Type column until they are refreshed.
 - Roles are a heuristic. A healer whose largest pool is health or stamina shows as a tank or a DPS, and a restoration staff from a set newer than the bundled weapon table is not recognised (out-healing their own damage still marks them a healer).
 - The build window shows the build as combat started. The game writes it once per fight, so gear or skills swapped during the fight do not show. The build-issue rules judge that same snapshot.

@@ -76,7 +76,10 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 0.04%, in the 1.3 s after END_COMBAT 0.02%.
 """
 
+from collections import Counter
 from typing import Callable, Dict, List, Optional, Tuple
+
+from damage_kinds import classify
 
 # LibCombat: dpstime = zo_max((dpsend - dpsstart) / 1000, 1)
 MIN_DPS_TIME_S = 1.0
@@ -206,7 +209,8 @@ class AbilityDamage:
     """One row of a breakdown: an ability, cast by the player or by a pet of
     theirs, and what its hits did."""
     __slots__ = ('ability_id', 'pet', 'damage', 'hits', 'crits', 'blocked',
-                 'shielded', 'ticks', 'max_hit', 'min_hit')
+                 'shielded', 'ticks', 'max_hit', 'min_hit', 'tick_damage', 'area_damage',
+                 'types')
 
     def __init__(self, ability_id: str, pet: bool):
         self.ability_id = ability_id
@@ -219,8 +223,13 @@ class AbilityDamage:
         self.ticks = 0  # of the hits, damage-over-time ticks
         self.max_hit = 0
         self.min_hit = 0
+        # The kinds of the hits (damage_kinds): the damage the ticks did,
+        # the damage from area hits, and the damage per type label
+        self.tick_damage = 0
+        self.area_damage = 0
+        self.types: Counter = Counter()
 
-    def note(self, hit: int, result: str) -> None:
+    def note(self, hit: int, result: str, damage_type: str = '', area: bool = False) -> None:
         self.damage += hit
         if result == SHIELDED:
             self.shielded += hit
@@ -232,16 +241,25 @@ class AbilityDamage:
             self.blocked += 1
         if result in TICK_RESULTS:
             self.ticks += 1
+            self.tick_damage += hit
+        if area:
+            self.area_damage += hit
+        self.types[classify(result, damage_type)['type']] += hit
         if hit > self.max_hit:
             self.max_hit = hit
         if self.min_hit == 0 or hit < self.min_hit:
             self.min_hit = hit
 
+    def move_to_area(self, hit: int) -> None:
+        """A cast counted single struck a second unit: its hit was area."""
+        self.area_damage += hit
+
     def as_dict(self, name: str, icon: str) -> dict:
         return {'id': self.ability_id, 'name': name, 'icon': icon, 'pet': self.pet,
                 'damage': self.damage, 'hits': self.hits, 'crits': self.crits,
                 'blocked': self.blocked, 'shielded': self.shielded, 'ticks': self.ticks,
-                'max': self.max_hit, 'min': self.min_hit}
+                'max': self.max_hit, 'min': self.min_hit, 'tick_damage': self.tick_damage,
+                'area_damage': self.area_damage, 'types': dict(self.types)}
 
 
 class TargetDamage:
@@ -273,7 +291,7 @@ class PlayerDamage:
     by, and the breakdowns the damage window shows."""
     __slots__ = ('damage', 'boss_damage', 'window', 'boss_window',
                  'abilities', 'boss_abilities', 'targets', 'buckets', 'boss_buckets',
-                 'target_buckets')
+                 'target_buckets', 'kinds', '_pending')
 
     def __init__(self):
         self.damage = 0
@@ -290,20 +308,37 @@ class PlayerDamage:
         # (pen_crit weighs the debuffs on each target by the damage dealt
         # to it that second)
         self.target_buckets: Dict[str, Dict[int, int]] = {}
+        # The kinds of the damage (damage_kinds): the sides of the three
+        # splits, the damage per type label, what rule classed the area
+        # side, and the shield absorbs, which sit outside the splits
+        self.kinds: Dict[str, object] = {
+            'direct': 0, 'dot': 0, 'area': 0, 'single': 0, 'martial': 0, 'magical': 0,
+            'oblivion': 0, 'other': 0, 'shielded': 0, 'types': Counter(), 'rules': Counter()}
+        # cast key -> [(rows, hit)] counted single until the cast's second
+        # target lands and the watcher moves them to area
+        self._pending: Dict[tuple, List[Tuple[tuple, int]]] = {}
 
     def note(self, ts: int, hit: int, result: str, ability_id: str, pet: bool,
-             target_id: str, boss: bool) -> None:
+             target_id: str, boss: bool, damage_type: str = '', area=None,
+             cast_key=None, watch=None) -> None:
+        """One hit. *damage_type* is the line's; *area* is (area?, rule)
+        from damage_kinds.area_of, None when nothing classes it; *watch*
+        registers a callback for the cast's second target (CastIndex.watch)
+        so a hit counted single is moved to area when the cast turns out to
+        be one, *cast_key* naming the cast."""
         self.damage += hit
         self.window.note(ts)
         _bucket(self.buckets, ts, hit)
         _bucket(self.target_buckets.setdefault(target_id, {}), ts, hit)
         if boss:
             _bucket(self.boss_buckets, ts, hit)
+        is_area, rule = area if area else (False, 'none')
         key = (ability_id, pet)
         row = self.abilities.get(key)
         if row is None:
             row = self.abilities[key] = AbilityDamage(ability_id, pet)
-        row.note(hit, result)
+        row.note(hit, result, damage_type, is_area)
+        rows = (row,)
         target = self.targets.get(target_id)
         if target is None:
             target = self.targets[target_id] = TargetDamage(target_id, boss)
@@ -314,7 +349,51 @@ class PlayerDamage:
             row = self.boss_abilities.get(key)
             if row is None:
                 row = self.boss_abilities[key] = AbilityDamage(ability_id, pet)
-            row.note(hit, result)
+            row.note(hit, result, damage_type, is_area)
+            rows = rows + (row,)
+        kinds = self.kinds
+        if result == SHIELDED:
+            kinds['shielded'] += hit
+            return
+        classed = classify(result, damage_type)
+        if classed['time'] in ('direct', 'dot'):
+            kinds[classed['time']] += hit
+        kinds[classed['school']] += hit
+        kinds['types'][classed['type']] += hit
+        kinds['rules'][rule] += hit
+        if is_area:
+            kinds['area'] += hit
+        else:
+            kinds['single'] += hit
+            if watch is not None and rule == 'none' and cast_key is not None:
+                pending = self._pending.get(cast_key)
+                if pending is None:
+                    pending = self._pending[cast_key] = []
+                    watch(lambda key=cast_key: self._cast_became_area(key))
+                pending.append((rows, hit))
+
+    def _cast_became_area(self, cast_key) -> None:
+        """The cast's second target landed: its earlier hits were area."""
+        kinds = self.kinds
+        for rows, hit in self._pending.pop(cast_key, ()):
+            kinds['single'] -= hit
+            kinds['area'] += hit
+            kinds['rules']['none'] -= hit
+            kinds['rules']['cast'] += hit
+            for row in rows:
+                row.move_to_area(hit)
+
+    def kinds_snapshot(self) -> dict:
+        """The kinds as primitives for the build window: the sides, the
+        types, the rules and the shield absorbs, with 'total' the damage
+        the sides sum (every hit but the absorbs)."""
+        kinds = self.kinds
+        out = {key: kinds[key] for key in ('direct', 'dot', 'area', 'single', 'martial',
+                                           'magical', 'oblivion', 'other', 'shielded')}
+        out['total'] = self.damage - kinds['shielded']
+        out['types'] = dict(kinds['types'])
+        out['rules'] = dict(kinds['rules'])
+        return out
 
     def dps(self) -> float:
         return dps(self.damage, self.window.span_ms)
@@ -344,6 +423,8 @@ class PlayerDamage:
             'targets': targets,
             'series': series_of(self.buckets, origin_ms),
             'boss_series': series_of(self.boss_buckets, origin_ms),
+            # The kinds of the damage, for the build window (damage_kinds)
+            'kinds': self.kinds_snapshot(),
         }
 
 
@@ -365,10 +446,14 @@ class FightDamage:
         self.target_buckets: Dict[str, Dict[int, int]] = {}
 
     def note(self, player_id: str, ts: int, hit: int, result: str, ability_id: str,
-             pet: bool, target_id: str, boss: bool, also: Optional[str] = None) -> None:
+             pet: bool, target_id: str, boss: bool, damage_type: str = '', area=None,
+             cast_key=None, watch=None, also: Optional[str] = None) -> None:
         """One hit: once for the group, then on *player_id*'s record and, when
         *also* names another record, on that one too as a pet's hit (a
-        companion's hit counted as its owner's as well, see companions.py)."""
+        companion's hit counted as its owner's as well, see companions.py).
+        *damage_type*, *area*, *cast_key* and *watch* are the kinds of the
+        damage (damage_kinds), handed to each record; the cast watcher takes
+        a callback per record."""
         self.window.note(ts)
         _bucket(self.buckets, ts, hit)
         _bucket(self.target_buckets.setdefault(target_id, {}), ts, hit)
@@ -381,7 +466,8 @@ class FightDamage:
             player = self.players.get(record_id)
             if player is None:
                 player = self.players[record_id] = PlayerDamage()
-            player.note(ts, hit, result, ability_id, as_pet, target_id, boss)
+            player.note(ts, hit, result, ability_id, as_pet, target_id, boss,
+                        damage_type, area, cast_key, watch)
 
     def player(self, player_id: str) -> PlayerDamage:
         """The player's record, an empty one for a player who dealt nothing."""

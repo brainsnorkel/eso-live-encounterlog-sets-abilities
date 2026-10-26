@@ -1019,5 +1019,59 @@ class TestBuildWindow(BuildGuiTestCase):
             win.close()
 
 
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestDamageDealtSection(unittest.TestCase):
+    """The Damage dealt section (damage_kinds): the kinds of the player's
+    damage from the record, the no-damage and not-recorded lines, the star
+    links' hover text in the window."""
+
+    def setUp(self):
+        _ensure_app()
+
+    def test_the_section_sums_the_fights_damage_by_kind(self):
+        from damage_kinds import stars_for
+        from gui.build_render import DEALT_TITLE, render_build_html
+        entry = _entry()
+        html = render_build_html(entry, '1')
+        self.assertIn(DEALT_TITLE, html)
+        section = html[html.index(DEALT_TITLE):html.index('Penetration')]
+        # @brainsnorkel's one physical hit of 90,000 (build_session.HIT)
+        self.assertIn('<b>90,000</b> damage dealt in this fight', section)
+        self.assertIn('physical 100%', section)
+        self.assertIn('100%', section)
+        self.assertIn(f'href="{stars_for("dealt", "direct")[0]["url"]}"', section)
+        self.assertIn(f'href="{stars_for("dealt", "martial")[0]["url"]}"', section)
+        self.assertNotIn('Preparation', section)
+        # The section sits after the bars and before Penetration
+        self.assertLess(html.index('Back bar') if 'Back bar' in html else 0, html.index(DEALT_TITLE))
+
+    def test_no_damage_and_entries_from_before_the_kinds(self):
+        from gui.build_render import DEALT_NOT_RECORDED, NO_DEALT, render_build_html
+        entry = _entry()
+        quiet = copy.deepcopy(entry)
+        p = _player(quiet, '1')
+        p['damage'] = dict(p['damage'], total=0, boss=0, abilities=[], boss_abilities=[])
+        self.assertIn(NO_DEALT, render_build_html(quiet, '1'))
+        old = copy.deepcopy(entry)
+        _player(old, '1')['damage'].pop('kinds')
+        self.assertIn(DEALT_NOT_RECORDED, render_build_html(old, '1'))
+        older = copy.deepcopy(entry)
+        _player(older, '1').pop('damage')
+        self.assertIn(DEALT_NOT_RECORDED, render_build_html(older, '1'))
+
+    def test_the_window_serves_the_star_hover_text(self):
+        from damage_kinds import stars_for
+        from gui.build_dialog import BuildDialog
+        dialog = BuildDialog()
+        try:
+            dialog.show_build(_entry(), '1', dark=True)
+            url = stars_for('dealt', 'dot')[0]['url']
+            self.assertIn('Thaumaturge', dialog.view._tooltips.get(url, ''))
+            self.assertIn('Damage dealt', dialog.view.toPlainText())
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+
 if __name__ == '__main__':
     unittest.main()

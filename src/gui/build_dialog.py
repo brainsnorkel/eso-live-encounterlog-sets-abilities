@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from gui.build_render import build_title, render_build_html
+from gui.death_render import kind_tooltips
 from gui.fight_render import anchor_tooltips
 from gui.fight_view import FightView
 
@@ -49,10 +50,13 @@ class BuildDialog(QDialog):
         self._shown = (entry, unit_id, pen_crit_options, names)
         self.setWindowTitle(build_title(entry, unit_id, names))
         # The window's anchors use the fight view's targets, so its hover
-        # text serves here too
-        self.view.set_tooltips(anchor_tooltips(
+        # text serves here too; the Damage dealt section's star links carry
+        # the Warfare stars for each side (death_render.kind_tooltips)
+        tooltips = anchor_tooltips(
             entry, links=esohub_ability_url, set_links=esohub_set_url,
-            script_links=esohub_script_url))
+            script_links=esohub_script_url)
+        tooltips.update(kind_tooltips())
+        self.view.set_tooltips(tooltips)
         self.view.setHtml(render_build_html(
             entry, unit_id, dark=dark, icons=self.view.icons,
             links=esohub_ability_url, set_links=esohub_set_url,

@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2163](../src/esolog_tail.py#L2163)*
+*[src/esolog_tail.py:2240](../src/esolog_tail.py#L2240)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:74](../src/esolog_tail.py#L74)*
+*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1596](../src/esolog_tail.py#L1596)*
+*[src/esolog_tail.py:1633](../src/esolog_tail.py#L1633)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1611](../src/esolog_tail.py#L1611)*
+*[src/esolog_tail.py:1648](../src/esolog_tail.py#L1648)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:68](../src/esolog_tail.py#L68)*
+*[src/esolog_tail.py:69](../src/esolog_tail.py#L69)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3478](../src/esolog_tail.py#L3478)*
+*[src/esolog_tail.py:3562](../src/esolog_tail.py#L3562)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:349](../src/esolog_tail.py#L349)*
+*[src/esolog_tail.py:350](../src/esolog_tail.py#L350)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -430,7 +430,8 @@ October 2026):
   reads for every pet. A companion is known by its reaction or its monster
   id, and its name is taken from its UNIT_ADDED, never from the rename.
 - A companion gets a new unit id every time it is summoned again (after a
-  death, a zone change, a dismissal), up to five times in one solo run, so
+  death, a zone change, a dismissal): four unit ids for one Isobel in a
+  solo Moon Hunter Keep run of 2026-10-26, where she died five times, so
   its row is keyed by owner and monster id (row_key), not by unit id: the
   re-summons of one companion within a zone are one row.
 - PLAYER_INFO never names a companion, so the log has no bar or gear for
@@ -827,7 +828,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:392](../src/gui/build_render.py#L392)*
+*[src/gui/build_render.py:441](../src/gui/build_render.py#L441)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1253,7 +1254,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:741](../src/esolog_tail.py#L741)*
+*[src/esolog_tail.py:770](../src/esolog_tail.py#L770)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1293,13 +1294,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:83](../src/esolog_tail.py#L83)*
+*[src/esolog_tail.py:84](../src/esolog_tail.py#L84)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:399](../src/esolog_tail.py#L399)*
+*[src/esolog_tail.py:400](../src/esolog_tail.py#L400)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1383,7 +1384,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:100](../src/esolog_tail.py#L100)*
+*[src/esolog_tail.py:101](../src/esolog_tail.py#L101)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1391,7 +1392,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:118](../src/esolog_tail.py#L118)*
+*[src/esolog_tail.py:119](../src/esolog_tail.py#L119)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1477,7 +1478,7 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 
 ### dps_time_s
 
-*[src/damage_stats.py:90](../src/damage_stats.py#L90)*
+*[src/damage_stats.py:93](../src/damage_stats.py#L93)*
 
 A dps time: the span in seconds, floored at a second like LibCombat.
 
@@ -1537,7 +1538,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:509](../src/esolog_tail.py#L509)*
+*[src/esolog_tail.py:513](../src/esolog_tail.py#L513)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1560,7 +1561,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:625](../src/esolog_tail.py#L625)*
+*[src/esolog_tail.py:636](../src/esolog_tail.py#L636)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1570,11 +1571,17 @@ other enemies, and the like. *to_boss* says the target is a unit
 the game flags as a boss, so the hit also counts as boss damage.
 With the hit's *timestamp*, *result*, *ability_id* and *target_id*
 the hit also goes into the fight's damage record (damage_stats):
-the spans the dps figures divide by, and the breakdowns.
+the spans the dps figures divide by, and the breakdowns. With its
+*damage_type*, *cast_id* and the analyzer's *cast_index* the record
+also keeps the kinds of the damage (damage_kinds): the area rule
+reads the cast, the session and the player-skill table, and a hit
+counted single is moved to area should its cast strike a second
+unit later.
 
 A companion's damage is its own row's (companions.py), keyed by
-the companion's row key; with *accrue_companions* (the setting
-companions.accrue_to_owner) it is its owner's as well.
+the companion's row key, with its kinds like a player's; with
+*accrue_companions* (the setting companions.accrue_to_owner) it is
+its owner's as well.
 
 ## Death recaps
 
@@ -1602,6 +1609,91 @@ logs):
   attacker as source, the same castTrackId, and the shield as the ability.
   Several shields can soak one hit, and the death event can sit between the
   shields and the hit.
+
+Each row also carries the kinds of the hit (damage_kinds, issue #73): its
+damage type, and whether it was an area hit, read from the cast index the
+analyzer shares with the recorder (a cast that struck two or more units),
+with the rule that decided and the number of players the cast struck. Rows
+are classed when the recap is built or refilled, and once more when the
+fight ends (refresh_fight), so a ground effect that reached a second player
+seconds after the death still reads as area. Pure overheals (a heal line
+whose hit value is zero) are kept in the window for the recap's overheal
+sum but never become rows.
+
+## Kinds of damage: direct or over time, area or single target, Martial or Magical
+
+### src/damage_kinds.py
+
+*[src/damage_kinds.py:1](../src/damage_kinds.py#L1)*
+
+The kinds of damage: direct or over time, area or single target, Martial or
+Magical, and what shields, blocks, heals and overheal did (issue #73).
+Engine side, no Qt. The death recap and the build window draw the same
+summary from the same rules, so a reader learns one vocabulary.
+
+Design. The Warfare champion point stars act on four splits of a hit, and
+the encounter log carries three of them on every COMBAT_EVENT line:
+
+- **Direct or over time** is the result: DAMAGE, CRITICAL_DAMAGE and
+  BLOCKED_DAMAGE are direct, DOT_TICK and DOT_TICK_CRITICAL are over time
+  (Master-at-Arms and Thaumaturge for damage dealt, Ironclad and Enduring
+  Resolve for damage taken). FALL_DAMAGE is neither and is named "fall".
+- **Martial or Magical** is the damage type: PHYSICAL, BLEED, POISON and
+  DISEASE are Martial (Mighty, Hardy), MAGIC, FIRE, COLD and SHOCK are
+  Magical (War Mage, Elemental Aegis). OBLIVION belongs to neither and no
+  star reduces it; DROWN, GENERIC, NONE, EARTH and any type a later patch
+  adds are "untyped" and shown under the log's own word, never refused.
+  Over 87 of Chris's split logs (11.6 million combat lines, 6,831 player
+  deaths; 2026-10-27) the damage that reached players' health was 885M
+  Magical, 411M Martial, 44M Oblivion and 20M fall, drowning or untyped,
+  89% of it direct and 11% ticks; the death lines by type were MAGIC 1,434,
+  PHYSICAL 1,391, SHOCK 1,257, FIRE 1,053, OBLIVION 770, COLD 587, POISON
+  243, GENERIC 59, BLEED 17, DISEASE 17, DROWN 3. EARTH appeared on five
+  hits, NONE on REFLECTED lines and on the zero-value DAMAGE line the game
+  writes beside a DAMAGE_SHIELDED line when a shield took the whole hit.
+- **Blocked, absorbed, avoided.** A BLOCKED_DAMAGE hit value is what got
+  through the block and counts as direct damage; how much the block
+  prevented is not in the log, so it is never stated. A DAMAGE_SHIELDED
+  line is what a shield absorbed and is never added to the damage that
+  reached health (shields absorbed 726M on players in the survey, more than
+  any one damage type reached health). DODGED and MISS are counted, not
+  summed. IMMUNE and REFLECTED are not counted.
+- **Healing.** HEAL and CRITICAL_HEAL are direct heals, HOT_TICK and
+  HOT_TICK_CRITICAL heals over time (Focused Mending, Swift Renewal); the hit
+  value landed and the overflow is overheal (1.17B landed against 12.4B
+  overheal in the survey; 3.1M of 3.6M heal lines were pure overheal).
+  HEAL_ABSORBED is healing a healing-absorb effect ate. The killing blow's
+  overflow is overkill (written on 6,039 of 6,398 killing blows; a blow
+  written as BLOCKED_DAMAGE or FALL_DAMAGE carries none).
+
+**Area or single target is not in the log** (Biting Aura and Deadly Aim,
+Unassailable and Duelist's Rebuff), and is read from the cast id. Every
+hostile hit on a player in the survey carried a non-zero castTrackId, and
+grouping hits by (source unit, cast id) separates the mechanics that kill
+groups from the attacks that pick one player: Maelstrom's 147 casts struck
+up to 12 players each, Grievous Pulse's 38 casts struck more than one player
+every time, Oppressive Bolts' 266 casts 98% of the time; Piercing Hailstone,
+Venom Injection, Temporal Splinters, Swipe, Claw and Clash struck one unit
+per cast, always. So a hit is area when its cast struck two or more distinct
+units in the fight, counting hits before and after it; a hit of a cast that
+struck one unit is area when a cast of the same ability struck two or more
+earlier in the zone session (a repeat pull of the same boss); for a player's
+or pet's own ability with no such evidence the bundled table of player
+skills' target kinds decides (data/skills/ability_targets.json, Area, Cone
+and Ground against Enemy, from UESP's skill table); otherwise single target.
+Monster abilities never consult the table: UESP's target field calls
+Oppressive Bolts and other group-wide mechanics "Enemy", and knew only 74%
+of the hostile damage in the survey, so for monsters the log is the better
+judge. The rule that classed a hit is kept beside it, so a reader can be
+told "this cast hit 8 players" or "no cast of this ability struck two
+players this session". Melee against ranged is not attempted: the log has no
+range, its unit positions are normalised map coordinates whose scale differs
+by map, and no Warfare star reads it.
+
+A session's cast index and a fight's damage-taken tallies cost a few
+dictionaries: the (source, cast) map is cleared at each fight's end, the
+per-ability memory with the zone session (unit ids start over), and a cast's
+pending amounts are dropped the moment its second target lands.
 
 ## Experimental buff timeline
 
