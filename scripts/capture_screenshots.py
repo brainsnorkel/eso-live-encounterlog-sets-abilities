@@ -16,6 +16,7 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
+    build-damage-dealt.png          the same window scrolled to its Damage dealt section
     build-pen-crit.png              the same window scrolled to its penetration and crit sections
     build-issues.png                the (i) popup of a player's possible build issues
     update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
@@ -158,8 +159,12 @@ def main():
         win._show_build(players[0]["unit_id"])
         pump(1.5)
         save(win._build_dialog, "build-window.png")
-        # The Penetration and Critical damage sections sit under the gear grid
-        from gui.build_render import PEN_CRIT_ANCHOR
+        # The Damage dealt section sits under the gear grid, the
+        # Penetration and Critical damage sections under it
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR
+        win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
+        pump(0.5)
+        save(win._build_dialog, "build-damage-dealt.png")
         win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-pen-crit.png")
