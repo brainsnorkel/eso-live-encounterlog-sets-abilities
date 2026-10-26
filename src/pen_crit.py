@@ -98,23 +98,37 @@ Solo dungeons and the Armour row (issue #55). The solo dungeons of October
 2026 are the group dungeons' layouts and bosses at a zone id of their own,
 with the dungeon's name and difficulty NONE on the ZONE_CHANGED line (the
 solo March of Sacrifices is zone 1592, the group dungeon 1055, logged on
-2026-10-25 and 2026-09-22); nothing else in the log says solo, and the
-run's Misfortunes, picked at the door, did not appear in that log. Read by
-difficulty alone a solo dungeon is overland, 9,100, so SOLO_DUNGEON_ZONES
-names the ids and zone_kind reads it first; the figures are the
-hyperioxes.com Moon Hunter Keep guide's: trash 18,200 like any instance,
-bosses 27,300, the final boss 36,400, and the game's cap of 25,000 on an
-enemy's armour, above which penetration changes nothing until the debuffs
-bring the armour under. Every boss is taken at 27,300 (the maintainer's
-choice, 2026-10-26); the labels say the final boss has more. The buff
-timeline's Armour row (armour_row) draws the target's armour less the
-group's armour debuffs on it, second by second, from a series fight_fields
-keeps on the target the group damaged most: spans of equal debuff sum and
-names, the sum rather than the remainder so the Settings' cap override
-can restate the estimate. The remainder is averaged over time for the
-label, where the build window's effective figures weigh each second by
-the damage dealt; the two are different questions (how long the armour
-was down, and how much of the damage met it down).
+2026-10-25 and 2026-09-22; the solo Moon Hunter Keep is 1593, the group
+dungeon 1052, logged on 2026-10-26 and 2026-06-11); nothing else in the log
+says solo. The Misfortunes picked at the door were absent from the March of
+Sacrifices log and present in the Moon Hunter Keep one: each is a DEBUFF the
+player carries from the door to the end (Warm Welcome 269749, Revoke of
+Respite 269803, Alleviating Assault 269792), every enemy spawns with a
+"Misfortune Level Three" BUFF (267457 and 267460 on trash, 272449 and 272450
+on the boss), and Alleviating Assault works as a HEAL event from the player
+to the enemy hit, 5,100 on trash and 8,160 on a boss at most every 3 s, so
+the player's heal events include heals on hostile units. None of the three
+touches armour (double enemy damage, half the healing received, the heal),
+so the figures here hold under any Misfortune; the boss's logged health,
+2,157,795 for Jailer Melitus, is the guide's figure for three Misfortunes,
+which is why the guide's armour figures are trusted. The solo bosses have
+monster ids of their own (Jailer Melitus 132991, where the group dungeon's
+bosses are 83219 to 83223), so a per-boss table could not reuse the group
+ids. Read by difficulty alone a solo dungeon is overland, 9,100, so
+SOLO_DUNGEON_ZONES names the ids and zone_kind reads it first; the figures
+are the hyperioxes.com Moon Hunter Keep guide's: trash 18,200 like any
+instance, bosses 27,300, the final boss 36,400, and the game's cap of 25,000
+on an enemy's armour, above which penetration changes nothing until the
+debuffs bring the armour under. Every boss is taken at 27,300 (the
+maintainer's choice, 2026-10-26); the labels say the final boss has more.
+The buff timeline's Armour row (armour_row) draws the target's armour less
+the group's armour debuffs on it, second by second, from a series
+fight_fields keeps on the target the group damaged most: spans of equal
+debuff sum and names, the sum rather than the remainder so the Settings' cap
+override can restate the estimate. The remainder is averaged over time for
+the label, where the build window's effective figures weigh each second by
+the damage dealt; the two are different questions (how long the armour was
+down, and how much of the damage met it down).
 
 The row's window (issue #64). A fight runs from BEGIN_COMBAT to
 END_COMBAT, and the target the row follows need not be there for all of
@@ -167,17 +181,18 @@ PEN_CAP_OVERLAND = 9100
 # Solo dungeons (October 2026): the group dungeons' layouts and bosses at
 # a zone id of their own, with the dungeon's name and difficulty NONE on
 # the ZONE_CHANGED line, which is the log's only marker (the solo March of
-# Sacrifices is 1592, the group dungeon 1055). The figures are the
-# hyperioxes.com Moon Hunter Keep guide's (October 2026): trash 18,200
-# like any instance, bosses 27,300, the final boss 36,400 (Balorgh, Vykosa
-# the Ascendant), and the game caps an enemy's armour at 25,000 (50%
-# damage reduction), so against a boss the first 2,300 of penetration
-# changes nothing until the debuffs bring the armour under the cap. Every
-# boss is taken at 27,300 (the maintainer's choice, 2026-10-26): no
-# per-boss table, the labels say the final boss has more. Moon Hunter
-# Keep's solo zone id is in no log yet: read it off the ZONE_CHANGED line
-# of a solo run and add it here.
-SOLO_DUNGEON_ZONES = {"1592": "March of Sacrifices"}
+# Sacrifices is 1592, the group dungeon 1055; the solo Moon Hunter Keep is
+# 1593, the group dungeon 1052). The figures are the hyperioxes.com Moon
+# Hunter Keep guide's (October 2026): trash 18,200 like any instance,
+# bosses 27,300, the final boss 36,400 (Balorgh, Vykosa the Ascendant),
+# and the game caps an enemy's armour at 25,000 (50% damage reduction),
+# so against a boss the first 2,300 of penetration changes nothing until
+# the debuffs bring the armour under the cap. Every boss is taken at
+# 27,300 (the maintainer's choice, 2026-10-26): no per-boss table, the
+# labels say the final boss has more. The run's Misfortunes change the
+# enemies' health and damage, not their armour (the module docstring has
+# their ids), so no figure here depends on them.
+SOLO_DUNGEON_ZONES = {"1592": "March of Sacrifices", "1593": "Moon Hunter Keep"}
 SOLO_BOSS_ARMOUR = 27300
 SOLO_FINAL_BOSS_ARMOUR = 36400
 ENEMY_ARMOUR_CAP = 25000

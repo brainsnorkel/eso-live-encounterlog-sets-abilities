@@ -366,6 +366,9 @@ class TestZones(unittest.TestCase):
     def test_zone_kind_and_target_armour(self):
         self.assertEqual(pen_crit.zone_kind("1592", "NONE"), "solo_dungeon")
         self.assertEqual(pen_crit.zone_kind(1592, ""), "solo_dungeon")
+        # Moon Hunter Keep solo, from the 2026-10-26 log; the group dungeon is 1052
+        self.assertEqual(pen_crit.zone_kind("1593", "NONE"), "solo_dungeon")
+        self.assertEqual(pen_crit.zone_kind("1052", "VETERAN"), "instanced")
         self.assertEqual(pen_crit.zone_kind("1055", "VETERAN"), "instanced")
         self.assertEqual(pen_crit.zone_kind("1126", "NONE", dummy=True), "instanced")
         self.assertEqual(pen_crit.zone_kind("382", "NONE"), "overland")
