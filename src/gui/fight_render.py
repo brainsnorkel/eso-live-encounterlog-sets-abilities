@@ -69,7 +69,8 @@ from gui.name_mask import NO_MASK
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
 
-ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS"}
+ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS", "C": "Companion"}
+COMPANION_INDENT = "↳ "  # before a companion's name, under its owner's row (companions.py)
 
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
@@ -176,8 +177,12 @@ def build_tooltips(entry, names=None) -> dict:
         lines = [f"<b>{e(names.text(name))}</b>"]
         if character and character != name:
             lines.append(e(names.text(character)))
-        lines.append("<span style='font-size:85%'>Click for the full build: bars, gear, "
-                     "mundus and food</span>")
+        if p.get("companion"):
+            lines.append("<span style='font-size:85%'>Companion. Click for the skills it "
+                         "was seen casting</span>")
+        else:
+            lines.append("<span style='font-size:85%'>Click for the full build: bars, gear, "
+                         "mundus and food</span>")
         tips[build_href(unit_id)] = "<br>".join(lines)
     return tips
 
@@ -423,7 +428,10 @@ def _is_boss_fight(entry) -> bool:
 
 
 def _resources_html(p) -> str:
-    """'H 23.3k · M 14.9k · S 27.6k' with the largest pool in bold."""
+    """'H 23.3k · M 14.9k · S 27.6k' with the largest pool in bold; a
+    companion has a health pool only ('H 33k')."""
+    if p.get("companion"):
+        return f"H {_fmt_resource(p.get('h'))}" if p.get("h") else ""
     pools = [("H", p.get("h")), ("M", p.get("m")), ("S", p.get("s"))]
     values = []
     for _label, raw in pools:
@@ -868,6 +876,14 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # Death-recap button for a player who died in this fight
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
+        # A companion's row (companions.py) hangs under its owner's, and its
+        # deaths are a muted mark: the log keeps no recap of them
+        if p.get("companion"):
+            name = f"<span style='color:{muted}'>{COMPANION_INDENT}</span>{name}"
+            died = int(p.get("deaths") or 0)
+            if died:
+                recap_html = (f"&nbsp;&nbsp;<span style='color:{muted}'>{DEATH_CUE}"
+                              f"{f' ×{died}' if died > 1 else ''}</span>")
         class_abbr = e(_join(p.get("class_abbr", "")))
         # Beside the class: the lines a build borrows from another class
         # ("NB +Herald"), or a pure-class build's Class Mastery passives
@@ -1007,7 +1023,8 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
-        lines.append(f"[{role}] {names.text(_join(p.get('name', '')))}{star} "
+        indent = COMPANION_INDENT if p.get("companion") else ""
+        lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else ""))
         skill_lines = _subclass_text(p, short=False)

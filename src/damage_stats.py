@@ -365,17 +365,23 @@ class FightDamage:
         self.target_buckets: Dict[str, Dict[int, int]] = {}
 
     def note(self, player_id: str, ts: int, hit: int, result: str, ability_id: str,
-             pet: bool, target_id: str, boss: bool) -> None:
+             pet: bool, target_id: str, boss: bool, also: Optional[str] = None) -> None:
+        """One hit: once for the group, then on *player_id*'s record and, when
+        *also* names another record, on that one too as a pet's hit (a
+        companion's hit counted as its owner's as well, see companions.py)."""
         self.window.note(ts)
         _bucket(self.buckets, ts, hit)
         _bucket(self.target_buckets.setdefault(target_id, {}), ts, hit)
         if boss:
             self.boss_window.note(ts)
             _bucket(self.boss_buckets, ts, hit)
-        player = self.players.get(player_id)
-        if player is None:
-            player = self.players[player_id] = PlayerDamage()
-        player.note(ts, hit, result, ability_id, pet, target_id, boss)
+        for record_id, as_pet in ((player_id, pet), (also, True)):
+            if record_id is None:
+                continue
+            player = self.players.get(record_id)
+            if player is None:
+                player = self.players[record_id] = PlayerDamage()
+            player.note(ts, hit, result, ability_id, as_pet, target_id, boss)
 
     def player(self, player_id: str) -> PlayerDamage:
         """The player's record, an empty one for a player who dealt nothing."""

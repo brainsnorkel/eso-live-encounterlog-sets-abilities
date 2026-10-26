@@ -59,6 +59,9 @@ TOPICS = [
     ("Werewolf form: the bar the log never writes", [
         "src/werewolf.py",
     ]),
+    ("Companions: a row of their own under their owner", [
+        "src/companions.py",
+    ]),
     ("Builds: gear, weapon types, armor weights, mundus and food", [
         "src/player_build.py",
         "scripts/generate_weapon_types.py",

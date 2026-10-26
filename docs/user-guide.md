@@ -46,7 +46,7 @@ The list on the left has one line per completed fight: `boss · duration · grou
   - the class. A build that borrows skill lines from another class shows those lines after a plus sign, `NB +Aedric +Grave`, read from the character's passives, so a line taken for its passives alone shows too. A pure-class build names its Class Mastery passives after a colon instead, `NB: An Eye for Exploitation, Above and Beyond`. A stock build shows just the class;
   - DPS and the share of the group's damage, each `boss / total` in a fight with a boss (against the units the game flags as bosses, then against everything), and max health, magicka and stamina with the largest pool in bold. The small three-bar mark after a DPS figure says it opens something: click it for the player's [damage window](#a-players-damage); hover it for the time the figure divides by.
 
-DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar, a companion. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on). Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's.
+DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal Archer, a Warden's bear, a Sorcerer's atronachs and familiar. A companion is not a pet here: it has [a row of its own](#companions) under its owner. Damage-over-time ticks count, as in Combat Metrics; see [Damage](#what-the-numbers-are-based-on). Each figure divides by its **dps time**, the time from the first of those hits to the last (a second at least) rather than the whole fight, which is also how Combat Metrics works: a player's DPS over the span of their own hits, their boss DPS over the span of their hits on the bosses, the group's over the span of the group's.
 
 ### A player's row in detail
 
@@ -59,6 +59,12 @@ With **Detail view** on (the default; Tab toggles it), each row shows the player
 - The line under the bars lists every equipped set with its piece count, `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`; each name opens the set's ESO-Hub page.
 - A `ⓘ` after a player's class means the app found a [possible build issue](#possible-build-issues) in the build they pulled with. Hover it for the list; click it for each finding with the rule behind it. A player without one has no `ⓘ`, in either view.
 - After the shares, `p:18199 cd:121%`: the player's estimated effective penetration and critical damage over this fight, from their build and the fight's effects, with the Champion Point rows Settings assumes (see [Penetration and critical damage](#penetration-and-critical-damage)); each second is capped, so a figure at the cap reads as the cap. Hover it for the caps, the shares of them and the share of damage dealt over them; click it for every source. A player who dealt no damage has no token. Shown in both views.
+
+### Companions
+
+A companion that is out during a fight (Mirri, Bastian, Ember, Isobel, Sharp-as-Night, Azandar, Tanlorin, Zerith-var) has a row of its own straight under the player it belongs to, marked `↳` with `C` in the role column and its level where a player's class goes. Its DPS, share and health are its own, and its DPS opens the damage window like a player's. Its name opens a short window with its level, its owner and the companion skills it was seen casting this session: the game writes no bar, gear or perks for a companion into its log, so in Detail view the row's bar is those skills, in the order first cast. A `☠` after its name means it died in the fight; that is not counted in the fight's Deaths, which are players', and has no recap.
+
+By default the owner's figures are their own, as in Combat Metrics, which never counts a companion as the player's. Turn on **Count a companion's damage and healing as its owner's too** under Companions in Settings for the old way: the owner's DPS and share then include the companion's, its abilities show `(pet)` in the owner's damage window, and the shares add up to more than 100%. A companion of a player who has no row, or whose owner the log never named, has no row either; its damage is still in the group's.
 
 With Detail view off, the rows are one line each, for a quick ranking:
 
@@ -242,6 +248,7 @@ Open **Settings…** from the toolbar.
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
 - **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
+- **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
 - **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 - **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
 

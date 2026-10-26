@@ -44,6 +44,9 @@ def build_analyzer(config: AppConfig,
     # here and reported in Settings
     rules, _errors = parse_rules(config.get("tracking.rules", DEFAULT_RULES) or "")
     analyzer.effect_tracker = EffectTracker(rules)
+    # A companion's damage and healing on its owner's row too (companions.py);
+    # Settings restarts the engine on save, so the change replays the session
+    analyzer.companion_accrual = bool(config.get("companions.accrue_to_owner", False))
     analyzer.fight_history = FightHistory()
     for listener in listeners:
         analyzer.add_listener(listener)

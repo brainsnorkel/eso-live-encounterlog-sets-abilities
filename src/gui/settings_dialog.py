@@ -45,6 +45,10 @@ PRIVACY_HELP = ("For screenshots and sharing: every player but the one writing t
                 "pixelated in the fight pane and the windows, and reads as blocks in hover "
                 "text, pop-ups and the copied fight. The same switch as the toolbar's Hide "
                 "names button.")
+COMPANION_HELP = ("A companion that is out has its own row under its owner. Off, the owner's "
+                  "figures are their own, as in Combat Metrics; on, the owner's dps and share "
+                  "include the companion's too, so the shares add up to more than 100%. "
+                  "Applies when Settings is saved, to the fights already listed.")
 
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
@@ -180,6 +184,20 @@ class SettingsDialog(QDialog):
         privacy_form.addRow(privacy_help)
         layout.addWidget(privacy_group)
 
+        # Companions (issue #74, companions.py): each has its own row under
+        # its owner; this adds its figures to the owner's as well
+        companion_group = QGroupBox("Companions")
+        companion_form = QFormLayout(companion_group)
+        self.companion_accrual = QCheckBox(
+            "Count a companion's damage and healing as its owner's too")
+        self.companion_accrual.setChecked(bool(config.get("companions.accrue_to_owner", False)))
+        companion_form.addRow(self.companion_accrual)
+        companion_help = QLabel(COMPANION_HELP)
+        companion_help.setWordWrap(True)
+        companion_help.setStyleSheet("color: #888; font-size: 11px;")
+        companion_form.addRow(companion_help)
+        layout.addWidget(companion_group)
+
         # Tracked effects: the rule text, with its parse result underneath;
         # the timeline strip above each fight draws them
         tracking_group = QGroupBox("Tracked effects (the timeline strip)")
@@ -303,6 +321,7 @@ class SettingsDialog(QDialog):
         self.config.set("archive.delete_original", self.delete_original.isChecked())
         self.config.set("update.check_enabled", self.update_check.isChecked())
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
+        self.config.set("companions.accrue_to_owner", self.companion_accrual.isChecked())
         self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())
         self.config.set("pen_crit.fighting_finesse", self.assume_finesse.isChecked())
         self.config.set("pen_crit.backstabber", self.assume_backstabber.isChecked())
