@@ -496,6 +496,125 @@ class TestZones(unittest.TestCase):
         self.assertEqual((entry["armour"]["target"], entry["armour"]["window"]), ("81", [[2000, 5000]]))
 
 
+class TestPackReading(unittest.TestCase):
+    """Issue #66: what armour the group's damage was going into, second by
+    second, whatever it was hitting."""
+
+    def test_the_pack_reading_fills_the_time_before_a_late_boss(self):
+        tracker = pen_crit.new_tracker()
+        tracker.record("GAINED", "61743", "80", 1, 11000, "enemy", source_id="2")  # Major Breach on a mob
+        tracker.record("FADED", "61743", "80", 1, 13000, "enemy", source_id="2")
+        tracker.record("GAINED", "61743", "70", 1, 20000, "boss", source_id="2")  # and on the boss
+        units = {"2": ("group", None, None), "70": ("boss", None, None),
+                 "80": ("enemy", None, None), "81": ("enemy", None, None)}
+        names = {"70": "Xoryn", "80": "Prism", "81": "Slasher"}
+        buckets = {"80": {11: 500, 12: 500}, "81": {12: 200, 13: 300}, "70": {20: 1000, 21: 1000}}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 30000, units, buckets, {}, lambda u: names.get(u, u), lambda u: {},
+            zone="instanced", set_table=SETS)
+        armour = entry["armour"]
+        # The boss row as before: Xoryn alone, his window alone
+        self.assertEqual((armour["target"], armour["boss"], armour["window"]), ("Xoryn", True, [[10000, 12000]]))
+        # The debuff rows and the histograms are still the boss's
+        self.assertEqual([row["name"] for row in entry["debuffs"]], ["Major Breach"])
+        self.assertEqual(entry["debuffs"][0]["uptime_pct"], 50)
+        self.assertEqual(entry["damage"], 2000)
+        pack = armour["pack"]
+        # Seconds 11 to 13 read on the unit hit hardest: the Prism at 11 and
+        # 12 (500 against 200), the Slasher at 13; the Breach on the Prism
+        # covers 11 and 12
+        self.assertEqual(pack["spans"], [[1000, 3000, 5948, "Major Breach", "Prism", 18200],
+                                         [3000, 4000, 0, "", "Slasher", 18200]])
+        self.assertEqual((pack["window"], pack["units"]), ([[1000, 4000]], 2))
+        # Weighed by every hit in those seconds: 1,000 of the 1,500 under the Breach
+        self.assertEqual(pack["weighted_pen"], round(5948 * 1000 / 1500))
+        row = pen_crit.armour_row(entry)
+        self.assertFalse(row["pack_only"])
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")  # the boss's figure
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"], iv["target"], bool(iv.get("pack")))
+                          for iv in row["intervals"]],
+                         [(1000, 3000, 12252, "Prism", True), (3000, 4000, 18200, "Slasher", True),
+                          (10000, 12000, 12252, "Xoryn", False)])
+        self.assertNotIn("unit_armour", row["intervals"][0])
+        self.assertEqual((row["pack_units"], row["pack_window"], row["pack_window_ms"], row["pack_drawn_ms"]),
+                         (2, [[1000, 4000]], [1000, 4000], 3000))
+        self.assertEqual((row["pack_average_left"], row["pack_lowest_left"], row["pack_no_debuff_pct"]),
+                         (round((12252 * 2 + 18200) / 3), 12252, 33))
+        self.assertEqual(row["pack_weighted_left"], 18200 - round(5948 * 1000 / 1500))
+        self.assertIn("paler stretches", row["explain"])
+
+    def test_a_trash_fight_reads_the_unit_hit_hardest_each_second(self):
+        tracker = pen_crit.new_tracker()
+        tracker.record("GAINED", "61743", "81", 1, 12000, "enemy", source_id="2")  # Major Breach on 81
+        units = {"2": ("group", None, None), "80": ("enemy", None, None), "81": ("enemy", None, None)}
+        # 80 takes the most damage in all (the row's target); 81 is hit
+        # hardest at 12 s and equals 80 at 13 s, where the previous
+        # second's unit keeps the reading; at 14 s only 81 is hit
+        buckets = {"80": {11: 400, 13: 100}, "81": {12: 300, 13: 100, 14: 50}}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 20000, units, buckets, {}, lambda u: f"mob {u}", lambda u: {},
+            zone="instanced", set_table=SETS)
+        armour = entry["armour"]
+        self.assertEqual((armour["target"], armour["boss"]), ("mob 80", False))
+        self.assertEqual(armour["pack"]["spans"], [[1000, 2000, 0, "", "mob 80", 18200],
+                                                   [2000, 5000, 5948, "Major Breach", "mob 81", 18200]])
+        self.assertEqual(armour["pack"]["units"], 2)
+        row = pen_crit.armour_row(entry)
+        # The pack reading is the row: its average is the label's
+        self.assertTrue(row["pack_only"])
+        self.assertEqual(row["label"], "Armour 18,200 · 13,739 left")
+        self.assertEqual((row["average_left"], row["window"], row["window_ms"], row["drawn_ms"]),
+                         (13739, [[1000, 5000]], [1000, 5000], 4000))
+        self.assertTrue(all(iv.get("pack") for iv in row["intervals"]))
+        self.assertEqual([iv["target"] for iv in row["intervals"]], ["mob 80", "mob 81"])
+        self.assertEqual(row["pack_units"], 2)
+        # A tie with no previous second: the row's target, then the lowest unit id
+        buckets = {"80": {11: 100}, "81": {11: 100, 15: 100}, "82": {15: 100}}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 20000, units | {"82": ("enemy", None, None)}, buckets, {},
+            lambda u: u, lambda u: {}, zone="instanced", set_table=SETS)
+        self.assertEqual([span[4] for span in entry["armour"]["pack"]["spans"]], ["80", "81"])
+
+    def test_a_solo_dungeons_boss_row_holds_its_scale_over_trash_seconds(self):
+        tracker = pen_crit.new_tracker()
+        units = {"2": ("group", None, None), "70": ("boss", None, None), "80": ("enemy", None, None)}
+        buckets = {"80": {11: 500}, "70": {20: 1000}}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 30000, units, buckets, {}, lambda u: u, lambda u: {}, zone="solo_dungeon")
+        self.assertEqual(entry["armour"]["pack"]["spans"], [[1000, 2000, 0, "", "80", 18200]])
+        row = pen_crit.armour_row(entry)
+        self.assertEqual(row["estimate"], 27300)
+        trash = row["intervals"][0]
+        # Drawn on the boss's scale, with the unit's own armour for the hover
+        self.assertEqual((trash["pack"], trash["stacks"], trash["unit_armour"]), (True, 27300, 18200))
+        self.assertNotIn("unit_armour", row["intervals"][1])
+        # The Settings' cap restates the scale and drops the note
+        self.assertNotIn("unit_armour", pen_crit.armour_row(entry, {"cap": 18200})["intervals"][0])
+
+    def test_a_pack_gap_bridged_across_the_boss_stays_the_bosss(self):
+        """Adds hit a second before and after the boss: the pack's bridged
+        gap must not cover the boss row's own seconds."""
+        tracker = pen_crit.new_tracker()
+        units = {"2": ("group", None, None), "70": ("boss", None, None), "80": ("enemy", None, None)}
+        buckets = {"80": {10: 100, 14: 100}, "70": {11: 500, 13: 500}}
+        entry, _players = pen_crit.fight_fields(
+            tracker, 10000, 20000, units, buckets, {}, lambda u: u, lambda u: {}, zone="instanced")
+        armour = entry["armour"]
+        self.assertEqual(armour["window"], [[1000, 4000]])
+        self.assertEqual(armour["pack"]["window"], [[0, 1000], [4000, 5000]])
+        self.assertEqual([span[:2] for span in armour["pack"]["spans"]], [[0, 1000], [4000, 5000]])
+        row = pen_crit.armour_row(entry)
+        self.assertEqual([(iv["start_ms"], iv["end_ms"], bool(iv.get("pack"))) for iv in row["intervals"]],
+                         [(0, 1000, True), (1000, 4000, False), (4000, 5000, True)])
+        self.assertEqual(pen_crit._subtract_ranges([[0, 10], [20, 30]], [[5, 25], [28, 40]]),
+                         [[0, 5], [25, 28]])
+
+    def test_a_row_without_the_pack_draws_as_before(self):
+        group = dict(TestArmourRow.GROUP)
+        self.assertFalse(pen_crit.armour_row(group)["pack_only"])
+        self.assertNotIn("pack_units", pen_crit.armour_row(group))
+
+
 class TestArmourRow(unittest.TestCase):
     """The timeline's Armour row from a fight's group part (issue #55)."""
 

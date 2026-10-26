@@ -26,6 +26,7 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
+from boss_units import is_fight_boss
 from build_issues import (
     BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, food_findings, structural_findings,
     worn_proc_sets,
@@ -417,7 +418,11 @@ class EnemyInfo:
         self.max_health: int = 0
         self.current_health: int = 0
         self.is_hostile: bool = False
-        self.is_boss: bool = False  # the game's own flag on UNIT_ADDED
+        self.monster_id: str = ""  # the game's monster id on UNIT_ADDED
+        self.boss_flag: bool = False  # the game's own boss flag on UNIT_ADDED
+        # A boss of the fight: the flag less the units that carry it without
+        # being one (boss_units.is_fight_boss, issue #67)
+        self.is_boss: bool = False
         self.added_at: Optional[int] = None  # log time of its UNIT_ADDED
         self.died_at: Optional[int] = None  # log time of its DIED, when seen
         self.removed_at: Optional[int] = None  # log time of its UNIT_REMOVED
@@ -670,7 +675,8 @@ class CombatEncounter:
         """What effect_rules measures a fight's rules on, unit id -> (kind,
         since_ms, gone_ms): the players ('self' or 'group'), and the
         hostiles the group hit in this fight ('boss' or 'enemy', by the
-        game's flag) with the log time each was added and the time it died
+        game's flag less boss_units' exceptions) with the log time each
+        was added and the time it died
         or was removed, None when it was there throughout. Enemies carry
         over from fight to fight within a zone, so a boss that only stands
         in the list, dead since the last pull, is not a boss of this fight:
@@ -1060,10 +1066,15 @@ class ESOLogAnalyzer(ListenerMixin):
                 name = entry.fields[8] if len(entry.fields) > 8 else ""
                 health = 0
                 is_hostile = False
-                
-                # Extract health from field [4] if available (105634 in the example)
-                if len(entry.fields) > 4 and entry.fields[4].isdigit():
-                    health = int(entry.fields[4])
+
+                # Field [4] is the game's monster id (105634 in the
+                # example), not a health figure; it has stood in for the
+                # unit's max health until the first combat event on it
+                # updates that, and the highest-health fallback name is
+                # the only reader, so it is left as it was
+                monster_id = entry.fields[4] if len(entry.fields) > 4 else ""
+                if monster_id.isdigit():
+                    health = int(monster_id)
                 
                 # Check if this is a HOSTILE monster (field [14] in the example)
                 if len(entry.fields) > 14 and entry.fields[14] == "HOSTILE":
@@ -1080,7 +1091,11 @@ class ESOLogAnalyzer(ListenerMixin):
                     # A unit id handed out again is a unit nobody has hit yet
                     self._enemy_last_hit.pop(unit_id, None)
                     enemy.is_hostile = is_hostile
-                    enemy.is_boss = len(entry.fields) > 5 and entry.fields[5] == "T"
+                    enemy.monster_id = monster_id
+                    enemy.boss_flag = len(entry.fields) > 5 and entry.fields[5] == "T"
+                    # The game's flag, less the units that carry it without
+                    # being the fight's boss (boss_units, issue #67)
+                    enemy.is_boss = is_fight_boss(enemy.boss_flag, monster_id)
                     enemy.added_at = entry.timestamp
                     
                     self.current_encounter.enemies[unit_id] = enemy
@@ -2213,7 +2228,8 @@ class ESOLogAnalyzer(ListenerMixin):
         """What the encounter knows a unit to be, for effect_rules scopes:
         'self' (the player writing the log), 'group' (another player),
         'pet' (a group member's pet), 'boss' (a hostile the game flags as a
-        boss), 'enemy' (any other hostile), or None."""
+        boss, less boss_units' exceptions), 'enemy' (any other hostile), or
+        None."""
         enc = self.current_encounter
         if enc is None:
             return None
