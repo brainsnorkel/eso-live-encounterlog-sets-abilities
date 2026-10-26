@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Moon Hunter Keep solo** (#55): the solo Moon Hunter Keep (zone 1593, logged on 2026-10-26) is now known as a solo dungeon, so its trash reads at 18,200, Jailer Melitus and the other bosses at 27,300, and every penetration figure against them follows; until now the run read as overland, 9,100. The log also settled the open question on the Misfortunes: the three picked at the door are written as effects on the player for the whole run (Warm Welcome, Revoke of Respite, Alleviating Assault), every enemy spawns with a `Misfortune Level Three` buff, and Alleviating Assault's heal (5,100 on trash, 8,160 on a boss, at most every 3 seconds) is logged as a heal from the player to the enemy. None of them changes armour, so the figures stand under any Misfortune; the boss's logged health, 2,157,795, is the guide's figure for three Misfortunes, which is why the guide's armour figures are trusted
+
 ## [0.14.3] - 2026-10-26
 
 ### Changed
