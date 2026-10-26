@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.14.5] - 2026-10-27
 
 ### Added
 - **Armour row: what the group is hitting, second by second** (#66): the buff timeline's `Armour` row no longer goes blank where the group was not on its boss. The paler stretches read each second on whichever hostile the group hit hardest that second, the armour left on it after the group's armour debuffs, so Xoryn's seven-minute gauntlet, a dragon's flight spent on adds and the trash before a boss now show what armour the damage was meeting; the hover names the unit of the moment and says the reading is per second, and the click summary gives the pack's figures (average, lowest, share with no debuff, and the damage-weighted remainder) beside the boss's. In a fight without a boss that reading is the whole row in place of the one mob it followed, and the label's average is its own. The debuff rows and the build window's penetration figures still weigh the bosses alone; a clean boss fight gains a few paler seconds that read lower than the boss (the adds carry fewer debuffs for less time). Over the four Lucent Citadel and three Sunspire logs of #64 a Xoryn pull reads 3,200 to 6,200 left with 7 to 15% of the damaged seconds undebuffed over 130 to 210 changes of unit, and a trash fight 2,700 to 10,400 left where the one-mob row read 10,317 to 16,800. A solo dungeon's trash is drawn on its boss's 27,300 scale rather than changing the bar's scale mid-row, and the hover says its armour is 18,200. Ties go to a boss, then to the unit read the second before, so a pack of equals does not flicker
