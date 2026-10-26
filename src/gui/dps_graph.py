@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 
 from damage_stats import running_dps, smoothed_dps
 from gui.fight_render import _fmt_dps, _fmt_duration, _join
+from gui.name_mask import NO_MASK
 from gui.timeline_strip import _fmt_tick, _tick_step_ms
 
 # The categorical palette, light and dark steps of the same eight hues
@@ -400,9 +401,16 @@ class DpsGraphDialog(QDialog):
 
     # ---- showing a fight ----
 
-    def show_graph(self, entry, dark: bool) -> None:
-        """Show the fight *entry*: the group's line and every player's."""
-        self._shown = (entry, dark)
+    @property
+    def entry(self):
+        """The fight on display, None before the first."""
+        return self._shown[0] if self._shown is not None else None
+
+    def show_graph(self, entry, dark: bool, names=None) -> None:
+        """Show the fight *entry*: the group's line and every player's.
+        *names* is the Hide names mask (gui.name_mask) for the legend and
+        the hover."""
+        self._shown = (entry, dark, names)
         name = entry.boss_name or entry.zone_name or "fight"
         self.setWindowTitle(f"DPS over time – {name}")
         facts = [entry.boss_name or "", entry.zone_name or "",
@@ -420,10 +428,10 @@ class DpsGraphDialog(QDialog):
             self.boss_only.setChecked(False)
             self.boss_only.blockSignals(False)
         self.boss_only.setVisible(has_boss)
-        self._fill_legend(entry, dark)
+        self._fill_legend(entry, dark, names or NO_MASK)
         self._rerender()
 
-    def _fill_legend(self, entry, dark: bool) -> None:
+    def _fill_legend(self, entry, dark: bool, names) -> None:
         self.legend.blockSignals(True)
         self.legend.clear()
         text_color = self.palette().color(QPalette.Text)
@@ -437,7 +445,9 @@ class DpsGraphDialog(QDialog):
         self.legend.addItem(group)
         for rank, p in enumerate(entry.players):
             unit_id = str(p.get("unit_id", ""))
-            name = _join(p.get("name", "")) or unit_id
+            # The name as the legend and the hover show it: through the
+            # Hide names mask, so a hidden player reads as blocks there too
+            name = names.text(_join(p.get("name", ""))) or unit_id
             self._players.append((unit_id, name, rank))
             item = QListWidgetItem(_line_icon(series_color(rank, dark), rank >= MAX_HUES),
                                    self._legend_label(name, p.get("boss_dps"), p.get("dps"),
@@ -472,7 +482,7 @@ class DpsGraphDialog(QDialog):
     def _rerender(self) -> None:
         if self._shown is None:
             return
-        entry, dark = self._shown
+        entry, dark, _names = self._shown
         duration = float(entry.duration_s or 0)
         mode_window = int(self.mode.currentData() or 0)
         boss = self.boss_only.isChecked()
@@ -498,7 +508,10 @@ class DpsGraphDialog(QDialog):
                                 LINE_WIDTH, rank >= MAX_HUES, PLAYER_PANEL))
         self.graph.set_curves(curves, duration)
 
-    def refresh(self, dark: bool) -> None:
-        """Re-render for a theme switch (the series colours follow it)."""
+    def refresh(self, dark: bool, names=None) -> None:
+        """Re-render for a theme switch (the series colours follow it) or
+        a flip of the Hide names switch (*names*, the new mask; None keeps
+        the one shown)."""
         if self._shown is not None and self.isVisible():
-            self.show_graph(self._shown[0], dark)
+            entry, _dark, shown = self._shown
+            self.show_graph(entry, dark, names=shown if names is None else names)

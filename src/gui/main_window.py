@@ -35,6 +35,7 @@ from gui.fight_render import (
     summary_line,
 )
 from gui.fight_view import FightView
+from gui.name_mask import NameMask
 from gui.settings_dialog import SettingsDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
@@ -119,6 +120,11 @@ class MainWindow(QMainWindow):
         self._graph_dialog = None  # created on the first DPS graph request
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        # The Hide names switch (issue #72, gui.name_mask): every player
+        # name but the logging player's hidden, for screenshots and
+        # sharing. One state behind the toolbar button, Ctrl+H and the
+        # Settings box, saved whenever it flips
+        self._hide_names = bool(config.get("privacy.hide_names", False))
 
         self._build_ui()
         self._build_update_poller()
@@ -189,6 +195,19 @@ class MainWindow(QMainWindow):
         self.graph_action = QAction("DPS graph", self)
         self.graph_action.triggered.connect(self._show_graph)
         toolbar.addAction(self.graph_action)
+
+        self.hide_names_action = QAction("Hide names", self)
+        self.hide_names_action.setCheckable(True)
+        self.hide_names_action.setChecked(self._hide_names)
+        self.hide_names_action.setShortcut(QKeySequence("Ctrl+H"))
+        # From any of the app's windows, not only this one: the key is for
+        # the moment before a screenshot of a build or a recap too
+        self.hide_names_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.hide_names_action.setToolTip(
+            "Hide other players' handles and character names, for screenshots and "
+            "sharing; the player writing the log stays visible (Ctrl+H)")
+        self.hide_names_action.toggled.connect(self._toggle_hide_names)
+        toolbar.addAction(self.hide_names_action)
 
         toolbar.addSeparator()
 
@@ -700,16 +719,19 @@ class MainWindow(QMainWindow):
         # time (pen_crit): the row tokens, their hover text and the strip's
         # Armour row follow them
         pen_crit_options = self.config.get("pen_crit") or {}
+        # The Hide names mask for this fight: the identity unless the
+        # switch is on (gui.name_mask)
+        names = self._names_for(entry)
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
-            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options))
+            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names)
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
         # player's name show in both views
-        tooltips = death_tooltips(entry)
-        tooltips.update(build_tooltips(entry))
-        tooltips.update(damage_tooltips(entry))
+        tooltips = death_tooltips(entry, names)
+        tooltips.update(build_tooltips(entry, names))
+        tooltips.update(damage_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         if self._detailed:
@@ -731,7 +753,8 @@ class MainWindow(QMainWindow):
                                             base_pt=self.fight_view.font().pointSizeF(),
                                             script_links=esohub_script_url,
                                             text_color=text_color,
-                                            pen_crit_options=pen_crit_options))
+                                            pen_crit_options=pen_crit_options,
+                                            names=names))
         self._apply_search()
 
     def _show_pen_crit(self, unit_id):
@@ -747,7 +770,8 @@ class MainWindow(QMainWindow):
             return
         if self._death_dialog is None:
             self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
-        self._death_dialog.show_recap(fights[row], unit_id, self._dark)
+        self._death_dialog.show_recap(fights[row], unit_id, self._dark,
+                                      names=self._names_for(fights[row]))
         self._death_dialog.show()
         self._death_dialog.raise_()
         self._death_dialog.activateWindow()
@@ -765,7 +789,7 @@ class MainWindow(QMainWindow):
         # time so a change applies to the next build window without a restart
         self._build_dialog.show_build(fights[row], unit_id, self._dark,
                                       pen_crit_options=self.config.get("pen_crit") or {},
-                                      scroll_to=scroll_to)
+                                      scroll_to=scroll_to, names=self._names_for(fights[row]))
         self._build_dialog.show()
         self._build_dialog.raise_()
         self._build_dialog.activateWindow()
@@ -778,7 +802,8 @@ class MainWindow(QMainWindow):
             return
         if self._damage_dialog is None:
             self._damage_dialog = DamageDialog(self, icons=self.fight_view.icons)
-        self._damage_dialog.show_damage(fights[row], unit_id, self._dark)
+        self._damage_dialog.show_damage(fights[row], unit_id, self._dark,
+                                        names=self._names_for(fights[row]))
         self._damage_dialog.show()
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
@@ -806,7 +831,8 @@ class MainWindow(QMainWindow):
             return
         if self._graph_dialog is None:
             self._graph_dialog = DpsGraphDialog(self)
-        self._graph_dialog.show_graph(fights[row], self._dark)
+        self._graph_dialog.show_graph(fights[row], self._dark,
+                                      names=self._names_for(fights[row]))
         self._graph_dialog.show()
         self._graph_dialog.raise_()
         self._graph_dialog.activateWindow()
@@ -881,12 +907,52 @@ class MainWindow(QMainWindow):
         self._detailed = checked
         self._show_fight(self.history_list.currentRow())
 
+    # ---- hidden names ----
+
+    def _names_for(self, entry) -> NameMask:
+        """The Hide names mask for *entry*: the identity while the switch
+        is off; with it on, every player but the logging one hidden."""
+        return NameMask.for_entry(entry, self._hide_names)
+
+    def _toggle_hide_names(self, checked):
+        """The toolbar button or Ctrl+H: the state is saved at once (the
+        button shows it, so the next start holds no surprise) and the
+        fight on screen and every open window are redrawn with it."""
+        self._hide_names = bool(checked)
+        self.config.set("privacy.hide_names", self._hide_names)
+        self.config.save()
+        self._refresh_names()
+
+    def _refresh_names(self):
+        """Redraw everything that shows a player name with the current
+        mask: the pane and the strip through _show_fight, and each open
+        window with a mask for the fight it holds, which may not be the
+        one on screen."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if 0 <= row < len(fights):
+            # Redrawn in place: the reader is looking at this page, about
+            # to take the picture, so it stays where it was scrolled to
+            scroll = self.fight_view.verticalScrollBar().value()
+            self._show_fight(row)
+            self.fight_view.restore_scroll(scroll)
+        for dialog in (self._death_dialog, self._build_dialog,
+                       self._damage_dialog, self._graph_dialog):
+            if dialog is not None and dialog.isVisible() and dialog.entry is not None:
+                dialog.refresh(self._dark, names=self._names_for(dialog.entry))
+
+    def _apply_privacy_settings(self):
+        """Settings saved: the action follows the box (its toggled signal
+        redraws when the state changed)."""
+        self.hide_names_action.setChecked(bool(self.config.get("privacy.hide_names", False)))
+
     def _copy_current(self):
         fights = self._current_fights()
         row = self.history_list.currentRow()
         if 0 <= row < len(fights):
             QGuiApplication.clipboard().setText(render_plain_text(
-                fights[row], pen_crit_options=self.config.get("pen_crit") or {}))
+                fights[row], pen_crit_options=self.config.get("pen_crit") or {},
+                names=self._names_for(fights[row])))
             self.statusBar().showMessage("Fight summary copied to clipboard", 3000)
 
     # ---- actions ----
@@ -911,6 +977,7 @@ class MainWindow(QMainWindow):
             dialog.apply_to_config()
             self.config.save()
             self._apply_update_settings()
+            self._apply_privacy_settings()
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
             # The history is cleared when the engine reaches the restart
             # (see _on_monitoring_restarting); until then its fights are

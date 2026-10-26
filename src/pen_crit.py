@@ -154,16 +154,48 @@ target's name, each second read on the one hit hardest that second
 health) the row follows the one hit over the longest window, then the
 first hit (_row_target), where the largest unit id, the last spawned, was
 taken before. The boss-scoped uptime rows above it still measure over the
-whole fight (issue #64 lists that choice), and the engine's boss_window
-is no window for the row: the Prisms and the Baron carry the game's boss
-flag too, so on a Xoryn pull it spans the gauntlet.
+whole fight (issue #64 lists that choice). The engine's boss_window was no
+window for the row while the Prisms and the Baron carried the game's boss
+flag into the fight's bosses; since issue #67 they are adds (boss_units),
+so the row's target on a Xoryn pull is Xoryn alone either way.
+
+The pack reading (issue #66). Windowed to its target, the row left the
+first seven minutes of a Xoryn pull blank, where the group hit 245 to 279
+units and the armour debuffs on them mattered as much, and on a trash
+fight it followed one mob of a pack of twenty. The question the row could
+not answer was what armour the group's damage was going into, second by
+second, whatever it was hitting. So fight_fields now keeps the armour
+debuffs' coverage on every hostile the group hit, not only the bosses (the
+crit debuffs, the status effects, the debuff rows and the histograms stay
+the targets'), and _pack_series reads each second on the hostile hit
+hardest that second, ties to a boss among them, then to the unit read the
+second before so a pack of equals does not flicker, then to the lowest
+unit id; a gap of up to ARMOUR_GAP_S seconds carries the last unit's
+reading, as the boss row bridges its own, except across the boss row's
+own time. In a boss fight the reading
+fills the row outside the boss's window, drawn paler so the two are told
+apart, the hover naming the unit of the moment and the label keeping the
+boss's figure (the pack reading is lower, since adds carry fewer debuffs
+for less time, and a second spent on an add while the boss stands
+debuffed reads on the add: a different question, not a better answer to
+the boss's); in a fight without a boss it is the row, and the label is its
+average. The estimate is held at one value per row (a solo dungeon's boss
+at 27,300 against its trash at 18,200 would otherwise change the bar's
+scale mid-row), and an interval read on a unit whose armour differs
+carries that figure for the hover. From the #64 replays: a Xoryn pull
+read this way averages 3,200 to 6,200 left with 7 to 15% of the damaged
+seconds undebuffed over 130 to 210 switches of unit, Xoryn himself the
+hardest-hit unit in 19 to 25% of them; a trash fight 2,700 to 10,400 left
+where the one-mob row read 10,317 to 16,800; a clean boss fight's pack
+seconds are few and read lower than the boss (Count Ryelaz 1,053 against
+6,348).
 """
 
 import math
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 
-from effect_rules import PLAYER_KINDS, EffectTracker, Rule, group_size_class
+from effect_rules import HOSTILE_KINDS, PLAYER_KINDS, EffectTracker, Rule, group_size_class
 from player_build import (
     ARMOR_SLOTS,
     OFF_HAND_OF,
@@ -718,8 +750,12 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
     duration = max(0, end_ms - start_ms)
     index_of = {rule.name: i for i, rule in enumerate(tracker.rules)}
     bosses = [u for u, info in units.items() if info[0] == "boss"]
-    targets = bosses or [u for u, info in units.items() if info[0] == "enemy"]
+    # Every hostile the group hit: the pack reading of the Armour row is
+    # read on them second by second (issue #66, _pack_series)
+    hostiles = [u for u, info in units.items() if info[0] in HOSTILE_KINDS]
+    targets = bosses or [u for u in hostiles if u not in bosses]
     target_set = set(targets)
+    hostile_set = set(hostiles)
     kind = "instanced" if dummy and zone != "solo_dungeon" else (zone or "overland")
     cap = target_armour(kind, bool(bosses))
 
@@ -730,13 +766,13 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
         return [span for span in tracker.spans_in(index, start_ms, end_ms)
                 if want_targets is None or span[3] in want_targets]
 
-    # Each debuff's weighted value per target per second, and its row
-    pen_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
+    # Each armour debuff's weighted value and its names per second on every
+    # hostile hit (the Armour row reads any of them), the crit debuffs and
+    # status effects on the targets alone (the histograms weigh those)
+    pen_by_target: dict[str, dict[int, float]] = {t: {} for t in hostiles}
+    names_by_target: dict[str, dict[int, set]] = {t: {} for t in hostiles}
     crit_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
     status_by_target: dict[str, dict[int, float]] = {t: {} for t in targets}
-    # The armour debuffs covering at least half of each second, for the
-    # timeline row's hover text
-    names_by_target: dict[str, dict[int, set]] = {t: {} for t in targets}
     debuff_rows: list[dict] = []
     crusher_value: dict[str, int] = {}
     permanent_debuffs = permanent_debuffs or {}
@@ -747,8 +783,10 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
         # the log shows of it on that target (another player's refresh of
         # the same debuff) adds nothing
         permanent_on = [t for t in targets if name in permanent_debuffs.get(t, ())]
-        spans = [s for s in spans_of(name, target_set) if s[3] not in permanent_on]
-        if not spans and not permanent_on:
+        all_spans = [s for s in spans_of(name, hostile_set) if s[3] not in permanent_on]
+        # The rows, the casters and the histograms are the targets' alone
+        spans = [s for s in all_spans if s[3] in target_set]
+        if not all_spans and not permanent_on:
             continue
         for target in permanent_on:
             perm_pen[target] = perm_pen.get(target, 0.0) + pen
@@ -766,16 +804,25 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                             "pct": _pct(_union_ms((s[0], s[1]) for s in own), duration),
                             "via": via, "value": value})
         row_value = max(crusher_value.values()) if name == "Crusher" and crusher_value else pen
-        for target in targets:
-            own = [s for s in spans if s[3] == target]
-            if not own:
-                continue
+        if name == "Crusher":
+            # A caster who only ever hit the pack still has a glyph value
+            for source in {str(s[5] or "") for s in all_spans} - set(crusher_value):
+                _via, value = caster_source(gear_of(source) if source else {}, name, set_table, kind_of)
+                if value:
+                    crusher_value[source] = value
+        by_unit: dict[str, list] = {}
+        for span in all_spans:
+            by_unit.setdefault(span[3], []).append(span)
+        for target, own in by_unit.items():
             if name == "Crusher" and crusher_value:
                 # One caster's glyph at a time: the strongest covering the second
                 weighted: dict[int, float] = {}
-                for source, source_spans in by_source.items():
+                own_by_source: dict[str, list] = {}
+                for span in own:
+                    own_by_source.setdefault(str(span[5] or ""), []).append(span)
+                for source, source_spans in own_by_source.items():
                     value = crusher_value.get(source, pen)
-                    for second, frac in _coverage((s[0], s[1]) for s in source_spans if s[3] == target).items():
+                    for second, frac in _coverage((s[0], s[1]) for s in source_spans).items():
                         weighted[second] = max(weighted.get(second, 0.0), value * frac)
                         if frac >= 0.5:
                             names_by_target[target].setdefault(second, set()).add(name)
@@ -787,12 +834,15 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
                     pen_by_target[target][second] = pen_by_target[target].get(second, 0.0) + pen * frac
                     if frac >= 0.5:
                         names_by_target[target].setdefault(second, set()).add(name)
-                if crit:
+                if crit and target in crit_by_target:
                     crit_by_target[target][second] = crit_by_target[target].get(second, 0.0) + crit * frac
-        debuff_rows.append({"name": name, "pen": row_value if pen else 0, "crit": crit,
-                            "uptime_pct": (100 if permanent_on
-                                           else _pct(_union_ms((s[0], s[1]) for s in spans), duration)),
-                            "casters": casters})
+        if spans or permanent_on:
+            # A debuff seen on the pack alone has no row: the rows are the
+            # targets' (the bosses', in a fight with one)
+            debuff_rows.append({"name": name, "pen": row_value if pen else 0, "crit": crit,
+                                "uptime_pct": (100 if permanent_on
+                                               else _pct(_union_ms((s[0], s[1]) for s in spans), duration)),
+                                "casters": casters})
     for status in STATUS_EFFECTS.values():
         for target in targets:
             own = [s for s in spans_of(STATUS_PREFIX + status, {target})]
@@ -837,11 +887,18 @@ def fight_fields(tracker: EffectTracker, start_ms: int, end_ms: int,
         spans, window, weighted = _armour_series(
             start_ms, end_ms, main, row_units, group_target_buckets, pen_by_target,
             names_by_target, perm_pen, permanent_debuffs)
+        # The pack reading (issue #66): each second read on the hostile the
+        # group hit hardest, outside the boss row's window in a boss fight
+        # and over every hit in a fight without one
+        pack = _pack_series(
+            start_ms, end_ms, set(bosses), hostiles, window if main in bosses else [],
+            group_target_buckets, pen_by_target, names_by_target, perm_pen, permanent_debuffs,
+            name_of, lambda u: target_armour(kind, u in bosses))
         armour = {"estimate": cap, "kind": kind, "target": name_of(main), "boss": main in bosses,
                   "final_boss_armour": (SOLO_FINAL_BOSS_ARMOUR
                                         if kind == "solo_dungeon" and bosses else None),
                   "game_cap": ENEMY_ARMOUR_CAP, "spans": spans, "window": window,
-                  "weighted_pen": weighted}
+                  "weighted_pen": weighted, "pack": pack}
     entry = {"on": ("boss" if bosses else "enemies") if targets else "", "targets": len(targets),
              "kind": kind, "cap": cap, "instanced": kind != "overland", "dummy": bool(dummy),
              "group_size": group_size,
@@ -980,6 +1037,119 @@ def _armour_series(start_ms: int, end_ms: int, main: str, units: list[str],
     return spans, _armour_window(start_ms, end_ms, hit), weighted
 
 
+def _in_ranges(ms: int, ranges: list[list[int]]) -> bool:
+    """Whether the fight-relative millisecond *ms* falls in one of *ranges*."""
+    return any(int(s) <= ms < int(e) for s, e in ranges)
+
+
+def _subtract_ranges(ranges: list[list[int]], holes: list[list[int]]) -> list[list[int]]:
+    """*ranges* less *holes*, both [start_ms, end_ms] lists in time order."""
+    out = [list(r) for r in ranges]
+    for hole_start, hole_end in holes:
+        cut: list[list[int]] = []
+        for s, e in out:
+            if hole_end <= s or hole_start >= e:
+                cut.append([s, e])
+                continue
+            if s < hole_start:
+                cut.append([s, hole_start])
+            if hole_end < e:
+                cut.append([hole_end, e])
+        out = cut
+    return out
+
+
+def _pack_series(start_ms: int, end_ms: int, bosses: set[str], hostiles: list[str],
+                 row_window: list[list[int]], group_target_buckets: dict[str, dict[int, int]],
+                 pen_by_target: dict[str, dict[int, float]], names_by_target: dict[str, dict[int, set]],
+                 perm_pen: dict[str, float], permanent_debuffs: dict[str, list[str]],
+                 name_of: Callable[[str], str], armour_of: Callable[[str], int],
+                 gap_s: int = ARMOUR_GAP_S) -> dict | None:
+    """The Armour row's pack reading (issue #66): what armour the group's
+    damage was going into, second by second, whatever it was hitting.
+
+    Each second is read on the hostile the group hit hardest that second,
+    ties going to a boss among them (*bosses*), then to the unit read the
+    second before (so a pack of equals does not flicker), then to the
+    lowest unit id; a second without a hit within *gap_s* of one reads on
+    the unit of the second before, as _armour_series bridges a gap, and a
+    longer gap is left out. Seconds inside *row_window* (the boss row's own
+    ranges, fight-relative, empty in a fight without a boss) are left to
+    the boss row. Returns {'spans': [[start_ms, end_ms, sum, 'Major Breach,
+    Crusher', unit name, the unit's armour (armour_of)], ...]
+    fight-relative, one per run of seconds with the same unit, sum and
+    names; 'window': the ranges read (_armour_window); 'units': how many
+    hostiles were hit in them; 'weighted_pen': the debuffs' sum weighed by
+    every hit in them (None without damage)}, or None when no second is
+    read."""
+    by_second: dict[int, list[tuple[str, int]]] = {}
+    for unit in hostiles:
+        for second, damage in (group_target_buckets.get(unit) or {}).items():
+            if damage <= 0:
+                continue
+            rel = second * 1000 - start_ms
+            if rel + 1000 <= 0 or rel >= end_ms - start_ms or _in_ranges(max(rel, 0), row_window):
+                continue
+            by_second.setdefault(second, []).append((unit, damage))
+    if not by_second:
+        return None
+    hit: dict[int, tuple[str, int]] = {}
+    previous = None
+    for second in sorted(by_second):
+        top = max(damage for _unit, damage in by_second[second])
+        tied = [unit for unit, damage in by_second[second] if damage == top]
+        if len(tied) > 1:
+            boss_tied = [unit for unit in tied if unit in bosses]
+            if boss_tied:
+                tied = boss_tied
+            elif previous in tied:
+                tied = [previous]
+        previous = min(tied, key=_unit_order)
+        hit[second] = (previous, top)
+    # A gap bridged between two pack seconds can cross the boss row's own
+    # window (adds hit a second before and after a boss hit): the boss row
+    # keeps that time
+    window = _subtract_ranges(_armour_window(start_ms, end_ms, hit, gap_s), row_window)
+    if not window:
+        return None
+    permanent_names = {u: [n for n in PEN_DEBUFFS if n in permanent_debuffs.get(u, ())] for u in hostiles}
+    spans: list[list] = []
+    current_unit = None
+    for second in range(start_ms // 1000, max(start_ms // 1000, (end_ms - 1) // 1000) + 1):
+        s = max(start_ms, second * 1000) - start_ms
+        e = min(end_ms, second * 1000 + 1000) - start_ms
+        if second in hit:
+            current_unit = hit[second][0]
+        if e <= s or current_unit is None or not _in_ranges(s, window):
+            continue
+        value = round(pen_by_target[current_unit].get(second, 0.0) + perm_pen.get(current_unit, 0.0))
+        present = names_by_target[current_unit].get(second, ())
+        names = ", ".join(n for n in PEN_DEBUFFS if n in present or n in permanent_names[current_unit])
+        unit_name = name_of(current_unit)
+        if spans and spans[-1][1] == s and spans[-1][2] == value and spans[-1][3] == names \
+                and spans[-1][4] == unit_name:
+            spans[-1][1] = e
+        else:
+            spans.append([s, e, value, names, unit_name, armour_of(current_unit)])
+    weighted_sum = 0.0
+    weighted_damage = 0
+    units_hit: set[str] = set()
+    for unit in hostiles:
+        for second, damage in (group_target_buckets.get(unit) or {}).items():
+            if damage <= 0 or not _in_ranges(max(second * 1000 - start_ms, 0), window):
+                continue
+            units_hit.add(unit)
+            weighted_sum += damage * (pen_by_target[unit].get(second, 0.0) + perm_pen.get(unit, 0.0))
+            weighted_damage += damage
+    return {"spans": spans, "window": window, "units": len(units_hit),
+            "weighted_pen": round(weighted_sum / weighted_damage) if weighted_damage else None}
+
+
+def _unit_order(unit: str) -> tuple:
+    """Unit ids in the log's order, numeric before anything else."""
+    return (0, int(unit)) if unit.isdigit() else (1, unit)
+
+
 # ---- the timeline's Armour row ----
 
 _ZONE_EXPLAIN = {
@@ -995,6 +1165,8 @@ _ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs eac
                 "while the group was hitting the target, averaged over time; the click "
                 "summary and the build window's effective figures weigh each second by the "
                 "damage dealt instead.")
+_PACK_EXPLAIN = ("The paler stretches read each second on whatever the group hit hardest "
+                 "then, the hover naming it.")
 
 
 def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
@@ -1015,7 +1187,15 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     'weighted_left' the remainder weighed by the damage dealt (None when
     the series has no figure). A series from before the window (or one
     whose target was never hit) is drawn over the whole fight as before.
-    None for an entry without the series."""
+    The pack reading (issue #66, fight_fields' 'pack'): in a boss fight its
+    intervals fill the row outside the boss's window, each with 'pack'
+    True, 'target' the unit read that second and 'unit_armour' when that
+    unit's armour is not the estimate, and its figures sit beside the
+    boss's as 'pack_units', 'pack_window', 'pack_window_ms',
+    'pack_drawn_ms', 'pack_average_left', 'pack_lowest_left',
+    'pack_no_debuff_pct' and 'pack_weighted_left'; in a fight without a
+    boss it is the row ('pack_only' True): the label, the intervals and the
+    figures are its own. None for an entry without the series."""
     group = group or {}
     data = group.get("armour")
     if not data or not data.get("spans"):
@@ -1026,35 +1206,68 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     estimate = pen_cap(True, setting) if overridden else int(data.get("estimate") or 0)
     if estimate <= 0:
         return None
-    intervals = []
+    boss = bool(data.get("boss"))
+    pack = data.get("pack") or {}
+    pack_spans = pack.get("spans") or []
+    # In a fight without a boss the pack reading is the row (issue #66); a
+    # series from before it, or one whose pack was never read, draws the
+    # one target as before
+    pack_only = bool(pack_spans) and not boss
     fight_ms = max(int(span[1]) for span in data["spans"])
+    target = str(data.get("target") or "")
+
+    def figures(spans, window, weighted_pen, unit_name=None, flag=False):
+        """Intervals clipped to *window* and the figures over the drawn time."""
+        out = []
+        drawn = 0
+        left_ms = 0.0
+        lowest = estimate
+        no_debuff_ms = 0
+        for span in spans:
+            s, e, value, names = int(span[0]), int(span[1]), int(span[2]), str(span[3] or "")
+            remaining = max(0, estimate - value)
+            for window_start, window_end in window:
+                a, b = max(s, window_start), min(e, window_end)
+                if b <= a:
+                    continue
+                interval = {"start_ms": a, "end_ms": b, "stacks": remaining, "debuff_pen": value,
+                            "debuffs": names, "target": unit_name if unit_name is not None else span[4],
+                            "source": ""}
+                if flag:
+                    interval["pack"] = True
+                    # A unit whose armour is not the row's estimate (a solo
+                    # dungeon's trash under its boss's scale): the hover says
+                    unit_armour = int(span[5] or 0) if len(span) > 5 else 0
+                    if unit_armour and unit_armour != estimate and not overridden:
+                        interval["unit_armour"] = unit_armour
+                out.append(interval)
+                drawn += b - a
+                left_ms += remaining * (b - a)
+                lowest = min(lowest, remaining)
+                if not value:
+                    no_debuff_ms += b - a
+        return {
+            "intervals": out, "drawn_ms": drawn,
+            "average_left": round(left_ms / drawn) if drawn else estimate,
+            "lowest_left": lowest,
+            "no_debuff_pct": round(100.0 * no_debuff_ms / drawn) if drawn else 100,
+            "window": window, "window_ms": [window[0][0], window[-1][1]] if window else [0, fight_ms],
+            "weighted_left": (max(0, estimate - int(weighted_pen)) if weighted_pen is not None else None),
+        }
+
     window = [[int(s), int(e)] for s, e in (data.get("window") or []) if int(e) > int(s)]
     if not window:
         window = [[0, fight_ms]]
-    drawn = 0
-    left_ms = 0.0
-    lowest = estimate
-    no_debuff_ms = 0
-    target = str(data.get("target") or "")
-    for s, e, value, names in data["spans"]:
-        s, e, value = int(s), int(e), int(value)
-        remaining = max(0, estimate - value)
-        for window_start, window_end in window:
-            a, b = max(s, window_start), min(e, window_end)
-            if b <= a:
-                continue
-            intervals.append({"start_ms": a, "end_ms": b, "stacks": remaining, "debuff_pen": value,
-                              "debuffs": str(names or ""), "target": target, "source": ""})
-            drawn += b - a
-            left_ms += remaining * (b - a)
-            lowest = min(lowest, remaining)
-            if not value:
-                no_debuff_ms += b - a
-    average = round(left_ms / drawn) if drawn else estimate
-    weighted_pen = data.get("weighted_pen")
-    weighted_left = max(0, estimate - int(weighted_pen)) if weighted_pen is not None else None
+    main = figures(data["spans"], window, data.get("weighted_pen"), unit_name=target)
+    pack_window = [[int(s), int(e)] for s, e in (pack.get("window") or []) if int(e) > int(s)]
+    read = figures(pack_spans, pack_window, pack.get("weighted_pen"), flag=True) if pack_spans else None
+    if pack_only:
+        shown, intervals = read, read["intervals"]
+    else:
+        shown = main
+        intervals = main["intervals"] + (read["intervals"] if read else [])
+        intervals.sort(key=lambda iv: iv["start_ms"])
     kind = str(data.get("kind") or ("instanced" if group.get("instanced") else "overland"))
-    boss = bool(data.get("boss"))
     if overridden:
         reason = f"The estimate is the Settings' penetration cap, {estimate:,}."
     elif group.get("dummy"):
@@ -1063,18 +1276,28 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
         reason = _ZONE_EXPLAIN["solo_boss" if boss else "solo_trash"]
     else:
         reason = _ZONE_EXPLAIN.get(kind, _ZONE_EXPLAIN["overland"])
-    return {"name": ARMOUR_ROW, "estimate": estimate,
-            # Short enough for the strip's label column: the hover and the
-            # click say the figure is an estimate and why
-            "label": f"{ARMOUR_ROW} {estimate:,} · {average:,} left",
-            "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
-            "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
-            "average_left": average, "lowest_left": lowest,
-            "no_debuff_pct": round(100.0 * no_debuff_ms / drawn) if drawn else 100,
-            "window": window, "window_ms": [window[0][0], window[-1][1]],
-            "drawn_ms": drawn, "fight_ms": fight_ms, "weighted_left": weighted_left,
-            "kind": kind, "target": target, "final_boss_armour": data.get("final_boss_armour"),
-            "explain": f"{reason} {_ROW_EXPLAIN}"}
+    row = {"name": ARMOUR_ROW, "estimate": estimate,
+           # Short enough for the strip's label column: the hover and the
+           # click say the figure is an estimate and why
+           "label": f"{ARMOUR_ROW} {estimate:,} · {shown['average_left']:,} left",
+           "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
+           "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
+           "average_left": shown["average_left"], "lowest_left": shown["lowest_left"],
+           "no_debuff_pct": shown["no_debuff_pct"],
+           "window": shown["window"], "window_ms": shown["window_ms"],
+           "drawn_ms": shown["drawn_ms"], "fight_ms": fight_ms, "weighted_left": shown["weighted_left"],
+           "kind": kind, "target": target, "final_boss_armour": data.get("final_boss_armour"),
+           "pack_only": pack_only,
+           "explain": f"{reason} {_ROW_EXPLAIN}" + (f" {_PACK_EXPLAIN}" if read else "")}
+    if read:
+        # The pack reading's own figures: the whole row's in a fight without
+        # a boss, the paler stretches' beside the boss's otherwise
+        row.update({"pack_units": int(pack.get("units") or 0), "pack_window": read["window"],
+                    "pack_window_ms": read["window_ms"], "pack_drawn_ms": read["drawn_ms"],
+                    "pack_average_left": read["average_left"], "pack_lowest_left": read["lowest_left"],
+                    "pack_no_debuff_pct": read["no_debuff_pct"],
+                    "pack_weighted_left": read["weighted_left"]})
+    return row
 
 
 # ---- reading the histograms, with any static part and cap ----

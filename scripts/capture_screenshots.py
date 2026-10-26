@@ -2,7 +2,7 @@
 """Capture the screenshots the user guide and README show, from the real app
 drawn offscreen over a log file.
 
-    python scripts/capture_screenshots.py --log path/to/split.log
+    python scripts/capture_screenshots.py --log path/to/split.log --hide-names
 
 The log is read, never written: the run uses a scratch config of its own
 (split files and archiving off, no update check), so the user's settings are
@@ -51,6 +51,9 @@ def main():
                         help="folder for the PNG files")
     parser.add_argument("--boss", default="",
                         help="select the first fight whose boss name contains this (default: the longest fight)")
+    parser.add_argument("--hide-names", action="store_true",
+                        help="capture with the Hide names switch on: every player but the one "
+                             "who wrote the log is pixelated (the guide's pictures are taken so)")
     args = parser.parse_args()
     log = Path(args.log).resolve()
     if not log.exists():
@@ -121,6 +124,10 @@ def main():
 
     row = pick(fights)
     fight = fights[row]
+    if args.hide_names:
+        # The toolbar switch: saved to the scratch config, so the Settings
+        # picture shows its box ticked too
+        win.hide_names_action.setChecked(True)
     win.history_list.setCurrentRow(row)
     # "Monitoring <path>" sits in the status bar for eight seconds after
     # the load; the guide's picture should show the freshness label instead

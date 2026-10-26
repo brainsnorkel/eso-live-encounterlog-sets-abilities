@@ -13,7 +13,7 @@ class FightHistoryEntry:
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
-                 'damage_series', 'pen_crit']
+                 'damage_series', 'pen_crit', 'player_names']
 
     def __init__(self):
         self.timestamp = ""
@@ -44,6 +44,12 @@ class FightHistoryEntry:
         # build_issues (the possible build issues behind the row's (i), see build_issues),
         # and for the build window: character, race, gear, mundus, food (see player_build.build_fields)
         self.players = []
+        # Every player unit of the fight, rows or not: one dict per player
+        # with name (the display name), character and is_local. The Hide
+        # names mask (gui.name_mask) reads it, since a player whose build
+        # never reached the log has no row above but still casts, heals
+        # and dies in the fight's other data
+        self.player_names = []
         self.buff_summary = ""
         self.first_damage_dealer = None
         self.trial_info = None

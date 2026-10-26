@@ -16,7 +16,9 @@ A player's name and dps figure look like plain text (the dps figures carry
 a small glyph that says they can be clicked, see gui.glyphs; the names do
 not), so the pane shows they can be clicked while the pointer is over them:
 the text is underlined in the link color (see _show_hover_cue). The glyphs
-are images the page asks for by URL, served by loadResource like the icons.
+are images the page asks for by URL, served by loadResource like the icons,
+and so are the pixelated stand-ins the Hide names switch puts in place of
+other players' names (``mask:`` URLs, see gui.name_mask).
 """
 
 from typing import Callable, Dict, List, Optional
@@ -35,6 +37,7 @@ from gui.fight_render import (
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
+from gui.name_mask import MASK_SCHEME, mask_image, mask_request
 
 ICON_SCHEME = "icon"
 _RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in that color
@@ -135,6 +138,18 @@ class FightView(QTextBrowser):
 
     def _apply_selections(self) -> None:
         self.setExtraSelections(self._search_selections + self._hover_selections)
+
+    def restore_scroll(self, value: int) -> None:
+        """Put the vertical scroll back at *value* after a setHtml that
+        redrew the page the reader was looking at (a flip of the Hide names
+        switch, a theme change): now, and again once the new document is
+        laid out."""
+        self._kept_scroll = int(value)
+        self.verticalScrollBar().setValue(self._kept_scroll)
+        QTimer.singleShot(0, self._apply_kept_scroll)
+
+    def _apply_kept_scroll(self) -> None:
+        self.verticalScrollBar().setValue(getattr(self, "_kept_scroll", 0))
 
     def _text_anchor_cursor(self, href: str) -> Optional[QTextCursor]:
         """A cursor selecting the text of the anchor that leads to *href*
@@ -246,6 +261,14 @@ class FightView(QTextBrowser):
             image = _glyph(name, self.devicePixelRatioF())
             if image is not None:
                 return image
+        if resource_type == QTextDocument.ImageResource and name.scheme() == MASK_SCHEME:
+            # A hidden player name: the pixelated stand-in (gui.name_mask)
+            # in this view's font family and at its device pixel ratio
+            request = mask_request(name)
+            if request is not None:
+                image = mask_image(*request, self.font(), self.devicePixelRatioF())
+                if image is not None:
+                    return image
         return super().loadResource(resource_type, name)
 
     def _pulse_step(self) -> None:

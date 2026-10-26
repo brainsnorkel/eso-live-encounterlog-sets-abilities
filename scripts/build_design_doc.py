@@ -89,6 +89,9 @@ TOPICS = [
         "src/esolog_tail.py#Taunts",
         "src/esolog_tail.py:mark_taunt_slots",
     ]),
+    ("What a boss is: the game's flag and its exceptions", [
+        "src/boss_units.py",
+    ]),
     ("What counts as damage", [
         "src/esolog_tail.py#What counts as damage",
     ]),
@@ -128,6 +131,9 @@ TOPICS = [
     ("Taunt marks that pulse in a text page", [
         "src/gui/icon_cache.py:ringed",
         "src/gui/fight_view.py:FightView._pulse_step",
+    ]),
+    ("Hidden names: the stand-in behind the blur", [
+        "src/gui/name_mask.py",
     ]),
     ("Links in the fight pane: the hover cue and the dps glyphs", [
         "src/gui/fight_view.py:FightView._show_hover_cue",

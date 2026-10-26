@@ -65,6 +65,7 @@ from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
+from gui.name_mask import NO_MASK
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
 
@@ -158,17 +159,26 @@ def build_unit_from_href(href: str) -> Optional[str]:
     return None
 
 
-def build_tooltips(entry) -> dict:
-    """Hover text per player-name link: that a click opens the build window."""
+def build_tooltips(entry, names=None) -> dict:
+    """Hover text per player-name link: the handle, the character name
+    under it when the log gave both (issue #71), and that a click opens
+    the build window. *names*: the Hide names mask (gui.name_mask), which
+    hides another player's handle and character name alike."""
+    names = names or NO_MASK
     e = html.escape
     tips = {}
     for p in entry.players:
         unit_id = str(p.get("unit_id", ""))
-        if unit_id:
-            tips[build_href(unit_id)] = (
-                f"<b>{e(_join(p.get('name', '')))}</b><br>"
-                f"<span style='font-size:85%'>Click for the full build: bars, gear, "
-                f"mundus and food</span>")
+        if not unit_id:
+            continue
+        name = _join(p.get("name", ""))
+        character = str(p.get("character") or "")
+        lines = [f"<b>{e(names.text(name))}</b>"]
+        if character and character != name:
+            lines.append(e(names.text(character)))
+        lines.append("<span style='font-size:85%'>Click for the full build: bars, gear, "
+                     "mundus and food</span>")
+        tips[build_href(unit_id)] = "<br>".join(lines)
     return tips
 
 
@@ -308,11 +318,13 @@ def _dps_time_text(seconds: float) -> str:
     return _fmt_duration(max(float(seconds or 0), 1.0))
 
 
-def damage_tooltips(entry) -> dict:
+def damage_tooltips(entry, names=None) -> dict:
     """Hover text per dps-figure link: the dps time each figure divides by
     (see damage_stats), the figures over the whole fight for comparison,
     and that a click opens the damage window; for the header's group
-    figure, that a click opens the dps over time graph."""
+    figure, that a click opens the dps over time graph. *names*: the Hide
+    names mask (gui.name_mask)."""
+    names = names or NO_MASK
     e = html.escape
     tips = {}
     fight_s = float(getattr(entry, "duration_s", 0) or 0)
@@ -349,7 +361,7 @@ def damage_tooltips(entry) -> dict:
                 lines.append(f"Over the whole fight: {whole}")
         lines.append("Click for the damage breakdown by ability and target")
         tips[damage_href(unit_id)] = (
-            f"<b>{e(_join(p.get('name', '')))}</b><br>"
+            f"<b>{e(names.text(_join(p.get('name', ''))))}</b><br>"
             f"<span style='font-size:85%'>{'<br>'.join(e(line) for line in lines)}</span>")
     return tips
 
@@ -762,7 +774,8 @@ def _sets_html(p, set_links, e, color: str) -> str:
 def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
-                text_color: Optional[str] = None, pen_crit_options=None) -> str:
+                text_color: Optional[str] = None, pen_crit_options=None,
+                names=None) -> str:
     """Render one fight as HTML for a QTextBrowser.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
@@ -774,8 +787,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
     shares (pen_crit.cap_shares); None assumes no Champion Point rows.
     text_color: the pane's own text color, which a player's name keeps
     although it is a link; the theme's default when not given.
+    names: the Hide names mask (gui.name_mask): with it on, every player
+    name but the logging player's is drawn as a pixelated stand-in.
     """
     theme = _theme(dark)
+    names = names or NO_MASK
     name_color = text_color or theme["text"]
     e = html.escape
     zone = e(entry.zone_name or "Unknown")
@@ -837,7 +853,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
     for p in entry.players:
         role = p.get("role") or "D"
         color = theme["roles"].get(role, muted)
-        name = e(_join(p.get("name", "")))
+        # The name; with Hide names on, another player's pixelated
+        # stand-in (gui.name_mask), bold like the row's text
+        name = names.html(_join(p.get("name", "")), name_color, base_pt, bold=True)
         unit_id = str(p.get("unit_id", ""))
         # The name opens the player's build window. It keeps the look of
         # plain text; the fight view restyles it while it is hovered
@@ -950,7 +968,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
     # the log) still get their recap button
     listed = {str(p.get("unit_id", "")) for p in entry.players}
     others = [death_chip_html(unit_id, recaps, dark,
-                              label=str(recaps[0].get("name") or "unknown"))
+                              label=names.text(str(recaps[0].get("name") or "unknown")))
               for unit_id, recaps in deaths.items() if unit_id not in listed]
     if others:
         parts.append(f"<p style='margin:4px 0;color:{muted}'>"
@@ -972,10 +990,12 @@ def _sets_text(sets_value) -> str:
         return str(sets_value)
 
 
-def render_plain_text(entry, pen_crit_options=None) -> str:
+def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
     """Plain-text rendering for clipboard copy. *pen_crit_options* is the
     config's pen_crit section, so the cap shares on each line match the
-    pane's."""
+    pane's; *names* the Hide names mask, so a pasted fight hides what the
+    pane hides."""
+    names = names or NO_MASK
     lines = [summary_line(entry)]
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
@@ -987,7 +1007,7 @@ def render_plain_text(entry, pen_crit_options=None) -> str:
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
-        lines.append(f"[{role}] {_join(p.get('name', ''))}{star} "
+        lines.append(f"[{role}] {names.text(_join(p.get('name', '')))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else ""))
         skill_lines = _subclass_text(p, short=False)

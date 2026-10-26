@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2018](../src/esolog_tail.py#L2018)*
+*[src/esolog_tail.py:2033](../src/esolog_tail.py#L2033)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:72](../src/esolog_tail.py#L72)*
+*[src/esolog_tail.py:73](../src/esolog_tail.py#L73)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1480](../src/esolog_tail.py#L1480)*
+*[src/esolog_tail.py:1495](../src/esolog_tail.py#L1495)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1495](../src/esolog_tail.py#L1495)*
+*[src/esolog_tail.py:1510](../src/esolog_tail.py#L1510)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:66](../src/esolog_tail.py#L66)*
+*[src/esolog_tail.py:67](../src/esolog_tail.py#L67)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3250](../src/esolog_tail.py#L3250)*
+*[src/esolog_tail.py:3274](../src/esolog_tail.py#L3274)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:347](../src/esolog_tail.py#L347)*
+*[src/esolog_tail.py:348](../src/esolog_tail.py#L348)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -680,9 +680,41 @@ target's name, each second read on the one hit hardest that second
 health) the row follows the one hit over the longest window, then the
 first hit (_row_target), where the largest unit id, the last spawned, was
 taken before. The boss-scoped uptime rows above it still measure over the
-whole fight (issue #64 lists that choice), and the engine's boss_window
-is no window for the row: the Prisms and the Baron carry the game's boss
-flag too, so on a Xoryn pull it spans the gauntlet.
+whole fight (issue #64 lists that choice). The engine's boss_window was no
+window for the row while the Prisms and the Baron carried the game's boss
+flag into the fight's bosses; since issue #67 they are adds (boss_units),
+so the row's target on a Xoryn pull is Xoryn alone either way.
+
+The pack reading (issue #66). Windowed to its target, the row left the
+first seven minutes of a Xoryn pull blank, where the group hit 245 to 279
+units and the armour debuffs on them mattered as much, and on a trash
+fight it followed one mob of a pack of twenty. The question the row could
+not answer was what armour the group's damage was going into, second by
+second, whatever it was hitting. So fight_fields now keeps the armour
+debuffs' coverage on every hostile the group hit, not only the bosses (the
+crit debuffs, the status effects, the debuff rows and the histograms stay
+the targets'), and _pack_series reads each second on the hostile hit
+hardest that second, ties to a boss among them, then to the unit read the
+second before so a pack of equals does not flicker, then to the lowest
+unit id; a gap of up to ARMOUR_GAP_S seconds carries the last unit's
+reading, as the boss row bridges its own, except across the boss row's
+own time. In a boss fight the reading
+fills the row outside the boss's window, drawn paler so the two are told
+apart, the hover naming the unit of the moment and the label keeping the
+boss's figure (the pack reading is lower, since adds carry fewer debuffs
+for less time, and a second spent on an add while the boss stands
+debuffed reads on the add: a different question, not a better answer to
+the boss's); in a fight without a boss it is the row, and the label is its
+average. The estimate is held at one value per row (a solo dungeon's boss
+at 27,300 against its trash at 18,200 would otherwise change the bar's
+scale mid-row), and an interval read on a unit whose armour differs
+carries that figure for the hover. From the #64 replays: a Xoryn pull
+read this way averages 3,200 to 6,200 left with 7 to 15% of the damaged
+seconds undebuffed over 130 to 210 switches of unit, Xoryn himself the
+hardest-hit unit in 19 to 25% of them; a trash fight 2,700 to 10,400 left
+where the one-mob row read 10,317 to 16,800; a clean boss fight's pack
+seconds are few and read lower than the boss (Count Ryelaz 1,053 against
+6,348).
 
 ### scripts/generate_set_offense.py
 
@@ -739,7 +771,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
+*[src/gui/build_render.py:352](../src/gui/build_render.py#L352)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1165,12 +1197,13 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:669](../src/esolog_tail.py#L669)*
+*[src/esolog_tail.py:674](../src/esolog_tail.py#L674)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
 hostiles the group hit in this fight ('boss' or 'enemy', by the
-game's flag) with the log time each was added and the time it died
+game's flag less boss_units' exceptions) with the log time each
+was added and the time it died
 or was removed, None when it was there throughout. Enemies carry
 over from fight to fight within a zone, so a boss that only stands
 in the list, dead since the last pull, is not a boss of this fight:
@@ -1178,7 +1211,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:89](../src/app_config.py#L89)*
+*[src/app_config.py:94](../src/app_config.py#L94)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1204,24 +1237,97 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
+*[src/esolog_tail.py:82](../src/esolog_tail.py#L82)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:397](../src/esolog_tail.py#L397)*
+*[src/esolog_tail.py:398](../src/esolog_tail.py#L398)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
 slot has, the slot that shares its icon (Destructive Clench taunts as
 Frost Clench, a separate id with the same icon).
 
+## What a boss is: the game's flag and its exceptions
+
+### src/boss_units.py
+
+*[src/boss_units.py:1](../src/boss_units.py#L1)*
+
+What a boss is: the game's flag, and the units that carry it without being
+the fight's boss (issue #67).
+
+The encounter log flags a boss on its UNIT_ADDED line (isBoss, the sixth
+field after the unit id), and the engine takes that flag as the word on
+what a boss is: EnemyInfo.is_boss feeds the boss damage and boss dps time
+(damage_stats), each player's boss share, the ``boss`` scope of the tracked
+rules (effect_rules), the targets of the penetration figures and the
+Armour row (pen_crit), and the damage window's boss-only switch. The flag
+is the game's own boss health bar: it is reliable in dungeons and trials
+(Z'Maja and her shade, the Lucent twins, Opulent Ordeal's three, every
+dungeon boss), and the only boss definition that needs no list.
+
+It is wrong for a few units. In Lucent Citadel the gauntlet before Xoryn
+is one combat with him: the group hits five Defense Prisms (2,910,773
+health, 10 to 20 s apiece) and Baron Rize (13,971,720, hit for 21 to 41 s
+at about 110 s in) before Xoryn (69,858,576) is added a median 435 s into
+a median 549 s fight, and all three carry the flag. Read as bosses, the
+boss dps time of a Xoryn pull ran from the first hit on a Prism to the end
+(a median 531 s of 561 s over 23 full pulls in 899 split logs) and divided
+his damage, the Baron's and the Prisms' together; every player's boss
+share counted Prism and Baron damage; a boss-scoped rule was measured on
+every Prism (the taunt's ``each`` averaged over seven units); and the
+penetration figures weighed the Prisms' seconds. In Kyne's Aegis the Sea
+Adders of Yandir the Butcher's fight carry it too (4,657,240 health, 8%
+of Yandir's, hit for about 22 s in every one of the 32 Yandir fights
+logged), so the taunt was averaged over Yandir and his adders and 10% of
+the "boss" damage was adder damage.
+
+A survey over every split log on the maintainer's machine (899 logs,
+9,177 fights, 2,943 that hit a flagged unit, 2026-01 to 2026-10;
+scripts/survey_boss_flag.py) found no other flagged unit under a tenth of
+its fight's largest flagged unit: after the Prisms (4%) and the adders
+(8%) the next lowest is 20% (Baron Rize against Xoryn, and one Dreadsail
+Reef pull of the Reef Guardians), then Spindleclutch's chain-pulled bosses
+at 23% and Cloudrest's Shade of Z'Maja at 40%, all bosses in their own
+right. The issue offered a rule instead of a list, a flagged unit under a
+tenth of the largest flagged unit of its fight being an add. The survey
+shows the threshold would hold, but the rule cannot be applied where the
+flag is read: the largest unit, Xoryn, arrives seven minutes after the
+Prisms, the tracked rules keep each span's unit kind from the moment the
+effect was recorded, and the damage record keeps per-ability rows for the
+bosses alone, so the fight would have to be re-kinded at its end. It would
+also make the Prisms bosses on the 15 gauntlet wipes at the Baron (21% of
+him) and on the wipes at the Prisms alone. A bundled list of monster ids
+is read once, on the UNIT_ADDED line, so every consumer agrees.
+
+Baron Rize is on the list, against the issue's first thought (he has a
+name, a health bar and a phase of his own). The boss dps time runs from
+the first hit on any boss to the last (Combat Metrics' GetBossTargetDamage,
+see damage_stats), so with the Baron a boss a Xoryn pull's boss dps time
+would still have been a median 446 s of 561 s, the Baron's half minute at
+110 s stretching it over the gauntlet, against 129 s with him an add. The
+other way out, a union of each boss's own hit window, would have changed
+Nahviintaas, who lands as a new unit each time, in 27 of 136 Sunspire
+fights, away from Combat Metrics' figure for a fight with one boss. A
+wipe in the gauntlet before Xoryn is therefore a fight without a boss,
+still named after the Baron when he took the most damage (the name follows
+the most damaged hostile, flagged or not); removing his id from the list
+reverses the choice.
+
+Combat Metrics counts these units as bosses, since it reads the same boss
+health bar, so its boss figures and this app's differ on Xoryn and Yandir
+pulls, by design. A new trial can bring a new unit of this kind; the
+survey script lists every flagged unit by zone with its health as a share
+of the fight's largest, and a line here is all it takes.
+
 ## What counts as damage
 
 ### What counts as damage
 
-*[src/esolog_tail.py:98](../src/esolog_tail.py#L98)*
+*[src/esolog_tail.py:99](../src/esolog_tail.py#L99)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1229,7 +1335,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:116](../src/esolog_tail.py#L116)*
+*[src/esolog_tail.py:117](../src/esolog_tail.py#L117)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1375,7 +1481,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:493](../src/esolog_tail.py#L493)*
+*[src/esolog_tail.py:498](../src/esolog_tail.py#L498)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1398,7 +1504,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:584](../src/esolog_tail.py#L584)*
+*[src/esolog_tail.py:589](../src/esolog_tail.py#L589)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1500,7 +1606,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:190](../src/gui/timeline_strip.py#L190)*
+*[src/gui/timeline_strip.py:202](../src/gui/timeline_strip.py#L202)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -1552,7 +1658,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:501](../src/gui/main_window.py#L501)*
+*[src/gui/main_window.py:520](../src/gui/main_window.py#L520)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1562,7 +1668,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:920](../src/gui/main_window.py#L920)*
+*[src/gui/main_window.py:987](../src/gui/main_window.py#L987)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -1662,7 +1768,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
+*[src/gui/fight_view.py:274](../src/gui/fight_view.py#L274)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1673,11 +1779,79 @@ the viewport repainted: a few small images and a repaint every
 PULSE_INTERVAL_MS, no layout, so the page never moves. The timer
 runs only while the page holds a ringed icon and the view is shown.
 
+## Hidden names: the stand-in behind the blur
+
+### src/gui/name_mask.py
+
+*[src/gui/name_mask.py:1](../src/gui/name_mask.py#L1)*
+
+Design: Hidden names. A screenshot of a fight, or a fight pasted into a
+chat, shows the handles and character names of everyone in the group. The
+Hide names switch (issue #72) keeps the name of the player whose client
+writes the log and hides everyone else's, in every place the app shows a
+name: the fight pane's rows and hover texts, the build, damage and
+death-recap windows, the dps graph's legend, the timeline strip's hover
+and pop-ups, and the Copy fight text. Enemy, pet, set and ability names
+are never hidden.
+
+Who is kept is read from the log, not configured: the game writes
+``isLocalPlayer`` on every player's UNIT_ADDED line, ``T`` for the one
+client writing the log (checked over 899 split logs: exactly one per log,
+the same handle on 14 characters, the flag in the same place since the
+oldest log of 2025). The engine puts it on each fight entry's player as
+``is_local``. A reviewed log written by a friend therefore keeps the
+friend, which is what "the handle of the person logging" means.
+
+Which names are player names: a name is hidden when it is not the local
+player's handle or character name and either starts with ``@`` or is the
+character name of another player of the fight. The ``@`` rule reaches
+every nested place a handle lands (the source of a heal in a death recap,
+a caster in the penetration section, a timeline interval's source and
+target) without threading the player list into each; the character-name
+set reaches a player the log gave no handle. That set is read from the
+entry's ``player_names``, every player unit the engine saw, rows or not:
+a player whose PLAYER_INFO never reached the log has no row in the table
+but still casts, heals and dies in the fight's other data (the review of
+2026-10-27 found the gap when the set was read from the rows alone).
+``anon`` (the engine's word for a player with neither handle nor name)
+and enemy names fall through, as no enemy, pet, set or ability name
+starts with ``@``. An entry with no local player at all hides every name,
+the safe direction.
+
+How a hidden name looks: the maintainer asked for a blurred or pixelated
+name, the look of a screenshot with the names smudged out. The pages
+drawn as rich text (the fight pane and the three windows) get a pixelated
+word of the hidden name's length, its ``@`` left readable as text so the
+row still reads as a handle. That word is **not** the real name pixelated.
+Pixelated or blurred text can be read back when the font, the size and
+the rendering are known (they are all public here) and the words are
+short, so a picture meant to hide a handle would carry it. Instead the
+mask makes a stand-in word from a keyed hash of the name (``stand_in``:
+the key is random per run, so the same name gives the same word in every
+row, window and pop-up of a run, and nothing persists), draws it in the
+page's font at the requested size and weight, downscales it smoothly by
+the block size and scales it back with nearest-neighbour. The result has
+the blocky texture of a pixelated word, the ascender and descender
+pattern of a word nobody has ever seen. The length is kept so the row's
+columns stay where they were; a handle's length identifies nobody.
+
+Where text is all there is (a tooltip, the strip's pop-up, the graph's
+legend, a window title, the clipboard) a hidden name is ``@`` followed by
+one shade block per hidden character: a QLabel cannot ask a view for an
+image.
+
+The page asks for the image by URL, ``mask:<word>?color=rrggbb&pt=<n>&b=<0|1>``
+(``image_html``), answered by ``FightView.loadResource`` from
+``mask_image`` with the view's font family and device pixel ratio, cached
+for the run by its parameters, as the link glyphs are (see gui.glyphs).
+The word is lower-case letters and underscores for spaces, so the URL
+needs no escaping and a malformed one is refused.
+
 ## Links in the fight pane: the hover cue and the dps glyphs
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:170](../src/gui/fight_view.py#L170)*
+*[src/gui/fight_view.py:185](../src/gui/fight_view.py#L185)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
