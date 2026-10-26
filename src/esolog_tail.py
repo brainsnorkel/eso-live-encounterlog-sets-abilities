@@ -467,9 +467,9 @@ class CombatEncounter:
         # and the row key of each companion unit while it has an owner.
         # Both carry over to the next fight like pet_ownership; the deaths
         # are this fight's
-        self.companions: Dict[str, companions.CompanionRecord] = {}
-        self.companion_units: Dict[str, str] = {}
-        self.companion_deaths: Dict[str, int] = defaultdict(int)
+        self.companions: dict[str, companions.CompanionRecord] = {}
+        self.companion_units: dict[str, str] = {}
+        self.companion_deaths: dict[str, int] = defaultdict(int)
 
         # Track combat end time
         self.combat_ended_at: Optional[int] = None
@@ -556,7 +556,7 @@ class CombatEncounter:
             record.level = unit.level
         self.companion_units[unit_id] = key
 
-    def companion_key(self, unit_id: str) -> Optional[str]:
+    def companion_key(self, unit_id: str) -> str | None:
         """The row key of the companion *unit_id* while it has an owner."""
         return self.companion_units.get(unit_id)
 
@@ -859,7 +859,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # the skills each one cast this session, by (owner's player key,
         # monster id), in first-cast order
         self.companion_accrual = False
-        self.companion_casts: Dict[Tuple[str, str], List[str]] = {}
+        self.companion_casts: dict[tuple[str, str], list[str]] = {}
         self.scribing_keys: Dict[str, str] = {}  # unit_id -> the tracker's key for that player
         self._scribing_characters: Dict[str, str] = {}  # tracker key -> character id last seen
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -2776,7 +2776,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 return True
         return False
 
-    def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon) -> Dict[str, List[dict]]:
+    def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon) -> dict[str, list[dict]]:
         """The fight's companion rows by owner unit id (companions.py): every
         companion that was out during the fight or dealt damage, healed or
         died in it. A row has the keys a player's row has that make sense
@@ -2784,7 +2784,7 @@ class ESOLogAnalyzer(ListenerMixin):
         data, health, the bar of skills it cast this session) and
         'companion': True, 'owner_unit_id' and 'level'."""
         damage = enc.damage
-        rows: Dict[str, List[dict]] = {}
+        rows: dict[str, list[dict]] = {}
         total = enc.total_damage
         for key, record in enc.companions.items():
             active = (key in damage.players or enc.player_healing.get(key)

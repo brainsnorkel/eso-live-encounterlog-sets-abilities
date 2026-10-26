@@ -447,7 +447,7 @@ class FightDamage:
 
     def note(self, player_id: str, ts: int, hit: int, result: str, ability_id: str,
              pet: bool, target_id: str, boss: bool, damage_type: str = '', area=None,
-             cast_key=None, watch=None, also: Optional[str] = None) -> None:
+             cast_key=None, watch=None, also: str | None = None) -> None:
         """One hit: once for the group, then on *player_id*'s record and, when
         *also* names another record, on that one too as a pet's hit (a
         companion's hit counted as its owner's as well, see companions.py).
