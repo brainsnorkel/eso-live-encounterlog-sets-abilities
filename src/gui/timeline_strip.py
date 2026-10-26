@@ -47,6 +47,15 @@ gauntlet reads as blank until the boss; the hover over a blank stretch
 says so, and the label's average and the click summary's figures are over
 the drawn time, the summary naming the window when it is not the whole
 fight and giving the damage-weighted remainder beside the time average.
+The pack reading (issue #66): the row's blank stretches in a boss fight
+(the gauntlet before Xoryn, a dragon's flight while the group is on adds)
+are filled with a paler bar read each second on whatever hostile the group
+hit hardest then, the hover naming it, and in a fight without a boss that
+reading is the whole row in place of the one mob it followed; the label
+keeps the boss's figure in a boss fight and the click summary gives the
+pack's beside it. A unit whose armour is not the row's estimate (a solo
+dungeon's trash under its boss's 27,300) is drawn on the row's scale and
+the hover says so.
 
 Deliberately tiny: it must never crowd the fight summary. A fight in which
 none of the built-in effects was up has no recorded timeline; its tracked
@@ -100,8 +109,10 @@ TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
 # The label of an expected row that never came: dark red on a light pane, a
 # lighter red on a dark one (keyed by whether the pane is dark)
 MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
-# The Armour row's bar: a blue-grey of its own, so the rules keep theirs
+# The Armour row's bar: a blue-grey of its own, so the rules keep theirs;
+# its pack reading (issue #66) is the same colour at this opacity
 ARMOUR_COLORS = {False: QColor("#546e7a"), True: QColor("#b0bec5")}
+ARMOUR_PACK_ALPHA = 0.5
 
 # A group buff reaching at most this many distinct receivers is drawn
 # cross-hatched (paint_sparse_span)
@@ -442,9 +453,12 @@ class TimelineStrip(QWidget):
                                       QRectF(x0, rect.top(), max(1.0, x1 - x0), rect.height()),
                                       color, track_left)
             else:
+                # The Armour row's pack reading is paler than its boss reading
+                pack_color = self.armour_pack_color() if info.get("armour") else color
                 for interval in self._intervals(effect):
                     x0 = self._x_for_ms(interval["start_ms"])
                     x1 = self._x_for_ms(interval["end_ms"])
+                    fill = pack_color if interval.get("pack") else color
                     if stacks_max:
                         if info.get("zero_level"):
                             level = max(0, min(stacks_max, int(interval.get("stacks") or 0)))
@@ -452,11 +466,11 @@ class TimelineStrip(QWidget):
                             level = max(1, min(stacks_max, int(interval.get("stacks") or 1)))
                         height = max(1.0 if level == 0 else 2.0, rect.height() * level / stacks_max)
                         painter.fillRect(QRectF(x0, rect.bottom() - height,
-                                                max(1.0, x1 - x0), height), color)
+                                                max(1.0, x1 - x0), height), fill)
                     else:
                         painter.fillRect(QRectF(x0, rect.top(),
                                                 max(1.0, x1 - x0), rect.height()),
-                                         color)
+                                         fill)
             # The game's cap on an enemy's armour, when the estimate is
             # above it: a dashed line across the Armour row at that level
             game_cap = (info.get("armour") or {}).get("game_cap")
@@ -502,6 +516,14 @@ class TimelineStrip(QWidget):
         """The Armour row's blue-grey, lighter on a dark pane."""
         dark = self.palette().color(self.backgroundRole()).lightness() < 128
         return ARMOUR_COLORS[dark]
+
+    def armour_pack_color(self) -> QColor:
+        """The pack reading's bar (issue #66): the row's colour at
+        ARMOUR_PACK_ALPHA, paler on either pane so the two readings are
+        told apart."""
+        color = QColor(self.armour_color())
+        color.setAlphaF(ARMOUR_PACK_ALPHA)
+        return color
 
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
@@ -615,11 +637,18 @@ class TimelineStrip(QWidget):
         target = escape(str(armour.get('target') or ''), quote=False)
         window = armour.get("window_ms") or [0, duration]
         drawn = int(armour.get("drawn_ms") or duration)
+        pack_units = int(armour.get("pack_units") or 0)
+        if armour.get("pack_only"):
+            # A fight without a boss (issue #66): the row is the pack reading
+            on = (f"Read each second on the unit the group hit hardest, "
+                  f"{pack_units} unit{'s' if pack_units != 1 else ''} in all,")
+        else:
+            on = f"On {target}"
         if int(window[0]) <= 0 and int(window[1]) >= duration and drawn >= duration:
-            when = f"On {target} over {_fmt_tick(duration)}"
+            when = f"{on} over {_fmt_tick(duration)}"
             of_what = "of the fight"
         else:
-            when = (f"On {target} from {_fmt_tick(int(window[0]))} to {_fmt_tick(int(window[1]))}, "
+            when = (f"{on} from {_fmt_tick(int(window[0]))} to {_fmt_tick(int(window[1]))}, "
                     f"{_fmt_tick(drawn)} of the {_fmt_tick(duration)} fight")
             of_what = "of that time"
         figures = (f"{when}: {int(armour.get('average_left', 0)):,} armour left on average, "
@@ -629,8 +658,21 @@ class TimelineStrip(QWidget):
         if weighted is not None:
             figures += (f". Weighed by the damage dealt, as the build window does: "
                         f"{int(weighted):,} left")
-        explain = f"<i>{escape(str(armour.get('explain') or ''), quote=False)}</i>"
-        return "<br>".join((head, figures, explain))
+        parts = [head, figures]
+        if pack_units and not armour.get("pack_only"):
+            # The paler stretches of a boss fight's row: the pack's figures
+            pack_drawn = int(armour.get("pack_drawn_ms") or 0)
+            pack = (f"The paler {_fmt_tick(pack_drawn)}, read each second on whichever of "
+                    f"{pack_units} other unit{'s' if pack_units != 1 else ''} the group hit "
+                    f"hardest: {int(armour.get('pack_average_left', 0)):,} left on average, "
+                    f"{int(armour.get('pack_lowest_left', 0)):,} at the lowest; no armour debuff "
+                    f"for {int(armour.get('pack_no_debuff_pct', 0))}% of that time")
+            pack_weighted = armour.get("pack_weighted_left")
+            if pack_weighted is not None:
+                pack += f". Weighed by the damage dealt: {int(pack_weighted):,} left"
+            parts.append(pack)
+        parts.append(f"<i>{escape(str(armour.get('explain') or ''), quote=False)}</i>")
+        return "<br>".join(parts)
 
     def show_summary(self, effect: str, global_pos) -> "SummaryPopup":
         """Open the pop-up for *effect*'s row at *global_pos*."""
@@ -693,6 +735,17 @@ class TimelineStrip(QWidget):
                               f" &nbsp;·&nbsp; {int(iv.get('stacks') or 0):,} of {estimate:,} left"),
                              escape(debuffs, quote=False)
                              + (f" &nbsp;·&nbsp; {taken:,} off" if taken else "")]
+                    if iv.get("pack"):
+                        # The pack reading (issue #66): the unit of the moment,
+                        # and its own armour when the row's scale is not it
+                        unit = escape(str(iv.get("target") or "the unit"), quote=False)
+                        lines[0] += f" on {unit}"
+                        note = "Read on the unit the group hit hardest that second"
+                        unit_armour = int(iv.get("unit_armour") or 0)
+                        if unit_armour:
+                            note += (f"; its armour is {unit_armour:,}, the row's scale "
+                                     f"the {estimate:,} of its target")
+                        lines.append(f"<i>{note}</i>")
                     QToolTip.showText(ev.globalPos(), "<br>".join(lines) + CLICK_HINT, self)
                     return True
                 if hits:
@@ -712,10 +765,13 @@ class TimelineStrip(QWidget):
                     return True
                 if info.get("armour"):
                     # A blank stretch of the Armour row: the group was not
-                    # hitting the target then (issue #64)
+                    # hitting the target then (issue #64), or, when the row
+                    # carries the pack reading too (issue #66), anything
                     ranges = info["armour"].get("window") or []
                     target = str(info["armour"].get("target") or "the target")
-                    if ranges and ms < int(ranges[0][0]):
+                    if "pack_units" in info["armour"]:
+                        why = "the group hit nothing for this stretch"
+                    elif ranges and ms < int(ranges[0][0]):
                         why = f"{target} not yet engaged"
                     elif ranges and ms > int(ranges[-1][1]):
                         why = f"after the last hit on {target}"

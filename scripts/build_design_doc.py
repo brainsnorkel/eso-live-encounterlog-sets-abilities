@@ -89,6 +89,9 @@ TOPICS = [
         "src/esolog_tail.py#Taunts",
         "src/esolog_tail.py:mark_taunt_slots",
     ]),
+    ("What a boss is: the game's flag and its exceptions", [
+        "src/boss_units.py",
+    ]),
     ("What counts as damage", [
         "src/esolog_tail.py#What counts as damage",
     ]),
