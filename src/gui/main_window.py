@@ -121,8 +121,8 @@ class MainWindow(QMainWindow):
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
         self._build_ui()
-        self._build_worker()
         self._build_update_poller()
+        self._build_worker()  # last: the engine thread starts here
 
         # Follow live theme switches (e.g. Windows auto dark mode after
         # sunset): rendered HTML embeds theme colors, so it must re-render.
