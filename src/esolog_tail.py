@@ -2333,6 +2333,11 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.deaths = self.fight_deaths  # this fight's player deaths
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
+        # Every player unit, rows or not (a player with no PLAYER_INFO gets
+        # no row below but still appears in the timeline, the recaps and
+        # the casters): the roster the Hide names mask reads
+        entry.player_names = [{'name': p.get_display_name(), 'character': p.name,
+                               'is_local': bool(p.is_local)} for p in enc.players.values()]
 
         # The buff/debuff timeline (None when none of its effects was up)
         if self.track_buff_timeline:
@@ -2451,6 +2456,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 'cp': player.champion_points,
                 'character': player.name,
                 'race': race_name(player.race_id),
+                # The player whose client writes the log (the game's
+                # isLocalPlayer flag): the one the Hide names switch keeps
+                'is_local': bool(player.is_local),
             })
             # Per-slot gear, mundus and food for the build window
             entry.players[-1].update(build_fields(

@@ -72,6 +72,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
 from effect_rules import DOTS_CAP
 from effect_summary import matrix, summarise
+from gui.name_mask import NO_MASK
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
                 "Major Berserk", "Powerful Assault", "Major Vulnerability",
@@ -244,16 +245,20 @@ class TimelineStrip(QWidget):
         self._row_info = {}   # effect -> {'uptime_pct': int, 'sparse': bool}
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
         self._divider = None  # index of the first debuff row below buff rows, or None
+        self._names = NO_MASK  # the Hide names mask for the hover and the pop-ups
         self.setVisible(False)
         self.setCursor(Qt.PointingHandCursor)
 
     # ---- data ----
 
-    def set_timeline(self, timeline, tracked=None, armour=None) -> None:
+    def set_timeline(self, timeline, tracked=None, armour=None, names=None) -> None:
         """timeline: {'duration_ms', 'effects': {...}} or None to hide.
         tracked: the fight's tracked effects (FightHistoryEntry.tracked),
         rows after the built-in ones; a rule that never occurred has none.
-        armour: the Armour row (pen_crit.armour_row), last of all, or None."""
+        armour: the Armour row (pen_crit.armour_row), last of all, or None.
+        names: the Hide names mask (gui.name_mask) for the casters and
+        receivers the hover and the click pop-up name."""
+        self._names = names or NO_MASK
         valid = bool(timeline and timeline.get("duration_ms", 0) > 0
                      and (timeline.get("effects") or tracked))
         self._timeline = timeline if valid else None
@@ -587,7 +592,7 @@ class TimelineStrip(QWidget):
             rows = [f"<tr><th align=left>{escape(title)}</th>"
                     + "".join(f"<th align=right>&nbsp;{c}</th>" for c in columns) + "</tr>"]
             for line in lines[:SUMMARY_LIST_LIMIT]:
-                rows.append(f"<tr><td>{escape(line['name'])}</td>"
+                rows.append(f"<tr><td>{escape(self._names.text(line['name']))}</td>"
                             + "".join(f"<td align=right>&nbsp;{v}</td>" for v in cells(line))
                             + "</tr>")
             if len(lines) > SUMMARY_LIST_LIMIT:
@@ -608,10 +613,11 @@ class TimelineStrip(QWidget):
                 and len(summary["targets"]) <= MATRIX_MAX_TARGETS):
             sources = [line["name"] for line in summary["sources"]]
             rows = ["<tr><th align=left>On \\ by</th>"
-                    + "".join(f"<th align=right>&nbsp;{escape(s)}</th>" for s in sources) + "</tr>"]
+                    + "".join(f"<th align=right>&nbsp;{escape(self._names.text(s))}</th>"
+                              for s in sources) + "</tr>"]
             for line in summary["targets"]:
                 target = line["name"]
-                rows.append(f"<tr><td>{escape(target)}</td>" + "".join(
+                rows.append(f"<tr><td>{escape(self._names.text(target))}</td>" + "".join(
                     f"<td align=right>&nbsp;{grid[s][target]}%</td>" if target in grid[s]
                     else "<td align=right>&nbsp;–</td>" for s in sources) + "</tr>")
             sections.append("<table cellspacing=0 cellpadding=1>" + "".join(rows) + "</table>")
@@ -745,9 +751,11 @@ class TimelineStrip(QWidget):
                 if hits:
                     lines = [f"<b>{effect}</b> ({info.get('scope', '')}) @ {_fmt_tick(ms)}"
                              f" &nbsp;·&nbsp; uptime {info.get('uptime_pct', 0)}%"]
+                    names = self._names
                     for iv in hits:
-                        who = (f"{iv['source']} → {iv['target']}" if iv.get("source")
-                               else f"on {iv.get('target', '')}")
+                        who = (f"{names.text(iv['source'])} → {names.text(iv['target'])}"
+                               if iv.get("source")
+                               else f"on {names.text(iv.get('target', ''))}")
                         counted = iv.get("stacks") or (info.get("zero_level") and "stacks" in iv)
                         stacks = f" &nbsp; ×{iv['stacks']}" if counted and effect in self._tracked else ""
                         lines.append(

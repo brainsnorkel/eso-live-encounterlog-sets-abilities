@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3266](../src/esolog_tail.py#L3266)*
+*[src/esolog_tail.py:3274](../src/esolog_tail.py#L3274)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -771,7 +771,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:332](../src/gui/build_render.py#L332)*
+*[src/gui/build_render.py:352](../src/gui/build_render.py#L352)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1211,7 +1211,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:89](../src/app_config.py#L89)*
+*[src/app_config.py:94](../src/app_config.py#L94)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1606,7 +1606,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:201](../src/gui/timeline_strip.py#L201)*
+*[src/gui/timeline_strip.py:202](../src/gui/timeline_strip.py#L202)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -1658,7 +1658,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:501](../src/gui/main_window.py#L501)*
+*[src/gui/main_window.py:520](../src/gui/main_window.py#L520)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1668,7 +1668,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:920](../src/gui/main_window.py#L920)*
+*[src/gui/main_window.py:987](../src/gui/main_window.py#L987)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -1768,7 +1768,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
+*[src/gui/fight_view.py:274](../src/gui/fight_view.py#L274)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -1779,11 +1779,79 @@ the viewport repainted: a few small images and a repaint every
 PULSE_INTERVAL_MS, no layout, so the page never moves. The timer
 runs only while the page holds a ringed icon and the view is shown.
 
+## Hidden names: the stand-in behind the blur
+
+### src/gui/name_mask.py
+
+*[src/gui/name_mask.py:1](../src/gui/name_mask.py#L1)*
+
+Design: Hidden names. A screenshot of a fight, or a fight pasted into a
+chat, shows the handles and character names of everyone in the group. The
+Hide names switch (issue #72) keeps the name of the player whose client
+writes the log and hides everyone else's, in every place the app shows a
+name: the fight pane's rows and hover texts, the build, damage and
+death-recap windows, the dps graph's legend, the timeline strip's hover
+and pop-ups, and the Copy fight text. Enemy, pet, set and ability names
+are never hidden.
+
+Who is kept is read from the log, not configured: the game writes
+``isLocalPlayer`` on every player's UNIT_ADDED line, ``T`` for the one
+client writing the log (checked over 899 split logs: exactly one per log,
+the same handle on 14 characters, the flag in the same place since the
+oldest log of 2025). The engine puts it on each fight entry's player as
+``is_local``. A reviewed log written by a friend therefore keeps the
+friend, which is what "the handle of the person logging" means.
+
+Which names are player names: a name is hidden when it is not the local
+player's handle or character name and either starts with ``@`` or is the
+character name of another player of the fight. The ``@`` rule reaches
+every nested place a handle lands (the source of a heal in a death recap,
+a caster in the penetration section, a timeline interval's source and
+target) without threading the player list into each; the character-name
+set reaches a player the log gave no handle. That set is read from the
+entry's ``player_names``, every player unit the engine saw, rows or not:
+a player whose PLAYER_INFO never reached the log has no row in the table
+but still casts, heals and dies in the fight's other data (the review of
+2026-10-27 found the gap when the set was read from the rows alone).
+``anon`` (the engine's word for a player with neither handle nor name)
+and enemy names fall through, as no enemy, pet, set or ability name
+starts with ``@``. An entry with no local player at all hides every name,
+the safe direction.
+
+How a hidden name looks: the maintainer asked for a blurred or pixelated
+name, the look of a screenshot with the names smudged out. The pages
+drawn as rich text (the fight pane and the three windows) get a pixelated
+word of the hidden name's length, its ``@`` left readable as text so the
+row still reads as a handle. That word is **not** the real name pixelated.
+Pixelated or blurred text can be read back when the font, the size and
+the rendering are known (they are all public here) and the words are
+short, so a picture meant to hide a handle would carry it. Instead the
+mask makes a stand-in word from a keyed hash of the name (``stand_in``:
+the key is random per run, so the same name gives the same word in every
+row, window and pop-up of a run, and nothing persists), draws it in the
+page's font at the requested size and weight, downscales it smoothly by
+the block size and scales it back with nearest-neighbour. The result has
+the blocky texture of a pixelated word, the ascender and descender
+pattern of a word nobody has ever seen. The length is kept so the row's
+columns stay where they were; a handle's length identifies nobody.
+
+Where text is all there is (a tooltip, the strip's pop-up, the graph's
+legend, a window title, the clipboard) a hidden name is ``@`` followed by
+one shade block per hidden character: a QLabel cannot ask a view for an
+image.
+
+The page asks for the image by URL, ``mask:<word>?color=rrggbb&pt=<n>&b=<0|1>``
+(``image_html``), answered by ``FightView.loadResource`` from
+``mask_image`` with the view's font family and device pixel ratio, cached
+for the run by its parameters, as the link glyphs are (see gui.glyphs).
+The word is lower-case letters and underscores for spaces, so the URL
+needs no escaping and a malformed one is refused.
+
 ## Links in the fight pane: the hover cue and the dps glyphs
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:170](../src/gui/fight_view.py#L170)*
+*[src/gui/fight_view.py:185](../src/gui/fight_view.py#L185)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

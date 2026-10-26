@@ -443,11 +443,14 @@ class TestBuildRender(BuildGuiTestCase):
         entry = self._with(role='D')
         html = self._html(entry)
         self.assertEqual(ROLE_NAMES['D'], 'DPS')
-        self.assertIn(">Pïque · High Elf Warden · CP 3224 · DPS</span>", html)
-        for expected in ('>@brainsnorkel</span>', 'Test Boss', 'Scalecaller Peak', '[VET]',
+        # The character name sits beside the handle at the title's size,
+        # in normal weight (issue #71), and no longer among the muted facts
+        self.assertIn(">@brainsnorkel</span><span style='font-size:11.70pt'> · Pïque</span>", html)
+        self.assertIn(f"<span style='color:{MUTED}'>High Elf Warden · CP 3224 · DPS</span>", html)
+        for expected in ('Test Boss', 'Scalecaller Peak', '[VET]',
                          str(entry.timestamp), SNAPSHOT_NOTE):
             self.assertIn(expected, html)
-        self.assertEqual(build_title(entry, '1'), 'Build – @brainsnorkel')
+        self.assertEqual(build_title(entry, '1'), 'Build – @brainsnorkel (Pïque)')
 
     def test_anonymous_player_has_no_character_name(self):
         from gui.build_render import SNAPSHOT_NOTE
@@ -896,7 +899,7 @@ class TestBuildWindow(BuildGuiTestCase):
             self.assertIsNotNone(dialog)
             self.assertTrue(dialog.isVisible())
             self.assertFalse(dialog.isModal())
-            self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel')
+            self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
             text = dialog.view.toPlainText()
             for expected in ('Pïque', 'High Elf Warden', 'The Thief',
                              'Perfected Whorl of the Depths', 'Bloodthirsty', '3/5',
@@ -913,7 +916,7 @@ class TestBuildWindow(BuildGuiTestCase):
             dialog = win._build_dialog
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/2'))
             self.assertIs(win._build_dialog, dialog)
-            self.assertEqual(dialog.windowTitle(), 'Build – @dualwield')
+            self.assertEqual(dialog.windowTitle(), 'Build – @dualwield (Stabby)')
             text = dialog.view.toPlainText()
             self.assertIn('Crown Lethal Poison', text)
             self.assertNotIn('Perfected Whorl of the Depths', text)
@@ -946,7 +949,7 @@ class TestBuildWindow(BuildGuiTestCase):
             self.assertEqual(win.history_list.currentRow(), 1)
             self.assertIn('Another Boss', win.fight_view.toPlainText())
             self.assertEqual(dialog.view.toHtml(), shown)
-            self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel')
+            self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
             # Selecting the older fight again changes nothing either
             win.history_list.setCurrentRow(0)
             self.assertEqual(dialog.view.toHtml(), shown)

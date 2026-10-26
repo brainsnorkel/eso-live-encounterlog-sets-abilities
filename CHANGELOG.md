@@ -2,6 +2,12 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Hide names, for screenshots and sharing** (#72): a `Hide names` button on the toolbar, Ctrl+H, and a box under Privacy in Settings, one switch, saved whenever it flips. With it on, every player but the one writing the log has their handle and character name hidden wherever the app shows a name: the fight pane's rows and `Also died` chips, the hover texts, the build, damage and death-recap windows (title, header, the casters in the penetration section, the source of a heal), the DPS graph's legend, the timeline strip's hover and click pop-up, and the copied fight. In the pages drawn as rich text a hidden name is a pixelated word of the same length with its `@` left readable; where text is all there is it reads `@▒▒▒▒▒▒`. The pixelated word is a stand-in, not the real name blurred: pixelated or blurred text can be read back when the font and size are known, so nothing of the name goes into the picture but its length. Who is kept comes from the log's own `isLocalPlayer` flag (all 899 split logs on the maintainer's machine carry exactly one), so a reviewed log a friend wrote keeps the friend. Enemy, pet, set and ability names are never hidden. `scripts/capture_screenshots.py --hide-names` takes the guide's pictures that way, and they have been retaken
+- **The character name beside the handle** (#71): the build window's title line reads `@handle · Character` (the character name was a muted fact on the line below) and its window title `Build – @handle (Character)`; hovering a handle in the fight pane shows the character name under it
+
 ## [0.14.5] - 2026-10-27
 
 ### Added
