@@ -494,13 +494,16 @@ class TestTheWindows(HideNamesTestCase):
     def test_the_pane_stays_where_it_was_scrolled(self):
         win = self._window()
         try:
-            win.resize(700, 260)
             win.show()
+            # A long page in a short pane, whatever the platform's fonts and
+            # window geometry make of the layout
+            win.fight_view.setFixedHeight(120)
             entry = _entry()
-            entry.players = entry.players * 4  # enough rows to scroll
+            entry.players = entry.players * 20
             win._on_fight_completed(entry)
             win.history_list.setCurrentRow(0)
-            _app.processEvents()
+            for _ in range(3):
+                _app.processEvents()
             bar = win.fight_view.verticalScrollBar()
             self.assertGreater(bar.maximum(), 0)
             bar.setValue(bar.maximum() // 2)
