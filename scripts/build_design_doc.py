@@ -109,6 +109,9 @@ TOPICS = [
     ("Death recaps", [
         "src/death_recap.py",
     ]),
+    ("Kinds of damage: direct or over time, area or single target, Martial or Magical", [
+        "src/damage_kinds.py",
+    ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",

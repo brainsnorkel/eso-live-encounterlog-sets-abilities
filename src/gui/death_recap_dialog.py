@@ -9,7 +9,7 @@ player's recap reuses the same window.
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout
 
-from gui.death_render import deaths_by_unit, render_death_recap_html
+from gui.death_render import deaths_by_unit, kind_tooltips, render_death_recap_html
 from gui.fight_view import FightView
 from gui.name_mask import NO_MASK
 
@@ -42,6 +42,9 @@ class DeathRecapDialog(QDialog):
         deaths = deaths_by_unit(entry).get(str(unit_id), [])
         name = (names or NO_MASK).text(str(deaths[0].get("name", ""))) if deaths else ""
         self.setWindowTitle(f"Death recap – {name}" if name else "Death recap")
+        # The kinds summaries' star links carry their hover text (the
+        # Warfare stars for each side); a click opens the ESO-Hub page
+        self.view.set_tooltips(kind_tooltips())
         self.view.setHtml(render_death_recap_html(
             entry, unit_id, dark=dark, icons=self.view.icons,
             base_pt=self.view.font().pointSizeF(), names=names,

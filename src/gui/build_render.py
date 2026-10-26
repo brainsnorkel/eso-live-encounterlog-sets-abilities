@@ -28,6 +28,8 @@ rest of the fight pane.
 import html
 from typing import Optional
 
+from damage_kinds import summary_of_taken
+from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     issues_html, werewolf_bar_html,
@@ -57,6 +59,9 @@ CRIT_TITLE = "Critical damage"
 PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
 ASSUMED_MARK = "assumed"
 NO_PEN_CRIT = "No penetration or critical damage figures for this fight."
+DEALT_TITLE = "Damage dealt"
+NO_DEALT = "This player dealt no damage in this fight."
+DEALT_NOT_RECORDED = "Damage kinds were not recorded for this fight."
 NO_DAMAGE_MEASURED = "no damage of this player's to weigh the fight's effects by"
 PEN_CRIT_NOTE = ("After LunaCairu's PenCrit Calc sheet and the Hyperioxes calculators that "
                  "skinnycheeks.gg recommends; debuffs valued as Combat Metrics (Solinur) values them; "
@@ -349,6 +354,47 @@ def _casters_text(casters, e, names, color: str, pt: float) -> str:
     return ", ".join(parts)
 
 
+def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
+    """The Damage dealt section (damage_kinds, issue #73): the kinds of the
+    player's damage in the fight from the damage record's 'kinds', drawn by
+    the same block as the death recap window, so the two read alike; the
+    shield absorbs sit outside the splits and are named; the hover on a
+    side's label names the Warfare stars for damage dealt."""
+    muted = theme["muted"]
+    heading = f"padding-top:7px;color:{muted};font-weight:bold"
+    under = (f"border-bottom-style:solid;border-bottom-width:1px;"
+             f"border-bottom-color:{_RULES[bool(dark)]}")
+    title = f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}</p>"
+    damage = p.get("damage")
+    if not isinstance(damage, dict) or not damage:
+        return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"
+    kinds = damage.get("kinds")
+    if not isinstance(kinds, dict) or "total" not in kinds:
+        return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"
+    if not (damage.get("total") or 0):
+        return title + f"<p style='margin:0;color:{muted}'>{NO_DEALT}</p>"
+    summary = summary_of_taken(kinds)
+    # The recap window's theme carries the bar colours; the pane's own
+    # text colour for the labels
+    kind_theme = dict(_KIND_THEMES[bool(dark)])
+    kind_theme["text"] = theme["text"]
+    parts = [title, kinds_block_html(summary, "dealt", kind_theme, e, base_pt,
+                                     "dealt in this fight", NO_DEALT)]
+    shielded = int(kinds.get("shielded") or 0)
+    total = int(damage.get("total") or 0)
+    if shielded and total:
+        parts.append(f"<p style='margin:1px 0;color:{muted};font-size:{base_pt * 0.9:.2f}pt'>"
+                     f"{shielded:,} absorbed by enemy shields, {round(100.0 * shielded / total)}% "
+                     f"of the damage, outside the splits</p>")
+    rules = kinds.get("rules") or {}
+    table_share = int(rules.get("table") or 0)
+    if summary["total"] and table_share:
+        parts.append(f"<p style='margin:1px 0;color:{muted};font-size:{base_pt * 0.85:.2f}pt'>"
+                     f"area or single target: {round(100.0 * table_share / summary['total'])}% "
+                     f"of the damage classed by the skill table, the rest by the casts</p>")
+    return "".join(parts)
+
+
 def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, names) -> str:
     """The Penetration and Critical damage sections (pen_crit): the player's
     own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -532,5 +578,8 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
+        # The kinds of the damage dealt (damage_kinds), before the
+        # penetration and critical damage figures
+        _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]), base_pt, e),
         _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e, names),
     ))

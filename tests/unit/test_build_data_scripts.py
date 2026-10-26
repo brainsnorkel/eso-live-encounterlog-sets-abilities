@@ -598,5 +598,75 @@ class TestClassPassives(unittest.TestCase):
                               for i, e in data['passives'].items()]}))
 
 
+TARGETS_SAMPLE = {
+    "numRecords": 8,
+    "minedSkills": [
+        {"id": "28800", "name": "Impulse", "target": "Area", "isPlayer": "1"},
+        {"id": "46324", "name": "Crystal Fragments", "target": "Enemy", "isPlayer": "1"},
+        {"id": "40161", "name": "Flawless Dawnbreaker", "target": "Cone", "isPlayer": "1"},
+        {"id": "1", "name": "A ground effect", "target": "Ground", "isPlayer": "1"},
+        {"id": "2", "name": "A self buff", "target": "Self", "isPlayer": "1"},
+        {"id": "3", "name": "No target", "target": "", "isPlayer": "1"},
+        {"id": "95687", "name": "Oppressive Bolts", "target": "Enemy", "isPlayer": "0"},
+        {"id": "x", "name": "Bad id", "target": "Area", "isPlayer": "1"},
+    ],
+}
+
+
+class TestAbilityTargets(unittest.TestCase):
+    """scripts/generate_ability_targets.py: player skills' target kinds for
+    the area rule (damage_kinds), from UESP's mined skill table."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('generate_ability_targets.py')
+
+    def test_player_skills_are_sorted_into_area_and_single(self):
+        kinds = self.script.ability_targets(TARGETS_SAMPLE)
+        self.assertEqual(kinds['area'], [1, 28800, 40161])   # Area, Cone and Ground
+        self.assertEqual(kinds['single'], [46324])            # Enemy
+        self.assertEqual(kinds['read'], 7)                    # the monster row is not read
+        text = self.script.render(kinds, '2026-10-27T00:00:00+00:00', 'test')
+        data = json.loads(text)
+        self.assertEqual((data['area'], data['single'], data['count']), ([1, 28800, 40161], [46324], 4))
+        self.assertIn('UESP', data['attribution'])
+
+    def test_main_refuses_a_short_reply_and_writes_a_full_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reply = Path(tmp) / 'mined_skills.json'
+            reply.write_text(json.dumps(TARGETS_SAMPLE), encoding='utf-8')
+            out = Path(tmp) / 'ability_targets.json'
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(self.script.main(['--from', str(reply), '--out', str(out)]), 1)
+            self.assertIn('not writing', err.getvalue())
+            self.assertFalse(out.exists())
+            with mock.patch.object(self.script, 'MIN_ROWS', 1), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(self.script.main(['--from', str(reply), '--out', str(out)]), 0)
+            data = json.loads(out.read_text(encoding='utf-8'))
+            self.assertEqual(data['single'], [46324])
+            self.assertIn('mined_skills.json', data['source'])
+            # And the loader reads the shape the script writes
+            from damage_kinds import table_target
+            self.assertEqual(table_target('28800', path=out), 'area')
+            self.assertEqual(table_target('46324', path=out), 'single')
+            self.assertIsNone(table_target('2', path=out))
+
+    def test_committed_table(self):
+        data = json.loads((REPO_ROOT / 'data' / 'skills' / 'ability_targets.json')
+                          .read_text(encoding='utf-8'))
+        self.assertEqual(data['count'], len(data['area']) + len(data['single']))
+        self.assertGreaterEqual(data['count'], self.script.MIN_ROWS)
+        self.assertIn('UESP', data['attribution'])
+        self.assertIn(28800, data['area'])        # Impulse
+        self.assertIn(28858, data['area'])        # Wall of Elements
+        self.assertIn(46324, data['single'])      # Crystal Fragments
+        self.assertIn(18718, data['single'])      # Mages' Fury
+        self.assertFalse(set(data['area']) & set(data['single']))
+        from damage_kinds import reset_target_table, table_target
+        reset_target_table()
+        self.assertEqual(table_target('28800'), 'area')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -227,5 +227,65 @@ class TestDamageStatsUnits(unittest.TestCase):
                           row.max_hit, row.min_hit), (450, 2, 1, 1, 50, 300, 100))
 
 
+def _cast_hit(ts, source, damage, target, cast, ability, result='DAMAGE', damage_type='PHYSICAL'):
+    """A hit with its own cast id and damage type (the kinds of damage)."""
+    return (f"{ts},COMBAT_EVENT,{result},{damage_type},1,{damage},0,{cast},{ability},"
+            f"{source},{target}")
+
+
+class TestKindsOfDamageDealt(unittest.TestCase):
+    """The record's kinds (damage_kinds): area or single target by the cast
+    and the bundled table of player skills, direct or over time, Martial or
+    Magical, the types, and the shield absorbs outside the splits."""
+
+    def test_kinds_by_cast_table_and_type(self):
+        fight = _fight([
+            # Impulse on the lone boss: area by the table (28800 is Area)
+            _cast_hit(11000, _player(1), 10000, _boss(), 1, 28800, damage_type='FIRE'),
+            # Crystal Fragments: single target by the table (46324 is Enemy)
+            _cast_hit(12000, _player(1), 5000, _boss(), 2, 46324, damage_type='MAGIC'),
+            # An ability the table lacks, one cast on the boss and then the
+            # add: area by the cast, the first hit moved over
+            _cast_hit(13000, _player(1), 3000, _boss(), 3, 555555),
+            _cast_hit(13000, _player(1), 3000, _add(), 3, 555555),
+            # A tick of an unknown ability on the boss alone: single
+            _cast_hit(14000, _player(1), 2000, _boss(), 4, 666666, result='DOT_TICK',
+                      damage_type='POISON'),
+            # A shield absorb: damage, but outside the splits
+            _cast_hit(15000, _player(1), 1000, _boss(), 5, 777777, result='DAMAGE_SHIELDED',
+                      damage_type='GENERIC'),
+        ])
+        damage = _by_unit(fight)['1']['damage']
+        self.assertEqual(damage['total'], 24000)
+        kinds = damage['kinds']
+        self.assertEqual(kinds['total'], 23000)
+        self.assertEqual((kinds['direct'], kinds['dot']), (21000, 2000))
+        self.assertEqual((kinds['area'], kinds['single']), (16000, 7000))
+        self.assertEqual((kinds['martial'], kinds['magical'], kinds['oblivion'], kinds['other']),
+                         (8000, 15000, 0, 0))
+        self.assertEqual(kinds['types'],
+                         {'fire': 10000, 'magic': 5000, 'physical': 6000, 'poison': 2000})
+        self.assertEqual(kinds['rules'], {'table': 15000, 'cast': 6000, 'none': 2000})
+        self.assertEqual(kinds['shielded'], 1000)
+        rows = {row['id']: row for row in damage['abilities']}
+        self.assertEqual((rows['28800']['area_damage'], rows['28800']['types']),
+                         (10000, {'fire': 10000}))
+        self.assertEqual((rows['555555']['area_damage'], rows['555555']['damage']), (6000, 6000))
+        self.assertEqual((rows['666666']['tick_damage'], rows['666666']['area_damage']), (2000, 0))
+        self.assertEqual(rows['46324']['area_damage'], 0)
+        # The boss view's rows carry the same kinds
+        boss_rows = {row['id']: row for row in damage['boss_abilities']}
+        self.assertEqual(boss_rows['555555']['area_damage'], 3000)
+
+    def test_a_record_without_kinds_still_snapshots(self):
+        from damage_stats import PlayerDamage
+        record = PlayerDamage()
+        record.note(1000, 500, 'DAMAGE', '1', False, '70', True)
+        snapshot = record.snapshot(lambda a: 'x', lambda a: '', lambda u: 'Boss')
+        self.assertEqual(snapshot['kinds']['total'], 500)
+        self.assertEqual(snapshot['kinds']['types'], {'untyped': 500})
+        self.assertEqual(snapshot['kinds']['rules'], {'none': 500})
+
+
 if __name__ == '__main__':
     unittest.main()
