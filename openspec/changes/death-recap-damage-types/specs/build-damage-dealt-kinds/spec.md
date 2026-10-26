@@ -29,14 +29,14 @@ The section SHALL class a player's hits by the `damage-kinds` rule for player da
 - **WHEN** every cast in the fight struck the one boss and 70% of the damage came from skills the table lists as Area or Ground
 - **THEN** the area side reads 70%, and its hover says the share rests on the skill table
 
-### Requirement: Hovering a side names the stars
+### Requirement: A side's label names its stars
 
-Hovering either side of a bar SHALL show the hover text the `damage-kinds` capability defines for damage dealt (Master-at-Arms, Thaumaturge, Biting Aura, Deadly Aim, War Mage, Mighty).
+Each side's label beside a bar SHALL be a link to the ESO-Hub page of the Warfare star the `damage-kinds` capability names for damage dealt on that side (Master-at-Arms, Thaumaturge, Biting Aura, Deadly Aim, War Mage, Mighty), and hovering it SHALL show the star with its tooltip text; a click opens the page.
 
 #### Scenario: Hover on the area side
 
-- **WHEN** the reader hovers the area side
-- **THEN** the hover names Biting Aura with its tooltip text and ESO-Hub link
+- **WHEN** the reader hovers the area label
+- **THEN** the hover names Biting Aura with its tooltip text and says the click opens it on ESO-Hub, and names no damage-taken star
 
 ### Requirement: Fights recorded before the change
 

@@ -27,7 +27,7 @@ For each death the window SHALL show, between the "Killed by" line and the event
 
 ### Requirement: The whole fight's damage taken
 
-The window SHALL open with a block for the player's whole fight: every hit the player took from the first to the last, as the same total, bars and lines as the per-death summary, followed by the abilities that did the most damage to them, at most five, each with its damage, its share, its kind words (direct or over time, area or single target, type) and its source. The block SHALL be measured over the fight as the engine recorded it, including hits after the last death, and SHALL say over how many seconds of combat the player was alive.
+The window SHALL open with a block for the player's whole fight: every hit the player took from the first to the last, as the same total, bars and lines as the per-death summary, followed by the abilities that did the most damage to them, at most five, each with its damage, its share, its kind words (direct or over time, area or single target, type) and its source. The block SHALL be measured over the fight as the engine recorded it, including hits after the last death, and SHALL say the span from the first hit the player took to the last.
 
 #### Scenario: A player who died twice
 
@@ -48,14 +48,19 @@ The Result column of the event table SHALL add the damage type after the result 
 - **WHEN** a row is a `DAMAGE` of `SHOCK` from a cast that struck 12 players
 - **THEN** its Result cell reads "Hit · shock · area · hit 12 players"
 
-### Requirement: Hovering a side names the stars
+### Requirement: A side's label names its stars
 
-Hovering either side of a bar in this window SHALL show the hover text the `damage-kinds` capability defines for damage taken (Ironclad, Enduring Resolve, Unassailable, Duelist's Rebuff, Elemental Aegis, Hardy, Preparation) and, on the healing line, for healing received.
+Each side's label beside a bar in this window SHALL be a link to the ESO-Hub page of the first Warfare star the `damage-kinds` capability names for damage taken on that side (Ironclad, Enduring Resolve, Unassailable, Duelist's Rebuff, Elemental Aegis, Hardy, with Preparation), and hovering it SHALL show every such star with its tooltip text; the healing line's figures link and hover the same way for healing received. A click opens the page, as a click on an ability name does.
 
 #### Scenario: Hover on the Martial side
 
-- **WHEN** the reader hovers the Martial side of the whole-fight bar
-- **THEN** the hover names Hardy and Preparation with their tooltip texts and ESO-Hub links
+- **WHEN** the reader hovers the Martial label of the whole-fight bar
+- **THEN** the hover names Hardy and Preparation with their tooltip texts and says the click opens Hardy on ESO-Hub
+
+#### Scenario: Click on a side
+
+- **WHEN** the reader clicks the "over time" label
+- **THEN** Enduring Resolve's ESO-Hub page opens in the browser and the window is unchanged
 
 ### Requirement: Fights recorded before the change
 

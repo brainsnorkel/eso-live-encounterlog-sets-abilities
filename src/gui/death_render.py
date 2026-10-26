@@ -1,21 +1,54 @@
 """
 Death recap rendering: the button a player's row gets in the fight view when
 they died, its hover summary, and the recap window's HTML (the last seconds
-of damage and healing before each of that player's deaths).
+of damage and healing before each of that player's deaths, each with a
+summary of the kinds of damage in it, and the whole fight's damage taken at
+the top).
 
 The data is FightHistoryEntry.death_recaps, built by the engine's
-death_recap module. Colors are theme-aware like the rest of the fight pane.
+death_recap module, and the player dict's 'taken' key (damage_kinds).
+Colors are theme-aware like the rest of the fight pane.
+
+The kinds summary (issue #73). Each of the three splits (direct against over
+time, area against single target, Martial against Magical) is a two-colour
+bar: a one-row table of two cells with a bgcolor and percentage widths, which
+Qt's rich text draws without images, between the two sides' labels with
+their amounts and percentages. A side's label is a link to the ESO-Hub page
+of the first Warfare star that acts on it, with hover text naming every such
+star and its tooltip (damage_kinds.stars_for), the pattern the ability names
+use: the hover tells, the click opens the page. Below the bars: the damage
+types behind the sides, the amounts outside them (Oblivion, fall, drowning,
+untyped), what got through while blocking, what shields absorbed, hits
+avoided, the healing that landed against the overheal, and the killing
+blow's overkill. The same block draws a death's five seconds and the whole
+fight, so the two read alike.
 """
 
 import html
 from typing import Dict, List, Optional
 
+from damage_kinds import (
+    SIDE_LABELS,
+    SPLITS,
+    rows_have_kinds,
+    stars_for,
+    summary_of_rows,
+    summary_of_taken,
+    type_label,
+)
 from death_recap import RECAP_WINDOW_MS
 from gui.name_mask import NO_MASK
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
 SKULL = "☠"
 ICON_PX = 20  # ability icon edge in the recap table
+NOT_RECORDED = "Damage kinds were not recorded for this fight."
+NO_DAMAGE_IN_WINDOW = "No damage other than the killing blow was logged in the window."
+NO_DAMAGE_TAKEN = "This player took no damage in this fight."
+FIGHT_BLOCK_TITLE = "Damage taken this fight"
+TOP_ABILITIES = 5  # the fight block lists this many abilities
+# A side narrower than this keeps its percentage off the bar (it would not fit)
+MIN_BAR_TEXT_PCT = 8
 
 RESULT_LABELS = {
     "DAMAGE": "Hit",
@@ -47,6 +80,11 @@ _THEMES = {
         "chip_bg": "#e57373",
         "rule": "#45494f",
         "final_bg": "#3a2a2a",
+        # the two sides of a kinds bar, and the text drawn on them
+        "bar_left": "#8e4b43",
+        "bar_right": "#3f6482",
+        "bar_text": "#f1f3f4",
+        "bar_empty": "#2a2e33",
     },
     # light background: darker, saturated accents
     False: {
@@ -60,6 +98,10 @@ _THEMES = {
         "chip_bg": "#c62828",
         "rule": "#d6d9dc",
         "final_bg": "#fdecea",
+        "bar_left": "#e9a59c",
+        "bar_right": "#a7c6e2",
+        "bar_text": "#202124",
+        "bar_empty": "#eceff1",
     },
 }
 
@@ -81,6 +123,13 @@ def deaths_by_unit(entry) -> Dict[str, List[dict]]:
     for recap in getattr(entry, "death_recaps", None) or []:
         grouped.setdefault(str(recap.get("unit_id", "")), []).append(recap)
     return grouped
+
+
+def _player_for(entry, unit_id) -> Optional[dict]:
+    for p in getattr(entry, "players", None) or []:
+        if str(p.get("unit_id", "")) == str(unit_id):
+            return p
+    return None
 
 
 def _clock(ms) -> str:
@@ -129,6 +178,254 @@ def death_tooltips(entry, names=None) -> Dict[str, str]:
     return tips
 
 
+# ----------------------------------------------------------- the kinds --
+
+def _star_href(scope: str, side: str) -> str:
+    """The link a side's label carries: the first star's ESO-Hub page."""
+    stars = stars_for(scope, side)
+    return stars[0]["url"] if stars else ""
+
+
+def kind_tooltips() -> Dict[str, str]:
+    """Hover text per star link in the kinds summaries, for every scope
+    (damage dealt, damage taken, healing) and side: the Warfare stars that
+    act on that side, each with the game's tooltip text, and where the
+    link leads. Static: the windows set it once per render."""
+    e = html.escape
+    tips: Dict[str, str] = {}
+    scope_words = {"dealt": "damage dealt", "taken": "damage taken", "heal": "healing"}
+    for scope, scope_word in scope_words.items():
+        sides = ["direct", "dot", "area", "single", "martial", "magical"]
+        if scope == "heal":
+            sides = ["direct", "dot", "landed", "overheal"]
+        for side in sides:
+            stars = stars_for(scope, side)
+            if not stars:
+                continue
+            side_word = {"landed": "healing that landed", "overheal": "overheal"}.get(
+                side, SIDE_LABELS.get(side, side))
+            lines = [f"<b>Warfare stars for {e(side_word)} {e(scope_word)}</b>"]
+            for star in stars:
+                lines.append(f"<b>{e(star['name'])}</b>: {e(star['text'])}")
+            lines.append(f"<span style='font-size:85%'>Click to open {e(stars[0]['name'])} "
+                         f"on eso-hub.com · the log does not say which stars a player has</span>")
+            tips[stars[0]["url"]] = "<br>".join(lines)
+    return tips
+
+
+def _side_html(scope: str, side: str, amount: int, pct: int, theme: dict, e,
+               align: str) -> str:
+    """A side's label with its amount and percentage, linked to its star."""
+    label = e(SIDE_LABELS.get(side, side))
+    href = _star_href(scope, side)
+    if href:
+        label = (f'<a href="{e(href, quote=True)}" style="text-decoration:none;'
+                 f'color:{theme["text"]}">{label}</a>')
+    figures = f"<span style='color:{theme['muted']}'>{amount:,} · {pct}%</span>"
+    return f"{label} {figures}" if align == "left" else f"{figures} {label}"
+
+
+def _bar_cells(left_pct: int, right_pct: int, theme: dict) -> str:
+    """The two coloured cells of a bar, the percentage on a side wide enough."""
+    def cell(pct, color, text_align):
+        text = f"{pct}%" if pct >= MIN_BAR_TEXT_PCT else "&nbsp;"
+        return (f"<td width='{pct}%' bgcolor='{color}' align='{text_align}' "
+                f"style='color:{theme['bar_text']};font-size:85%'>{text}</td>")
+    if left_pct + right_pct == 0:
+        return (f"<td width='100%' bgcolor='{theme['bar_empty']}' "
+                f"style='color:{theme['muted']};font-size:85%'>&nbsp;</td>")
+    cells = []
+    if left_pct:
+        cells.append(cell(left_pct, theme["bar_left"], "left"))
+    if right_pct:
+        cells.append(cell(right_pct, theme["bar_right"], "right"))
+    return "".join(cells)
+
+
+def _bars_html(summary: dict, scope: str, theme: dict, e) -> str:
+    """The three splits as rows: left label and figures, the bar, right
+    label and figures."""
+    parts = ["<table cellpadding='2' cellspacing='0' width='99%'>"]
+    for key, (left, right) in zip(("time", "target", "school"), SPLITS):
+        left_amount, right_amount = summary["sides"][key]
+        left_pct, right_pct = summary["pcts"][key]
+        bar = (f"<table cellpadding='1' cellspacing='0' width='100%'><tr>"
+               f"{_bar_cells(left_pct, right_pct, theme)}</tr></table>")
+        parts.append(
+            "<tr>"
+            f"<td width='26%' align='right' valign='middle'>"
+            f"{_side_html(scope, left, left_amount, left_pct, theme, e, 'right')}</td>"
+            f"<td width='48%' valign='middle'>{bar}</td>"
+            f"<td width='26%' valign='middle'>"
+            f"{_side_html(scope, right, right_amount, right_pct, theme, e, 'left')}</td>"
+            "</tr>")
+    parts.append("</table>")
+    return "".join(parts)
+
+
+def _heal_link(side: str, text: str, theme: dict, e) -> str:
+    href = _star_href("heal", side)
+    if not href:
+        return e(text)
+    return (f'<a href="{e(href, quote=True)}" style="text-decoration:none;'
+            f'color:{theme["heal"]}">{e(text)}</a>')
+
+
+def kinds_block_html(summary: dict, scope: str, theme: dict, e, base_pt: float,
+                     lead: str = "", empty_text: str = NO_DAMAGE_IN_WINDOW) -> str:
+    """One kinds summary: the total (with *lead*, a clause after it such as
+    'in the last 5 seconds'), the three bars, the types, the amounts outside
+    the two schools, what blocks let through, shields and avoided hits, the
+    healing against the overheal, the overkill. A summary with no damage
+    is *empty_text* and the healing figures alone."""
+    muted = theme["muted"]
+    small = f"font-size:{base_pt * 0.9:.2f}pt"
+    total = summary["total"]
+    parts = []
+    heal_bits = []
+    healed = summary["healed"]
+    if healed or summary["overheal"] or summary["heal_absorbed"]:
+        if healed:
+            shares = []
+            if summary["heal_direct"]:
+                shares.append(_heal_link("direct", f"direct {summary['heal_direct']:,}", theme, e))
+            if summary["heal_hot"]:
+                shares.append(_heal_link("dot", f"over time {summary['heal_hot']:,}", theme, e))
+            heal_bits.append(_heal_link("landed", f"healed {healed:,}", theme, e)
+                             + (f" <span style='color:{muted}'>({' · '.join(shares)})</span>"
+                                if len(shares) > 1 else ""))
+        else:
+            heal_bits.append(_heal_link("landed", "nothing healed", theme, e))
+        if summary["overheal"]:
+            heal_bits.append(_heal_link("overheal", f"{summary['overheal']:,} overheal", theme, e))
+        if summary["heal_absorbed"]:
+            heal_bits.append(f"<span style='color:{theme['shield']}'>"
+                             f"{summary['heal_absorbed']:,} healing absorbed</span>")
+    if total <= 0:
+        parts.append(f"<p style='margin:2px 0;color:{muted}'>{e(empty_text)}"
+                     + (f" {' · '.join(heal_bits)}" if heal_bits else "") + "</p>")
+        return "".join(parts)
+
+    head = f"<b>{total:,}</b> damage"
+    if lead:
+        head += f" {e(lead)}"
+    if summary["overkill"]:
+        head += f" <span style='color:{muted}'>· {summary['overkill']:,} overkill</span>"
+    parts.append(f"<p style='margin:4px 0 2px 0'>{head}</p>")
+    parts.append(_bars_html(summary, scope, theme, e))
+    lines = []
+    types = [f"{e(label)} {round(100.0 * amount / total)}%"
+             for label, amount in summary["types"] if amount]
+    if types:
+        lines.append(" · ".join(types))
+    outside = summary.get("outside") or {}
+    if outside:
+        lines.append("outside both: " + " · ".join(
+            f"{e(label)} {amount:,}" for label, amount in outside.items()))
+    mitigation = []
+    if summary["blocked_through"]:
+        mitigation.append(f"{summary['blocked_through']:,} got through while blocking")
+    if summary["absorbed"]:
+        mitigation.append(f"<span style='color:{theme['shield']}'>"
+                          f"{summary['absorbed']:,} absorbed by shields</span>")
+    if summary["avoided"]:
+        noun = "hit" if summary["avoided"] == 1 else "hits"
+        mitigation.append(f"{summary['avoided']} {noun} avoided")
+    if mitigation:
+        lines.append(" · ".join(mitigation))
+    if heal_bits:
+        lines.append(" · ".join(heal_bits))
+    for line in lines:
+        parts.append(f"<p style='margin:1px 0;color:{muted};{small}'>{line}</p>")
+    return "".join(parts)
+
+
+def _kind_words(row: dict) -> str:
+    """'direct · area · fire' for an ability row of the fight block: the
+    larger side of each split, and the types largest first."""
+    words = []
+    direct, dot, fall = row.get("direct", 0), row.get("dot", 0), row.get("fall", 0)
+    if fall and fall >= max(direct, dot):
+        words.append("fall")
+    elif direct and dot:
+        words.append("direct and over time" if min(direct, dot) * 4 >= max(direct, dot)
+                     else ("direct" if direct > dot else "over time"))
+    elif dot:
+        words.append("over time")
+    elif direct:
+        words.append("direct")
+    if not fall or fall < max(direct, dot):
+        words.append("area" if row.get("area", 0) > row.get("single", 0) else "single target")
+    types = sorted((row.get("types") or {}).items(), key=lambda kv: -kv[1])
+    if types:
+        total = sum(amount for _label, amount in types) or 1
+        words.append(", ".join(label for label, amount in types if amount * 10 >= total))
+    return " · ".join(words)
+
+
+def fight_block_html(player: Optional[dict], theme: dict, icons, e, names,
+                     base_pt: float) -> str:
+    """The whole fight's damage taken for *player* (their dict's 'taken'
+    key), with the abilities that did most of it; the not-recorded line for
+    an entry from before the kinds were kept."""
+    muted = theme["muted"]
+    title = f"<p style='margin:10px 0 2px 0'><b>{FIGHT_BLOCK_TITLE}</b></p>"
+    taken = player.get("taken") if isinstance(player, dict) else None
+    if not isinstance(taken, dict) or "total" not in taken:
+        return title + f"<p style='margin:0;color:{muted}'>{NOT_RECORDED}</p>"
+    summary = summary_of_taken(taken)
+    lead = ""
+    if taken.get("first_ms") is not None and taken.get("last_ms") is not None:
+        span_s = (int(taken["last_ms"]) - int(taken["first_ms"])) / 1000.0
+        if span_s >= 1:
+            lead = f"over {_clock(span_s * 1000)} of hits, first to last"
+    parts = [title, kinds_block_html(summary, "taken", theme, e, base_pt, lead, NO_DAMAGE_TAKEN)]
+    rows = (taken.get("abilities") or [])[:TOP_ABILITIES]
+    if rows and summary["total"]:
+        head = (f"style='color:{muted};border-bottom-style:solid;"
+                f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
+        parts.append(
+            "<table cellpadding='3' cellspacing='0' width='99%'>"
+            f"<tr><td width='{ICON_PX}' {head}></td><td width='24%' {head}>Ability</td>"
+            f"<td width='10%' align='right' {head}>Damage</td>"
+            f"<td width='6%' align='right' {head}>%</td>"
+            f"<td {head}>Kind</td><td width='18%' {head}>Source</td></tr>")
+        for row in rows:
+            icon = _icon_html(row, icons)
+            pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
+            source = str(row.get("source") or "")
+            damage = int(row.get("damage") or 0)
+            cells = (
+                (f" width='{ICON_PX}'", icon),
+                ("", e(str(row.get("name", "")))),
+                (" align='right'", f"<span style='color:{theme['damage']}'>{damage:,}</span>"),
+                (" align='right'", f"{round(100.0 * damage / summary['total'])}%"),
+                ("", f"<span style='color:{muted}'>{e(_kind_words(row))}</span>"),
+                ("", names.html(source, theme["text"], base_pt) if source else "–"),
+            )
+            parts.append("<tr>" + "".join(
+                f"<td{attrs} valign='middle' style='{pad}'>{content}</td>"
+                for attrs, content in cells) + "</tr>")
+        parts.append("</table>")
+        more = int(taken.get("ability_count") or 0) - len(rows)
+        if more > 0:
+            parts.append(f"<p style='margin:0;color:{muted};font-size:{base_pt * 0.85:.2f}pt'>"
+                         f"and {more} more {'ability' if more == 1 else 'abilities'}</p>")
+    return "".join(parts)
+
+
+def _death_kinds_html(recap: dict, rows: List[dict], theme: dict, e, base_pt: float) -> str:
+    """The summary of one death's window, or the not-recorded line."""
+    muted = theme["muted"]
+    if not rows_have_kinds(rows):
+        return f"<p style='margin:0 0 4px 0;color:{muted}'>{NOT_RECORDED}</p>"
+    summary = summary_of_rows(rows, recap.get("overheal"))
+    return kinds_block_html(summary, "taken", theme, e, base_pt,
+                            f"in the last {RECAP_WINDOW_MS // 1000} seconds")
+
+
+# ------------------------------------------------------------- the table --
+
 def _offset_text(offset_ms) -> str:
     seconds = round(offset_ms / 1000, 1)
     if seconds >= 0:
@@ -163,12 +460,19 @@ def _amount_html(row: dict, theme: dict) -> str:
 
 
 def _result_html(row: dict, theme: dict, e) -> str:
-    """'Blocked · 5,603 absorbed by Bone Shield · 1,224 overkill'."""
+    """'Blocked · fire · area · hit 8 players · 5,603 absorbed by Bone
+    Shield · 1,224 overkill'."""
     kind = row.get("kind")
-    label = RESULT_LABELS.get(str(row.get("result")), str(row.get("result", "")))
+    result = str(row.get("result", ""))
+    label = RESULT_LABELS.get(result, result)
     color = {"heal": theme["heal"], "avoided": theme["muted"],
              "absorbed": theme["shield"], "heal_absorbed": theme["shield"]}.get(kind)
     parts = [f"<span style='color:{color}'>{e(label)}</span>" if color else e(label)]
+    if kind == "damage" and "damage_type" in row and result != "FALL_DAMAGE":
+        parts.append(e(type_label(str(row.get("damage_type") or ""), result)))
+        if row.get("area"):
+            targets = int(row.get("targets_hit") or 0)
+            parts.append("area" + (f" · hit {targets} players" if targets >= 2 else ""))
     absorbed = row.get("absorbed") or 0
     if absorbed:
         shields = ", ".join(str(s) for s in row.get("shields") or [])
@@ -213,6 +517,7 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         parts.append(f"<p style='margin:0;color:{muted}'>No damage or healing was logged "
                      f"in the {RECAP_WINDOW_MS // 1000} seconds before this death.</p>")
         return "".join(parts)
+    parts.append(_death_kinds_html(recap, rows, theme, e, base_pt))
 
     head = (f"style='color:{muted};border-bottom-style:solid;"
             f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
@@ -258,13 +563,15 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
 def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                             base_pt: float = 9.0, names=None,
                             text_color: str | None = None) -> str:
-    """One player's deaths in a fight as HTML for the recap window.
+    """One player's deaths in a fight as HTML for the recap window: the
+    whole fight's damage taken first, then each death.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
     leaves the abilities as names. base_pt: the pane's font size, which the
     title is scaled from (Qt rich text ignores percentage sizes). names:
     the Hide names mask (gui.name_mask) for the title and the heal sources;
     text_color: the pane's own text colour, which a hidden name is drawn in.
+    The hover text for the star links is kind_tooltips().
     """
     theme = dict(_THEMES[bool(dark)])
     if text_color:
@@ -286,7 +593,8 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     if not deaths:
         parts.append(f"<p style='color:{muted}'>No deaths recorded for this player.</p>")
         return "".join(parts)
-    parts.append(f"<p style='margin:2px 0;color:{muted}'>Damage and healing in the "
+    parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
+    parts.append(f"<p style='margin:12px 0 2px 0;color:{muted}'>Damage and healing in the "
                  f"{RECAP_WINDOW_MS // 1000} seconds before each death, oldest first. "
                  f"Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):

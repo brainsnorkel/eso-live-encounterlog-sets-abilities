@@ -272,6 +272,187 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         self.assertIn('A&lt;i&gt;', render_death_recap_html(entry, '77'))
 
 
+def _krow(offset_ms, kind, result, source, ability, amount, health, damage_type='PHYSICAL',
+          area=False, rule='none', targets=0, **extra):
+    """A recap row recorded with its kinds (damage_kinds)."""
+    row = _row(offset_ms, kind, result, source, ability, amount, health, **extra)
+    row.update({'damage_type': damage_type, 'area': area, 'area_rule': rule,
+                'targets_hit': targets})
+    return row
+
+
+def _taken(total=310000):
+    """A player's whole-fight 'taken' dict, as damage_kinds.TakenTally.snapshot writes it."""
+    return {
+        'total': total, 'direct': 250000, 'dot': 60000, 'fall': 0, 'area': 200000,
+        'single': 110000, 'martial': 190000, 'magical': 120000, 'oblivion': 0, 'other': 0,
+        'types': {'physical': 190000, 'frost': 70000, 'fire': 50000},
+        'rules': {'cast': 200000, 'none': 110000}, 'blocked_through': 12000, 'absorbed': 44000,
+        'avoided': 3, 'healed': 400000, 'heal_direct': 100000, 'heal_hot': 300000,
+        'overheal': 900000, 'heal_absorbed': 0, 'overkill': 6100,
+        'first_ms': 10000, 'last_ms': 100000,
+        'abilities': [
+            {'id': '166299', 'name': 'Maelstrom', 'icon': '', 'damage': 186000, 'hits': 40,
+             'direct': 186000, 'dot': 0, 'fall': 0, 'area': 186000, 'single': 0,
+             'types': {'physical': 186000}, 'source': 'Tideborn Taleria'},
+            {'id': '175116', 'name': 'Soaked Wound', 'icon': '', 'damage': 62000, 'hits': 31,
+             'direct': 0, 'dot': 62000, 'fall': 0, 'area': 0, 'single': 62000,
+             'types': {'frost': 62000}, 'source': 'Tideborn Taleria'},
+        ],
+        'ability_count': 7,
+    }
+
+
+def _entry_with_kinds():
+    """@tester dies twice in a fight whose rows and player dict carry the kinds."""
+    from fight_history import FightHistoryEntry
+    entry = FightHistoryEntry()
+    entry.boss_name = 'Tideborn Taleria'
+    entry.zone_name = 'Dreadsail Reef'
+    entry.timestamp = '2026-09-02 20:41:27'
+    tester = _player('1', '@tester')
+    tester['taken'] = _taken()
+    entry.players = [tester, _player('2', '@friend')]
+    first = _death('1', '@tester', 54000, 'Tideborn Taleria', 'Slap', [
+        _krow(-3200, 'damage', 'BLOCKED_DAMAGE', 'Tideborn Taleria', 'Swinging Cleave', 2102, 6413,
+              absorbed=5603, shields=['Bone Shield']),
+        _krow(-1500, 'heal', 'HOT_TICK', '@friend', 'Radiating Regeneration', 2500, 8913,
+              damage_type='GENERIC', rule='', overflow=700),
+        _krow(-900, 'avoided', 'DODGED', 'Tideborn Taleria', 'Tremor', 0, 8913, rule=''),
+        _krow(-400, 'heal_absorbed', 'HEAL_ABSORBED', '@friend', 'Hindered', 1328, 8913,
+              damage_type='GENERIC', rule=''),
+        _krow(1, 'damage', 'DAMAGE', 'Tideborn Taleria', 'Slap', 8913, 0, damage_type='FIRE',
+              area=True, rule='cast', targets=8, overflow=4983),
+    ])
+    first['overheal'] = 700
+    second = _death('1', '@tester', 95000, '', 'Soothing', [
+        _krow(-2000, 'heal', 'HEAL', '@friend', 'Soothing', 900, 5000, damage_type='GENERIC',
+              rule='', overflow=100),
+    ])
+    second['overheal'] = 100
+    entry.death_recaps = [first, second]
+    entry.deaths = 2
+    return entry
+
+
+class TestKindsInTheWindow(DeathRecapGuiTestCase):
+    """The kinds summaries (damage_kinds): per death, for the whole fight,
+    in the Result column, and the star links' hover text."""
+
+    def _html(self, entry=None, unit_id='1', **kwargs):
+        from gui.death_render import render_death_recap_html
+        return render_death_recap_html(entry or _entry_with_kinds(), unit_id,
+                                       icons=self._cache(), **kwargs)
+
+    def test_each_death_sums_its_window(self):
+        from gui.death_render import NO_DAMAGE_IN_WINDOW
+        html = self._html()
+        one = html[html.index('Death 1 of 2'):html.index('Death 2 of 2')]
+        self.assertIn('<b>11,015</b> damage in the last 5 seconds', one)   # 2,102 + 8,913
+        self.assertIn('4,983 overkill', one)
+        # direct 100 / over time 0; area 81 / single 19; Martial 19 / Magical 81
+        for text in ('100%', '81%', '19%'):
+            self.assertIn(text, one)
+        self.assertIn('fire 81% · physical 19%', one)
+        self.assertIn('2,102 got through while blocking', one)
+        self.assertIn('5,603 absorbed by shields', one)
+        self.assertIn('1 hit avoided', one)
+        self.assertIn('healed 2,500', one)
+        self.assertIn('700 overheal', one)
+        self.assertIn('1,328 healing absorbed', one)
+        two = html[html.index('Death 2 of 2'):]
+        self.assertIn(NO_DAMAGE_IN_WINDOW, two)
+        self.assertIn('healed 900', two)
+        self.assertIn('100 overheal', two)
+        self.assertEqual(html.count('in the last 5 seconds'), 1)   # the empty window has no bars
+
+    def test_the_result_column_names_the_kind(self):
+        html = self._html()
+        self.assertIn('Hit · fire · area · hit 8 players', html)
+        self.assertIn('Blocked · physical', html)
+        self.assertNotIn('Dodged · ', html)
+
+    def test_the_whole_fight_block_comes_first_and_once(self):
+        from gui.death_render import FIGHT_BLOCK_TITLE
+        html = self._html()
+        self.assertEqual(html.count(FIGHT_BLOCK_TITLE), 1)
+        block = html[html.index(FIGHT_BLOCK_TITLE):html.index('Death 1 of 2')]
+        self.assertIn('<b>310,000</b> damage over 1:30 of hits, first to last', block)
+        self.assertIn('6,100 overkill', block)
+        self.assertIn('physical 61% · frost 23% · fire 16%', block)
+        self.assertIn('12,000 got through while blocking', block)
+        self.assertIn('44,000 absorbed by shields', block)
+        self.assertIn('3 hits avoided', block)
+        self.assertIn('healed 400,000', block)
+        self.assertIn('direct 100,000', block)
+        self.assertIn('over time 300,000', block)
+        self.assertIn('900,000 overheal', block)
+        # The abilities that hurt most, with their kinds and source
+        maelstrom, soaked = block.index('Maelstrom'), block.index('Soaked Wound')
+        self.assertLess(maelstrom, soaked)
+        self.assertIn('>60%<', block)
+        self.assertIn('direct · area · physical', block)
+        self.assertIn('over time · single target · frost', block)
+        self.assertIn('Tideborn Taleria', block)
+        self.assertIn('and 5 more abilities', block)
+
+    def test_entries_from_before_the_kinds_say_so(self):
+        from gui.death_render import NOT_RECORDED
+        html = self._html(_entry_with_deaths())
+        # One line for the fight block, one per death with rows
+        self.assertEqual(html.count(NOT_RECORDED), 3)
+        self.assertNotIn('in the last 5 seconds', html)
+
+    def test_sides_link_to_their_stars_with_hover_text(self):
+        from damage_kinds import stars_for
+        from gui.death_render import kind_tooltips
+        html = self._html()
+        resolve = stars_for('taken', 'dot')[0]['url']
+        self.assertIn(f'href="{resolve}"', html)
+        tips = kind_tooltips()
+        tip = tips[resolve]
+        self.assertIn('Enduring Resolve', tip)
+        self.assertIn('Preparation', tip)
+        self.assertIn('eso-hub.com', tip)
+        self.assertNotIn('Thaumaturge', tip)
+        dealt = stars_for('dealt', 'dot')[0]['url']
+        self.assertIn('Thaumaturge', tips[dealt])
+        self.assertNotIn('Preparation', tips[dealt])
+        self.assertIn('Swift Renewal', tips[stars_for('heal', 'dot')[0]['url']])
+
+    def test_a_click_on_a_star_opens_its_page(self):
+        from PySide6.QtCore import QUrl
+        from damage_kinds import stars_for
+        from gui.fight_view import FightView
+        opened = []
+        view = FightView(icons=self._cache(),
+                         open_external=lambda url: opened.append(url.toString()) or True)
+        url = stars_for('taken', 'area')[0]['url']
+        view.anchorClicked.emit(QUrl(url))
+        self.assertEqual(opened, [url])
+
+    def test_themes_differ_and_names_are_escaped(self):
+        self.assertNotEqual(self._html(dark=True), self._html(dark=False))
+        entry = _entry_with_kinds()
+        entry.players[0]['taken']['abilities'][0]['name'] = '<b>Mael</b>'
+        self.assertIn('&lt;b&gt;Mael&lt;/b&gt;', self._html(entry))
+
+    def test_the_window_serves_the_star_hover_text(self):
+        from damage_kinds import stars_for
+        from gui.death_recap_dialog import DeathRecapDialog
+        dialog = DeathRecapDialog(icons=self._cache())
+        try:
+            dialog.show_recap(_entry_with_kinds(), '1', dark=False)
+            url = stars_for('taken', 'dot')[0]['url']
+            self.assertIn('Enduring Resolve', dialog.view._tooltips.get(url, ''))
+            text = dialog.view.toPlainText()
+            self.assertIn('Damage taken this fight', text)
+            self.assertIn('11,015', text)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+
 class TestRecapWindow(DeathRecapGuiTestCase):
 
     def _window(self):
