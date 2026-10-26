@@ -183,8 +183,6 @@ Two documents are built from the app and the code rather than written by hand, s
 2. The release commit sets the version in `src/version.py` (`__version__` and `__version_info__`) and renames `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`.
 3. Push an annotated tag `vX.Y.Z`.
 
-A `v1.0.0` tag from September 2025, the terminal era, is still in the repository and sorts above the current `v0.x` releases in `git tag --sort=-v:refname`. It has no GitHub release, so the update check ignores it; read the current version from `src/version.py` or `gh release list`, not from the highest tag.
-
 The tag runs `.github/workflows/build-installers.yml`: tests, then the Windows installer and portable zip, then the Linux tarball (with a start-up smoke test under xvfb), then a GitHub release carrying all three files. A failure in either build stops the release. The app's update check reads that release, so a published tag is what users are offered.
 
 To run the workflow without releasing, push a branch and start it by hand (`gh workflow run build-installers.yml --ref <branch>`); the release job only runs for tags. Pull requests to `main` run the builds too.
