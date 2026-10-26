@@ -19,6 +19,7 @@ from typing import List
 from damage_stats import dps as dps_over, dps_time_s
 from gui.build_render import player_for
 from gui.fight_render import ROLE_NAMES, _fmt_dps, _fmt_duration, _join, _subclass_text, _theme
+from gui.name_mask import NO_MASK
 
 ICON_PX = 20  # ability icon edge in the table
 PET_MARK = "(pet)"
@@ -37,10 +38,10 @@ TARGET_COLUMNS = (("Target", "left"), ("Damage", "right"), ("%", "right"), ("Hit
 _RULES = {True: "#45494f", False: "#d6d9dc"}  # under the tables' headers
 
 
-def damage_title(entry, unit_id) -> str:
-    """Window title: 'Damage – @name'."""
+def damage_title(entry, unit_id, names=None) -> str:
+    """Window title: 'Damage – @name'; *names* is the Hide names mask."""
     player = player_for(entry, unit_id)
-    name = _join(player.get("name", "")) if player else ""
+    name = (names or NO_MASK).text(_join(player.get("name", ""))) if player else ""
     return f"Damage – {name}" if name else "Damage"
 
 
@@ -68,9 +69,10 @@ def _icon_html(stem, icons) -> str:
             f'style="vertical-align:middle">')
 
 
-def _header_html(entry, p, theme, base_pt: float, e) -> str:
+def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> str:
     muted = theme["muted"]
-    name = _join(p.get("name", ""))
+    # The name, through the Hide names mask (gui.name_mask)
+    name = names.html(_join(p.get("name", "")), text_color, base_pt * 1.3, bold=True)
     facts = [ROLE_NAMES.get(p.get("role"), ""), str(p.get("class_name") or ""),
              _subclass_text(p)]
     vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
@@ -81,7 +83,7 @@ def _header_html(entry, p, theme, base_pt: float, e) -> str:
              e(str(getattr(entry, "timestamp", "") or ""))]
     # Not an <h3>: Qt would scale the nested facts by the heading's size
     return (f"<p style='margin:0'>"
-            f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{e(name)}</span>"
+            f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{name}</span>"
             f"&nbsp;&nbsp; <span style='color:{muted}'>"
             f"{' · '.join(e(fact) for fact in facts if fact)}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>"
@@ -192,12 +194,15 @@ def _target_table_html(targets: List[dict], total: int, boss_only: bool, theme, 
 
 
 def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = False,
-                       icons=None, base_pt: float = 9.0) -> str:
+                       icons=None, base_pt: float = 9.0, names=None,
+                       text_color: str | None = None) -> str:
     """One player's damage in a fight as HTML for the damage window.
 
     boss_only: the rows and totals for the units the game flags as bosses
     alone. icons: object with has(stem) -> bool (the fight view's
     IconCache); None keeps the rows as text. base_pt: the window's font size.
+    names: the Hide names mask (gui.name_mask) for the header's name;
+    text_color: the pane's own text colour, which a hidden name is drawn in.
     """
     theme = dict(_theme(dark))
     theme["rule"] = _RULES[dark]
@@ -206,7 +211,8 @@ def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = Fal
     p = player_for(entry, unit_id)
     if p is None:
         return f"<p style='color:{muted}'>{NO_RECORD}</p>"
-    parts = [_header_html(entry, p, theme, base_pt, e)]
+    parts = [_header_html(entry, p, theme, base_pt, e, names or NO_MASK,
+                          text_color or theme["text"])]
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         # An entry from before the record was kept

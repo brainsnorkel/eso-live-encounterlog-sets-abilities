@@ -57,6 +57,11 @@ DEFAULTS = {
         "force_of_nature_per_effect": 660,
         "cap": "auto",
     },
+    # The Hide names switch (gui/name_mask): every player's handle and
+    # character name but the logging player's hidden, for screenshots
+    "privacy": {
+        "hide_names": False,
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split

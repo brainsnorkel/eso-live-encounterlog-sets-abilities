@@ -42,7 +42,7 @@ The list on the left has one line per completed fight: `boss · duration · grou
 - **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; seven boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Elemental Catalyst's weaknesses, Alkosh); and Crux, the mean and peak Crux you held. Each of these is a [tracked-effect rule](#tracked-effects) and has a row when its effect was up; the group buffs other than Powerful Assault also show at `0%`, in dark red bold, in a group of five or more when nobody had them, and the taunt in any group. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
   - the role letter, **T**ank, **H**ealer or **D**PS (see [Roles](#what-the-numbers-are-based-on));
-  - the account name, with `*` after the player who dealt the fight's first damage;
+  - the account name, with `*` after the player who dealt the fight's first damage; hover it for the character name, click it for the [build](#a-players-build);
   - the class. A build that borrows skill lines from another class shows those lines after a plus sign, `NB +Aedric +Grave`, read from the character's passives, so a line taken for its passives alone shows too. A pure-class build names its Class Mastery passives after a colon instead, `NB: An Eye for Exploitation, Above and Beyond`. A stock build shows just the class;
   - DPS and the share of the group's damage, each `boss / total` in a fight with a boss (against the units the game flags as bosses, then against everything), and max health, magicka and stamina with the largest pool in bold. The small three-bar mark after a DPS figure says it opens something: click it for the player's [damage window](#a-players-damage); hover it for the time the figure divides by.
 
@@ -98,7 +98,7 @@ Click a player's name, in either view, to open their build for that fight. The n
 
 ![The build window: mundus and food, both bars, and the gear grid](screencaps/build-window.png)
 
-- **Header**: account and character name, race, class, champion points and role, then the fight.
+- **Header**: the account name with the character name beside it, then race, class, champion points and role, and the fight.
 - **Mundus, food and mastery**: the mundus stone, the food or drink buff the player had as combat started, and the Class Mastery passives a pure-class character has taken. `no known food or drink` means none of their effects is a food or drink the app knows; no mastery part means the character has none (a subclassed build cannot).
 - **Possible build issues**: the same findings the fight pane's `ⓘ` opens, each with its rule, under the header; nothing there for a build without one.
 - **Bars**: front bar above back bar, ultimate set apart, with the same hover names, ESO-Hub links and scribed-skill line as the fight view, and for a werewolf the rebuilt werewolf bar under them.
@@ -216,9 +216,19 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
-**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares, effective penetration and critical damage (`— 61.8k / 63.0k (12.4% / 12.1%) · p:18141 cd:119%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`.
+**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares, effective penetration and critical damage (`— 61.8k / 63.0k (12.4% / 12.1%) · p:18141 cd:119%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`. With [Hide names](#hiding-other-players-names) on, the copy carries `@▒▒▒▒▒▒` in place of every name but yours.
 
 **About** shows the version, the project link and the credits.
+
+## Hiding other players' names
+
+For a screenshot or a pasted fight that should give away nobody else's identity, turn on **Hide names** on the toolbar (Ctrl+H toggles it; the same box is under Privacy in Settings). Every player but you keeps their row and their figures and loses their handle and character name: in the fight pane and in the build, damage and death-recap windows the name becomes a pixelated word with its `@` left readable, so it still reads as a handle; in hover text, pop-ups, the DPS graph's legend, window titles and the copied fight it reads as `@▒▒▒▒▒▒`. Enemy, pet, set and ability names stay. The switch is saved, and the pressed button shows it is on.
+
+- **Who stays visible** is the player whose game wrote the log, which the log itself says. Reviewing a file a friend logged keeps the friend's name and hides yours.
+- **The pixelated word is not the name blurred.** Blurred or pixelated text can be read back when the font is known, so the app draws a made-up word of the same length and pixelates that; the picture carries nothing of the name but its length.
+- The in-fight search cannot find a hidden name. Hovering one shows blocks, and a click still opens the build.
+
+The pictures in this guide are taken with the switch on.
 
 ## Settings
 
@@ -231,6 +241,7 @@ Open **Settings…** from the toolbar.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
+- **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
 - **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 - **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
 

@@ -32,6 +32,7 @@ from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     issues_html, werewolf_bar_html,
 )
+from gui.name_mask import NO_MASK
 from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
@@ -91,11 +92,20 @@ def player_for(entry, unit_id) -> Optional[dict]:
                  if str(p.get("unit_id", "")) == unit_id), None)
 
 
-def build_title(entry, unit_id) -> str:
-    """Window title: 'Build – @name'."""
+def build_title(entry, unit_id, names=None) -> str:
+    """Window title: 'Build – @name (Character)', the character name when
+    the log gave one besides the handle (issue #71); *names* is the Hide
+    names mask (gui.name_mask)."""
     player = player_for(entry, unit_id)
-    name = _join(player.get("name", "")) if player else ""
-    return f"Build – {name}" if name else "Build"
+    if not player:
+        return "Build"
+    names = names or NO_MASK
+    name = _join(player.get("name", ""))
+    character = str(player.get("character") or "")
+    title = names.text(name)
+    if title and character and character != name:
+        title += f" ({names.text(character)})"
+    return f"Build – {title}" if title else "Build"
 
 
 def _quality_html(quality: str, dark: bool, e) -> str:
@@ -121,15 +131,18 @@ def _pieces_text(row: dict) -> str:
     return f"{front}/{back}"
 
 
-def _header_html(entry, p, theme, base_pt: float, e) -> str:
+def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> str:
+    """The title line: the handle in bold and, at the same size, the
+    character name after it when the log gave both (issue #71; it was a
+    muted fact until then); then race, class, champion points, role and
+    borrowed lines, muted. Both names follow the Hide names mask."""
     muted = theme["muted"]
     name = _join(p.get("name", ""))
     character = str(p.get("character") or "")
     kind = " ".join(part for part in (str(p.get("race") or ""), str(p.get("class_name") or ""))
                     if part and part != "Unknown")
     cp = p.get("cp") or 0
-    facts = [character if character != name else "", kind,
-             f"CP {cp}" if cp else "", ROLE_NAMES.get(p.get("role"), ""),
+    facts = [kind, f"CP {cp}" if cp else "", ROLE_NAMES.get(p.get("role"), ""),
              _subclass_text(p)]
     vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
            if getattr(entry, "is_vet", False) else "")
@@ -138,9 +151,14 @@ def _header_html(entry, p, theme, base_pt: float, e) -> str:
              f"{e(zone)}{vet}" if zone else "",
              e(str(getattr(entry, "timestamp", "") or "")),
              SNAPSHOT_NOTE]
+    title_pt = base_pt * 1.3
+    title = (f"<span style='font-size:{title_pt:.2f}pt;font-weight:bold'>"
+             f"{names.html(name, text_color, title_pt, bold=True)}</span>")
+    if character and character != name:
+        title += (f"<span style='font-size:{title_pt:.2f}pt'> · "
+                  f"{names.html(character, text_color, title_pt)}</span>")
     # Not an <h3>: Qt would scale the nested facts by the heading's size
-    return (f"<p style='margin:0'>"
-            f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{e(name)}</span>"
+    return (f"<p style='margin:0'>{title}"
             f"&nbsp;&nbsp; <span style='color:{muted}'>"
             f"{' · '.join(e(fact) for fact in facts if fact)}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>"
@@ -318,18 +336,20 @@ def _pair_text(values, pct: bool = False) -> str:
     return f"{_num(front, pct)} / {_num(back, pct)}"
 
 
-def _casters_text(casters, e) -> str:
-    """'@tank via Infused Inferno Staff (back bar) 70%, @healer via Elemental Susceptibility 40%'."""
+def _casters_text(casters, e, names, color: str, pt: float) -> str:
+    """'@tank via Infused Inferno Staff (back bar) 70%, @healer via Elemental
+    Susceptibility 40%'; each name through the Hide names mask, drawn in
+    *color* at *pt* points when hidden."""
     parts = []
     for caster in casters or []:
-        text = e(str(caster.get("name") or "unknown"))
+        text = names.html(str(caster.get("name") or "unknown"), color, pt)
         if caster.get("via"):
             text += f" <span style='opacity:0.8'>via {e(str(caster['via']))}</span>"
         parts.append(f"{text} {int(caster.get('pct') or 0)}%")
     return ", ".join(parts)
 
 
-def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> str:
+def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, names) -> str:
     """The Penetration and Critical damage sections (pen_crit): the player's
     own rows and the assumed Champion Point rows, the fight's debuffs on
     the boss (uptime, value, casters) and the buffs on the player, then the
@@ -403,7 +423,8 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> s
                 f"<td style='color:{muted};{small}'>uptime · who</td></tr>")
 
     def group_row(d, stat, pct: bool):
-        who = f"{int(d.get('uptime_pct') or 0)}% · {_casters_text(d.get('casters'), e)}"
+        who = (f"{int(d.get('uptime_pct') or 0)}% · "
+               f"{_casters_text(d.get('casters'), e, names, muted, base_pt * 0.85)}")
         return (f"<tr>{cell(e(str(d['name'])))}{cell(_num(d[stat], pct), 'right')}"
                 f"{cell(who, color=muted, extra=small)}</tr>")
 
@@ -483,7 +504,8 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e) -> s
 
 def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None,
                       set_links=None, script_links=None, base_pt: float = 9.0,
-                      text_color: Optional[str] = None, pen_crit_options: Optional[dict] = None) -> str:
+                      text_color: Optional[str] = None, pen_crit_options: Optional[dict] = None,
+                      names=None) -> str:
     """One player's build in a fight as HTML for the build window.
 
     icons: object with has(stem) -> bool (the view's IconCache); None draws
@@ -493,20 +515,22 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     text ignores percentage sizes). text_color: the pane's own text color,
     which set names keep although they are links. pen_crit_options: the
     config's pen_crit section (the assumed Champion Point rows and the cap);
-    None assumes nothing and takes the cap from the zone.
+    None assumes nothing and takes the cap from the zone. names: the Hide
+    names mask (gui.name_mask) for the header and the casters.
     """
     theme = _theme(dark)
+    names = names or NO_MASK
     e = html.escape
     p = player_for(entry, unit_id)
     if p is None:
         return f"<p style='color:{theme['muted']}'>{NO_BUILD}</p>"
     return "".join((
-        _header_html(entry, p, theme, base_pt, e),
+        _header_html(entry, p, theme, base_pt, e, names, text_color or theme["text"]),
         _mundus_food_html(p, theme, icons, e),
         # The possible build issues the fight pane's (i) shows, repeated
         # here where the build is read (build_issues)
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
-        _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e),
+        _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e, names),
     ))

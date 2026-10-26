@@ -11,6 +11,7 @@ import html
 from typing import Dict, List, Optional
 
 from death_recap import RECAP_WINDOW_MS
+from gui.name_mask import NO_MASK
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
 SKULL = "☠"
@@ -36,6 +37,7 @@ RESULT_LABELS = {
 _THEMES = {
     # dark background: lighter accents
     True: {
+        "text": "#e8eaed",
         "muted": "#9aa0a6",
         "damage": "#ef9a9a",
         "heal": "#81c784",
@@ -48,6 +50,7 @@ _THEMES = {
     },
     # light background: darker, saturated accents
     False: {
+        "text": "#202124",
         "muted": "#5f6368",
         "damage": "#c62828",
         "heal": "#2e7d32",
@@ -85,10 +88,12 @@ def _clock(ms) -> str:
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-def _killed_by(recap: dict) -> str:
-    """'Slap (Sharpfang)', or just the ability when the log names no killer."""
+def _killed_by(recap: dict, names=NO_MASK) -> str:
+    """'Slap (Sharpfang)', or just the ability when the log names no killer.
+    The killer goes through the Hide names mask: an enemy passes, a player
+    (a PvP log, friendly fire) is hidden."""
     ability = str(recap.get("ability", ""))
-    killer = str(recap.get("killer") or "")
+    killer = names.text(str(recap.get("killer") or ""))
     return f"{ability} ({killer})" if killer else ability
 
 
@@ -107,15 +112,17 @@ def death_chip_html(unit_id, deaths: List[dict], dark: bool,
             f'&nbsp;{text}&nbsp;</a>')
 
 
-def death_tooltips(entry) -> Dict[str, str]:
-    """Hover text per death-recap button: when and to what the player died."""
+def death_tooltips(entry, names=None) -> Dict[str, str]:
+    """Hover text per death-recap button: when and to what the player
+    died; *names* is the Hide names mask (gui.name_mask)."""
+    names = names or NO_MASK
     e = html.escape
     tips = {}
     for unit_id, deaths in deaths_by_unit(entry).items():
-        name = e(str(deaths[0].get("name", "")))
+        name = e(names.text(str(deaths[0].get("name", ""))))
         noun = "death" if len(deaths) == 1 else "deaths"
         lines = [f"<b>{name}: {len(deaths)} {noun}</b>"]
-        lines.extend(f"{_clock(d.get('time_ms', 0))} &nbsp;{e(_killed_by(d))}"
+        lines.extend(f"{_clock(d.get('time_ms', 0))} &nbsp;{e(_killed_by(d, names))}"
                      for d in deaths)
         lines.append("<span style='font-size:85%'>Click for the death recap</span>")
         tips[death_href(unit_id)] = "<br>".join(lines)
@@ -181,13 +188,16 @@ def _icon_html(row: dict, icons) -> str:
             f'style="vertical-align:middle">')
 
 
-def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e) -> str:
+def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
+                names, base_pt: float) -> str:
     muted = theme["muted"]
     max_health = recap.get("max_health") or 0
     facts = [f"{_clock(recap.get('time_ms', 0))} into the fight"]
     if max_health:
         facts.append(f"{max_health:,} max health")
-    killer = str(recap.get("killer") or "")
+    # The killer, normally an enemy; a player in a PvP log, hidden like
+    # any other player's name
+    killer = names.html(str(recap.get("killer") or ""), theme["text"], base_pt)
     icon = _icon_html(recap, icons)
     ability = e(str(recap.get("ability", "")))
     killed_by = f"{icon}&nbsp;{ability}" if icon else ability
@@ -195,7 +205,7 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e) -> s
         f"<p style='margin:14px 0 2px 0'><b>Death {index} of {total}</b>"
         f" <span style='color:{muted}'>· {' · '.join(facts)}</span></p>",
         f"<p style='margin:0 0 4px 0'>Killed by <b>{killed_by}</b>"
-        + (f" <span style='color:{muted}'>from</span> {e(killer)}" if killer else "")
+        + (f" <span style='color:{muted}'>from</span> {killer}" if killer else "")
         + "</p>",
     ]
     rows = recap.get("events") or []
@@ -226,13 +236,15 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e) -> s
         icon = _icon_html(row, icons)
         # A row without an icon is padded out to the height of one with
         pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
+        # The source, a player's handle for a heal, through the Hide names
+        # mask (gui.name_mask); an enemy's name passes as it is
         source = str(row.get("source") or "")
         cells = (
             (" align='right'", f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
             (" align='right'", "", _health_html(row, theme)),
             (f" width='{ICON_PX}'", "", icon),
             (" width='20%'", bold, e(str(row.get("ability", "")))),
-            ("", bold, e(source) if source else "–"),
+            ("", bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
             (" align='right'", bold, _amount_html(row, theme)),
             ("", "", _result_html(row, theme, e)),
         )
@@ -244,21 +256,28 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e) -> s
 
 
 def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
-                            base_pt: float = 9.0) -> str:
+                            base_pt: float = 9.0, names=None,
+                            text_color: str | None = None) -> str:
     """One player's deaths in a fight as HTML for the recap window.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
     leaves the abilities as names. base_pt: the pane's font size, which the
-    title is scaled from (Qt rich text ignores percentage sizes).
+    title is scaled from (Qt rich text ignores percentage sizes). names:
+    the Hide names mask (gui.name_mask) for the title and the heal sources;
+    text_color: the pane's own text colour, which a hidden name is drawn in.
     """
-    theme = _THEMES[bool(dark)]
+    theme = dict(_THEMES[bool(dark)])
+    if text_color:
+        theme["text"] = text_color
+    names = names or NO_MASK
     e = html.escape
     deaths = deaths_by_unit(entry).get(str(unit_id), [])
     muted = theme["muted"]
     where = " · ".join(e(str(part)) for part in (
         getattr(entry, "boss_name", ""), getattr(entry, "zone_name", ""),
         getattr(entry, "timestamp", "")) if part)
-    name = e(str(deaths[0].get("name", ""))) if deaths else ""
+    name = (names.html(str(deaths[0].get("name", "")), theme["text"], base_pt * 1.3, bold=True)
+            if deaths else "")
     parts = [
         f"<p style='margin:0'>"
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{name}</span>"
@@ -271,5 +290,5 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                  f"{RECAP_WINDOW_MS // 1000} seconds before each death, oldest first. "
                  f"Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
-        parts.append(_death_html(recap, index, len(deaths), theme, icons, e))
+        parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt))
     return "".join(parts)

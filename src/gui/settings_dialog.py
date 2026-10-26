@@ -41,6 +41,11 @@ RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | bo
               "mobs it reached. A line that starts with $ is a HyperTools tracker export. Copy "
               "these lines to share them.")
 
+PRIVACY_HELP = ("For screenshots and sharing: every player but the one writing the log is "
+                "pixelated in the fight pane and the windows, and reads as blocks in hover "
+                "text, pop-ups and the copied fight. The same switch as the toolbar's Hide "
+                "names button.")
+
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
               "1024 MB (1 GB) ≈ five veteran trials.")
@@ -160,6 +165,20 @@ class SettingsDialog(QDialog):
         self.update_check.setChecked(bool(config.get("update.check_enabled", True)))
         update_form.addRow(self.update_check)
         layout.addWidget(update_group)
+
+        # Privacy: the Hide names switch (issue #72, gui.name_mask), the
+        # same state as the toolbar button and Ctrl+H
+        privacy_group = QGroupBox("Privacy")
+        privacy_form = QFormLayout(privacy_group)
+        self.hide_names = QCheckBox(
+            "Hide other players' handles and character names (Ctrl+H toggles it)")
+        self.hide_names.setChecked(bool(config.get("privacy.hide_names", False)))
+        privacy_form.addRow(self.hide_names)
+        privacy_help = QLabel(PRIVACY_HELP)
+        privacy_help.setWordWrap(True)
+        privacy_help.setStyleSheet("color: #888; font-size: 11px;")
+        privacy_form.addRow(privacy_help)
+        layout.addWidget(privacy_group)
 
         # Tracked effects: the rule text, with its parse result underneath;
         # the timeline strip above each fight draws them
@@ -283,6 +302,7 @@ class SettingsDialog(QDialog):
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
         self.config.set("update.check_enabled", self.update_check.isChecked())
+        self.config.set("privacy.hide_names", self.hide_names.isChecked())
         self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())
         self.config.set("pen_crit.fighting_finesse", self.assume_finesse.isChecked())
         self.config.set("pen_crit.backstabber", self.assume_backstabber.isChecked())

@@ -34,14 +34,20 @@ class BuildDialog(QDialog):
         buttons.rejected.connect(self.close)
         layout.addWidget(buttons)
 
+    @property
+    def entry(self):
+        """The fight on display, None before the first build."""
+        return self._shown[0] if self._shown is not None else None
+
     def show_build(self, entry, unit_id: str, dark: bool, pen_crit_options=None,
-                   scroll_to: str = None) -> None:
+                   scroll_to: str = None, names=None) -> None:
         """Show the build of the player *unit_id* in the fight *entry*.
         *pen_crit_options* is the config's pen_crit section (the assumed
         Champion Point rows and the cap the sections use); *scroll_to* names
-        an anchor in the page to open at (build_render.PEN_CRIT_ANCHOR)."""
-        self._shown = (entry, unit_id, pen_crit_options)
-        self.setWindowTitle(build_title(entry, unit_id))
+        an anchor in the page to open at (build_render.PEN_CRIT_ANCHOR);
+        *names* is the Hide names mask (gui.name_mask)."""
+        self._shown = (entry, unit_id, pen_crit_options, names)
+        self.setWindowTitle(build_title(entry, unit_id, names))
         # The window's anchors use the fight view's targets, so its hover
         # text serves here too
         self.view.set_tooltips(anchor_tooltips(
@@ -53,13 +59,19 @@ class BuildDialog(QDialog):
             script_links=esohub_script_url,
             base_pt=self.view.font().pointSizeF(),
             text_color=self.view.palette().color(QPalette.Text).name(),
-            pen_crit_options=pen_crit_options))
+            pen_crit_options=pen_crit_options, names=names))
         if scroll_to:
             # Now, and once the view has laid the document out
             self.view.scrollToAnchor(scroll_to)
             QTimer.singleShot(0, lambda: self.view.scrollToAnchor(scroll_to))
 
-    def refresh(self, dark: bool) -> None:
-        """Re-render for a theme switch (the HTML embeds theme colors)."""
+    def refresh(self, dark: bool, names=None) -> None:
+        """Re-render for a theme switch (the HTML embeds theme colors) or
+        a flip of the Hide names switch (*names*, the new mask; None keeps
+        the one shown)."""
         if self._shown is not None and self.isVisible():
-            self.show_build(self._shown[0], self._shown[1], dark, self._shown[2])
+            entry, unit_id, options, shown = self._shown
+            scroll = self.view.verticalScrollBar().value()
+            self.show_build(entry, unit_id, dark, options,
+                            names=shown if names is None else names)
+            self.view.restore_scroll(scroll)
