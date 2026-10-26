@@ -70,6 +70,8 @@ class GuiTestCase(unittest.TestCase):
         from app_config import AppConfig
         self.config = AppConfig(path=self.dir / 'config.json')
         self.config.set('log_path', str(self.log))
+        # No request to GitHub from a test; the poller has tests of its own
+        self.config.set('update.check_enabled', False)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -422,96 +424,202 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
-    def test_update_flow(self):
-        """Update prompt wiring: skip persists; update triggers download."""
-        from unittest.mock import patch
+    # ---- the Update button (issue #56: a button and an ⓘ, never a dialog) ----
+
+    @staticmethod
+    def _update_info(version='9.9.9'):
         from update_check import UpdateInfo
+        return UpdateInfo(
+            version=version, tag=f'v{version}',
+            installer_url=f'https://example.invalid/{version}/setup.exe',
+            installer_name=f'esolog-tail-windows-setup-{version}.exe',
+            notes="## What's Changed\n* A fix (#1) by @someone in "
+                  "https://example.invalid/pull/1\n",
+            page_url=f'https://example.invalid/releases/v{version}',
+            published='2026-10-26T00:23:57Z')
+
+    @staticmethod
+    def _no_dialogs():
+        """Patch QMessageBox so any dialog in the update path fails the test."""
+        from unittest.mock import MagicMock, patch
+        box = MagicMock(side_effect=AssertionError('a dialog in the update path'))
+        for name in ('question', 'information', 'warning', 'critical', 'about'):
+            getattr(box, name).side_effect = AssertionError('a dialog in the update path')
+        return patch('gui.main_window.QMessageBox', box)
+
+    def test_update_offer_shows_button_title_and_hover(self):
+        from unittest.mock import patch
+
+        from version import __version__
         win = self._window()
         try:
-            info = UpdateInfo(version='9.9.9', tag='v9.9.9',
-                              installer_url='https://example.invalid/s.exe',
-                              installer_name='esolog-tail-windows-setup-9.9.9.exe',
-                              notes='', page_url='')
-            # Skip: persisted to config
-            with patch.object(win, '_prompt_update', return_value='skip'):
-                win._on_update_available(info)
-            from app_config import AppConfig
-            self.assertEqual(AppConfig(path=self.config.path)
-                             .get('update.skip_version'), '9.9.9')
-            # Update (Windows: there is an installer): emits the download request
-            requested = []
-            win.request_update_download.connect(
-                lambda url, name: requested.append((url, name)))
-            with patch.object(win, '_prompt_update', return_value='update'), \
-                 patch('gui.main_window.HAS_INSTALLER', True):
-                win._on_update_available(info)
-            self.assertEqual(requested,
-                             [(info.installer_url, info.installer_name)])
-            # Later: nothing persisted or requested
-            requested.clear()
-            self.config.set('update.skip_version', None)
-            with patch.object(win, '_prompt_update', return_value='later'):
-                win._on_update_available(info)
-            self.assertEqual(requested, [])
-            self.assertIsNone(self.config.get('update.skip_version'))
+            plain = f'ESO Log Tail v{__version__}'
+            self.assertFalse(win.update_action.isVisible())
+            self.assertFalse(win.update_info_action.isVisible())
+            self.assertEqual(win.windowTitle(), plain)
+            with patch('gui.main_window.HAS_INSTALLER', True), self._no_dialogs():
+                win._on_update_available(self._update_info())
+            self.assertTrue(win.update_action.isVisible())
+            self.assertTrue(win.update_info_action.isVisible())
+            self.assertEqual(win.update_button.text(), 'Update to 9.9.9')
+            self.assertTrue(win.update_button.isEnabled())
+            self.assertIn(f'you have {__version__}', win.update_button.toolTip())
+            self.assertIn('install', win.update_button.toolTip())
+            self.assertIn('26 October 2026', win.update_info_button.toolTip())
+            self.assertEqual(win.windowTitle(), f'{plain} · 9.9.9 available')
+            # A still newer release replaces the offer; Linux wording
+            with patch('gui.main_window.HAS_INSTALLER', False):
+                win._on_update_available(self._update_info('9.9.10'))
+            self.assertEqual(win.update_button.text(), 'Get 9.9.10')
+            self.assertIn('release page', win.update_button.toolTip())
+            self.assertEqual(win.windowTitle(), f'{plain} · 9.9.10 available')
+            # Gone: both hidden, the title plain again
+            win._on_update_gone()
+            self.assertFalse(win.update_action.isVisible())
+            self.assertFalse(win.update_info_action.isVisible())
+            self.assertEqual(win.windowTitle(), plain)
         finally:
             win.close()
 
-    def test_update_without_installer_opens_release_page(self):
-        """Linux has no installer: 'update' opens the release page instead."""
+    def test_update_click_downloads_then_installs(self):
         from unittest.mock import patch
-        from update_check import UpdateInfo
         win = self._window()
         try:
-            info = UpdateInfo(
-                version='9.9.9', tag='v9.9.9',
-                installer_url='https://example.invalid/l.tar.gz',
-                installer_name='esolog-tail-linux-x86_64-9.9.9.tar.gz',
-                notes='', page_url='https://example.invalid/releases/v9.9.9')
-            requested = []
-            win.request_update_download.connect(
-                lambda url, name: requested.append((url, name)))
-            with patch.object(win, '_prompt_update', return_value='update'), \
-                 patch('gui.main_window.HAS_INSTALLER', False), \
-                 patch('gui.main_window.QDesktopServices') as services:
+            info = self._update_info()
+            with patch('gui.main_window.HAS_INSTALLER', True), self._no_dialogs():
                 win._on_update_available(info)
-            self.assertEqual(requested, [])
+                with patch.object(win.update_poller, 'download',
+                                  return_value=True) as download:
+                    win.update_button.click()
+                download.assert_called_once_with(info.installer_url, info.installer_name)
+                self.assertEqual(win.update_button.text(), 'Downloading 9.9.9…')
+                self.assertFalse(win.update_button.isEnabled())
+                # The installer lands: it is started and the app closes
+                with patch('subprocess.Popen') as popen, \
+                     patch.object(win, 'close') as close:
+                    win._on_update_ready('C:/tmp/esolog-tail-windows-setup-9.9.9.exe')
+                self.assertEqual(popen.call_args[0][0],
+                                 ['C:/tmp/esolog-tail-windows-setup-9.9.9.exe'])
+                close.assert_called_once()
+                # A failed start reverts the button and says why
+                with patch('subprocess.Popen', side_effect=OSError('denied')), \
+                     patch.object(win, 'close') as close:
+                    win._on_update_ready('x.exe')
+                close.assert_not_called()
+                self.assertEqual(win.update_button.text(), 'Update to 9.9.9')
+                self.assertTrue(win.update_button.isEnabled())
+                self.assertIn('could not start', win.statusBar().currentMessage())
+                # A failed download likewise
+                win.update_button.setText('Downloading 9.9.9…')
+                win.update_button.setEnabled(False)
+                win._on_update_failed('download failed; try again later')
+                self.assertEqual(win.update_button.text(), 'Update to 9.9.9')
+                self.assertTrue(win.update_button.isEnabled())
+                self.assertIn('download failed', win.statusBar().currentMessage())
+                # The poller busy with a check: the click says so, no download
+                with patch.object(win.update_poller, 'download', return_value=False):
+                    win.update_button.click()
+                self.assertEqual(win.update_button.text(), 'Update to 9.9.9')
+                self.assertIn('try again', win.statusBar().currentMessage())
+        finally:
+            win.close()
+
+    def test_update_on_linux_opens_the_release_page(self):
+        from unittest.mock import patch
+        win = self._window()
+        try:
+            info = self._update_info()
+            with patch('gui.main_window.HAS_INSTALLER', False), \
+                 patch('gui.main_window.QDesktopServices') as services, \
+                 patch.object(win.update_poller, 'download') as download:
+                win._on_update_available(info)
+                win.update_button.click()
+            download.assert_not_called()
             services.openUrl.assert_called_once()
-            self.assertEqual(services.openUrl.call_args[0][0].toString(),
-                             info.page_url)
+            self.assertEqual(services.openUrl.call_args[0][0].toString(), info.page_url)
+            self.assertEqual(win.update_button.text(), 'Get 9.9.9')
+            self.assertTrue(win.update_button.isEnabled())
         finally:
             win.close()
 
-    def test_worker_update_check_emits_signal(self):
+    def test_update_notes_popup_and_skip(self):
         from unittest.mock import patch
-        from update_check import UpdateInfo
-        import gui.engine_worker  # noqa: F401  (module for patch target)
-        worker = self._worker()
-        seen = []
-        worker.update_available.connect(lambda i: seen.append(i))
-        info = UpdateInfo(version='9.9.9', tag='v9.9.9', installer_url='u',
-                          installer_name='n', notes='', page_url='')
-        with patch('update_check.check_for_update', return_value=info):
-            worker.check_for_update()
-        _app.processEvents()
-        self.assertEqual([i.version for i in seen], ['9.9.9'])
 
-    def test_worker_download_update_emits_ready(self):
-        import tempfile
-        worker = self._worker()
-        ready, failed = [], []
-        worker.update_ready.connect(lambda p: ready.append(p))
-        worker.update_failed.connect(lambda r: failed.append(r))
-        with tempfile.TemporaryDirectory() as td:
-            src = Path(td) / 'setup.exe'
-            src.write_bytes(b'installer-bytes')
-            worker.download_update(src.as_uri(), 'esolog-test-setup.exe')
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from app_config import AppConfig
+        from gui.update_popup import SKIP_HREF, UpdateNotesPopup
+        from version import __version__
+
+        def popups():
+            return [w for w in _app.topLevelWidgets() if isinstance(w, UpdateNotesPopup)]
+
+        win = self._window()
+        try:
+            with patch('gui.main_window.HAS_INSTALLER', True):
+                win._on_update_available(self._update_info())
+            win._show_update_notes()
             _app.processEvents()
-        self.assertEqual(failed, [])
-        self.assertEqual(len(ready), 1)
-        downloaded = Path(ready[0])
-        self.assertEqual(downloaded.read_bytes(), b'installer-bytes')
-        downloaded.unlink()
+            popup = popups()[0]
+            self.assertIn('9.9.9', popup.heading.text())
+            self.assertIn('26 October 2026', popup.heading.text())
+            self.assertIn(__version__, popup.heading.text())
+            self.assertIn('A fix', popup.notes.toPlainText())
+            self.assertIn('https://example.invalid/pull/1', popup.notes.toHtml())
+            self.assertTrue(popup.notes.openExternalLinks())
+            self.assertIn('Release page', popup.links.text())
+            self.assertIn('https://example.invalid/releases/v9.9.9', popup.links.text())
+            self.assertIn('/blob/v9.9.9/CHANGELOG.md', popup.links.text())
+            self.assertIn(SKIP_HREF, popup.links.text())
+            # Esc closes it (and it deletes itself)
+            QTest.keyClick(popup, Qt.Key_Escape)
+            _app.processEvents()
+            self.assertEqual(popups(), [])
+            # The skip link persists the version and withdraws the offer
+            win._show_update_notes()
+            _app.processEvents()
+            popups()[0]._on_link(SKIP_HREF)
+            _app.processEvents()
+            self.assertEqual(popups(), [])
+            self.assertEqual(AppConfig(path=self.config.path).get('update.skip_version'),
+                             '9.9.9')
+            self.assertFalse(win.update_action.isVisible())
+            self.assertEqual(win.windowTitle(), f'ESO Log Tail v{__version__}')
+        finally:
+            win.close()
+
+    def test_update_settings_start_and_stop_the_poller(self):
+        from unittest.mock import patch
+
+        from version import __version__
+        win = self._window()
+        try:
+            self.assertFalse(win.update_poller.is_running())  # the test config
+            with patch('gui.main_window.HAS_INSTALLER', True):
+                win._on_update_available(self._update_info())
+            self.config.set('update.check_enabled', False)
+            win._apply_update_settings()
+            self.assertFalse(win.update_poller.is_running())
+            self.assertFalse(win.update_action.isVisible())
+            self.assertEqual(win.windowTitle(), f'ESO Log Tail v{__version__}')
+            self.config.set('update.check_enabled', True)
+            win._apply_update_settings()
+            self.assertTrue(win.update_poller.is_running())
+            win.update_poller.stop()  # before its first check reaches GitHub
+        finally:
+            win.close()
+
+    def test_update_info_button_follows_the_theme(self):
+        from gui.fight_render import link_color
+        win = self._window()
+        try:
+            self.assertIn(link_color(win._dark), win.update_info_button.styleSheet())
+            win._dark = not win._dark
+            win._style_update_buttons()
+            self.assertIn(link_color(win._dark), win.update_info_button.styleSheet())
+        finally:
+            win.close()
 
     def test_review_emits_parse_progress(self):
         worker = self._worker()

@@ -36,30 +36,26 @@ Repeat checks SHALL be conditional: the app sends the validator GitHub returned 
 
 ### Requirement: The Update button and the ⓘ
 
-When a check finds a release newer than the running version, not skipped, that carries this platform's asset, the toolbar SHALL show at its right end a flat button labelled with the version ("Update to 0.15.0" where an installer exists, "Get 0.15.0" elsewhere) and beside it an `ⓘ` in the link colour. Hovering the button SHALL say which version is available, which is running, and that nothing is installed until it is clicked. Neither SHALL be shown otherwise, and both SHALL disappear when a later check finds no newer release or the version is skipped. Nothing SHALL be downloaded or installed until the button is clicked.
+When a check finds a release newer than the running version, not skipped, that carries this platform's asset, the toolbar SHALL show at its right end a flat button labelled with the version ("Update to 0.15.0" where an installer exists, "Get 0.15.0" elsewhere) and beside it an `ⓘ` in the link colour, and the window title SHALL end with " · 0.15.0 available". Hovering the button SHALL say which version is available, which is running, and what a click does (on Windows: downloads and installs at once, and the app restarts). Neither button SHALL be shown otherwise, the title SHALL be the plain version, and the buttons and the suffix SHALL disappear when a later check finds no newer release or the version is skipped. Nothing SHALL be downloaded or installed until the button is clicked.
 
 #### Scenario: A newer release
 - **WHEN** 0.15.0 is published and 0.14.2 is running on Windows
-- **THEN** the toolbar shows "Update to 0.15.0" and the `ⓘ` AND no dialog opens
+- **THEN** the toolbar shows "Update to 0.15.0" and the `ⓘ` AND the window title ends " · 0.15.0 available" AND no dialog opens
 
 #### Scenario: Up to date
 - **WHEN** the latest release is the running version
-- **THEN** the toolbar shows neither
+- **THEN** the toolbar shows neither AND the window title is the plain version
 
 #### Scenario: A still newer release
 - **WHEN** the button offers 0.15.0 and a check finds 0.15.1
-- **THEN** the button reads "Update to 0.15.1" AND the notes are 0.15.1's AND a downloaded 0.15.0 installer is forgotten
+- **THEN** the button reads "Update to 0.15.1" AND the notes are 0.15.1's AND the title names 0.15.1
 
-### Requirement: Updating on Windows takes two clicks
+### Requirement: Updating on Windows takes one click
 
-On a platform with an installer, the first click SHALL download the installer to the temporary folder, with progress in the status bar, the button disabled and reading "Downloading 0.15.0…"; when the download finishes the button SHALL read "Install 0.15.0 and restart" and be enabled again. The second click SHALL start the installer and close the app. If the download or the start fails, the button SHALL return to "Update to 0.15.0" and the status bar SHALL say why. The app SHALL NOT close at any other point of the path.
+On a platform with an installer, the click SHALL download the installer to the temporary folder, with progress in the status bar, the button disabled and reading "Downloading 0.15.0…"; when the download finishes the app SHALL start the installer and close. If the download or the start fails, the button SHALL return to "Update to 0.15.0" and the status bar SHALL say why. The app SHALL NOT close at any other point of the path.
 
 #### Scenario: The download finishes
 - **WHEN** the user clicks "Update to 0.15.0" and the download completes
-- **THEN** the button reads "Install 0.15.0 and restart" AND the app is still running
-
-#### Scenario: The second click
-- **WHEN** the user clicks "Install 0.15.0 and restart"
 - **THEN** the installer starts AND the app closes
 
 #### Scenario: The download fails

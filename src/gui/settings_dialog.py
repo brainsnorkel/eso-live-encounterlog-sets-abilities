@@ -155,7 +155,8 @@ class SettingsDialog(QDialog):
         update_group = QGroupBox("Updates")
         update_form = QFormLayout(update_group)
         self.update_check = QCheckBox(
-            "Check GitHub for a newer release at startup and offer to update")
+            "Check GitHub for a newer release at startup and every 15 minutes, "
+            "and show an Update button in the toolbar")
         self.update_check.setChecked(bool(config.get("update.check_enabled", True)))
         update_form.addRow(self.update_check)
         layout.addWidget(update_group)

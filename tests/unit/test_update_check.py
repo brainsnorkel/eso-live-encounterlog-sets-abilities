@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Unit tests for the GitHub release update check."""
 
+import json
 import os
 import sys
 import tempfile
+import time
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
 import update_check
 from update_check import (
-    check_for_update, download_file, is_newer, parse_version,
+    FetchResult, changelog_url, check_for_update, download_file,
+    fetch_latest_release, format_release_date, is_newer, parse_version,
     release_to_update_info,
 )
 
@@ -33,6 +37,7 @@ def _release(tag='v0.4.0', assets=None, **extra):
         'assets': assets,
         'body': 'Release notes',
         'html_url': f'https://github.com/x/releases/{tag}',
+        'published_at': '2026-10-26T00:23:57Z',
         'draft': False,
         'prerelease': False,
         **extra,
@@ -63,6 +68,15 @@ class TestReleaseParsing(unittest.TestCase):
         self.assertEqual(info.tag, 'v0.4.0')
         self.assertIn('setup', info.installer_name)
         self.assertTrue(info.installer_url)
+        self.assertEqual(info.published, '2026-10-26T00:23:57Z')
+
+    def test_release_date_and_changelog_link(self):
+        self.assertEqual(format_release_date('2026-10-26T00:23:57Z'), '26 October 2026')
+        self.assertEqual(format_release_date('2026-03-05'), '5 March 2026')
+        self.assertEqual(format_release_date(''), '')
+        self.assertEqual(format_release_date('soon'), '')
+        self.assertTrue(changelog_url('v1.2.3').endswith('/blob/v1.2.3/CHANGELOG.md'))
+        self.assertIn(update_check.GITHUB_REPO, changelog_url('v1.2.3'))
 
     def test_asset_follows_platform(self):
         release = _release()
@@ -104,6 +118,87 @@ class TestReleaseParsing(unittest.TestCase):
         self.assertIsNone(release_to_update_info(None))
 
 
+class _Response:
+    """What urlopen yields for a full reply."""
+
+    def __init__(self, payload: bytes, headers: dict):
+        self._payload = payload
+        self.headers = headers
+
+    def read(self):
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _http_error(code, headers=None):
+    return urllib.error.HTTPError(update_check.LATEST_RELEASE_URL, code,
+                                  'reply', headers or {}, None)
+
+
+class TestFetchLatestRelease(unittest.TestCase):
+    """The conditional request: ETag out, 304 and rate-limit replies in."""
+
+    def _fetch(self, urlopen_result, etag=None):
+        kwargs = ({'side_effect': urlopen_result} if isinstance(urlopen_result, BaseException)
+                  else {'return_value': urlopen_result})
+        with patch.object(update_check.urllib.request, 'urlopen', **kwargs) as urlopen:
+            result = fetch_latest_release(etag)
+        return result, urlopen.call_args[0][0]
+
+    def test_full_reply_carries_the_etag(self):
+        payload = json.dumps(_release('v1.2.3')).encode('utf-8')
+        result, request = self._fetch(_Response(payload, {'ETag': '"abc"'}))
+        self.assertEqual(result.release['tag_name'], 'v1.2.3')
+        self.assertEqual(result.etag, '"abc"')
+        self.assertFalse(result.not_modified)
+        self.assertIsNone(result.error)
+        self.assertFalse(request.has_header('If-none-match'))
+
+    def test_etag_is_sent_and_304_is_not_modified(self):
+        result, request = self._fetch(_http_error(304), etag='"abc"')
+        self.assertTrue(result.not_modified)
+        self.assertEqual(result.etag, '"abc"')
+        self.assertIsNone(result.release)
+        self.assertIsNone(result.error)
+        self.assertEqual(request.get_header('If-none-match'), '"abc"')
+
+    def test_rate_limit_reset_names_the_wait(self):
+        reset = int(time.time()) + 600
+        result, _ = self._fetch(_http_error(403, {'X-RateLimit-Reset': str(reset)}))
+        self.assertIn('rate limited', result.error)
+        self.assertAlmostEqual(result.retry_at, reset, delta=2)
+        self.assertIsNone(result.release)
+
+    def test_retry_after_names_the_wait(self):
+        result, _ = self._fetch(_http_error(429, {'Retry-After': '120'}))
+        self.assertAlmostEqual(result.retry_at, time.time() + 120, delta=2)
+
+    def test_rate_limit_wait_is_capped_at_an_hour(self):
+        reset = int(time.time()) + 86400
+        result, _ = self._fetch(_http_error(403, {'X-RateLimit-Reset': str(reset)}))
+        self.assertLessEqual(result.retry_at, time.time() + 3600 + 2)
+
+    def test_rate_limit_without_a_time(self):
+        result, _ = self._fetch(_http_error(403))
+        self.assertIsNone(result.retry_at)
+        self.assertIn('rate limited', result.error)
+
+    def test_other_http_error(self):
+        result, _ = self._fetch(_http_error(500))
+        self.assertEqual(result.error, 'HTTP 500')
+        self.assertIsNone(result.retry_at)
+
+    def test_timeout_is_an_error(self):
+        result, _ = self._fetch(TimeoutError('timed out'))
+        self.assertIn('timed out', result.error)
+        self.assertFalse(result.not_modified)
+
+
 class TestCheckForUpdate(unittest.TestCase):
 
     def setUp(self):
@@ -112,31 +207,45 @@ class TestCheckForUpdate(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_newer_release_returned(self):
+    def _check(self, fetched, *args, **kwargs):
         with patch.object(update_check, 'fetch_latest_release',
-                          return_value=_release('v9.9.9')):
-            info = check_for_update('0.3.0')
-        self.assertIsNotNone(info)
-        self.assertEqual(info.version, '9.9.9')
+                          return_value=fetched) as fetch:
+            result = check_for_update(*args, **kwargs)
+        return result, fetch
+
+    def test_newer_release_returned_with_the_etag(self):
+        result, fetch = self._check(
+            FetchResult(release=_release('v9.9.9'), etag='"e1"'), '0.3.0')
+        self.assertIsNotNone(result.info)
+        self.assertEqual(result.info.version, '9.9.9')
+        self.assertEqual(result.etag, '"e1"')
+        fetch.assert_called_once_with(None)
+
+    def test_etag_passed_through(self):
+        result, fetch = self._check(FetchResult(not_modified=True, etag='"e1"'),
+                                    '0.3.0', None, '"e1"')
+        fetch.assert_called_once_with('"e1"')
+        self.assertTrue(result.not_modified)
+        self.assertIsNone(result.info)
 
     def test_same_or_older_ignored(self):
-        with patch.object(update_check, 'fetch_latest_release',
-                          return_value=_release('v0.3.0')):
-            self.assertIsNone(check_for_update('0.3.0'))
-        with patch.object(update_check, 'fetch_latest_release',
-                          return_value=_release('v0.2.0')):
-            self.assertIsNone(check_for_update('0.3.0'))
+        for tag in ('v0.3.0', 'v0.2.0'):
+            result, _ = self._check(FetchResult(release=_release(tag)), '0.3.0')
+            self.assertIsNone(result.info)
+            self.assertFalse(result.not_modified)
+            self.assertIsNone(result.error)
 
     def test_skip_version_honored(self):
-        with patch.object(update_check, 'fetch_latest_release',
-                          return_value=_release('v9.9.9')):
-            self.assertIsNone(check_for_update('0.3.0', skip_version='9.9.9'))
-            self.assertIsNotNone(check_for_update('0.3.0', skip_version='9.9.8'))
+        fetched = FetchResult(release=_release('v9.9.9'))
+        self.assertIsNone(self._check(fetched, '0.3.0', skip_version='9.9.9')[0].info)
+        self.assertIsNotNone(self._check(fetched, '0.3.0', skip_version='9.9.8')[0].info)
 
-    def test_network_failure_is_none(self):
-        with patch.object(update_check, 'fetch_latest_release',
-                          return_value=None):
-            self.assertIsNone(check_for_update('0.3.0'))
+    def test_failures_are_reported_not_raised(self):
+        result, _ = self._check(FetchResult(error='timed out'), '0.3.0')
+        self.assertIsNone(result.info)
+        self.assertEqual(result.error, 'timed out')
+        result, _ = self._check(FetchResult(error='rate limited (403)', retry_at=5.0), '0.3.0')
+        self.assertEqual(result.retry_at, 5.0)
 
 
 class TestDownload(unittest.TestCase):

@@ -21,7 +21,7 @@ The **[home page](https://xop.co/eso-live-encounterlog-sets-abilities/)** is the
 - **ESO-Hub links**: hover an ability icon for its name, click it for the skill's ESO-Hub page; set names open their set pages. Nothing is sent to ESO-Hub until you click.
 - **Search within a fight** (Ctrl+F), including ability icons by name; **copy any fight** as plain text for Discord; **review any log file** without interrupting live monitoring.
 - **Log housekeeping**: per-encounter split files, automatic archiving of the ever-growing log, and a freshness indicator so you can tell at a glance that logging is on.
-- **Zero-friction startup**: finds the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and offers updates from GitHub.
+- **Zero-friction startup**: finds the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and shows an **Update** button in the toolbar when a newer release is on GitHub (checked every 15 minutes, never a pop-up).
 
 ## Installation
 
@@ -47,7 +47,7 @@ tar -xzf esolog-tail-linux-x86_64-<version>.tar.gz
 It needs a 64-bit x86 desktop (X11 or Wayland) with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36, or later. Nothing is installed; delete the folder to remove it. What differs from Windows:
 
 - **Finding the log**: the app looks in ESO's Steam (Proton) prefix, including Flatpak Steam, and in the default `~/.wine` prefix. For anything else, set the path under Settings → Encounter log.
-- **Updates**: the update prompt opens the release page for you to download the new tarball.
+- **Updates**: the toolbar's **Get <version>** button opens the release page for you to download the new tarball.
 - **Start at login** is not offered.
 - Settings and `crash.log` live in `~/.config/esolog-tail/`.
 

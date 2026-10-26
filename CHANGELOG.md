@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Updates: a toolbar button, checked every 15 minutes, no pop-up** (#56): the app now checks GitHub a few seconds after it starts and every 15 minutes after that (`update.check_interval_min` in the config file), so a release published during a raid night is noticed before the next one; until now the one check ran at startup and the offer was a modal box that took the focus from whatever was being typed. When a newer release exists an `Update to 0.15.0` button appears at the right end of the toolbar with an `ⓘ` beside it, and the window title ends with `0.15.0 available`; nothing is downloaded until the button is clicked. On Windows one click downloads the installer (progress in the status bar) and hands over to it; on Linux the button, `Get 0.15.0`, opens the release page. The `ⓘ` shows GitHub's release notes, links to the release page and the changelog, and `Don't show this version again`, the old Skip. The three dialogs (`Update available`, `Install update?`, `Could not start the installer`) are gone; a failure puts the button back with the reason in the status bar. Each repeat check is conditional (the ETag sent back as `If-None-Match`; an unchanged release is a `304` with no body, which GitHub does not count against its limit of 60 unsigned requests an hour), a rate-limit reply makes the app wait for the reset it names, and the check and the download now run on their own thread rather than the engine's, where a wedged network stalled fight updates for the 10-second timeout. The Settings box reads `Check GitHub for a newer release at startup and every 15 minutes, and show an Update button in the toolbar`; saving with it off stops the checks and hides the button
+
 ## [0.14.2] - 2026-10-26
 
 ### Changed
