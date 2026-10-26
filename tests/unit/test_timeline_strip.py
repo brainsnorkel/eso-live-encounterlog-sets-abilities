@@ -321,6 +321,74 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertIn("0% of that time", html)
         self.assertIn("7,300 left", html)
 
+    def test_the_pack_reading_is_paler_names_its_unit_and_has_its_own_figures(self):
+        """Issue #66: the boss row's blank stretches carry the per-second
+        reading on whatever the group hit, drawn paler; its hover names the
+        unit and the summary gives the pack's figures beside the boss's."""
+        from PySide6.QtCore import QEvent, QPoint
+        from PySide6.QtGui import QHelpEvent
+        from PySide6.QtWidgets import QToolTip
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189 left",
+                  "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 9189,
+                  "lowest_left": 0, "no_debuff_pct": 0, "target": "Balorgh",
+                  "window": [[45_000, 55_000]], "window_ms": [45_000, 55_000],
+                  "drawn_ms": 10_000, "fight_ms": 60_000, "weighted_left": 7300,
+                  "pack_only": False, "pack_units": 3, "pack_window": [[5_000, 30_000]],
+                  "pack_window_ms": [5_000, 30_000], "pack_drawn_ms": 25_000,
+                  "pack_average_left": 20_000, "pack_lowest_left": 15_000, "pack_no_debuff_pct": 40,
+                  "pack_weighted_left": 19_000,
+                  "explain": "A solo dungeon's bosses have 27,300 armour.", "intervals": [
+                      {"start_ms": 5_000, "end_ms": 20_000, "stacks": 27300, "debuff_pen": 0,
+                       "debuffs": "", "target": "Wyress Strigidae", "source": "", "pack": True,
+                       "unit_armour": 18200},
+                      {"start_ms": 20_000, "end_ms": 30_000, "stacks": 15000, "debuff_pen": 12300,
+                       "debuffs": "Major Breach, Crusher", "target": "Hagraven", "source": "", "pack": True,
+                       "unit_armour": 18200},
+                      {"start_ms": 45_000, "end_ms": 55_000, "stacks": 0, "debuff_pen": 30000,
+                       "debuffs": "Major Breach, Crusher", "target": "Balorgh", "source": ""}]}
+        self.strip.set_timeline(_sample_timeline(), [], armour)
+        self.strip.show()
+        info = self.strip._row_info["Armour"]
+        image = self.strip.grab().toImage()
+        rect = self.strip._row_rect(self.strip._rows.index("Armour"))
+
+        def column(ms):
+            x = int(self.strip._x_for_ms(ms))
+            return [image.pixel(x, y) for y in range(int(rect.top()), int(rect.bottom()) + 1)]
+
+        boss = info["color"].rgb()
+        # The pack stretch is drawn, in a colour that is not the boss bar's
+        pack_pixels = [p for p in column(10_000) if p != image.pixel(int(self.strip._x_for_ms(40_000)), int(rect.top()))]
+        self.assertGreater(len(pack_pixels), 1)
+        self.assertNotIn(boss, pack_pixels)
+        self.assertEqual(sum(1 for p in column(40_000) if p == boss), 0)
+
+        def hover(ms):
+            pos = QPoint(int(self.strip._x_for_ms(ms)), int(rect.center().y()))
+            self.assertTrue(self.strip.event(QHelpEvent(QEvent.ToolTip, pos, self.strip.mapToGlobal(pos))))
+            return QToolTip.text()
+
+        text = hover(25_000)
+        self.assertIn("15,000 of 27,300 left on Hagraven", text)
+        self.assertIn("Major Breach, Crusher", text)
+        self.assertIn("Read on the unit the group hit hardest that second", text)
+        self.assertIn("its armour is 18,200, the row's scale the 27,300 of its target", text)
+        # A blank stretch of a row with the pack reading: nothing was hit
+        self.assertIn("the group hit nothing for this stretch", hover(40_000))
+        html = self.strip.summary_html("Armour")
+        self.assertIn("On Balorgh from 45s to 55s", html)
+        self.assertIn("The paler 25s, read each second on whichever of 3 other units the group hit hardest: "
+                      "20,000 left on average, 15,000 at the lowest; no armour debuff for 40% of that time. "
+                      "Weighed by the damage dealt: 19,000 left", html)
+        # A fight without a boss: the row is the pack reading
+        trash = dict(armour, scope="mobs", pack_only=True, window=[[5_000, 30_000]],
+                     window_ms=[5_000, 30_000], drawn_ms=25_000, average_left=20_000,
+                     label="Armour 18,200 · 20,000 left", intervals=armour["intervals"][:2])
+        self.strip.set_timeline(_sample_timeline(), [], trash)
+        html = self.strip.summary_html("Armour")
+        self.assertIn("Read each second on the unit the group hit hardest, 3 units in all, from 5s to 30s", html)
+        self.assertNotIn("The paler", html)
+
     def test_help_event_shows_tooltip(self):
         """QHelpEvent path end-to-end (task 2.2)."""
         from PySide6.QtCore import QEvent, QPoint
