@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.16.0] - 2026-10-27
+
+### Added
+- **Companions have a row of their own** (#74): a companion that is out during a fight is listed straight under its owner, marked `↳`, with `C` for its role, its level, its own DPS, share and health, a `☠` when it died (not counted in the fight's Deaths), and in Detail view a bar of the companion skills it was seen casting this session (the log writes no companion bar or gear). Its DPS opens the damage window; its name opens a short window with its level, owner and skills. A companion that dies and is summoned again stays one row. **The owner's DPS no longer includes the companion's** by default, matching Combat Metrics, which never counts a companion as the player's; in the two solo Moon Hunter Keep runs of 2026-10-26 Isobel's share was 1 to 9%. A new box under Companions in Settings, *Count a companion's damage and healing as its owner's too*, brings the old figures back beside the companion's row (the shares then add up to more than 100%). Effect rules, expected group sizes and the penetration figures still treat a companion as a pet. The companion's window ends with the `Damage dealt` section a player's build window has (#73), over the companion's own hits
+
 ## [0.15.0] - 2026-10-27
 
 ### Added

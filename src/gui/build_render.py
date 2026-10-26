@@ -50,6 +50,9 @@ NO_MUNDUS = "none logged"
 NO_FOOD = "no known food or drink at combat start"
 NO_GEAR = "The log carried no gear for this player in this fight."
 NO_BUILD = "No build was logged for this player in this fight."
+COMPANION_NOTE = ("The encounter log writes no bar, gear or perks for a companion: these are "
+                  "the skills it was seen casting this session, in the order first cast.")
+NO_COMPANION_SKILLS = "No companion skill was seen cast yet this session."
 POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted"
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
                "front bar / back bar, for a set whose weapons sit on one bar only.")
@@ -109,6 +112,8 @@ def build_title(entry, unit_id, names=None) -> str:
     name = _join(player.get("name", ""))
     character = str(player.get("character") or "")
     title = names.text(name)
+    if player.get("companion"):
+        return f"Companion – {title}" if title else "Companion"
     if title and character and character != name:
         title += f" ({names.text(character)})"
     return f"Build – {title}" if title else "Build"
@@ -169,6 +174,42 @@ def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> 
             f"{' · '.join(e(fact) for fact in facts if fact)}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>"
             f"{' · '.join(part for part in fight if part)}</p>")
+
+
+def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
+                    text_color: str) -> str:
+    """A companion's window (companions.py): its name, level and owner, the
+    fight, and the skills it was seen casting this session. The log writes
+    no bar, gear or perks for a companion, so there is nothing else of a
+    build; render_build_html adds the kinds of its damage under it."""
+    muted = theme["muted"]
+    owner = player_for(entry, p.get("owner_unit_id")) or {}
+    owner_name = _join(owner.get("name", ""))
+    level = p.get("level") or 0
+    facts = ["Companion", f"level {level}" if level else ""]
+    title_pt = base_pt * 1.3
+    title = (f"<span style='font-size:{title_pt:.2f}pt;font-weight:bold'>"
+             f"{e(_join(p.get('name', '')))}</span>")
+    of_owner = (f" · of {names.html(owner_name, muted, base_pt)}" if owner_name else "")
+    vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
+           if getattr(entry, "is_vet", False) else "")
+    zone = str(getattr(entry, "zone_name", "") or "")
+    fight = [e(str(getattr(entry, "boss_name", "") or "")),
+             f"{e(zone)}{vet}" if zone else "",
+             e(str(getattr(entry, "timestamp", "") or ""))]
+    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, BAR_ICON_PX,
+                    taunt_color=theme["taunt"])
+    skills = (f"<table cellpadding='4' cellspacing='0' width='100%' "
+              f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
+              f"border-collapse:collapse;background-color:{theme['frame_bg']}'>"
+              f"<tr><td width='8%' valign='middle' style='color:{muted}'>Skills</td>"
+              f"<td valign='middle'>{bar}</td></tr></table>"
+              if bar else f"<p style='color:{muted}'>{NO_COMPANION_SKILLS}</p>")
+    return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
+            f"{' · '.join(e(fact) for fact in facts if fact)}{of_owner}</span></p>"
+            f"<p style='margin:2px 0;color:{muted}'>{' · '.join(part for part in fight if part)}</p>"
+            f"<p style='margin:8px 0 6px 0;color:{muted}'>{COMPANION_NOTE}</p>"
+            f"{skills}")
 
 
 def _mundus_food_html(p, theme, icons, e) -> str:
@@ -572,6 +613,13 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     p = player_for(entry, unit_id)
     if p is None:
         return f"<p style='color:{theme['muted']}'>{NO_BUILD}</p>"
+    if p.get("companion"):
+        # A companion's window: its skills, then the kinds of its damage
+        # (damage_kinds), as the build window shows a player's
+        return (_companion_html(entry, p, theme, icons, links, base_pt, e, names,
+                                text_color or theme["text"])
+                + _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]),
+                                     base_pt, e))
     return "".join((
         _header_html(entry, p, theme, base_pt, e, names, text_color or theme["text"]),
         _mundus_food_html(p, theme, icons, e),

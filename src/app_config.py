@@ -62,6 +62,12 @@ DEFAULTS = {
     "privacy": {
         "hide_names": False,
     },
+    # A companion has its own row under its owner (companions.py); this
+    # also counts its damage and healing as the owner's (off: Combat
+    # Metrics never does)
+    "companions": {
+        "accrue_to_owner": False,
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split

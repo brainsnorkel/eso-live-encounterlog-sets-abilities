@@ -34,6 +34,7 @@ from build_issues import (
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
+import companions
 import pen_crit
 import werewolf
 
@@ -427,6 +428,9 @@ class EnemyInfo:
         self.added_at: Optional[int] = None  # log time of its UNIT_ADDED
         self.died_at: Optional[int] = None  # log time of its DIED, when seen
         self.removed_at: Optional[int] = None  # log time of its UNIT_REMOVED
+        # A player's companion (companions.is_companion) and its level
+        self.is_companion: bool = False
+        self.level: int = 0
 
 class CombatEncounter:
     """Represents a single combat encounter."""
@@ -459,7 +463,14 @@ class CombatEncounter:
         
         # Pet ownership tracking
         self.pet_ownership: Dict[str, str] = {}
-        
+        # Companions (companions.py): each owner's companion by its row key,
+        # and the row key of each companion unit while it has an owner.
+        # Both carry over to the next fight like pet_ownership; the deaths
+        # are this fight's
+        self.companions: dict[str, companions.CompanionRecord] = {}
+        self.companion_units: dict[str, str] = {}
+        self.companion_deaths: dict[str, int] = defaultdict(int)
+
         # Track combat end time
         self.combat_ended_at: Optional[int] = None
         
@@ -521,8 +532,33 @@ class CombatEncounter:
         """
         if owner_unit_id != "0" and self.find_player_by_unit_id(owner_unit_id):
             self.pet_ownership[pet_unit_id] = owner_unit_id
+            self._link_companion(pet_unit_id, owner_unit_id)
         else:
             self.pet_ownership.pop(pet_unit_id, None)
+            self.companion_units.pop(pet_unit_id, None)
+
+    def _link_companion(self, unit_id: str, owner_unit_id: str) -> None:
+        """A companion unit that has an owner joins its owner's record for
+        that companion (companions.py): one record, and one row, for every
+        unit id the companion gets in the zone. Any other pet is left as it
+        is."""
+        unit = self.enemies.get(unit_id)
+        if unit is None or not unit.is_companion:
+            self.companion_units.pop(unit_id, None)
+            return
+        key = companions.row_key(owner_unit_id, unit.monster_id)
+        record = self.companions.get(key)
+        if record is None:
+            record = self.companions[key] = companions.CompanionRecord(
+                owner_unit_id, unit.monster_id, unit.name, unit.level)
+        record.unit_ids.add(unit_id)
+        if unit.level:
+            record.level = unit.level
+        self.companion_units[unit_id] = key
+
+    def companion_key(self, unit_id: str) -> str | None:
+        """The row key of the companion *unit_id* while it has an owner."""
+        return self.companion_units.get(unit_id)
 
     def is_friendly_unit(self, unit_id: str) -> bool:
         """Check if a unit ID belongs to a friendly player or their pet."""
@@ -600,6 +636,7 @@ class CombatEncounter:
     def add_damage_to_player(self, unit_id: str, damage: int, to_boss: bool = False,
                              timestamp: Optional[int] = None, result: str = 'DAMAGE',
                              ability_id: str = '', target_id: str = '',
+                             accrue_companions: bool = False,
                              damage_type: str = '', cast_id: str = '', cast_index=None):
         """Credit damage dealt by *unit_id* to the player it belongs to:
         the player themself, or the owner of a pet (see
@@ -614,43 +651,77 @@ class CombatEncounter:
         also keeps the kinds of the damage (damage_kinds): the area rule
         reads the cast, the session and the player-skill table, and a hit
         counted single is moved to area should its cast strike a second
-        unit later."""
+        unit later.
+
+        A companion's damage is its own row's (companions.py), keyed by
+        the companion's row key, with its kinds like a player's; with
+        *accrue_companions* (the setting companions.accrue_to_owner) it is
+        its owner's as well."""
         # Find the player this unit belongs to
         player = self.find_player_by_unit_id(unit_id)
+        companion = None
         if player is None and unit_id in self.pet_ownership:
             # A pet's damage is its owner's
             player = self.find_player_by_unit_id(self.pet_ownership[unit_id])
-        if player is None:
+            companion = self.companion_key(unit_id)
+        if player is None and companion is None:
             return
-        self.player_damage[player.unit_id] = self.player_damage.get(player.unit_id, 0) + damage
-        if to_boss:
-            self.player_boss_damage[player.unit_id] = (
-                self.player_boss_damage.get(player.unit_id, 0) + damage)
+        # The kinds of the hit (damage_kinds), the same for a player's own
+        # hit, a pet's and a companion's
+        area = watch = cast_key = None
+        if timestamp is not None and cast_index is not None:
+            is_area, rule, _targets = area_of(cast_index, unit_id, cast_id,
+                                              str(ability_id), True)
+            area = (is_area, rule)
+            cast_key = (str(unit_id), str(cast_id))
+            watch = lambda callback: cast_index.watch(unit_id, cast_id, callback)  # noqa: E731
+        if companion is not None:
+            owner = player.unit_id if (player is not None and accrue_companions) else None
+            for record_id in (companion, owner):
+                if record_id is not None:
+                    self._credit_damage(record_id, damage, to_boss)
+            if timestamp is not None:
+                self.damage.note(companion, timestamp, damage, result, str(ability_id),
+                                 False, target_id, to_boss, damage_type, area, cast_key,
+                                 watch, also=owner)
+            return
+        self._credit_damage(player.unit_id, damage, to_boss)
         if timestamp is not None:
-            area = watch = cast_key = None
-            if cast_index is not None:
-                is_area, rule, _targets = area_of(cast_index, unit_id, cast_id,
-                                                  str(ability_id), True)
-                area = (is_area, rule)
-                cast_key = (str(unit_id), str(cast_id))
-                watch = lambda callback: cast_index.watch(unit_id, cast_id, callback)  # noqa: E731
             self.damage.note(player.unit_id, timestamp, damage, result, str(ability_id),
                              not player.has_unit_id(unit_id), target_id, to_boss,
                              damage_type, area, cast_key, watch)
 
-    def add_healing_to_player(self, source_unit_id: str, target_unit_id: str, heal_value: int):
-        """Track healing done by source player to a DIFFERENT player."""
+    def _credit_damage(self, record_id: str, damage: int, to_boss: bool) -> None:
+        self.player_damage[record_id] = self.player_damage.get(record_id, 0) + damage
+        if to_boss:
+            self.player_boss_damage[record_id] = (
+                self.player_boss_damage.get(record_id, 0) + damage)
+
+    def add_healing_to_player(self, source_unit_id: str, target_unit_id: str, heal_value: int,
+                              accrue_companions: bool = False):
+        """Track healing done by source player to a DIFFERENT player. A
+        companion's heal on a player is its own row's, its owner included;
+        with *accrue_companions* it is the owner's too, unless it healed
+        the owner (a self-heal for the owner)."""
         source_player = self.find_player_by_unit_id(source_unit_id)
+        companion = None
         if not source_player:
             # Check pet ownership
             if source_unit_id in self.pet_ownership:
                 owner_id = self.pet_ownership[source_unit_id]
                 source_player = self.find_player_by_unit_id(owner_id)
+                companion = self.companion_key(source_unit_id)
         if not source_player:
             return
-        # Only count healing to other players (not self-heals)
         target_player = self.find_player_by_unit_id(target_unit_id)
-        if not target_player or target_player.unit_id == source_player.unit_id:
+        if not target_player:
+            return
+        if companion is not None:
+            self.player_healing[companion] = self.player_healing.get(companion, 0) + heal_value
+            if not accrue_companions:
+                return
+        # Only count healing to other players (not self-heals)
+        if target_player.unit_id == source_player.unit_id:
             return
         if source_player.unit_id not in self.player_healing:
             self.player_healing[source_player.unit_id] = 0
@@ -783,6 +854,12 @@ class ESOLogAnalyzer(ListenerMixin):
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
+        # Companions (companions.py): whether their damage and healing are
+        # their owner's too (the setting companions.accrue_to_owner), and
+        # the skills each one cast this session, by (owner's player key,
+        # monster id), in first-cast order
+        self.companion_accrual = False
+        self.companion_casts: dict[tuple[str, str], list[str]] = {}
         self.scribing_keys: Dict[str, str] = {}  # unit_id -> the tracker's key for that player
         self._scribing_characters: Dict[str, str] = {}  # tracker key -> character id last seen
         self.gear_cache: Dict[str, str] = {}  # gear_item_id -> gear_set_name
@@ -977,6 +1054,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     self.current_encounter.pet_ownership.pop(entry.fields[0], None)
+                    self.current_encounter.companion_units.pop(entry.fields[0], None)
                     enemy = self.current_encounter.enemies.get(entry.fields[0])
                     if enemy is not None and enemy.removed_at is None:
                         enemy.removed_at = entry.timestamp
@@ -1126,7 +1204,14 @@ class ESOLogAnalyzer(ListenerMixin):
                     # being the fight's boss (boss_units, issue #67)
                     enemy.is_boss = is_fight_boss(enemy.boss_flag, monster_id)
                     enemy.added_at = entry.timestamp
-                    
+                    # A player's companion (companions.py): by its reaction,
+                    # or by its monster id when it is another member's
+                    enemy.is_companion = companions.is_companion(
+                        monster_id, entry.fields[14] if len(entry.fields) > 14 else "")
+                    if enemy.is_companion:
+                        enemy.level = companions.level_of(
+                            entry.fields[11] if len(entry.fields) > 11 else "")
+
                     self.current_encounter.enemies[unit_id] = enemy
                     # The game names the owner of a summoned unit
                     # (ownerUnitId): a player's pet, whose damage and healing
@@ -1203,6 +1288,20 @@ class ESOLogAnalyzer(ListenerMixin):
                     slot.update(scribed.get(str(ability_id), {}))
                 slots.append(slot)
         return slots
+
+    def _note_companion_cast(self, companion: str, ability_id: str) -> None:
+        """A cast by a companion: a companion skill (by its icon) joins the
+        companion's bar for the session, in first-cast order. Keyed by the
+        owner's player key, which outlives the zone's unit ids."""
+        if not companions.bar_ability(self.ability_icons.get(str(ability_id), "")):
+            return
+        record = self.current_encounter.companions.get(companion)
+        if record is None:
+            return
+        key = (self._scribing_player_key(record.owner_unit_id), record.monster_id)
+        casts = self.companion_casts.setdefault(key, [])
+        if ability_id not in casts:
+            casts.append(ability_id)
 
     def _ability_slot(self, ability_id: str) -> Dict[str, str]:
         """A bar slot for *ability_id*: the log's name and icon for it, else
@@ -1499,19 +1598,25 @@ class ESOLogAnalyzer(ListenerMixin):
             old_players = {}
             old_enemies = {}
             old_pets = {}
+            old_companions = {}
+            old_companion_units = {}
             if self.current_encounter:
                 if self.current_encounter.players:
                     old_players = self.current_encounter.players.copy()
                 if self.current_encounter.enemies:
                     old_enemies = self.current_encounter.enemies.copy()
                 old_pets = self.current_encounter.pet_ownership.copy()
-            
+                old_companions = self.current_encounter.companions.copy()
+                old_companion_units = self.current_encounter.companion_units.copy()
+
             self.current_encounter = CombatEncounter()
 
             # Restore players, enemies and pets from previous encounter (they persist across combats in same zone)
             self.current_encounter.players = old_players
             self.current_encounter.enemies = old_enemies
             self.current_encounter.pet_ownership = old_pets
+            self.current_encounter.companions = old_companions
+            self.current_encounter.companion_units = old_companion_units
 
             # Reset resource tracking for all players for the new encounter
             for player in self.current_encounter.players.values():
@@ -1747,6 +1852,11 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
 
+            # A companion's skills, for the bar on its row (companions.py)
+            companion = self.current_encounter.companion_key(caster_unit_id)
+            if companion is not None:
+                self._note_companion_cast(companion, ability_id)
+
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
                 self.current_encounter.add_ability_use(caster_unit_id, ability_name)
@@ -1767,6 +1877,18 @@ class ESOLogAnalyzer(ListenerMixin):
         enemy = self.current_encounter.enemies.get(unit_id)
         if not enemy:
             return
+
+        # A companion's health pool, for its row: the unit's own max_health
+        # starts at its monster id (see _handle_unit_added) and only grows
+        companion = self.current_encounter.companion_key(unit_id)
+        if companion is not None and resource_fields and "/" in resource_fields[0]:
+            try:
+                pool = int(resource_fields[0].split("/")[1])
+            except (ValueError, IndexError):
+                pool = 0
+            record = self.current_encounter.companions.get(companion)
+            if record is not None and pool > record.max_health:
+                record.max_health = pool
 
         # Parse health field: "current/max" - we want the max (second number)
         try:
@@ -1916,6 +2038,11 @@ class ESOLogAnalyzer(ListenerMixin):
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     if enemy.died_at is None:
                         enemy.died_at = entry.timestamp
+                    # A companion's death is shown on its row, and is not
+                    # one of the fight's (player) deaths (companions.py)
+                    companion = self.current_encounter.companion_key(dying_unit_id)
+                    if companion is not None and self.current_encounter.in_combat:
+                        self.current_encounter.companion_deaths[companion] += 1
                     # Its effects end with it: the game does not always
                     # write FADED for a corpse's (see effect_rules)
                     self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
@@ -1955,8 +2082,12 @@ class ESOLogAnalyzer(ListenerMixin):
                                     
                                     # Track first damage dealer
                                     if self.current_encounter.first_damage_dealer is None:
-                                        # Attribute to owner if it's a pet
-                                        if source_unit_id in self.current_encounter.pet_ownership:
+                                        # A companion's own row, else the
+                                        # owner if it's a pet
+                                        companion = self.current_encounter.companion_key(source_unit_id)
+                                        if companion is not None:
+                                            self.current_encounter.first_damage_dealer = companion
+                                        elif source_unit_id in self.current_encounter.pet_ownership:
                                             owner_id = self.current_encounter.pet_ownership[source_unit_id]
                                             owner_player = self.current_encounter.find_player_by_unit_id(owner_id)
                                             if owner_player:
@@ -1993,6 +2124,7 @@ class ESOLogAnalyzer(ListenerMixin):
                                         source_unit_id, hit_value, to_boss=enemy.is_boss,
                                         timestamp=entry.timestamp, result=combat_event_type,
                                         ability_id=entry.fields[6], target_id=target_unit_id,
+                                        accrue_companions=self.companion_accrual,
                                         damage_type=entry.fields[1], cast_id=entry.fields[5],
                                         cast_index=self.cast_index)
                                     
@@ -2009,7 +2141,9 @@ class ESOLogAnalyzer(ListenerMixin):
                     source_unit_id = entry.fields[7] if len(entry.fields) > 7 else ""
                     target_unit_id = entry.fields[17] if len(entry.fields) > 17 else ""
                     if hit_value > 0 and self.current_encounter and source_unit_id and target_unit_id:
-                        self.current_encounter.add_healing_to_player(source_unit_id, target_unit_id, hit_value)
+                        self.current_encounter.add_healing_to_player(
+                            source_unit_id, target_unit_id, hit_value,
+                            accrue_companions=self.companion_accrual)
                 except (ValueError, IndexError):
                     pass
 
@@ -2585,6 +2719,17 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # Each companion that was out during the fight, on a row of its own
+        # straight under its owner's (companions.py); one whose owner has
+        # no row is left out, like a player whose build never reached the log
+        by_owner = self._companion_rows(enc, ability_name, ability_icon)
+        if by_owner:
+            ordered = []
+            for row in entry.players:
+                ordered.append(row)
+                ordered.extend(by_owner.get(row['unit_id'], []))
+            entry.players = ordered
+
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
         # group size (a rule can be about the logging player alone)
@@ -2618,6 +2763,67 @@ class ESOLogAnalyzer(ListenerMixin):
         return entry
 
 
+    def _companion_out(self, enc: 'CombatEncounter', record: companions.CompanionRecord) -> bool:
+        """Whether one of the companion's units was out during the fight:
+        added before its end and not removed before its start."""
+        for unit_id in record.unit_ids:
+            unit = enc.enemies.get(unit_id)
+            if (unit is None or not unit.is_companion or unit.monster_id != record.monster_id
+                    or unit.added_at is None):
+                continue  # the unit id was handed to another unit since
+            if unit.added_at <= enc.end_time and (unit.removed_at is None
+                                                  or unit.removed_at >= enc.start_time):
+                return True
+        return False
+
+    def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon) -> dict[str, list[dict]]:
+        """The fight's companion rows by owner unit id (companions.py): every
+        companion that was out during the fight or dealt damage, healed or
+        died in it. A row has the keys a player's row has that make sense
+        for a companion (the dps figures and shares, the damage window's
+        data, health, the bar of skills it cast this session) and
+        'companion': True, 'owner_unit_id' and 'level'."""
+        damage = enc.damage
+        rows: dict[str, list[dict]] = {}
+        total = enc.total_damage
+        for key, record in enc.companions.items():
+            active = (key in damage.players or enc.player_healing.get(key)
+                      or enc.companion_deaths.get(key))
+            if not active and not self._companion_out(enc, record):
+                continue
+            dealt = enc.player_damage.get(key, 0)
+            boss = enc.player_boss_damage.get(key, 0)
+            figures = damage.player(key)
+            casts = self.companion_casts.get(
+                (self._scribing_player_key(record.owner_unit_id), record.monster_id), [])
+            slots = [self._ability_slot(ability_id) for ability_id in casts]
+            rows.setdefault(record.owner_unit_id, []).append({
+                'companion': True,
+                'owner_unit_id': record.owner_unit_id,
+                'role': companions.ROLE,
+                'name': record.name,
+                'character': '',
+                'level': record.level,
+                'class_abbr': f"lvl {record.level}" if record.level else '',
+                'class_name': f"level {record.level}" if record.level else '',
+                'dps': figures.dps(),
+                'boss_dps': figures.boss_dps(),
+                'dmg_pct': (dealt / total * 100) if total > 0 else 0,
+                'boss_pct': (boss / enc.boss_damage * 100) if enc.boss_damage > 0 else 0,
+                'damage': figures.snapshot(ability_name, ability_icon,
+                                           self._resolve_timeline_name, enc.start_time),
+                'h': record.max_health, 'm': 0, 's': 0,
+                'healing': enc.player_healing.get(key, 0),
+                'deaths': enc.companion_deaths.get(key, 0),
+                'unit_id': key,
+                'front_bar_slots': slots,
+                'front_bar': [slot['name'] for slot in slots],
+                'back_bar_slots': [], 'back_bar': [],
+                'sets': [], 'all_sets': [], 'skill_lines': [], 'class_lines': [],
+                'masteries': [], 'taunts': [], 'build_issues': [],
+            })
+        return rows
+
     def _pen_crit_fields(self, entry: FightHistoryEntry, enc: 'CombatEncounter') -> None:
         """Set entry.pen_crit and each player's 'pen_crit' (pen_crit.py): the
         player's own rows from their PLAYER_INFO line, the fight's debuffs
@@ -2630,8 +2836,10 @@ class ESOLogAnalyzer(ListenerMixin):
         debuffs are then credited in full (pen_crit.TRIAL_DUMMY_DEBUFFS)."""
         zone = pen_crit.zone_kind(self.current_zone_id, self.current_difficulty)
         damage = enc.damage
+        # A companion's row has no build to read and no buffs of its own to
+        # weigh (companions.py): its damage is in the group's buckets only
         player_buckets = {p['unit_id']: damage.player(p['unit_id']).target_buckets
-                          for p in entry.players}
+                          for p in entry.players if not p.get('companion')}
         units = enc.fight_units()
         # The Trial dummy keeps a trial group's debuffs on itself from its
         # spawn; a session begun later never sees them applied (pen_crit)
