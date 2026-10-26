@@ -275,6 +275,52 @@ class TestTimelineStrip(unittest.TestCase):
         self.strip.set_timeline(_sample_timeline(), tracked, dict(armour, intervals=[]))
         self.assertNotIn("Armour", self.strip._rows)
 
+    def test_the_armour_row_is_blank_outside_its_window(self):
+        """Issue #64: nothing is drawn before the first hit on the target,
+        the hover there says so, and the summary names the window."""
+        from PySide6.QtCore import QEvent, QPoint
+        from PySide6.QtGui import QHelpEvent
+        from PySide6.QtWidgets import QToolTip
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189 left",
+                  "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 9189,
+                  "lowest_left": 0, "no_debuff_pct": 0, "target": "Balorgh",
+                  "window": [[20_000, 30_000], [45_000, 55_000]], "window_ms": [20_000, 55_000],
+                  "drawn_ms": 20_000, "fight_ms": 60_000, "weighted_left": 7300,
+                  "explain": "A solo dungeon's bosses have 27,300 armour.", "intervals": [
+                      {"start_ms": 20_000, "end_ms": 30_000, "stacks": 18378, "debuff_pen": 8922,
+                       "debuffs": "Major Breach, Minor Breach", "target": "Balorgh", "source": ""},
+                      {"start_ms": 45_000, "end_ms": 55_000, "stacks": 0, "debuff_pen": 30000,
+                       "debuffs": "Major Breach, Crusher", "target": "Balorgh", "source": ""}]}
+        self.strip.set_timeline(_sample_timeline(), [], armour)
+        self.strip.show()
+        info = self.strip._row_info["Armour"]
+        image = self.strip.grab().toImage()
+        rect = self.strip._row_rect(self.strip._rows.index("Armour"))
+        color = info["color"].rgb()
+
+        def filled(ms):
+            x = int(self.strip._x_for_ms(ms))
+            return sum(1 for y in range(int(rect.top()), int(rect.bottom()) + 1)
+                       if image.pixel(x, y) == color)
+
+        self.assertEqual((filled(10_000), filled(40_000), filled(58_000)), (0, 0, 0))
+        self.assertGreater(filled(25_000), 1)
+
+        # Hover on a blank: why there is nothing there
+        def hover(ms):
+            pos = QPoint(int(self.strip._x_for_ms(ms)), int(rect.center().y()))
+            self.assertTrue(self.strip.event(QHelpEvent(QEvent.ToolTip, pos, self.strip.mapToGlobal(pos))))
+            return QToolTip.text()
+
+        self.assertIn("Balorgh not yet engaged", hover(10_000))
+        self.assertIn("no hits on Balorgh for this stretch", hover(40_000))
+        self.assertIn("after the last hit on Balorgh", hover(58_000))
+        # The summary names the window and gives the damage-weighted figure
+        html = self.strip.summary_html("Armour")
+        self.assertIn("from 20s to 55s, 20s of the 1m fight", html)
+        self.assertIn("0% of that time", html)
+        self.assertIn("7,300 left", html)
+
     def test_help_event_shows_tooltip(self):
         """QHelpEvent path end-to-end (task 2.2)."""
         from PySide6.QtCore import QEvent, QPoint

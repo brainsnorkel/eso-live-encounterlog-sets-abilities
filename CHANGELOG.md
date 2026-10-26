@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.14.2] - 2026-10-26
+
+### Changed
+- **Armour row over the time the target was fought** (#64): the buff timeline's `Armour` row is now drawn and measured over the seconds the group was hitting its target, not the whole fight, so a boss reached late no longer stands as a full bar until then. Xoryn's combat starts at the Defense Prisms and runs through Baron Rize and the gauntlet: over 33 Lucent Citadel logs he was added a median 7 minutes into a median 9-minute fight, and the row read `14,500` to `16,000 left` with "77% without a debuff" where over his own two to three minutes it is `2,565` to `5,978 left` and 0 to 1%. Nothing is drawn before the first hit, after the last, or through a gap of more than five seconds between hits (a dragon in the air), and hovering the blank says why; the label's average, the lowest point and the no-debuff share are over the drawn time; the click summary names the window when it is not the whole fight and adds the remainder weighed by the damage dealt, the build window's reading, which differs from the time average by a factor of two to seven even on a clean boss fight. A boss that returns as a new unit (Nahviintaas at each landing) keeps one row, and among a trash pack's equal-damage mobs the row follows the one fought longest rather than the last to spawn. Fights recorded before this change are drawn as they were, and the boss debuff rows above the Armour row are still measured over the whole fight
+
 ## [0.14.1] - 2026-10-26
 
 ### Added
