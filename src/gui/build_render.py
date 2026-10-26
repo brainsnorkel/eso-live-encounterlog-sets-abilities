@@ -60,6 +60,7 @@ PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
 ASSUMED_MARK = "assumed"
 NO_PEN_CRIT = "No penetration or critical damage figures for this fight."
 DEALT_TITLE = "Damage dealt"
+DEALT_ANCHOR = "damage-dealt"  # <a name>, where the section begins
 NO_DEALT = "This player dealt no damage in this fight."
 DEALT_NOT_RECORDED = "Damage kinds were not recorded for this fight."
 NO_DAMAGE_MEASURED = "no damage of this player's to weigh the fight's effects by"
@@ -364,7 +365,8 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
     heading = f"padding-top:7px;color:{muted};font-weight:bold"
     under = (f"border-bottom-style:solid;border-bottom-width:1px;"
              f"border-bottom-color:{_RULES[bool(dark)]}")
-    title = f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}</p>"
+    title = (f"<a name='{DEALT_ANCHOR}'></a>"
+             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}</p>")
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"

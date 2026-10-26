@@ -125,7 +125,7 @@ class TestCastIndex(unittest.TestCase):
 class TestTakenTally(unittest.TestCase):
 
     def test_the_dreadsail_death(self):
-        """@Badz7, Dreadsail Reef 2026-09-02: 29,626 damage in the window,
+        """A player's death, Dreadsail Reef 2026-09-02: 29,626 damage in the window,
         76% ticks of Ignite from a cast that hit others, all fire; 3,848
         absorbed, healed 2,419 against 45,236 overheal."""
         tally = TakenTally()

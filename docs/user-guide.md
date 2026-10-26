@@ -108,6 +108,8 @@ Click a player's name, in either view, to open their build for that fight. The n
 - **Damage dealt**: the kinds of the player's damage in the fight, the same three bars as the [death recap](#death-recaps) draws for damage taken: direct against over time (Master-at-Arms, Thaumaturge), area against single target (Biting Aura, Deadly Aim), Martial against Magical (Mighty, War Mage), with the damage types under them and what enemy shields absorbed named apart. For a player's own skills the area side comes from the casts (a cast that struck two or more units) and, against a lone boss where every cast strikes one unit, from UESP's skill table (Impulse is an area skill, Crystal Fragments single target); a line under the bars says how much of the damage the table classed. A side's label links to its star on ESO-Hub and names it on hover.
 - **Penetration** and **Critical damage**: where the player's figures come from and how they stand against the caps, see below.
 
+![The Damage dealt section of the build window](screencaps/build-damage-dealt.png)
+
 ### Penetration and critical damage
 
 Under the gear grid, two sections do what raid leads do with a spreadsheet of checkboxes: list every source of Offensive Penetration and of Critical Damage with its value, add them up, and compare the sum with the cap (18,200 penetration against the bosses and mobs of dungeons, trials and arenas, 9,100 overland, 27,300 against a solo dungeon's bosses; 125% critical damage, 155% with the Nightblade mastery Above and Beyond). Every row traces to something the log said, except the rows marked *assumed*.
