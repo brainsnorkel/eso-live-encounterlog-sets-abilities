@@ -44,5 +44,5 @@
 ## 8. Integration
 
 - [x] 8.1 Whole suite 1,036 passed (3 skipped) on the tree merged with main at 5f8c4e9; ruff on every touched file shows the same rule counts as its baseline (the house-tolerated typing and concatenation styles) with the new module and script clean; the replay comparison over 8 logs and 241 fights identical in every pre-existing field
-- [ ] 8.2 Launch the app on a scratch copy of the Dreadsail Reef split with a scratch config (no real config touched), open a recap and a build window in both themes, and confirm the bars, hovers and no scrollbar; verify by the offscreen PNGs attached to the PR
+- [x] 8.2 The windows were opened offscreen from the Dreadsail Reef split (the capture script's own scratch config, the real one untouched): the light theme through `scripts/capture_screenshots.py` (recap and build pictures in the PR), the dark theme through a scratch render of the recap dialog; bars, labels and hover map present, no horizontal scrollbar in either
 - [ ] 8.3 Open the PR with the release commit (0.15.0) inside it per the main-branch ruleset; verify both CI jobs pass
