@@ -230,7 +230,7 @@ Open **Settings…** from the toolbar.
 - **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
-- **Updates**: check GitHub for a newer release at startup and offer to install it. See [below](#automatic-updates).
+- **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
 - **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 - **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
 
@@ -238,7 +238,16 @@ Saving restarts monitoring: the history clears and the current session is replay
 
 ### Automatic updates
 
-At startup the app checks GitHub for a newer release. When one exists you are asked **Update now / Later / Skip this version**. Updating downloads the installer with a progress bar, closes the app, and hands over to the installer; settings are kept and the app restarts when it finishes. Nothing is installed without the prompt. On Linux the first button is **Open download page**, which opens the release page for you to download the new tarball.
+The app checks GitHub for a newer release a few seconds after it starts and every 15 minutes after that, so a release published during a raid night is noticed before the next one. Nothing pops up: when a newer release exists, an **Update to 0.15.0** button appears at the right end of the toolbar with an **ⓘ** beside it, and the window title ends with "0.15.0 available". The check costs nothing while nothing has changed (it asks GitHub only whether the release is still the one it last saw) and never delays the fight pane.
+
+![The Update button at the right end of the toolbar](screencaps/update-button.png)
+
+- **The button**: on Windows one click downloads the installer (progress in the status bar), then hands over to it and closes the app; your settings are kept and the app comes back when the installer finishes. Nothing is downloaded or installed until you click, so leave it until the pull is over. On Linux the button reads **Get 0.15.0** and opens the release page for you to download the new tarball.
+- **The ⓘ**: hover for the version and its date; click for the release notes, with links to the release page and the changelog, and **Don't show this version again**, which hides the offer until a later release. Saving Settings with the check on shows a skipped version again.
+
+![The release notes popup](screencaps/update-notes.png)
+
+If a download fails, the button comes back and the status bar says why.
 
 ### Automatic log archiving
 

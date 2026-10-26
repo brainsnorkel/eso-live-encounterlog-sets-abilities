@@ -1538,7 +1538,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:479](../src/gui/main_window.py#L479)*
+*[src/gui/main_window.py:501](../src/gui/main_window.py#L501)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1548,9 +1548,90 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:841](../src/gui/main_window.py#L841)*
+*[src/gui/main_window.py:920](../src/gui/main_window.py#L920)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+## Updates: the schedule, the conditional request and the button
+
+### src/update_check.py
+
+*[src/update_check.py:1](../src/update_check.py#L1)*
+
+Update check against GitHub releases (stdlib only, no extra dependencies).
+
+Queries the repository's latest release and compares its tag against the
+running version. Network problems are never fatal: every failure is a
+result the caller can read, and the app carries on.
+
+Design: the check repeats every 15 minutes while the app runs (issue #56,
+2026-10-26; gui/update_poller.py has the schedule), so it is conditional.
+GitHub returns an ``ETag`` with every reply; sent back as
+``If-None-Match``, an unchanged release is answered ``304 Not Modified``
+with no body. GitHub limits unsigned requests to 60 an hour per address
+and does not count a 304 against that limit, so four checks an hour cost
+nothing while nothing changes, and a household of several copies behind
+one address stays far under the limit; a plain GET each time would spend
+four of the 60 per copy for a few KB of unchanged JSON. A limit reply
+(403 or 429) names a reset time in ``X-RateLimit-Reset`` (epoch seconds)
+or ``Retry-After`` (seconds); the result carries it, capped at an hour
+from now, and the poller makes no request before then. The ETag is kept
+for the run only, so each start sends one full request.
+
+The release body is GitHub's generated notes (one line per pull request
+and a compare link), shown in the ⓘ popup beside the Update button; the
+release date comes from ``published_at``.
+
+### src/gui/update_poller.py
+
+*[src/gui/update_poller.py:1](../src/gui/update_poller.py#L1)*
+
+The update poller: when the app asks GitHub for a newer release, and on
+which thread.
+
+Design: the check runs 3 s after the window is built and then every
+``update.check_interval_min`` minutes (default 15), for as long as the
+Settings box is ticked, so an app that runs through a raid night learns of
+a release published after it started. Issue #56 (2026-10-26) asked for
+this in place of the one check at startup and the pop-up it opened.
+
+Each check is a conditional request: the ETag GitHub returned with the last
+full reply goes back as If-None-Match, and an unchanged release is answered
+304 with no body, which GitHub does not count against its limit of 60
+unsigned requests an hour per address (update_check has the figures). A
+rate-limit reply names a reset time, and no check runs until then.
+
+The network call and the installer download run on a daemon Python thread,
+not on the engine thread as they did until 0.14.2: there a wedged network
+stalled fight updates for the 10-second timeout, and a download for its
+whole length; once per run that was bearable, every 15 minutes it is not.
+The thread calls update_check functions only, creates no Qt object and
+holds no widget, and hands its result back through a signal carrying plain
+data, which Qt queues to this object's thread, the UI thread (see
+engine_worker.py and the 0.6.x settings crash for why a Qt object must
+never be freed off the UI thread). One check or download runs at a time; a
+tick during one is skipped. A result that arrives after stop() is dropped
+(the generation counter), so a closing window never hears from a late
+thread.
+
+start() clears the ETag so its first request is a full one: Settings saved
+with the check on also clears a skipped version, and a 304 would otherwise
+hide the release that was skipped and is wanted again.
+
+### src/gui/update_popup.py
+
+*[src/gui/update_popup.py:1](../src/gui/update_popup.py#L1)*
+
+The ⓘ popup beside the Update button: the release on offer, its date, its
+notes as GitHub publishes them, links to the release page and the
+changelog, and the way to skip the version. A Qt.Popup frame like
+BuildIssuesPopup: it closes on a click elsewhere or Esc and deletes itself,
+and nothing keeps a reference to it.
+
+The notes are GitHub's generated release notes (one line per pull request
+with its link, and a compare link), rendered from markdown; the
+maintainer chose them on 2026-10-26 over the CHANGELOG entries, which run
+to a dozen lines each and are one click away through the Changelog link.
 
 ## Taunt marks that pulse in a text page
 

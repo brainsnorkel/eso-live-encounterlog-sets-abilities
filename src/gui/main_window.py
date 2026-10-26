@@ -15,8 +15,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
-    QTextEdit, QVBoxLayout, QWidget,
+    QMainWindow, QMessageBox, QProgressBar, QSizePolicy, QSplitter,
+    QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
@@ -30,14 +30,17 @@ from gui.death_render import death_tooltips
 from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
-    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, muted_color, pen_crit_tooltips, render_html, render_plain_text,
     summary_line,
 )
 from gui.fight_view import FightView
 from gui.settings_dialog import SettingsDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
+from gui.update_poller import UpdatePoller
+from gui.update_popup import UpdateNotesPopup
 from pen_crit import armour_row
+from update_check import format_release_date
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -94,12 +97,12 @@ class MainWindow(QMainWindow):
     request_archive = Signal()
     request_restart = Signal()
     request_review = Signal(str)
-    request_update_download = Signal(str, str)  # url, asset name
 
     def __init__(self, config: AppConfig):
         super().__init__()
         self.config = config
-        self.setWindowTitle(f"ESO Log Tail v{__version__}")
+        self._update = None  # the UpdateInfo on offer (the toolbar button), or None
+        self._apply_title()
         self.resize(1080, 720)
 
         self._fights = []          # live session FightHistoryEntry list
@@ -118,7 +121,8 @@ class MainWindow(QMainWindow):
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
 
         self._build_ui()
-        self._build_worker()
+        self._build_update_poller()
+        self._build_worker()  # last: the engine thread starts here
 
         # Follow live theme switches (e.g. Windows auto dark mode after
         # sunset): rendered HTML embeds theme colors, so it must re-render.
@@ -147,6 +151,7 @@ class MainWindow(QMainWindow):
         self._dark = dark
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
+        self._style_update_buttons()
         self.timeline_strip.update()
         if self._death_dialog is not None:
             self._death_dialog.refresh(dark)
@@ -209,6 +214,26 @@ class MainWindow(QMainWindow):
         about_action = QAction("About…", self)
         about_action.triggered.connect(self._show_about)
         toolbar.addAction(about_action)
+
+        # The Update button and its ⓘ at the right end, shown only while a
+        # newer release is on offer (issue #56: a button, never a pop-up).
+        # Toolbar widgets are shown and hidden through their actions: the
+        # toolbar's layout shows a widget again that was hidden directly
+        stretch = QWidget()
+        stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(stretch)
+        self.update_button = QToolButton()
+        self.update_button.setAutoRaise(True)
+        self.update_button.clicked.connect(self._on_update_clicked)
+        self.update_action = toolbar.addWidget(self.update_button)
+        self.update_action.setVisible(False)
+        self.update_info_button = QToolButton()
+        self.update_info_button.setAutoRaise(True)
+        self.update_info_button.setText(ISSUES_CUE)
+        self.update_info_button.clicked.connect(self._show_update_notes)
+        self.update_info_action = toolbar.addWidget(self.update_info_button)
+        self.update_info_action.setVisible(False)
+        self._style_update_buttons()
 
         splitter = QSplitter(Qt.Horizontal)
         self.history_list = QListWidget()
@@ -322,14 +347,10 @@ class MainWindow(QMainWindow):
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
         self.worker.review_loaded.connect(self._on_review_loaded)
         self.worker.parse_progress.connect(self._on_parse_progress)
-        self.worker.update_available.connect(self._on_update_available)
-        self.worker.update_ready.connect(self._on_update_ready)
-        self.worker.update_failed.connect(self._on_update_failed)
 
         requests = ((self.request_archive, self.worker.archive_now),
                     (self.request_restart, self.worker.restart_monitoring),
-                    (self.request_review, self.worker.open_review),
-                    (self.request_update_download, self.worker.download_update))
+                    (self.request_review, self.worker.open_review))
         for signal, slot in requests:
             signal.connect(slot)
 
@@ -356,6 +377,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._ticker.stop()
+        self.update_poller.stop()  # a thread still checking is ignored
         self._save_window_layout()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
@@ -515,71 +537,127 @@ class MainWindow(QMainWindow):
 
     # ---- updates ----
 
-    def _prompt_update(self, info) -> str:
-        """Ask about an available update: 'update' | 'later' | 'skip'."""
-        box = QMessageBox(self)
-        box.setWindowTitle("Update available")
-        box.setIcon(QMessageBox.Information)
-        box.setText(f"ESO Log Tail {info.version} is available "
-                    f"(you have {__version__}).")
-        notes = (info.notes or "").strip()
-        if notes:
-            box.setDetailedText(notes)
-        update_btn = box.addButton(
-            "Update now" if HAS_INSTALLER else "Open download page",
-            QMessageBox.AcceptRole)
-        box.addButton("Later", QMessageBox.RejectRole)
-        skip_btn = box.addButton("Skip this version", QMessageBox.DestructiveRole)
-        box.setDefaultButton(update_btn)
-        box.exec()
-        clicked = box.clickedButton()
-        box.deleteLater()  # on the UI thread, as for the settings dialog
-        if clicked is update_btn:
-            return "update"
-        if clicked is skip_btn:
-            return "skip"
-        return "later"
+    def _build_update_poller(self):
+        """The schedule and the threads behind the Update button (see
+        gui/update_poller.py), started when Settings has the check on. No
+        dialog anywhere in this path: a release found shows as the button,
+        the ⓘ and the title; a failure as a status-bar message."""
+        self.update_poller = UpdatePoller(self.config, __version__, self)
+        self.update_poller.update_available.connect(self._on_update_available)
+        self.update_poller.update_gone.connect(self._on_update_gone)
+        self.update_poller.download_progress.connect(self._on_parse_progress)
+        self.update_poller.update_ready.connect(self._on_update_ready)
+        self.update_poller.update_failed.connect(self._on_update_failed)
+        if bool(self.config.get("update.check_enabled", True)):
+            self.update_poller.start()
+
+    def _apply_update_settings(self):
+        """Settings saved: the check on starts a full check now and the
+        schedule; off stops both and withdraws the offer."""
+        if bool(self.config.get("update.check_enabled", True)):
+            self.update_poller.start()
+        else:
+            self.update_poller.stop()
+            self._on_update_gone()
+
+    def _apply_title(self):
+        title = f"ESO Log Tail v{__version__}"
+        if self._update is not None:
+            title += f" · {self._update.version} available"
+        self.setWindowTitle(title)
+
+    def _style_update_buttons(self):
+        self.update_info_button.setStyleSheet(
+            f"QToolButton {{ color: {link_color(self._dark)}; font-weight: bold; }}")
+
+    def _update_button_label(self) -> str:
+        version = self._update.version
+        return f"Update to {version}" if HAS_INSTALLER else f"Get {version}"
 
     @Slot(object)
     def _on_update_available(self, info):
-        choice = self._prompt_update(info)
-        if choice == "update" and not HAS_INSTALLER:
+        """A newer release: the button, the ⓘ and the title say so.
+        Nothing is downloaded until the button is clicked."""
+        self._update = info
+        self.update_button.setText(self._update_button_label())
+        self.update_button.setEnabled(True)
+        if HAS_INSTALLER:
+            hint = ("Click to download and install it now: the app closes for "
+                    "the installer and comes back when it is done. Nothing "
+                    "happens until you click.")
+        else:
+            hint = "Click to open the release page and download it."
+        self.update_button.setToolTip(
+            f"ESO Log Tail {info.version} is available (you have {__version__}). {hint}")
+        released = format_release_date(info.published)
+        when = f", released {released}" if released else ""
+        self.update_info_button.setToolTip(f"Release notes for {info.version}{when}")
+        self.update_action.setVisible(True)
+        self.update_info_action.setVisible(True)
+        self._apply_title()
+
+    @Slot()
+    def _on_update_gone(self):
+        """No newer release any more (withdrawn, skipped, or the check
+        turned off): the button, the ⓘ and the title suffix go."""
+        self._update = None
+        self.update_action.setVisible(False)
+        self.update_info_action.setVisible(False)
+        self._apply_title()
+
+    def _on_update_clicked(self):
+        """The button: on Windows the download, and the installer as soon
+        as it lands (one click, the maintainer's choice of 2026-10-26);
+        elsewhere the release page."""
+        info = self._update
+        if info is None:
+            return
+        if not HAS_INSTALLER:
             QDesktopServices.openUrl(QUrl(info.page_url))
-        elif choice == "update":
+            return
+        if not self.update_poller.download(info.installer_url, info.installer_name):
             self.statusBar().showMessage(
-                f"Downloading update {info.version}…")
-            self.request_update_download.emit(info.installer_url,
-                                              info.installer_name)
-        elif choice == "skip":
-            self.config.set("update.skip_version", info.version)
-            self.config.save()
+                "Update check in progress; try again in a moment", 5000)
+            return
+        self.update_button.setText(f"Downloading {info.version}…")
+        self.update_button.setEnabled(False)
 
     @Slot(str)
     def _on_update_ready(self, installer_path):
-        reply = QMessageBox.question(
-            self, "Install update",
-            "The update has downloaded. Install it now?\n\n"
-            "ESO Log Tail will close and the installer will take over; "
-            "your settings are kept and monitoring resumes when it "
-            "relaunches.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if reply != QMessageBox.Yes:
-            self.statusBar().showMessage(
-                f"Update downloaded to {installer_path} — run it when ready",
-                15000)
-            return
+        """The installer has landed: hand over to it and close. The click on
+        the button was the consent; settings are kept and the installer
+        relaunches the app."""
         import subprocess
         try:
             subprocess.Popen([installer_path], close_fds=True)
         except OSError as exc:
-            QMessageBox.warning(self, "Update",
-                                f"Could not start the installer:\n{exc}")
+            self._on_update_failed(f"could not start the installer: {exc}")
             return
         self.close()
 
     @Slot(str)
     def _on_update_failed(self, reason):
+        if self._update is not None:
+            self.update_button.setText(self._update_button_label())
+            self.update_button.setEnabled(True)
         self.statusBar().showMessage(f"Update {reason}", 15000)
+
+    def _show_update_notes(self):
+        """The ⓘ: the release notes in a popup at the pointer; its skip
+        link withdraws the offer for this version. The popup owns itself
+        (Qt.Popup, deleted on close)."""
+        if self._update is None:
+            return
+        popup = UpdateNotesPopup(self._update, __version__, self._dark, self)
+        popup.skip_requested.connect(self._skip_update)
+        popup.show_at(QCursor.pos())
+
+    def _skip_update(self):
+        if self._update is None:
+            return
+        self.config.set("update.skip_version", self._update.version)
+        self.config.save()
+        self._on_update_gone()
 
     # ---- freshness ----
 
@@ -832,6 +910,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
+            self._apply_update_settings()
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
             # The history is cleared when the engine reaches the restart
             # (see _on_monitoring_restarting); until then its fights are

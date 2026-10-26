@@ -16,6 +16,24 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
 POPUP_WIDTH = 460  # wide enough for a rule's sentence or two per line
 
 
+def place_popup(frame, pos: QPoint) -> None:
+    """Show *frame* with its top-left corner at *pos* (the pointer), pulled
+    onto the screen when it would overhang an edge. A frame's size is only
+    settled once it is shown, so it is placed after showing. Shared with
+    the Update button's notes popup."""
+    frame.move(pos)
+    frame.show()
+    frame.adjustSize()
+    screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+    if screen is not None:
+        area = screen.availableGeometry()
+        geometry = frame.frameGeometry()
+        x = max(area.left(), min(pos.x(), area.right() - geometry.width() + 1))
+        y = max(area.top(), min(pos.y(), area.bottom() - geometry.height() + 1))
+        if (x, y) != (pos.x(), pos.y()):
+            frame.move(x, y)
+
+
 class BuildIssuesPopup(QFrame):
 
     def __init__(self, html: str, parent=None):
@@ -33,20 +51,9 @@ class BuildIssuesPopup(QFrame):
         layout.addWidget(self.label)
 
     def show_at(self, pos: QPoint) -> None:
-        """Show with the top-left corner at *pos* (the pointer), pulled onto
-        the screen when it would overhang an edge. The frame's size is only
-        settled once it is shown, so it is placed after showing."""
-        self.move(pos)
-        self.show()
-        self.adjustSize()
-        screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
-        if screen is not None:
-            area = screen.availableGeometry()
-            frame = self.frameGeometry()
-            x = max(area.left(), min(pos.x(), area.right() - frame.width() + 1))
-            y = max(area.top(), min(pos.y(), area.bottom() - frame.height() + 1))
-            if (x, y) != (pos.x(), pos.y()):
-                self.move(x, y)
+        """Show with the top-left corner at *pos* (the pointer), kept on
+        the screen (place_popup)."""
+        place_popup(self, pos)
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key_Escape:

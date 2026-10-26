@@ -18,6 +18,8 @@ time, so the pictures stay in step with the app:
     build-window.png                one player's build window
     build-pen-crit.png              the same window scrolled to its penetration and crit sections
     build-issues.png                the (i) popup of a player's possible build issues
+    update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
+    update-notes.png                the ⓘ popup with that release's notes
     damage-window.png               one player's damage by ability and target
     dps-graph.png                   the dps over time graph
     death-recap.png                 one player's death recap
@@ -170,6 +172,36 @@ def main():
             pump(0.5)
     else:
         print("  (no player with a build issue in this fight: build-issues.png not written)")
+
+    # The Update button and its ⓘ popup, from a crafted release one patch up
+    from PySide6.QtWidgets import QToolBar
+
+    from gui.update_popup import UpdateNotesPopup
+    from update_check import GITHUB_REPO, UpdateInfo
+    from version import __version__
+    parts = __version__.split(".")
+    next_version = ".".join(parts[:-1] + [str(int(parts[-1]) + 1)])
+    win._on_update_available(UpdateInfo(
+        version=next_version, tag=f"v{next_version}", installer_url="",
+        installer_name=f"esolog-tail-windows-setup-{next_version}.exe",
+        notes=(f"## What's Changed\n"
+               f"* Updates: a toolbar button, checked every 15 minutes, no pop-up (#56) "
+               f"by @brainsnorkel in https://github.com/{GITHUB_REPO}/issues/56\n\n\n"
+               f"**Full Changelog**: https://github.com/{GITHUB_REPO}/compare/"
+               f"v{__version__}...v{next_version}"),
+        page_url=f"https://github.com/{GITHUB_REPO}/releases/tag/v{next_version}",
+        published=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+    pump(1)
+    save(win.findChild(QToolBar), "update-button.png")
+    win._show_update_notes()
+    pump(1)
+    popup = next((w for w in app.topLevelWidgets() if isinstance(w, UpdateNotesPopup)), None)
+    if popup is not None:
+        save(popup, "update-notes.png")
+        popup.close()
+        pump(0.5)
+    win._on_update_gone()
+    pump(0.5)
 
     # Damage window for the same player
     if players:

@@ -68,10 +68,15 @@ class TestWorkerTeardown(unittest.TestCase):
         freed_on = []
         worker.destroyed.connect(lambda *_: freed_on.append(threading.current_thread().name),
                                  Qt.DirectConnection)
-        waiting = []
-        worker.waiting_for_log.connect(waiting.append)
-        # The worker has started on its own thread and is waiting for the log
-        self.assertTrue(self._pump_until(lambda: waiting), "the engine thread never started")
+        # The worker has started on its own thread and is waiting for the log.
+        # Read through the window's own slot, connected before the thread
+        # started: a connection made here can miss the signal, which the
+        # engine emits within a millisecond of starting on a fast runner
+        # (seen on the Linux runner once the window built more before it)
+        def started():
+            return win._last_placeholder.startswith("Waiting for Encounter.log")
+
+        self.assertTrue(self._pump_until(started), "the engine thread never started")
 
         win.close()   # stops the engine thread and waits for it, as at exit
         self.assertFalse(win.worker_thread.isRunning())

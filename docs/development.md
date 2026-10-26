@@ -43,6 +43,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `update_check.py`, `autostart.py` | The GitHub release check; the start-at-login toggle. |
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
+| `gui/update_poller.py`, `gui/update_popup.py` | The 15-minute release check and the installer download on their own thread; the ⓘ popup with the release notes. |
 | `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window and its dialogs, the example tracked-effect rules picker among them. |
 | `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
 | `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache, and the small glyphs drawn after the dps figures to show they can be clicked. |
@@ -182,8 +183,6 @@ Two documents are built from the app and the code rather than written by hand, s
 1. Changes add their notes under `## [Unreleased]` at the top of `CHANGELOG.md` as they are made.
 2. The release commit sets the version in `src/version.py` (`__version__` and `__version_info__`) and renames `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`.
 3. Push an annotated tag `vX.Y.Z`.
-
-A `v1.0.0` tag from September 2025, the terminal era, is still in the repository and sorts above the current `v0.x` releases in `git tag --sort=-v:refname`. It has no GitHub release, so the update check ignores it; read the current version from `src/version.py` or `gh release list`, not from the highest tag.
 
 The tag runs `.github/workflows/build-installers.yml`: tests, then the Windows installer and portable zip, then the Linux tarball (with a start-up smoke test under xvfb), then a GitHub release carrying all three files. A failure in either build stops the release. The app's update check reads that release, so a published tag is what users are offered.
 
