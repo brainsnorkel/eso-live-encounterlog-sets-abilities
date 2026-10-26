@@ -138,6 +138,11 @@ python scripts\generate_weapon_types.py
 :: database (network access)
 python scripts\generate_armor_weights.py
 
+:: Player skills' target kinds (area or single target) for the kinds of damage
+:: in the death recap and build windows, from the UESP skill table the esobuild
+:: export caches under build\esobuild-assets\sources (no request; --fetch makes one)
+python scripts\generate_ability_targets.py
+
 :: What each set does for penetration and critical damage, for the build
 :: window's two sections, from UESP's set summary (network access; or --from a
 :: reply of theirs already saved)

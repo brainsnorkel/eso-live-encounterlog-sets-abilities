@@ -299,5 +299,138 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual(recap['events'], [])
 
 
+def _typed(ts, result, damage_type, hit, source, target=None, overflow=0, cast=900,
+           ability=12437):
+    """A COMBAT_EVENT line with its damage type (see damage_kinds)."""
+    return (f"{ts},COMBAT_EVENT,{result},{damage_type},1,{hit},{overflow},{cast},{ability},"
+            f"{source},{target if target is not None else '*'}")
+
+
+PLAYER_INFO = [f'10001,PLAYER_INFO,{unit},[45549],[1],[],[12437],[12437]' for unit in (1, 2)]
+
+
+def _taken(analyzer, fight_index, unit_id):
+    fight = analyzer.fight_history.fights[fight_index]
+    return next(p for p in fight.players if p['unit_id'] == unit_id)['taken']
+
+
+class TestKindsInTheRecap(unittest.TestCase):
+    """Each row's damage type and area rule, the recap's overheal sum, and
+    the player's whole-fight tally of damage taken (damage_kinds)."""
+
+    def test_rows_carry_their_kinds_and_the_fight_is_tallied(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT', *PLAYER_INFO,
+            # One cast of the boss lands on both players: area
+            _typed(15000, 'DAMAGE', 'SHOCK', 3000, BOSS, _player(1, 17000), cast=901),
+            _typed(15000, 'DAMAGE', 'SHOCK', 3000, BOSS, _player(2, 17000), cast=901),
+            _typed(17000, 'DOT_TICK', 'FIRE', 1000, BOSS, _player(1, 16000), cast=902, ability=777),
+            # A pure overheal (no row, but counted) and a HoT that landed
+            _typed(18000, 'HEAL', 'GENERIC', 0, _player(2, 20000), _player(1, 16000),
+                   overflow=5000, cast=903, ability=40079),
+            _typed(18500, 'HOT_TICK', 'GENERIC', 500, _player(2, 20000), _player(1, 16500),
+                   overflow=200, cast=904, ability=40079),
+            _typed(19000, 'DAMAGE_SHIELDED', 'GENERIC', 800, BOSS, _player(1, 16500),
+                   cast=905, ability=555),
+            _typed(20000, 'DIED', 'COLD', 0, BOSS, _player(1, 0), cast=906),
+            _typed(20001, 'DAMAGE', 'COLD', 16500, BOSS, _player(1, 0), overflow=2000, cast=906),
+            # The killing cast lands on the other player too, within the grace
+            _typed(20050, 'DAMAGE', 'COLD', 16500, BOSS, _player(2, 500), cast=906),
+            '70000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        rows = recap['events']
+        self.assertEqual([r['result'] for r in rows],
+                         ['DAMAGE', 'DOT_TICK', 'HOT_TICK', 'DAMAGE_SHIELDED', 'DAMAGE'])
+        self.assertEqual([r['damage_type'] for r in rows],
+                         ['SHOCK', 'FIRE', 'GENERIC', 'GENERIC', 'COLD'])
+        self.assertEqual([(r['area'], r['area_rule'], r['targets_hit']) for r in rows],
+                         [(True, 'cast', 2), (False, 'none', 1), (False, '', 0),
+                          (False, '', 0), (True, 'cast', 2)])
+        self.assertEqual(recap['overheal'], 5200)
+        self.assertEqual((rows[2]['amount'], rows[2]['overflow']), (500, 200))
+
+        taken = _taken(analyzer, 0, '1')
+        self.assertEqual(taken['total'], 20500)
+        self.assertEqual((taken['direct'], taken['dot'], taken['fall']), (19500, 1000, 0))
+        # The killing blow was counted single until its cast struck player 2
+        self.assertEqual((taken['area'], taken['single']), (19500, 1000))
+        self.assertEqual((taken['martial'], taken['magical'], taken['oblivion']), (0, 20500, 0))
+        self.assertEqual(taken['types'], {'shock': 3000, 'fire': 1000, 'frost': 16500})
+        # The blow's ability had struck both players on cast 901, so the
+        # tally classed it by the session as it landed; the row, classed
+        # again once cast 906 struck player 2, reads the cast
+        self.assertEqual(taken['rules'], {'cast': 3000, 'session': 16500, 'none': 1000})
+        self.assertEqual((taken['absorbed'], taken['healed'], taken['heal_hot'],
+                          taken['heal_direct'], taken['overheal'], taken['overkill']),
+                         (800, 500, 500, 0, 5200, 2000))
+        self.assertEqual((taken['first_ms'], taken['last_ms']), (15000, 20001))
+        self.assertEqual([(a['name'], a['damage'], a['area'], a['source']) for a in taken['abilities']],
+                         [('Toppling Blow', 19500, 19500, 'Test Boss'),
+                          ('Ability 777', 1000, 0, 'Test Boss')])
+        self.assertEqual(taken['abilities'][1]['types'], {'fire': 1000})
+        other = _taken(analyzer, 0, '2')
+        self.assertEqual((other['total'], other['area'], other['overkill']), (19500, 19500, 0))
+
+    def test_a_late_hit_of_the_same_cast_reclasses_the_row_when_the_fight_ends(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT', *PLAYER_INFO,
+            _typed(19000, 'DAMAGE', 'SHOCK', 5000, BOSS, _player(1, 15000), cast=950),
+            _typed(20000, 'DIED', 'PHYSICAL', 0, BOSS, _player(1, 0), cast=951, ability=778),
+            _typed(20001, 'DAMAGE', 'PHYSICAL', 15000, BOSS, _player(1, 0), overflow=100,
+                   cast=951, ability=778),
+            # Five seconds on, the same ground effect reaches the other player
+            _typed(25000, 'DAMAGE', 'SHOCK', 5000, BOSS, _player(2, 15000), cast=950),
+            '70000,END_COMBAT',
+        ])
+        rows = analyzer.fight_history.fights[0].death_recaps[0]['events']
+        self.assertEqual([(r['area'], r['area_rule'], r['targets_hit']) for r in rows],
+                         [(True, 'cast', 2), (False, 'none', 1)])
+        taken = _taken(analyzer, 0, '1')
+        self.assertEqual((taken['area'], taken['single']), (5000, 15000))
+
+    def test_a_repeat_pull_reads_the_ability_as_area_from_the_session(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT', *PLAYER_INFO,
+            _typed(15000, 'DAMAGE', 'FIRE', 4000, BOSS, _player(1, 16000), cast=960, ability=888),
+            _typed(15000, 'DAMAGE', 'FIRE', 4000, BOSS, _player(2, 16000), cast=960, ability=888),
+            '30000,END_COMBAT',
+            '100000,BEGIN_COMBAT', *PLAYER_INFO,
+            _typed(105000, 'DAMAGE', 'FIRE', 4000, BOSS, _player(1, 16000), cast=970, ability=888),
+            _typed(106000, 'DIED', 'FIRE', 0, BOSS, _player(1, 0), cast=971),
+            _typed(106001, 'DAMAGE', 'FIRE', 16000, BOSS, _player(1, 0), overflow=10, cast=971),
+            '130000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        rows = second.death_recaps[0]['events']
+        self.assertEqual([(r['area'], r['area_rule'], r['targets_hit']) for r in rows],
+                         [(True, 'session', 1), (False, 'none', 1)])
+        # Each fight's tally is its own
+        self.assertEqual(_taken(analyzer, 0, '1')['total'], 4000)
+        self.assertEqual(_taken(analyzer, 1, '1')['total'], 20000)
+        self.assertEqual(_taken(analyzer, 1, '1')['rules'], {'session': 4000, 'none': 16000})
+
+    def test_a_players_own_skill_falls_back_to_the_bundled_table(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT', *PLAYER_INFO,
+            _typed(17000, 'DAMAGE', 'MAGIC', 2000, _player(2, 20000), _player(1, 18000),
+                   cast=980, ability=28800),     # Impulse: Area in the table
+            _typed(18000, 'DAMAGE', 'MAGIC', 2000, _player(2, 20000), _player(1, 16000),
+                   cast=981, ability=46324),     # Crystal Fragments: Enemy
+            _typed(19000, 'DAMAGE', 'MAGIC', 2000, _player(2, 20000), _player(1, 14000),
+                   cast=982, ability=999999),    # a player ability the table lacks
+            _typed(19500, 'DAMAGE', 'MAGIC', 2000, BOSS, _player(1, 12000),
+                   cast=983, ability=28800),     # a monster never asks the table
+            _typed(20000, 'DIED', 'MAGIC', 0, BOSS, _player(1, 0), cast=984),
+            _typed(20001, 'DAMAGE', 'MAGIC', 12000, BOSS, _player(1, 0), cast=984),
+            '70000,END_COMBAT',
+        ])
+        rows = analyzer.fight_history.fights[0].death_recaps[0]['events']
+        self.assertEqual([(r['area'], r['area_rule']) for r in rows],
+                         [(True, 'table'), (False, 'table'), (False, 'none'),
+                          (False, 'none'), (False, 'none')])
+        self.assertEqual(_taken(analyzer, 0, '1')['rules'], {'table': 4000, 'none': 16000})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -24,6 +24,7 @@ from fight_history import FightHistory, FightHistoryEntry
 from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
+from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from build_issues import (
@@ -441,6 +442,9 @@ class CombatEncounter:
         # When the hits happened (the spans the dps figures divide by) and
         # each player's breakdown by ability and target (damage_stats)
         self.damage = FightDamage()
+        # Each player's damage taken and healing received by kind, for the
+        # death recap window's whole-fight block (damage_kinds.TakenTally)
+        self.taken: Dict[str, TakenTally] = {}
         self.player_healing: Dict[str, int] = {}  # Track healing done to OTHER players
         self.enemy_damage: Dict[str, int] = {}  # Track damage dealt to each enemy
         self.total_health_damaged: int = 0  # Track total health of all damaged enemies
@@ -581,9 +585,17 @@ class CombatEncounter:
         if short_unit_id in self.players:
             self.players[short_unit_id].add_long_unit_id(long_unit_id)
 
+    def taken_for(self, player_unit_id: str) -> TakenTally:
+        """The player's tally of damage taken in this fight, started empty."""
+        tally = self.taken.get(player_unit_id)
+        if tally is None:
+            tally = self.taken[player_unit_id] = TakenTally()
+        return tally
+
     def add_damage_to_player(self, unit_id: str, damage: int, to_boss: bool = False,
                              timestamp: Optional[int] = None, result: str = 'DAMAGE',
-                             ability_id: str = '', target_id: str = ''):
+                             ability_id: str = '', target_id: str = '',
+                             damage_type: str = '', cast_id: str = '', cast_index=None):
         """Credit damage dealt by *unit_id* to the player it belongs to:
         the player themself, or the owner of a pet (see
         track_pet_ownership). Damage from a unit that is neither is
@@ -592,7 +604,12 @@ class CombatEncounter:
         the game flags as a boss, so the hit also counts as boss damage.
         With the hit's *timestamp*, *result*, *ability_id* and *target_id*
         the hit also goes into the fight's damage record (damage_stats):
-        the spans the dps figures divide by, and the breakdowns."""
+        the spans the dps figures divide by, and the breakdowns. With its
+        *damage_type*, *cast_id* and the analyzer's *cast_index* the record
+        also keeps the kinds of the damage (damage_kinds): the area rule
+        reads the cast, the session and the player-skill table, and a hit
+        counted single is moved to area should its cast strike a second
+        unit later."""
         # Find the player this unit belongs to
         player = self.find_player_by_unit_id(unit_id)
         if player is None and unit_id in self.pet_ownership:
@@ -605,8 +622,16 @@ class CombatEncounter:
             self.player_boss_damage[player.unit_id] = (
                 self.player_boss_damage.get(player.unit_id, 0) + damage)
         if timestamp is not None:
+            area = watch = cast_key = None
+            if cast_index is not None:
+                is_area, rule, _targets = area_of(cast_index, unit_id, cast_id,
+                                                  str(ability_id), True)
+                area = (is_area, rule)
+                cast_key = (str(unit_id), str(cast_id))
+                watch = lambda callback: cast_index.watch(unit_id, cast_id, callback)  # noqa: E731
             self.damage.note(player.unit_id, timestamp, damage, result, str(ability_id),
-                             not player.has_unit_id(unit_id), target_id, to_boss)
+                             not player.has_unit_id(unit_id), target_id, to_boss,
+                             damage_type, area, cast_key, watch)
 
     def add_healing_to_player(self, source_unit_id: str, target_unit_id: str, heal_value: int):
         """Track healing done by source player to a DIFFERENT player."""
@@ -807,9 +832,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # tracking id: a TAUNTED event names its skill through it
         self._cast_abilities: Dict[str, str] = {}
 
+        # Which units each cast struck, for the area rule of the kinds of
+        # damage (damage_kinds): shared by the recap recorder, the damage
+        # record and the per-player tally of damage taken
+        self.cast_index = CastIndex()
         # Death recaps: the last seconds before each player death
         self.death_recap_recorder = DeathRecapRecorder(
-            self._resolve_recap_unit, self._resolve_recap_ability)
+            self._resolve_recap_unit, self._resolve_recap_ability, self.cast_index)
         self.fight_death_recaps: List[dict] = []  # this fight's (reset with fight_deaths)
         # The fight entry just emitted and its start time, for a death that
         # is logged after END_COMBAT (see LATE_DEATH_GRACE_MS)
@@ -1401,6 +1430,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
+            self.cast_index.reset()
             self.scribing.forget_players("unit:")
 
             # Reset all tracking - create new encounter for this zone
@@ -1428,9 +1458,12 @@ class ESOLogAnalyzer(ListenerMixin):
             self._resume_last_fight()
             return
 
-        # Per-fight death counter starts fresh with each combat
+        # Per-fight death counter starts fresh with each combat; so do the
+        # fight's casts in the kinds index and the recorder's list of recaps
         self.fight_deaths = 0
         self.fight_death_recaps = []
+        self.cast_index.new_fight()
+        self.death_recap_recorder.new_fight()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
@@ -1582,6 +1615,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.effect_tracker.reset()
         self.pen_crit_tracker.reset()
         self.death_recap_recorder.reset()
+        self.cast_index.reset()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
@@ -1837,7 +1871,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
                 recap_target = entry.fields[17] if entry.fields[17] != '*' else entry.fields[7]
                 if recap_target in self.current_encounter.players:
-                    self.death_recap_recorder.record(entry.timestamp, entry.fields, recap_target)
+                    self._note_hit_on_player(entry, combat_event_type, recap_target)
 
             # Track death events.
             # Player deaths arrive as DIED, or as KILLING_BLOW when the killer
@@ -1933,11 +1967,19 @@ class ESOLogAnalyzer(ListenerMixin):
 
                                     # Track individual player damage, and
                                     # the hit's time, result, ability and
-                                    # target for the dps time and breakdown
+                                    # target for the dps time and breakdown;
+                                    # the cast index tells area from single
+                                    # target for the kinds (damage_kinds)
+                                    if combat_event_type in CAST_RESULTS:
+                                        self.cast_index.note_hit(
+                                            source_unit_id, entry.fields[5], entry.fields[6],
+                                            target_unit_id)
                                     self.current_encounter.add_damage_to_player(
                                         source_unit_id, hit_value, to_boss=enemy.is_boss,
                                         timestamp=entry.timestamp, result=combat_event_type,
-                                        ability_id=entry.fields[6], target_id=target_unit_id)
+                                        ability_id=entry.fields[6], target_id=target_unit_id,
+                                        damage_type=entry.fields[1], cast_id=entry.fields[5],
+                                        cast_index=self.cast_index)
                                     
                                     # Update the most damaged hostile monster
                                     self.current_encounter.update_most_damaged_hostile(target_unit_id)
@@ -1983,6 +2025,37 @@ class ESOLogAnalyzer(ListenerMixin):
                                     
                         except (ValueError, IndexError):
                             pass  # Skip invalid health data
+
+    def _note_hit_on_player(self, entry: ESOLogEntry, result: str, target_id: str):
+        """A recap-result event on the player *target_id*: feed the cast
+        index (the area rule), the player's tally of damage taken by kind,
+        and the death recap recorder (damage_kinds, death_recap)."""
+        enc = self.current_encounter
+        fields = entry.fields
+        source_id = fields[7]
+        player_source = bool(enc.find_player_by_unit_id(source_id)
+                             or source_id in enc.pet_ownership)
+        tally = enc.taken_for(target_id)
+        hit = int(fields[3]) if fields[3].isdigit() else 0
+        overflow = int(fields[4]) if fields[4].isdigit() else 0
+        if result in HEALTH_RESULTS:
+            cast_id, ability_id = fields[5], fields[6]
+            if result in CAST_RESULTS:
+                self.cast_index.note_hit(source_id, cast_id, ability_id, target_id)
+            area, rule, _targets = area_of(self.cast_index, source_id, cast_id,
+                                           ability_id, player_source)
+            if hit:
+                tally.note_damage(entry.timestamp, result, fields[1], hit, ability_id,
+                                  source_id, area, rule, self.cast_index, cast_id)
+            # The killing blow: the target's health after it is 0 and the
+            # line carries the overkill
+            health_at = 18 if fields[17] != '*' else 8
+            if overflow and str(fields[health_at]).startswith('0/'):
+                tally.note_overkill(overflow)
+        else:
+            tally.note_other(result, hit, overflow)
+        self.death_recap_recorder.record(entry.timestamp, fields, target_id,
+                                         player_source=player_source)
 
     def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, entry: ESOLogEntry):
         """Count a player's death and capture its recap (see death_recap.py)."""
@@ -2315,6 +2388,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # The group's damage per second, for the graph window
         entry.damage_series = damage.series(enc.start_time)
         entry.deaths = self.fight_deaths  # this fight's player deaths
+        # The recaps' rows are classed once more with every cast of the
+        # fight known (an area hit's second target may have landed late)
+        self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
 
@@ -2419,6 +2495,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 'm': player.max_magicka,
                 's': player.max_stamina,
                 'healing': player_healing,
+                # The damage the player took and the healing they received,
+                # by kind, for the death recap window (damage_kinds)
+                'taken': enc.taken_for(player.unit_id).snapshot(
+                    ability_name, ability_icon, self._resolve_timeline_name),
                 'skill_line_role': skill_line_role or '',
                 'unit_id': player.unit_id,
                 'sets': player_sets,

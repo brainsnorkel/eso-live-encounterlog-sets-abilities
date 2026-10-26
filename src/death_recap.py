@@ -19,10 +19,22 @@ logs):
   attacker as source, the same castTrackId, and the shield as the ability.
   Several shields can soak one hit, and the death event can sit between the
   shields and the hit.
+
+Each row also carries the kinds of the hit (damage_kinds, issue #73): its
+damage type, and whether it was an area hit, read from the cast index the
+analyzer shares with the recorder (a cast that struck two or more units),
+with the rule that decided and the number of players the cast struck. Rows
+are classed when the recap is built or refilled, and once more when the
+fight ends (refresh_fight), so a ground effect that reached a second player
+seconds after the death still reads as area. Pure overheals (a heal line
+whose hit value is zero) are kept in the window for the recap's overheal
+sum but never become rows.
 """
 
 from collections import deque
 from typing import Callable, Dict, List, Optional, Tuple
+
+from damage_kinds import area_of
 
 # Chronology kept before each death
 RECAP_WINDOW_MS = 5000
@@ -62,6 +74,7 @@ HEAL_RESULTS = frozenset(r for r, kind in _KINDS.items() if kind == "heal")
 # Indices into a COMBAT_EVENT's fields (after the time offset and line type):
 # actionResult, damageType, powerType, hitValue, overflow, castTrackId,
 # abilityId, then the 10-field source unit state and the target's (or '*')
+_DAMAGE_TYPE = 1
 _HIT, _OVERFLOW, _CAST, _ABILITY, _SOURCE = 3, 4, 5, 6, 7
 _SOURCE_HEALTH, _TARGET, _TARGET_HEALTH = 8, 17, 18
 
@@ -83,31 +96,49 @@ class DeathRecapRecorder:
     """Keeps each player's recent combat events and builds death recaps."""
 
     def __init__(self, resolve_unit: Callable[[str], str],
-                 resolve_ability: Callable[[str], Tuple[str, str]]):
+                 resolve_ability: Callable[[str], Tuple[str, str]], cast_index=None):
         # unit id -> display name ('' when the log names no unit);
         # ability id -> (name, icon stem)
         self._resolve_unit = resolve_unit
         self._resolve_ability = resolve_ability
+        # The analyzer's damage_kinds.CastIndex, which tells an area hit
+        # from a single one; None classes every hit as single
+        self.cast_index = cast_index
         # unit id -> events of the last RECAP_WINDOW_MS, oldest first
         self._recent: Dict[str, deque] = {}
         # unit id -> (recap, its raw events, death time) while the killing
         # blow may still arrive
         self._open: Dict[str, tuple] = {}
+        # (recap, its raw events, death time) of this fight's deaths, for
+        # the reclassing at the fight's end (refresh_fight)
+        self._fight: List[tuple] = []
 
     def reset(self) -> None:
         """Drop all state (new log session or zone: unit ids start over)."""
         self._recent.clear()
         self._open.clear()
+        self._fight.clear()
 
-    def record(self, timestamp_ms: int, fields: List[str], target_id: str) -> None:
+    def new_fight(self) -> None:
+        """A new fight begins: the last fight's recaps are final."""
+        self._fight.clear()
+
+    def refresh_fight(self) -> None:
+        """Class this fight's recap rows again with what the cast index
+        knows now that the fight is over."""
+        for recap, events, died_ms in self._fight:
+            self._fill(recap, events, died_ms)
+
+    def record(self, timestamp_ms: int, fields: List[str], target_id: str,
+               player_source: bool = False) -> None:
         """Note one COMBAT_EVENT whose result is in RECAP_RESULTS and whose
-        target is the player *target_id*."""
+        target is the player *target_id*; *player_source* says a player or
+        a player's pet dealt it (the area rule's table applies then)."""
         result = fields[0]
-        if fields[_HIT] == "0" and result in HEAL_RESULTS:
-            return  # pure overheal: health did not move
         health_at = _TARGET_HEALTH if fields[_TARGET] != "*" else _SOURCE_HEALTH
         event = (timestamp_ms, result, fields[_HIT], fields[_OVERFLOW],
-                 fields[_CAST], fields[_ABILITY], fields[_SOURCE], fields[health_at])
+                 fields[_CAST], fields[_ABILITY], fields[_SOURCE], fields[health_at],
+                 fields[_DAMAGE_TYPE], player_source)
 
         opened = self._open.get(target_id)
         if opened is not None:
@@ -144,15 +175,20 @@ class DeathRecapRecorder:
             "ability_id": ability_id,
             "icon": icon,
             "max_health": _health(fields[health_at])[1] if len(fields) > health_at else 0,
+            "overheal": 0,
             "events": [],
         }
         self._fill(recap, events, timestamp_ms)
         self._open[unit_id] = (recap, events, timestamp_ms)
+        self._fight.append((recap, events, timestamp_ms))
         return recap
 
     def _fill(self, recap: dict, events: list, died_ms: int) -> None:
-        """(Re)build the recap's rows from its raw events."""
+        """(Re)build the recap's rows from its raw events, and sum the
+        window's overheal (the pure overheals included, which are no rows)."""
         rows = self._rows(events, died_ms)
+        recap["overheal"] = sum(_int(event[3]) for event in events
+                                if event[1] in HEAL_RESULTS)
         if not recap["killer"]:
             # A death event with no source unit (seen when the blow also ends
             # the fight): the hit by the same ability names the killer
@@ -167,9 +203,11 @@ class DeathRecapRecorder:
         # (source, castTrackId) -> (time, index into rows) of shields still
         # waiting for the hit they absorbed
         waiting: Dict[tuple, list] = {}
-        for (timestamp_ms, result, hit, overflow,
-             cast_id, ability_id, source_id, health) in events:
+        for (timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
+             health, damage_type, player_source) in events:
             kind = _KINDS[result]
+            if kind == "heal" and hit == "0":
+                continue  # pure overheal: health did not move (summed by _fill)
             ability, icon = self._resolve_ability(ability_id)
             current, maximum = _health(health)
             row = {
@@ -186,7 +224,15 @@ class DeathRecapRecorder:
                 "shields": [],
                 "health": current,
                 "max_health": maximum,
+                "damage_type": damage_type,
+                "area": False,
+                "area_rule": "",
+                "targets_hit": 0,
             }
+            if kind == "damage" and result != "FALL_DAMAGE":
+                area, rule, targets = area_of(self.cast_index, source_id, cast_id,
+                                              ability_id, player_source)
+                row["area"], row["area_rule"], row["targets_hit"] = area, rule, targets
             key = (source_id, cast_id)
             if kind == "absorbed":
                 waiting.setdefault(key, []).append((timestamp_ms, len(rows)))
