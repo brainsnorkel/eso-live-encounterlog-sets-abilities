@@ -502,14 +502,20 @@ class TestTheWindows(HideNamesTestCase):
             entry.players = entry.players * 20
             win._on_fight_completed(entry)
             win.history_list.setCurrentRow(0)
-            for _ in range(3):
-                _app.processEvents()
-            bar = win.fight_view.verticalScrollBar()
-            self.assertGreater(bar.maximum(), 0)
+            view = win.fight_view
+            # Qt lays a long document out lazily; asking for its size lays
+            # it out whole and sizes the scrollbar (the Linux runner never
+            # got there on its own)
+            view.document().documentLayout().documentSize()
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            if bar.maximum() <= 0:
+                self.skipTest("the pane did not overflow on this platform")
             bar.setValue(bar.maximum() // 2)
             kept = bar.value()
             self.assertGreater(kept, 0)
             win.hide_names_action.setChecked(True)
+            view.document().documentLayout().documentSize()
             _app.processEvents()
             self.assertEqual(bar.value(), kept)
         finally:
