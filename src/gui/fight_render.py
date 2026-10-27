@@ -459,9 +459,18 @@ def _is_boss_fight(entry) -> bool:
     return float(getattr(entry, "group_boss_dps", 0) or 0) > 0
 
 
+def cpm_text(p) -> str:
+    """'CPM 105': the player's casts per minute in the fight (casts.py), ''
+    for a companion and on an entry built before the counts."""
+    summary = p.get("casts")
+    if p.get("companion") or not isinstance(summary, dict):
+        return ""
+    return f"CPM {float(summary.get('cpm') or 0):.0f}"
+
+
 def _resources_html(p) -> str:
-    """'H 23.3k · M 14.9k · S 27.6k' with the largest pool in bold; a
-    companion has a health pool only ('H 33k')."""
+    """'H 23.3k · M 14.9k · S 27.6k · CPM 105' with the largest pool in
+    bold; a companion has a health pool only ('H 33k')."""
     if p.get("companion"):
         return f"H {_fmt_resource(p.get('h'))}" if p.get("h") else ""
     pools = [("H", p.get("h")), ("M", p.get("m")), ("S", p.get("s"))]
@@ -476,6 +485,9 @@ def _resources_html(p) -> str:
     for index, (label, raw) in enumerate(pools):
         text = f"{label} {_fmt_resource(raw)}"
         parts.append(f"<b>{text}</b>" if index == top else text)
+    cpm = cpm_text(p)
+    if cpm:
+        parts.append(cpm)
     return " · ".join(parts)
 
 
@@ -895,7 +907,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
     # tracked rule, its label the rule's text (issue #25). The plain copy
     # keeps the line, since text is all a paste can carry
 
-    parts.append("<table cellpadding='3' cellspacing='0' width='100%'>")
+    # Not 100% wide: Qt rounds percentage columns up to a pixel past the
+    # pane, which shows a horizontal scroll bar
+    parts.append("<table cellpadding='3' cellspacing='0' width='99%'>")
     first_dealer = str(entry.first_damage_dealer or "")
     starred = False
     deaths = deaths_by_unit(entry)
@@ -1085,11 +1099,13 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         star = (" *" if first_dealer
                 and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
+        cpm = cpm_text(p)
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
         lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
-                     + (f" · {caps}" if caps else "") + (f" · {note}" if note else ""))
+                     + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
+                     + (f" · {note}" if note else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")

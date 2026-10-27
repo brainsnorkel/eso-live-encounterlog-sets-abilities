@@ -134,6 +134,11 @@ def _names(slots):
     return [slot['name'] for slot in slots]
 
 
+def _uncounted(slot):
+    """A slot without its cast count (casts.py, tested in test_casts)."""
+    return {key: value for key, value in slot.items() if key != 'casts'}
+
+
 class _AllIcons:
     """Stand-in for the fight view's IconCache that has every icon."""
 
@@ -252,7 +257,7 @@ class TestEngine(unittest.TestCase):
         self.assertTrue(all(slot['werewolf'] for slot in slots))
         self.assertTrue(slots[-1]['ultimate'])
         # The log has no line for Feral Pounce: the bundled table names it
-        self.assertEqual(slots[0], {'id': FERAL_POUNCE, 'name': 'Feral Pounce',
+        self.assertEqual(_uncounted(slots[0]), {'id': FERAL_POUNCE, 'name': 'Feral Pounce',
                                     'icon': 'u50_ability_werewolf_feral_pounce', 'werewolf': True})
         # The second fight adds what was cast since
         second = _player(self.fights[1], '@brainsnorkel')
@@ -266,7 +271,7 @@ class TestEngine(unittest.TestCase):
 
     def test_a_rampage_in_the_human_bar_shows_the_morph(self):
         second = _player(self.fights[1], '@brainsnorkel')
-        self.assertEqual(second['front_bar_slots'][-1],
+        self.assertEqual(_uncounted(second['front_bar_slots'][-1]),
                          {'id': BERSERKER, 'name': 'Werewolf Berserker',
                           'icon': 'ability_werewolf_001_b', 'stand_in': 'Rampage'})
         self.assertEqual(second['front_bar'][-1], 'Werewolf Berserker')

@@ -59,6 +59,9 @@ TOPICS = [
     ("Werewolf form: the bar the log never writes", [
         "src/werewolf.py",
     ]),
+    ("Cast counts and casts per minute", [
+        "src/casts.py",
+    ]),
     ("Companions: a row of their own under their owner", [
         "src/companions.py",
     ]),
