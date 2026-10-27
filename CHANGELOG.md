@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.19.0] - 2026-10-27
 
 ### Fixed
 - **A session split again is continued, not copied** (#85): a session's split file meets its own name when the session is split a second time (the attach replay at startup, a Settings save, which rebuilds the monitor, or a restart mid-session), and until now the two were compared by whole-file hash, which could never match (the temp file holds the lines up to the first `BEGIN_COMBAT`, the file the whole session), so the session was written out again under the next `-N`. In the maintainer's split folder 513 of 899 files were byte-identical copies, 512 of them written by the pre-GUI tool's `--read-all-then-tail` between January and April 2026, which re-split the whole log at every start, and the last by two instances of the app on one live session. Now the file on disk is the same session when it begins with the temp file's lines (an older split lacking the lines its parser rejected still matches), the temp file goes, and the existing file is continued: the lines still to come are skipped until they have passed the file's end, then appended, so a split cut short by a restart or a crash is completed (a partial last line trimmed first) and a complete one gains nothing. Only a file whose head is another session's gets the suffix. The check at the session's end compares the finished file with the folder as it is then, byte for byte, instead of a size index built at startup, which the two-instance case slipped past; a continued file is never taken for a copy
