@@ -14,7 +14,6 @@ import time
 import csv
 import io
 import re
-import hashlib
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, FrozenSet, List, Optional, Tuple, Set
@@ -3814,16 +3813,10 @@ class LogSplitter:
                 continue
         return False
 
-    def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
-        h = hashlib.md5()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                h.update(chunk)
-        return h.hexdigest()
-
     def write_log_line(self, line: str):
-        """Write a log line to the current split file."""
+        """Write a log line to the current split file. Not flushed here: a
+        flush per line made one OS write per log line (3.3 M for a 573 MB
+        session, issue #109); the monitor calls flush() once per batch."""
         if self.skip_current or self.disabled:
             return
         if self._catch_up is not None and self._catching_up(line):
@@ -3831,7 +3824,19 @@ class LogSplitter:
         if self.file_handle:
             try:
                 self.file_handle.write(line + '\n')
-                self.file_handle.flush()  # Ensure immediate write
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+
+    def flush(self):
+        """Push the lines written so far to the split file: the monitor's
+        end of each batch of new lines, so a crash loses at most one poll's
+        lines, which are still in the game's log for the split's catch-up
+        (_continue_existing) to restore."""
+        if self.file_handle:
+            try:
+                self.file_handle.flush()
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -4126,6 +4131,8 @@ class LogFileMonitor:
                 line = raw.decode('utf-8', errors='ignore').strip()
                 if line:
                     self._process_one_line(line)
+        if self.log_splitter:
+            self.log_splitter.flush()
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
@@ -4382,6 +4389,8 @@ class LogFileMonitor:
                     # Advance last_position by the bytes consumed so far so resume
                     # doesn't re-process already-handled lines.
                     self.last_position += sum(len(l) for l in new_lines[:idx])
+                    if self.log_splitter:
+                        self.log_splitter.flush()
                     if self.diagnostic:
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
                         _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
@@ -4391,6 +4400,8 @@ class LogFileMonitor:
             if line:
                 self._process_one_line(line)
 
+        if self.log_splitter:
+            self.log_splitter.flush()
         self.last_position = new_end_position
         if new_lines:
             self._emit_log_status(new_end_position)
