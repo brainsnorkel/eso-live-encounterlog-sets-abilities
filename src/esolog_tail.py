@@ -3549,9 +3549,14 @@ class LogSplitter:
         self.final_file_path = self.split_dir / final_filename
 
         try:
-            # Rename the file
+            # Rename the file. Windows refuses a rename onto an existing
+            # file; POSIX replaces it silently, which would clobber the
+            # session's split, so the existing file is met the same way on
+            # every platform
+            if self.final_file_path.exists():
+                raise FileExistsError(str(self.final_file_path))
             self.temp_file_path.rename(self.final_file_path)
-            
+
             # Update tracking
             self.current_split_file = self.final_file_path
             self.current_split_path = self.final_file_path
