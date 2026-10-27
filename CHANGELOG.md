@@ -7,6 +7,10 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Added
 - **Zip split logs older than N weeks** (#86): a setting under Per-encounter split files, off by default (4 weeks when turned on). Shortly after startup and once a day, each old split is zipped beside itself as `<name>.log.zip`, at about a sixteenth of its size (a 573 MB Dreadsail Reef split became 35 MB). Settings shows how many splits it would zip before you save; the status bar reports each run. Age counts from the later of the session date in the name and the file's last change. The newest session's split, a `keep` folder inside the split folder, and every file that is not one of the app's splits (`Encounter.log` and its archives included) are never touched. The splitter treats a zipped split as the session's split, so it is not written out again
 - **Open log for review opens zips**: a zipped split or an `Encounter-*.zip` archive is read as it stands, never unpacked to disk; a zip holding several logs asks which
+- **Move split logs to the Recycle Bin when older than M weeks** (#87): off by default (52 weeks when turned on), more than N while zipping is on. Settings previews how many would go and the dates they span; saving a change that would move any asks first, listing the sessions by zone and size, every file under Show Details. On Windows a split the Recycle Bin cannot take (network or removable drive, bin set to delete at once, larger than the bin's limit) is left and reported, never deleted outright: the app checks the drive's bin settings and asks the shell to warn rather than delete, where send2trash's Windows backends delete such a file without a word. On Linux and macOS it uses send2trash, a new dependency there
+
+### Changed
+- **The Settings dialog scrolls** above fixed Save and Cancel buttons and opens no taller than the screen: it had grown taller than a 1080p screen, and Qt squeezed its wrapped help labels until lines were cut off or overlapped
 
 ## [0.17.0] - 2026-10-27
 

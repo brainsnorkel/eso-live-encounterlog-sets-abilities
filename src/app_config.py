@@ -31,6 +31,10 @@ DEFAULTS = {
         # Zip splits older than this many weeks (split_retention, issue #86)
         "zip_enabled": False,
         "zip_after_weeks": 4,
+        # Move splits older than this to the Recycle Bin (issue #87); more
+        # than zip_after_weeks while zipping is on
+        "delete_enabled": False,
+        "delete_after_weeks": 52,
     },
     "archive": {
         "size_threshold_mb": 1024,   # ~5 veteran trials (100-300 MB each)

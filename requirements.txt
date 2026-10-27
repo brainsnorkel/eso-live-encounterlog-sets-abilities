@@ -8,3 +8,7 @@ PySide6-Essentials>=6.12.0
 # 4.8.0 added the WIN_PD_OVERRIDE_* variables that docs/development.md uses
 # to keep a test run away from the real config
 platformdirs>=4.8.0
+# Moves old split logs to the trash on Linux and macOS (recycle_bin). Not on
+# Windows: both of its Windows backends delete a file outright when the
+# Recycle Bin cannot take it, so recycle_bin calls the shell itself there
+Send2Trash>=2.1.0; sys_platform != "win32"

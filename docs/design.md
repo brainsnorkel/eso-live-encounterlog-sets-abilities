@@ -1308,7 +1308,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:104](../src/app_config.py#L104)*
+*[src/app_config.py:108](../src/app_config.py#L108)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1820,13 +1820,14 @@ wherever a span starts. The caller paints the union of the row's
 intervals, one call per merged span, so overlapping receivers do not
 double the translucent base and abutting spans show no seam.
 
-## Split log retention: zipping old splits
+## Split log retention: zipping old splits and moving older ones to the Recycle Bin
 
 ### src/split_retention.py
 
 *[src/split_retention.py:1](../src/split_retention.py#L1)*
 
-Split log retention: zip split logs older than N weeks (issue #86).
+Split log retention: zip split logs older than N weeks (issue #86) and
+move those older than M weeks to the Recycle Bin (issue #87).
 
 Which files. Only the splitter's own names are touched:
 ``YYMMDDHHMMSS-<Zone-Name>[-vet][-N].log`` and the same with ``.zip``
@@ -1848,7 +1849,19 @@ file still growing, stays young.
 
 The latest session. The split of the live log's newest session (its last
 BEGIN_LOG) is never touched: it may be the file the splitter has open, and
-it is the one session the app replays at every start.
+it is the one session the app replays at every start, so deleting its
+split would only have it written out again. The newest session in the
+folder is spared too: it is almost always the same one, and Settings can
+find it without reading the log, so its preview counts what a run does.
+
+Deleting (issue #87) moves files to the Recycle Bin (recycle_bin), never
+deletes outright; a file the bin cannot take is left and reported. M must
+be more than N while zipping is on, so a split is zipped before it can be
+deleted; settings_from_config holds to that even for a hand-edited config.
+A run deletes first and zips what is left, since zipping a file about to
+be deleted is wasted work. Settings asks before saving a change that
+deletes: turning it on, lowering M, or pointing it at another folder; the
+daily run deletes only within what was confirmed and asks nothing.
 
 Zipped splits are still splits. ``<stem>.log.zip`` holds one member,
 ``<stem>.log``, so the original name stays visible and a ``*.zip`` pattern
@@ -1878,6 +1891,36 @@ When. At startup and once a day while the app is open, on a thread of its
 own (RetentionRunner), one file at a time with a check for cancel between
 chunks: the first run over a large folder takes minutes, and the engine
 thread that polls the live log must not wait for it.
+
+### src/recycle_bin.py
+
+*[src/recycle_bin.py:1](../src/recycle_bin.py#L1)*
+
+Moving a file to the Recycle Bin (the trash on Linux and macOS), never
+deleting it outright (issue #87).
+
+Why not send2trash on Windows. Both its Windows backends ask the shell to
+delete with "allow undo" and "no confirmation". When the Recycle Bin cannot
+take a file (a network or removable drive, the bin turned off for the
+drive, a file larger than the bin's limit), Windows then deletes it
+outright without a word; its pywin32 backend's progress sink returns
+E_FAIL in that case, but its own comment says the delete goes ahead. So on
+Windows this module:
+
+1. Checks the bin can take the file: a fixed local drive, no
+   NoRecycleFiles policy, the drive's bin not set to delete at once
+   (NukeOnDelete), and the file no larger than the drive's bin limit
+   (MaxCapacity in MB, under HKCU\...\Explorer\BitBucket\Volume\{guid};
+   a RecycleBinSize policy, a percentage of the drive, wins; a drive with
+   neither gets Windows' default of 5%). A file that fails the check is
+   left where it is and reported.
+2. Asks the shell (SHFileOperationW) with FOF_WANTNUKEWARNING as well, so
+   should the check ever be wrong, Windows asks before deleting outright
+   rather than doing it.
+
+Elsewhere send2trash moves the file to the freedesktop trash (Linux) or the
+Finder's (macOS); both fail rather than delete outright when there is no
+trash for the file.
 
 ### src/log_open.py
 
@@ -1923,7 +1966,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:588](../src/gui/main_window.py#L588)*
+*[src/gui/main_window.py:597](../src/gui/main_window.py#L597)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1933,7 +1976,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1057](../src/gui/main_window.py#L1057)*
+*[src/gui/main_window.py:1066](../src/gui/main_window.py#L1066)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

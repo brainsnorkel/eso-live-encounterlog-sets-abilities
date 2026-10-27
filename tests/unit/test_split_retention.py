@@ -212,6 +212,7 @@ def test_settings_follow_the_splitters_folder_rule(tmp_path):
 
 def test_runner_runs_on_its_own_thread(tmp_path):
     old = _split(tmp_path, f"{_stamp(10)}-Rockgrove-vet.log", 10)
+    _split(tmp_path, f"{_stamp(1)}-Cloudrest-vet.log", 1)  # the newest, spared
     events = []
     runner = sr.RetentionRunner()
     assert runner.start(_settings(tmp_path, zip_weeks=4), events.append)
@@ -222,6 +223,7 @@ def test_runner_runs_on_its_own_thread(tmp_path):
 
 def test_stop_cancels_a_run(tmp_path):
     old = _split(tmp_path, f"{_stamp(10)}-Rockgrove-vet.log", 10, "x" * (20 * 1024 * 1024))
+    _split(tmp_path, f"{_stamp(1)}-Cloudrest-vet.log", 1)  # the newest, spared
     runner = sr.RetentionRunner()
     gate = threading.Event()
 

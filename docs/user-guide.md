@@ -258,7 +258,7 @@ Open **Settings…** from the toolbar.
 ![The Settings dialog](screencaps/settings.png)
 
 - **Encounter log**: a specific `Encounter.log`, or blank to auto-detect.
-- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share. *Zip split logs older than N weeks* (off by default) keeps them small: see [Old split logs](#old-split-logs).
+- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share. *Zip split logs older than N weeks* and *Move split logs to the Recycle Bin when older than M weeks* (both off by default) keep the folder in check: see [Old split logs](#old-split-logs).
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
@@ -302,6 +302,13 @@ Split logs add up: a season of trials is tens of GB. With *Zip split logs older 
 - **Never touched**: the newest session's split, anything in the `keep` folder the app makes inside the split folder (move a split there to keep it as it is), and any file that is not one of the app's own splits, `Encounter.log` and its archives included.
 - **Safety**: the zip is written as a `.partial` file and read back in full before the log is removed, as the archiver does; a split that changes while it is zipped is left as it was.
 - **On a compressed folder** (a folder Windows already compresses, shown with blue names in Explorer) the space saved is smaller, since the splits there already take about a third of their size.
+
+With *Move split logs to the Recycle Bin when older than M weeks* on (52 weeks unless you change it), splits older than that, zipped or not, go to the Recycle Bin (the trash on Linux) on the same schedule. While zipping is on, M stays above N, so a split is zipped before it can go.
+
+- **Before it starts**: Settings shows how many splits would go now and the dates they span. Saving a change that would move any (turning it on, lowering M, or choosing another folder) asks first, listing the sessions by zone with their sizes; **Show Details** lists every file. Cancel leaves Settings open with nothing saved. After that the daily run moves what has aged past M without asking.
+- **Never deleted outright**: a split the Recycle Bin cannot take (on a network or removable drive, a drive whose bin is set to delete at once, or a file larger than the bin's limit) is left where it is and the status bar says so. Restore anything from the Recycle Bin as usual.
+- **The Recycle Bin has a size limit** (by default about 5% of the drive). When it is full, Windows makes room by emptying its oldest items for good, other files you deleted included. Moving tens of GB of splits at once can push those out, so check the bin before the first run, or start with a large M and lower it in steps.
+- The same files are never touched as for zipping: the newest session's split, the `keep` folder, and anything that is not one of the app's splits.
 
 ## The status bar
 

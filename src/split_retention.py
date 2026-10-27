@@ -1,5 +1,6 @@
 """
-Split log retention: zip split logs older than N weeks (issue #86).
+Split log retention: zip split logs older than N weeks (issue #86) and
+move those older than M weeks to the Recycle Bin (issue #87).
 
 Which files. Only the splitter's own names are touched:
 ``YYMMDDHHMMSS-<Zone-Name>[-vet][-N].log`` and the same with ``.zip``
@@ -21,7 +22,19 @@ file still growing, stays young.
 
 The latest session. The split of the live log's newest session (its last
 BEGIN_LOG) is never touched: it may be the file the splitter has open, and
-it is the one session the app replays at every start.
+it is the one session the app replays at every start, so deleting its
+split would only have it written out again. The newest session in the
+folder is spared too: it is almost always the same one, and Settings can
+find it without reading the log, so its preview counts what a run does.
+
+Deleting (issue #87) moves files to the Recycle Bin (recycle_bin), never
+deletes outright; a file the bin cannot take is left and reported. M must
+be more than N while zipping is on, so a split is zipped before it can be
+deleted; settings_from_config holds to that even for a hand-edited config.
+A run deletes first and zips what is left, since zipping a file about to
+be deleted is wasted work. Settings asks before saving a change that
+deletes: turning it on, lowering M, or pointing it at another folder; the
+daily run deletes only within what was confirmed and asks nothing.
 
 Zipped splits are still splits. ``<stem>.log.zip`` holds one member,
 ``<stem>.log``, so the original name stays visible and a ``*.zip`` pattern
@@ -146,8 +159,92 @@ def select_for_zip(files: Iterable[SplitFile], weeks: int, now: float,
             if not f.zipped and f.stamp not in protected and f.older_than(weeks, now)]
 
 
+def select_for_delete(files: Iterable[SplitFile], weeks: int, now: float,
+                      protected: set[str] = frozenset()) -> list[SplitFile]:
+    """Splits, plain or zipped, older than *weeks*, but none of a protected session."""
+    return [f for f in files if f.stamp not in protected and f.older_than(weeks, now)]
+
+
+def newest_stamp(files: Iterable[SplitFile]) -> str | None:
+    return max((f.stamp for f in files), default=None)
+
+
 def total_size(files: Iterable[SplitFile]) -> int:
     return sum(f.size for f in files)
+
+
+@dataclass
+class Plan:
+    """What a run would do now: delete these, then zip those."""
+    delete: list[SplitFile]
+    zip: list[SplitFile]
+
+
+def plan(files: list[SplitFile], zip_weeks: int | None, delete_weeks: int | None,
+         now: float, protected: set[str]) -> Plan:
+    """The one selection both a run and Settings' preview use."""
+    protected = set(protected)
+    newest = newest_stamp(files)
+    if newest:
+        protected.add(newest)
+    delete = select_for_delete(files, delete_weeks, now, protected) if delete_weeks else []
+    gone = {f.path for f in delete}
+    zipping = ([f for f in select_for_zip(files, zip_weeks, now, protected) if f.path not in gone]
+               if zip_weeks else [])
+    return Plan(delete=delete, zip=zipping)
+
+
+def _stamp_date(stamp: str) -> str:
+    when = datetime.strptime(stamp, _STAMP_FORMAT)
+    return f"{when.day} {when:%b %Y}"
+
+
+@dataclass
+class DeleteSummary:
+    """The splits a change would delete, for the preview and the question."""
+    count: int
+    size: int
+    first: str                    # "3 Jan 2026", the oldest session's date
+    last: str
+    groups: list[tuple[str, int, int]]   # (zone and difficulty, sessions, bytes), largest first
+    names: list[str]
+
+
+def summarize(files: list[SplitFile]) -> DeleteSummary:
+    groups: dict[str, list] = {}
+    for f in files:
+        label = f"{f.zone} (vet)" if f.vet else f.zone
+        entry = groups.setdefault(label, [0, 0])
+        entry[0] += 1
+        entry[1] += f.size
+    ordered = sorted(((label, n, size) for label, (n, size) in groups.items()),
+                     key=lambda g: (-g[2], g[0]))
+    stamps = sorted(f.stamp for f in files)
+    return DeleteSummary(count=len(files), size=total_size(files),
+                         first=_stamp_date(stamps[0]) if stamps else "",
+                         last=_stamp_date(stamps[-1]) if stamps else "",
+                         groups=ordered, names=sorted(f.path.name for f in files))
+
+
+def describe_deletion(summary: DeleteSummary, trash_name: str,
+                      shown_groups: int = 12) -> tuple[str, str, str]:
+    """(question, details, every file) for the confirmation."""
+    noun = "log" if summary.count == 1 else "logs"
+    question = (f"Move {summary.count} split {noun} ({format_bytes(summary.size)}) "
+                f"to the {trash_name}?")
+    lines = [f"Sessions from {summary.first} to {summary.last}:"]
+    for label, sessions, size in summary.groups[:shown_groups]:
+        word = "session" if sessions == 1 else "sessions"
+        lines.append(f"    {label} — {sessions} {word}, {format_bytes(size)}")
+    hidden = summary.groups[shown_groups:]
+    if hidden:
+        rest = sum(g[1] for g in hidden)
+        lines.append(f"    and {len(hidden)} more zones, {rest} sessions")
+    lines.append("")
+    lines.append(f"To keep one, move it into the {KEEP_FOLDER} folder inside the split "
+                 "folder first. The newest session's split is always kept. After this, "
+                 "the same happens once a day without asking.")
+    return question, "\n".join(lines), "\n".join(summary.names)
 
 
 def zip_member(zip_path: Path) -> str:
@@ -309,11 +406,13 @@ def _remove_quietly(path: Path) -> None:
 class RetentionSettings:
     split_dir: Path | None
     log_path: Path | None
-    zip_weeks: int | None       # None: zipping is off
+    zip_weeks: int | None            # None: zipping is off
+    delete_weeks: int | None = None  # None: deleting is off
 
     @property
     def active(self) -> bool:
-        return self.split_dir is not None and self.zip_weeks is not None
+        return self.split_dir is not None and (self.zip_weeks is not None
+                                               or self.delete_weeks is not None)
 
 
 def resolve_log(log_path_value) -> Path | None:
@@ -345,22 +444,30 @@ def settings_from_config(config) -> RetentionSettings:
     split_dir = split_folder(config.get("split.dir"), log_path)
     zip_weeks = (int(config.get("split.zip_after_weeks", 4) or 4)
                  if config.get("split.zip_enabled", False) else None)
-    return RetentionSettings(split_dir=split_dir, log_path=log_path, zip_weeks=zip_weeks)
+    delete_weeks = (int(config.get("split.delete_after_weeks", 52) or 52)
+                    if config.get("split.delete_enabled", False) else None)
+    if delete_weeks is not None and zip_weeks is not None and delete_weeks <= zip_weeks:
+        delete_weeks = zip_weeks + 1  # a split is zipped before it can be deleted
+    return RetentionSettings(split_dir=split_dir, log_path=log_path, zip_weeks=zip_weeks,
+                             delete_weeks=delete_weeks)
 
 
 @dataclass
 class RetentionEvent:
     """What a run is doing, for the status bar.
 
-    kind: "started" (total files), "progress" (done of total, name),
-    "completed" (the counts), "failed" (reason).
+    kind: "started" (total files), "progress" (done of total, name, and
+    action: "delete" or "zip"), "completed" (the counts), "failed" (reason).
     """
     kind: str
     done: int = 0
     total: int = 0
     name: str = ""
+    action: str = ""
     zipped: int = 0
     saved: int = 0
+    deleted: int = 0
+    freed: int = 0
     skipped: list[str] = field(default_factory=list)
     reason: str = ""
 
@@ -368,9 +475,14 @@ class RetentionEvent:
 def run_retention(settings: RetentionSettings,
                   notify: Callable[[RetentionEvent], None],
                   cancel: threading.Event | None = None,
-                  now: float | None = None) -> RetentionEvent | None:
-    """One run: zip what is due. Returns the "completed" event, or None when
-    there was nothing to do or the run was cancelled."""
+                  now: float | None = None,
+                  trash: Callable[[Path], None] | None = None) -> RetentionEvent | None:
+    """One run: delete what is due, then zip what is due. Returns the
+    "completed" event, or None when there was nothing to do or the run was
+    cancelled. *trash* moves one file to the Recycle Bin (recycle_bin's, by
+    default)."""
+    if trash is None:
+        from recycle_bin import move_to_trash as trash
     if not settings.active or not settings.split_dir.is_dir():
         return None
     now = time.time() if now is None else now
@@ -380,17 +492,28 @@ def run_retention(settings: RetentionSettings,
     except OSError:
         pass
     latest = latest_session_stamp(settings.log_path)
-    protected = {latest} if latest else set()
-    due = select_for_zip(scan_splits(settings.split_dir), settings.zip_weeks, now, protected)
-    if not due:
+    work = plan(scan_splits(settings.split_dir), settings.zip_weeks, settings.delete_weeks,
+                now, {latest} if latest else set())
+    steps = [("delete", f) for f in work.delete] + [("zip", f) for f in work.zip]
+    if not steps:
         return None
-    done = RetentionEvent("completed", total=len(due))
-    notify(RetentionEvent("started", total=len(due)))
+    done = RetentionEvent("completed", total=len(steps))
+    notify(RetentionEvent("started", total=len(steps)))
     try:
-        for index, split in enumerate(due):
+        for index, (action, split) in enumerate(steps):
             if cancel is not None and cancel.is_set():
                 return None
-            notify(RetentionEvent("progress", done=index, total=len(due), name=split.path.name))
+            notify(RetentionEvent("progress", done=index, total=len(steps),
+                                  name=split.path.name, action=action))
+            if action == "delete":
+                try:
+                    trash(split.path)
+                except OSError as exc:
+                    done.skipped.append(f"{split.path.name}: {exc}")
+                else:
+                    done.deleted += 1
+                    done.freed += split.size
+                continue
             result = zip_split(split.path, cancel)
             if result.kind == "skipped":
                 done.skipped.append(f"{split.path.name}: {result.reason}")
@@ -399,7 +522,7 @@ def run_retention(settings: RetentionSettings,
                 done.saved += result.saved
     except Cancelled:
         return None
-    done.done = len(due)
+    done.done = len(steps)
     notify(done)
     return done
 

@@ -760,6 +760,97 @@ class TestRetentionSettings(GuiTestCase):
         finally:
             dialog.deleteLater()
 
+    def _old_splits(self, weeks_ago=(60, 61)):
+        import time
+        splits = self.dir / 'splits'
+        splits.mkdir(exist_ok=True)
+        for weeks in weeks_ago:
+            when = time.time() - weeks * 7 * 86400
+            stamp = time.strftime('%y%m%d%H%M%S', time.localtime(when))
+            path = splits / f'{stamp}-Sunspire-vet.log'
+            path.write_bytes(b'x' * 1024)
+            os.utime(path, (when, when))
+        (splits / '991231235959-Newest.log').write_bytes(b'x')  # newest: spared
+        self.config.set('split.dir', str(splits))
+        return splits
+
+    def test_delete_weeks_stay_above_zip_weeks(self):
+        from gui.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self.config)
+        try:
+            dialog.zip_enabled.setChecked(True)
+            dialog.zip_weeks.setValue(8)
+            dialog.delete_weeks.setValue(3)
+            self.assertEqual(dialog.delete_weeks.value(), 9)
+            dialog.zip_weeks.setValue(20)  # raising N pushes M up
+            self.assertEqual(dialog.delete_weeks.value(), 21)
+            dialog.zip_enabled.setChecked(False)
+            dialog.delete_weeks.setValue(3)
+            self.assertEqual(dialog.delete_weeks.value(), 3)
+        finally:
+            dialog.deleteLater()
+
+    def test_saving_a_change_that_deletes_asks_first(self):
+        from gui.settings_dialog import SettingsDialog
+        self._old_splits()
+        dialog = SettingsDialog(self.config)
+        asked = []
+        try:
+            dialog.confirm_delete = lambda summary: asked.append(summary) or False
+            dialog.delete_enabled.setChecked(True)
+            dialog.delete_weeks.setValue(52)
+            self.assertIn('Would move 2 split logs (2 KB)', dialog.retention_preview.text())
+            dialog.accept()
+            self.assertEqual(len(asked), 1)
+            self.assertEqual(asked[0].count, 2)
+            self.assertEqual(dialog.result(), 0)  # declined: Settings stays open
+            dialog.confirm_delete = lambda summary: asked.append(summary) or True
+            dialog.accept()
+            self.assertEqual(dialog.result(), SettingsDialog.Accepted)
+        finally:
+            dialog.deleteLater()
+
+    def test_raising_m_saves_without_asking_and_lowering_asks(self):
+        from gui.settings_dialog import SettingsDialog
+        self._old_splits()
+        self.config.set('split.delete_enabled', True)
+        self.config.set('split.delete_after_weeks', 52)
+        for weeks, expect_question in ((100, False), (52, False), (30, True)):
+            dialog = SettingsDialog(self.config)
+            asked = []
+            try:
+                dialog.confirm_delete = lambda summary: asked.append(summary) or True
+                dialog.delete_weeks.setValue(weeks)
+                dialog.accept()
+                self.assertEqual(bool(asked), expect_question, weeks)
+            finally:
+                dialog.deleteLater()
+
+    def test_the_question_lists_the_files(self):
+        from unittest import mock
+
+        import split_retention
+        from gui.settings_dialog import SettingsDialog
+        self._old_splits()
+        dialog = SettingsDialog(self.config)
+        try:
+            dialog.delete_enabled.setChecked(True)
+            summary = split_retention.summarize(dialog.retention_plan().delete)
+            seen = {}
+
+            def run(box):
+                seen.update(text=box.text(), info=box.informativeText(),
+                            details=box.detailedText())
+                return 0
+
+            with mock.patch('gui.settings_dialog.QMessageBox.exec', run):
+                self.assertFalse(dialog.confirm_delete(summary))
+            self.assertIn('Move 2 split logs', seen['text'])
+            self.assertIn('Sunspire (vet) — 2 sessions', seen['info'])
+            self.assertEqual(len(seen['details'].splitlines()), 2)
+        finally:
+            dialog.deleteLater()
+
     def test_run_events_reach_the_status_bar(self):
         import split_retention
         from gui.main_window import MainWindow
@@ -768,13 +859,18 @@ class TestRetentionSettings(GuiTestCase):
         win.worker_thread.wait(3000)
         try:
             win._on_retention_event(split_retention.RetentionEvent('started', total=3))
-            self.assertIn('Zipping 3 old split logs', win.statusBar().currentMessage())
+            self.assertIn('Tidying 3 old split logs', win.statusBar().currentMessage())
             win._on_retention_event(split_retention.RetentionEvent(
                 'completed', total=3, zipped=2, saved=3 * 1024 ** 3,
                 skipped=['a.log: the log changed while it was zipped']))
             message = win.statusBar().currentMessage()
             self.assertIn('Zipped 2 split logs, 3.0 GB saved', message)
             self.assertIn('1 left as they were', message)
+            win._on_retention_event(split_retention.RetentionEvent(
+                'completed', total=4, deleted=4, freed=2 * 1024 ** 3))
+            from recycle_bin import TRASH_NAME
+            self.assertIn(f'Moved 4 split logs (2.0 GB) to the {TRASH_NAME}',
+                          win.statusBar().currentMessage())
         finally:
             win.close()
 
