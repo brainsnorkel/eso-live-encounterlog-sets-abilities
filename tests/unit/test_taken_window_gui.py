@@ -171,7 +171,7 @@ class TestShieldOnTheRow(TakenWindowTestCase):
         self.assertEqual(set(tips), {'esolog:taken/1', 'esolog:taken/2'})
         tip = tips['esolog:taken/1']
         for expected in ('<b>@tester</b>', '112,000 damage taken, 1,120 a second of the fight',
-                         '340,000 healing landed, 3,400 a second', '60,000 absorbed by shields',
+                         '340,000 healing received, 3,400 a second', '60,000 absorbed by shields',
                          'Click for the whole fight'):
             self.assertIn(expected, tip)
         # A player without a tally still has the shield and the click line
@@ -214,7 +214,7 @@ class TestTakenHtml(TakenWindowTestCase):
         for expected in ('@tester', 'Tank · Dragonknight', 'Nahviintaas · Sunspire [VET]',
                          '112,000 damage taken · 1,120 a second of the 1:40 fight',
                          'hits over 1:20, first to last',
-                         '340,000 healing landed · 3,400 a second',
+                         '340,000 healing received · 3,400 a second',
                          '91% of all healing on this player was overheal',
                          'shields absorbed 60,000, 54% as much as reached health',
                          'blocked 25 of 45 direct hits', 'dodged or missed by 3'):
@@ -263,8 +263,8 @@ class TestTakenHtml(TakenWindowTestCase):
         text = self._text()
         block = text[text.index('Healing received'):]
         lines = [line.strip() for line in block.splitlines() if line.strip()]
-        self.assertEqual(lines[1:7], ['Healer · ability', 'Landed', '%', 'Hits', 'Overheal', 'Kind'])
-        # The healer rows: name with its mark, landed, share of the landed
+        self.assertEqual(lines[1:7], ['Healer · ability', 'Received', '%', 'Hits', 'Overheal', 'Kind'])
+        # The healer rows: name with its mark, received, share of all received
         # healing, hits, the overheal as a share of that healer's healing
         self.assertEqual(_cells_after(lines, '@friend', 5),
                          ['200,000', '59%', '360', '90%', 'HoT 60% · direct 40%'])

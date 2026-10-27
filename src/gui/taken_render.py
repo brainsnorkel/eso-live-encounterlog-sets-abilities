@@ -31,13 +31,13 @@ player-fights with damage taken; 2026-10-27):
   512.
 - Healing is grouped by healer, with the healer's abilities under them.
   Six to eight units healed each player in the median fight (every group
-  HoT counts) with 15-19 abilities between them; the largest healer landed
-  51-65%, a tank's own heals 23% of what landed on them, a healer's own
+  HoT counts) with 15-19 abilities between them; the largest healer gave
+  51-65%, a tank's own heals 23% of what they received, a healer's own
   61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
   after the owner, since the log names no pet.
 - Overheal is a share per row, never an amount: 91-96% of all healing on a
-  player overflowed, so the amounts would be ten to twenty times the landed
-  figures and bury them. Landed healing is the headline; the share tells a
+  player overflowed, so the amounts would be ten to twenty times the received
+  figures and bury them. Healing received is the headline; the share tells a
   healer which HoTs were wasted on this player.
 - Shields absorbed 54-67% as much again as the damage that reached health
   (tanks most), so the header gives the absorbed amount with that ratio,
@@ -73,7 +73,7 @@ from gui.name_mask import NO_MASK
 NO_PLAYER = "No player with this id was in the fight."
 NOT_RECORDED = "Damage kinds were not recorded for this fight."
 NO_DAMAGE_TAKEN = "This player took no damage in this fight."
-NO_HEALING = "No healing landed on this player in this fight."
+NO_HEALING = "This player received no healing in this fight."
 KINDS_TITLE = "Kinds of damage"
 SOURCES_TITLE = "Damage by source"
 HEALERS_TITLE = "Healing received"
@@ -95,7 +95,7 @@ NOTES = (
 )
 SOURCE_COLUMNS = (("", "left"), ("Source · ability", "left"), ("Damage", "right"), ("%", "right"),
                   ("Hits", "right"), ("Max", "right"), ("Avg", "right"), ("Kind", "left"))
-HEALER_COLUMNS = (("", "left"), ("Healer · ability", "left"), ("Landed", "right"), ("%", "right"),
+HEALER_COLUMNS = (("", "left"), ("Healer · ability", "left"), ("Received", "right"), ("%", "right"),
                   ("Hits", "right"), ("Overheal", "right"), ("Kind", "left"))
 
 
@@ -146,7 +146,7 @@ def _header_html(entry, p, theme, vet_color: str, base_pt: float, e, names) -> s
 
 def _figures_html(entry, taken: dict, theme, e) -> str:
     """The headline figures: damage taken and its rate over the fight, the
-    healing that landed and its rate with the overheal share, and the
+    healing received and its rate with the overheal share, and the
     mitigation the log does carry: shields, blocked hits, avoided hits."""
     muted = theme["muted"]
     fight_s = float(getattr(entry, "duration_s", 0) or 0)
@@ -164,7 +164,7 @@ def _figures_html(entry, taken: dict, theme, e) -> str:
         damage += (f" <span style='color:{muted}'>· hits over {_clock(int(last) - int(first))}, "
                    f"first to last</span>")
     lines.append(damage)
-    heal = f"<span style='color:{theme['heal']}'><b>{_n(healed)}</b> healing landed</span>"
+    heal = f"<span style='color:{theme['heal']}'><b>{_n(healed)}</b> healing received</span>"
     if fight_s > 0 and healed:
         heal += f" · <b>{_rate(healed, fight_s)}</b> a second"
     if healed + overheal:
@@ -294,7 +294,7 @@ def _heal_kind_words(row: dict) -> str:
 
 
 def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: float) -> str:
-    """The healing by the unit that did it, by landed amount, each unit's
+    """The healing by the unit that did it, by amount received, each unit's
     abilities under it; the overheal as a share of that row's healing."""
     muted = theme["muted"]
     parts = [_section_title(HEALERS_TITLE, theme, dark, "healers")]

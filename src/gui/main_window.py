@@ -708,7 +708,7 @@ class MainWindow(QMainWindow):
 
     def _on_update_clicked(self):
         """The button: on Windows the download, and the installer as soon
-        as it lands (one click, the maintainer's choice of 2026-10-26);
+        once downloaded (one click, the maintainer's choice of 2026-10-26);
         elsewhere the release page."""
         info = self._update
         if info is None:
@@ -725,7 +725,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_update_ready(self, installer_path):
-        """The installer has landed: hand over to it and close. The click on
+        """The installer has downloaded: hand over to it and close. The click on
         the button was the consent; settings are kept and the installer
         relaunches the app."""
         import subprocess

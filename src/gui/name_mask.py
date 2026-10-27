@@ -19,7 +19,7 @@ friend, which is what "the handle of the person logging" means.
 Which names are player names: a name is hidden when it is not the local
 player's handle or character name and either starts with ``@`` or is the
 character name of another player of the fight. The ``@`` rule reaches
-every nested place a handle lands (the source of a heal in a death recap,
+every nested place a handle appears (the source of a heal in a death recap,
 a caster in the penetration section, a timeline interval's source and
 target) without threading the player list into each; the character-name
 set reaches a player the log gave no handle. That set is read from the

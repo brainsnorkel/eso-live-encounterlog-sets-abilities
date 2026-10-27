@@ -55,7 +55,7 @@ up to 71 mobs hit). A ``boss`` rule has nothing to measure there, so it
 measures every hostile the group fought instead, and both it and an
 ``enemies`` rule then say how many of the pack's mobs the effect reached,
 ``Alkosh:45% on 7 of 12 mobs`` (the pack is the mobs the group hit, plus
-any a tracked effect landed on). In those fights Off-Balance reached up to
+any a tracked effect was applied to). In those fights Off-Balance reached up to
 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle
 18 of 32, the taunt 20 of 32. In a boss fight nothing changes: the boss
 rule reads the boss alone (its effect was on the adds too in about half
@@ -146,7 +146,7 @@ comes under several ids at once (45902 for most sources, 62988 for
 Elemental Blockade, 39077, 34733, 20806, 130139), so a union is needed,
 and its uptime on a trial boss was 4 to 28% per fight; Crux stacks to 3
 on the Arcanist alone; a pet-applied buff (a Glyphic's heal, Major
-Protection from a netch) lands on players like any other and needs no
+Protection from a netch) is applied to players like any other and needs no
 special case, since only the target's kind is looked at. Replaying the
 bundled examples through two of those logs (Sunspire, Kyne's Aegis):
 Off-Balance on the boss 12 to 28% per boss fight, to the decimal what an

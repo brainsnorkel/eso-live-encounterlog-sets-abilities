@@ -33,7 +33,7 @@ The last row, "Armour" (issue #55, pen_crit.armour_row), is not an effect
 but an estimate: the target's armour (18,200 in an instance, 9,100
 overland, 27,300 on a solo dungeon's boss) less the group's armour debuffs
 on it, second by second, drawn by height like Touch of Z'en's row so the
-bar drops as Breach, Crusher and Alkosh land and climbs back as they fall
+bar drops as Breach, Crusher and Alkosh are applied and climbs back as they fall
 off; the label carries the estimate and the time-averaged remainder. The
 row's intervals carry the debuffs' names and sum for the hover, and its
 click summary is its own (the sources-and-receivers popup makes no sense

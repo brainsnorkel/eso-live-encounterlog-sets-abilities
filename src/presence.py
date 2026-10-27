@@ -38,7 +38,7 @@ The rules (Chris, 2026-10-27):
    MONSTER added on their unit id marks them gone too, and that id is no
    longer theirs.
 3. The same character back in the zone is the same row: the new unit id is
-   an alias of the record, so the damage before and after the drop lands on
+   an alias of the record, so the damage before and after the drop goes to
    one row and its dps time spans both, the gap included (as Combat Metrics
    counts it). At the next BEGIN_COMBAT the record takes the new id as its
    own, its companion and pets following, so later fights are keyed as for
