@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **The death recap window leads with the deaths** (#95): each death's table of the last 5 seconds of damage and healing now sits right under its "Killed by" line, with that death's kinds-of-damage summary under the table, and the whole fight's **Damage taken this fight** block (bars, lines and top abilities) closes the window instead of opening it. Damage over time is written `DoT` and healing over time `HoT` beside the bars, in the heal share, in the ability kind words and in the star hover text, as the Result column already wrote them; the build window's Damage dealt bars say the same
+
 ## [0.19.0] - 2026-10-27
 
 ### Fixed

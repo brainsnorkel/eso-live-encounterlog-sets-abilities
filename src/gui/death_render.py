@@ -1,9 +1,9 @@
 """
 Death recap rendering: the button a player's row gets in the fight view when
 they died, its hover summary, and the recap window's HTML (the last seconds
-of damage and healing before each of that player's deaths, each with a
-summary of the kinds of damage in it, and the whole fight's damage taken at
-the top).
+of damage and healing before each of that player's deaths, each followed by
+a summary of the kinds of damage in it, and the whole fight's damage taken
+at the bottom).
 
 The data is FightHistoryEntry.death_recaps, built by the engine's
 death_recap module, and the player dict's 'taken' key (damage_kinds).
@@ -22,6 +22,14 @@ untyped), what got through while blocking, what shields absorbed, hits
 avoided, the healing that landed against the overheal, and the killing
 blow's overkill. The same block draws a death's five seconds and the whole
 fight, so the two read alike.
+
+The order (issue #95). The event table is what the window is opened for, so
+each death's table sits right under its "Killed by" line, that death's
+kinds summary under the table as its footing, and the whole fight's block
+closes the window; the first version opened with the fight block and put
+each death's bars above its table, a screen of figures before the hits.
+Damage over time is written DoT and healing over time HoT, the game's words
+and the ones the Result column already used.
 """
 
 import html
@@ -49,6 +57,13 @@ FIGHT_BLOCK_TITLE = "Damage taken this fight"
 TOP_ABILITIES = 5  # the fight block lists this many abilities
 # A side narrower than this keeps its percentage off the bar (it would not fit)
 MIN_BAR_TEXT_PCT = 8
+# The words for the over-time sides: damage over time as the bars label it
+# (damage_kinds.SIDE_LABELS), healing over time beside it
+DOT_LABEL = SIDE_LABELS["dot"]
+HOT_LABEL = "HoT"
+# What a healing side's star hover is headed with
+HEAL_SIDE_WORDS = {"direct": "direct healing", "dot": f"healing over time ({HOT_LABEL})",
+                   "landed": "healing that landed", "overheal": "overheal"}
 
 RESULT_LABELS = {
     "DAMAGE": "Hit",
@@ -202,9 +217,9 @@ def kind_tooltips() -> Dict[str, str]:
             stars = stars_for(scope, side)
             if not stars:
                 continue
-            side_word = {"landed": "healing that landed", "overheal": "overheal"}.get(
-                side, SIDE_LABELS.get(side, side))
-            lines = [f"<b>Warfare stars for {e(side_word)} {e(scope_word)}</b>"]
+            what = (HEAL_SIDE_WORDS.get(side, side) if scope == "heal"
+                    else f"{SIDE_LABELS.get(side, side)} {scope_word}")
+            lines = [f"<b>Warfare stars for {e(what)}</b>"]
             for star in stars:
                 lines.append(f"<b>{e(star['name'])}</b>: {e(star['text'])}")
             lines.append(f"<span style='font-size:85%'>Click to open {e(stars[0]['name'])} "
@@ -290,7 +305,7 @@ def kinds_block_html(summary: dict, scope: str, theme: dict, e, base_pt: float,
             if summary["heal_direct"]:
                 shares.append(_heal_link("direct", f"direct {summary['heal_direct']:,}", theme, e))
             if summary["heal_hot"]:
-                shares.append(_heal_link("dot", f"over time {summary['heal_hot']:,}", theme, e))
+                shares.append(_heal_link("dot", f"{HOT_LABEL} {summary['heal_hot']:,}", theme, e))
             heal_bits.append(_heal_link("landed", f"healed {healed:,}", theme, e)
                              + (f" <span style='color:{muted}'>({' · '.join(shares)})</span>"
                                 if len(shares) > 1 else ""))
@@ -348,10 +363,10 @@ def _kind_words(row: dict) -> str:
     if fall and fall >= max(direct, dot):
         words.append("fall")
     elif direct and dot:
-        words.append("direct and over time" if min(direct, dot) * 4 >= max(direct, dot)
-                     else ("direct" if direct > dot else "over time"))
+        words.append(f"direct and {DOT_LABEL}" if min(direct, dot) * 4 >= max(direct, dot)
+                     else ("direct" if direct > dot else DOT_LABEL))
     elif dot:
-        words.append("over time")
+        words.append(DOT_LABEL)
     elif direct:
         words.append("direct")
     if not fall or fall < max(direct, dot):
@@ -366,10 +381,10 @@ def _kind_words(row: dict) -> str:
 def fight_block_html(player: Optional[dict], theme: dict, icons, e, names,
                      base_pt: float) -> str:
     """The whole fight's damage taken for *player* (their dict's 'taken'
-    key), with the abilities that did most of it; the not-recorded line for
-    an entry from before the kinds were kept."""
+    key), with the abilities that did most of it, which closes the window;
+    the not-recorded line for an entry from before the kinds were kept."""
     muted = theme["muted"]
-    title = f"<p style='margin:10px 0 2px 0'><b>{FIGHT_BLOCK_TITLE}</b></p>"
+    title = f"<p style='margin:14px 0 2px 0'><b>{FIGHT_BLOCK_TITLE}</b></p>"
     taken = player.get("taken") if isinstance(player, dict) else None
     if not isinstance(taken, dict) or "total" not in taken:
         return title + f"<p style='margin:0;color:{muted}'>{NOT_RECORDED}</p>"
@@ -517,7 +532,6 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         parts.append(f"<p style='margin:0;color:{muted}'>No damage or healing was logged "
                      f"in the {RECAP_WINDOW_MS // 1000} seconds before this death.</p>")
         return "".join(parts)
-    parts.append(_death_kinds_html(recap, rows, theme, e, base_pt))
 
     head = (f"style='color:{muted};border-bottom-style:solid;"
             f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
@@ -557,14 +571,16 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
             f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
             for attrs, style, content in cells) + "</tr>")
     parts.append("</table>")
+    # The window's summary, under the table it sums (issue #95)
+    parts.append(_death_kinds_html(recap, rows, theme, e, base_pt))
     return "".join(parts)
 
 
 def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                             base_pt: float = 9.0, names=None,
                             text_color: str | None = None) -> str:
-    """One player's deaths in a fight as HTML for the recap window: the
-    whole fight's damage taken first, then each death.
+    """One player's deaths in a fight as HTML for the recap window: each
+    death, then the whole fight's damage taken.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
     leaves the abilities as names. base_pt: the pane's font size, which the
@@ -593,10 +609,12 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     if not deaths:
         parts.append(f"<p style='color:{muted}'>No deaths recorded for this player.</p>")
         return "".join(parts)
-    parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
-    parts.append(f"<p style='margin:12px 0 2px 0;color:{muted}'>Damage and healing in the "
+    parts.append(f"<p style='margin:8px 0 2px 0;color:{muted}'>Damage and healing in the "
                  f"{RECAP_WINDOW_MS // 1000} seconds before each death, oldest first. "
                  f"Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
         parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt))
+    # The whole fight closes the window: the deaths are what it is opened
+    # for (issue #95)
+    parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
     return "".join(parts)

@@ -345,10 +345,12 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
                                        icons=self._cache(), **kwargs)
 
     def test_each_death_sums_its_window(self):
-        from gui.death_render import NO_DAMAGE_IN_WINDOW
+        from gui.death_render import FIGHT_BLOCK_TITLE, NO_DAMAGE_IN_WINDOW
         html = self._html()
         one = html[html.index('Death 1 of 2'):html.index('Death 2 of 2')]
         self.assertIn('<b>11,015</b> damage in the last 5 seconds', one)   # 2,102 + 8,913
+        # The table first, its summary under it (issue #95)
+        self.assertLess(one.index('</table>'), one.index('in the last 5 seconds'))
         self.assertIn('4,983 overkill', one)
         # direct 100 / over time 0; area 81 / single 19; Martial 19 / Magical 81
         for text in ('100%', '81%', '19%'):
@@ -360,7 +362,7 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertIn('healed 2,500', one)
         self.assertIn('700 overheal', one)
         self.assertIn('1,328 healing absorbed', one)
-        two = html[html.index('Death 2 of 2'):]
+        two = html[html.index('Death 2 of 2'):html.index(FIGHT_BLOCK_TITLE)]
         self.assertIn(NO_DAMAGE_IN_WINDOW, two)
         self.assertIn('healed 900', two)
         self.assertIn('100 overheal', two)
@@ -372,11 +374,13 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertIn('Blocked · physical', html)
         self.assertNotIn('Dodged · ', html)
 
-    def test_the_whole_fight_block_comes_first_and_once(self):
+    def test_the_whole_fight_block_comes_last_and_once(self):
         from gui.death_render import FIGHT_BLOCK_TITLE
         html = self._html()
         self.assertEqual(html.count(FIGHT_BLOCK_TITLE), 1)
-        block = html[html.index(FIGHT_BLOCK_TITLE):html.index('Death 1 of 2')]
+        # After the last death (issue #95): the deaths are what the window is for
+        self.assertGreater(html.index(FIGHT_BLOCK_TITLE), html.index('Death 2 of 2'))
+        block = html[html.index(FIGHT_BLOCK_TITLE):]
         self.assertIn('<b>310,000</b> damage over 1:30 of hits, first to last', block)
         self.assertIn('6,100 overkill', block)
         self.assertIn('physical 61% · frost 23% · fire 16%', block)
@@ -385,14 +389,14 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertIn('3 hits avoided', block)
         self.assertIn('healed 400,000', block)
         self.assertIn('direct 100,000', block)
-        self.assertIn('over time 300,000', block)
+        self.assertIn('HoT 300,000', block)
         self.assertIn('900,000 overheal', block)
         # The abilities that hurt most, with their kinds and source
         maelstrom, soaked = block.index('Maelstrom'), block.index('Soaked Wound')
         self.assertLess(maelstrom, soaked)
         self.assertIn('>60%<', block)
         self.assertIn('direct · area · physical', block)
-        self.assertIn('over time · single target · frost', block)
+        self.assertIn('DoT · single target · frost', block)
         self.assertIn('Tideborn Taleria', block)
         self.assertIn('and 5 more abilities', block)
 
@@ -411,6 +415,7 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertIn(f'href="{resolve}"', html)
         tips = kind_tooltips()
         tip = tips[resolve]
+        self.assertIn('Warfare stars for DoT damage taken', tip)
         self.assertIn('Enduring Resolve', tip)
         self.assertIn('Preparation', tip)
         self.assertIn('eso-hub.com', tip)
@@ -418,7 +423,9 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         dealt = stars_for('dealt', 'dot')[0]['url']
         self.assertIn('Thaumaturge', tips[dealt])
         self.assertNotIn('Preparation', tips[dealt])
-        self.assertIn('Swift Renewal', tips[stars_for('heal', 'dot')[0]['url']])
+        hot = tips[stars_for('heal', 'dot')[0]['url']]
+        self.assertIn('Swift Renewal', hot)
+        self.assertIn('Warfare stars for healing over time (HoT)', hot)
 
     def test_a_click_on_a_star_opens_its_page(self):
         from PySide6.QtCore import QUrl

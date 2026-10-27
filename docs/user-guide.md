@@ -170,15 +170,15 @@ A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deat
 
 ![The death recap window: the last seconds before a death](screencaps/death-recap.png)
 
-The window opens with **Damage taken this fight**: everything that reached the player's health over the whole fight, summed by kind, then the abilities that did most of it. For each death it then names the killing ability and who used it, sums the last 5 seconds the same way, and lists those seconds of damage and healing, oldest first.
+The window opens with the deaths. Each names the killing ability and who used it, lists the last 5 seconds of damage and healing, oldest first, and sums those seconds by kind under the table. **Damage taken this fight** closes the window: everything that reached the player's health over the whole fight, summed the same way, then the abilities that did most of it.
 
 The kinds are the splits the Warfare champion point stars act on, each a two-colour bar with the amounts and percentages on either side:
 
-- **direct** against **over time**: a hit or a tick (Ironclad and Enduring Resolve reduce them for damage taken).
+- **direct** against **DoT** (damage over time): a hit or a tick (Ironclad and Enduring Resolve reduce them for damage taken).
 - **area** against **single target** (Unassailable and Duelist's Rebuff). The log does not say whether an attack was an area attack, so the app reads the cast: a cast that struck two or more players in the fight is area, and the row says `area · hit 8 players`. An ability that struck a group earlier in the session reads as area on a lone hit too; a cast that struck one player, of an ability never seen on two, reads as single target.
 - **Martial** against **Magical** (Hardy and Elemental Aegis): physical, bleed, poison and disease damage on one side; magic, fire, frost and shock on the other. Under the bar, the damage types behind them, `fire 64% · physical 19% · frost 17%`. Oblivion damage, fall damage and drowning belong to neither and are named apart.
 
-Under the bars: what got through while blocking (the log writes what a block let through, never what it saved), what damage shields absorbed, hits dodged or missed, the healing that landed against the overheal (with direct heals and heals over time apart: Focused Mending and Swift Renewal), and the killing blow's overkill. Each side's label links to the first star's ESO-Hub page, and hovering it names every Warfare star for that side with the game's text. The app never knows which stars a player has: the log does not carry them.
+Under the bars: what got through while blocking (the log writes what a block let through, never what it saved), what damage shields absorbed, hits dodged or missed, the healing that landed against the overheal (direct heals and HoTs apart: Focused Mending and Swift Renewal), and the killing blow's overkill. Each side's label links to the first star's ESO-Hub page, and hovering it names every Warfare star for that side with the game's text. The app never knows which stars a player has: the log does not carry them.
 
 The event table:
 
