@@ -222,6 +222,15 @@ def main():
         save(win._damage_dialog, "damage-window.png")
         win._damage_dialog.hide()
 
+    # Damage taken window for the fight's tank (the reader it is for), else
+    # the same player
+    if players:
+        tank = next((p for p in players if p.get("role") == "T"), players[0])
+        win._show_taken(tank["unit_id"])
+        pump(1.5)
+        save(win._taken_dialog, "taken-window.png")
+        win._taken_dialog.hide()
+
     # The dps over time graph of the fight
     win._show_graph()
     pump(1.5)

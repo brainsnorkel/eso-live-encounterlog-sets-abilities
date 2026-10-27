@@ -30,9 +30,9 @@ one image per kind, colour, size and ratio, kept for the session.
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
 
-from gui.fight_render import BREAKDOWN_GLYPH, GRAPH_GLYPH
+from gui.fight_render import BREAKDOWN_GLYPH, GRAPH_GLYPH, TAKEN_GLYPH
 
-KINDS = (GRAPH_GLYPH, BREAKDOWN_GLYPH)
+KINDS = (GRAPH_GLYPH, BREAKDOWN_GLYPH, TAKEN_GLYPH)
 
 _images: dict[tuple[str, str, int, float], QImage] = {}
 
@@ -68,6 +68,22 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
         path = QPainterPath(QPointF(*points[0]))
         for x, y in points[1:]:
             path.lineTo(QPointF(x, y))
+        painter.drawPath(path)
+    elif kind == TAKEN_GLYPH:
+        # A shield, for the damage taken window (issue #98): a flat top,
+        # straight sides to the middle, then curving to a point at the
+        # bottom; an outline only, in the link colour, so it reads as a
+        # cue beside the (i) and not as a filled mark like the death chip
+        painter.setPen(QPen(color, max(1.5, px / 8.0), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        left, right = px * 0.16, px * 0.84
+        top, waist, bottom = px * 0.12, px * 0.50, px * 0.92
+        path = QPainterPath(QPointF(left, top))
+        path.lineTo(QPointF(right, top))
+        path.lineTo(QPointF(right, waist))
+        path.quadTo(QPointF(right, px * 0.78), QPointF(px / 2.0, bottom))
+        path.quadTo(QPointF(left, px * 0.78), QPointF(left, waist))
+        path.closeSubpath()
         painter.drawPath(path)
     else:
         # A breakdown: three bars, the longest on top, as the damage

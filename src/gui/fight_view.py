@@ -33,7 +33,7 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 from gui.death_render import unit_from_href
 from gui.fight_render import (
     BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, build_unit_from_href,
-    damage_unit_from_href, issues_unit_from_href, pen_crit_unit_from_href,
+    damage_unit_from_href, issues_unit_from_href, pen_crit_unit_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -79,6 +79,7 @@ class FightView(QTextBrowser):
     graph_requested = Signal()  # the header's group dps figure was clicked
     issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
+    taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -327,6 +328,10 @@ class FightView(QTextBrowser):
         unit_id = pen_crit_unit_from_href(url.toString())
         if unit_id is not None:
             self.pen_crit_requested.emit(unit_id)
+            return
+        unit_id = taken_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.taken_requested.emit(unit_id)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

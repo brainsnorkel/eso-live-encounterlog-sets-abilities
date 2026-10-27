@@ -6,6 +6,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [The main window](#the-main-window)
 - [A player's build](#a-players-build)
 - [A player's damage](#a-players-damage)
+- [A player's damage taken](#a-players-damage-taken)
 - [DPS over time](#dps-over-time)
 - [Death recaps](#death-recaps)
 - [Tracked effects](#tracked-effects)
@@ -59,6 +60,7 @@ With **Detail view** on (the default; Tab toggles it), each row shows the player
 - A werewolf gets a third line, **Werewolf**: the bar they fought with in werewolf form and how much of the fight they spent transformed, `in form 100%`. The game never writes that bar into its log, so the app rebuilds it from the werewolf skills the player cast, in the skill line's order; a skill they slotted but never cast cannot show. For a few players the game writes a werewolf bar in place of a human bar instead, and that bar can be stale, so it is left out: such a werewolf may show the Werewolf line alone. At full Fury the game lists Rampage in place of the transformation ultimate for the player writing the log, and the bar shows the morph, Werewolf Berserker or Pack Leader, instead. Hovering either kind of icon says so.
 - The line under the bars lists every equipped set with its piece count, `5x Deadly Strike, 2x Zaan, 1x Oakensoul Ring`; each name opens the set's ESO-Hub page.
 - A `ⓘ` after a player's class means the app found a [possible build issue](#possible-build-issues) in the build they pulled with. Hover it for the list; click it for each finding with the rule behind it. A player without one has no `ⓘ`, in either view.
+- A shield outline after the name, in the link colour, opens the player's [damage taken](#a-players-damage-taken): what reached their health over the fight, who did it, and what healed them. Every player has one, died or not, in either view; hover it for the totals. A companion has none.
 - After the shares, `p:18199 cd:121%`: the player's estimated effective penetration and critical damage over this fight, from their build and the fight's effects, with the Champion Point rows Settings assumes (see [Penetration and critical damage](#penetration-and-critical-damage)); each second is capped, so a figure at the cap reads as the cap. Hover it for the caps, the shares of them and the share of damage dealt over them; click it for every source. A player who dealt no damage has no token. Shown in both views.
 
 ### Companions
@@ -154,6 +156,19 @@ Click a player's DPS figure, the one with the small three-bar mark after it, to 
 - **Targets**: each unit the player hit, with the damage, its share, the hits, the span from the player's first hit on it to their last, and the DPS over that span (what Combat Metrics calls the real DPS to that target). Bosses are marked.
 - **Boss targets only**: in a fight with a boss, the switch at the bottom narrows every figure to the units the game flags as bosses.
 
+## A player's damage taken
+
+Click the shield after a player's name, in either view, for everything that reached that player's health over the fight and everything that healed them. Every player has one, died or not: the [death recap](#death-recaps) is for a player who died and keeps the last seconds before each death, and its **Damage taken this fight** block links here, as the **Damage dealt** heading of the [build window](#a-players-build) does. The window stays open beside the main window and keeps the fight it was opened for; clicking another shield reuses it.
+
+![The damage taken window: the figures, the kinds, damage by source, healing by healer](screencaps/taken-window.png)
+
+- **Header**: the player, then the fight, then the figures: the damage taken and the rate per second of the fight, pull to end (not the dps time: a quiet stretch is part of the answer, and two pulls compare); how long the hits spanned; the healing that landed, its rate, and the share of all healing on the player that was overheal; what damage shields absorbed, as a share of the damage that reached health; how many of the direct hits were blocked; and the hits dodged or missed. What a block, armour or resistances prevented is not in the log, so it is never stated.
+- **Kinds of damage**: the bars and lines the [death recap](#death-recaps) draws, over the whole fight.
+- **Damage by source**: every unit that hurt the player, bosses first (marked `boss`), then by damage. Several units of one name are one row with their count, `Alkosh's Will ×4`; damage the log credits to no unit (fall damage, some set procs) is the `No unit named in the log` row. Under each unit, its abilities largest first, with the damage, its share of all the damage taken, hits, largest hit, average hit, and the kind words the recap uses, `direct · area · fire`.
+- **Healing received**: every unit that healed the player, by what landed, with the player's own heals marked `own` and a pet's heals (a Twilight Matriarch's) in a row of their own, named after the owner and marked `pet`. Under each healer, their abilities. **Overheal** is the share of that row's healing that overflowed, not an amount: in a trial about nine tenths of all healing on a player is overheal, so the amounts would bury the landed figures; a row near 100% is a HoT ticking on a full bar. **Kind** says `HoT`, `direct`, or the mix.
+
+With **Hide names** on, other players are masked here as everywhere, as sources and as healers. A fight recorded by an older version says `Damage kinds were not recorded for this fight`; one recorded before the window had its by-source and by-healer tables says so under those headings.
+
 ## DPS over time
 
 Click the group DPS figure in the fight header, the one ending in a small graph line, or **DPS graph** on the toolbar, for a graph of the fight: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis.
@@ -171,7 +186,7 @@ A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deat
 
 ![The death recap window: the last seconds before a death](screencaps/death-recap.png)
 
-The window opens with the deaths. Each names the killing ability and who used it, lists the last seconds of damage and healing, oldest first (5 seconds by default, up to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Damage taken this fight** closes the window: everything that reached the player's health over the whole fight, summed the same way, then the abilities that did most of it.
+The window opens with the deaths. Each names the killing ability and who used it, lists the last seconds of damage and healing, oldest first (5 seconds by default, up to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Damage taken this fight** closes the window: everything that reached the player's health over the whole fight, summed the same way, then the abilities that did most of it; the link beside its title opens the player's [damage taken window](#a-players-damage-taken), which has every ability, the units that did the damage and the healers.
 
 The kinds are the splits the Warfare champion point stars act on, each a two-colour bar with the amounts and percentages on either side:
 

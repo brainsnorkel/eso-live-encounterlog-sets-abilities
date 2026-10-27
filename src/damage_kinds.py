@@ -298,25 +298,64 @@ class TakenTally:
         # counted as single until the cast's second target lands
         self.abilities: dict[str, dict] = {}
         self._pending: dict[tuple[str, str], list[tuple[str, int]]] = {}
+        # For the damage taken window (issue #98): every result line
+        # counted, the same hits split by the unit that did them (source
+        # unit id -> row with its own ability rows), and the healing by the
+        # unit that healed (healer unit id -> row with its ability rows).
+        # The engine fills these; a tally built from recap rows
+        # (summary_of_rows) names no units and leaves them empty
+        self.results = Counter()
+        self.sources: dict[str, dict] = {}
+        self.healers: dict[str, dict] = {}
 
     def _row(self, ability_id: str) -> dict:
         row = self.abilities.get(ability_id)
         if row is None:
             row = self.abilities[ability_id] = {
                 "damage": 0, "direct": 0, "dot": 0, "fall": 0, "area": 0, "single": 0,
-                "types": Counter(), "sources": Counter(), "hits": 0}
+                "types": Counter(), "sources": Counter(), "hits": 0, "max": 0}
+        return row
+
+    def _source_row(self, source_id: str, boss: bool) -> dict:
+        row = self.sources.get(source_id)
+        if row is None:
+            row = self.sources[source_id] = {
+                "damage": 0, "hits": 0, "max": 0, "boss": bool(boss), "abilities": {}}
+        elif boss:
+            row["boss"] = True
+        return row
+
+    @staticmethod
+    def _source_ability(source_row: dict, ability_id: str) -> dict:
+        row = source_row["abilities"].get(ability_id)
+        if row is None:
+            row = source_row["abilities"][ability_id] = {
+                "damage": 0, "hits": 0, "max": 0, "direct": 0, "dot": 0, "fall": 0,
+                "area": 0, "single": 0, "types": Counter()}
+        return row
+
+    def _healer_row(self, healer_id: str, self_source: bool, pet_owner: str) -> dict:
+        row = self.healers.get(healer_id)
+        if row is None:
+            row = self.healers[healer_id] = {
+                "landed": 0, "overheal": 0, "hits": 0, "direct": 0, "hot": 0,
+                "self": bool(self_source), "pet_owner": str(pet_owner or ""), "abilities": {}}
         return row
 
     def note_damage(self, ts: int, result: str, damage_type: str, hit: int,
                     ability_id: str, source_id: str, area: bool, rule: str,
-                    index: CastIndex | None = None, cast_id: str = "") -> None:
-        """A damage line that reached health (HEALTH_RESULTS)."""
+                    index: CastIndex | None = None, cast_id: str = "", *,
+                    source_boss: bool = False) -> None:
+        """A damage line that reached health (HEALTH_RESULTS); *source_boss*
+        when the unit that did it is a boss of the fight."""
         kinds = classify(result, damage_type)
         ability_id = str(ability_id)
+        source_id = str(source_id)
         self.total += hit
         self.time[kinds["time"]] += hit
         self.school[kinds["school"]] += hit
         self.types[kinds["type"]] += hit
+        self.results[result] += 1
         if result == BLOCKED_RESULT:
             self.blocked_through += hit
         if self.first_ms is None or ts < self.first_ms:
@@ -326,16 +365,29 @@ class TakenTally:
         row = self._row(ability_id)
         row["damage"] += hit
         row["hits"] += 1
+        row["max"] = max(row["max"], hit)
         row[kinds["time"]] += hit
         row["types"][kinds["type"]] += hit
-        row["sources"][str(source_id)] += hit
+        row["sources"][source_id] += hit
+        source = self._source_row(source_id, source_boss)
+        source["damage"] += hit
+        source["hits"] += 1
+        source["max"] = max(source["max"], hit)
+        by_source = self._source_ability(source, ability_id)
+        by_source["damage"] += hit
+        by_source["hits"] += 1
+        by_source["max"] = max(by_source["max"], hit)
+        by_source[kinds["time"]] += hit
+        by_source["types"][kinds["type"]] += hit
         self.rules[rule] += hit
         if area:
             self.area += hit
             row["area"] += hit
+            by_source["area"] += hit
         else:
             self.single += hit
             row["single"] += hit
+            by_source["single"] += hit
             if index is not None and rule == "none" and kinds["time"] != "fall":
                 key = (str(source_id), str(cast_id))
                 pending = self._pending.get(key)
@@ -346,6 +398,7 @@ class TakenTally:
 
     def _cast_became_area(self, key: tuple[str, str]) -> None:
         """The cast's second target landed: its earlier hits were area."""
+        source = self.sources.get(key[0])
         for ability_id, hit in self._pending.pop(key, ()):
             self.single -= hit
             self.area += hit
@@ -355,10 +408,23 @@ class TakenTally:
             if row is not None:
                 row["single"] -= hit
                 row["area"] += hit
+            by_source = source["abilities"].get(ability_id) if source else None
+            if by_source is not None:
+                by_source["single"] -= hit
+                by_source["area"] += hit
 
-    def note_other(self, result: str, hit: int, overflow: int) -> None:
+    def note_other(self, result: str, hit: int, overflow: int, *, source_id: str = "",
+                   ability_id: str = "", self_source: bool = False,
+                   pet_owner: str = "") -> None:
         """A recap-result line that did not reach health: a shield absorb,
-        an avoided hit, a heal (landed and overheal), an absorbed heal."""
+        an avoided hit, a heal (landed and overheal), an absorbed heal.
+
+        A heal with a *source_id* is kept by healer and ability for the
+        damage taken window: *self_source* when the player healed
+        themselves, *pet_owner* the owner's unit id when a pet did it (the
+        log names no pet, so the row is named after its owner). Without a
+        source the heal counts in the totals alone."""
+        self.results[result] += 1
         if result == SHIELDED_RESULT:
             self.absorbed += hit
         elif result in AVOIDED_RESULTS:
@@ -366,10 +432,25 @@ class TakenTally:
         elif result in HEAL_RESULTS:
             self.healed += hit
             self.overheal += overflow
-            if result in HOT_RESULTS:
+            hot = result in HOT_RESULTS
+            if hot:
                 self.heal_hot += hit
             else:
                 self.heal_direct += hit
+            if source_id:
+                healer = self._healer_row(str(source_id), self_source, pet_owner)
+                healer["landed"] += hit
+                healer["overheal"] += overflow
+                healer["hits"] += 1
+                healer["hot" if hot else "direct"] += hit
+                row = healer["abilities"].get(str(ability_id))
+                if row is None:
+                    row = healer["abilities"][str(ability_id)] = {
+                        "landed": 0, "overheal": 0, "hits": 0, "direct": 0, "hot": 0}
+                row["landed"] += hit
+                row["overheal"] += overflow
+                row["hits"] += 1
+                row["hot" if hot else "direct"] += hit
         elif result == HEAL_ABSORBED_RESULT:
             self.heal_absorbed += hit
 
@@ -377,10 +458,13 @@ class TakenTally:
         self.overkill += overflow
 
     def snapshot(self, name_of: Callable[[str], str], icon_of: Callable[[str], str],
-                 unit_name_of: Callable[[str], str], top: int = 5) -> dict:
+                 unit_name_of: Callable[[str], str], top: int | None = None) -> dict:
         """Plain dicts for a fight entry (read on the GUI thread): the
-        totals by kind and the *top* abilities by damage, each with its
-        kinds, its types and the source that did most of it."""
+        totals by kind and the abilities by damage (the *top* of them when
+        given), each with its kinds, its types and the source that did most
+        of it; the same damage by source ('sources', see _sources_snapshot)
+        and the healing by healer ('healers', see _healers_snapshot) for the
+        damage taken window; every result line counted ('results')."""
         rows = []
         for ability_id, row in self.abilities.items():
             source_id = row["sources"].most_common(1)[0][0] if row["sources"] else ""
@@ -389,7 +473,7 @@ class TakenTally:
                 "damage": row["damage"], "hits": row["hits"], "direct": row["direct"],
                 "dot": row["dot"], "fall": row["fall"], "area": row["area"],
                 "single": row["single"], "types": dict(row["types"]),
-                "source": unit_name_of(source_id) if source_id else "",
+                "source": unit_name_of(source_id) if source_id else "", "max": row["max"],
             })
         rows.sort(key=lambda r: (-r["damage"], r["name"]))
         return {
@@ -404,7 +488,73 @@ class TakenTally:
             "heal_absorbed": self.heal_absorbed, "overkill": self.overkill,
             "first_ms": self.first_ms, "last_ms": self.last_ms,
             "abilities": rows[:top], "ability_count": len(rows),
+            "results": dict(self.results),
+            "sources": self._sources_snapshot(name_of, icon_of, unit_name_of),
+            "healers": self._healers_snapshot(name_of, icon_of, unit_name_of),
         }
+
+    def _sources_snapshot(self, name_of, icon_of, unit_name_of) -> list[dict]:
+        """The damage by the units that did it, grouped by (name, boss):
+        several adds of one name are one row with their count ('units'),
+        and the unit the log leaves unnamed (id 0: the environment, fall
+        damage, some set procs) is the 'unnamed' row. Bosses first, then by
+        damage; each group's abilities by damage."""
+        groups: dict[tuple[str, bool], dict] = {}
+        for source_id, source in self.sources.items():
+            unnamed = source_id == "0"
+            name = "" if unnamed else unit_name_of(source_id)
+            key = (name, source["boss"])
+            group = groups.get(key)
+            if group is None:
+                group = groups[key] = {
+                    "name": name, "boss": source["boss"], "unnamed": unnamed, "units": 0,
+                    "damage": 0, "hits": 0, "max": 0, "abilities": {}}
+            group["units"] += 1
+            group["damage"] += source["damage"]
+            group["hits"] += source["hits"]
+            group["max"] = max(group["max"], source["max"])
+            for ability_id, row in source["abilities"].items():
+                merged = group["abilities"].get(ability_id)
+                if merged is None:
+                    merged = group["abilities"][ability_id] = {
+                        "id": ability_id, "name": name_of(ability_id), "icon": icon_of(ability_id),
+                        "damage": 0, "hits": 0, "max": 0, "direct": 0, "dot": 0, "fall": 0,
+                        "area": 0, "single": 0, "types": Counter()}
+                for field in ("damage", "hits", "direct", "dot", "fall", "area", "single"):
+                    merged[field] += row[field]
+                merged["max"] = max(merged["max"], row["max"])
+                merged["types"].update(row["types"])
+        out = []
+        for group in groups.values():
+            abilities = sorted(group["abilities"].values(),
+                               key=lambda r: (-r["damage"], r["name"]))
+            for row in abilities:
+                row["types"] = dict(row["types"])
+            group["abilities"] = abilities
+            out.append(group)
+        out.sort(key=lambda g: (not g["boss"], -g["damage"], g["name"]))
+        return out
+
+    def _healers_snapshot(self, name_of, icon_of, unit_name_of) -> list[dict]:
+        """The healing by the unit that did it, by landed amount: a pet's
+        row is named after its owner and marked 'pet'; the unit the log
+        leaves unnamed is the 'unnamed' row; each healer's abilities by
+        landed amount."""
+        out = []
+        for healer_id, healer in self.healers.items():
+            unnamed = healer_id == "0"
+            named_id = healer["pet_owner"] or healer_id
+            abilities = [{"id": ability_id, "name": name_of(ability_id), "icon": icon_of(ability_id),
+                          **row} for ability_id, row in healer["abilities"].items()]
+            abilities.sort(key=lambda r: (-r["landed"], -r["overheal"], r["name"]))
+            out.append({
+                "name": "" if unnamed else unit_name_of(named_id), "self": healer["self"],
+                "pet": bool(healer["pet_owner"]), "unnamed": unnamed,
+                "landed": healer["landed"], "overheal": healer["overheal"], "hits": healer["hits"],
+                "direct": healer["direct"], "hot": healer["hot"], "abilities": abilities,
+            })
+        out.sort(key=lambda h: (-h["landed"], -h["overheal"], h["name"]))
+        return out
 
 
 # ----------------------------------------------------------------- summary --

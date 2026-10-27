@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2435](../src/esolog_tail.py#L2435)*
+*[src/esolog_tail.py:2444](../src/esolog_tail.py#L2444)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4077](../src/esolog_tail.py#L4077)*
+*[src/esolog_tail.py:4086](../src/esolog_tail.py#L4086)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -1001,7 +1001,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:498](../src/gui/build_render.py#L498)*
+*[src/gui/build_render.py:508](../src/gui/build_render.py#L508)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1761,7 +1761,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3301](../src/esolog_tail.py#L3301)*
+*[src/esolog_tail.py:3310](../src/esolog_tail.py#L3310)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -1942,6 +1942,62 @@ A session's cast index and a fight's damage-taken tallies cost a few
 dictionaries: the (source, cast) map is cleared at each fight's end, the
 per-ability memory with the zone session (unit ids start over), and a cast's
 pending amounts are dropped the moment its second target lands.
+
+## The damage taken window: by source and by healer, over the whole fight
+
+### src/gui/taken_render.py
+
+*[src/gui/taken_render.py:1](../src/gui/taken_render.py#L1)*
+
+Damage taken window: one player's damage taken and healing received over a
+whole fight, by kind, by the unit that did it and by the unit that healed
+(issue #98). The death recap keeps the last seconds before each death and
+is only there for a player who died; this window has no event table, only
+the fight's totals, so it opens for any player.
+
+Design. What a tank wants to know after a pull is what hit them, who hit
+them and whether the healing kept up, none of which the fight pane or the
+build window says. The data is the player dict's 'taken' key, as
+damage_kinds.TakenTally.snapshot writes it for every player in every fight.
+The shape follows a survey of three veteran trial logs (Dreadsail Reef,
+Sunspire, Halls of Fabrication; 48 boss fights of a minute or more, 561
+player-fights with damage taken; 2026-10-27):
+
+- Every ability is listed, no cap. A tank took damage from a median 11
+  distinct abilities (at most 26) and 8 units (at most 29), a DPS from 7
+  and 5 or 6; the ten largest abilities carried everything in the median
+  fight, so the table is short enough to read whole.
+- Damage is grouped by the unit that did it, bosses first. The largest
+  source carried about half the damage and the second a fifth, so "the
+  boss against the adds" is the first question; units of one name are one
+  row with their count, since adds come in packs (four Alkosh's Will on
+  Nahviintaas). Bosses carried a median 44% of the damage taken in every
+  role. The unit the log leaves unnamed (id 0: the environment, fall
+  damage, some set procs) is its own row.
+- The per-second figure divides by the fight time, pull to end, not the
+  span of hits as the dps figures do: it is for comparing pulls, a quiet
+  stretch is part of the answer, and the hits spanned only 64-80% of the
+  fight (tanks most). Tanks took a median 1,016 a second, DPS 545, healers
+  512.
+- Healing is grouped by healer, with the healer's abilities under them.
+  Six to eight units healed each player in the median fight (every group
+  HoT counts) with 15-19 abilities between them; the largest healer landed
+  51-65%, a tank's own heals 23% of what landed on them, a healer's own
+  61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
+  after the owner, since the log names no pet.
+- Overheal is a share per row, never an amount: 91-96% of all healing on a
+  player overflowed, so the amounts would be ten to twenty times the landed
+  figures and bury them. Landed healing is the headline; the share tells a
+  healer which HoTs were wasted on this player.
+- Shields absorbed 54-67% as much again as the damage that reached health
+  (tanks most), so the header gives the absorbed amount with that ratio,
+  and the blocked hits as a count of the direct hits that reached health
+  (tanks blocked 1,818 of 5,729 in the survey). What a block, armour or
+  resistances prevented is not in the log and is never stated.
+
+The kinds bars are the death recap's block (death_render.kinds_block_html)
+so the two windows read alike; the player names go through the Hide names
+mask (gui.name_mask), the sources and healers included.
 
 ## Experimental buff timeline
 
@@ -2173,7 +2229,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:597](../src/gui/main_window.py#L597)*
+*[src/gui/main_window.py:602](../src/gui/main_window.py#L602)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2183,7 +2239,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1066](../src/gui/main_window.py#L1066)*
+*[src/gui/main_window.py:1094](../src/gui/main_window.py#L1094)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2283,7 +2339,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:274](../src/gui/fight_view.py#L274)*
+*[src/gui/fight_view.py:275](../src/gui/fight_view.py#L275)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2366,7 +2422,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:185](../src/gui/fight_view.py#L185)*
+*[src/gui/fight_view.py:186](../src/gui/fight_view.py#L186)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
