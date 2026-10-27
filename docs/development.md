@@ -114,7 +114,15 @@ python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Eld
 :: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
 python scripts\generate_esohub_links.py
 
-:: Gear set data, after dropping a new LibSets_SetData.xlsm into data/gear_sets/
+:: Set names from your installed game, and a check of every bundled name
+:: against it (needs UESP's EsoExtractData; about 20 seconds). It lists each
+:: name that differs from the game's and exits 1 when there is one; run it
+:: first, then the scripts below whose tables it names
+python scripts\check_client_names.py --write-sets
+
+:: Gear set data: names from the game (the step above), set types from
+:: LibSets_SetData.xlsm in data/gear_sets/ (drop in a new one when LibSets
+:: publishes it)
 python scripts\generate_gear_data.py
 
 :: Class skill line and Class Mastery passives by ability id, for the skill

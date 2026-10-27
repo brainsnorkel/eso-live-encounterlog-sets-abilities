@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Every mythic shows on the fight pane's set row**: the row decided what was a mythic from a hand-kept list of 20 names, two of which were not set names ("Kilt" for Harpooner's Wading Kilt, "Antiquarian's Eye"), so 19 of the game's 36 mythics never showed there, among them Belharza's Band, Rourken Steamguards, Ring of the Wild Hunt and Prowler's Talisman. It now asks the set's type, as the build window already did
+
+### Changed
+- **Set names come from the game** (#79): the bundled set table takes every set's name from the installed client's own English text, committed as `data/client/set_names_en.json`, and only the set type from the LibSets workbook; the 26 hand-typed name corrections are gone. No name the app shows changes today. A set the workbook does not have yet appears under its name at once, read as a five-piece set until LibSets types it
+- **`scripts/check_client_names.py`** compares every name the app bundles by id with the client after a patch: set names (the set table, the build issue rules' set lists, the penetration and critical table, the ESO-Hub link keys), class passives and mastery effects, weapon skills, the taunt, pull and Elemental Drain id lists, and poison names. It prints each name that differs and exits 1 when one does; ids the game no longer names (the old rank II to IV ids UESP keeps, 488 of them) are counted, not failed. On the Update 51 client every bundled name matches
+
 ## [0.21.0] - 2026-10-28
 
 ### Added
