@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2428](../src/esolog_tail.py#L2428)*
+*[src/esolog_tail.py:2435](../src/esolog_tail.py#L2435)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:78](../src/esolog_tail.py#L78)*
+*[src/esolog_tail.py:79](../src/esolog_tail.py#L79)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1819](../src/esolog_tail.py#L1819)*
+*[src/esolog_tail.py:1821](../src/esolog_tail.py#L1821)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1834](../src/esolog_tail.py#L1834)*
+*[src/esolog_tail.py:1836](../src/esolog_tail.py#L1836)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:72](../src/esolog_tail.py#L72)*
+*[src/esolog_tail.py:73](../src/esolog_tail.py#L73)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4043](../src/esolog_tail.py#L4043)*
+*[src/esolog_tail.py:4077](../src/esolog_tail.py#L4077)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:372](../src/esolog_tail.py#L372)*
+*[src/esolog_tail.py:373](../src/esolog_tail.py#L373)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -394,6 +394,72 @@ Icons: five of the werewolf skills (Pounce, Brutal Pounce, Feral Pounce,
 Rending Claws, Claw Fury) carry Update 50 icons named u50_ability_*, and
 Rampage an achievement icon, all outside the ability_* family the app used
 to bundle (see scripts/extract_ability_icons.py).
+
+## Cast counts and casts per minute
+
+### src/casts.py
+
+*[src/casts.py:1](../src/casts.py#L1)*
+
+Cast counts and casts per minute (engine side, no Qt). Issue #94.
+
+Design: every player's BEGIN_CAST lines are in the log, the group's as well
+as the logging player's. One cast can write two of them under one
+castTrackId: a channelled heavy attack writes one at the press and one for
+the channel (11 of 11 for a Lightning staff in the Tideborn Taleria fight
+of 2026-10-27), and a synergy can write two ability ids (Healing
+Combustion, 63507 then 95042, on the same timestamp). A cast is therefore
+one castTrackId per caster, whatever the lines under it.
+
+A fight's casts are those begun from its start to its end, the engine's
+fight window (BEGIN_COMBAT to END_COMBAT). Combat Metrics counts the same
+way: for the logging player in that fight it showed Force Pulse 37,
+Subterranean Assault 12, light attacks (Lightning) 52 and every other skill
+alike, and left out the pre-buffs cast in the ten seconds before the pull
+(Blockade of Frost 7 in both). Its light attacks (Ice) read 15 against the
+log's 14. Over 12 trial and arena splits (193 fights, 66,244 casts), 3% of
+casts began in the 3 s before BEGIN_COMBAT; those are not counted.
+
+A count sits under a bar slot when the cast's id is the slot's, or its name
+is (Venom Skull is slotted as 117624 and cast as 123704, Incapacitating
+Strike as 36508 and 113105, Crystal Fragments' instant proc is 114716), or
+both are in one of the families of SKILL_FAMILIES. The Destruction Staff
+families are there because the bar lists those skills under a base id
+(Elemental Blockade 39011) or the element of the staff equipped when
+PLAYER_INFO was written, while the cast
+carries the element of the staff in hand: over the October splits,
+Elemental Blockade was cast as Blockade of Fire 2,651 times, Frost 2,391,
+Storms 1,257, and a bar listing Blockade of Storms was cast as Blockade of
+Frost 253 times. A skill slotted on both bars shows its total under each
+(Chris's choice: totals per skill, not per active bar).
+
+One skill writes no BEGIN_CAST at all: the Arcanist's Fatecarver, matched
+in 0 of 1,514 player-fights with Pragmatic Fatecarver slotted and 0 of 68
+with Exhausting Fatecarver (no other slotted skill is systematically
+unmatched; those that are never cast are slotted for their passives,
+banners cast before the pull, or rarely used ultimates). Each use instead
+gains its channel effects on the caster under one castTrackId: Pragmatic
+writes 186369, 189533, 201265 and 201273 (6,867 casts in the October
+splits; 201265 also comes alone, a shield), Exhausting 186780, sometimes
+with 184291. CHANNEL_EFFECTS turns such a GAINED into a cast of the morph,
+one per castTrackId like any cast. No log had the unmorphed Fatecarver.
+
+Casts per minute counts every cast (Chris's choice), extras included,
+over the fight's duration; a player who left during the fight over the
+share of it they were there for.
+
+The extras are the casts no slot holds, by kind (EXTRA_KINDS): light and
+heavy attacks (every id the client's own name table, en.lang table
+198758357 of Update 51, names "Light Attack (…)" or "Heavy Attack (…)"),
+bashes, weapon swaps, dodges, synergies, potions and Break Free. The log
+marks neither a synergy nor a potion: a synergy writes only its own
+effects, and a potion is cast under its first trait's effect (Restore
+Health, Major Brutality) with the generic icon Recall and Mount Up also
+carry. Both come from the ids seen in the October splits: SYNERGIES holds
+the skill-line synergies (class, guild, Undaunted, werewolf), not the
+trials' mechanics; POTIONS the alchemy block 45221 to 45241, the vendor,
+Alliance War and Crown potions. Werewolf light and heavy attacks count as
+light and heavy attacks.
 
 ## Companions: a row of their own under their owner
 
@@ -935,7 +1001,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:441](../src/gui/build_render.py#L441)*
+*[src/gui/build_render.py:498](../src/gui/build_render.py#L498)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1361,7 +1427,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:898](../src/esolog_tail.py#L898)*
+*[src/esolog_tail.py:899](../src/esolog_tail.py#L899)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1402,13 +1468,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:87](../src/esolog_tail.py#L87)*
+*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:422](../src/esolog_tail.py#L422)*
+*[src/esolog_tail.py:423](../src/esolog_tail.py#L423)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1492,7 +1558,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:104](../src/esolog_tail.py#L104)*
+*[src/esolog_tail.py:105](../src/esolog_tail.py#L105)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1500,7 +1566,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:122](../src/esolog_tail.py#L122)*
+*[src/esolog_tail.py:123](../src/esolog_tail.py#L123)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1646,7 +1712,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:638](../src/esolog_tail.py#L638)*
+*[src/esolog_tail.py:639](../src/esolog_tail.py#L639)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1669,7 +1735,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:764](../src/esolog_tail.py#L764)*
+*[src/esolog_tail.py:765](../src/esolog_tail.py#L765)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1695,7 +1761,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3272](../src/esolog_tail.py#L3272)*
+*[src/esolog_tail.py:3301](../src/esolog_tail.py#L3301)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 

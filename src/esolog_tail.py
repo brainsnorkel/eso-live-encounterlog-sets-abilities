@@ -36,6 +36,7 @@ from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
 from misfortunes import run_misfortunes
 from presence import present_share
+import casts
 import companions
 import pen_crit
 import split_retention
@@ -982,6 +983,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
+        self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
         # Companions (companions.py): whether their damage and healing are
         # their owner's too (the setting companions.accrue_to_owner), and
         # the skills each one cast this session, by (owner's player key,
@@ -1932,6 +1934,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing_keys.clear()
         self._scribing_characters.clear()
         self.werewolf.reset()
+        self.casts.reset()
         self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
@@ -2027,8 +2030,12 @@ class ESOLogAnalyzer(ListenerMixin):
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
-            if self.current_encounter.player_of(caster_unit_id) is not None:
+            caster = self.current_encounter.player_of(caster_unit_id)
+            if caster is not None:
                 self._remember_cast(entry.fields[2], ability_id)
+                # Counted for the build window and the cpm (casts.py)
+                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id,
+                                     casts.line_time(entry.original_line))
                 # Werewolf form: the skills of the bar the log never writes,
                 # and the morph (werewolf.py)
                 if ability_id in werewolf.CAST_IDS:
@@ -2494,6 +2501,15 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.werewolf.note_effect(self._scribing_player_key(target_unit_id),
                                           effect_type, ability_id, entry.timestamp)
 
+            # A skill the log writes no BEGIN_CAST for (Fatecarver): its
+            # channel effect on the caster is the cast (casts.py)
+            if (effect_type == "GAINED" and ability_id in casts.CHANNEL_EFFECTS
+                    and extracted is not None and self.current_encounter):
+                caster = self.current_encounter.player_of(source_unit_id)
+                if caster is not None:
+                    self.casts.note_cast(caster.unit_id, cast_track_id,
+                                         casts.CHANNEL_EFFECTS[ability_id], entry.timestamp)
+
             # A proc set's effect, sourced by its wearer: the build-issue
             # rule for a set that never fires (build_issues)
             if (effect_type == "GAINED" and ability_id in PROC_EFFECT_IDS
@@ -2875,6 +2891,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['left'] = True
                 entry.players[-1]['present_pct'] = present_share(
                     enc.start_time, enc.end_time, player.joined_at, player.left_at)
+            # The fight's casts: the total, cpm and extras (casts.py)
+            cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time)
+            entry.players[-1]['casts'] = casts.cast_summary(
+                cast_counts, duration, entry.players[-1].get('present_pct'))
             if not player.equipped_abilities:
                 # Back on another character whose build is not in the log
                 # yet: the class and the figures, nothing to judge
@@ -2888,6 +2908,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # The werewolf bar the log never writes, rebuilt from casts, and
             # the share of the fight spent in form (werewolf.py)
             entry.players[-1].update(self._werewolf_fields(player, enc))
+            # Each slot's casts in the fight, under its icon in the build
+            # window (casts.py)
+            casts.mark_slot_casts(cast_counts, (entry.players[-1]['front_bar_slots'],
+                                                entry.players[-1]['back_bar_slots'],
+                                                entry.players[-1].get('werewolf_bar_slots')),
+                                  ability_name)
             # The abilities this player taunted with, marked on their bars
             taunts = self._taunts_of(enc, player.unit_id)
             entry.players[-1]['taunts'] = taunts
@@ -2936,6 +2962,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 ordered.append(row)
                 ordered.extend(by_owner.get(row['unit_id'], []))
             entry.players = ordered
+        # Not before the end: this fight's casts are needed once more if it
+        # turns out to carry on (see COMBAT_RESUME_MS)
+        self.casts.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the

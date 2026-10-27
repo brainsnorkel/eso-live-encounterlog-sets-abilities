@@ -6,8 +6,11 @@ Top to bottom: who it is and which fight; mundus stone, food and Class
 Mastery passives; the possible build issues the fight pane's (i) lists,
 when there are any (build_issues, fight_render.issues_html); both ability
 bars, front above back, then a werewolf's
-own bar rebuilt from casts (see werewolf.py), with the fight view's line of
-scribed skills;
+own bar rebuilt from casts (see werewolf.py), each slot with the fight's
+casts of it in small print under it, and a row of the casts no slot holds
+(light and heavy attacks, bashes, swaps, dodges, synergies, potions, Break
+Free) ending in every cast and the casts per minute (casts.py, issue #94);
+then the fight view's line of scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
 poison row under a bar that has one slotted; then the Penetration and
@@ -32,7 +35,7 @@ from damage_kinds import summary_of_taken
 from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
-    issues_html, werewolf_bar_html,
+    form_share_text, issues_html,
 )
 from gui.name_mask import NO_MASK
 from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
@@ -57,6 +60,11 @@ POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
                "front bar / back bar, for a set whose weapons sit on one bar only.")
 UNKNOWN_WEIGHT = "unknown"  # in the armor tally, a piece the bundled table lacks
+CASTS_LABEL = "Other"  # the card's last row: the casts no slot holds
+# That row's kinds (casts.EXTRA_KINDS) as labelled there
+EXTRA_LABELS = (("light", "Light attacks"), ("heavy", "Heavy attacks"), ("bash", "Bashes"),
+                ("swap", "Swaps"), ("dodge", "Dodges"), ("synergy", "Synergies"),
+                ("potion", "Potions"), ("break_free", "Break Free"))
 PEN_TITLE = "Penetration"
 CRIT_TITLE = "Critical damage"
 PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
@@ -243,23 +251,72 @@ def _mundus_food_html(p, theme, icons, e) -> str:
             f"{'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.join(parts)}</p>")
 
 
+def _counted_bar_html(slots, theme, icons, links, base_pt: float, e) -> str:
+    """One ability bar with the fight's casts of each slot in small print
+    under it (casts.py); a dash for none. The ultimate sits apart as on any
+    bar: the sixth slot, or one marked 'ultimate'."""
+    muted = theme["muted"]
+    small = f"font-size:{base_pt * 0.8:.2f}pt;color:{muted}"
+    cells = []
+    for index, slot in enumerate(slots):
+        if index == 5 or (index and slot.get("ultimate")):
+            cells.append("<td width='10'></td>")
+        icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, BAR_ICON_PX,
+                         taunt_color=theme["taunt"])
+        count = int(slot.get("casts") or 0)
+        cells.append(f"<td align='center' valign='bottom'>{icon}<br>"
+                     f"<span style='{small}'>{count if count else DASH}</span></td>")
+    return f"<table cellpadding='1' cellspacing='0'><tr>{''.join(cells)}</tr></table>"
+
+
+def _extras_html(p, theme, base_pt: float, e) -> str:
+    """'Light attacks 52 · Heavy attacks 0 · … · 168 casts, 105 per minute':
+    the fight's casts no slot holds, by kind, then every cast and the cpm
+    (casts.py); '' on an entry built before the counts."""
+    summary = p.get("casts")
+    if not isinstance(summary, dict):
+        return ""
+    muted = theme["muted"]
+    parts = [f"{e(label)} {int(summary.get(kind) or 0)}" for kind, label in EXTRA_LABELS]
+    parts.append(f"{int(summary.get('total') or 0)} casts, "
+                 f"{float(summary.get('cpm') or 0):.0f} per minute")
+    return (f"<span style='color:{muted};font-size:{base_pt * 0.9:.2f}pt'>"
+            f"{' · '.join(parts)}</span>")
+
+
 def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
     """Front bar above back bar in a framed card, then a werewolf's own bar
-    when the player spent some of the fight in form, then the scribed skills
-    with their scripts as the fight view lists them."""
+    when the player spent some of the fight in form, each slot with its
+    casts under it, then the casts no slot holds; under the card the
+    scribed skills with their scripts as the fight view lists them."""
     muted = theme["muted"]
     rows = []
+
+    def bar_of(slots, names):
+        # Counts under the icons once the entry has them (casts.py)
+        if icons is not None and slots and any("casts" in slot for slot in slots):
+            return _counted_bar_html(slots, theme, icons, links, base_pt, e)
+        return _bar_html(slots, names, icons, links, e, BAR_ICON_PX, taunt_color=theme["taunt"])
+
     for label, slots_key, names_key in (("Front", "front_bar_slots", "front_bar"),
                                         ("Back", "back_bar_slots", "back_bar")):
-        bar = _bar_html(p.get(slots_key), p.get(names_key), icons, links, e, BAR_ICON_PX,
-                        taunt_color=theme["taunt"])
+        bar = bar_of(p.get(slots_key), p.get(names_key))
         if bar:
             rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{label}</td>"
                         f"<td valign='middle'>{bar}</td></tr>")
-    werewolf = werewolf_bar_html(p, icons, links, e, theme, BAR_ICON_PX)
-    if werewolf:
+    if p.get("werewolf_share"):
+        slots = p.get("werewolf_bar_slots") or []
+        bar = bar_of(slots, [str(slot.get("name", "")) for slot in slots])
+        note = f"<span style='color:{muted}'>{e(form_share_text(p['werewolf_share']))}</span>"
+        werewolf = (f"<table cellpadding='0' cellspacing='0'><tr><td valign='middle'>{bar}</td>"
+                    f"<td valign='middle'>&nbsp;&nbsp;&nbsp;{note}</td></tr></table>"
+                    if bar else note)
         rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{WEREWOLF_LABEL}</td>"
                     f"<td valign='middle'>{werewolf}</td></tr>")
+    extras = _extras_html(p, theme, base_pt, e)
+    if rows and extras:
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{CASTS_LABEL}</td>"
+                    f"<td valign='middle'>{extras}</td></tr>")
     if not rows:
         return ""
     card = (f"<table cellpadding='4' cellspacing='0' width='99%' "
