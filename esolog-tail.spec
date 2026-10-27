@@ -33,6 +33,8 @@ a = Analysis(
         'gui.settings_dialog',
         'log_archiver',
         'log_freshness',
+        'log_open',
+        'split_retention',
         'version',
     ],
     hookspath=[],

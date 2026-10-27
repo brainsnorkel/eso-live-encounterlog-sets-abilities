@@ -3,6 +3,7 @@ tracked effects the timeline strip draws, and the penetration and critical
 damage assumptions the build window's sections use."""
 
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtGui import QFontDatabase
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+import split_retention
 from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
 from pen_crit import (
@@ -49,6 +51,10 @@ COMPANION_HELP = ("A companion that is out has its own row under its owner. Off,
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
                   "Applies when Settings is saved, to the fights already listed.")
+
+RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for review. Checked "
+                  "at startup and daily; the newest session's split and the keep folder are "
+                  "left alone.")
 
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
@@ -118,7 +124,34 @@ class SettingsDialog(QDialog):
         self.split_dir = _PathRow(config.get("split.dir") or "", directory=True)
         split_form.addRow(self.split_enabled)
         split_form.addRow("Split folder (blank = log folder):", self.split_dir)
+        # Retention (split_retention, issue #86): what a run would do now is
+        # counted from the same selection the run makes
+        zip_row = QHBoxLayout()
+        self.zip_enabled = QCheckBox("Zip split logs older than")
+        self.zip_enabled.setChecked(bool(config.get("split.zip_enabled", False)))
+        self.zip_weeks = QSpinBox()
+        self.zip_weeks.setRange(1, 52)
+        self.zip_weeks.setSuffix(" weeks")
+        self.zip_weeks.setValue(int(config.get("split.zip_after_weeks", 4) or 4))
+        zip_row.addWidget(self.zip_enabled)
+        zip_row.addWidget(self.zip_weeks)
+        zip_row.addStretch(1)
+        split_form.addRow(zip_row)
+        self.retention_preview = QLabel("")
+        self.retention_preview.setWordWrap(True)
+        self.retention_preview.setStyleSheet("color: #888; font-size: 11px;")
+        split_form.addRow(self.retention_preview)
+        retention_help = QLabel(RETENTION_HELP)
+        retention_help.setWordWrap(True)
+        retention_help.setStyleSheet("color: #888; font-size: 11px;")
+        split_form.addRow(retention_help)
         layout.addWidget(split_group)
+        self._splits = []
+        self._scan_splits()
+        self.split_dir.edit.textChanged.connect(self._scan_splits)
+        self.log_row.edit.textChanged.connect(self._scan_splits)
+        self.zip_enabled.toggled.connect(self._update_retention_preview)
+        self.zip_weeks.valueChanged.connect(self._update_retention_preview)
 
         # Archive
         archive_group = QGroupBox("Automatic log archiving (checked at app startup)")
@@ -273,6 +306,27 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def retention_folder(self):
+        """The split folder these settings name (blank: the log's folder)."""
+        return split_retention.split_folder(
+            self.split_dir.value(), split_retention.resolve_log(self.log_row.value()))
+
+    def _scan_splits(self) -> None:
+        folder = self.retention_folder()
+        self._splits = split_retention.scan_splits(folder) if folder is not None else []
+        self._update_retention_preview()
+
+    def _update_retention_preview(self) -> None:
+        """What a run with these settings would zip now."""
+        if not self.zip_enabled.isChecked():
+            self.retention_preview.setText("")
+            return
+        due = split_retention.select_for_zip(self._splits, self.zip_weeks.value(), time.time())
+        noun = "log" if len(due) == 1 else "logs"
+        self.retention_preview.setText(
+            f"Would zip {len(due)} split {noun} "
+            f"({split_retention.format_bytes(split_retention.total_size(due))}) now.")
+
     def _pick_examples(self) -> None:
         """The example picker; its ticked lines go under the user's rules."""
         from gui.examples_dialog import ExamplesDialog
@@ -316,6 +370,8 @@ class SettingsDialog(QDialog):
         self.config.set("log_path", self.log_row.value())
         self.config.set("split.enabled", self.split_enabled.isChecked())
         self.config.set("split.dir", self.split_dir.value())
+        self.config.set("split.zip_enabled", self.zip_enabled.isChecked())
+        self.config.set("split.zip_after_weeks", self.zip_weeks.value())
         self.config.set("archive.size_threshold_mb", self.threshold.value())
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
