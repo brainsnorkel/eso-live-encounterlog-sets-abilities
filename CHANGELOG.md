@@ -2,9 +2,10 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.20.0] - 2026-10-27
 
 ### Added
+- **Cast counts in the build window, and CPM on the fight pane** (#94): the fight's casts of each slotted skill in small print under its icon on the front, back and werewolf bars, and an **Other** row with light and heavy attacks, bashes, swaps, dodges, synergies, potions and Break Free, then every cast and the casts per minute; the fight pane shows `CPM 105` after `H · M · S` on each player's row, and in the plain copy. A cast is one cast track id per caster begun inside the fight, matched to a slot by id, by name or by family (Destruction Staff elements, the two Fatecarver slot ids); Fatecarver writes no `BEGIN_CAST`, so its channel effect gained on the caster counts as the cast. Checked against Combat Metrics on a Tideborn Taleria pull: every skill count equal, light attacks 66 against 67
 - **The death recap window is a setting** (#95): Settings → Death recaps, 5 to 10 seconds in steps of one, 5 by default. Saving replays the session, so the fights already listed are rebuilt with the new window; each recap names the window it was recorded with
 
 ### Changed
