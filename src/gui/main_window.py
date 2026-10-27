@@ -37,14 +37,16 @@ from gui.fight_render import (
 )
 from gui.fight_view import FightView
 from gui.name_mask import NameMask
+from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
 from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
-from log_open import is_zip, log_members
+from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
+import review_load
 import split_retention
 from update_check import format_release_date
 from version import __version__
@@ -72,6 +74,18 @@ RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000
 class _RetentionBridge(QObject):
     """Carries a retention run's events from its thread to this one."""
     event = Signal(object)  # split_retention.RetentionEvent
+
+
+class _ReviewBridge(QObject):
+    """Carries a review's events from its thread to this one."""
+    event = Signal(object)  # gui.review_runner.ReviewEvent
+
+
+def _duration_text(seconds: float) -> str:
+    """'about 40 seconds', 'about 9 minutes' for a review's time estimate."""
+    if seconds < 90:
+        return f"about {max(10, round(seconds / 10) * 10)} seconds"
+    return f"about {round(seconds / 60)} minutes"
 
 
 def state_style(state: str, dark: bool) -> str:
@@ -144,6 +158,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_update_poller()
         self._build_retention()
+        self._build_review()
         self._build_worker()  # last: the engine thread starts here
 
         # Follow live theme switches (e.g. Windows auto dark mode after
@@ -335,12 +350,18 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.freshness_label)
         self.zone_label = QLabel("")
         self.statusBar().addWidget(self.zone_label)
-        # Shared work-progress bar (archiving, review parsing, catch-up);
-        # the worker thread serializes these, so one bar can't be contended
+        # Shared work-progress bar (archiving, review parsing, catch-up). A
+        # review runs on its own thread, so its progress can meet a live
+        # catch-up's here; the next review update shows it again
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(220)
         self.progress_bar.setVisible(False)
         self.statusBar().addPermanentWidget(self.progress_bar)
+        self.review_cancel_button = QToolButton()
+        self.review_cancel_button.setText("Cancel review")
+        self.review_cancel_button.setAutoRaise(True)
+        self.review_cancel_button.setVisible(False)
+        self.statusBar().addPermanentWidget(self.review_cancel_button)
 
         self._ticker = QTimer(self)
         self._ticker.setInterval(1000)
@@ -383,12 +404,10 @@ class MainWindow(QMainWindow):
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
-        self.worker.review_loaded.connect(self._on_review_loaded)
         self.worker.parse_progress.connect(self._on_parse_progress)
 
         requests = ((self.request_archive, self.worker.archive_now),
-                    (self.request_restart, self.worker.restart_monitoring),
-                    (self.request_review, self.worker.open_review))
+                    (self.request_restart, self.worker.restart_monitoring))
         for signal, slot in requests:
             signal.connect(slot)
 
@@ -465,6 +484,113 @@ class MainWindow(QMainWindow):
         elif event.kind == "failed":
             self.statusBar().showMessage(f"Tidying split logs failed: {event.reason}", 30000)
 
+    # ---- review (gui/review_runner.py, issue #107) ----
+
+    def _build_review(self):
+        """Reviews run on a thread of their own and report through a QObject
+        that lives here; the thread holds it weakly, so it is never the one
+        to free it (see gui/engine_worker.py on freeing Qt objects)."""
+        self._review = ReviewRunner()
+        self._review_bridge = _ReviewBridge(self)
+        self._review_bridge.event.connect(self._on_review_event)
+        self.review_cancel_button.clicked.connect(self._review.cancel)
+        self.request_review.connect(self._start_review)
+
+    def _review_notify(self):
+        bridge = weakref.ref(self._review_bridge)
+
+        def notify(event):
+            target = bridge()
+            if target is not None:
+                target.event.emit(event)
+        return notify
+
+    def _set_review_busy(self, busy: bool):
+        self.review_cancel_button.setVisible(busy)
+        if not busy:
+            self.progress_bar.setVisible(False)
+
+    @Slot(str, str)
+    def _start_review(self, path, member=""):
+        """A log above review_load.LARGE_REVIEW_BYTES is outlined first and
+        the reader asked whether to read all of it; a smaller one replays
+        at once."""
+        if self._review.running:
+            self.statusBar().showMessage("A review is still loading: cancel it first", 8000)
+            return
+        try:
+            size = log_size(Path(path), member or None)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Review", f"Could not read {path}: {exc}")
+            return
+        self._set_review_busy(True)
+        if size > review_load.LARGE_REVIEW_BYTES:
+            self._on_parse_progress(f"Looking through {Path(path).name}", 0, 0)
+            self._review.outline(path, member, self._review_notify())
+        else:
+            self._review.replay(self.config, path, member, -1, self._review_notify())
+
+    @Slot(object)
+    def _on_review_event(self, event):
+        if event.kind == "progress":
+            self._on_parse_progress(event.label, event.done, event.total)
+            return
+        self._set_review_busy(False)
+        if event.kind == "outlined":
+            self._ask_review_range(event)
+        elif event.kind == "loaded":
+            self._on_review_loaded(event.shown, event.fights)
+        elif event.kind == "cancelled":
+            self.statusBar().showMessage(f"Review of {Path(event.path).name} cancelled", 8000)
+        elif event.kind == "failed":
+            self.statusBar().clearMessage()
+            QMessageBox.warning(self, "Review",
+                                f"Could not review {event.path}:\n{event.reason}")
+
+    def _ask_review_range(self, event):
+        """The whole log, or its most recent sessions holding at least
+        review_load.RECENT_FIGHTS fights (a cut is always at a session
+        start: see review_load)."""
+        # No fight counts here: the outline counts BEGIN_COMBAT lines, and
+        # the engine merges or drops some (62 counted, 47 listed, on a
+        # month's log), so sessions, size and time are what it states
+        outline = event.outline
+        name = Path(event.path).name
+        sessions = len(outline.starts)
+        recent = outline.recent()
+        box = QMessageBox(self)
+        box.setWindowTitle("Review")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"{name} is {split_retention.format_bytes(outline.total)}, "
+                    f"{sessions} session{'s' if sessions != 1 else ''} of play.")
+        box.setInformativeText(
+            f"Reading all of it takes {_duration_text(review_load.estimate_seconds(outline.total))}. "
+            f"Live monitoring carries on meanwhile.")
+        whole = box.addButton("Whole log", QMessageBox.AcceptRole)
+        recent_button = None
+        if recent > 0:
+            count = sessions - recent
+            size = outline.size_from(recent)
+            recent_button = box.addButton(
+                f"Last {count} session{'s' if count != 1 else ''}, "
+                f"{split_retention.format_bytes(size)} "
+                f"({_duration_text(review_load.estimate_seconds(size))})",
+                QMessageBox.AcceptRole)
+            box.setDefaultButton(recent_button)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        box.deleteLater()
+        if clicked is whole:
+            choice = -1
+        elif recent_button is not None and clicked is recent_button:
+            choice = outline.begin_log(recent)
+        else:
+            self.statusBar().clearMessage()
+            return
+        self._set_review_busy(True)
+        self._review.replay(self.config, event.path, event.member, choice, self._review_notify())
+
     @Slot()
     def _discard_worker(self):
         """Delete the worker on the UI thread, where leave_thread put it."""
@@ -479,6 +605,15 @@ class MainWindow(QMainWindow):
         self._retention_first.stop()
         self._retention_daily.stop()
         self._retention.stop()  # a zip in progress stops within one chunk
+        # A review stops within a megabyte of the log; its last event may
+        # already be queued, so the bridge is cut off from this window,
+        # which is being deleted
+        self._review.cancel()
+        self._review.wait(5)
+        try:
+            self._review_bridge.event.disconnect(self._on_review_event)
+        except (RuntimeError, TypeError):
+            pass
         self._save_window_layout()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so

@@ -34,7 +34,6 @@ from engine_events import AnalyzerListener
 from esolog_tail import LogFileMonitor
 from fight_history import FightHistory
 from log_archiver import LogArchiver
-from log_open import open_log_text
 
 POLL_INTERVAL_MS = 1000
 WAIT_FOR_LOG_INTERVAL_MS = 2000
@@ -75,8 +74,9 @@ class SignalListener(AnalyzerListener):
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.
 
-    All slots run on the worker thread, so polling, manual archiving, review
-    replays, and monitoring restarts are naturally serialized.
+    All slots run on the worker thread, so polling, manual archiving and
+    monitoring restarts are naturally serialized. A review has a thread of
+    its own (gui/review_runner.py), so the poll never waits for one.
     """
 
     fight_completed = Signal(object)   # FightHistoryEntry
@@ -90,8 +90,7 @@ class EngineWorker(QObject):
     # A requested restart has begun: fights sent before this came from the
     # analyzer being replaced (queued signals arrive in emission order)
     monitoring_restarting = Signal()
-    review_loaded = Signal(str, list)  # path, [FightHistoryEntry]
-    # Parsing/import progress: (label, done_bytes, total_bytes).
+    # Catch-up progress: (label, done_bytes, total_bytes).
     # total == 0 -> indeterminate busy; done >= total > 0 -> finished (hide).
     parse_progress = Signal(str, int, int)
 
@@ -267,40 +266,3 @@ class EngineWorker(QObject):
                     self._start_waiting()
                 elif polling:
                     self._poll_timer.start()
-
-    @Slot(str, str)
-    def open_review(self, path: str, member: str = ""):
-        """Replay an arbitrary log file and hand its fights to the UI. A zip
-        (a zipped split or an archive) is read through its log *member*, or
-        its only log when none is named (log_open)."""
-        review_path = Path(path)
-        shown = str(review_path)
-        label = f"Parsing {review_path.name}"
-        try:
-            analyzer = build_analyzer(self.config, [])
-            analyzer.current_log_file = str(review_path)
-            with open_log_text(review_path, member or None) as (f, total, shown):
-                # Emit at most ~200 updates (and no more than one per MB)
-                step = max(1024 * 1024, total // 200)
-                done = 0
-                last_emit = 0
-                self.parse_progress.emit(label, 0, total)
-                for line in f:
-                    # Char length approximates byte length for these logs;
-                    # progress is clamped to total either way
-                    done += len(line)
-                    if done - last_emit >= step:
-                        last_emit = done
-                        self.parse_progress.emit(label, min(done, total), total)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    entry = analyzer.log_parser.parse_line(line)
-                    if entry is not None:
-                        analyzer.process_log_entry(entry)
-            self.review_loaded.emit(shown, list(analyzer.fight_history.fights))
-        except Exception as exc:
-            self.diagnostic.emit(f"Review failed for {review_path}: {exc}")
-            self.review_loaded.emit(shown, [])
-        finally:
-            self.parse_progress.emit(label, 1, 1)  # hide

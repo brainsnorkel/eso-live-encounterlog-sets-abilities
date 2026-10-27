@@ -2229,7 +2229,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:602](../src/gui/main_window.py#L602)*
+*[src/gui/main_window.py:737](../src/gui/main_window.py#L737)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2239,9 +2239,49 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1094](../src/gui/main_window.py#L1094)*
+*[src/gui/main_window.py:1229](../src/gui/main_window.py#L1229)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+## Reviews: a thread of their own, and where a large log is cut
+
+### src/review_load.py
+
+*[src/review_load.py:1](../src/review_load.py#L1)*
+
+Replaying a log for review (issue #107): the engine side of "Open log for
+review…", with no Qt in it, so it runs on a thread of its own while live
+monitoring keeps its poll.
+
+A large log is first outlined: one pass over the line heads that finds each
+session's start (``BEGIN_LOG``) and counts its fights (``BEGIN_COMBAT``),
+so the window can offer the whole log or only its most recent sessions.
+The cut is always at a session start. Starting in the middle of a session
+was measured and rejected: the roster lines alone do not carry what the
+engine learns from the rest of the session (who owns which companion and
+pet), and on a Dreadsail Reef split every one of the last 18 fights came
+out different. A replay from a ``BEGIN_LOG`` matched a replay of the whole
+file in 75 of 75 fights (once champion points followed the log).
+
+Lines before the first session read are skipped unparsed, so a cut log
+costs a pass over its head plus the engine's time for the rest. The engine
+runs at about 10 MB/s on the maintainer's machine, which the time estimate
+uses.
+
+### src/gui/review_runner.py
+
+*[src/gui/review_runner.py:1](../src/gui/review_runner.py#L1)*
+
+A review on a thread of its own (issue #107). Until 0.21 a review ran on
+the engine thread, whose poll timer then waited for it: a month-sized log
+took 8.6 minutes with no live fights shown. Now the engine polls on while a
+review replays through an analyzer of its own.
+
+The thread holds no Qt object. It reports through *notify*, which the
+window turns into a signal on an object living on the UI thread (as split
+retention does), so nothing Qt is created or freed here; the analyzer and
+its fights are plain Python. The settings are a snapshot taken when the
+review starts, since Settings may change them meanwhile.
 
 ## Updates: the schedule, the conditional request and the button
 
