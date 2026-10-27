@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2240](../src/esolog_tail.py#L2240)*
+*[src/esolog_tail.py:2241](../src/esolog_tail.py#L2241)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
+*[src/esolog_tail.py:76](../src/esolog_tail.py#L76)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1633](../src/esolog_tail.py#L1633)*
+*[src/esolog_tail.py:1634](../src/esolog_tail.py#L1634)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1648](../src/esolog_tail.py#L1648)*
+*[src/esolog_tail.py:1649](../src/esolog_tail.py#L1649)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:69](../src/esolog_tail.py#L69)*
+*[src/esolog_tail.py:70](../src/esolog_tail.py#L70)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3562](../src/esolog_tail.py#L3562)*
+*[src/esolog_tail.py:3572](../src/esolog_tail.py#L3572)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:350](../src/esolog_tail.py#L350)*
+*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -575,6 +575,46 @@ NAME_CORRECTIONS carries the name from the installed client's own English
 string table for each of those ids, and the script reports a correction
 the workbook no longer needs. ESO-Hub links for sets are looked up by the
 corrected name (see src/ability_icons.py).
+
+## Solo dungeons: the run's Misfortunes
+
+### src/misfortunes.py
+
+*[src/misfortunes.py:1](../src/misfortunes.py#L1)*
+
+The Misfortunes a solo dungeon run was started with (engine side, no Qt).
+Issue #70.
+
+The solo dungeons of October 2026 (pen_crit.SOLO_DUNGEON_ZONES: March of
+Sacrifices 1592, Moon Hunter Keep 1593) let the player pick Misfortunes at
+the door, each one making the run harder. The log writes each picked
+Misfortune as a DEBUFF on the player, gained at the door and never faded,
+and every PLAYER_INFO line of the run lists its id among the player's
+long-term effects (the 2026-10-26 solo Moon Hunter Keep run: six lines, six
+hits for each of the three), so the logging player's long_term_effects at
+BEGIN_COMBAT, the list the food rule and the passives already read, carry
+them at every pull and no new parsing is needed.
+
+Known ids: Warm Welcome 269749, Revoke of Respite 269803 and Alleviating
+Assault 269792 from that run; Weary Submission 269799 and Pulled Punches
+269804 from the 2026-10-25 solo March of Sacrifices run, which picked those
+two and Warm Welcome (each of its PLAYER_INFO lines lists all three). The
+texts are the game's own descriptions (the client's en.lang, table
+132143172 by ability id), shortened; where the game leaves the figure to a
+placeholder, the figure is the hyperioxes.com guide's (Revoke of Respite's
+50%), the log's (Alleviating Assault's heals: 5,100 on trash, 8,160 on a
+boss) or left out (Weary Submission's). Every ABILITY_INFO icon of these
+effects starts with ``debuff_solodungeon_`` (``..._monster_warmwelcome``,
+``..._player_pulledpunches``, ``..._player_wearywarriorssubmission``), so a
+long-term effect whose icon stem starts with that is named by its logged
+name, with no text, until its id goes in the table.
+
+The engine stores them on the fight entry (entry.misfortunes, a list of
+[name, text]), in the table's order whatever order the log lists them in
+(it differed between pulls of one run): None outside a solo dungeon, so the
+fight pane shows nothing there and an entry built before this renders as
+before; [] in a solo dungeon run without Misfortunes, which the pane shows
+as ``Misfortunes: none``.
 
 ## Penetration and critical damage: the spreadsheet from the log
 
@@ -1216,7 +1256,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:547](../src/effect_rules.py#L547)*
+*[src/effect_rules.py:555](../src/effect_rules.py#L555)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -1233,7 +1273,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:743](../src/effect_rules.py#L743)*
+*[src/effect_rules.py:751](../src/effect_rules.py#L751)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1254,7 +1294,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:770](../src/esolog_tail.py#L770)*
+*[src/esolog_tail.py:771](../src/esolog_tail.py#L771)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1268,7 +1308,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:100](../src/app_config.py#L100)*
+*[src/app_config.py:101](../src/app_config.py#L101)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1282,7 +1322,8 @@ a renamed or already-flagged line is left alone), so a trial fight
 still shows a missing group buff at 0% after the upgrade. A text
 saved before version 4 has the ``expected large`` that version 3
 put on its Powerful Assault line taken off again (issue #48: the
-one default no longer expected). Nothing is written back; the
+one default no longer expected). A text saved before version 5 has
+the default Crux line commented out (issue #80). Nothing is written back; the
 version is saved with the next Save, and every step is harmless to
 repeat.
 
@@ -1294,13 +1335,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:84](../src/esolog_tail.py#L84)*
+*[src/esolog_tail.py:85](../src/esolog_tail.py#L85)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:400](../src/esolog_tail.py#L400)*
+*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1384,7 +1425,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:101](../src/esolog_tail.py#L101)*
+*[src/esolog_tail.py:102](../src/esolog_tail.py#L102)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1392,7 +1433,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:119](../src/esolog_tail.py#L119)*
+*[src/esolog_tail.py:120](../src/esolog_tail.py#L120)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1538,7 +1579,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:513](../src/esolog_tail.py#L513)*
+*[src/esolog_tail.py:514](../src/esolog_tail.py#L514)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1561,7 +1602,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:636](../src/esolog_tail.py#L636)*
+*[src/esolog_tail.py:637](../src/esolog_tail.py#L637)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1714,7 +1755,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:620](../src/effect_rules.py#L620)*
+*[src/effect_rules.py:628](../src/effect_rules.py#L628)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
@@ -1820,7 +1861,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:987](../src/gui/main_window.py#L987)*
+*[src/gui/main_window.py:988](../src/gui/main_window.py#L988)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

@@ -34,6 +34,7 @@ from build_issues import (
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
+from misfortunes import run_misfortunes
 import companions
 import pen_crit
 import werewolf
@@ -2749,6 +2750,15 @@ class ESOLogAnalyzer(ListenerMixin):
         # weighed by the damage dealt while they were up
         self._pen_crit_fields(entry, enc)
         self.pen_crit_tracker.prune_before(enc.start_time)
+
+        # A solo dungeon run's Misfortunes, from the logging player's
+        # long-term effects (misfortunes.py, issue #70)
+        if pen_crit.zone_kind(self.current_zone_id, self.current_difficulty) == "solo_dungeon":
+            local = next((p for p in enc.players.values() if p.is_local), None)
+            entry.misfortunes = [list(item) for item in run_misfortunes(
+                local.long_term_effects if local is not None else [],
+                lambda ability_id: self.ability_icons.get(ability_id, ""),
+                lambda ability_id: self.ability_cache.get(ability_id, ""))]
 
         if enc.trial_info and enc.trial_info.get('completed'):
             trial = enc.trial_info

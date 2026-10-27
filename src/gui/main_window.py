@@ -31,8 +31,8 @@ from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, muted_color, pen_crit_tooltips, render_html, render_plain_text,
-    summary_line,
+    issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
+    render_plain_text, summary_line,
 )
 from gui.fight_view import FightView
 from gui.name_mask import NameMask
@@ -734,6 +734,7 @@ class MainWindow(QMainWindow):
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
+        tooltips.update(misfortunes_tooltips(entry))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,

@@ -71,6 +71,9 @@ TOPICS = [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
     ]),
+    ("Solo dungeons: the run's Misfortunes", [
+        "src/misfortunes.py",
+    ]),
     ("Penetration and critical damage: the spreadsheet from the log", [
         "src/pen_crit.py",
         "scripts/generate_set_offense.py",
