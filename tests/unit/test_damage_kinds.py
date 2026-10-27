@@ -250,6 +250,9 @@ class TestSummaryOfRows(unittest.TestCase):
 class TestStars(unittest.TestCase):
 
     def test_every_side_of_every_split_names_a_star_with_an_esohub_link(self):
+        # ESO-Hub keeps every star under /champion-points/star/<slug>, not
+        # under its constellation (0.15.0 linked .../warfare/<slug>, a 404)
+        self.assertTrue(ESOHUB_CP.endswith('/en/champion-points/star/'), ESOHUB_CP)
         for scope in ('dealt', 'taken'):
             for left, right in SPLITS:
                 for side in (left, right):

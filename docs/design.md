@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2242](../src/esolog_tail.py#L2242)*
+*[src/esolog_tail.py:2428](../src/esolog_tail.py#L2428)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:77](../src/esolog_tail.py#L77)*
+*[src/esolog_tail.py:78](../src/esolog_tail.py#L78)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1635](../src/esolog_tail.py#L1635)*
+*[src/esolog_tail.py:1819](../src/esolog_tail.py#L1819)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1650](../src/esolog_tail.py#L1650)*
+*[src/esolog_tail.py:1834](../src/esolog_tail.py#L1834)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:71](../src/esolog_tail.py#L71)*
+*[src/esolog_tail.py:72](../src/esolog_tail.py#L72)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3594](../src/esolog_tail.py#L3594)*
+*[src/esolog_tail.py:3800](../src/esolog_tail.py#L3800)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
+*[src/esolog_tail.py:372](../src/esolog_tail.py#L372)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -451,6 +451,73 @@ October 2026):
 The effect rules still see a companion as a pet (ESOLogAnalyzer._unit_kind),
 so ``pets`` rules, the group size an expectation reads and the pen/crit
 figures do not move with the companion rows.
+
+## Members who leave, come back, or come back on another character
+
+### src/presence.py
+
+*[src/presence.py:1](../src/presence.py#L1)*
+
+Group members who leave, come back, or come back on another character
+(engine side, no Qt). Issue #78.
+
+Design: a group list should name the people who were in the fight, once
+each. Before this, a member who left stayed on the list at 0 dps in every
+later fight of the zone (656 of 9,435 fights in the split logs, 1,256 stale
+rows), a member who came back on a new unit id got a second row, and a
+member back on another character had no row in the fight they came back to
+while their damage was in the group total. The rules below were chosen so
+that a player with no UNIT_REMOVED and no second UNIT_ADDED in the zone
+keeps every figure they had.
+
+What the log writes, from 386 unique sessions (October 2026):
+
+- ``Offline`` is a loading placeholder: a UNIT_ADDED named ``Offline`` with
+  the handle and character id intact, replaced by the real unit (a new unit
+  id) within 0 to 29 s. It is skipped.
+- Leaving is UNIT_REMOVED. Coming back is always a fresh UNIT_ADDED: the
+  same character keeps its character id, and its unit id only on an
+  instance reload (a ZONE_CHANGED between, which starts the zone afresh
+  anyway). Without a zone change the id is always new.
+- Another character of the same account is the same handle with a new
+  character id (and a new per-session id); its PLAYER_INFO comes at the
+  next pull, or never. In 14 of 17 cases the old character's unit was never
+  removed.
+- A player's UNIT_CHANGED never changes who they are, except an anonymous
+  member (empty name and handle) becoming named on joining the group.
+- A departed player's unit id can be handed to a monster.
+
+The rules (Chris, 2026-10-27):
+
+1. A player is their character: handle and character id, the character id
+   alone being unique. Rows stay per character.
+2. UNIT_REMOVED marks the player gone (``left_at``). The fight in progress
+   keeps their row, greyed, with the share of the fight they were there for
+   (present_share); from the next BEGIN_COMBAT they are off the list. A
+   MONSTER added on their unit id marks them gone too, and that id is no
+   longer theirs.
+3. The same character back in the zone is the same row: the new unit id is
+   an alias of the record, so the damage before and after the drop lands on
+   one row and its dps time spans both, the gap included (as Combat Metrics
+   counts it). At the next BEGIN_COMBAT the record takes the new id as its
+   own, its companion and pets following, so later fights are keyed as for
+   anyone else.
+4. Another character is a new row, and the old character is gone. Until its
+   PLAYER_INFO arrives it has no build; it is listed anyway, with the class
+   from UNIT_ADDED and empty bars, when the log says it is grouped with the
+   logging player, so the fight's rows add up to its group total. Anyone
+   else without a build stays off the list, as before (passers-by in the
+   Infinite Archive and overland).
+5. Offline stays skipped.
+6. An anonymous member named by a UNIT_CHANGED takes that name and handle.
+7. A companion follows its owner: its row is keyed by the owner's record,
+   so a re-summon, or a summon on the owner's new unit id, is the same row,
+   and it leaves the list with its owner.
+
+What is per unit id and not merged in the fight a member comes back to:
+the timeline strip, the uptime spans and the pen/crit buffs on them, which
+the trackers keep by the unit id the log names. From the next pull they
+are keyed as for anyone else.
 
 ## Builds: gear, weapon types, armor weights, mundus and food
 
@@ -1294,7 +1361,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:772](../src/esolog_tail.py#L772)*
+*[src/esolog_tail.py:898](../src/esolog_tail.py#L898)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1335,13 +1402,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:86](../src/esolog_tail.py#L86)*
+*[src/esolog_tail.py:87](../src/esolog_tail.py#L87)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
+*[src/esolog_tail.py:422](../src/esolog_tail.py#L422)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1425,7 +1492,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:103](../src/esolog_tail.py#L103)*
+*[src/esolog_tail.py:104](../src/esolog_tail.py#L104)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1433,7 +1500,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:121](../src/esolog_tail.py#L121)*
+*[src/esolog_tail.py:122](../src/esolog_tail.py#L122)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1579,7 +1646,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:515](../src/esolog_tail.py#L515)*
+*[src/esolog_tail.py:638](../src/esolog_tail.py#L638)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1602,7 +1669,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:638](../src/esolog_tail.py#L638)*
+*[src/esolog_tail.py:764](../src/esolog_tail.py#L764)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see

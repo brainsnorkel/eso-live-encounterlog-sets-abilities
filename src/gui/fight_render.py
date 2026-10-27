@@ -76,6 +76,11 @@ from scribing import scribed_label, slot_label
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS", "C": "Companion"}
 COMPANION_INDENT = "↳ "  # before a companion's name, under its owner's row (companions.py)
+# Beside a player who left during the fight, whose row is greyed, and one
+# back on another character whose build the log has not written yet
+# (presence.py)
+LEFT_NOTE = "left · here for {pct:.0f}% of the fight"
+NO_BUILD_NOTE = "build not in the log yet"
 
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
@@ -896,16 +901,20 @@ def render_html(entry, detailed: bool, dark: bool = False,
     deaths = deaths_by_unit(entry)
     for p in entry.players:
         role = p.get("role") or "D"
-        color = theme["roles"].get(role, muted)
+        # A player who left during the fight: the row in the muted color
+        # (presence.py)
+        left = bool(p.get("left"))
+        color = muted if left else theme["roles"].get(role, muted)
+        row_color = muted if left else name_color
         # The name; with Hide names on, another player's pixelated
         # stand-in (gui.name_mask), bold like the row's text
-        name = names.html(_join(p.get("name", "")), name_color, base_pt, bold=True)
+        name = names.html(_join(p.get("name", "")), row_color, base_pt, bold=True)
         unit_id = str(p.get("unit_id", ""))
         # The name opens the player's build window. It keeps the look of
         # plain text; the fight view restyles it while it is hovered
         if unit_id:
             name = (f'<a href="{e(build_href(unit_id), quote=True)}" '
-                    f'style="text-decoration:none;color:{name_color}">{name}</a>')
+                    f'style="text-decoration:none;color:{row_color}">{name}</a>')
         if first_dealer and unit_id == first_dealer:
             name = f"{name} <b>*</b>"
             starred = True
@@ -930,6 +939,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
             class_abbr += ":"
             beside = _mastery_text(p)
         subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
+        note = presence_note(p)
+        if note:
+            subclass_html += f" <span style='color:{muted}'>· {e(note)}</span>"
         # The (i) of possible build issues (build_issues): only on a player
         # with at least one, in the link color so it reads as a cue
         issues_cue = ""
@@ -943,7 +955,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # can be clicked, since the window has no other way in
         if unit_id:
             dps = (f'<a href="{e(damage_href(unit_id), quote=True)}" '
-                   f'style="text-decoration:none;color:{name_color}">{dps}&nbsp;'
+                   f'style="text-decoration:none;color:{row_color}">{dps}&nbsp;'
                    f'{glyph_html(BREAKDOWN_GLYPH, muted, px)}</a>')
         # The player's effective penetration and crit damage over the fight
         # (pen_crit): muted, as plain-looking as the dps figure, and a link
@@ -954,11 +966,12 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if caps and unit_id:
             caps = (f'<a href="{e(pen_crit_href(unit_id), quote=True)}" '
                     f'style="text-decoration:none;color:{muted}">{caps}</a>')
+        pct_style = f" style='color:{muted}'" if left else ""
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
                f"{subclass_html}{issues_cue}{recap_html}</td>"
                f"<td align='right'>{dps}</td>"
-               f"<td align='right'>{_pct_text(p, boss_fight)}</td>"
+               f"<td align='right'{pct_style}>{_pct_text(p, boss_fight)}</td>"
                f"<td align='right' style='color:{muted}'>{caps}</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
         parts.append(row)
@@ -1028,6 +1041,16 @@ def render_html(entry, detailed: bool, dark: bool = False,
     return "".join(parts)
 
 
+def presence_note(p) -> str:
+    """The note beside a player who left during the fight, or one whose
+    build the log has not written yet (presence.py); '' for anyone else."""
+    if p.get("left"):
+        return LEFT_NOTE.format(pct=float(p.get("present_pct") or 0))
+    if p.get("no_build"):
+        return NO_BUILD_NOTE
+    return ""
+
+
 def _sets_text(sets_value) -> str:
     """Human-readable gear sets ("5x Name, 2x Other") from the entry's sets
     field: a preformatted string or a list of (piece_count, set_name, ...)
@@ -1063,9 +1086,10 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
                 and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         indent = COMPANION_INDENT if p.get("companion") else ""
+        note = presence_note(p)
         lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
-                     + (f" · {caps}" if caps else ""))
+                     + (f" · {caps}" if caps else "") + (f" · {note}" if note else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")

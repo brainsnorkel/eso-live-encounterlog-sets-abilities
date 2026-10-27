@@ -62,6 +62,9 @@ TOPICS = [
     ("Companions: a row of their own under their owner", [
         "src/companions.py",
     ]),
+    ("Members who leave, come back, or come back on another character", [
+        "src/presence.py",
+    ]),
     ("Builds: gear, weapon types, armor weights, mundus and food", [
         "src/player_build.py",
         "scripts/generate_weapon_types.py",
