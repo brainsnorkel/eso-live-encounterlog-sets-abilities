@@ -34,6 +34,7 @@ a = Analysis(
         'log_archiver',
         'log_freshness',
         'log_open',
+        'recycle_bin',
         'split_retention',
         'version',
     ],

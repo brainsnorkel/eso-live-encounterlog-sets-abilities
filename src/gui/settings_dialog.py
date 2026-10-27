@@ -6,16 +6,18 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase, QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox,
-    QVBoxLayout,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
+    QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 import split_retention
 from app_config import AppConfig
 from effect_rules import DEFAULT_RULES, parse_rules
+from recycle_bin import TRASH_NAME
 from pen_crit import (
     FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND, SOLO_BOSS_ARMOUR,
 )
@@ -54,7 +56,8 @@ COMPANION_HELP = ("A companion that is out has its own row under its owner. Off,
 
 RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for review. Checked "
                   "at startup and daily; the newest session's split and the keep folder are "
-                  "left alone.")
+                  f"left alone. A split the {TRASH_NAME} cannot take is left, never deleted "
+                  "outright.")
 
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
@@ -107,7 +110,18 @@ class SettingsDialog(QDialog):
         self.config = config
         self.setWindowTitle("Settings")
         self.setMinimumWidth(560)
-        layout = QVBoxLayout(self)
+        # The groups scroll above fixed Save and Cancel buttons: the dialog
+        # is taller than a 1080p screen, and without room Qt squeezed the
+        # wrapped help labels until their lines overlapped
+        outer = QVBoxLayout(self)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setWidget(content)
+        outer.addWidget(self._scroll, 1)
 
         # Log file
         log_group = QGroupBox("Encounter log")
@@ -137,6 +151,19 @@ class SettingsDialog(QDialog):
         zip_row.addWidget(self.zip_weeks)
         zip_row.addStretch(1)
         split_form.addRow(zip_row)
+        # Deleting (issue #87): to the Recycle Bin, M more than N while
+        # zipping is on, and a question before saving a change that deletes
+        delete_row = QHBoxLayout()
+        self.delete_enabled = QCheckBox(f"Move split logs to the {TRASH_NAME} when older than")
+        self.delete_enabled.setChecked(bool(config.get("split.delete_enabled", False)))
+        self.delete_weeks = QSpinBox()
+        self.delete_weeks.setRange(1, 520)
+        self.delete_weeks.setSuffix(" weeks")
+        self.delete_weeks.setValue(int(config.get("split.delete_after_weeks", 52) or 52))
+        delete_row.addWidget(self.delete_enabled)
+        delete_row.addWidget(self.delete_weeks)
+        delete_row.addStretch(1)
+        split_form.addRow(delete_row)
         self.retention_preview = QLabel("")
         self.retention_preview.setWordWrap(True)
         self.retention_preview.setStyleSheet("color: #888; font-size: 11px;")
@@ -147,11 +174,17 @@ class SettingsDialog(QDialog):
         split_form.addRow(retention_help)
         layout.addWidget(split_group)
         self._splits = []
+        self._initial_delete = (self.delete_enabled.isChecked(), self.delete_weeks.value(),
+                                self.retention_folder())
+        self._couple_weeks()
         self._scan_splits()
         self.split_dir.edit.textChanged.connect(self._scan_splits)
         self.log_row.edit.textChanged.connect(self._scan_splits)
-        self.zip_enabled.toggled.connect(self._update_retention_preview)
-        self.zip_weeks.valueChanged.connect(self._update_retention_preview)
+        for changed in (self.zip_enabled.toggled, self.zip_weeks.valueChanged):
+            changed.connect(self._couple_weeks)
+        for changed in (self.zip_enabled.toggled, self.zip_weeks.valueChanged,
+                        self.delete_enabled.toggled, self.delete_weeks.valueChanged):
+            changed.connect(self._update_retention_preview)
 
         # Archive
         archive_group = QGroupBox("Automatic log archiving (checked at app startup)")
@@ -304,7 +337,20 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        outer.addWidget(buttons)
+        self._fit_to_screen(content)
+
+    def _fit_to_screen(self, content: QWidget) -> None:
+        """Open tall enough to show every group where the screen allows,
+        and no taller than nine tenths of it; the rest scrolls."""
+        content.adjustSize()
+        width = max(self.minimumWidth(), content.sizeHint().width()
+                    + self._scroll.verticalScrollBar().sizeHint().width() + 24)
+        height = content.sizeHint().height() + 72  # the buttons and margins
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            height = min(height, int(screen.availableGeometry().height() * 0.9))
+        self.resize(width, height)
 
     def retention_folder(self):
         """The split folder these settings name (blank: the log's folder)."""
@@ -316,16 +362,71 @@ class SettingsDialog(QDialog):
         self._splits = split_retention.scan_splits(folder) if folder is not None else []
         self._update_retention_preview()
 
+    def _couple_weeks(self) -> None:
+        """While zipping is on, a split is zipped before it can be deleted:
+        M stays above N, and raising N pushes M up with it."""
+        self.delete_weeks.setMinimum(
+            self.zip_weeks.value() + 1 if self.zip_enabled.isChecked() else 1)
+
+    def retention_plan(self) -> split_retention.Plan:
+        """What a run with these settings would do now: the run's own
+        selection, sparing the folder's newest session as the run does."""
+        return split_retention.plan(
+            self._splits,
+            self.zip_weeks.value() if self.zip_enabled.isChecked() else None,
+            self.delete_weeks.value() if self.delete_enabled.isChecked() else None,
+            time.time(), set())
+
     def _update_retention_preview(self) -> None:
-        """What a run with these settings would zip now."""
-        if not self.zip_enabled.isChecked():
-            self.retention_preview.setText("")
-            return
-        due = split_retention.select_for_zip(self._splits, self.zip_weeks.value(), time.time())
-        noun = "log" if len(due) == 1 else "logs"
-        self.retention_preview.setText(
-            f"Would zip {len(due)} split {noun} "
-            f"({split_retention.format_bytes(split_retention.total_size(due))}) now.")
+        work = self.retention_plan()
+        lines = []
+        if self.delete_enabled.isChecked():
+            noun = "log" if len(work.delete) == 1 else "logs"
+            line = (f"Would move {len(work.delete)} split {noun} "
+                    f"({split_retention.format_bytes(split_retention.total_size(work.delete))}) "
+                    f"to the {TRASH_NAME} now")
+            if work.delete:
+                summary = split_retention.summarize(work.delete)
+                line += f", sessions from {summary.first} to {summary.last}"
+            lines.append(line + ".")
+        if self.zip_enabled.isChecked():
+            noun = "log" if len(work.zip) == 1 else "logs"
+            lines.append(
+                f"Would zip {len(work.zip)} split {noun} "
+                f"({split_retention.format_bytes(split_retention.total_size(work.zip))}) now.")
+        self.retention_preview.setText("\n".join(lines))
+
+    def _delete_needs_asking(self) -> bool:
+        """A change that deletes: turning it on, lowering M, or another folder."""
+        if not self.delete_enabled.isChecked():
+            return False
+        was_on, was_weeks, was_folder = self._initial_delete
+        return (not was_on or self.delete_weeks.value() < was_weeks
+                or self.retention_folder() != was_folder)
+
+    def confirm_delete(self, summary: split_retention.DeleteSummary) -> bool:
+        """Ask before saving a change that deletes; the full list is under
+        Show Details."""
+        question, details, names = split_retention.describe_deletion(summary, TRASH_NAME)
+        box = QMessageBox(QMessageBox.Warning, "Move old split logs", question,
+                          QMessageBox.NoButton, self)
+        box.setInformativeText(details)
+        box.setDetailedText(names)
+        move = box.addButton(f"Move to the {TRASH_NAME}", QMessageBox.DestructiveRole)
+        box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(QMessageBox.Cancel)
+        try:
+            box.exec()
+            return box.clickedButton() is move
+        finally:
+            box.deleteLater()  # on the UI thread, as the main window does
+
+    def accept(self) -> None:
+        if self._delete_needs_asking():
+            doomed = self.retention_plan().delete
+            if doomed and not self.confirm_delete(split_retention.summarize(doomed)):
+                return  # stay in Settings
+        super().accept()
 
     def _pick_examples(self) -> None:
         """The example picker; its ticked lines go under the user's rules."""
@@ -372,6 +473,8 @@ class SettingsDialog(QDialog):
         self.config.set("split.dir", self.split_dir.value())
         self.config.set("split.zip_enabled", self.zip_enabled.isChecked())
         self.config.set("split.zip_after_weeks", self.zip_weeks.value())
+        self.config.set("split.delete_enabled", self.delete_enabled.isChecked())
+        self.config.set("split.delete_after_weeks", self.delete_weeks.value())
         self.config.set("archive.size_threshold_mb", self.threshold.value())
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())

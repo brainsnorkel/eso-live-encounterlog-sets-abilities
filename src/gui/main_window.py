@@ -43,6 +43,7 @@ from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members
 from pen_crit import armour_row
+from recycle_bin import TRASH_NAME
 import split_retention
 from update_check import format_release_date
 from version import __version__
@@ -400,7 +401,7 @@ class MainWindow(QMainWindow):
         self.worker_thread.start()
 
     def _build_retention(self):
-        """Split log retention (split_retention, issue #86): a run shortly
+        """Split log retention (split_retention, issues #86 and #87): a run shortly
         after startup, so the session replay goes first, then once a day.
         Runs have a thread of their own and report through a QObject that
         lives here; the thread holds it weakly, so it is never the one to
@@ -437,19 +438,27 @@ class MainWindow(QMainWindow):
     def _on_retention_event(self, event):
         if event.kind == "started":
             noun = "log" if event.total == 1 else "logs"
-            self.statusBar().showMessage(f"Zipping {event.total} old split {noun}…")
+            self.statusBar().showMessage(f"Tidying {event.total} old split {noun}…")
         elif event.kind == "progress":
+            doing = f"Moving to the {TRASH_NAME}" if event.action == "delete" else "Zipping"
             self.statusBar().showMessage(
-                f"Zipping old split logs: {event.done + 1} of {event.total} ({event.name})")
+                f"Old split logs, {event.done + 1} of {event.total}: {doing} {event.name}")
         elif event.kind == "completed":
-            noun = "log" if event.zipped == 1 else "logs"
-            text = (f"Zipped {event.zipped} split {noun}, "
-                    f"{split_retention.format_bytes(event.saved)} saved")
+            parts = []
+            if event.deleted:
+                noun = "log" if event.deleted == 1 else "logs"
+                parts.append(f"Moved {event.deleted} split {noun} "
+                             f"({split_retention.format_bytes(event.freed)}) to the {TRASH_NAME}")
+            if event.zipped:
+                noun = "log" if event.zipped == 1 else "logs"
+                parts.append(f"Zipped {event.zipped} split {noun}, "
+                             f"{split_retention.format_bytes(event.saved)} saved")
+            text = "; ".join(parts) or "No split logs changed"
             if event.skipped:
                 text += f"; {len(event.skipped)} left as they were: {event.skipped[0]}"
             self.statusBar().showMessage(text, 30000)
         elif event.kind == "failed":
-            self.statusBar().showMessage(f"Zipping split logs failed: {event.reason}", 30000)
+            self.statusBar().showMessage(f"Tidying split logs failed: {event.reason}", 30000)
 
     @Slot()
     def _discard_worker(self):
