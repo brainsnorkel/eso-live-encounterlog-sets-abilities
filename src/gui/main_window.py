@@ -36,7 +36,7 @@ from gui.fight_render import (
     issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
     render_plain_text, summary_line, taken_tooltips,
 )
-from gui.fight_view import FightView
+from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
 from gui.settings_dialog import SettingsDialog
 from gui.taken_dialog import TakenDialog
@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
         self._hide_names = bool(config.get("privacy.hide_names", False))
         # The text size, before any widget is made, so all of them start at it
         text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
+        set_reduce_motion(bool(config.get("display.reduce_motion", False)))
 
         self._build_ui()
         self._build_update_poller()
@@ -292,6 +293,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self.history_list = QListWidget()
+        self.history_list.setAccessibleName("Fights")
         self.history_list.currentRowChanged.connect(self._show_fight)
         splitter.addWidget(self.history_list)
 
@@ -315,6 +317,7 @@ class MainWindow(QMainWindow):
         self.search_field.setPlaceholderText(
             "Search in fight… (Ctrl+F, Enter jumps to next match; "
             "ability icons match by name)")
+        self.search_field.setAccessibleName("Search in fight")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_search)
         self.search_field.returnPressed.connect(self._goto_next_match)
@@ -325,6 +328,7 @@ class MainWindow(QMainWindow):
 
         # Serves bundled ability icons, hover names, and ESO-Hub link clicks
         self.fight_view = FightView()
+        self.fight_view.setAccessibleName("Fight")
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
@@ -1125,6 +1129,7 @@ class MainWindow(QMainWindow):
             self.config.save()
             self._apply_update_settings()
             self._apply_privacy_settings()
+            set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
             if self._graph_dialog is not None:
                 self._graph_dialog.set_colorblind(
                     bool(self.config.get("display.colorblind_graph", False)))

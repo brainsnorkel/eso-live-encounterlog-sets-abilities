@@ -169,6 +169,10 @@ class DpsGraph(QWidget):
             self._y_step[panel] = step
             self._y_top[panel] = max(step, math.ceil(peak / step) * step)
         self.hover_second = None
+        # What a screen reader hears for the painted chart (issue #77): the
+        # lines drawn, each with its dps at the end of the fight
+        self.setAccessibleDescription("; ".join(
+            f"{c.name} {_fmt_dps(c.points[-1][1])} at the end" for c in self._curves))
         self.update()
 
     @property
@@ -408,6 +412,7 @@ class DpsGraphDialog(QDialog):
         layout.addWidget(self.header)
         middle = QHBoxLayout()
         self.graph = DpsGraph()
+        self.graph.setAccessibleName("DPS over time")
         middle.addWidget(self.graph, 1)
         self.legend = QListWidget()
         self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))

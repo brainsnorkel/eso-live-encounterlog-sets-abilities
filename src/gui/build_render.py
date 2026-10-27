@@ -232,7 +232,7 @@ def _mundus_food_html(p, theme, icons, e) -> str:
     for stone in p.get("mundus") or []:
         stem = str(stone.get("icon") or "")
         icon = (f'<img src="icon:{stem}" width="{scaled_px(MUNDUS_ICON_PX)}" '
-                f'height="{scaled_px(MUNDUS_ICON_PX)}" style="vertical-align:middle">&nbsp;'
+                f'height="{scaled_px(MUNDUS_ICON_PX)}" alt="" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         stones.append(f"{icon}{e(str(stone.get('name', '')))}")
     mundus = ", ".join(stones) or f"<span style='color:{muted}'>{NO_MUNDUS}</span>"

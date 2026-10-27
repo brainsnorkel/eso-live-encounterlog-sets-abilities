@@ -67,7 +67,7 @@ def _icon_html(stem, icons) -> str:
     if icons is None or not stem or not icons.has(stem):
         return ""
     return (f'<img src="icon:{stem}" width="{scaled_px(ICON_PX)}" height="{scaled_px(ICON_PX)}" '
-            f'style="vertical-align:middle">')
+            f'alt="" style="vertical-align:middle">')
 
 
 def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> str:

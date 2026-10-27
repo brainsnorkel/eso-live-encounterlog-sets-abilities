@@ -19,14 +19,25 @@ the text is underlined in the link color (see _show_hover_cue). The glyphs
 are images the page asks for by URL, served by loadResource like the icons,
 and so are the pixelated stand-ins the Hide names switch puts in place of
 other players' names (``mask:`` URLs, see gui.name_mask).
+
+Design: a screen reader reads a QTextBrowser's text, where every image is
+U+FFFC; Qt keeps an image's alt attribute but never reads it out. So the
+view gives its accessible description the page's text with each image
+replaced by its alt text (an ability icon on a bar says the ability, a
+glyph what it opens, a hidden name 'hidden name'; an icon beside its own
+name has alt="" and says nothing), rebuilt whenever the page changes
+(issue #77). The taunt ring's pulse stops, at its plain phase, while
+Reduce motion is on (set_reduce_motion).
 """
+
+import weakref
 
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
     QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
-    QTextDocument,
+    QTextDocument, QTextFormat,
 )
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
@@ -42,6 +53,23 @@ from gui.name_mask import MASK_SCHEME, mask_image, mask_request
 ICON_SCHEME = "icon"
 _RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in that color
 PULSE_INTERVAL_MS = 150  # a glow cycle is PULSE_STEPS of these: about a breath
+_ALT_PROPERTY = getattr(QTextFormat.Property, "ImageAltText", 0x5002)  # an <img>'s alt
+_reduce_motion = False  # Settings → Display → Reduce motion
+_views = weakref.WeakSet()  # every live view, for set_reduce_motion
+
+
+def set_reduce_motion(on: bool) -> None:
+    """Reduce motion on or off for every view: on, a pulsing taunt ring
+    stops at its plain phase and no new pulse starts."""
+    global _reduce_motion
+    _reduce_motion = bool(on)
+    if _reduce_motion:
+        for view in list(_views):
+            view._still()
+
+
+def reduce_motion() -> bool:
+    return _reduce_motion
 
 
 def _query_color(url: QUrl, key: str) -> str | None:
@@ -100,6 +128,9 @@ class FightView(QTextBrowser):
         self._pulse = QTimer(self)
         self._pulse.setInterval(PULSE_INTERVAL_MS)
         self._pulse.timeout.connect(self._pulse_step)
+        _views.add(self)
+        # What a screen reader is given in place of the images (see above)
+        self.textChanged.connect(self._update_accessible_text)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
@@ -255,7 +286,7 @@ class FightView(QTextBrowser):
             if image is not None:
                 if ring:
                     self._ring_urls[name.toString()] = QUrl(name)
-                    if not self._pulse.isActive():
+                    if not self._pulse.isActive() and not _reduce_motion:
                         self._pulse.start()
                 return image
         if resource_type == QTextDocument.ImageResource and name.scheme() == GLYPH_SCHEME:
@@ -271,6 +302,45 @@ class FightView(QTextBrowser):
                 if image is not None:
                     return image
         return super().loadResource(resource_type, name)
+
+    def accessible_text(self) -> str:
+        """The page as a screen reader should hear it: its text, each
+        image replaced by its alt text, one line per paragraph or cell."""
+        lines = []
+        block = self.document().begin()
+        while block.isValid():
+            pieces = []
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                fmt = fragment.charFormat()
+                if fmt.isImageFormat():
+                    alt = fmt.property(_ALT_PROPERTY)
+                    if alt:
+                        pieces.append(f" {alt} ")
+                else:
+                    pieces.append(fragment.text().replace("\ufffc", ""))
+                it += 1
+            line = " ".join("".join(pieces).split())
+            if line:
+                lines.append(line)
+            block = block.next()
+        return "\n".join(lines)
+
+    def _update_accessible_text(self) -> None:
+        self.setAccessibleDescription(self.accessible_text())
+
+    def _still(self) -> None:
+        """Stop the pulse with every ringed icon at its plain phase."""
+        self._pulse.stop()
+        if self._pulse_phase:
+            self._pulse_phase = 0
+            document = self.document()
+            for url in self._ring_urls.values():
+                image = self.icons.image(url.path(), ring=_ring_color(url), phase=0.0)
+                if image is not None:
+                    document.addResource(QTextDocument.ImageResource, url, image)
+            self.viewport().update()
 
     def _pulse_step(self) -> None:
         """Design: Taunt marks pulse. A QTextBrowser page cannot animate, but

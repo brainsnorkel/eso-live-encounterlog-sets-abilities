@@ -1441,7 +1441,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:120](../src/app_config.py#L120)*
+*[src/app_config.py:122](../src/app_config.py#L122)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -2230,7 +2230,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:620](../src/gui/main_window.py#L620)*
+*[src/gui/main_window.py:624](../src/gui/main_window.py#L624)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2240,7 +2240,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1140](../src/gui/main_window.py#L1140)*
+*[src/gui/main_window.py:1145](../src/gui/main_window.py#L1145)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2340,7 +2340,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:275](../src/gui/fight_view.py#L275)*
+*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2423,7 +2423,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:186](../src/gui/fight_view.py#L186)*
+*[src/gui/fight_view.py:217](../src/gui/fight_view.py#L217)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
