@@ -12,6 +12,10 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Changed
 - **The Settings dialog scrolls** above fixed Save and Cancel buttons and opens no taller than the screen: it had grown taller than a 1080p screen, and Qt squeezed its wrapped help labels until lines were cut off or overlapped
 
+### Fixed
+- **Players who leave, come back, or come back on another character** (#78): a member who left stayed on the group list at 0 DPS in every later fight of the zone, a member who dropped and came back got a second row, and a member back on another character had no row in the fight they came back to while their damage was in the group total. Now a player who leaves during a fight keeps their row in it, greyed, with `left · here for 62% of the fight`, and is off the list from the next pull; the same character back in the zone stays one row, its DPS over the whole span, the time away included (as Combat Metrics counts it); another character is a new row, listed with its class and `build not in the log yet` until its next pull when the log says it is grouped with the logging player, and the old character counts as having left; an anonymous member named on joining the group takes the name; a companion follows its owner through all of it. The `Offline` placeholder the log writes while a member loads in is ignored throughout, and a monster given a departed player's unit id is no longer counted as them. Replayed over the 386 unique sessions in the maintainer's split logs, see the PR for which fights changed
+- **The Warfare star links** (#73): the labels beside the kinds-of-damage bars linked to `eso-hub.com/en/champion-points/warfare/<star>`, which does not exist; ESO-Hub keeps every star at `/champion-points/star/<star>` whatever its constellation, as its star sitemap lists them, and the 19 links now go there
+
 ## [0.17.0] - 2026-10-27
 
 ### Added

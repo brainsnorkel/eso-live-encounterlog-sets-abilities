@@ -67,6 +67,15 @@ A companion that is out during a fight (Mirri, Bastian, Ember, Isobel, Sharp-as-
 
 By default the owner's figures are their own, as in Combat Metrics, which never counts a companion as the player's. Turn on **Count a companion's damage and healing as its owner's too** under Companions in Settings for the old way: the owner's DPS and share then include the companion's, its abilities show `(pet)` in the owner's damage window, and the shares add up to more than 100%. A companion of a player who has no row, or whose owner the log never named, has no row either; its damage is still in the group's.
 
+### Players who leave or come back
+
+- A player who leaves the group or the instance during a fight keeps their row in that fight, greyed, with `left · here for 62% of the fight` after the class. From the next pull on they are not listed.
+- A player who drops and comes back on the same character in the same zone stays one row. Their DPS divides by the time from their first hit to their last, so the time they were away counts against it, as in Combat Metrics.
+- A player who comes back on another character is listed as that character: a new row with the new class and `build not in the log yet` until their next pull, when the game writes their build. That row only shows when the log marks them as grouped with you; the old character's row is greyed as having left.
+- An anonymous player (`anon`) who joins your group takes their name.
+
+Their companion goes with them: it stays one row under them when they come back, and leaves the list when they do.
+
 With Detail view off, the rows are one line each, for a quick ranking:
 
 ![Compact view: one line per player](screencaps/compact-view.png)
