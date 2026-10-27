@@ -29,6 +29,14 @@ fight ends (refresh_fight), so a ground effect that reached a second player
 seconds after the death still reads as area. Pure overheals (a heal line
 whose hit value is zero) are kept in the window for the recap's overheal
 sum but never become rows.
+
+The window is a setting (issue #95): 5 seconds by default, up to 10, read
+from the config when the engine is built (app_startup), so a Settings save,
+which rebuilds the engine and replays the session, rebuilds the fights
+already listed with the new window. Each recap records the window it was
+built with ('window_ms'), so a frontend names the right number of seconds
+for a fight recorded under another setting, and a recap from before the key
+existed reads as the old fixed five.
 """
 
 from collections import deque
@@ -36,8 +44,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from damage_kinds import area_of
 
-# Chronology kept before each death
-RECAP_WINDOW_MS = 5000
+# Chronology kept before each death: the default, and what Settings allows
+DEFAULT_WINDOW_S = 5
+MIN_WINDOW_S, MAX_WINDOW_S = 5, 10
+RECAP_WINDOW_MS = DEFAULT_WINDOW_S * 1000
 
 # Events on the dead player this soon after the death event belong to it: the
 # killing blow and anything landing in the same instant. Later hits are on
@@ -92,11 +102,23 @@ def _health(value) -> Tuple[int, int]:
     return _int(current), _int(maximum)
 
 
+def recap_window_s(value) -> int:
+    """The recap window in seconds from a config value: an integer held
+    to MIN_WINDOW_S..MAX_WINDOW_S, the default for anything that is not a
+    number."""
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_WINDOW_S
+    return max(MIN_WINDOW_S, min(MAX_WINDOW_S, seconds))
+
+
 class DeathRecapRecorder:
     """Keeps each player's recent combat events and builds death recaps."""
 
     def __init__(self, resolve_unit: Callable[[str], str],
-                 resolve_ability: Callable[[str], Tuple[str, str]], cast_index=None):
+                 resolve_ability: Callable[[str], Tuple[str, str]], cast_index=None,
+                 window_ms: int = RECAP_WINDOW_MS):
         # unit id -> display name ('' when the log names no unit);
         # ability id -> (name, icon stem)
         self._resolve_unit = resolve_unit
@@ -104,7 +126,10 @@ class DeathRecapRecorder:
         # The analyzer's damage_kinds.CastIndex, which tells an area hit
         # from a single one; None classes every hit as single
         self.cast_index = cast_index
-        # unit id -> events of the last RECAP_WINDOW_MS, oldest first
+        # How far back a recap reaches (the Settings value, app_startup);
+        # set before the lines are fed, since it bounds the history kept
+        self.window_ms = int(window_ms)
+        # unit id -> events of the last window_ms, oldest first
         self._recent: Dict[str, deque] = {}
         # unit id -> (recap, its raw events, death time) while the killing
         # blow may still arrive
@@ -153,7 +178,7 @@ class DeathRecapRecorder:
         if recent is None:
             recent = self._recent[target_id] = deque()
         recent.append(event)
-        cutoff = timestamp_ms - RECAP_WINDOW_MS
+        cutoff = timestamp_ms - self.window_ms
         while recent[0][0] < cutoff:
             recent.popleft()
 
@@ -162,7 +187,7 @@ class DeathRecapRecorder:
         *fields*. The returned dict keeps filling for KILLING_BLOW_GRACE_MS as
         the killing blow is logged.
         """
-        cutoff = timestamp_ms - RECAP_WINDOW_MS
+        cutoff = timestamp_ms - self.window_ms
         events = [e for e in self._recent.pop(unit_id, ()) if e[0] >= cutoff]
         ability_id = fields[_ABILITY] if len(fields) > _ABILITY else ""
         source_id = fields[_SOURCE] if len(fields) > _SOURCE else "0"
@@ -175,6 +200,7 @@ class DeathRecapRecorder:
             "ability_id": ability_id,
             "icon": icon,
             "max_health": _health(fields[health_at])[1] if len(fields) > health_at else 0,
+            "window_ms": self.window_ms,
             "overheal": 0,
             "events": [],
         }

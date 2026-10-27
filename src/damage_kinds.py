@@ -103,9 +103,11 @@ TYPE_LABELS = {"COLD": "frost", "MAGIC": "magic", "FIRE": "fire", "SHOCK": "shoc
                "GENERIC": "untyped", "NONE": "untyped"}
 FALL_LABEL = "fall"
 
-# The three sides a summary draws: (left, right) of each split
+# The three sides a summary draws: (left, right) of each split, and the
+# words the windows write beside the bars: damage over time is DoT, the
+# game's own word and the one the recap's Result column uses (issue #95)
 SPLITS = (("direct", "dot"), ("area", "single"), ("martial", "magical"))
-SIDE_LABELS = {"direct": "direct", "dot": "over time", "area": "area",
+SIDE_LABELS = {"direct": "direct", "dot": "DoT", "area": "area",
                "single": "single target", "martial": "Martial", "magical": "Magical"}
 
 
