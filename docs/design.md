@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3800](../src/esolog_tail.py#L3800)*
+*[src/esolog_tail.py:4043](../src/esolog_tail.py#L4043)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -1690,6 +1690,72 @@ A companion's damage is its own row's (companions.py), keyed by
 the companion's row key, with its kinds like a player's; with
 *accrue_companions* (the setting companions.accrue_to_owner) it is
 its owner's as well.
+
+## Split files: one per session, continued rather than copied
+
+### LogSplitter
+
+*[src/esolog_tail.py:3272](../src/esolog_tail.py#L3272)*
+
+Handles automatic splitting of encounter logs into individual encounter files.
+
+Design: one split per session, continued rather than copied (issue #85).
+A session's split is named at its first BEGIN_COMBAT from the BEGIN_LOG
+stamp and the zone, so a session split again meets its own file at the
+rename. Until 0.18.0 the two were compared by whole-file MD5, which can
+never match there (the temp file holds the lines up to that BEGIN_COMBAT,
+the file on disk the whole session), so the session was written out
+again under the next ``-N``: 513 of the 899 files in the maintainer's
+split folder were byte-identical copies, 512 of them written by the
+pre-GUI tool's ``--read-all-then-tail`` between January and April 2026,
+which re-split the whole log at every start. Now the file on disk is the
+same session when it begins with the temp file's bytes; the temp file is
+dropped and the existing file is continued: incoming lines are counted
+and skipped until the count reaches the file's size and the file's last
+line has gone past, then appended, so a split cut short by a restart,
+a crash or a Settings save (which rebuilds the monitor) is completed
+rather than left truncated, and a split already complete gains nothing.
+A file that ends mid-line (a crash) is trimmed to its last whole line
+first. Only a file whose head differs is a different session of the same
+second and gets the suffix. At the session's end a copy that still
+matches another file of the same stamp byte for byte is removed; a
+continued file never is. Two instances of the app on one split folder
+(the installed app beside a launch from the source tree, which wrote
+the one copy of 2026-10-25) would append to one file from two sides, so
+the splitter takes a lock file in the folder, ``.esolog-tail-split.lock``
+with its process id, and a second instance that finds it held by a live
+process writes no splits at all and says so. Every line of the session
+is written, the ones the parser rejects included (an END_CAST with a
+cancel reason, an OBJECT unit), so a split is the session's bytes; the
+older splits are a few hundred bytes to 57 KB short of that, which the
+continuation tolerates.
+
+### scripts/dedupe_splits.py
+
+*[scripts/dedupe_splits.py:1](../scripts/dedupe_splits.py#L1)*
+
+Move the byte-identical copies of split logs to the Recycle Bin (issue #85).
+
+Until 0.18.0 a session split again was written out again under the next
+``-N`` suffix: the pre-GUI tool's ``--read-all-then-tail`` did that to every
+session in the log at every start, and 513 of the 899 files in the
+maintainer's split folder were copies of another file, several GB in all.
+The splitter no longer makes them (see LogSplitter in src/esolog_tail.py);
+this script clears the ones already on disk.
+
+A copy is a file with the same session stamp as another, the same size and
+the same bytes (whole-file SHA-256, not a head hash). Of each group the file
+with the lowest suffix is kept, the plain name before ``-1`` before ``-2``,
+and the rest go to the Recycle Bin, never deleted outright, so a mistake can
+be undone. Zipped splits and the ``keep`` folder are left alone.
+
+```
+    python scripts/dedupe_splits.py                      # list what would move
+    python scripts/dedupe_splits.py --recycle            # move the copies
+    python scripts/dedupe_splits.py --dir D:/esologs/splits --recycle
+```
+
+Without --dir the split folder from the app's config is used.
 
 ## Death recaps
 

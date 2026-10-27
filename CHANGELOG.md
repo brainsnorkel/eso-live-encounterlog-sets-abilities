@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **A session split again is continued, not copied** (#85): a session's split file meets its own name when the session is split a second time (the attach replay at startup, a Settings save, which rebuilds the monitor, or a restart mid-session), and until now the two were compared by whole-file hash, which could never match (the temp file holds the lines up to the first `BEGIN_COMBAT`, the file the whole session), so the session was written out again under the next `-N`. In the maintainer's split folder 513 of 899 files were byte-identical copies, 512 of them written by the pre-GUI tool's `--read-all-then-tail` between January and April 2026, which re-split the whole log at every start, and the last by two instances of the app on one live session. Now the file on disk is the same session when it begins with the temp file's lines (an older split lacking the lines its parser rejected still matches), the temp file goes, and the existing file is continued: the lines still to come are skipped until they have passed the file's end, then appended, so a split cut short by a restart or a crash is completed (a partial last line trimmed first) and a complete one gains nothing. Only a file whose head is another session's gets the suffix. The check at the session's end compares the finished file with the folder as it is then, byte for byte, instead of a size index built at startup, which the two-instance case slipped past; a continued file is never taken for a copy
+- **Two instances of the app on one split folder**: the splitter now takes a lock file in the folder (`.esolog-tail-split.lock`, holding its process id), and a second instance that finds it held by a live process writes no splits and says so in the status bar; a lock left by a crashed instance is taken over
+- **Every line of a session reaches its split**: lines the parser rejects (an `END_CAST` with a cancel reason, an `OBJECT` unit) were left out, so every split was a few hundred bytes to 57 KB short of its session; they are written now
+- **`scripts/dedupe_splits.py`** moves the copies already on disk to the Recycle Bin: files of one session stamp with the same size and the same bytes (whole-file SHA-256), the lowest suffix kept; a dry run lists them, `--recycle` moves them, nothing is deleted outright
+
 ## [0.18.0] - 2026-10-27
 
 ### Added

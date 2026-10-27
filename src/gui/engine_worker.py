@@ -177,6 +177,15 @@ class EngineWorker(QObject):
             self._poll_timer.stop()
         if self._wait_timer:
             self._wait_timer.stop()
+        # Close the session's split and give the folder's lock up, so the
+        # monitor built next (a Settings save) continues the split rather
+        # than finding the folder held by this same process
+        monitor = self.monitor
+        if monitor is not None and getattr(monitor, "log_splitter", None) is not None:
+            try:
+                monitor.log_splitter.cleanup()
+            except Exception:
+                pass
         self.monitor = None
         self.analyzer = None
 

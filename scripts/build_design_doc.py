@@ -115,6 +115,10 @@ TOPICS = [
         "src/esolog_tail.py:CombatEncounter.track_pet_ownership",
         "src/esolog_tail.py:CombatEncounter.add_damage_to_player",
     ]),
+    ("Split files: one per session, continued rather than copied", [
+        "src/esolog_tail.py:LogSplitter",
+        "scripts/dedupe_splits.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),

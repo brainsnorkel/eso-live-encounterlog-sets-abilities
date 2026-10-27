@@ -87,7 +87,38 @@ class TestPreambleBackfill(unittest.TestCase):
         self.assertIn('BEGIN_LOG', content)
         self.assertIn('BEGIN_COMBAT', content)
 
-    def test_existing_split_not_duplicated(self):
+    def test_existing_partial_split_is_continued_at_attach(self):
+        """A split cut short by an earlier run (issue #85): the attach's
+        replay completes it and the new fight goes into the same file; no
+        copy under a suffix."""
+        self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
+                            encoding='utf-8')
+        split_dir = Path(self.tmp.name) / 'splits'
+        # The earlier run wrote the session up to the first combat event
+        from esolog_tail import LogSplitter, _handle_replay_log_splitting
+        earlier = LogSplitter(self.log, split_dir=split_dir)
+        parser = ESOLogAnalyzer().log_parser
+        for line in PREAMBLE + OLD_FIGHT[:2]:
+            _handle_replay_log_splitting(earlier, parser.parse_line(line), line)
+        earlier.close_for_waiting()
+        earlier.release_lock()
+        import datetime
+        stamp = datetime.datetime.fromtimestamp(EPOCH / 1000).strftime('%y%m%d%H%M%S')
+        existing = split_dir / f'{stamp}-Coral-Aerie-vet.log'
+        self.assertTrue(existing.exists())
+        short = existing.stat().st_size
+        self._attach_and_fight(split_dir=split_dir)
+        self.assertEqual(sorted(split_dir.glob(f'{stamp}*.log')), [existing])
+        content = existing.read_text(encoding='utf-8')
+        self.assertGreater(existing.stat().st_size, short)
+        self.assertEqual(content.count('BEGIN_COMBAT'), 2)   # the old fight once, the new one
+        self.assertEqual(content.count('70000,END_COMBAT'), 1)
+        self.assertIn('130000,END_COMBAT', content)
+
+    def test_a_foreign_file_at_the_stamp_is_left_alone(self):
+        """A file of the session's stamp that is not the session (another
+        session of the same second) keeps its content; the session is
+        written beside it under a suffix."""
         self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
                             encoding='utf-8')
         split_dir = Path(self.tmp.name) / 'splits'
@@ -97,10 +128,9 @@ class TestPreambleBackfill(unittest.TestCase):
         existing = split_dir / f'{stamp}-Coral-Aerie-vet.log'
         existing.write_text('partial split from earlier run\n', encoding='utf-8')
         self._attach_and_fight(split_dir=split_dir)
-        # No new split for the session stamp; the existing file is untouched
-        splits = sorted(split_dir.glob(f'{stamp}*'))
-        self.assertEqual(splits, [existing])
-        self.assertIn('partial split', existing.read_text(encoding='utf-8'))
+        splits = sorted(split_dir.glob(f'{stamp}*.log'))
+        self.assertEqual(splits, [split_dir / f'{stamp}-Coral-Aerie-vet-1.log', existing])
+        self.assertEqual(existing.read_text(encoding='utf-8'), 'partial split from earlier run\n')
 
     def test_oversized_session_falls_back_to_roster_sweep(self):
         self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
