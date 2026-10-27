@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.18.0] - 2026-10-27
 
 ### Added
 - **Zip split logs older than N weeks** (#86): a setting under Per-encounter split files, off by default (4 weeks when turned on). Shortly after startup and once a day, each old split is zipped beside itself as `<name>.log.zip`, at about a sixteenth of its size (a 573 MB Dreadsail Reef split became 35 MB). Settings shows how many splits it would zip before you save; the status bar reports each run. Age counts from the later of the session date in the name and the file's last change. The newest session's split, a `keep` folder inside the split folder, and every file that is not one of the app's splits (`Encounter.log` and its archives included) are never touched. The splitter treats a zipped split as the session's split, so it is not written out again
