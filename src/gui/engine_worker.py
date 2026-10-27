@@ -34,6 +34,7 @@ from engine_events import AnalyzerListener
 from esolog_tail import LogFileMonitor
 from fight_history import FightHistory
 from log_archiver import LogArchiver
+from log_open import open_log_text
 
 POLL_INTERVAL_MS = 1000
 WAIT_FOR_LOG_INTERVAL_MS = 2000
@@ -258,22 +259,23 @@ class EngineWorker(QObject):
                 elif polling:
                     self._poll_timer.start()
 
-    @Slot(str)
-    def open_review(self, path: str):
-        """Replay an arbitrary log file and hand its fights to the UI."""
+    @Slot(str, str)
+    def open_review(self, path: str, member: str = ""):
+        """Replay an arbitrary log file and hand its fights to the UI. A zip
+        (a zipped split or an archive) is read through its log *member*, or
+        its only log when none is named (log_open)."""
         review_path = Path(path)
+        shown = str(review_path)
         label = f"Parsing {review_path.name}"
         try:
-            total = review_path.stat().st_size
-            # Emit at most ~200 updates (and no more than one per MB)
-            step = max(1024 * 1024, total // 200)
-            done = 0
-            last_emit = 0
-            self.parse_progress.emit(label, 0, total)
-
             analyzer = build_analyzer(self.config, [])
             analyzer.current_log_file = str(review_path)
-            with open(review_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open_log_text(review_path, member or None) as (f, total, shown):
+                # Emit at most ~200 updates (and no more than one per MB)
+                step = max(1024 * 1024, total // 200)
+                done = 0
+                last_emit = 0
+                self.parse_progress.emit(label, 0, total)
                 for line in f:
                     # Char length approximates byte length for these logs;
                     # progress is clamped to total either way
@@ -287,10 +289,9 @@ class EngineWorker(QObject):
                     entry = analyzer.log_parser.parse_line(line)
                     if entry is not None:
                         analyzer.process_log_entry(entry)
-            self.review_loaded.emit(str(review_path),
-                                    list(analyzer.fight_history.fights))
+            self.review_loaded.emit(shown, list(analyzer.fight_history.fights))
         except Exception as exc:
             self.diagnostic.emit(f"Review failed for {review_path}: {exc}")
-            self.review_loaded.emit(str(review_path), [])
+            self.review_loaded.emit(shown, [])
         finally:
             self.parse_progress.emit(label, 1, 1)  # hide

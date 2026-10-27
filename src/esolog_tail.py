@@ -37,6 +37,7 @@ from player_build import build_fields, food_ids, has_restoration_staff, is_two_h
 from misfortunes import run_misfortunes
 import companions
 import pen_crit
+import split_retention
 import werewolf
 
 
@@ -3040,6 +3041,28 @@ class ESOLogAnalyzer(ListenerMixin):
         pass
 
 
+def find_session_start_offset(log_file: Path, end: int, lookback_bytes: int) -> Optional[int]:
+    """Byte offset of the most recent BEGIN_LOG line before *end* in
+    *log_file*, searching back at most *lookback_bytes*; None if none."""
+    chunk_size = 1024 * 1024
+    scanned = 0
+    pos = end
+    carry = b''
+    with open(log_file, 'rb') as f:
+        while pos > 0 and scanned < lookback_bytes:
+            start = max(0, pos - chunk_size)
+            f.seek(start)
+            chunk = f.read(pos - start) + carry
+            idx = chunk.rfind(b',BEGIN_LOG,')
+            if idx != -1:
+                line_start = chunk.rfind(b'\n', 0, idx) + 1
+                return start + line_start
+            carry = chunk[:64]
+            scanned += pos - start
+            pos = start
+    return None
+
+
 class LogSplitter:
     """Handles automatic splitting of encounter logs into individual encounter files."""
 
@@ -3085,20 +3108,31 @@ class LogSplitter:
         return re.sub(r'-\d+$', '', stem)
 
     def _scan_existing_splits(self):
-        """Scan split directory for existing files and build dedup index."""
+        """Scan split directory for existing files and build dedup index.
+
+        A split zipped by the retention job (``<stem>.log.zip``, issue #86)
+        counts as the split it holds, indexed by the log's own size: the
+        zip's size would never match a split written again."""
         try:
             with os.scandir(self.split_dir) as it:
                 for entry in it:
                     filename = entry.name
-                    if not (filename.endswith('.log') and not filename.endswith('-temp.log')):
+                    zipped = filename.endswith(split_retention.ZIP_SUFFIX)
+                    if zipped:
+                        stem = filename[:-len(split_retention.ZIP_SUFFIX)]
+                    elif filename.endswith('.log') and not filename.endswith('-temp.log'):
+                        stem = filename[:-len('.log')]
+                    else:
                         continue
                     if not entry.is_file():
                         continue
-                    stem = Path(filename).stem
                     prefix = self._strip_numeric_suffix(stem)
                     try:
-                        size = entry.stat().st_size
+                        size = (split_retention.zipped_log_size(Path(entry.path)) if zipped
+                                else entry.stat().st_size)
                     except OSError:
+                        continue
+                    if size is None:
                         continue
                     if prefix not in self.existing_splits:
                         self.existing_splits[prefix] = set()
@@ -3529,23 +3563,7 @@ class LogFileMonitor:
 
     def _find_session_start_offset(self, end: int) -> Optional[int]:
         """Byte offset of the most recent BEGIN_LOG line before *end*."""
-        chunk_size = 1024 * 1024
-        scanned = 0
-        pos = end
-        carry = b''
-        with open(self.log_file, 'rb') as f:
-            while pos > 0 and scanned < self.PREAMBLE_LOOKBACK_BYTES:
-                start = max(0, pos - chunk_size)
-                f.seek(start)
-                chunk = f.read(pos - start) + carry
-                idx = chunk.rfind(b',BEGIN_LOG,')
-                if idx != -1:
-                    line_start = chunk.rfind(b'\n', 0, idx) + 1
-                    return start + line_start
-                carry = chunk[:64]
-                scanned += pos - start
-                pos = start
-        return None
+        return find_session_start_offset(self.log_file, end, self.PREAMBLE_LOOKBACK_BYTES)
 
     # Latest sessions up to this size are fully replayed at attach (fights
     # into history, splitter fed); larger ones fall back to the roster-only
@@ -3565,7 +3583,11 @@ class LogFileMonitor:
                 return False
             stamp = datetime.fromtimestamp(
                 int(parts[2]) / 1000).strftime('%y%m%d%H%M%S')
-            return any(Path(self.log_splitter.split_dir).glob(f"{stamp}*.log"))
+            # A zipped split (issue #86) is the session's split too: missing
+            # it here would write the session out again at every start
+            split_dir = Path(self.log_splitter.split_dir)
+            return (any(split_dir.glob(f"{stamp}*.log"))
+                    or any(split_dir.glob(f"{stamp}*{split_retention.ZIP_SUFFIX}")))
         except (OSError, ValueError):
             return False
 

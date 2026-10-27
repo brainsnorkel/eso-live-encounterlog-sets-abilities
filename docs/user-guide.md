@@ -233,7 +233,7 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ## Reviewing and copying fights
 
-**Open log for review** loads any log file, a split file or an unzipped archive, and lists its fights while live monitoring carries on underneath. A banner shows which file is open; **Back to live** returns to the live session.
+**Open log for review** loads any log file, a split file, a zipped split or an `Encounter-*.zip` archive, and lists its fights while live monitoring carries on underneath. A zip is read as it stands, never unpacked to disk; if it holds more than one log, the app asks which. A banner shows which file is open; **Back to live** returns to the live session.
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
@@ -258,7 +258,7 @@ Open **Settings…** from the toolbar.
 ![The Settings dialog](screencaps/settings.png)
 
 - **Encounter log**: a specific `Encounter.log`, or blank to auto-detect.
-- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share.
+- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share. *Zip split logs older than N weeks* (off by default) keeps them small: see [Old split logs](#old-split-logs).
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
@@ -292,6 +292,16 @@ ESO never truncates `Encounter.log`. With regular raiding it grows by hundreds o
 - **Safety**: the app takes exclusive access to the log for the whole operation. If ESO is running and holds the file, the archive is **skipped with a notification** and monitoring starts normally; nothing is ever zipped mid-write. Linux cannot lock a file that way, so there the app skips the archive when another process has the log open, and keeps the original if the log grew while it was being zipped.
 - **Your original log is kept** by default. With *Delete Encounter.log after a verified archive* on, the original is removed only after the zip verifies, and ESO starts a fresh, small log.
 - **Archive now** on the toolbar runs the same guarded archive at any moment, handy right after you close ESO.
+
+### Old split logs
+
+Split logs add up: a season of trials is tens of GB. With *Zip split logs older than N weeks* on (Settings → Per-encounter split files; 4 weeks unless you change it), the app zips each old split beside itself, `260902204127-Dreadsail-Reef-vet.log` becoming `260902204127-Dreadsail-Reef-vet.log.zip`, at about a sixteenth of the size. A zipped split still opens in **Open log for review**, and the app still knows the session has its split, so it is not written out again.
+
+- **When**: shortly after the app starts and once a day while it stays open, in the background; the status bar says how many it zipped and how much space that saved. Settings shows how many splits it would zip now, before you save.
+- **Age** counts from the later of the session's date in the name and the file's last change, so a split written out again recently is not treated as old.
+- **Never touched**: the newest session's split, anything in the `keep` folder the app makes inside the split folder (move a split there to keep it as it is), and any file that is not one of the app's own splits, `Encounter.log` and its archives included.
+- **Safety**: the zip is written as a `.partial` file and read back in full before the log is removed, as the archiver does; a split that changes while it is zipped is left as it was.
+- **On a compressed folder** (a folder Windows already compresses, shown with blue names in Explorer) the space saved is smaller, since the splits there already take about a third of their size.
 
 ## The status bar
 

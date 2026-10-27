@@ -124,6 +124,10 @@ TOPICS = [
         "src/effect_summary.py",
         "src/gui/timeline_strip.py:paint_sparse_span",
     ]),
+    ("Split log retention: zipping old splits", [
+        "src/split_retention.py",
+        "src/log_open.py",
+    ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",

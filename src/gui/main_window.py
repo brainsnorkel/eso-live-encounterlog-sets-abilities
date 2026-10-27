@@ -5,16 +5,17 @@ settings, manual archive, and the freshness status bar.
 
 import base64
 import sys
+import weakref
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QProgressBar, QSizePolicy, QSplitter,
     QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
@@ -40,7 +41,9 @@ from gui.settings_dialog import SettingsDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
+from log_open import is_zip, log_members
 from pen_crit import armour_row
+import split_retention
 from update_check import format_release_date
 from version import __version__
 
@@ -58,6 +61,15 @@ _STATE_COLORS = {
 # Windows updates through its installer; other platforms have none, so an
 # update there is a download from the release page
 HAS_INSTALLER = sys.platform == "win32"
+
+# Split log retention: the first run waits for startup's replay, then daily
+RETENTION_FIRST_DELAY_MS = 30 * 1000
+RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000
+
+
+class _RetentionBridge(QObject):
+    """Carries a retention run's events from its thread to this one."""
+    event = Signal(object)  # split_retention.RetentionEvent
 
 
 def state_style(state: str, dark: bool) -> str:
@@ -97,7 +109,7 @@ class MainWindow(QMainWindow):
 
     request_archive = Signal()
     request_restart = Signal()
-    request_review = Signal(str)
+    request_review = Signal(str, str)  # path, log in a zip ("" = its only one)
 
     def __init__(self, config: AppConfig):
         super().__init__()
@@ -128,6 +140,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_update_poller()
+        self._build_retention()
         self._build_worker()  # last: the engine thread starts here
 
         # Follow live theme switches (e.g. Windows auto dark mode after
@@ -386,6 +399,58 @@ class MainWindow(QMainWindow):
         self.worker_thread.finished.connect(self._discard_worker)
         self.worker_thread.start()
 
+    def _build_retention(self):
+        """Split log retention (split_retention, issue #86): a run shortly
+        after startup, so the session replay goes first, then once a day.
+        Runs have a thread of their own and report through a QObject that
+        lives here; the thread holds it weakly, so it is never the one to
+        free it (see gui/engine_worker.py on freeing Qt objects)."""
+        self._retention = split_retention.RetentionRunner()
+        self._retention_bridge = _RetentionBridge(self)
+        self._retention_bridge.event.connect(self._on_retention_event)
+        self._retention_first = QTimer(self)
+        self._retention_first.setSingleShot(True)
+        self._retention_first.setInterval(RETENTION_FIRST_DELAY_MS)
+        self._retention_first.timeout.connect(self._start_retention)
+        self._retention_first.start()
+        self._retention_daily = QTimer(self)
+        self._retention_daily.setInterval(RETENTION_INTERVAL_MS)
+        self._retention_daily.timeout.connect(self._start_retention)
+        self._retention_daily.start()
+
+    def _start_retention(self):
+        try:
+            settings = split_retention.settings_from_config(self.config)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Split log retention skipped: {exc}", 15000)
+            return
+        bridge = weakref.ref(self._retention_bridge)
+
+        def notify(event):
+            target = bridge()
+            if target is not None:
+                target.event.emit(event)
+
+        self._retention.start(settings, notify)
+
+    @Slot(object)
+    def _on_retention_event(self, event):
+        if event.kind == "started":
+            noun = "log" if event.total == 1 else "logs"
+            self.statusBar().showMessage(f"Zipping {event.total} old split {noun}…")
+        elif event.kind == "progress":
+            self.statusBar().showMessage(
+                f"Zipping old split logs: {event.done + 1} of {event.total} ({event.name})")
+        elif event.kind == "completed":
+            noun = "log" if event.zipped == 1 else "logs"
+            text = (f"Zipped {event.zipped} split {noun}, "
+                    f"{split_retention.format_bytes(event.saved)} saved")
+            if event.skipped:
+                text += f"; {len(event.skipped)} left as they were: {event.skipped[0]}"
+            self.statusBar().showMessage(text, 30000)
+        elif event.kind == "failed":
+            self.statusBar().showMessage(f"Zipping split logs failed: {event.reason}", 30000)
+
     @Slot()
     def _discard_worker(self):
         """Delete the worker on the UI thread, where leave_thread put it."""
@@ -397,6 +462,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._ticker.stop()
         self.update_poller.stop()  # a thread still checking is ignored
+        self._retention_first.stop()
+        self._retention_daily.stop()
+        self._retention.stop()  # a zip in progress stops within one chunk
         self._save_window_layout()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
@@ -985,6 +1053,7 @@ class MainWindow(QMainWindow):
             # the old analyzer's and are dropped
             self._restart_pending = True
             self.request_restart.emit()
+            self._start_retention()  # new retention settings act now
         # Design: Qt objects are freed on the UI thread. Delete the closed
         # dialog here, on the UI thread, rather than leave
         # it to Python's garbage collector, which frees whatever is garbage
@@ -998,10 +1067,29 @@ class MainWindow(QMainWindow):
                              or self.config.get("log_path") or Path.home()).parent)
         path, _ = QFileDialog.getOpenFileName(
             self, "Open encounter log for review", start_dir,
-            "Log files (*.log);;All files (*)")
-        if path:
-            self.statusBar().showMessage(f"Loading {path}…")
-            self.request_review.emit(path)
+            "Encounter logs (*.log *.zip);;All files (*)")
+        if not path:
+            return
+        member = ""
+        if is_zip(Path(path)):
+            # A zipped split or an archive: its one log, or the one chosen
+            try:
+                members = log_members(Path(path))
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Review", f"Could not read {path}: {exc}")
+                return
+            if not members:
+                QMessageBox.information(self, "Review",
+                                        f"{Path(path).name} holds no encounter log.")
+                return
+            if len(members) > 1:
+                member, ok = QInputDialog.getItem(
+                    self, "Review", f"{Path(path).name} holds {len(members)} logs. Open:",
+                    members, 0, False)
+                if not ok:
+                    return
+        self.statusBar().showMessage(f"Loading {path}…")
+        self.request_review.emit(path, member)
 
     def _exit_review(self):
         self._review_fights = None

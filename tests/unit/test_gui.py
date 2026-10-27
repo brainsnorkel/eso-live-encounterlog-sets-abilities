@@ -659,5 +659,125 @@ class TestArchiveNowEndToEnd(GuiTestCase):
         self.assertTrue(self.log.exists())  # default keep
 
 
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestZippedReview(GuiTestCase):
+    """Issue #86: a zipped split or an archive reviews like the log it holds."""
+
+    def _review(self, path, member=''):
+        worker = self._worker()
+        loaded, progress = {}, []
+        worker.review_loaded.connect(lambda p, f: loaded.update(path=p, fights=f))
+        worker.parse_progress.connect(lambda *a: progress.append(a))
+        worker.open_review(str(path), member)
+        _app.processEvents()
+        return loaded, progress
+
+    def _fight_key(self, fights):
+        return [(f.zone_name, round(f.group_dps, 1), [p.get('name') for p in f.players])
+                for f in fights]
+
+    def test_zipped_split_lists_the_same_fights(self):
+        import split_retention
+        split = self.dir / '250820201000-Coral-Aerie-vet.log'
+        split.write_bytes(FIXTURE_LOG.read_bytes())
+        split_retention.zip_split(split)
+        zipped = self.dir / (split.name + '.zip')
+        plain, _ = self._review(FIXTURE_LOG)
+        loaded, progress = self._review(zipped)
+        self.assertEqual(loaded['path'], str(zipped))
+        self.assertTrue(loaded['fights'])
+        self.assertEqual(self._fight_key(loaded['fights']), self._fight_key(plain['fights']))
+        # Progress counts the log's bytes, not the zip's
+        self.assertEqual(progress[0][2], FIXTURE_LOG.stat().st_size)
+
+    def test_archive_with_several_logs_opens_the_chosen_one(self):
+        import zipfile
+        archive = self.dir / 'Encounter-250820.zip'
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('empty.log', BEGIN_LOG + '\n')
+            zf.write(FIXTURE_LOG, 'Encounter.log')
+        loaded, _ = self._review(archive, 'Encounter.log')
+        self.assertTrue(loaded['fights'])
+        self.assertTrue(loaded['path'].endswith('› Encounter.log'))
+        # Without a choice it is refused, not guessed
+        loaded, _ = self._review(archive)
+        self.assertEqual(loaded['fights'], [])
+
+    def test_review_dialog_passes_the_member_and_filters_zips(self):
+        import zipfile
+        from unittest import mock
+
+        from gui.main_window import MainWindow
+        archive = self.dir / 'two.zip'
+        with zipfile.ZipFile(archive, 'w') as zf:
+            zf.writestr('a.log', 'x')
+            zf.writestr('b.log', 'y')
+        win = MainWindow(self.config)
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        try:
+            requests = []  # the ended worker is already cut off (_hand_back)
+            win.request_review.connect(lambda p, m: requests.append((p, m)))
+            with mock.patch('gui.main_window.QFileDialog.getOpenFileName',
+                            return_value=(str(archive), '')) as chooser, \
+                    mock.patch('gui.main_window.QInputDialog.getItem',
+                               return_value=('b.log', True)):
+                win._open_review_dialog()
+            self.assertIn('*.zip', chooser.call_args[0][3])
+            self.assertEqual(requests, [(str(archive), 'b.log')])
+        finally:
+            win.close()
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestRetentionSettings(GuiTestCase):
+    """Issue #86: the zip setting, its preview and its status messages."""
+
+    def test_preview_counts_what_a_run_would_zip_and_saves(self):
+        import time
+
+        from gui.settings_dialog import SettingsDialog
+        splits = self.dir / 'splits'
+        splits.mkdir()
+        old = time.time() - 10 * 7 * 86400
+        for name in ('251001200000-Sunspire-vet.log', '251002200000-Cloudrest-vet.log'):
+            path = splits / name
+            path.write_bytes(b'x' * 2048)
+            os.utime(path, (old, old))
+        (splits / '261020200000-Rockgrove-vet.log').write_bytes(b'x')  # young
+        self.config.set('split.dir', str(splits))
+        dialog = SettingsDialog(self.config)
+        try:
+            self.assertEqual(dialog.retention_preview.text(), '')  # off
+            dialog.zip_enabled.setChecked(True)
+            self.assertIn('Would zip 2 split logs (4 KB)', dialog.retention_preview.text())
+            dialog.zip_weeks.setValue(52)
+            self.assertIn('Would zip 0 split logs', dialog.retention_preview.text())
+            dialog.zip_weeks.setValue(6)
+            dialog.apply_to_config()
+            self.assertTrue(self.config.get('split.zip_enabled'))
+            self.assertEqual(self.config.get('split.zip_after_weeks'), 6)
+        finally:
+            dialog.deleteLater()
+
+    def test_run_events_reach_the_status_bar(self):
+        import split_retention
+        from gui.main_window import MainWindow
+        win = MainWindow(self.config)
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        try:
+            win._on_retention_event(split_retention.RetentionEvent('started', total=3))
+            self.assertIn('Zipping 3 old split logs', win.statusBar().currentMessage())
+            win._on_retention_event(split_retention.RetentionEvent(
+                'completed', total=3, zipped=2, saved=3 * 1024 ** 3,
+                skipped=['a.log: the log changed while it was zipped']))
+            message = win.statusBar().currentMessage()
+            self.assertIn('Zipped 2 split logs, 3.0 GB saved', message)
+            self.assertIn('1 left as they were', message)
+        finally:
+            win.close()
+
+
 if __name__ == '__main__':
     unittest.main()

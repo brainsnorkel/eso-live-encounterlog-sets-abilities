@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2241](../src/esolog_tail.py#L2241)*
+*[src/esolog_tail.py:2242](../src/esolog_tail.py#L2242)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:76](../src/esolog_tail.py#L76)*
+*[src/esolog_tail.py:77](../src/esolog_tail.py#L77)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1634](../src/esolog_tail.py#L1634)*
+*[src/esolog_tail.py:1635](../src/esolog_tail.py#L1635)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1649](../src/esolog_tail.py#L1649)*
+*[src/esolog_tail.py:1650](../src/esolog_tail.py#L1650)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:70](../src/esolog_tail.py#L70)*
+*[src/esolog_tail.py:71](../src/esolog_tail.py#L71)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:3572](../src/esolog_tail.py#L3572)*
+*[src/esolog_tail.py:3594](../src/esolog_tail.py#L3594)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -101,7 +101,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
+*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -1294,7 +1294,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:771](../src/esolog_tail.py#L771)*
+*[src/esolog_tail.py:772](../src/esolog_tail.py#L772)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1308,7 +1308,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:101](../src/app_config.py#L101)*
+*[src/app_config.py:104](../src/app_config.py#L104)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1335,13 +1335,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:85](../src/esolog_tail.py#L85)*
+*[src/esolog_tail.py:86](../src/esolog_tail.py#L86)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
+*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1425,7 +1425,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:102](../src/esolog_tail.py#L102)*
+*[src/esolog_tail.py:103](../src/esolog_tail.py#L103)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1433,7 +1433,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:120](../src/esolog_tail.py#L120)*
+*[src/esolog_tail.py:121](../src/esolog_tail.py#L121)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1579,7 +1579,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:514](../src/esolog_tail.py#L514)*
+*[src/esolog_tail.py:515](../src/esolog_tail.py#L515)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1602,7 +1602,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:637](../src/esolog_tail.py#L637)*
+*[src/esolog_tail.py:638](../src/esolog_tail.py#L638)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1820,6 +1820,78 @@ wherever a span starts. The caller paints the union of the row's
 intervals, one call per merged span, so overlapping receivers do not
 double the translucent base and abutting spans show no seam.
 
+## Split log retention: zipping old splits
+
+### src/split_retention.py
+
+*[src/split_retention.py:1](../src/split_retention.py#L1)*
+
+Split log retention: zip split logs older than N weeks (issue #86).
+
+Which files. Only the splitter's own names are touched:
+``YYMMDDHHMMSS-<Zone-Name>[-vet][-N].log`` and the same with ``.zip``
+added. The split folder defaults to the log's folder, which also holds
+Encounter.log and the archiver's ``Encounter-*.zip``, and Chris's split
+folder holds ``*-report.txt`` files another tool writes; none of those
+match. ``-temp.log`` (a split still waiting for its zone) never matches,
+subfolders are never entered, and symbolic links are skipped. That makes a
+``keep`` folder inside the split folder a place where nothing is ever
+zipped; the job creates it so it is there to use.
+
+How old. A split's age runs from the later of the session stamp in its name
+and its modification time. On the 899 splits in Chris's folder
+(2026-10-27), 433 had a modification time more than two days off their
+stamp, because the splitter wrote some sessions out again long after they
+were played (issue #85). The later of the two never makes a file look older
+than it is, and a session that stays open for days, with an old stamp and a
+file still growing, stays young.
+
+The latest session. The split of the live log's newest session (its last
+BEGIN_LOG) is never touched: it may be the file the splitter has open, and
+it is the one session the app replays at every start.
+
+Zipped splits are still splits. ``<stem>.log.zip`` holds one member,
+``<stem>.log``, so the original name stays visible and a ``*.zip`` pattern
+cannot mix it up with the archives. The splitter's checks for "this session
+already has a split" (LogSplitter._scan_existing_splits and
+LogFileMonitor._session_split_exists) accept the zipped form, indexed by
+the member's size; without that, zipping the newest split of someone who
+had not played for N weeks would have it written out again at the next
+start, and zipped again under a ``-1`` name.
+
+Writing safely, as the log archiver does: the zip is written to
+``.partial``, read back in full (CRC and size), given its final name, and
+only then is the log removed, so an interrupted run leaves the log or a
+verified zip, never neither. A ``.partial`` left by an interrupted run is
+removed at the start of the next. The zip and its member keep the log's
+modification time. A zip of the same name that already exists is either
+the same log (the log is then removed as a copy) or a different one (the
+log is left and reported).
+
+What it saves. Deflate at level 6 brings a split to about 6% of its size
+(a 95 MB Hel Ra split to 6.0 MB in 1.0 s, a 573 MB Dreadsail split to
+34.8 MB in 5.7 s, both read back in under 2 s). On a folder Windows
+already compresses (Chris's: 105 GB stored in 32 GB) the saving is
+smaller: about 26 GB there rather than 92.
+
+When. At startup and once a day while the app is open, on a thread of its
+own (RetentionRunner), one file at a time with a check for cancel between
+chunks: the first run over a large folder takes minutes, and the engine
+thread that polls the live log must not wait for it.
+
+### src/log_open.py
+
+*[src/log_open.py:1](../src/log_open.py#L1)*
+
+Opening a log for review: a plain log, a split the retention job zipped
+(``<stem>.log.zip``, issue #86) or an archive the log archiver wrote
+(``Encounter-*.zip``).
+
+A zip is read as a stream through its member, never extracted to disk or
+read whole into memory: an archive can hold a log of more than a gigabyte.
+The size reported for progress is the member's own, since the zip's is
+about a sixteenth of it. A zip is recognised by its content, not its name.
+
 ## The GUI and the engine thread
 
 ### src/gui/engine_worker.py
@@ -1851,7 +1923,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:520](../src/gui/main_window.py#L520)*
+*[src/gui/main_window.py:588](../src/gui/main_window.py#L588)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -1861,7 +1933,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:988](../src/gui/main_window.py#L988)*
+*[src/gui/main_window.py:1057](../src/gui/main_window.py#L1057)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

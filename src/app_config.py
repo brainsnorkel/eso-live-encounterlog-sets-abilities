@@ -28,6 +28,9 @@ DEFAULTS = {
     "split": {
         "enabled": False,
         "dir": None,            # None -> log file's directory
+        # Zip splits older than this many weeks (split_retention, issue #86)
+        "zip_enabled": False,
+        "zip_after_weeks": 4,
     },
     "archive": {
         "size_threshold_mb": 1024,   # ~5 veteran trials (100-300 MB each)
