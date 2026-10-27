@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.21.1] - 2026-10-28
 
 ### Changed
 - Healing reads **healing received** where it read "healing landed" (#102): the fight pane's shield hover, the damage taken window's header, its **Received** column under Healing received and its no-healing line, the death recap's healing star hover, and the user guide
