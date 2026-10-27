@@ -13,6 +13,7 @@ import sys
 import time
 import csv
 import io
+import json
 import re
 import hashlib
 from pathlib import Path
@@ -1016,6 +1017,12 @@ class ESOLogAnalyzer(ListenerMixin):
         # (timestamp, zone_name, zone_id, difficulty)
         self.zone_history: List[Tuple[int, str, str, str]] = []
         self.max_zone_history = 10  # Keep last 10 zone changes
+
+        # A player's gear rows as fight entries share them, by content
+        # (issue #110): the same gear pull after pull is one list, not a
+        # copy per fight (455 copies of 40 gear sets in a Sunspire night).
+        # The rows are only read once built
+        self._shared_gear: Dict[str, list] = {}
         
         
         # Session tracking for players going offline/online
@@ -2914,6 +2921,10 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
                 self.ability_cache.get, self.ability_icons.get))
+            gear_rows = entry.players[-1].get('gear')
+            if gear_rows:
+                key = json.dumps(gear_rows, sort_keys=True, default=str)
+                entry.players[-1]['gear'] = self._shared_gear.setdefault(key, gear_rows)
             # The werewolf bar the log never writes, rebuilt from casts, and
             # the share of the fight spent in form (werewolf.py)
             entry.players[-1].update(self._werewolf_fields(player, enc))
