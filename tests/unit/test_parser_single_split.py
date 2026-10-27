@@ -83,6 +83,29 @@ class TestSingleSplit(unittest.TestCase):
         self.assertIsNone(self.parser.get_event_type('100,NOT_AN_EVENT,1,2'))
         self.assertEqual(self.parser.get_event_type(COMBAT_EVENT), EventType.COMBAT_EVENT)
 
+    def test_legacy_entries_take_the_shared_split(self):
+        import csv
+        import io
+
+        from eso_log_parser import ESOLogParser
+        legacy = ESOLogParser()
+        lines = {
+            EFFECT_CHANGED: ('EFFECT_CHANGED', 884),
+            COMBAT_EVENT: ('COMBAT_EVENT', 2968),
+            BEGIN_CAST_TARGET: ('BEGIN_CAST', 0),  # the log gives casts no timestamp
+            '1000,BEGIN_LOG,1755729685851,15,"NA Megaserver","en","eso.live.11.1"':
+                ('BEGIN_LOG', 1755729685851),
+            '1000,ZONE_CHANGED,1055,"Scalecaller Peak",VETERAN': ('ZONE_CHANGED', 1055),
+            '9990,BEGIN_COMBAT': ('BEGIN_COMBAT', 9990),
+        }
+        for line, (event_type, timestamp) in lines.items():
+            with self.subTest(event_type=event_type):
+                entry = legacy.parse_line(line)
+                self.assertEqual(entry.event_type, event_type)
+                self.assertEqual(entry.timestamp, timestamp)
+                self.assertEqual(entry.fields, next(csv.reader(io.StringIO(line)))[2:])
+                self.assertEqual(entry.original_line, line)
+
     def test_unit_stats_fields_match_string(self):
         fields = EFFECT_CHANGED.split(',')[7:16]
         self.assertEqual(UnitStats.from_fields(fields), UnitStats.from_string(','.join(fields)))
