@@ -116,7 +116,7 @@ _THEMES = {
         "damage": "#c62828",
         "heal": "#2e7d32",
         "shield": "#1565c0",
-        "health": ("#2e7d32", "#8a6d00", "#b25a00", "#c62828"),
+        "health": ("#2e7d32", "#856900", "#aa5600", "#c62828"),
         "chip_fg": "#ffffff",
         "chip_bg": "#c62828",
         "rule": "#d6d9dc",

@@ -11,6 +11,11 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 - **Text size** (#77): Settings → Display has a slider from 80% to 200% of the system's text, and Ctrl+=, Ctrl+- and Ctrl+0 step it from any of the app's windows. It is saved and applies to the whole app at once: the fight list, the fight pane and every window are redrawn at the new size, and the timeline strip's rows, label column and axis, the DPS graph's margins and legend, and the ability icons in every page grow with it (never shrinking below their size at 100%). Settings' helper lines and the rule editor follow it too, and Settings scrolls sideways if a line no longer fits the screen
 - The bundled ability icons are the game's own 64 px rather than 40 px, so they stay sharp at a large text size or on a high-DPI screen; the icon folder grows from 15 MB to 25 MB
 
+- **Colour-blind DPS graph** (#77): Settings → Display → *Colour-blind colours and line styles in the DPS graph*, off by default. The lines take Paul Tol's 'bright' colours, adjusted for each theme so every line stands 3:1 against the graph, and each player in turn is drawn solid, dashed, dotted or dash-dotted. The closest two colours measure 9.8 (light) and 13.1 (dark) in CIEDE2000 for normal vision and each kind of colour blindness simulated, where the default colours measure 5 and 2 for red-blindness
+
+### Changed
+- **Clearer colours on the light theme** (#77): the timeline strip's bars were the same pale tints in both themes and measured 1.3:1 (Major Courage) to 2.8:1 against the light window; each is now a darker shade of its hue there, 3:1 or more, and follows a live theme switch. Text under 4.5:1 is darkened a step: the link blue, the veteran and stale orange, the Trash, Legendary and Mythic gear qualities, the death recap's health colours, and Settings' grey and orange helper lines (now the theme's own muted and warning colours, in the dark theme too). A unit test pins every text colour at 4.5:1 and every bar at 3:1 against both themes
+
 ### Fixed
 - The build window's Front, Back, Werewolf and Other labels no longer break a letter per line when the window is narrow or the text large
 

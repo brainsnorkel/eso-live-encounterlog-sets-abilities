@@ -129,7 +129,7 @@ class TestTimelineStrip(unittest.TestCase):
         flickering at half uptime; a buff on the whole group is solid."""
         from PySide6.QtGui import QImage
 
-        from gui.timeline_strip import EFFECT_COLORS, ROW_HEIGHT
+        from gui.timeline_strip import ROW_HEIGHT
         timeline = _sample_timeline()
         timeline["effects"]["Major Courage"] = [
             {"start_ms": 10_000, "end_ms": 30_000, "source": "@h", "target": f"@p{i}"}
@@ -141,7 +141,7 @@ class TestTimelineStrip(unittest.TestCase):
 
         def coloured(effect, x):
             rect = self.strip._row_rect(self.strip._rows.index(effect))
-            rgb = EFFECT_COLORS[effect].rgb()
+            rgb = self.strip.row_color(effect).rgb()
             return sum(1 for y in range(int(rect.top()), int(rect.top()) + ROW_HEIGHT)
                        if image.pixel(x, y) == rgb)
 
@@ -235,11 +235,11 @@ class TestTimelineStrip(unittest.TestCase):
         self.assertEqual(self.strip._rows, ["Major Force", "Major Vulnerability", "OB", "Armour"])
         info = self.strip._row_info["Armour"]
         self.assertEqual((info["scope"], info["stacks_max"], info["zero_level"]), ("boss", 27300, True))
-        self.assertEqual(info["color"], self.strip.armour_color())
+        self.assertEqual(self.strip.row_color("Armour"), self.strip.armour_color())
         self.strip.show()
         image = self.strip.grab().toImage()
         rect = self.strip._row_rect(3)
-        color = info["color"].rgb()
+        color = self.strip.row_color("Armour").rgb()
 
         def filled(ms):
             x = int(self.strip._x_for_ms(ms))
@@ -296,7 +296,7 @@ class TestTimelineStrip(unittest.TestCase):
         info = self.strip._row_info["Armour"]
         image = self.strip.grab().toImage()
         rect = self.strip._row_rect(self.strip._rows.index("Armour"))
-        color = info["color"].rgb()
+        color = self.strip.row_color("Armour").rgb()
 
         def filled(ms):
             x = int(self.strip._x_for_ms(ms))
@@ -356,7 +356,7 @@ class TestTimelineStrip(unittest.TestCase):
             x = int(self.strip._x_for_ms(ms))
             return [image.pixel(x, y) for y in range(int(rect.top()), int(rect.bottom()) + 1)]
 
-        boss = info["color"].rgb()
+        boss = self.strip.row_color("Armour").rgb()
         # The pack stretch is drawn, in a colour that is not the boss bar's
         pack_pixels = [p for p in column(10_000) if p != image.pixel(int(self.strip._x_for_ms(40_000)), int(rect.top()))]
         self.assertGreater(len(pack_pixels), 1)
@@ -658,7 +658,7 @@ class TestTrackedRows(unittest.TestCase):
         self.strip.show()
         image = self.strip.grab().toImage()
         rect = self.strip._row_rect(0)
-        color = self.strip._row_info["Zen"]["color"].rgb()
+        color = self.strip.row_color("Zen").rgb()
 
         def filled(ms):
             x = int(self.strip._x_for_ms(ms))
@@ -672,7 +672,6 @@ class TestTrackedRows(unittest.TestCase):
         self.assertEqual([iv["stacks"] for iv in found[2]], [0])
 
     def test_a_stacking_rule_is_drawn_by_height(self):
-        from gui.timeline_strip import TRACKED_COLORS
         tracked = [{"name": "Crux", "kind": "stacks", "text": "Crux:2.0/3", "uptime_pct": 100.0,
                     "max_stacks": 3, "intervals": [
                         {"start_ms": 0, "end_ms": 30_000, "stacks": 1, "target": "@me"},
@@ -681,7 +680,7 @@ class TestTrackedRows(unittest.TestCase):
         self.strip.show()
         image = self.strip.grab().toImage()
         rect = self.strip._row_rect(self.strip._rows.index("Crux"))
-        color = TRACKED_COLORS[0].rgb()
+        color = self.strip.row_color("Crux").rgb()
 
         def filled_height(ms):
             x = int(self.strip._x_for_ms(ms))

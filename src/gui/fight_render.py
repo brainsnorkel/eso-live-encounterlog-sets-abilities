@@ -144,8 +144,9 @@ _THEMES = {
         "text": "#202124",
         "muted": "#5f6368",
         "detail": "#3c4043",
-        "vet": "#b25a00",
-        "link": "#1a73e8",
+        # 4.5:1 or more on the light window as well as the white page (#77)
+        "vet": "#aa5600",
+        "link": "#166ad8",
         "roles": {"T": "#1565c0", "H": "#2e7d32", "D": "#c62828"},
         "frame_border": "#d6d9dc",
         "frame_bg": "#f6f7f8",

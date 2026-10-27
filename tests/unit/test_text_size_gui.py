@@ -294,8 +294,8 @@ class TestSettings(TextSizeTestCase):
 
     def test_helper_lines_are_in_points_and_follow_the_size(self):
         from gui import text_size
-        from gui.settings_dialog import _small_style
-        self.assertNotIn("px", _small_style("#888"))
+        _, dialog = self._dialog()
+        self.assertNotIn("px", dialog._small_style("muted"))
         small = text_size.small_pt()
         text_size.apply(150)
         self.assertAlmostEqual(text_size.small_pt(), round(small * 1.5, 2), places=1)

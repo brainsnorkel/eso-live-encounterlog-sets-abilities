@@ -92,14 +92,14 @@ _CELLS = tuple("<td align='center'>" if align == "center" else "<td>"
                for _title, _width, align in COLUMNS[1:])
 
 # The game's quality colors; the light theme gets darker variants, since the
-# game's own are picked for a dark background
+# game's own are picked for a dark background, each 4.5:1 or more (#77)
 _QUALITY_COLORS = {
     True: {"TRASH": "#9aa0a6", "NORMAL": "#e8eaed", "MAGIC": "#5fd35f",
            "ARCANE": "#5aa9ff", "ARTIFACT": "#c58af9", "LEGENDARY": "#eeca2a",
            "MYTHIC_OVERRIDE": "#ff9d3c"},
-    False: {"TRASH": "#80868b", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
-            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#8a6d00",
-            "MYTHIC_OVERRIDE": "#c25e00"},
+    False: {"TRASH": "#686e72", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
+            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#856900",
+            "MYTHIC_OVERRIDE": "#ae5400"},
 }
 _RULES = {True: "#45494f", False: "#d6d9dc"}  # under the grid's header and groups
 

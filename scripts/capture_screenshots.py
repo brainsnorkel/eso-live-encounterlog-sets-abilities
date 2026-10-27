@@ -57,6 +57,10 @@ def main():
                              "who wrote the log is pixelated (the guide's pictures are taken so)")
     parser.add_argument("--text-size", type=int, default=100,
                         help="the app's text size in percent, 80 to 200 (Settings → Display)")
+    parser.add_argument("--colorblind-graph", action="store_true",
+                        help="the DPS graph's colour-blind colours and strokes (Settings → Display)")
+    parser.add_argument("--dark", action="store_true",
+                        help="the dark theme (the Windows 11 style's dark palette, set by hand)")
     args = parser.parse_args()
     log = Path(args.log).resolve()
     if not log.exists():
@@ -74,6 +78,20 @@ def main():
 
     app = QApplication([])
     app.setFont(QFont("Segoe UI", 9))
+    if args.dark:
+        # The offscreen platform ignores the colour scheme hint, so the
+        # dark palette of Qt's Windows 11 style is set by hand
+        from PySide6.QtGui import QColor, QPalette
+        palette = QPalette()
+        for role, value in ((QPalette.Window, "#1e1e1e"), (QPalette.Base, "#2d2d2d"),
+                            (QPalette.AlternateBase, "#353535"), (QPalette.Button, "#2d2d2d"),
+                            (QPalette.WindowText, "#ffffff"), (QPalette.Text, "#ffffff"),
+                            (QPalette.ButtonText, "#ffffff"), (QPalette.ToolTipBase, "#2d2d2d"),
+                            (QPalette.ToolTipText, "#ffffff"), (QPalette.Highlight, "#4cc2ff"),
+                            (QPalette.HighlightedText, "#000000"), (QPalette.Link, "#99ebff"),
+                            (QPalette.PlaceholderText, "#9d9d9d")):
+            palette.setColor(role, QColor(value))
+        app.setPalette(palette)
 
     from app_config import AppConfig
     from gui.main_window import MainWindow
@@ -86,7 +104,7 @@ def main():
         "split": {"enabled": False},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
         "update": {"check_enabled": False},
-        "display": {"text_scale": args.text_size},
+        "display": {"text_scale": args.text_size, "colorblind_graph": args.colorblind_graph},
     }), encoding="utf-8")
 
     # The engine says "monitoring started" once it has replayed the log's
