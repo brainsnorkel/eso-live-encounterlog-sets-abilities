@@ -201,7 +201,11 @@ class MainWindow(QMainWindow):
         self.detail_action = QAction("Detail view", self)
         self.detail_action.setCheckable(True)
         self.detail_action.setChecked(True)
-        self.detail_action.setShortcut(QKeySequence(Qt.Key_Tab))
+        # Not Tab, which this once was: Tab has to move the focus, or a
+        # keyboard user never leaves the fight list (#77)
+        self.detail_action.setShortcut(QKeySequence("Ctrl+D"))
+        self.detail_action.setToolTip(
+            "Show each player's ability bars as icons, or one line per player (Ctrl+D)")
         self.detail_action.toggled.connect(self._toggle_detail)
         toolbar.addAction(self.detail_action)
 
