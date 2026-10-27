@@ -20,6 +20,22 @@ import csv
 import io
 
 
+# The line EventTypeParser.parse_line last split, and its fields: each entry
+# type's parse() takes them from here instead of running the CSV reader over
+# the line a second time (issue #108). One tuple, replaced whole and matched
+# by identity, so a second thread parsing at the same time finds another
+# line here and splits its own; the parsers only read the list.
+_last_split: Tuple[Optional[str], List[str]] = (None, [])
+
+
+def _line_fields(line: str) -> List[str]:
+    """The CSV fields of *line*, reusing parse_line's split of it."""
+    cached_line, fields = _last_split
+    if cached_line is line:
+        return fields
+    return next(csv.reader(io.StringIO(line)))
+
+
 class EventType(Enum):
     """ESO log event types"""
     BEGIN_LOG = "BEGIN_LOG"
@@ -49,6 +65,11 @@ class EventType(Enum):
     ENDLESS_DUNGEON_BUFF_ADDED = "ENDLESS_DUNGEON_BUFF_ADDED"
     ENDLESS_DUNGEON_BUFF_REMOVED = "ENDLESS_DUNGEON_BUFF_REMOVED"
     ENDLESS_DUNGEON_END = "ENDLESS_DUNGEON_END"
+
+
+# EventType by its value, for the per-line lookup (a scan of the enum's
+# members cost a tenth of the engine's time, issue #108)
+_EVENT_TYPES: Dict[str, 'EventType'] = {e.value: e for e in EventType}
 
 
 class UnitType(Enum):
@@ -113,7 +134,11 @@ class UnitStats:
     @classmethod
     def from_string(cls, stats_str: str) -> 'UnitStats':
         """Parse unit stats from string format like '22762/22762,26657/26657,13021/13021,500/500,1000/1000,0,0.2696,0.5942,5.5492'"""
-        parts = stats_str.split(',')
+        return cls.from_fields(stats_str.split(','))
+
+    @classmethod
+    def from_fields(cls, parts: List[str]) -> 'UnitStats':
+        """Parse unit stats from the line's nine stats fields, already split"""
         if len(parts) < 9:
             # Fallback for incomplete stats
             return cls(0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0)
@@ -200,8 +225,7 @@ class BeginLogEntry:
     def parse(cls, line: str) -> Optional['BeginLogEntry']:
         """Parse BEGIN_LOG entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 7 or fields[1] != "BEGIN_LOG":
                 return None
@@ -231,8 +255,7 @@ class EndLogEntry:
     def parse(cls, line: str) -> Optional['EndLogEntry']:
         """Parse END_LOG entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 2 or fields[1] != "END_LOG":
                 return None
@@ -273,8 +296,7 @@ class HealthRegenEntry:
     def parse(cls, line: str) -> Optional['HealthRegenEntry']:
         """Parse HEALTH_REGEN entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 13 or fields[1] != "HEALTH_REGEN":
                 return None
@@ -318,8 +340,7 @@ class ZoneChangedEntry:
     def parse(cls, line: str) -> Optional['ZoneChangedEntry']:
         """Parse ZONE_CHANGED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 5 or fields[1] != "ZONE_CHANGED":
                 return None
@@ -365,8 +386,7 @@ class UnitAddedEntry:
     def parse(cls, line: str) -> Optional['UnitAddedEntry']:
         """Parse UNIT_ADDED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
 
             if len(fields) < 18 or fields[1] != "UNIT_ADDED":
                 return None
@@ -420,8 +440,7 @@ class UnitChangedEntry:
     def parse(cls, line: str) -> Optional['UnitChangedEntry']:
         """Parse UNIT_CHANGED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 13 or fields[1] != "UNIT_CHANGED":
                 return None
@@ -466,8 +485,7 @@ class AbilityInfoEntry:
     def parse(cls, line: str) -> Optional['AbilityInfoEntry']:
         """Parse ABILITY_INFO entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
 
             if len(fields) < 7 or fields[1] != "ABILITY_INFO":
                 return None
@@ -501,8 +519,7 @@ class MapChangedEntry:
     def parse(cls, line: str) -> Optional['MapChangedEntry']:
         """Parse MAP_CHANGED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 5 or fields[1] != "MAP_CHANGED":
                 return None
@@ -537,22 +554,18 @@ class BeginCastEntry:
     def parse(cls, line: str) -> Optional['BeginCastEntry']:
         """Parse BEGIN_CAST entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 16 or fields[1] != "BEGIN_CAST":
                 return None
             
             # Parse caster stats (fields 7-15)
-            caster_stats_str = ",".join(fields[7:16])
-            caster_stats = UnitStats.from_string(caster_stats_str)
+            caster_stats = UnitStats.from_fields(fields[7:16])
             
             # Parse target stats if present (fields 17+)
             target_stats = None
-            if len(fields) > 17 and fields[16] != "0":
-                target_stats_str = ",".join(fields[17:26]) if len(fields) >= 26 else ""
-                if target_stats_str:
-                    target_stats = UnitStats.from_string(target_stats_str)
+            if len(fields) >= 26 and fields[16] != "0":
+                target_stats = UnitStats.from_fields(fields[17:26])
                 
             return cls(
                 line_number=int(fields[0]),
@@ -584,8 +597,7 @@ class EndCastEntry:
     def parse(cls, line: str) -> Optional['EndCastEntry']:
         """Parse END_CAST entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 5 or fields[1] != "END_CAST":
                 return None
@@ -617,8 +629,7 @@ class EffectInfoEntry:
     def parse(cls, line: str) -> Optional['EffectInfoEntry']:
         """Parse EFFECT_INFO entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 6 or fields[1] != "EFFECT_INFO":
                 return None
@@ -654,15 +665,13 @@ class EffectChangedEntry:
     def parse(cls, line: str) -> Optional['EffectChangedEntry']:
         """Parse EFFECT_CHANGED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 16 or fields[1] != "EFFECT_CHANGED":
                 return None
             
             # Parse target stats (fields 7-15)
-            target_stats_str = ",".join(fields[7:16])
-            target_stats = UnitStats.from_string(target_stats_str)
+            target_stats = UnitStats.from_fields(fields[7:16])
             
             # Parse additional targets if present
             additional_targets = []
@@ -706,15 +715,13 @@ class CombatEventEntry:
     def parse(cls, line: str) -> Optional['CombatEventEntry']:
         """Parse COMBAT_EVENT entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 19 or fields[1] != "COMBAT_EVENT":
                 return None
             
             # Parse target stats (fields 10-18)
-            target_stats_str = ",".join(fields[10:19])
-            target_stats = UnitStats.from_string(target_stats_str)
+            target_stats = UnitStats.from_fields(fields[10:19])
                 
             return cls(
                 line_number=int(fields[0]),
@@ -745,8 +752,7 @@ class BeginCombatEntry:
     def parse(cls, line: str) -> Optional['BeginCombatEntry']:
         """Parse BEGIN_COMBAT entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 2 or fields[1] != "BEGIN_COMBAT":
                 return None
@@ -769,8 +775,7 @@ class EndCombatEntry:
     def parse(cls, line: str) -> Optional['EndCombatEntry']:
         """Parse END_COMBAT entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 2 or fields[1] != "END_COMBAT":
                 return None
@@ -794,8 +799,7 @@ class UnitRemovedEntry:
     def parse(cls, line: str) -> Optional['UnitRemovedEntry']:
         """Parse UNIT_REMOVED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 3 or fields[1] != "UNIT_REMOVED":
                 return None
@@ -828,8 +832,7 @@ class TrialInitEntry:
     def parse(cls, line: str) -> Optional['TrialInitEntry']:
         """Parse TRIAL_INIT entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 9 or fields[1] != "TRIAL_INIT":
                 return None
@@ -863,8 +866,7 @@ class BeginTrialEntry:
     def parse(cls, line: str) -> Optional['BeginTrialEntry']:
         """Parse BEGIN_TRIAL entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 4 or fields[1] != "BEGIN_TRIAL":
                 return None
@@ -896,8 +898,7 @@ class EndTrialEntry:
     def parse(cls, line: str) -> Optional['EndTrialEntry']:
         """Parse END_TRIAL entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 7 or fields[1] != "END_TRIAL":
                 return None
@@ -930,8 +931,7 @@ class EndlessDungeonBeginEntry:
     def parse(cls, line: str) -> Optional['EndlessDungeonBeginEntry']:
         """Parse ENDLESS_DUNGEON_BEGIN entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 5 or fields[1] != "ENDLESS_DUNGEON_BEGIN":
                 return None
@@ -961,8 +961,7 @@ class EndlessDungeonStageEndEntry:
     def parse(cls, line: str) -> Optional['EndlessDungeonStageEndEntry']:
         """Parse ENDLESS_DUNGEON_STAGE_END entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_STAGE_END":
                 return None
@@ -992,8 +991,7 @@ class EndlessDungeonEndEntry:
     def parse(cls, line: str) -> Optional['EndlessDungeonEndEntry']:
         """Parse ENDLESS_DUNGEON_END entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 5 or fields[1] != "ENDLESS_DUNGEON_END":
                 return None
@@ -1023,8 +1021,7 @@ class EndlessDungeonBuffAddedEntry:
     def parse(cls, line: str) -> Optional['EndlessDungeonBuffAddedEntry']:
         """Parse ENDLESS_DUNGEON_BUFF_ADDED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_BUFF_ADDED":
                 return None
@@ -1053,8 +1050,7 @@ class EndlessDungeonBuffRemovedEntry:
     def parse(cls, line: str) -> Optional['EndlessDungeonBuffRemovedEntry']:
         """Parse ENDLESS_DUNGEON_BUFF_REMOVED entry from CSV line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
+            fields = _line_fields(line)
             
             if len(fields) < 4 or fields[1] != "ENDLESS_DUNGEON_BUFF_REMOVED":
                 return None
@@ -1241,44 +1237,27 @@ class ESOLogStructureParser:
         if not line or not line.strip():
             return None
             
+        global _last_split
         try:
-            # Extract event type from line
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
-            
+            fields = next(csv.reader(io.StringIO(line)))
             if len(fields) < 2:
                 return None
-                
-            event_type_str = fields[1]
-            
-            # Find matching parser
-            for event_type in EventType:
-                if event_type.value == event_type_str:
-                    parser = self.PARSERS.get(event_type)
-                    if parser:
-                        return parser(line)
-                    break
-                    
-            return None
+            event_type = _EVENT_TYPES.get(fields[1])
+            parser = self.PARSERS.get(event_type) if event_type else None
+            if parser is None:
+                return None
+            _last_split = (line, fields)
+            return parser(line)
         except (ValueError, IndexError, StopIteration):
             return None
 
     def get_event_type(self, line: str) -> Optional[EventType]:
         """Get the event type from a log line"""
         try:
-            reader = csv.reader(io.StringIO(line))
-            fields = next(reader)
-            
+            fields = next(csv.reader(io.StringIO(line)))
             if len(fields) < 2:
                 return None
-                
-            event_type_str = fields[1]
-            
-            for event_type in EventType:
-                if event_type.value == event_type_str:
-                    return event_type
-                    
-            return None
+            return _EVENT_TYPES.get(fields[1])
         except (ValueError, IndexError, StopIteration):
             return None
 
