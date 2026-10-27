@@ -497,7 +497,10 @@ def summary_of_rows(rows: list[dict], overheal: int | None = None) -> dict:
 # Warfare stars that act on it, with the game's tooltip text at the top
 # stage (UESP, Online:Warfare) and the star's ESO-Hub page. The app never
 # says which stars a player has: the log does not carry them.
-ESOHUB_CP = "https://eso-hub.com/en/champion-points/warfare/"
+# Every star's page sits under /champion-points/star/<slug>, whatever its
+# constellation (ESO-Hub's sitemap_en_ChampionPointsStar.xml, 2026-10-27:
+# the 19 slugs below are listed there as written)
+ESOHUB_CP = "https://eso-hub.com/en/champion-points/star/"
 
 
 def _star(name: str, text: str, slug: str) -> dict:
