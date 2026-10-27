@@ -13,7 +13,7 @@ class FightHistoryEntry:
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
                  'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
-                 'damage_series', 'pen_crit', 'player_names']
+                 'damage_series', 'pen_crit', 'player_names', 'misfortunes']
 
     def __init__(self):
         self.timestamp = ""
@@ -75,6 +75,10 @@ class FightHistoryEntry:
         # player's own part is their 'pen_crit' dict. None on an entry built
         # without it
         self.pen_crit = None
+        # A solo dungeon run's Misfortunes, [name, text] each, as the logging
+        # player carried them (misfortunes.py); [] for a run without any,
+        # None outside a solo dungeon and on an entry built without them
+        self.misfortunes = None
 
 
 class FightHistory:

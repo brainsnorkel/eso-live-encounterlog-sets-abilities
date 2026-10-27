@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.17.0] - 2026-10-27
+
+### Added
+- **A solo dungeon run's Misfortunes in the fight pane** (#70): in March of Sacrifices and Moon Hunter Keep solo, a line under the fight header names the Misfortunes the run was started with, `Misfortunes: Warm Welcome · Revoke of Respite · Alleviating Assault`, or reads `Misfortunes: none`; hovering a name gives the game's own description of what it does, and **Copy fight** adds the same line. They are read from the logging player's long-term effects at each pull. All five Misfortunes seen in the maintainer's logs are known: the three Moon Hunter Keep ones and, from the 2026-10-25 March of Sacrifices run (which did pick some), Weary Submission and Pulled Punches; any other solo dungeon debuff is shown by its logged name. Other zones have no such line
+
+### Changed
+- **Crux is a commented-out example** (#80): the default tracked-effect rules end with `# Crux = 184220 on self stacks`, for an Arcanist to switch on by taking the `#` off. A saved rules text that still has the Crux line as it shipped has it commented out on upgrade; a Crux line of your own is kept
+
 ## [0.16.0] - 2026-10-27
 
 ### Added

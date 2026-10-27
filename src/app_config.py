@@ -19,8 +19,9 @@ APP_NAME = "esolog-tail"
 # The rules text's layout: 1 held the user's additions to a line whose
 # group buffs and taunt were built in; 2 has those as rules too; 3 gives
 # them ``expected`` words and Touch of Z'en the ``dots`` measure; 4 takes
-# Powerful Assault's ``expected`` off again (issue #48)
-TRACKING_VERSION = 4
+# Powerful Assault's ``expected`` off again (issue #48); 5 comments out the
+# default Crux line (issue #80)
+TRACKING_VERSION = 5
 
 DEFAULTS = {
     "log_path": None,           # None -> auto-detect
@@ -110,7 +111,8 @@ class AppConfig:
         still shows a missing group buff at 0% after the upgrade. A text
         saved before version 4 has the ``expected large`` that version 3
         put on its Powerful Assault line taken off again (issue #48: the
-        one default no longer expected). Nothing is written back; the
+        one default no longer expected). A text saved before version 5 has
+        the default Crux line commented out (issue #80). Nothing is written back; the
         version is saved with the next Save, and every step is harmless to
         repeat.
 

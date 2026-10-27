@@ -25,6 +25,11 @@ same line. A Rampage the log listed in a human bar is drawn as the morph it
 stands in for. The hover on either kind of slot says so, which is why such
 a slot's anchor carries a fragment of its own, as a scribed skill's does.
 
+In a solo dungeon a line under the header names the Misfortunes the run
+was started with, each name's hover saying what it does, or reads
+"Misfortunes: none" (see misfortunes.py); the plain-text copy adds the same
+line. Nothing shows in any other zone.
+
 A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
@@ -87,6 +92,9 @@ ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible bu
 # penetration and critical damage over the fight (pen_crit); a click opens
 # the build window at its Penetration and Critical damage sections
 PEN_CRIT_HREF = "esolog:pencrit/"
+# + the Misfortune's place on the line: a solo dungeon run's Misfortune
+# under the header, whose hover gives what it does (misfortunes.py)
+MISFORTUNE_HREF = "esolog:misfortune/"
 PEN_CRIT_TITLE = "Penetration and critical damage"
 # The cue itself, a circled i like the fight list's mark (ISSUES_LIST_CUE),
 # shown only on a player with a finding
@@ -236,6 +244,25 @@ def issues_tooltips(entry) -> dict:
                 f"<b>{ISSUES_TITLE}</b><br>{titles}<br>"
                 f"<span style='font-size:85%'>Click for the rules behind them</span>")
     return tips
+
+
+def misfortunes_text(entry) -> str:
+    """'Misfortunes: Warm Welcome · Revoke of Respite' for a solo dungeon
+    run, 'Misfortunes: none' for one without any, '' anywhere else and on
+    an entry built before the line existed (issue #70)."""
+    items = getattr(entry, "misfortunes", None)
+    if items is None:
+        return ""
+    return "Misfortunes: " + (" · ".join(str(name) for name, _text in items) or "none")
+
+
+def misfortunes_tooltips(entry) -> dict:
+    """Hover text per Misfortune on the line: its name and what it does; one
+    named only by the log (no text) has none."""
+    e = html.escape
+    return {f"{MISFORTUNE_HREF}{i}": f"<b>{e(str(name))}</b><br>{e(str(text))}"
+            for i, (name, text) in enumerate(getattr(entry, "misfortunes", None) or [])
+            if text}
 
 
 def pen_crit_href(unit_id) -> str:
@@ -850,6 +877,15 @@ def render_html(entry, detailed: bool, dark: bool = False,
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
     ]
+    # A solo dungeon run's Misfortunes, muted like the stats; each name with
+    # a text carries an anchor for its hover, in the look of plain text
+    misfortunes = getattr(entry, "misfortunes", None)
+    if misfortunes is not None:
+        names_html = " · ".join(
+            (f'<a href="{MISFORTUNE_HREF}{i}" style="text-decoration:none;color:{muted}">'
+             f'{e(str(name))}</a>') if text else e(str(name))
+            for i, (name, text) in enumerate(misfortunes)) or "none"
+        parts.append(f"<p style='margin:0;color:{muted}'>Misfortunes: {names_html}</p>")
     # No text uptime line: the timeline strip above the pane shows every
     # tracked rule, its label the rule's text (issue #25). The plain copy
     # keeps the line, since text is all a paste can carry
@@ -1013,6 +1049,9 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
     pane hides."""
     names = names or NO_MASK
     lines = [summary_line(entry)]
+    misfortunes = misfortunes_text(entry)
+    if misfortunes:
+        lines.append(misfortunes)
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
     first_dealer = str(entry.first_damage_dealer or "")
