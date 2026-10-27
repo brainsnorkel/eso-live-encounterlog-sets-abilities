@@ -76,6 +76,11 @@ DEFAULTS = {
     "companions": {
         "accrue_to_owner": False,
     },
+    # The death recap window: seconds of damage and healing kept before
+    # each death (death_recap, issue #95), 5 to 10
+    "death_recap": {
+        "window_s": 5,
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split

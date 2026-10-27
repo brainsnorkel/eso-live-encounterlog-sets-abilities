@@ -1441,7 +1441,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:108](../src/app_config.py#L108)*
+*[src/app_config.py:113](../src/app_config.py#L113)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1859,6 +1859,14 @@ fight ends (refresh_fight), so a ground effect that reached a second player
 seconds after the death still reads as area. Pure overheals (a heal line
 whose hit value is zero) are kept in the window for the recap's overheal
 sum but never become rows.
+
+The window is a setting (issue #95): 5 seconds by default, up to 10, read
+from the config when the engine is built (app_startup), so a Settings save,
+which rebuilds the engine and replays the session, rebuilds the fights
+already listed with the new window. Each recap records the window it was
+built with ('window_ms'), so a frontend names the right number of seconds
+for a fight recorded under another setting, and a recap from before the key
+existed reads as the old fixed five.
 
 ## Kinds of damage: direct or over time, area or single target, Martial or Magical
 

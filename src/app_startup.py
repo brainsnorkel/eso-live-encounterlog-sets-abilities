@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from app_config import AppConfig
+from death_recap import recap_window_s
 from effect_rules import DEFAULT_RULES, EffectTracker, parse_rules
 from engine_events import AnalyzerListener
 from esolog_tail import ESOLogAnalyzer, LogFileMonitor, _find_eso_log_file
@@ -47,6 +48,11 @@ def build_analyzer(config: AppConfig,
     # A companion's damage and healing on its owner's row too (companions.py);
     # Settings restarts the engine on save, so the change replays the session
     analyzer.companion_accrual = bool(config.get("companions.accrue_to_owner", False))
+    # The seconds of damage and healing a death recap keeps (death_recap,
+    # issue #95): read here, so the replay a save makes rebuilds the fights
+    # already listed with the new window
+    analyzer.death_recap_recorder.window_ms = (
+        recap_window_s(config.get("death_recap.window_s")) * 1000)
     analyzer.fight_history = FightHistory()
     for listener in listeners:
         analyzer.add_listener(listener)
