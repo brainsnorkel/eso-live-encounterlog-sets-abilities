@@ -71,6 +71,9 @@ class SignalListener(AnalyzerListener):
     def on_diagnostic(self, message):
         self._emit("diagnostic", message)
 
+    def on_parse_progress(self, label, done, total):
+        self._emit("parse_progress", label, done, total)
+
 
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.

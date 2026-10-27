@@ -73,6 +73,10 @@ class AnalyzerListener:
     def on_diagnostic(self, message: str) -> None:
         """Informational/diagnostic message (previously terminal output)."""
 
+    def on_parse_progress(self, label: str, done: int, total: int) -> None:
+        """A long replay (the session replayed at attach) has read *done* of
+        *total* bytes; done >= total ends it."""
+
 
 class ListenerMixin:
     """Mixin providing listener registration and safe fan-out notification."""
@@ -120,6 +124,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_diagnostic(self, message: str) -> None:
         self.events.append(("diagnostic", message))
+
+    def on_parse_progress(self, label: str, done: int, total: int) -> None:
+        self.events.append(("parse_progress", label, done, total))
 
     def of_kind(self, kind: str):
         return [e for e in self.events if e[0] == kind]
