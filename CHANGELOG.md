@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **The Warfare star links** (#73): the labels beside the kinds-of-damage bars linked to `eso-hub.com/en/champion-points/warfare/<star>`, which does not exist; ESO-Hub keeps every star at `/champion-points/star/<star>` whatever its constellation, as its star sitemap lists them, and the 19 links now go there
+
 ## [0.17.0] - 2026-10-27
 
 ### Added
