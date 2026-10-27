@@ -37,3 +37,17 @@ Beside the bars, in the heal share, in the ability kind words and in the star ho
 
 - **WHEN** the reader hovers the DoT label of a damage-taken bar
 - **THEN** the hover is headed "Warfare stars for DoT damage taken" and names Enduring Resolve and Preparation with their tooltip texts
+
+### Requirement: The recap window is a setting
+
+The seconds of damage and healing kept before each death SHALL be a setting under Settings → Death recaps, an integer from 5 to 10 in steps of one, 5 by default. The engine SHALL read it when it is built, so saving Settings (which replays the session) rebuilds the listed fights with the new window, and a log opened for review uses it. Each recap SHALL record the window it was built with, and the window SHALL name that number of seconds in its sentence above the deaths, in each death's summary and in its empty-window line; a recap from before the setting existed reads as five. A value outside the range in the config file SHALL be held to the nearest bound.
+
+#### Scenario: Eight seconds
+
+- **WHEN** the setting is 8 and a player dies with hits 7 and 2 seconds before the death
+- **THEN** both hits are rows, the death's summary reads "damage in the last 8 seconds", and the sentence above the deaths says "in the 8 seconds before each death"
+
+#### Scenario: An edited config
+
+- **WHEN** the config file says 99
+- **THEN** the engine keeps 10 seconds and Settings shows 10

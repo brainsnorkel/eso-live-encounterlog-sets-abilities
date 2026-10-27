@@ -88,6 +88,30 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
+    def test_the_death_recap_window_is_bounded_and_saved(self):
+        from gui.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self.config)
+        # 5 to 10 seconds in steps of one, 5 by default (issue #95)
+        self.assertEqual((dialog.recap_window.minimum(), dialog.recap_window.maximum()), (5, 10))
+        self.assertEqual(dialog.recap_window.singleStep(), 1)
+        self.assertEqual(dialog.recap_window.value(), 5)
+        dialog.recap_window.setValue(8)
+        dialog.apply_to_config()
+        self.assertEqual(self.config.get("death_recap.window_s"), 8)
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        # The saved value comes back; a hand-edited one is held to the range
+        again = SettingsDialog(self.config)
+        self.assertEqual(again.recap_window.value(), 8)
+        again.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.config.set("death_recap.window_s", 99)
+        edited = SettingsDialog(self.config)
+        self.assertEqual(edited.recap_window.value(), 10)
+        edited.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.config.set("death_recap.window_s", 5)
+
     def test_a_path_rows_browse_dialog_belongs_to_the_settings_window(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)

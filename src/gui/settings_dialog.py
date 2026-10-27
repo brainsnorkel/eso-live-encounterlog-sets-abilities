@@ -1,6 +1,7 @@
 """Settings dialog: log path, split files, archiving, startup, updates, the
-tracked effects the timeline strip draws, and the penetration and critical
-damage assumptions the build window's sections use."""
+death recap window, the tracked effects the timeline strip draws, and the
+penetration and critical damage assumptions the build window's sections
+use."""
 
 import sys
 import time
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 
 import split_retention
 from app_config import AppConfig
+from death_recap import DEFAULT_WINDOW_S, MAX_WINDOW_S, MIN_WINDOW_S, recap_window_s
 from effect_rules import DEFAULT_RULES, parse_rules
 from recycle_bin import TRASH_NAME
 from pen_crit import (
@@ -53,6 +55,10 @@ COMPANION_HELP = ("A companion that is out has its own row under its owner. Off,
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
                   "Applies when Settings is saved, to the fights already listed.")
+RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
+              "seconds before the death. Five is usually one mechanic; ten shows the lead-up. "
+              "Saving replays the session, so the fights already listed are rebuilt with the "
+              "new window.")
 
 RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for review. Checked "
                   "at startup and daily; the newest session's split and the keep folder are "
@@ -263,6 +269,22 @@ class SettingsDialog(QDialog):
         companion_help.setStyleSheet("color: #888; font-size: 11px;")
         companion_form.addRow(companion_help)
         layout.addWidget(companion_group)
+
+        # Death recaps (issue #95, death_recap): the seconds kept before
+        # each death; the engine reads it when a save rebuilds it
+        recap_group = QGroupBox("Death recaps")
+        recap_form = QFormLayout(recap_group)
+        self.recap_window = QSpinBox()
+        self.recap_window.setRange(MIN_WINDOW_S, MAX_WINDOW_S)
+        self.recap_window.setSuffix(" seconds")
+        self.recap_window.setValue(
+            recap_window_s(config.get("death_recap.window_s", DEFAULT_WINDOW_S)))
+        recap_form.addRow("Window before each death:", self.recap_window)
+        recap_help = QLabel(RECAP_HELP)
+        recap_help.setWordWrap(True)
+        recap_help.setStyleSheet("color: #888; font-size: 11px;")
+        recap_form.addRow(recap_help)
+        layout.addWidget(recap_group)
 
         # Tracked effects: the rule text, with its parse result underneath;
         # the timeline strip above each fight draws them
@@ -481,6 +503,7 @@ class SettingsDialog(QDialog):
         self.config.set("update.check_enabled", self.update_check.isChecked())
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
         self.config.set("companions.accrue_to_owner", self.companion_accrual.isChecked())
+        self.config.set("death_recap.window_s", self.recap_window.value())
         self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())
         self.config.set("pen_crit.fighting_finesse", self.assume_finesse.isChecked())
         self.config.set("pen_crit.backstabber", self.assume_backstabber.isChecked())

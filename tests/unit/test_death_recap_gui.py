@@ -407,6 +407,22 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertEqual(html.count(NOT_RECORDED), 3)
         self.assertNotIn('in the last 5 seconds', html)
 
+    def test_the_window_named_is_the_one_each_recap_was_built_with(self):
+        # A fight recorded with Settings at 8 seconds (issue #95)
+        entry = _entry_with_kinds()
+        for recap in entry.death_recaps:
+            recap['window_ms'] = 8000
+        html = self._html(entry)
+        self.assertIn('in the 8 seconds before each death', html)
+        self.assertIn('damage in the last 8 seconds', html)
+        self.assertNotIn('5 seconds', html)
+        # A recap from before the setting existed reads as the fixed five
+        self.assertIn('in the 5 seconds before each death', self._html())
+        # An empty window names it too
+        entry = _entry_with_deaths()
+        entry.death_recaps[1]['window_ms'] = 10000   # @passerby, nothing logged
+        self.assertIn('in the 10 seconds before this death', self._html(entry, unit_id='77'))
+
     def test_sides_link_to_their_stars_with_hover_text(self):
         from damage_kinds import stars_for
         from gui.death_render import kind_tooltips
