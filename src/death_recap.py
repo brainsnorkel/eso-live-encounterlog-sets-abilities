@@ -2,7 +2,7 @@
 Death recap recording: what hit and healed a player in the seconds before
 each death, for the GUI's per-player recap.
 
-The analyzer passes every COMBAT_EVENT that lands on a player to record();
+The analyzer passes every COMBAT_EVENT whose target is a player to record();
 a short per-player history is kept, and note_death() turns that history into
 the recap a frontend renders. Times are raw log-relative milliseconds.
 
@@ -50,7 +50,7 @@ MIN_WINDOW_S, MAX_WINDOW_S = 5, 10
 RECAP_WINDOW_MS = DEFAULT_WINDOW_S * 1000
 
 # Events on the dead player this soon after the death event belong to it: the
-# killing blow and anything landing in the same instant. Later hits are on
+# killing blow and anything arriving in the same instant. Later hits are on
 # the corpse.
 KILLING_BLOW_GRACE_MS = 100
 

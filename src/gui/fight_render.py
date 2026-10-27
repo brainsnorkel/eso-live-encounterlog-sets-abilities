@@ -260,7 +260,7 @@ def taken_tooltips(entry, names=None) -> dict:
             rate = f", {total / fight_s:,.0f} a second of the fight" if fight_s > 0 and total else ""
             lines.append(f"{total:,} damage taken{rate}")
             heal_rate = f", {healed / fight_s:,.0f} a second" if fight_s > 0 and healed else ""
-            lines.append(f"{healed:,} healing landed{heal_rate}")
+            lines.append(f"{healed:,} healing received{heal_rate}")
             absorbed = int(taken.get("absorbed") or 0)
             if absorbed:
                 lines.append(f"{absorbed:,} absorbed by shields")

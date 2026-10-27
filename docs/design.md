@@ -563,7 +563,7 @@ The rules (Chris, 2026-10-27):
    MONSTER added on their unit id marks them gone too, and that id is no
    longer theirs.
 3. The same character back in the zone is the same row: the new unit id is
-   an alias of the record, so the damage before and after the drop lands on
+   an alias of the record, so the damage before and after the drop goes to
    one row and its dps time spans both, the gap included (as Combat Metrics
    counts it). At the next BEGIN_COMBAT the record takes the new id as its
    own, its companion and pets following, so later fights are keyed as for
@@ -1289,7 +1289,7 @@ up to 71 mobs hit). A ``boss`` rule has nothing to measure there, so it
 measures every hostile the group fought instead, and both it and an
 ``enemies`` rule then say how many of the pack's mobs the effect reached,
 ``Alkosh:45% on 7 of 12 mobs`` (the pack is the mobs the group hit, plus
-any a tracked effect landed on). In those fights Off-Balance reached up to
+any a tracked effect was applied to). In those fights Off-Balance reached up to
 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle
 18 of 32, the taunt 20 of 32. In a boss fight nothing changes: the boss
 rule reads the boss alone (its effect was on the adds too in about half
@@ -1380,7 +1380,7 @@ comes under several ids at once (45902 for most sources, 62988 for
 Elemental Blockade, 39077, 34733, 20806, 130139), so a union is needed,
 and its uptime on a trial boss was 4 to 28% per fight; Crux stacks to 3
 on the Arcanist alone; a pet-applied buff (a Glyphic's heal, Major
-Protection from a netch) lands on players like any other and needs no
+Protection from a netch) is applied to players like any other and needs no
 special case, since only the target's kind is looked at. Replaying the
 bundled examples through two of those logs (Sunspire, Kyne's Aegis):
 Off-Balance on the boss 12 to 28% per boss fight, to the decimal what an
@@ -1832,7 +1832,7 @@ Without --dir the split folder from the app's config is used.
 Death recap recording: what hit and healed a player in the seconds before
 each death, for the GUI's per-player recap.
 
-The analyzer passes every COMBAT_EVENT that lands on a player to record();
+The analyzer passes every COMBAT_EVENT whose target is a player to record();
 a short per-player history is kept, and note_death() turns that history into
 the recap a frontend renders. Times are raw log-relative milliseconds.
 
@@ -1908,7 +1908,7 @@ the encounter log carries three of them on every COMBAT_EVENT line:
   summed. IMMUNE and REFLECTED are not counted.
 - **Healing.** HEAL and CRITICAL_HEAL are direct heals, HOT_TICK and
   HOT_TICK_CRITICAL heals over time (Focused Mending, Swift Renewal); the hit
-  value landed and the overflow is overheal (1.17B landed against 12.4B
+  value is healing received and the overflow is overheal (1.17B received against 12.4B
   overheal in the survey; 3.1M of 3.6M heal lines were pure overheal).
   HEAL_ABSORBED is healing a healing-absorb effect ate. The killing blow's
   overflow is overkill (written on 6,039 of 6,398 killing blows; a blow
@@ -1941,7 +1941,7 @@ by map, and no Warfare star reads it.
 A session's cast index and a fight's damage-taken tallies cost a few
 dictionaries: the (source, cast) map is cleared at each fight's end, the
 per-ability memory with the zone session (unit ids start over), and a cast's
-pending amounts are dropped the moment its second target lands.
+pending amounts are dropped the moment it hits a second target.
 
 ## The damage taken window: by source and by healer, over the whole fight
 
@@ -1981,13 +1981,13 @@ player-fights with damage taken; 2026-10-27):
   512.
 - Healing is grouped by healer, with the healer's abilities under them.
   Six to eight units healed each player in the median fight (every group
-  HoT counts) with 15-19 abilities between them; the largest healer landed
-  51-65%, a tank's own heals 23% of what landed on them, a healer's own
+  HoT counts) with 15-19 abilities between them; the largest healer gave
+  51-65%, a tank's own heals 23% of what they received, a healer's own
   61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
   after the owner, since the log names no pet.
 - Overheal is a share per row, never an amount: 91-96% of all healing on a
-  player overflowed, so the amounts would be ten to twenty times the landed
-  figures and bury them. Landed healing is the headline; the share tells a
+  player overflowed, so the amounts would be ten to twenty times the received
+  figures and bury them. Healing received is the headline; the share tells a
   healer which HoTs were wasted on this player.
 - Shields absorbed 54-67% as much again as the damage that reached health
   (tanks most), so the header gives the absorbed amount with that ratio,
@@ -2376,7 +2376,7 @@ friend, which is what "the handle of the person logging" means.
 Which names are player names: a name is hidden when it is not the local
 player's handle or character name and either starts with ``@`` or is the
 character name of another player of the fight. The ``@`` rule reaches
-every nested place a handle lands (the source of a heal in a death recap,
+every nested place a handle appears (the source of a heal in a death recap,
 a caster in the penetration section, a timeline interval's source and
 target) without threading the player list into each; the character-name
 set reaches a player the log gave no handle. That set is read from the

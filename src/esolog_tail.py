@@ -2198,7 +2198,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 else:
                     self._remember_cast(entry.fields[5], entry.fields[6])
 
-            # Death recap: keep what lands on each player (damage, heals,
+            # Death recap: keep what each player receives (damage, heals,
             # shields, dodges) for the seconds before a death
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
                 recap_target = entry.fields[17] if entry.fields[17] != '*' else entry.fields[7]
@@ -2754,7 +2754,7 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.damage_series = damage.series(enc.start_time)
         entry.deaths = self.fight_deaths  # this fight's player deaths
         # The recaps' rows are classed once more with every cast of the
-        # fight known (an area hit's second target may have landed late)
+        # fight known (an area cast's hit on a second target may come late)
         self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer

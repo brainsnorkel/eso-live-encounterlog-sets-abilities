@@ -19,7 +19,7 @@ star and its tooltip (damage_kinds.stars_for), the pattern the ability names
 use: the hover tells, the click opens the page. Below the bars: the damage
 types behind the sides, the amounts outside them (Oblivion, fall, drowning,
 untyped), what got through while blocking, what shields absorbed, hits
-avoided, the healing that landed against the overheal, and the killing
+avoided, the healing received against the overheal, and the killing
 blow's overkill. The same block draws a death's five seconds and the whole
 fight, so the two read alike.
 
@@ -70,7 +70,7 @@ DOT_LABEL = SIDE_LABELS["dot"]
 HOT_LABEL = "HoT"
 # What a healing side's star hover is headed with
 HEAL_SIDE_WORDS = {"direct": "direct healing", "dot": f"healing over time ({HOT_LABEL})",
-                   "landed": "healing that landed", "overheal": "overheal"}
+                   "landed": "healing received", "overheal": "overheal"}
 
 RESULT_LABELS = {
     "DAMAGE": "Hit",

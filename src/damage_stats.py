@@ -314,8 +314,8 @@ class PlayerDamage:
         self.kinds: Dict[str, object] = {
             'direct': 0, 'dot': 0, 'area': 0, 'single': 0, 'martial': 0, 'magical': 0,
             'oblivion': 0, 'other': 0, 'shielded': 0, 'types': Counter(), 'rules': Counter()}
-        # cast key -> [(rows, hit)] counted single until the cast's second
-        # target lands and the watcher moves them to area
+        # cast key -> [(rows, hit)] counted single until the cast hits a second
+        # target and the watcher moves them to area
         self._pending: Dict[tuple, List[Tuple[tuple, int]]] = {}
 
     def note(self, ts: int, hit: int, result: str, ability_id: str, pet: bool,
@@ -373,7 +373,7 @@ class PlayerDamage:
                 pending.append((rows, hit))
 
     def _cast_became_area(self, cast_key) -> None:
-        """The cast's second target landed: its earlier hits were area."""
+        """The cast hit a second target: its earlier hits were area."""
         kinds = self.kinds
         for rows, hit in self._pending.pop(cast_key, ()):
             kinds['single'] -= hit
