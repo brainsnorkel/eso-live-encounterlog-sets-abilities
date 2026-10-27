@@ -41,28 +41,27 @@ class TestFileNamingConflicts(unittest.TestCase):
         with open(filepath, 'rb') as f:
             return hashlib.md5(f.read()).hexdigest()
 
-    def test_split_log_same_content_deletes_temp(self):
-        """Test that temp file is deleted when target exists with same content."""
-        # Create existing target file
-        target_file = self._create_test_file("250914094523-Lucent-Citadel-vet.log", "encounter data")
-        target_hash = self._get_file_hash(target_file)
-        
-        # Create temp file with same content
-        temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.log", "encounter data")
-        temp_hash = self._get_file_hash(temp_file)
-        
-        # Verify hashes match
-        self.assertEqual(target_hash, temp_hash)
-        
-        # Mock the rename operation to simulate conflict
-        with patch('os.rename', side_effect=FileExistsError("File exists")):
-            with patch('os.path.exists', return_value=True):
-                result = self.splitter._handle_rename_conflict(Path(temp_file), Path(target_file))
-        
-        # Should return True (success) and temp file should be deleted
+    def test_split_log_same_session_continues_the_existing_file(self):
+        """A target that begins with the temp file's bytes is the same
+        session: the temp file goes and the existing file is continued
+        (issue #85), not skipped and not written again under a suffix."""
+        # Create existing target file: the same preamble, then the combat
+        # that named it and more
+        target_file = self._create_test_file("250914094523-Lucent-Citadel-vet.log",
+                                             "encounter data\r\n100,BEGIN_COMBAT\r\nmore lines\r\n")
+        # Create temp file holding the preamble only
+        temp_file = self._create_test_file("250914094523-Lucent-Citadel-vet-temp.log",
+                                           "encounter data\r\n")
+
+        result = self.splitter._handle_rename_conflict(Path(temp_file), Path(target_file))
+
         self.assertTrue(result)
         self.assertFalse(os.path.exists(temp_file))
         self.assertTrue(os.path.exists(target_file))
+        self.assertTrue(self.splitter.continued)
+        self.assertFalse(self.splitter.skip_current)
+        self.assertEqual(self.splitter.final_file_path, Path(target_file))
+        self.assertFalse(os.path.exists(os.path.join(self.temp_dir, "250914094523-Lucent-Citadel-vet-1.log")))
 
     def test_split_log_different_content_uses_suffix(self):
         """Test that different content uses suffix numbering."""

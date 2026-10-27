@@ -3270,11 +3270,48 @@ def find_session_start_offset(log_file: Path, end: int, lookback_bytes: int) -> 
 
 
 class LogSplitter:
-    """Handles automatic splitting of encounter logs into individual encounter files."""
+    """Handles automatic splitting of encounter logs into individual encounter files.
+
+    Design: one split per session, continued rather than copied (issue #85).
+    A session's split is named at its first BEGIN_COMBAT from the BEGIN_LOG
+    stamp and the zone, so a session split again meets its own file at the
+    rename. Until 0.18.0 the two were compared by whole-file MD5, which can
+    never match there (the temp file holds the lines up to that BEGIN_COMBAT,
+    the file on disk the whole session), so the session was written out
+    again under the next ``-N``: 513 of the 899 files in the maintainer's
+    split folder were byte-identical copies, 512 of them written by the
+    pre-GUI tool's ``--read-all-then-tail`` between January and April 2026,
+    which re-split the whole log at every start. Now the file on disk is the
+    same session when it begins with the temp file's bytes; the temp file is
+    dropped and the existing file is continued: incoming lines are counted
+    and skipped until the count reaches the file's size and the file's last
+    line has gone past, then appended, so a split cut short by a restart,
+    a crash or a Settings save (which rebuilds the monitor) is completed
+    rather than left truncated, and a split already complete gains nothing.
+    A file that ends mid-line (a crash) is trimmed to its last whole line
+    first. Only a file whose head differs is a different session of the same
+    second and gets the suffix. At the session's end a copy that still
+    matches another file of the same stamp byte for byte is removed; a
+    continued file never is. Two instances of the app on one split folder
+    (the installed app beside a launch from the source tree, which wrote
+    the one copy of 2026-10-25) would append to one file from two sides, so
+    the splitter takes a lock file in the folder, ``.esolog-tail-split.lock``
+    with its process id, and a second instance that finds it held by a live
+    process writes no splits at all and says so. Every line of the session
+    is written, the ones the parser rejects included (an END_CAST with a
+    cancel reason, an OBJECT unit), so a split is the session's bytes; the
+    older splits are a few hundred bytes to 57 KB short of that, which the
+    continuation tolerates.
+    """
 
     # ESO writes CRLF line endings; split files keep them on every OS
     # (text mode alone would give LF on Linux)
     NEWLINE = '\r\n'
+    LOCK_NAME = '.esolog-tail-split.lock'
+    # Catch-up tolerance for a split written by an older version, which left
+    # out the lines the parser rejected: 0.2% of the file, 64 KB at least
+    CATCH_UP_SLACK = 65536
+    CATCH_UP_SLACK_SHARE = 0.002
 
     def __init__(self, log_file: Path, diagnostic: bool = False, split_dir: Optional[Path] = None):
         self.log_file = log_file
@@ -3299,14 +3336,82 @@ class LogSplitter:
 
         # Deduplication: skip flag for encounters already on disk
         self.skip_current = False
-        # Index of existing split files: prefix → set of file sizes
+        # Index of existing split files: prefix → set of file sizes (the
+        # zipped ones are only known this way, see _scan_existing_splits)
         self.existing_splits = {}
+        # The session's file on disk was continued rather than written
+        # again (see the class docstring): never removed as a copy
+        self.continued = False
+        # While catching up to a continued file: bytes of it still to pass,
+        # its last line, and the slack a split by an older version gets
+        self._catch_up = None
+        # Another instance of the app holds this folder's lock: write nothing
+        self.disabled = False
+        self._lock_path = None
 
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
 
+        self._acquire_lock()
+
         # Scan existing splits for deduplication
         self._scan_existing_splits()
+
+    # ------------------------------------------------------------- lock --
+
+    @staticmethod
+    def _pid_alive(pid: int) -> bool:
+        """Whether a process with *pid* is running (a stale lock's is not)."""
+        if pid <= 0:
+            return False
+        if os.name == 'nt':
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return False
+            try:
+                code = ctypes.c_ulong()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                    return False
+                return code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _acquire_lock(self) -> None:
+        """Take the folder's lock, or stand down when a live process has it."""
+        self._lock_path = self.split_dir / self.LOCK_NAME
+        try:
+            holder = int(self._lock_path.read_text(encoding='utf-8').strip() or 0)
+        except (OSError, ValueError):
+            holder = 0
+        if holder and holder != os.getpid() and self._pid_alive(holder):
+            self.disabled = True
+            self.lock_holder = holder
+            return
+        self.lock_holder = os.getpid()
+        try:
+            self._lock_path.write_text(str(os.getpid()), encoding='utf-8')
+        except OSError:
+            pass  # a read-only folder: split anyway, as before
+
+    def release_lock(self) -> None:
+        """Give the folder's lock up (the app is closing or the monitor is
+        being rebuilt); a lock another process holds is left alone."""
+        if self.disabled or not self._lock_path:
+            return
+        try:
+            if int(self._lock_path.read_text(encoding='utf-8').strip() or 0) == os.getpid():
+                self._lock_path.unlink()
+        except (OSError, ValueError):
+            pass
         
     @staticmethod
     def _strip_numeric_suffix(stem: str) -> str:
@@ -3351,6 +3456,8 @@ class LogSplitter:
         # Close any existing split file
         self.end_encounter()
         self.skip_current = False
+        if self.disabled:
+            return  # another instance of the app splits this folder
         
         # Store BEGIN_LOG entry and initialize zone tracking
         self.pending_begin_log = begin_log_entry
@@ -3501,17 +3608,19 @@ class LogSplitter:
                 temp_file_path.rename(target_file_path)
                 return True
 
-            # Compare file contents using MD5 hash
-            temp_hash = self._get_file_hash(temp_file_path)
-            target_hash = self._get_file_hash(target_file_path)
-
-            if temp_hash == target_hash:
-                # Same content - delete temp file, keep existing target, skip further writes
+            # The same session when the file on disk begins with what the
+            # temp file holds (the lines up to this BEGIN_COMBAT); see the
+            # class docstring for why a whole-file hash could never say so
+            temp_bytes = temp_file_path.read_bytes()
+            with open(target_file_path, 'rb') as existing:
+                head = existing.read(len(temp_bytes) + 65536)
+            passed = self._same_session(temp_bytes, head)
+            if passed:
                 temp_file_path.unlink()
-                self.skip_current = True
+                self._continue_existing(target_file_path, passed)
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same content detected, deleted temp file: {temp_file_path}{Style.RESET_ALL}")
+                    _console(f"{Fore.YELLOW}[{timestamp_str}] DIAGNOSTIC: Same session on disk, continuing it: {target_file_path}{Style.RESET_ALL}")
                 return True
             else:
                 # Different content - find available suffix
@@ -3539,6 +3648,129 @@ class LogSplitter:
                 _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to handle rename conflict: {e}{Style.RESET_ALL}")
             return False
     
+    @staticmethod
+    def _same_session(temp_bytes: bytes, head: bytes) -> int:
+        """Whether a file beginning with *head* holds the session the temp
+        file holds: its BEGIN_LOG line is the temp file's, and every whole
+        line of its head, taken in order, is a line of the temp file (a
+        split by an older version lacks the lines its parser rejected, so
+        the temp file may hold lines the head does not, never the other way
+        round). Returns the bytes of the head the temp file stands for, 0
+        when it is another session."""
+        temp_lines = temp_bytes.split(b'\n')
+        if temp_lines and temp_lines[-1] == b'':
+            temp_lines.pop()
+        head_lines = head.split(b'\n')
+        head_lines.pop()  # the last piece is cut off, or empty after a newline
+        if not temp_lines or not head_lines or head_lines[0] != temp_lines[0]:
+            return 0
+        passed = 0
+        j = 0
+        for line in head_lines:
+            k = j
+            while k < len(temp_lines) and temp_lines[k] != line:
+                k += 1
+            if k == len(temp_lines):
+                # Not among the temp file's remaining lines: the session
+                # goes on past its preamble here (the temp file ends before
+                # the BEGIN_COMBAT that named it), or this is another session
+                return passed if b',BEGIN_COMBAT' in line else 0
+            j = k + 1
+            passed += len(line) + 1
+        # The head ended inside the preamble: a file cut short before combat
+        return passed
+
+    def _continue_existing(self, target_file_path, passed: int) -> None:
+        """Take the session's file on disk over: trim it to its last whole
+        line, and arrange for the lines still to come to be skipped until
+        they have passed the file's end (see write_log_line). *passed* is
+        how much of it the temp file already stood for."""
+        size = target_file_path.stat().st_size
+        with open(target_file_path, 'rb') as existing:
+            tail = existing.read()[-262144:] if size <= 262144 else self._tail(existing, size)
+        if tail and not tail.endswith(b'\n'):
+            # A crash mid-line: drop the partial line
+            cut = tail.rfind(b'\n') + 1
+            dropped = len(tail) - cut
+            with open(target_file_path, 'r+b') as existing:
+                existing.truncate(size - dropped)
+            size -= dropped
+            tail = tail[:cut]
+        lines = tail.splitlines()
+        last_line = lines[-1].decode('utf-8', errors='ignore') if lines else ''
+        self._catch_up = {
+            'remaining': size - passed,
+            'slack': max(self.CATCH_UP_SLACK, int(size * self.CATCH_UP_SLACK_SHARE)),
+            'last_line': last_line,
+            'passed_last': False,
+        }
+        self.continued = True
+        self.skip_current = False
+        self.final_file_path = target_file_path
+
+    @staticmethod
+    def _tail(handle, size: int, length: int = 262144) -> bytes:
+        handle.seek(size - length)
+        return handle.read()
+
+    def _catching_up(self, line: str) -> bool:
+        """Whether *line* is one the continued file already holds. The
+        count of bytes passes the file's end exactly for a split this
+        version wrote; a split by an older version is short by the lines it
+        left out, so within the slack the file's own last line marks the
+        end, and past the slack the rest is appended regardless."""
+        state = self._catch_up
+        if state is None:
+            return False
+        if state['passed_last']:
+            self._catch_up = None
+            return False
+        state['remaining'] -= len(line.encode('utf-8', errors='ignore')) + len(self.NEWLINE)
+        if state['remaining'] > 0:
+            return True  # still inside the file, whichever version wrote it
+        # At or past the file's size: the file's last line is met here for a
+        # split this version wrote (remaining 0), or a little further on for
+        # an older one, whose count ran past because of the lines it lacks
+        if line == state['last_line']:
+            state['passed_last'] = True  # the next line is new
+            return True
+        if state['remaining'] <= -state['slack']:
+            self._catch_up = None  # the last line never came: append from here
+            return False
+        return True
+
+    def _is_copy_of_another(self, path) -> bool:
+        """Whether *path* repeats another file of its stamp in the folder:
+        the same size and the same bytes, or a zipped split of that size."""
+        prefix = self._strip_numeric_suffix(path.stem)
+        size = path.stat().st_size
+        if size in self.existing_splits.get(prefix, ()):
+            # A zipped split (its log size is only known from the index)
+            for entry in os.scandir(self.split_dir):
+                if (entry.name.endswith(split_retention.ZIP_SUFFIX)
+                        and self._strip_numeric_suffix(entry.name[:-len(split_retention.ZIP_SUFFIX)]) == prefix
+                        and split_retention.zipped_log_size(Path(entry.path)) == size):
+                    return True
+        for entry in os.scandir(self.split_dir):
+            if not entry.name.endswith('.log') or entry.name.endswith('-temp.log'):
+                continue
+            other = Path(entry.path)
+            if other == path or self._strip_numeric_suffix(other.stem) != prefix:
+                continue
+            try:
+                if entry.stat().st_size != size:
+                    continue
+                with open(path, 'rb') as a, open(other, 'rb') as b:
+                    while True:
+                        chunk_a, chunk_b = a.read(1 << 20), b.read(1 << 20)
+                        if chunk_a != chunk_b:
+                            break
+                        if not chunk_a:
+                            return True
+            except OSError:
+                continue
+        return False
+
     def _get_file_hash(self, file_path):
         """Get MD5 hash of file content (chunked to avoid memory spikes)."""
         h = hashlib.md5()
@@ -3549,8 +3781,10 @@ class LogSplitter:
 
     def write_log_line(self, line: str):
         """Write a log line to the current split file."""
-        if self.skip_current:
+        if self.skip_current or self.disabled:
             return
+        if self._catch_up is not None and self._catching_up(line):
+            return  # the continued file holds this line already
         if self.file_handle:
             try:
                 self.file_handle.write(line + '\n')
@@ -3638,22 +3872,22 @@ class LogSplitter:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to delete temp file {self.temp_file_path}: {e}{Style.RESET_ALL}")
         
-        # Dedup check: now that the file is complete, compare against existing splits
-        if self.final_file_path and not should_delete_temp and not self.skip_current:
+        # Dedup check: now that the file is complete, compare against the
+        # folder as it is now (another file of the same stamp with the same
+        # size and bytes, or a zipped split of that size); a continued file
+        # is the session's own and is never the copy
+        if (self.final_file_path and not should_delete_temp and not self.skip_current
+                and not self.continued):
             try:
-                if self.final_file_path.exists():
-                    stem = self.final_file_path.stem
-                    prefix = self._strip_numeric_suffix(stem)
-                    final_size = self.final_file_path.stat().st_size
-                    if prefix in self.existing_splits and final_size in self.existing_splits[prefix]:
-                        self.skip_current = True
-                        try:
-                            self.final_file_path.unlink()
-                        except OSError:
-                            pass
-                        if self.diagnostic:
-                            ts = time.strftime("%H:%M:%S", time.localtime())
-                            _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Skipping duplicate encounter: {prefix} (size match: {final_size}){Style.RESET_ALL}")
+                if self.final_file_path.exists() and self._is_copy_of_another(self.final_file_path):
+                    self.skip_current = True
+                    try:
+                        self.final_file_path.unlink()
+                    except OSError:
+                        pass
+                    if self.diagnostic:
+                        ts = time.strftime("%H:%M:%S", time.localtime())
+                        _console(f"{Fore.YELLOW}[{ts}] DIAGNOSTIC: Removed duplicate split: {self.final_file_path.name}{Style.RESET_ALL}")
             except OSError:
                 pass
 
@@ -3672,6 +3906,8 @@ class LogSplitter:
 
         # Always clear encounter state, regardless of file handle status
         self.skip_current = False
+        self.continued = False
+        self._catch_up = None
         self.file_handle = None
         self.current_split_file = None
         self.current_split_path = None
@@ -3714,9 +3950,9 @@ class LogSplitter:
                 self.file_handle = None
 
     def cleanup(self):
-        """Clean up all split files."""
+        """Close the current split and give the folder's lock up."""
         self.end_encounter()
-        # Could add cleanup logic here if needed
+        self.release_lock()
 
 
 class LogFileMonitor:
@@ -3735,6 +3971,13 @@ class LogFileMonitor:
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
+        if self.log_splitter is not None and self.log_splitter.disabled:
+            # Another instance of the app holds the folder's lock: two
+            # splitters would append one session from two sides
+            self.analyzer._notify(
+                'on_diagnostic',
+                f"Split files are being written by another ESO Log Tail (process "
+                f"{self.log_splitter.lock_holder}); this one writes none")
 
         # Initialize position based on mode
         if self.log_file.exists():
@@ -3814,17 +4057,14 @@ class LogFileMonitor:
             if start is None or end - start > self.SESSION_REPLAY_CAP:
                 self._backfill_session_preamble()
                 return
-            # Don't re-split a session that already has a split file
-            replay_splitter = self.log_splitter
-            if replay_splitter is not None and self._session_split_exists(start):
-                self.log_splitter = None
+            # The session's split file, when it exists, is continued by the
+            # splitter itself (LogSplitter._handle_rename_conflict), so the
+            # replay runs through it like any other lines: a complete split
+            # gains nothing, a truncated one its missing tail
             self.analyzer._notify(
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
-            try:
-                self._process_range(start, end)
-            finally:
-                self.log_splitter = replay_splitter
+            self._process_range(start, end)
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
             try:
@@ -4122,6 +4362,10 @@ class LogFileMonitor:
             if self.log_splitter:
                 self._handle_log_splitting(entry, line)
             self.analyzer.process_log_entry(entry)
+        elif self.log_splitter:
+            # A line the parser rejects (an END_CAST with a cancel reason,
+            # an OBJECT unit) is still the session's: the split keeps it
+            self.log_splitter.write_log_line(line)
 
     def _emit_log_status(self, size_bytes: int):
         """Notify listeners of the log's current freshness."""

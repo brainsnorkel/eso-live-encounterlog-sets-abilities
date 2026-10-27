@@ -133,7 +133,7 @@ def _replay_pipeline(tmpdir: Path) -> dict:
 
     split_files = {}
     for f in sorted(splits_dir.rglob('*')):
-        if f.is_file():
+        if f.is_file() and not f.name.startswith('.'):  # not the splitter's lock file
             content = f.read_bytes()
             split_files[_normalize_times(f.name)] = {
                 'lines': content.decode('utf-8').count('\n'),
