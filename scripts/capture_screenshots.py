@@ -55,6 +55,8 @@ def main():
     parser.add_argument("--hide-names", action="store_true",
                         help="capture with the Hide names switch on: every player but the one "
                              "who wrote the log is pixelated (the guide's pictures are taken so)")
+    parser.add_argument("--text-size", type=int, default=100,
+                        help="the app's text size in percent, 80 to 200 (Settings → Display)")
     args = parser.parse_args()
     log = Path(args.log).resolve()
     if not log.exists():
@@ -84,6 +86,7 @@ def main():
         "split": {"enabled": False},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
         "update": {"check_enabled": False},
+        "display": {"text_scale": args.text_size},
     }), encoding="utf-8")
 
     # The engine says "monitoring started" once it has replayed the log's
@@ -259,7 +262,7 @@ def main():
     # 800 px virtual screen with the rest scrolling (0.18.0); the guide
     # wants every group, so the window takes the scrolled content's own
     # height plus the buttons and margins
-    dialog.resize(720, dialog._scroll.widget().sizeHint().height() + 72)
+    dialog.resize(720 * max(100, args.text_size) // 100, dialog._scroll.widget().sizeHint().height() + 72)
     pump(1)
     save(dialog, "settings.png")
     from effect_rules import parse_rules

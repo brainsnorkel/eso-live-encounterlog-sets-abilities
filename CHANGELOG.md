@@ -7,6 +7,13 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Changed
 - **Detail view is Ctrl+D, and Tab moves the focus** (#77): Tab used to toggle Detail view, so a keyboard user could not leave the fight list; Tab and Shift+Tab now move between the fight list, the search field and the fight pane, and Ctrl+D toggles Detail view from any of them, the search field included. The toolbar button's hover names the key, and the user guide lists the keys under **Keyboard**
 
+### Added
+- **Text size** (#77): Settings → Display has a slider from 80% to 200% of the system's text, and Ctrl+=, Ctrl+- and Ctrl+0 step it from any of the app's windows. It is saved and applies to the whole app at once: the fight list, the fight pane and every window are redrawn at the new size, and the timeline strip's rows, label column and axis, the DPS graph's margins and legend, and the ability icons in every page grow with it (never shrinking below their size at 100%). Settings' helper lines and the rule editor follow it too, and Settings scrolls sideways if a line no longer fits the screen
+- The bundled ability icons are the game's own 64 px rather than 40 px, so they stay sharp at a large text size or on a high-DPI screen; the icon folder grows from 15 MB to 25 MB
+
+### Fixed
+- The build window's Front, Back, Werewolf and Other labels no longer break a letter per line when the window is narrow or the text large
+
 ## [0.21.1] - 2026-10-28
 
 ### Changed

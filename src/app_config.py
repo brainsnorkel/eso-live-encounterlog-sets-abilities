@@ -81,6 +81,11 @@ DEFAULTS = {
     "death_recap": {
         "window_s": 5,
     },
+    # The app-wide text size, a percentage of the system font (gui.text_size,
+    # issue #77): 80 to 200, set in Settings or with Ctrl+=, Ctrl+- and Ctrl+0
+    "display": {
+        "text_scale": 100,
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split
