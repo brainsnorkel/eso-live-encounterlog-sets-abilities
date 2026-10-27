@@ -13,6 +13,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [The buff timeline](#the-buff-timeline)
 - [Reviewing and copying fights](#reviewing-and-copying-fights)
 - [Settings](#settings)
+- [Accessibility](#accessibility)
 - [The status bar](#the-status-bar)
 - [What the numbers are based on](#what-the-numbers-are-based-on)
 - [When something looks wrong](#when-something-looks-wrong)
@@ -352,6 +353,19 @@ With *Move split logs to the Recycle Bin when older than M weeks* on (52 weeks u
 - **Never deleted outright**: a split the Recycle Bin cannot take (on a network or removable drive, a drive whose bin is set to delete at once, or a file larger than the bin's limit) is left where it is and the status bar says so. Restore anything from the Recycle Bin as usual.
 - **The Recycle Bin has a size limit** (by default about 5% of the drive). When it is full, Windows makes room by emptying its oldest items for good, other files you deleted included. Moving tens of GB of splits at once can push those out, so check the bin before the first run, or start with a large M and lower it in steps.
 - The same files are never touched as for zipping: the newest session's split, the `keep` folder, and anything that is not one of the app's splits.
+
+## Accessibility
+
+What the app does for readers who use the keyboard, need bigger text, see colour differently, use a screen reader or are bothered by motion.
+
+- **Keyboard**: Tab and Shift+Tab move between the fight list, the search field and the fight; the arrow keys pick a fight; every toolbar switch has a key. See [Keyboard](#keyboard).
+- **Text size**: Settings → Display → *Text size*, 80% to 200%, or Ctrl+=, Ctrl+- and Ctrl+0 from any window. Everything follows it: the list, the pages, every window, Settings, the timeline strip's rows and labels, the DPS graph's legend and the ability icons, which are bundled at the game's own 64 px so they stay sharp when they grow.
+- **Colour**: text stands at least 4.5:1 against its background and bars and lines at least 3:1, in the light and the dark theme alike, and a unit test keeps it so. Nothing is said by colour alone: a player's role is a printed letter, health has its percentage beside it, a heal has a `+`, a buff on one or two players is cross-hatched rather than paler, an expected buff that never came is bold as well as red, and the clickable figures carry a small mark.
+- **Colour blindness**: Settings → Display → *Colour-blind colours and line styles in the DPS graph* swaps the graph's colours for a set chosen to stay apart for red-green and blue-yellow colour blindness and draws each player solid, dashed, dotted or dash-dotted in turn. The timeline strip's rows are named, so its colours never have to be told apart.
+- **Screen readers**: the fight pane and the build, damage, damage taken and death recap windows give a screen reader their text with each picture read as words: an ability icon on a bar as the ability's name, the marks after a figure as what they open ("DPS graph", "damage breakdown", "damage taken"), a hidden player as "hidden name". The timeline strip reads each row's label, whose effect it is and "expected but not up" for a red row; the DPS graph reads each drawn line with its dps at the end, and its legend is an ordinary list. The fight list, the search field and the fight pane are named. **Copy fight** (Ctrl+C) gives the whole fight as plain text, for reading anywhere.
+- **Motion**: the ring on a taunt skill's icon pulses; Settings → Display → *Reduce motion* keeps it still. Nothing else on screen moves by itself.
+
+Not yet checked: Windows' High Contrast themes (the app picks its colours from whether the background is light or dark, not from the theme's own colours), and every screen reader; tell us on the [issue tracker](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/issues) what does not work for you.
 
 ## The status bar
 
