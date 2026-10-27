@@ -201,7 +201,8 @@ DEFAULT_EXPECTED = {
 
 # The rules a fresh install starts with: the uptime line's own items, then
 # the maintainer's boss debuffs (2026-10-09; the Off-Balance ids beyond the
-# first six are his list)
+# first six are his list), then Crux as a commented-out example (issue #80:
+# a row only an Arcanist logging the fight ever gets)
 DEFAULT_RULES = (
     "# Tracked effects, one per line: Name = ability ids on <scope> [stacks | each | dots]\n"
     "# scope: self | group | pets | boss | enemies. Share these lines as text.\n"
@@ -212,17 +213,18 @@ DEFAULT_RULES = (
     + "# Boss debuffs; in a fight without a boss they measure the pack instead\n"
     "Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss\n"
     "Touch of Z'en = 126597 on boss dots\n"
-    "Crux          = 184220 on self stacks\n"
     "Morag Tong    = 34384 on boss\n"
     "Minor Brittle = 145975 on boss\n"
     "Major Brittle = 263825 on boss\n"
     "Elemental Catalyst = 142610 142652 142653 on boss\n"
     "Alkosh        = 76667 on boss\n"
+    "# Your own Crux, for an Arcanist: take the # off to track it\n"
+    "# Crux          = 184220 on self stacks\n"
 )
 
 # The example library Settings offers to paste from: (title, what it tells
-# you, the rule line). The first fifteen are DEFAULT_RULES; the other ids
-# were seen in the 2026 logs.
+# you, the rule line). The first fifteen are DEFAULT_RULES (Crux commented
+# out there); the other ids were seen in the 2026 logs.
 EXAMPLE_RULES = [
     ("Major Courage on the group",
      "Share of the fight Major Courage was on anyone in the group",
@@ -425,9 +427,13 @@ def upgrade_rules_text(text: str, version: int) -> str:
     never carries (issue #27), measures ``dots`` instead. Before version 4:
     a Powerful Assault line reading ``expected large``, the words version 3
     put on every such line, loses them again (issue #48); a line with other
-    sizes, ``expected all`` say, is the user's own and is kept. The line's
-    own spelling, ids and spacing are kept; any other line is left exactly
-    as written, so the upgrade is safe to repeat."""
+    sizes, ``expected all`` say, is the user's own and is kept. Before
+    version 5: the default Crux line, ``Crux = 184220 on self stacks``
+    exactly as shipped (any spacing), is commented out as the default text
+    now has it (issue #80); a Crux line with other ids, a scope, measure or
+    ``expected`` of its own is the user's and is kept. The line's own
+    spelling, ids and spacing are kept; any other line is left exactly as
+    written, so the upgrade is safe to repeat."""
     out = []
     for raw in (text or "").splitlines():
         line = raw.strip()
@@ -442,6 +448,8 @@ def upgrade_rules_text(text: str, version: int) -> str:
                         raw = re.sub(r"\bstacks\b", "dots", raw, flags=re.IGNORECASE)
                 if version < 4 and name == "powerful assault" and rule.expected == {"large"}:
                     raw = re.sub(r"\s+expected\s+large\b", "", raw, count=1, flags=re.IGNORECASE)
+                if version < 5 and rule == Rule("Crux", frozenset({"184220"}), "self", "stacks"):
+                    raw = "# " + raw
         out.append(raw)
     return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
 

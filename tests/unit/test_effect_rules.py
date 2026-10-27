@@ -82,7 +82,7 @@ class TestRuleText(unittest.TestCase):
         self.assertEqual([r.name for r in rules],
                          ["Major Courage", "Major Force", "Major Slayer", "Powerful Assault",
                           "Lucent Echoes", "Pearlescent Ward", "Taunt",
-                          "Off-Balance", "Touch of Z'en", "Crux", "Morag Tong",
+                          "Off-Balance", "Touch of Z'en", "Morag Tong",
                           "Minor Brittle", "Major Brittle", "Elemental Catalyst", "Alkosh"])
         self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime",
                                         frozenset({"large"})))
@@ -92,14 +92,17 @@ class TestRuleText(unittest.TestCase):
         # Five group buffs are expected in a large group; Powerful Assault
         # (issue #48) and the rest nowhere
         self.assertEqual([sorted(r.expected) for r in rules],
-                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] + [[]] * 8)
-        self.assertEqual(rules[10], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
+                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] + [[]] * 7)
+        self.assertEqual(rules[9], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
         # Elemental Catalyst's three weaknesses, one rule
-        self.assertEqual(rules[13], Rule("Elemental Catalyst", frozenset({"142610", "142652", "142653"}),
+        self.assertEqual(rules[12], Rule("Elemental Catalyst", frozenset({"142610", "142652", "142653"}),
                                          "boss", "uptime"))
-        self.assertEqual(rules[14], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
+        self.assertEqual(rules[13], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
         self.assertIn("45902", rules[7].ids)
-        self.assertEqual((rules[9].scope, rules[9].kind), ("self", "stacks"))
+        # Crux is a commented-out example (issue #80), and parses once uncommented
+        self.assertIn("\n# Crux          = 184220 on self stacks\n", DEFAULT_RULES)
+        self.assertEqual(parse_rules(DEFAULT_RULES.replace("# Crux", "Crux"))[0][-1],
+                         Rule("Crux", frozenset({"184220"}), "self", "stacks"))
         self.assertTrue(DEFAULT_RULES.startswith("#"))
         self.assertIn(UPTIME_LINE_RULES, DEFAULT_RULES)
 
@@ -126,6 +129,19 @@ class TestRuleText(unittest.TestCase):
         self.assertEqual(upgrade_rules_text(text, 0),
                          "Powerful Assault = 61771 on group\nMajor Force = 61747 on group expected large\n")
         self.assertEqual(upgrade_rules_text(text, 4), text)
+
+    def test_upgrade_to_5_comments_out_the_default_crux_line(self):
+        """Issue #80: the shipped Crux line, in any spacing, is commented
+        out; a Crux line of the user's own and a current text are kept."""
+        text = ("Crux          = 184220 on self stacks\n"
+                "Crux = 184220 on self stacks expected all\n"
+                "Crux = 184220 on group stacks\n"
+                "My Crux = 184220 on self stacks\n"
+                "# Crux = 184220 on self stacks\n")
+        self.assertEqual(upgrade_rules_text(text, 4),
+                         "# Crux          = 184220 on self stacks\n" + text.split("\n", 1)[1])
+        self.assertEqual(upgrade_rules_text(text, 0), upgrade_rules_text(text, 4))
+        self.assertEqual(upgrade_rules_text(text, 5), text)
 
 
 # A HyperTools export, as the addon's Transmission.lua writes it: a table of
