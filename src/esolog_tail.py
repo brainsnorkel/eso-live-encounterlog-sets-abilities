@@ -35,6 +35,7 @@ from build_issues import (
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
 from misfortunes import run_misfortunes
+from presence import present_share
 import companions
 import pen_crit
 import werewolf
@@ -253,6 +254,23 @@ class PlayerInfo:
         self.is_local: bool = False
         self.last_seen = 0
         self.long_unit_ids: Set[str] = set()
+        # Who the player is and when they were here (presence.py): the
+        # character id from UNIT_ADDED, the game's isGroupedWithLocalPlayer
+        # flag, the log time of the UNIT_ADDED that brought them into the
+        # zone, and of the UNIT_REMOVED that took them out (None while here)
+        self.character_id: str = ""
+        self.grouped: bool = False
+        self.joined_at: int | None = None
+        self.left_at: int | None = None
+        # The unit ids the player came back on in this fight (rule 3), the
+        # latest of their unit ids, and whether a monster was given the
+        # record's own unit id (rule 2)
+        self.alias_ids: set[str] = set()
+        self.latest_unit_id: str = unit_id
+        self.id_released: bool = False
+        # Back on another character of the same account: listed before its
+        # PLAYER_INFO when grouped with the logging player (rule 4)
+        self.switched_character: bool = False
 
         # Resource tracking (maximum values seen)
         self.max_health: int = 0
@@ -337,7 +355,9 @@ class PlayerInfo:
 
     def has_unit_id(self, unit_id: str) -> bool:
         """Check if this unit ID (short or long) belongs to this player."""
-        return unit_id == self.unit_id or unit_id in self.long_unit_ids
+        if unit_id == self.unit_id:
+            return not self.id_released
+        return unit_id in self.alias_ids or unit_id in self.long_unit_ids
 
     def get_display_name(self) -> str:
         """Get the display name for this player (handle or 'anon')."""
@@ -440,6 +460,9 @@ class CombatEncounter:
         self.start_time: int = 0
         self.end_time: int = 0
         self.players: Dict[str, PlayerInfo] = {}  # Keyed by short unit ID
+        # The unit ids a player came back on in this fight, to the key of
+        # their record in players (presence.py, rule 3)
+        self.player_aliases: dict[str, str] = {}
         self.enemies: Dict[str, EnemyInfo] = {}  # Track enemy units
         self.abilities_used: Dict[str, Set[str]] = defaultdict(set)
         self.total_damage: int = 0  # Track total damage dealt
@@ -511,6 +534,106 @@ class CombatEncounter:
         player.champion_points = champion_points
         self.players[unit_id] = player
 
+    def player_of(self, unit_id: str) -> PlayerInfo | None:
+        """The player whose unit *unit_id* is: their record's own id, or one
+        they came back on in this fight (presence.py). Not a long unit id."""
+        player = self.players.get(unit_id)
+        if player is not None and not player.id_released:
+            return player
+        key = self.player_aliases.get(unit_id)
+        return self.players.get(key) if key is not None else None
+
+    def record_id(self, unit_id: str) -> str:
+        """The key a unit's figures are kept under: its player's record for
+        a player unit, else the unit id itself."""
+        player = self.player_of(unit_id)
+        return player.unit_id if player is not None else unit_id
+
+    def player_by_character(self, character_id: str) -> PlayerInfo | None:
+        """The record of the character *character_id* in this zone."""
+        if not character_id or character_id == "0":
+            return None
+        for player in self.players.values():
+            if player.character_id == character_id:
+                return player
+        return None
+
+    def alias_player(self, player: PlayerInfo, unit_id: str) -> None:
+        """The same character back on a new unit id (presence.py, rule 3):
+        the id resolves to the record, which is no longer gone."""
+        if unit_id != player.unit_id:
+            player.alias_ids.add(unit_id)
+            self.player_aliases[unit_id] = player.unit_id
+        player.latest_unit_id = unit_id
+        player.left_at = None
+
+    def player_left(self, unit_id: str, timestamp_ms: int) -> None:
+        """A player's UNIT_REMOVED (presence.py, rule 2). Only their latest
+        unit counts: an older one going is no news."""
+        player = self.player_of(unit_id)
+        if player is not None and unit_id == player.latest_unit_id and player.left_at is None:
+            player.left_at = timestamp_ms
+
+    def release_player_id(self, unit_id: str, timestamp_ms: int) -> None:
+        """A MONSTER added on a player's unit id (presence.py, rule 2): the
+        player is gone, and the id is no longer theirs."""
+        player = self.player_of(unit_id)
+        if player is None:
+            return
+        if player.left_at is None:
+            player.left_at = timestamp_ms
+        if unit_id == player.unit_id:
+            player.id_released = True
+        else:
+            player.alias_ids.discard(unit_id)
+            self.player_aliases.pop(unit_id, None)
+
+    def start_fight_roster(self) -> None:
+        """At BEGIN_COMBAT (presence.py): players who are gone leave the
+        list, with their companions and pets; one who came back on a new
+        unit id takes it as the record's own, so the new fight's figures
+        are keyed as for anyone else."""
+        for key, player in list(self.players.items()):
+            if player.left_at is not None:
+                del self.players[key]
+                self._drop_owner(key)
+        for key, player in list(self.players.items()):
+            if player.latest_unit_id != key and player.latest_unit_id not in self.players:
+                self._rekey_player(player, player.latest_unit_id)
+            player.alias_ids = set()
+        self.player_aliases = {}
+
+    def _drop_owner(self, owner_id: str) -> None:
+        for pet, owner in list(self.pet_ownership.items()):
+            if owner == owner_id:
+                del self.pet_ownership[pet]
+        for key, record in list(self.companions.items()):
+            if record.owner_unit_id == owner_id:
+                del self.companions[key]
+        self.companion_units = {unit: key for unit, key in self.companion_units.items()
+                                if key in self.companions}
+
+    def _rekey_player(self, player: PlayerInfo, new_id: str) -> None:
+        old_id = player.unit_id
+        del self.players[old_id]
+        player.unit_id = new_id
+        player.alias_ids = set()
+        player.id_released = False
+        self.players[new_id] = player
+        for pet, owner in self.pet_ownership.items():
+            if owner == old_id:
+                self.pet_ownership[pet] = new_id
+        renamed = {}
+        for key, record in list(self.companions.items()):
+            if record.owner_unit_id == old_id:
+                del self.companions[key]
+                record.owner_unit_id = new_id
+                self.companions[record.key] = record
+                renamed[key] = record.key
+        if renamed:
+            self.companion_units = {unit: renamed.get(key, key)
+                                    for unit, key in self.companion_units.items()}
+
     def track_pet_ownership(self, pet_unit_id: str, owner_unit_id: str):
         """Record *pet_unit_id* as a pet of the player who owns it, so its
         damage and healing count as that player's; forget it when the owner
@@ -531,9 +654,12 @@ class CombatEncounter:
         the pull. Pets were 0 to 8% of a group's damage per log. Earlier
         code guessed pets from EFFECT_CHANGED targets and never found one.
         """
-        if owner_unit_id != "0" and self.find_player_by_unit_id(owner_unit_id):
-            self.pet_ownership[pet_unit_id] = owner_unit_id
-            self._link_companion(pet_unit_id, owner_unit_id)
+        owner = self.find_player_by_unit_id(owner_unit_id) if owner_unit_id != "0" else None
+        if owner is not None:
+            # Keyed by the owner's record, which an owner back on a new unit
+            # id keeps (presence.py, rule 7)
+            self.pet_ownership[pet_unit_id] = owner.unit_id
+            self._link_companion(pet_unit_id, owner.unit_id)
         else:
             self.pet_ownership.pop(pet_unit_id, None)
             self.companion_units.pop(pet_unit_id, None)
@@ -891,6 +1017,9 @@ class ESOLogAnalyzer(ListenerMixin):
         
         # Session tracking for players going offline/online
         self.player_sessions: Dict[str, Dict] = {}  # handle+name -> {unit_id, name, equipped_abilities, gear_data, last_seen}
+        # The character each handle was last seen on in this zone, which
+        # tells a member back on another character (presence.py, rule 4)
+        self._zone_characters: dict[str, str] = {}
         self.unit_id_to_handle: Dict[str, str] = {}  # unit_id -> handle
         
         # The per-fight buff/debuff timeline the fight pane's strip draws
@@ -1054,6 +1183,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
+                    # A player who left: off the list from the next fight
+                    # (presence.py)
+                    self.current_encounter.player_left(entry.fields[0], entry.timestamp)
                     self.current_encounter.pet_ownership.pop(entry.fields[0], None)
                     self.current_encounter.companion_units.pop(entry.fields[0], None)
                     enemy = self.current_encounter.enemies.get(entry.fields[0])
@@ -1139,35 +1271,60 @@ class ESOLogAnalyzer(ListenerMixin):
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: UNIT_ADDED player {unit_id}, encounter exists: {self.current_encounter is not None}{Style.RESET_ALL}")
                 
-                if self.current_encounter:
-                    # Clean up name and handle (remove quotes if present)
-                    clean_name = name.strip('"') if name else ""
-                    clean_handle = handle.strip('"') if handle else ""
-                    
+                # Clean up name and handle (remove quotes if present)
+                clean_name = name.strip('"') if name else ""
+                clean_handle = handle.strip('"') if handle else ""
+                # A loading placeholder: the real unit follows (presence.py)
+                if self.current_encounter and clean_name != "Offline":
+                    enc = self.current_encounter
                     if self.diagnostic:
                         timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                         _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Adding player {unit_id} ({clean_name}) to encounter{Style.RESET_ALL}")
 
-                    # Check if this is a returning player from session data
-                    session_key = f"{clean_handle}+{clean_name}"
-                    if session_key in self.player_sessions:
-                        # Restore player from session data
-                        self._restore_player_from_session(unit_id, clean_name, clean_handle)
+                    # The same character back in the zone is the same row
+                    # (presence.py, rule 3)
+                    returning = enc.player_by_character(long_unit_id)
+                    if returning is not None:
+                        enc.alias_player(returning, unit_id)
+                        added_player = returning
                     else:
-                        # New player - add normally with class ID and champion points
-                        self.current_encounter.add_player(unit_id, clean_name, clean_handle, class_id, champion_points)
-                    
+                        # Another character of a handle seen in this zone:
+                        # the old character is gone (rule 4)
+                        switched = False
+                        if clean_handle and long_unit_id and long_unit_id != "0":
+                            switched = self._zone_characters.get(clean_handle, long_unit_id) != long_unit_id
+                            for other in enc.players.values():
+                                if (other.handle == clean_handle and other.character_id
+                                        and other.character_id != long_unit_id):
+                                    enc.player_left(other.latest_unit_id, entry.timestamp)
+                        # Check if this is a returning player from session data
+                        session_key = f"{clean_handle}+{clean_name}"
+                        if session_key in self.player_sessions:
+                            # Restore player from session data
+                            self._restore_player_from_session(unit_id, clean_name, clean_handle)
+                        else:
+                            # New player - add normally with class ID and champion points
+                            enc.add_player(unit_id, clean_name, clean_handle, class_id, champion_points)
+                        added_player = enc.players.get(unit_id)
+                        if added_player is not None:
+                            added_player.joined_at = entry.timestamp
+                            added_player.switched_character = switched
+                    if clean_handle and long_unit_id and long_unit_id != "0":
+                        self._zone_characters[clean_handle] = long_unit_id
+
                     # Update session data
                     self._update_player_session(unit_id, clean_name, clean_handle, class_id=class_id, champion_points=champion_points)
                     # The race is not kept in session data: every UNIT_ADDED carries it
-                    added_player = self.current_encounter.players.get(unit_id)
                     if added_player is not None:
                         added_player.race_id = race_id
                         added_player.is_local = len(entry.fields) > 2 and entry.fields[2] == "T"
-                    
+                        added_player.grouped = len(entry.fields) > 15 and entry.fields[15] == "T"
+                        if long_unit_id and long_unit_id != "0":
+                            added_player.character_id = long_unit_id
+
                     # Associate the long unit ID with the player
                     if long_unit_id and long_unit_id != "0":
-                        self.current_encounter.associate_long_unit_id(unit_id, long_unit_id)
+                        enc.associate_long_unit_id(unit_id, long_unit_id)
             
             # Handle enemy units (MONSTER, NPC, etc.)
             elif unit_type in ["MONSTER", "NPC"]:
@@ -1214,6 +1371,9 @@ class ESOLogAnalyzer(ListenerMixin):
                             entry.fields[11] if len(entry.fields) > 11 else "")
 
                     self.current_encounter.enemies[unit_id] = enemy
+                    # A departed player's unit id handed to this unit: the
+                    # player is gone, and the id is not theirs (presence.py)
+                    self.current_encounter.release_player_id(unit_id, entry.timestamp)
                     # The game names the owner of a summoned unit
                     # (ownerUnitId): a player's pet, whose damage and healing
                     # are that player's
@@ -1236,6 +1396,23 @@ class ESOLogAnalyzer(ListenerMixin):
             unit_id = entry.fields[0]
             name = entry.fields[3] if len(entry.fields) > 3 else ""
             new_state = entry.fields[9] if len(entry.fields) > 9 else ""
+
+            # An anonymous member named on joining the group takes the name
+            # and handle (presence.py, rule 6); a player is otherwise who
+            # they were added as
+            player = self.current_encounter.player_of(unit_id)
+            if player is not None:
+                clean_name = name.strip('"')
+                clean_handle = entry.fields[4].strip('"')
+                if not player.handle and clean_handle and clean_handle != "0":
+                    player.handle = clean_handle
+                    if clean_name and clean_name != "0":
+                        player.name = clean_name
+                    self._update_player_session(unit_id, player.name, player.handle,
+                                                class_id=player.class_id)
+                if len(entry.fields) > 10:
+                    player.grouped = entry.fields[10] == "T"
+                return
 
             # The owner can change after the unit was added: a pet that has
             # expired loses its owner a moment before its UNIT_REMOVED
@@ -1435,8 +1612,10 @@ class ESOLogAnalyzer(ListenerMixin):
             equipped_ability_names = {slot['name'] for slot in logged_front + logged_back}
 
             # Find the player and set their equipped abilities and gear
-            if self.current_encounter and player_info.unit_id in self.current_encounter.players:
-                player = self.current_encounter.players[player_info.unit_id]
+            info_player = (self.current_encounter.player_of(player_info.unit_id)
+                           if self.current_encounter else None)
+            if info_player is not None:
+                player = info_player
                 if self.diagnostic:
                     _console(f"{Fore.MAGENTA}[DIAGNOSTIC] Found player {player.name} in current encounter, setting abilities{Style.RESET_ALL}")
                 player.set_equipped_abilities(equipped_ability_names)
@@ -1447,7 +1626,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 # The food and drink effects on the player as combat starts,
                 # for the rule on a meal that runs out (build_issues)
                 self.current_encounter.seed_food(
-                    player_info.unit_id,
+                    player.unit_id,
                     [a for a in player_info.ability_ids if str(a) in food_ids()])
                 # Buffs on the player as combat starts, with no GAINED line
                 # of their own (Lucent Echoes at the pull): the pen/crit
@@ -1468,8 +1647,8 @@ class ESOLogAnalyzer(ListenerMixin):
             player_handle = ""
             player_class_id = None
             
-            if self.current_encounter and player_info.unit_id in self.current_encounter.players:
-                player = self.current_encounter.players[player_info.unit_id]
+            if info_player is not None:
+                player = info_player
                 player_name = player.name
                 player_handle = player.handle
                 player_class_id = player.class_id
@@ -1530,7 +1709,8 @@ class ESOLogAnalyzer(ListenerMixin):
             
             # Clean up offline players
             self._cleanup_offline_players()
-            
+            self._zone_characters = {}
+
             # Reset death counters for new zone
             self.zone_deaths = 0
             self.fight_deaths = 0
@@ -1622,7 +1802,11 @@ class ESOLogAnalyzer(ListenerMixin):
             # Reset resource tracking for all players for the new encounter
             for player in self.current_encounter.players.values():
                 player.reset_resources()
-        
+
+        # Players who left are off the new fight's list; one who came back
+        # on a new unit id is keyed by it from here (presence.py)
+        self.current_encounter.start_fight_roster()
+
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
@@ -1842,7 +2026,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
-            if caster_unit_id in self.current_encounter.players:
+            if self.current_encounter.player_of(caster_unit_id) is not None:
                 self._remember_cast(entry.fields[2], ability_id)
                 # Werewolf form: the skills of the bar the log never writes,
                 # and the morph (werewolf.py)
@@ -1997,10 +2181,12 @@ class ESOLogAnalyzer(ListenerMixin):
 
             # Taunts: a TAUNTED result shares its cast tracking id with the
             # taunting skill's own cast and hits, which name the skill
-            if len(entry.fields) > 17 and entry.fields[7] in self.current_encounter.players:
+            if (len(entry.fields) > 17
+                    and self.current_encounter.player_of(entry.fields[7]) is not None):
                 if combat_event_type == TAUNTED:
                     self.current_encounter.note_taunt(
-                        entry.fields[7], self._cast_abilities.get(entry.fields[5], ""))
+                        self.current_encounter.record_id(entry.fields[7]),
+                        self._cast_abilities.get(entry.fields[5], ""))
                 else:
                     self._remember_cast(entry.fields[5], entry.fields[6])
 
@@ -2008,7 +2194,7 @@ class ESOLogAnalyzer(ListenerMixin):
             # shields, dodges) for the seconds before a death
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
                 recap_target = entry.fields[17] if entry.fields[17] != '*' else entry.fields[7]
-                if recap_target in self.current_encounter.players:
+                if self.current_encounter.player_of(recap_target) is not None:
                     self._note_hit_on_player(entry, combat_event_type, recap_target)
 
             # Track death events.
@@ -2185,7 +2371,7 @@ class ESOLogAnalyzer(ListenerMixin):
         source_id = fields[7]
         player_source = bool(enc.find_player_by_unit_id(source_id)
                              or source_id in enc.pet_ownership)
-        tally = enc.taken_for(target_id)
+        tally = enc.taken_for(enc.record_id(target_id))
         hit = int(fields[3]) if fields[3].isdigit() else 0
         overflow = int(fields[4]) if fields[4].isdigit() else 0
         if result in HEALTH_RESULTS:
@@ -2311,14 +2497,16 @@ class ESOLogAnalyzer(ListenerMixin):
             # rule for a set that never fires (build_issues)
             if (effect_type == "GAINED" and ability_id in PROC_EFFECT_IDS
                     and extracted is not None and self.current_encounter):
-                self.current_encounter.note_proc(source_unit_id, ability_id)
+                self.current_encounter.note_proc(
+                    self.current_encounter.record_id(source_unit_id), ability_id)
 
             # A food or drink effect coming or going on a player: the
             # build-issue rules on a meal (build_issues.food_findings)
             if (effect_type in ("GAINED", "FADED") and ability_id in food_ids()
                     and extracted is not None and self.current_encounter
                     and self._unit_kind(target_unit_id) in ("self", "group")):
-                self.current_encounter.note_food(target_unit_id, effect_type, ability_id,
+                self.current_encounter.note_food(self.current_encounter.record_id(target_unit_id),
+                                                 effect_type, ability_id,
                                                 entry.timestamp)
 
             # A Class Mastery effect names its holder, the source: a proc
@@ -2326,7 +2514,7 @@ class ESOLogAnalyzer(ListenerMixin):
             # Kept on the player and in their session for the rest of the
             # session, a mastery not changing between fights
             if effect_type == "GAINED" and self.current_encounter:
-                holder = self.current_encounter.players.get(source_unit_id)
+                holder = self.current_encounter.player_of(source_unit_id)
                 holder_class = holder.get_class_name() if holder is not None else ""
                 mastery = (mastery_of_effect(ability_id, None if holder_class == "Unknown" else holder_class)
                            if holder is not None else "")
@@ -2441,7 +2629,7 @@ class ESOLogAnalyzer(ListenerMixin):
         enc = self.current_encounter
         if enc is None:
             return None
-        player = enc.players.get(unit_id)
+        player = enc.player_of(unit_id)
         if player is not None:
             return "self" if player.is_local else "group"
         if unit_id in enc.pet_ownership:
@@ -2458,7 +2646,7 @@ class ESOLogAnalyzer(ListenerMixin):
             return "unknown"
         enc = self.current_encounter
         if enc is not None:
-            player = enc.players.get(unit_id)
+            player = enc.player_of(unit_id)
             if player is not None:
                 return player.get_display_name()
             enemy = enc.enemies.get(unit_id)
@@ -2472,7 +2660,7 @@ class ESOLogAnalyzer(ListenerMixin):
         enc = self.current_encounter
         if enc is None or unit_id == "0":
             return ""
-        player = enc.players.get(unit_id)
+        player = enc.player_of(unit_id)
         if player is not None:
             return player.get_display_name()
         enemy = enc.enemies.get(unit_id)
@@ -2571,7 +2759,12 @@ class ESOLogAnalyzer(ListenerMixin):
 
         players_with_damage = []
         for player in enc.players.values():
-            if not player.equipped_abilities:
+            # A player the log has not described is left out, unless they
+            # came back on another character grouped with the logging
+            # player during this fight (presence.py, rule 4)
+            if not player.equipped_abilities and not (
+                    player.switched_character and player.grouped
+                    and (player.joined_at is None or player.joined_at <= enc.end_time)):
                 continue
             player_damage = enc.player_damage.get(player.unit_id, 0)
             players_with_damage.append((player, player_damage))
@@ -2675,6 +2868,18 @@ class ESOLogAnalyzer(ListenerMixin):
                 # isLocalPlayer flag): the one the Hide names switch keeps
                 'is_local': bool(player.is_local),
             })
+            # A player who left during the fight: their row stays, greyed,
+            # with the share of the fight they were there for (presence.py)
+            if player.left_at is not None and player.left_at <= enc.end_time:
+                entry.players[-1]['left'] = True
+                entry.players[-1]['present_pct'] = present_share(
+                    enc.start_time, enc.end_time, player.joined_at, player.left_at)
+            if not player.equipped_abilities:
+                # Back on another character whose build is not in the log
+                # yet: the class and the figures, nothing to judge
+                entry.players[-1]['no_build'] = True
+                entry.players[-1]['build_issues'] = []
+                continue
             # Per-slot gear, mundus and food for the build window
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
@@ -2857,7 +3062,7 @@ class ESOLogAnalyzer(ListenerMixin):
                      if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME}
 
         def gear_of(unit_id: str):
-            player = enc.players.get(unit_id)
+            player = enc.player_of(unit_id)
             return player.gear if player is not None else {}
 
         try:
@@ -2960,7 +3165,7 @@ class ESOLogAnalyzer(ListenerMixin):
         player = PlayerInfo(unit_id, clean_name, clean_handle, session_data.get('class_id'))
         player.champion_points = session_data.get('champion_points', 0)
         player.equipped_abilities = session_data['equipped_abilities']
-        player.gear_data = session_data['gear_data']
+        player.set_gear(session_data['gear_data'])
         player.long_term_effects = list(session_data.get('long_term_effects') or [])
         player.masteries_seen = list(session_data.get('masteries') or [])
 
@@ -2977,7 +3182,8 @@ class ESOLogAnalyzer(ListenerMixin):
             return
 
         # Update session with current unit_id
-        self._update_player_session(unit_id, name, handle, player.equipped_abilities, player.gear_data, player.class_id,
+        self._update_player_session(unit_id, name, handle, player.equipped_abilities,
+                                    self.player_sessions[f"{handle}+{name}"]['gear_data'], player.class_id,
                                     long_term_effects=player.long_term_effects, masteries=player.masteries_seen)
 
         # Add player to current encounter with session data
