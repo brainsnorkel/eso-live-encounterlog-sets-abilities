@@ -504,7 +504,12 @@ class TestLinkGlyphs(FightViewTestCase):
             row = re.search(r'<a href="esolog:damage/1"[^>]*>(.*?)</a>', html).group(1)
             self.assertEqual(row, f'1.0k&nbsp;<img src="glyph:breakdown?color={muted}'
                                   f'&amp;px=13" style="vertical-align:middle">')
-            self.assertEqual(html.count('glyph:'), 2)
+            # After the player's name, the shield that opens their damage
+            # taken window (issue #98), in the link colour, the whole anchor
+            shield = re.search(r'<a href="esolog:taken/1"[^>]*>(.*?)</a>', html).group(1)
+            self.assertEqual(shield, f'<img src="glyph:taken?color={link}&amp;px=13" '
+                                     f'style="vertical-align:middle">')
+            self.assertEqual(html.count('glyph:'), 3)
         # The names keep their plain look, and copied text has no glyph
         self.assertIn('color:#202124">@tester</a>', render_html(entry, detailed=False))
         self.assertNotIn('glyph', render_plain_text(entry))

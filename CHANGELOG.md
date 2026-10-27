@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.21.0] - 2026-10-28
+
+### Added
+- **Damage taken window** (#98): a shield after every player's name on the fight pane opens the whole fight's damage taken and healing received for that player, died or not; the death recap keeps the last seconds before each death and now links to the new window from its **Damage taken this fight** block, as the build window does from its Damage dealt heading. The window leads with the figures: damage taken and the rate per second of the fight (pull to end, so two pulls compare), healing landed with the share of all healing that was overheal, what shields absorbed as a share of the damage that reached health, how many of the direct hits were blocked, and the hits dodged or missed. Then the recap's kinds bars (direct against DoT, area against single target, Martial against Magical, with the Warfare star hovers), **Damage by source** (every unit that hurt the player, bosses first, adds of one name as one row with their count, the unnamed unit for fall damage and set procs, each unit's abilities under it with damage, share, hits, largest hit, average and kind) and **Healing received** (every healer by what landed, the player's own heals marked `own`, a pet's named after its owner and marked `pet`, each healer's abilities under them, the overheal as a share per row rather than an amount, since 91 to 96% of all healing on a player is overheal in trials). Measured on three veteran trial logs (48 boss fights): a tank takes damage from a median 11 abilities and 8 units, a DPS from 7 and 6; six to eight units heal each player; bosses do 44% of the damage, adds the rest
+- The engine's per-fight tally of damage taken now keeps every ability (the recap's fight block still lists its top five), the largest hit per ability, the same damage by the unit that did it, the healing by the unit that healed, and a count of every result line; nothing already shown changes (replayed on 106 fights, every existing figure identical)
+
+### Fixed
+- A fall damage row in the death recap's fight block read `fall · fall`; it reads `fall`
+
 ## [0.20.0] - 2026-10-27
 
 ### Added

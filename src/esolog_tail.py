@@ -2379,7 +2379,8 @@ class ESOLogAnalyzer(ListenerMixin):
         source_id = fields[7]
         player_source = bool(enc.find_player_by_unit_id(source_id)
                              or source_id in enc.pet_ownership)
-        tally = enc.taken_for(enc.record_id(target_id))
+        record = enc.record_id(target_id)
+        tally = enc.taken_for(record)
         hit = int(fields[3]) if fields[3].isdigit() else 0
         overflow = int(fields[4]) if fields[4].isdigit() else 0
         if result in HEALTH_RESULTS:
@@ -2389,15 +2390,23 @@ class ESOLogAnalyzer(ListenerMixin):
             area, rule, _targets = area_of(self.cast_index, source_id, cast_id,
                                            ability_id, player_source)
             if hit:
+                enemy = enc.enemies.get(source_id)
                 tally.note_damage(entry.timestamp, result, fields[1], hit, ability_id,
-                                  source_id, area, rule, self.cast_index, cast_id)
+                                  source_id, area, rule, self.cast_index, cast_id,
+                                  source_boss=bool(enemy is not None and enemy.is_boss))
             # The killing blow: the target's health after it is 0 and the
             # line carries the overkill
             health_at = 18 if fields[17] != '*' else 8
             if overflow and str(fields[health_at]).startswith('0/'):
                 tally.note_overkill(overflow)
         else:
-            tally.note_other(result, hit, overflow)
+            # A heal is kept by healer for the damage taken window: a
+            # player's heals under their record whatever unit id they are
+            # on, a pet's under the pet with its owner for the name
+            pet_owner = enc.pet_ownership.get(source_id, "")
+            healer_id = source_id if pet_owner else enc.record_id(source_id)
+            tally.note_other(result, hit, overflow, source_id=healer_id, ability_id=fields[6],
+                             self_source=(healer_id == record), pet_owner=pet_owner)
         self.death_recap_recorder.record(entry.timestamp, fields, target_id,
                                          player_source=player_source)
 

@@ -33,11 +33,12 @@ from gui.engine_worker import EngineWorker
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
-    render_plain_text, summary_line,
+    render_plain_text, summary_line, taken_tooltips,
 )
 from gui.fight_view import FightView
 from gui.name_mask import NameMask
 from gui.settings_dialog import SettingsDialog
+from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
@@ -130,6 +131,7 @@ class MainWindow(QMainWindow):
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
+        self._taken_dialog = None  # created on the first click on a player's shield
         self._graph_dialog = None  # created on the first DPS graph request
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
@@ -179,6 +181,8 @@ class MainWindow(QMainWindow):
             self._build_dialog.refresh(dark)
         if self._damage_dialog is not None:
             self._damage_dialog.refresh(dark)
+        if self._taken_dialog is not None:
+            self._taken_dialog.refresh(dark)
         if self._graph_dialog is not None:
             self._graph_dialog.refresh(dark)
         fights = self._current_fights()
@@ -306,6 +310,7 @@ class MainWindow(QMainWindow):
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
+        self.fight_view.taken_requested.connect(self._show_taken)
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
@@ -809,6 +814,7 @@ class MainWindow(QMainWindow):
         tooltips = death_tooltips(entry, names)
         tooltips.update(build_tooltips(entry, names))
         tooltips.update(damage_tooltips(entry, names))
+        tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
@@ -848,6 +854,8 @@ class MainWindow(QMainWindow):
             return
         if self._death_dialog is None:
             self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
+            # The fight block's link to the damage taken window (issue #98)
+            self._death_dialog.view.taken_requested.connect(self._show_taken)
         self._death_dialog.show_recap(fights[row], unit_id, self._dark,
                                       names=self._names_for(fights[row]))
         self._death_dialog.show()
@@ -863,6 +871,8 @@ class MainWindow(QMainWindow):
             return
         if self._build_dialog is None:
             self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
+            # The Damage dealt heading's link to the damage taken window (issue #98)
+            self._build_dialog.view.taken_requested.connect(self._show_taken)
         # The Settings' assumed Champion Point rows and cap, read at render
         # time so a change applies to the next build window without a restart
         self._build_dialog.show_build(fights[row], unit_id, self._dark,
@@ -885,6 +895,24 @@ class MainWindow(QMainWindow):
         self._damage_dialog.show()
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
+
+    def _show_taken(self, unit_id):
+        """A player's damage-taken shield was clicked in the fight on screen,
+        or the link to it in their build or death recap window: the whole
+        fight's damage taken and healing received (taken_render, issue #98).
+        The dialogs' fights are the same objects the list holds, so the
+        window shows the fight on screen like the others."""
+        fights = self._current_fights()
+        row = self.history_list.currentRow()
+        if row < 0 or row >= len(fights):
+            return
+        if self._taken_dialog is None:
+            self._taken_dialog = TakenDialog(self, icons=self.fight_view.icons)
+        self._taken_dialog.show_taken(fights[row], unit_id, self._dark,
+                                      names=self._names_for(fights[row]))
+        self._taken_dialog.show()
+        self._taken_dialog.raise_()
+        self._taken_dialog.activateWindow()
 
     def _show_issues(self, unit_id):
         """A player's (i) was clicked in the fight on screen: their possible
@@ -1015,7 +1043,7 @@ class MainWindow(QMainWindow):
             self._show_fight(row)
             self.fight_view.restore_scroll(scroll)
         for dialog in (self._death_dialog, self._build_dialog,
-                       self._damage_dialog, self._graph_dialog):
+                       self._damage_dialog, self._taken_dialog, self._graph_dialog):
             if dialog is not None and dialog.isVisible() and dialog.entry is not None:
                 dialog.refresh(self._dark, names=self._names_for(dialog.entry))
 

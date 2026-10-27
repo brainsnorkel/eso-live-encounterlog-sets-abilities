@@ -128,6 +128,9 @@ TOPICS = [
     ("Kinds of damage: direct or over time, area or single target, Martial or Magical", [
         "src/damage_kinds.py",
     ]),
+    ("The damage taken window: by source and by healer, over the whole fight", [
+        "src/gui/taken_render.py",
+    ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",

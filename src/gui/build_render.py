@@ -35,7 +35,7 @@ from damage_kinds import summary_of_taken
 from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
-    form_share_text, issues_html,
+    form_share_text, issues_html, taken_href,
 )
 from gui.name_mask import NO_MASK
 from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
@@ -74,6 +74,7 @@ DEALT_TITLE = "Damage dealt"
 DEALT_ANCHOR = "damage-dealt"  # <a name>, where the section begins
 NO_DEALT = "This player dealt no damage in this fight."
 DEALT_NOT_RECORDED = "Damage kinds were not recorded for this fight."
+TAKEN_LINK = "damage taken and healing received"  # opens the damage taken window
 NO_DAMAGE_MEASURED = "no damage of this player's to weigh the fight's effects by"
 PEN_CRIT_NOTE = ("After LunaCairu's PenCrit Calc sheet and the Hyperioxes calculators that "
                  "skinnycheeks.gg recommends; debuffs valued as Combat Metrics (Solinur) values them; "
@@ -463,8 +464,17 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
     heading = f"padding-top:7px;color:{muted};font-weight:bold"
     under = (f"border-bottom-style:solid;border-bottom-width:1px;"
              f"border-bottom-color:{_RULES[bool(dark)]}")
+    # Beside the heading, the way to the other side: the player's damage
+    # taken window (taken_render, issue #98); not for a companion, which
+    # has no tally
+    unit_id = str(p.get("unit_id") or "")
+    taken_link = ""
+    if unit_id and not p.get("companion"):
+        taken_link = (f" <span style='font-weight:normal;font-size:{base_pt * 0.85:.2f}pt'>"
+                      f"<a href='{e(taken_href(unit_id), quote=True)}' style='text-decoration:none;"
+                      f"color:{theme['link']}'>{TAKEN_LINK}</a></span>")
     title = (f"<a name='{DEALT_ANCHOR}'></a>"
-             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}</p>")
+             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}{taken_link}</p>")
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"

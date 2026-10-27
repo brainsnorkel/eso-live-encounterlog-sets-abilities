@@ -110,6 +110,11 @@ ISSUES_TITLE = "Possible build issues"
 GLYPH_SCHEME = "glyph"
 GRAPH_GLYPH = "graph"  # after the header's group dps figure
 BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
+# + the player's unit id: the shield after a player's name, which opens
+# their damage taken window (taken_render, issue #98); on every player
+# since any player takes damage, in the link colour like the (i)
+TAKEN_HREF = "esolog:taken/"
+TAKEN_GLYPH = "taken"
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -222,6 +227,47 @@ def damage_unit_from_href(href: str) -> Optional[str]:
     if href and href.startswith(DAMAGE_HREF):
         return href[len(DAMAGE_HREF):]
     return None
+
+
+def taken_href(unit_id) -> str:
+    return f"{TAKEN_HREF}{unit_id}"
+
+
+def taken_unit_from_href(href: str) -> str | None:
+    """The player's unit id when *href* is a damage-taken shield, else None."""
+    if href and href.startswith(TAKEN_HREF):
+        return href[len(TAKEN_HREF):]
+    return None
+
+
+def taken_tooltips(entry, names=None) -> dict:
+    """Hover text per damage-taken shield: what the player took and was
+    healed for over the fight, the rates over the fight time, and that a
+    click opens the window. *names*: the Hide names mask (gui.name_mask)."""
+    names = names or NO_MASK
+    e = html.escape
+    tips = {}
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        if not unit_id or p.get("companion"):
+            continue
+        lines = [f"<b>{e(names.text(_join(p.get('name', ''))))}</b>"]
+        taken = p.get("taken") if isinstance(p.get("taken"), dict) else None
+        if taken and "total" in taken:
+            total = int(taken.get("total") or 0)
+            healed = int(taken.get("healed") or 0)
+            rate = f", {total / fight_s:,.0f} a second of the fight" if fight_s > 0 and total else ""
+            lines.append(f"{total:,} damage taken{rate}")
+            heal_rate = f", {healed / fight_s:,.0f} a second" if fight_s > 0 and healed else ""
+            lines.append(f"{healed:,} healing landed{heal_rate}")
+            absorbed = int(taken.get("absorbed") or 0)
+            if absorbed:
+                lines.append(f"{absorbed:,} absorbed by shields")
+        lines.append("<span style='font-size:85%'>Click for the whole fight's damage taken "
+                     "and healing received, by source and by healer</span>")
+        tips[taken_href(unit_id)] = "<br>".join(lines)
+    return tips
 
 
 def issues_href(unit_id) -> str:
@@ -962,6 +1008,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if unit_id and p.get("build_issues"):
             issues_cue = (f' <a href="{e(issues_href(unit_id), quote=True)}" '
                           f'style="text-decoration:none;color:{theme["link"]}">{ISSUES_CUE}</a>')
+        # The shield that opens the player's damage taken window (issue
+        # #98): on every player, since any player takes damage, after the
+        # marks that may precede it; a glyph (gui.glyphs) in the link colour
+        taken_cue = ""
+        if unit_id and not p.get("companion"):
+            taken_cue = (f' <a href="{e(taken_href(unit_id), quote=True)}" '
+                         f'style="text-decoration:none">{glyph_html(TAKEN_GLYPH, theme["link"], px)}</a>')
         dps = _dps_text(p, boss_fight)
         # The dps figure opens the player's damage window. Like the name it
         # keeps the look of plain text; unlike the name it carries a glyph
@@ -983,7 +1036,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         pct_style = f" style='color:{muted}'" if left else ""
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
-               f"{subclass_html}{issues_cue}{recap_html}</td>"
+               f"{subclass_html}{issues_cue}{recap_html}{taken_cue}</td>"
                f"<td align='right'>{dps}</td>"
                f"<td align='right'{pct_style}>{_pct_text(p, boss_fight)}</td>"
                f"<td align='right' style='color:{muted}'>{caps}</td>"

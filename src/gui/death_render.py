@@ -38,6 +38,7 @@ import html
 from typing import Dict, List, Optional
 
 from damage_kinds import (
+    FALL_LABEL,
     SIDE_LABELS,
     SPLITS,
     rows_have_kinds,
@@ -57,6 +58,10 @@ NO_DAMAGE_IN_WINDOW = "No damage other than the killing blow was logged in the w
 NO_DAMAGE_TAKEN = "This player took no damage in this fight."
 FIGHT_BLOCK_TITLE = "Damage taken this fight"
 TOP_ABILITIES = 5  # the fight block lists this many abilities
+# The link beside the fight block's title to the damage taken window
+# (taken_render, issue #98), which has every ability, the sources and the
+# healers; the recap keeps its top few
+TAKEN_WINDOW_LINK = "every ability, by source and by healer, in its own window"
 # A side narrower than this keeps its percentage off the bar (it would not fit)
 MIN_BAR_TEXT_PCT = 8
 # The words for the over-time sides: damage over time as the bars label it
@@ -380,6 +385,9 @@ def _kind_words(row: dict) -> str:
     if not fall or fall < max(direct, dot):
         words.append("area" if row.get("area", 0) > row.get("single", 0) else "single target")
     types = sorted((row.get("types") or {}).items(), key=lambda kv: -kv[1])
+    if words and words[0] == "fall":
+        # The fall type label is the word already written
+        types = [kv for kv in types if kv[0] != FALL_LABEL]
     if types:
         total = sum(amount for _label, amount in types) or 1
         words.append(", ".join(label for label, amount in types if amount * 10 >= total))
@@ -392,7 +400,15 @@ def fight_block_html(player: Optional[dict], theme: dict, icons, e, names,
     key), with the abilities that did most of it, which closes the window;
     the not-recorded line for an entry from before the kinds were kept."""
     muted = theme["muted"]
-    title = f"<p style='margin:14px 0 2px 0'><b>{FIGHT_BLOCK_TITLE}</b></p>"
+    link = ""
+    unit_id = str(player.get("unit_id") or "") if isinstance(player, dict) else ""
+    if unit_id:
+        # fight_render imports this module, so its href helper is taken here
+        from gui.fight_render import taken_href
+        link = (f" <span style='font-size:{base_pt * 0.85:.2f}pt;font-weight:normal'>"
+                f"<a href='{e(taken_href(unit_id), quote=True)}' style='text-decoration:none;"
+                f"color:{muted}'>{TAKEN_WINDOW_LINK}</a></span>")
+    title = f"<p style='margin:14px 0 2px 0'><b>{FIGHT_BLOCK_TITLE}</b>{link}</p>"
     taken = player.get("taken") if isinstance(player, dict) else None
     if not isinstance(taken, dict) or "total" not in taken:
         return title + f"<p style='margin:0;color:{muted}'>{NOT_RECORDED}</p>"
