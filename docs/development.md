@@ -144,9 +144,13 @@ python scripts\generate_armor_weights.py
 python scripts\generate_ability_targets.py
 
 :: What each set does for penetration and critical damage, for the build
-:: window's two sections, from UESP's set summary (network access; or --from a
-:: reply of theirs already saved)
+:: window's two sections, and every set's bonus text, from UESP's set summary
+:: (network access; or --from a reply of theirs already saved)
 python scripts\generate_set_offense.py
+
+:: The hidden abilities set bonuses fire, by ability id, with their set, from
+:: UESP's mined skills (network access, about 5 MB; or --from a saved reply)
+python scripts\generate_set_procs.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.

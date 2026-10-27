@@ -1,6 +1,6 @@
 {
- "generated": "2026-10-24T04:06:22+00:00",
- "source": "https://esolog.uesp.net/exportJson.php?table=setSummary (from set_summary.json)",
+ "generated": "2026-10-27T19:37:44+00:00",
+ "source": "https://esolog.uesp.net/exportJson.php?table=setSummary (from set_summary.json fetched 2026-10-06T06:35:38+00:00)",
  "attribution": "Set data from UESP (esolog.uesp.net), CC-BY-SA 2.5",
  "count": 113,
  "sets": {

@@ -668,5 +668,67 @@ class TestAbilityTargets(unittest.TestCase):
         self.assertEqual(table_target('28800'), 'area')
 
 
+class TestSetTextAndProcs(unittest.TestCase):
+    """Issue #79: set bonus text (scripts/generate_set_offense.py, a second
+    table from the same reply) and set proc abilities
+    (scripts/generate_set_procs.py)."""
+
+    SUMMARY = {"setSummary": [
+        {"gameId": "232", "setName": "Roar of Alkosh",
+         "setBonusDesc1": "(2 items) Adds 15-657 Critical Chance",
+         "setBonusDesc2": "(5 items) When you activate a synergy, you send a shockwave.  It scales.",
+         "setBonusDesc3": ""},
+        {"gameId": "393", "setName": "Perfected Arms of Relequen",
+         "setBonusDesc1": "(2 perfected items) Adds 1096 Maximum Stamina"},
+        {"gameId": "", "setName": "No Id"},
+        {"gameId": "999", "setName": "No Lines", "setBonusDesc1": "no piece count"},
+    ]}
+
+    def test_every_bonus_line_is_kept_with_its_piece_count(self):
+        gen = _load('generate_set_offense.py')
+        self.assertEqual(gen.set_texts(self.SUMMARY), {
+            "232": {"name": "Roar of Alkosh", "bonuses": [
+                {"pieces": 2, "text": "Adds 15-657 Critical Chance"},
+                {"pieces": 5, "text": "When you activate a synergy, you send a shockwave. It scales."}]},
+            "393": {"name": "Perfected Arms of Relequen", "bonuses": [
+                {"pieces": 2, "text": "Adds 1096 Maximum Stamina", "perfected": True}]},
+        })
+
+    def test_the_committed_text_covers_every_set_the_offense_table_names(self):
+        sets = REPO_ROOT / 'data' / 'sets'
+        text = json.loads((sets / 'bonuses_en.json').read_text(encoding='utf-8'))
+        offense = json.loads((sets / 'offense.json').read_text(encoding='utf-8'))
+        self.assertIn('CC-BY-SA', text['attribution'])
+        self.assertGreater(text['count'], 700)
+        self.assertEqual(sorted(set(offense['sets']) - set(text['sets'])), [])
+        alkosh = text['sets']['232']['bonuses']
+        self.assertEqual([b['pieces'] for b in alkosh], [2, 3, 4, 5])
+        self.assertIn("Minor Slayer", alkosh[1]['text'])
+
+    def test_a_proc_is_keyed_by_ability_and_named_by_its_set_id(self):
+        gen = _load('generate_set_procs.py')
+        payload = {"minedSkills": [
+            {"id": "135923", "setName": "Roaring Opportunist"},
+            {"id": "142012", "setName": "CP:Cutting Defense"},
+            {"id": "61746", "setName": ""},
+            {"id": "", "setName": "Roar of Alkosh"},
+            {"id": "75752", "setName": "Roar of Alkosh"},
+        ]}
+        procs, unknown = gen.set_procs(payload, {"Roaring Opportunist": "496", "Roar of Alkosh": "232"})
+        self.assertEqual(procs, {"135923": {"set_id": "496", "set": "Roaring Opportunist"},
+                                 "75752": {"set_id": "232", "set": "Roar of Alkosh"}})
+        self.assertEqual(unknown, ["CP:Cutting Defense"])
+
+    def test_a_short_reply_writes_nothing(self):
+        gen = _load('generate_set_procs.py')
+        with tempfile.TemporaryDirectory() as temp:
+            reply, out = Path(temp) / 'reply.json', Path(temp) / 'out.json'
+            reply.write_text(json.dumps({"minedSkills": [{"id": "1", "setName": "Roar of Alkosh"}]}),
+                             encoding='utf-8')
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(gen.main(['--from', str(reply), '--out', str(out)]), 1)
+            self.assertFalse(out.exists())
+
+
 if __name__ == '__main__':
     unittest.main()

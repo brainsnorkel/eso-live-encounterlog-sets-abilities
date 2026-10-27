@@ -993,6 +993,18 @@ Whenever, Dealing, Touching, On, If, Each, Every) is conditional. A set the
 export does not describe, or a bonus worded in a way this script does not
 read, is simply absent: the section then shows nothing for it.
 
+The same reply also gives data/sets/bonuses_en.json (issue #79): every set's
+bonus lines as the game words them, by set id, for a set's description in the
+app. The game's client files do not hold this text (the client assembles a
+set's tooltip from server data at run time), so UESP's copy, which its
+uespLog addon reads from the game, is the source; it is bundled so nothing
+is asked of UESP at run time, and it carries UESP's CC-BY-SA 2.5 attribution
+like this file. Each line keeps its piece count, whether it is a perfected
+bonus ("(2 perfected items)"), and its text with runs of spaces closed up;
+the figures stay as written ("Adds 15-657 Critical Chance": the second value
+is the one at Champion Point 160). Set names in it are UESP's; the app names
+a set from its own table by id.
+
 Run after an ESO update that adds or changes sets (one request to UESP; UESP
 asks heavy users to go lightly, so do not loop it):
     python scripts/generate_set_offense.py
