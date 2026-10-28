@@ -151,7 +151,7 @@ def main():
         # The toolbar switch: saved to the scratch config, so the Settings
         # picture shows its box ticked too
         win.hide_names_action.setChecked(True)
-    win.history_list.setCurrentRow(row)
+    win.history_list.select_fight(row)
     # "Monitoring <path>" sits in the status bar for eight seconds after
     # the load; the guide's picture should show the freshness label instead
     pump(9)
@@ -266,13 +266,13 @@ def main():
     dead = next(((f, r) for f in fights for r in f.death_recaps), None)
     if dead is not None:
         f, recap = dead
-        win.history_list.setCurrentRow(fights.index(f))
+        win.history_list.select_fight(fights.index(f))
         pump(1)
         win._show_death_recap(recap["unit_id"])
         pump(1.5)
         save(win._death_dialog, "death-recap.png")
         win._death_dialog.hide()
-        win.history_list.setCurrentRow(row)
+        win.history_list.select_fight(row)
         pump(1)
     else:
         print("  (no death in this log: death-recap.png not written)")
@@ -301,7 +301,7 @@ def main():
 
     # Review mode: the same fights as a reviewed file
     win._on_review_loaded(str(log), list(fights))
-    win.history_list.setCurrentRow(row)
+    win.history_list.select_fight(row)
     pump(1)
     save(win, "review-mode.png")
     win._exit_review()

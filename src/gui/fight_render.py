@@ -62,6 +62,15 @@ the caps, the shares of them and the share of damage dealt over them. A
 player with no damage to weigh has none, and so does an entry built before
 the figures existed. The plain-text copy adds the same token to the
 player's line.
+
+A companion's row (companions.py) hangs under its owner's. Its last cell
+is its health pool, its casts per minute and, when it cast its ultimate
+in the fight, 'Ult ×2' (issue #130); the hover on its name names the
+ultimate with the time of each cast. That hover, and a player's, gives
+the healing they did to others when there was some: the heals that landed
+on another player (a companion's owner counts), not on themselves, and
+not the overheal, the figure the engine keeps for the role guess. The
+plain-text copy adds the casts per minute and the Ult mark.
 """
 
 import html
@@ -83,6 +92,11 @@ COMPANION_INDENT = "↳ "  # before a companion's name, under its owner's row (c
 # (presence.py)
 LEFT_NOTE = "left · here for {pct:.0f}% of the fight"
 NO_BUILD_NOTE = "build not in the log yet"
+# A companion's ultimate cast in the fight, in its row's last cell ('Ult ×2')
+# and the plain-text copy (issue #130)
+ULT_LABEL = "Ult"
+# In the name's hover: the healing that landed on other players
+HEALING_LABEL = "healing to others"
 
 ICON_PX = 22  # rendered edge of an ability icon in the detail pane
 SCRIBED_ICON_PX = 14  # grimoire icon beside a scribed skill's scripts
@@ -187,12 +201,15 @@ def build_unit_from_href(href: str) -> Optional[str]:
 
 def build_tooltips(entry, names=None) -> dict:
     """Hover text per player-name link: the handle, the character name
-    under it when the log gave both (issue #71), and that a click opens
-    the build window. *names*: the Hide names mask (gui.name_mask), which
-    hides another player's handle and character name alike."""
+    under it when the log gave both (issue #71), a companion's ultimates
+    with their times and anyone's healing to others (issue #130), and that
+    a click opens the build window. *names*: the Hide names mask
+    (gui.name_mask), which hides another player's handle and character
+    name alike."""
     names = names or NO_MASK
     e = html.escape
     tips = {}
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
     for p in entry.players:
         unit_id = str(p.get("unit_id", ""))
         if not unit_id:
@@ -202,9 +219,13 @@ def build_tooltips(entry, names=None) -> dict:
         lines = [f"<b>{e(names.text(name))}</b>"]
         if character and character != name:
             lines.append(e(names.text(character)))
+        lines.extend(e(line) for line in ultimate_lines(p))
+        healing = healing_text(p, fight_s)
+        if healing:
+            lines.append(e(healing))
         if p.get("companion"):
             lines.append("<span style='font-size:85%'>Companion. Click for the skills it "
-                         "was seen casting</span>")
+                         "was seen casting, with this fight's casts</span>")
         else:
             lines.append("<span style='font-size:85%'>Click for the full build: bars, gear, "
                          "mundus and food</span>")
@@ -513,19 +534,57 @@ def _is_boss_fight(entry) -> bool:
 
 
 def cpm_text(p) -> str:
-    """'CPM 105': the player's casts per minute in the fight (casts.py), ''
-    for a companion and on an entry built before the counts."""
+    """'CPM 105': the player's or companion's casts per minute in the fight
+    (casts.py), '' on an entry built before the counts."""
     summary = p.get("casts")
-    if p.get("companion") or not isinstance(summary, dict):
+    if not isinstance(summary, dict):
         return ""
     return f"CPM {float(summary.get('cpm') or 0):.0f}"
 
 
+def ultimate_text(p) -> str:
+    """'Ult ×2': the ultimates a companion cast in the fight (issue #130);
+    '' when it cast none, for a player, and on an entry built before."""
+    count = sum(len(ultimate.get("at") or []) for ultimate in p.get("ultimates") or [])
+    return f"{ULT_LABEL} ×{count}" if count else ""
+
+
+def _clock_s(seconds) -> str:
+    """'1:38': seconds into the fight, as the death recap writes them."""
+    whole = max(0, int(seconds or 0))
+    return f"{whole // 60}:{whole % 60:02d}"
+
+
+def ultimate_lines(p) -> list[str]:
+    """'Raging Storm cast at 0:07 and 1:38 into the fight': each ultimate
+    a companion cast in the fight, with the time of each cast."""
+    lines = []
+    for ultimate in p.get("ultimates") or []:
+        times = [_clock_s(at) for at in ultimate.get("at") or []]
+        if times:
+            joined = times[0] if len(times) == 1 else f"{', '.join(times[:-1])} and {times[-1]}"
+            lines.append(f"{ultimate.get('name', '')} cast at {joined} into the fight")
+    return lines
+
+
+def healing_text(p, fight_s: float) -> str:
+    """'12,345 healing to others, 205 a second of the fight': the heals of a
+    player or companion that landed on another player; '' with none."""
+    healed = int(p.get("healing") or 0)
+    if healed <= 0:
+        return ""
+    rate = f", {healed / fight_s:,.0f} a second of the fight" if fight_s > 0 else ""
+    return f"{healed:,} {HEALING_LABEL}{rate}"
+
+
 def _resources_html(p) -> str:
     """'H 23.3k · M 14.9k · S 27.6k · CPM 105' with the largest pool in
-    bold; a companion has a health pool only ('H 33k')."""
+    bold; a companion has a health pool only, its casts per minute and its
+    ultimates ('H 33k · CPM 38 · Ult ×2')."""
     if p.get("companion"):
-        return f"H {_fmt_resource(p.get('h'))}" if p.get("h") else ""
+        parts = [f"H {_fmt_resource(p.get('h'))}"] if p.get("h") else []
+        parts.extend(text for text in (cpm_text(p), ultimate_text(p)) if text)
+        return " · ".join(parts)
     pools = [("H", p.get("h")), ("M", p.get("m")), ("S", p.get("s"))]
     values = []
     for _label, raw in pools:
@@ -663,13 +722,22 @@ def _taunt_mark(slot: dict, taunt_color: Optional[str]) -> str:
     return taunt_color if taunt_color and slot.get("taunt") else ""
 
 
+def ultimate_gap(slot: dict, index: int, marked: bool) -> bool:
+    """Whether a bar sets *slot* apart as its ultimate: on a bar that
+    marks one 'ultimate' (a rebuilt werewolf bar, a companion's, whose
+    session bar can hold more than five skills) the marked slot, else the
+    sixth."""
+    if not index:
+        return False
+    return bool(slot.get("ultimate")) if marked else index == 5
+
+
 def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
               taunt_color: Optional[str] = None) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
     names otherwise, each inside an anchor; the ultimate sits apart: the
-    sixth slot, or one marked 'ultimate' (a rebuilt werewolf bar can have
-    fewer than five skills). With no icon cache the bar is the plain joined
-    name list.
+    sixth slot, or the one marked 'ultimate' (ultimate_gap). With no icon
+    cache the bar is the plain joined name list.
     px: the icons' edge (the build window draws them larger; None, the
     pane's ICON_PX at the text size in force). taunt_color:
     an ability the player taunted with gets a ring of it on its icon (see
@@ -683,6 +751,7 @@ def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
                 for slot in slots])
         return e(_join(names))
     parts = []
+    marked = any(slot.get("ultimate") for slot in slots)
     for index, slot in enumerate(slots):
         stem = str(slot.get("icon") or "")
         mark = _taunt_mark(slot, taunt_color)
@@ -697,7 +766,7 @@ def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
             body = e(str(slot.get("name", "")))
         href = e(_ability_href(slot, links), quote=True)
         chunk = f'<a href="{href}" style="text-decoration:none">{body}</a>'
-        if index == 5 or (index and slot.get("ultimate")):
+        if ultimate_gap(slot, index, marked):
             chunk = "&nbsp;&nbsp;&nbsp;" + chunk
         parts.append(chunk)
     return "&nbsp;".join(parts)
@@ -1179,12 +1248,13 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
                 and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         cpm = cpm_text(p)
+        ult = ultimate_text(p)
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
         lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
-                     + (f" · {note}" if note else ""))
+                     + (f" · {ult}" if ult else "") + (f" · {note}" if note else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")

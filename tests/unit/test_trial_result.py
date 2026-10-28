@@ -147,8 +147,11 @@ class TestTheFightThatEndedTheRun(unittest.TestCase):
         self.assertEqual(engine.events(), ['fight_completed', 'fight_completed'])
 
     def test_after_the_final_fight_was_sent(self):
-        # Blackrose Prison's: about 4 seconds after END_COMBAT
-        engine = Engine(BASE + ['40000,END_COMBAT', '44000,END_TRIAL,12,1351407,T,253117,35000'])
+        # Blackrose Prison's: about 4 seconds after END_COMBAT, with combat
+        # events between, which mark the sent fight's encounter in combat
+        engine = Engine(BASE + ['40000,END_COMBAT', _hit(41000, 400000),
+                                '44000,END_TRIAL,12,1351407,T,253117,35000'])
+        self.assertTrue(engine.analyzer.current_encounter.in_combat)
         final = engine.fights[-1]
         self.assertEqual(final.trial_result['score'], 253117)
         self.assertEqual(engine.events(), ['fight_completed', 'fight_completed', 'fight_updated'])

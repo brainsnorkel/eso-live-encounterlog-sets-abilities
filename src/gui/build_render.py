@@ -25,6 +25,12 @@ one pen_crit computes the way Combat Metrics does. The data is the fight
 entry's player dict as the engine's player_build and pen_crit modules
 filled it in, and the labels come from those modules too.
 
+A companion's window is shorter (companions.py): its skills with this
+fight's casts under each and its ultimate set apart, the casts no skill
+holds by a companion's own kinds with its casts per minute, when it cast
+its ultimate and the healing it did to others (issue #130), then Damage
+dealt.
+
 The anchors here (ability icons, scribed skills and their scripts, set names)
 use the same targets as the fight view, so fight_render.anchor_tooltips
 supplies this window's hover text as well. Colors are theme-aware like the
@@ -38,7 +44,7 @@ from damage_kinds import summary_of_taken
 from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
-    form_share_text, issues_html, taken_href,
+    form_share_text, healing_text, issues_html, taken_href, ultimate_gap, ultimate_lines,
 )
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -58,7 +64,8 @@ NO_FOOD = "no known food or drink at combat start"
 NO_GEAR = "The log carried no gear for this player in this fight."
 NO_BUILD = "No build was logged for this player in this fight."
 COMPANION_NOTE = ("The encounter log writes no bar, gear or perks for a companion: these are "
-                  "the skills it was seen casting this session, in the order first cast.")
+                  "the skills it was seen casting this session, in the order first cast and "
+                  "its ultimate last, with this fight's casts under each.")
 NO_COMPANION_SKILLS = "No companion skill was seen cast yet this session."
 POISON_NOTE = "weapon enchants on this bar do not fire while a poison is slotted"
 PIECES_NOTE = ("Pcs: pieces of the row's set that are active. Two numbers are "
@@ -69,6 +76,10 @@ CASTS_LABEL = "Other"  # the card's last row: the casts no slot holds
 EXTRA_LABELS = (("light", "Light attacks"), ("heavy", "Heavy attacks"), ("bash", "Bashes"),
                 ("swap", "Swaps"), ("dodge", "Dodges"), ("synergy", "Synergies"),
                 ("potion", "Potions"), ("break_free", "Break Free"))
+# A companion's (casts.COMPANION_EXTRA_KINDS): it never heavy attacks,
+# swaps, takes a synergy or drinks a potion, and it blocks by casting
+COMPANION_EXTRA_LABELS = (("light", "Light attacks"), ("bash", "Bashes"), ("block", "Blocks"),
+                          ("dodge", "Dodges"), ("break_free", "Break Free"))
 RESOURCES_TITLE = "Resources"
 RESOURCES_ANCHOR = "resources"  # <a name>, where the section begins
 RESOURCES_CAPTION = "as the log's unit states show them"
@@ -201,9 +212,13 @@ def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> 
 def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
                     text_color: str) -> str:
     """A companion's window (companions.py): its name, level and owner, the
-    fight, and the skills it was seen casting this session. The log writes
-    no bar, gear or perks for a companion, so there is nothing else of a
-    build; render_build_html adds the kinds of its damage under it."""
+    fight, and the skills it was seen casting this session with this
+    fight's casts under each and its ultimate set apart, then the casts no
+    skill holds and its casts per minute (issue #130); under the card,
+    when it cast its ultimate this fight and the healing it did to others.
+    The log writes no bar, gear or perks for a companion, so there is
+    nothing else of a build; render_build_html adds the kinds of its damage
+    under it."""
     muted = theme["muted"]
     owner = player_for(entry, p.get("owner_unit_id")) or {}
     owner_name = _join(owner.get("name", ""))
@@ -219,19 +234,33 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     fight = [e(str(getattr(entry, "boss_name", "") or "")),
              f"{e(zone)}{vet}" if zone else "",
              e(str(getattr(entry, "timestamp", "") or ""))]
-    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, scaled_px(BAR_ICON_PX),
-                    taunt_color=theme["taunt"])
-    skills = (f"<table cellpadding='4' cellspacing='0' width='100%' "
-              f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
-              f"border-collapse:collapse;background-color:{theme['frame_bg']}'>"
-              f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>Skills</td>"
-              f"<td valign='middle'>{bar}</td></tr></table>"
-              if bar else f"<p style='color:{muted}'>{NO_COMPANION_SKILLS}</p>")
+    slots = p.get("front_bar_slots")
+    # Counts under the icons once the entry has them (casts.py)
+    if icons is not None and slots and any("casts" in slot for slot in slots):
+        bar = _counted_bar_html(slots, theme, icons, links, base_pt, e)
+    else:
+        bar = _bar_html(slots, p.get("front_bar"), icons, links, e, scaled_px(BAR_ICON_PX),
+                        taunt_color=theme["taunt"])
+    rows = [(label, body) for label, body in (("Skills", bar),
+                                              (CASTS_LABEL, _extras_html(p, theme, base_pt, e)))
+            if body]
+    card = (f"<table cellpadding='4' cellspacing='0' width='100%' "
+            f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
+            f"border-collapse:collapse;background-color:{theme['frame_bg']}'>"
+            + "".join(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>"
+                      f"{label}</td><td valign='middle'>{body}</td></tr>" for label, body in rows)
+            + "</table>" if rows else "")
+    no_skills = "" if bar else f"<p style='color:{muted}'>{NO_COMPANION_SKILLS}</p>"
+    # When it cast its ultimate this fight, and its healing to others
+    # (fight_render's hover gives the same)
+    after = [*ultimate_lines(p), healing_text(p, float(getattr(entry, "duration_s", 0) or 0))]
+    after_html = (f"<p style='margin:4px 0;color:{muted}'>"
+                  f"{' · '.join(e(line) for line in after if line)}</p>" if any(after) else "")
     return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
             f"{' · '.join(e(fact) for fact in facts if fact)}{of_owner}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>{' · '.join(part for part in fight if part)}</p>"
             f"<p style='margin:8px 0 6px 0;color:{muted}'>{COMPANION_NOTE}</p>"
-            f"{skills}")
+            f"{no_skills}{card}{after_html}")
 
 
 def _mundus_food_html(p, theme, icons, e) -> str:
@@ -268,12 +297,13 @@ def _mundus_food_html(p, theme, icons, e) -> str:
 def _counted_bar_html(slots, theme, icons, links, base_pt: float, e) -> str:
     """One ability bar with the fight's casts of each slot in small print
     under it (casts.py); a dash for none. The ultimate sits apart as on any
-    bar: the sixth slot, or one marked 'ultimate'."""
+    bar: the sixth slot, or the one marked 'ultimate' (ultimate_gap)."""
     muted = theme["muted"]
     small = f"font-size:{base_pt * 0.8:.2f}pt;color:{muted}"
     cells = []
+    marked = any(slot.get("ultimate") for slot in slots)
     for index, slot in enumerate(slots):
-        if index == 5 or (index and slot.get("ultimate")):
+        if ultimate_gap(slot, index, marked):
             cells.append("<td width='10'></td>")
         icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, scaled_px(BAR_ICON_PX),
                          taunt_color=theme["taunt"])
@@ -285,13 +315,15 @@ def _counted_bar_html(slots, theme, icons, links, base_pt: float, e) -> str:
 
 def _extras_html(p, theme, base_pt: float, e) -> str:
     """'Light attacks 52 · Heavy attacks 0 · … · 168 casts, 105 per minute':
-    the fight's casts no slot holds, by kind, then every cast and the cpm
-    (casts.py); '' on an entry built before the counts."""
+    the fight's casts no slot holds, by kind (a companion's own kinds for a
+    companion), then every cast and the cpm (casts.py); '' on an entry
+    built before the counts."""
     summary = p.get("casts")
     if not isinstance(summary, dict):
         return ""
     muted = theme["muted"]
-    parts = [f"{e(label)} {int(summary.get(kind) or 0)}" for kind, label in EXTRA_LABELS]
+    labels = COMPANION_EXTRA_LABELS if p.get("companion") else EXTRA_LABELS
+    parts = [f"{e(label)} {int(summary.get(kind) or 0)}" for kind, label in labels]
     parts.append(f"{int(summary.get('total') or 0)} casts, "
                  f"{float(summary.get('cpm') or 0):.0f} per minute")
     return (f"<span style='color:{muted};font-size:{base_pt * 0.9:.2f}pt'>"
