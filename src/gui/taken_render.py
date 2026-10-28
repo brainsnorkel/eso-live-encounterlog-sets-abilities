@@ -69,6 +69,7 @@ from gui.death_render import (
 )
 from gui.fight_render import ROLE_NAMES, _fmt_duration, _join, _subclass_text, _theme
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 
 NO_PLAYER = "No player with this id was in the fight."
 NOT_RECORDED = "Damage kinds were not recorded for this fight."
@@ -205,7 +206,7 @@ def _table_open(columns, theme) -> str:
             f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
     cells = []
     for title, align in columns:
-        width = f" width='{ICON_PX}'" if not title else ""
+        width = f" width='{scaled_px(ICON_PX)}'" if not title else ""
         cells.append(f"<td align='{align}'{width} {head}>{title}</td>")
     return (f"<table cellpadding='3' cellspacing='0' width='99%'><tr>{''.join(cells)}</tr>")
 
@@ -245,14 +246,14 @@ def _sources_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
         parts.append(f"<p style='margin:0;color:{muted}'>{NO_DAMAGE_TAKEN}</p>")
         return "".join(parts)
     parts.append(_table_open(SOURCE_COLUMNS, theme))
-    indent = f"padding-left:{INDENT_PX}px;"
+    indent = f"padding-left:{scaled_px(INDENT_PX)}px;"
     for group in sources:
         units = int(group.get("units") or 0)
         marks = (BOSS_MARK if group.get("boss") else "", f"×{units}" if units > 1 else "")
         damage = int(group.get("damage") or 0)
         hits = int(group.get("hits") or 0)
         parts.append(_cells((
-            (f" width='{ICON_PX}'", "", ""),
+            (f" width='{scaled_px(ICON_PX)}'", "", ""),
             ("", "", _unit_name(group, marks, theme, e, names, base_pt)),
             (" align='right'", "", f"<b><span style='color:{theme['damage']}'>{_n(damage)}</span></b>"),
             (" align='right'", "", f"<b>{_pct(damage, total)}</b>"),
@@ -267,7 +268,7 @@ def _sources_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
             row_damage = int(row.get("damage") or 0)
             row_hits = int(row.get("hits") or 0)
             parts.append(_cells((
-                (f" width='{ICON_PX}'", "", icon),
+                (f" width='{scaled_px(ICON_PX)}'", "", icon),
                 ("", indent, e(str(row.get("name") or ""))),
                 (" align='right'", "", f"<span style='color:{theme['damage']}'>{_n(row_damage)}</span>"),
                 (" align='right'", "", _pct(row_damage, total)),
@@ -308,7 +309,7 @@ def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
         parts.append(f"<p style='margin:0;color:{muted}'>{NO_HEALING}</p>")
         return "".join(parts)
     parts.append(_table_open(HEALER_COLUMNS, theme))
-    indent = f"padding-left:{INDENT_PX}px;"
+    indent = f"padding-left:{scaled_px(INDENT_PX)}px;"
 
     def overheal_cell(row):
         landed, over = int(row.get("landed") or 0), int(row.get("overheal") or 0)
@@ -318,7 +319,7 @@ def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
         marks = (SELF_MARK if healer.get("self") else "", PET_MARK if healer.get("pet") else "")
         landed = int(healer.get("landed") or 0)
         parts.append(_cells((
-            (f" width='{ICON_PX}'", "", ""),
+            (f" width='{scaled_px(ICON_PX)}'", "", ""),
             ("", "", _unit_name(healer, marks, theme, e, names, base_pt)),
             (" align='right'", "", f"<b><span style='color:{theme['heal']}'>{_n(landed)}</span></b>"),
             (" align='right'", "", f"<b>{_pct(landed, healed)}</b>"),
@@ -331,7 +332,7 @@ def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
             pad = "" if icon else "padding-top:4px;padding-bottom:4px;"
             row_landed = int(row.get("landed") or 0)
             parts.append(_cells((
-                (f" width='{ICON_PX}'", "", icon),
+                (f" width='{scaled_px(ICON_PX)}'", "", icon),
                 ("", indent, e(str(row.get("name") or ""))),
                 (" align='right'", "", f"<span style='color:{theme['heal']}'>{_n(row_landed)}</span>"),
                 (" align='right'", "", _pct(row_landed, healed)),

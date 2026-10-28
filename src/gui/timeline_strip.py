@@ -73,6 +73,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 from effect_rules import DOTS_CAP
 from effect_summary import matrix, summarise
 from gui.name_mask import NO_MASK
+from gui.text_size import scale as text_scale, scaled_px
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
                 "Major Berserk", "Powerful Assault", "Major Vulnerability",
@@ -124,6 +125,8 @@ SPARSE_RECEIVER_LIMIT = 2
 SPARSE_BASE_ALPHA = 0.35
 SPARSE_HATCH_STEP = 8
 
+# Pixel sizes at 100% text; each grows with a larger text size
+# (gui.text_size.scaled_px), so the labels painted in the rows still fit
 ROW_HEIGHT = 10
 ROW_GAP = 2
 AXIS_HEIGHT = 14
@@ -344,11 +347,11 @@ class TimelineStrip(QWidget):
     def _strip_height(self) -> int:
         if not self._rows:
             return 0
-        return MARGIN + self._rows_height() + AXIS_HEIGHT + MARGIN
+        return MARGIN + self._rows_height() + scaled_px(AXIS_HEIGHT) + MARGIN
 
     def _rows_height(self) -> int:
         """The rows' height, the divider between buffs and debuffs included."""
-        return (len(self._rows) * (ROW_HEIGHT + ROW_GAP)
+        return (len(self._rows) * (scaled_px(ROW_HEIGHT) + ROW_GAP)
                 + (DIVIDER_GAP if self._divider is not None else 0))
 
     def sizeHint(self):
@@ -360,7 +363,7 @@ class TimelineStrip(QWidget):
         return QSize(200, self._strip_height())
 
     def _track_rect(self) -> QRectF:
-        left = LABEL_WIDTH + SCOPE_WIDTH
+        left = scaled_px(LABEL_WIDTH) + scaled_px(SCOPE_WIDTH)
         return QRectF(left, MARGIN,
                       max(1, self.width() - left - MARGIN),
                       self._rows_height())
@@ -368,8 +371,8 @@ class TimelineStrip(QWidget):
     def _row_rect(self, row: int) -> QRectF:
         track = self._track_rect()
         below = DIVIDER_GAP if self._divider is not None and row >= self._divider else 0
-        return QRectF(track.left(), MARGIN + row * (ROW_HEIGHT + ROW_GAP) + below,
-                      track.width(), ROW_HEIGHT)
+        return QRectF(track.left(), MARGIN + row * (scaled_px(ROW_HEIGHT) + ROW_GAP) + below,
+                      track.width(), scaled_px(ROW_HEIGHT))
 
     def _divider_y(self):
         """The y of the line between the buff and the debuff rows, or None."""
@@ -429,14 +432,14 @@ class TimelineStrip(QWidget):
                 painter.setPen(dim)
                 painter.setFont(label_font)
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
-                                    LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
+                                    scaled_px(LABEL_WIDTH) - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter,
                              self._painted_label(effect, info, painter.fontMetrics()))
             painter.setPen(dim)
             painter.setFont(label_font)
             # Whose effect this row is
-            painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
-                                    SCOPE_WIDTH - 4, rect.height() + 2),
+            painter.drawText(QRectF(scaled_px(LABEL_WIDTH) + 2, rect.top() - 1,
+                                    scaled_px(SCOPE_WIDTH) - 4, rect.height() + 2),
                              Qt.AlignLeft | Qt.AlignVCenter, info.get("scope", ""))
             # Track background
             painter.fillRect(rect, track_bg)
@@ -498,7 +501,8 @@ class TimelineStrip(QWidget):
         while ms <= duration:
             x = self._x_for_ms(ms)
             painter.drawLine(int(x), int(axis_y), int(x), int(axis_y + 3))
-            painter.drawText(QRectF(x - 24, axis_y + 2, 48, AXIS_HEIGHT - 2),
+            painter.drawText(QRectF(x - scaled_px(24), axis_y + 2,
+                                    scaled_px(48), scaled_px(AXIS_HEIGHT) - 2),
                              Qt.AlignHCenter | Qt.AlignTop, _fmt_tick(ms))
             ms += step
 
@@ -528,7 +532,9 @@ class TimelineStrip(QWidget):
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
         small = QFont(self.font())
-        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2))
+        # Two points under the pane's text at 100%, in proportion above it,
+        # so a label keeps fitting its row as both grow (gui.text_size)
+        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2 * text_scale()))
         return small
 
     def _full_label(self, effect: str, info: dict) -> str:
@@ -541,14 +547,15 @@ class TimelineStrip(QWidget):
         and anything wider than the label column cut with an ellipsis."""
         label = info.get("label") or (f"{EFFECT_SHORT.get(effect, effect)} "
                                       f"{info.get('uptime_pct', 0)}%")
-        return metrics.elidedText(label, Qt.ElideRight, int(LABEL_WIDTH - 2 * MARGIN))
+        return metrics.elidedText(label, Qt.ElideRight, int(scaled_px(LABEL_WIDTH) - 2 * MARGIN))
 
     def _label_at(self, pos):
         """(whole label, scope word) of the row whose label or scope word
         is under *pos*, or None."""
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
-            band = QRectF(0, rect.top() - 1, LABEL_WIDTH + SCOPE_WIDTH, rect.height() + 2)
+            band = QRectF(0, rect.top() - 1, scaled_px(LABEL_WIDTH) + scaled_px(SCOPE_WIDTH),
+                          rect.height() + 2)
             if band.contains(pos):
                 info = self._row_info.get(effect, {})
                 return self._full_label(effect, info), info.get("scope", "")
@@ -706,6 +713,14 @@ class TimelineStrip(QWidget):
                         if iv["start_ms"] <= ms <= iv["end_ms"]]
                 return effect, ms, hits
         return None
+
+    def changeEvent(self, ev):
+        # A new text size: the rows, the label column and the axis are
+        # sized from it, so the strip asks its layout for a new height
+        if ev.type() == QEvent.FontChange:
+            self.updateGeometry()
+            self.update()
+        super().changeEvent(ev)
 
     def event(self, ev):
         if ev.type() == QEvent.ToolTip:

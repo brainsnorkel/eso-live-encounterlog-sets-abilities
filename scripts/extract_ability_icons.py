@@ -302,7 +302,8 @@ def main() -> int:
     ap.add_argument("--eso-dir", default="", help="ESO install folder (contains depot\\eso.mnf)")
     ap.add_argument("--extractor", default="", help="path to EsoExtractData.exe")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help=f"output folder (default {DEFAULT_OUT})")
-    ap.add_argument("--size", type=int, default=40, help="PNG edge length in px (game icons are 64; default 40)")
+    ap.add_argument("--size", type=int, default=64,
+                    help="PNG edge length in px (default 64, the game's own; sharp at a large text size)")
     ap.add_argument("--prefix", action="append", metavar="PREFIX",
                     help="icon filename prefix to extract; repeat for several. Naming any replaces "
                          f"the default families ({', '.join(DEFAULT_PREFIXES)}, the update-named "

@@ -9,12 +9,13 @@ Add on a fresh install adds nothing twice.
 from typing import Iterable, List
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase, QGuiApplication
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QVBoxLayout,
 )
 
 from effect_rules import EXAMPLE_RULES, rule_name as _rule_name
+from gui import text_size
 
 
 class ExamplesDialog(QDialog):
@@ -32,7 +33,7 @@ class ExamplesDialog(QDialog):
         intro.setWordWrap(True)
         layout.addWidget(intro)
         self.list = QListWidget()
-        self.list.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.list.setFont(text_size.fixed_font())
         self.list.setSpacing(3)
         for title, note, line in EXAMPLE_RULES:
             item = QListWidgetItem(f"{title}\n  {note}\n  {line}")

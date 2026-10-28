@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence, QPalette,
+    QAction, QColor, QDesktopServices, QFont, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from gui import text_size
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import PEN_CRIT_ANCHOR, player_for
@@ -154,6 +155,8 @@ class MainWindow(QMainWindow):
         # sharing. One state behind the toolbar button, Ctrl+H and the
         # Settings box, saved whenever it flips
         self._hide_names = bool(config.get("privacy.hide_names", False))
+        # The text size, before any widget is made, so all of them start at it
+        text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
 
         self._build_ui()
         self._build_update_poller()
@@ -246,6 +249,17 @@ class MainWindow(QMainWindow):
             "sharing; the player writing the log stays visible (Ctrl+H)")
         self.hide_names_action.toggled.connect(self._toggle_hide_names)
         toolbar.addAction(self.hide_names_action)
+
+        # Text size (issue #77): Ctrl+= or Ctrl++ bigger, Ctrl+- smaller,
+        # Ctrl+0 back to 100%, from any of the app's windows, saved at once
+        for label, keys, direction in (("Bigger text", ("Ctrl+=", "Ctrl++"), 1),
+                                       ("Smaller text", ("Ctrl+-",), -1),
+                                       ("Normal text size", ("Ctrl+0",), 0)):
+            action = QAction(label, self)
+            action.setShortcuts([QKeySequence(key) for key in keys])
+            action.setShortcutContext(Qt.ApplicationShortcut)
+            action.triggered.connect(lambda _=False, d=direction: self._step_text_size(d))
+            self.addAction(action)
 
         toolbar.addSeparator()
 
@@ -1212,6 +1226,28 @@ class MainWindow(QMainWindow):
             if dialog is not None and dialog.isVisible() and dialog.entry is not None:
                 dialog.refresh(self._dark, names=self._names_for(dialog.entry))
 
+    # ---- text size ----
+
+    def _step_text_size(self, direction: int):
+        """Ctrl+= / Ctrl+- / Ctrl+0: one step bigger, smaller, or 100%."""
+        self.set_text_size(text_size.step(text_size.percent(), direction))
+
+    def set_text_size(self, pct):
+        """Apply and save the app-wide text size, then redraw every page.
+        A view zoomed with Ctrl + mouse wheel drops its own size and takes
+        the new one, so the setting is what the user sees everywhere."""
+        applied = text_size.apply(pct)
+        self.config.set(text_size.CONFIG_KEY, applied)
+        self.config.save()
+        for view in [self.fight_view] + [dialog.view for dialog in (
+                self._death_dialog, self._build_dialog, self._damage_dialog,
+                self._taken_dialog) if dialog is not None]:
+            view.setFont(QFont())  # inherit the application font again
+        # The pane and every open window are rendered from their view's
+        # font, as for a flip of Hide names
+        self._refresh_names()
+        self.statusBar().showMessage(f"Text size {applied}%", 3000)
+
     def _apply_privacy_settings(self):
         """Settings saved: the action follows the box (its toggled signal
         redraws when the state changed)."""
@@ -1249,6 +1285,8 @@ class MainWindow(QMainWindow):
             self.config.save()
             self._apply_update_settings()
             self._apply_privacy_settings()
+            if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
+                self.set_text_size(self.config.get(text_size.CONFIG_KEY))
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
             # The history is cleared when the engine reaches the restart
             # (see _on_monitoring_restarting); until then its fights are

@@ -120,7 +120,9 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 | Ctrl+F | Put the cursor in the search field; Enter jumps to the next match, Esc clears |
 | Ctrl+C | Copy fight |
 | Ctrl+H | [Hide names](#hiding-other-players-names) on or off, from any of the app's windows |
-| Ctrl + mouse wheel | Make the fight pane's text bigger or smaller, until the app closes |
+| Ctrl+= (or Ctrl++), Ctrl+- | [Text size](#settings) a step bigger or smaller, from any of the app's windows; saved |
+| Ctrl+0 | Text size back to 100% |
+| Ctrl + mouse wheel | Zoom the one page under the pointer until the app closes; the next text size change resets it |
 
 Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
 
@@ -301,6 +303,7 @@ Open **Settings…** from the toolbar.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
+- **Display**: *Text size*, 80% to 200% of the system's text in steps of 10, for the whole app: the fight list, the pages, every window, Settings and the timeline strip, whose rows and labels grow with it. Ability icons grow above 100% and never shrink below it. Ctrl+=, Ctrl+- and Ctrl+0 change it without opening Settings. It applies as soon as Settings is saved; no replay is needed for it.
 - **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
 - **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
 - **Death recaps**: how many seconds before each death the recap keeps, 5 to 10 (5 by default). Saving replays the session, so the fights already listed are rebuilt with the new window. See [Death recaps](#death-recaps).

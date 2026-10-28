@@ -25,7 +25,7 @@ PULSE_STEPS = 8  # ring images per colour over one glow cycle (see FightView)
 
 def ringed(image: QImage, color: QColor, phase: float = 0.0) -> QImage:
     """A copy of *image* with a ring of *color* just inside its edge: about
-    an eighth of the icon wide (5 px on the bundled 40 px icons), a dark
+    an eighth of the icon wide (8 px on the bundled 64 px icons), a dark
     hairline outside it so it reads on any icon art, and a light hairline
     inside. *phase*, 0 to 1 around one glow cycle, brightens the ring from
     the colour itself (0) to a paler, lighter tone (0.5) and back, which the

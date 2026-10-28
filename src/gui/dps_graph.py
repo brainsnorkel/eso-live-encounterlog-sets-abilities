@@ -31,7 +31,7 @@ panel shows four or fewer.
 import math
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget,
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 from damage_stats import running_dps, smoothed_dps
 from gui.fight_render import _fmt_dps, _fmt_duration, _join
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from gui.timeline_strip import _fmt_tick, _tick_step_ms
 
 # The categorical palette, light and dark steps of the same eight hues
@@ -62,6 +63,7 @@ LINE_WIDTH = 2.0
 GROUP_LINE_WIDTH = 3.0
 MARKER_RADIUS = 4.0
 DIRECT_LABEL_MAX = 4  # lines labelled with their end value, per panel
+# Pixel sizes at 100% text, each grown with a larger text size (gui.text_size)
 MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 70, 10, 28
 PANEL_GAP = 22
 GROUP_PANEL_SHARE = 0.36  # of the plot height, when both panels show
@@ -156,9 +158,9 @@ class DpsGraph(QWidget):
 
     def _plot_rect(self) -> QRectF:
         """The whole plotting area, every panel and the gaps between."""
-        return QRectF(MARGIN_LEFT, MARGIN_TOP,
-                      max(1.0, self.width() - MARGIN_LEFT - MARGIN_RIGHT),
-                      max(1.0, self.height() - MARGIN_TOP - MARGIN_BOTTOM))
+        return QRectF(scaled_px(MARGIN_LEFT), scaled_px(MARGIN_TOP),
+                      max(1.0, self.width() - scaled_px(MARGIN_LEFT) - scaled_px(MARGIN_RIGHT)),
+                      max(1.0, self.height() - scaled_px(MARGIN_TOP) - scaled_px(MARGIN_BOTTOM)))
 
     def _panel_rect(self, panel: int) -> QRectF:
         plot = self._plot_rect()
@@ -254,7 +256,8 @@ class DpsGraph(QWidget):
             painter.setPen(QPen(grid, 1))
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             painter.setPen(dim)
-            painter.drawText(QRectF(0, y - metrics.height() / 2, MARGIN_LEFT - 8, metrics.height()),
+            painter.drawText(QRectF(0, y - metrics.height() / 2,
+                                    scaled_px(MARGIN_LEFT) - 8, metrics.height()),
                              Qt.AlignRight | Qt.AlignVCenter, _fmt_dps(value))
             value += step
         painter.setPen(QPen(dim, 1))
@@ -295,7 +298,7 @@ class DpsGraph(QWidget):
                 painter.drawLine(QPointF(rect.right() + 4, y), QPointF(rect.right() + 14, y))
                 painter.setPen(text)
                 painter.drawText(QRectF(rect.right() + 18, y - metrics.height() / 2,
-                                        MARGIN_RIGHT - 20, metrics.height()),
+                                        scaled_px(MARGIN_RIGHT) - 20, metrics.height()),
                                  Qt.AlignLeft | Qt.AlignVCenter, _fmt_dps(curve.points[-1][1]))
 
     # ---- hover ----
@@ -378,7 +381,7 @@ class DpsGraphDialog(QDialog):
         self.graph = DpsGraph()
         middle.addWidget(self.graph, 1)
         self.legend = QListWidget()
-        self.legend.setFixedWidth(LEGEND_WIDTH)
+        self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
         self.legend.itemChanged.connect(self._on_legend_changed)
         middle.addWidget(self.legend)
         layout.addLayout(middle, 1)
@@ -507,6 +510,12 @@ class DpsGraphDialog(QDialog):
             curves.append(Curve(unit_id, name, series_color(rank, dark), points,
                                 LINE_WIDTH, rank >= MAX_HUES, PLAYER_PANEL))
         self.graph.set_curves(curves, duration)
+
+    def changeEvent(self, event):
+        # A new text size: the legend's names are wider, so is its column
+        if event.type() == QEvent.FontChange:
+            self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
+        super().changeEvent(event)
 
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the series colours follow it) or

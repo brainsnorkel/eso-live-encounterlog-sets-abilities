@@ -71,6 +71,7 @@ from typing import List, Optional, Tuple
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
 
@@ -654,16 +655,18 @@ def _taunt_mark(slot: dict, taunt_color: Optional[str]) -> str:
     return taunt_color if taunt_color and slot.get("taunt") else ""
 
 
-def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
+def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
               taunt_color: Optional[str] = None) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
     names otherwise, each inside an anchor; the ultimate sits apart: the
     sixth slot, or one marked 'ultimate' (a rebuilt werewolf bar can have
     fewer than five skills). With no icon cache the bar is the plain joined
     name list.
-    px: the icons' edge (the build window draws them larger). taunt_color:
+    px: the icons' edge (the build window draws them larger; None, the
+    pane's ICON_PX at the text size in force). taunt_color:
     an ability the player taunted with gets a ring of it on its icon (see
     the view's loadResource) or its name in it."""
+    px = px or scaled_px(ICON_PX)
     if icons is None or not slots:
         if slots and any(_taunt_mark(slot, taunt_color) for slot in slots):
             return _join([
@@ -709,7 +712,7 @@ def form_share_text(share) -> str:
     return "in form <1%" if 0 < pct < 1 else f"in form {pct:.0f}%"
 
 
-def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:
+def werewolf_bar_html(p, icons, links, e, theme, px: Optional[int] = None) -> str:
     """The rebuilt werewolf bar and 'in form 100%' for a player who spent
     some of the fight in werewolf form, '' for any other."""
     share = p.get("werewolf_share")
@@ -792,8 +795,8 @@ def _scribed_html(p, icons, links, script_links, e, color: str) -> str:
     chunks = []
     for slot in _scribed_slots(p):
         stem = str(slot.get("icon") or "")
-        icon = (f'<img src="icon:{stem}" width="{SCRIBED_ICON_PX}" '
-                f'height="{SCRIBED_ICON_PX}" style="vertical-align:middle">&nbsp;'
+        icon = (f'<img src="icon:{stem}" width="{scaled_px(SCRIBED_ICON_PX)}" '
+                f'height="{scaled_px(SCRIBED_ICON_PX)}" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         name = anchor(e(str(slot.get("name", ""))), _ability_href(slot, links))
         scripts = []

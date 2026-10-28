@@ -20,6 +20,7 @@ from damage_stats import dps as dps_over, dps_time_s
 from gui.build_render import player_for
 from gui.fight_render import ROLE_NAMES, _fmt_dps, _fmt_duration, _join, _subclass_text, _theme
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 
 ICON_PX = 20  # ability icon edge in the table
 PET_MARK = "(pet)"
@@ -65,7 +66,7 @@ def _icon_html(stem, icons) -> str:
     stem = str(stem or "")
     if icons is None or not stem or not icons.has(stem):
         return ""
-    return (f'<img src="icon:{stem}" width="{ICON_PX}" height="{ICON_PX}" '
+    return (f'<img src="icon:{stem}" width="{scaled_px(ICON_PX)}" height="{scaled_px(ICON_PX)}" '
             f'style="vertical-align:middle">')
 
 
@@ -130,7 +131,7 @@ def _table_open(columns, theme) -> str:
     # Not 100% wide: Qt rounds percentage columns up to a pixel past the
     # pane, which is enough to summon a horizontal scrollbar
     return (f"<table cellpadding='3' cellspacing='0' width='99%'>"
-            f"<tr><td width='{ICON_PX}' {head}></td>{cells}</tr>")
+            f"<tr><td width='{scaled_px(ICON_PX)}' {head}></td>{cells}</tr>")
 
 
 def _ability_table_html(rows: List[dict], total: int, span_ms: int, theme, icons, e) -> str:
@@ -158,7 +159,7 @@ def _ability_table_html(rows: List[dict], total: int, span_ms: int, theme, icons
             ("right", _fmt_dps(dps_over(damage, span_ms))),
         )
         parts.append(
-            f"<tr><td width='{ICON_PX}' valign='middle' style='{pad}'>{icon}</td>"
+            f"<tr><td width='{scaled_px(ICON_PX)}' valign='middle' style='{pad}'>{icon}</td>"
             + "".join(f"<td align='{align}' valign='middle' style='{pad}'>{content}</td>"
                       for align, content in cells) + "</tr>")
     parts.append("</table>")

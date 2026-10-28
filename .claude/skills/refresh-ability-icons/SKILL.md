@@ -29,13 +29,13 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
    Expect roughly 2,020 icons (about 1,800 `ability_*.dds`, 160 `death_recap_*.dds`, 66 `u<NN>_ability_*.dds` and the `DEFAULT_STEMS`; 2,023 on the client of 2026-10-20) grouped into a few dozen `-s/-e` ranges. If the count is zero or the eso.mnf path is wrong, fix `--eso-dir` / `ESO_INSTALL_DIR` before continuing.
 
-2. Extract and convert (2-3 minutes; icons land in `data/icons/abilities/`, 40 px by default):
+2. Extract and convert (2-3 minutes; icons land in `data/icons/abilities/`, 64 px by default, the game's own size):
 
    ```cmd
    python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
    ```
 
-   `--check-log` is optional: it scans a log and reports any icon slotted on a player bar that has no PNG (exit code 2). Use `--size 64` for native resolution if the UI needs it (about 2x the repo weight).
+   `--check-log` is optional: it scans a log and reports any icon slotted on a player bar that has no PNG (exit code 2). The app has shipped 64 px icons since issue #77 (a text size up to 200% draws them up to 72 px); do not pass a smaller `--size`.
 
 3. Read the summary the script prints:
    - `manifest: N icons; vs previous: +added -removed ~changed` — added icons are the new skills from the patch; removed ones are abilities the game dropped. A large "removed" count usually means the wrong `eso.mnf` was read.
