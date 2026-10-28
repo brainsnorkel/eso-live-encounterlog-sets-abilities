@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 # Import structured parser for Phase 3 complete replacement
 try:
+    from eso_log_structures import _line_fields
     from eso_log_structures import (
         ESOLogStructureParser, 
         PlayerInfoEntry as StructuredPlayerInfoEntry,
@@ -157,6 +158,46 @@ class EffectChangedEntry:
     additional_targets: List[List[str]]
 
 
+
+# The legacy event type of each structured entry class, by class name; a
+# class not listed takes its name less "Entry", upper-cased
+_LEGACY_EVENT_TYPES = {
+    'BeginLogEntry': 'BEGIN_LOG', 'ZoneChangedEntry': 'ZONE_CHANGED',
+    'MapChangedEntry': 'MAP_CHANGED', 'UnitAddedEntry': 'UNIT_ADDED',
+    'UnitChangedEntry': 'UNIT_CHANGED', 'UnitRemovedEntry': 'UNIT_REMOVED',
+    'AbilityInfoEntry': 'ABILITY_INFO', 'PlayerInfoEntry': 'PLAYER_INFO',
+    'BeginCastEntry': 'BEGIN_CAST', 'EndCastEntry': 'END_CAST',
+    'EffectChangedEntry': 'EFFECT_CHANGED', 'CombatEventEntry': 'COMBAT_EVENT',
+    'BeginCombatEntry': 'BEGIN_COMBAT', 'EndCombatEntry': 'END_COMBAT',
+    'TrialInitEntry': 'TRIAL_INIT', 'BeginTrialEntry': 'BEGIN_TRIAL',
+    'EndTrialEntry': 'END_TRIAL', 'HealthRegenEntry': 'HEALTH_REGEN',
+    'EndlessDungeonBeginEntry': 'ENDLESS_DUNGEON_BEGIN',
+    'EndlessDungeonStageEndEntry': 'ENDLESS_DUNGEON_STAGE_END',
+    'EndlessDungeonBuffAddedEntry': 'ENDLESS_DUNGEON_BUFF_ADDED',
+    'EndlessDungeonBuffRemovedEntry': 'ENDLESS_DUNGEON_BUFF_REMOVED',
+}
+# Where a legacy entry's timestamp comes from, by class name: these few are
+# not the line number (None is 0, as the log gives them none); every other
+# class takes its line_number
+_LEGACY_TIMESTAMPS = {
+    'BeginLogEntry': 'unix_timestamp', 'ZoneChangedEntry': 'zone_id',
+    'MapChangedEntry': 'map_id', 'AbilityInfoEntry': None,
+    'BeginCastEntry': None, 'EndCastEntry': None,
+}
+_legacy_kinds: Dict[type, Tuple[str, Optional[str]]] = {}
+
+
+def _legacy_kind(cls: type) -> Tuple[str, Optional[str]]:
+    """(legacy event type, timestamp attribute or None) for an entry class."""
+    kind = _legacy_kinds.get(cls)
+    if kind is None:
+        name = cls.__name__
+        kind = (_LEGACY_EVENT_TYPES.get(name) or name.replace('Entry', '').upper(),
+                _LEGACY_TIMESTAMPS.get(name, 'line_number'))
+        _legacy_kinds[cls] = kind
+    return kind
+
+
 class ESOLogParser:
     """Robust parser for ESO encounter log files with Phase 3 structured parser replacement."""
     
@@ -186,108 +227,33 @@ class ESOLogParser:
         return self._convert_structured_to_legacy_entry(structured_result, line)
     
     def _convert_structured_to_legacy_entry(self, structured_result: Any, original_line: str) -> ESOLogEntry:
-        """Convert structured parser result to legacy ESOLogEntry format."""
-        # Extract timestamp based on event type
-        timestamp = 0
-        if hasattr(structured_result, '__class__'):
-            class_name = structured_result.__class__.__name__
-            # Use appropriate timestamp for each event type
-            if class_name == 'BeginLogEntry' and hasattr(structured_result, 'unix_timestamp'):
-                timestamp = structured_result.unix_timestamp
-            elif class_name == 'ZoneChangedEntry' and hasattr(structured_result, 'zone_id'):
-                timestamp = structured_result.zone_id
-            elif class_name == 'MapChangedEntry' and hasattr(structured_result, 'map_id'):
-                timestamp = structured_result.map_id
-            elif class_name == 'UnitAddedEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = structured_result.line_number
-            elif class_name == 'UnitChangedEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = structured_result.line_number
-            elif class_name == 'AbilityInfoEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = 0  # ABILITY_INFO doesn't have timestamps
-            elif class_name == 'PlayerInfoEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = structured_result.line_number
-            elif class_name == 'BeginCastEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = 0  # BEGIN_CAST doesn't have timestamps
-            elif class_name == 'EndCastEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = 0  # END_CAST doesn't have timestamps
-            elif class_name == 'EffectChangedEntry' and hasattr(structured_result, 'line_number'):
-                timestamp = structured_result.line_number  # EFFECT_CHANGED uses line_number as timestamp
-            elif hasattr(structured_result, 'line_number'):
-                timestamp = structured_result.line_number
-        else:
-            timestamp = 0
-            
-        if hasattr(structured_result, '__class__'):
-            class_name = structured_result.__class__.__name__
-            # Map class names to event types
-            if class_name == 'BeginLogEntry':
-                event_type = 'BEGIN_LOG'
-            elif class_name == 'ZoneChangedEntry':
-                event_type = 'ZONE_CHANGED'
-            elif class_name == 'MapChangedEntry':
-                event_type = 'MAP_CHANGED'
-            elif class_name == 'UnitAddedEntry':
-                event_type = 'UNIT_ADDED'
-            elif class_name == 'UnitChangedEntry':
-                event_type = 'UNIT_CHANGED'
-            elif class_name == 'UnitRemovedEntry':
-                event_type = 'UNIT_REMOVED'
-            elif class_name == 'AbilityInfoEntry':
-                event_type = 'ABILITY_INFO'
-            elif class_name == 'PlayerInfoEntry':
-                event_type = 'PLAYER_INFO'
-            elif class_name == 'BeginCastEntry':
-                event_type = 'BEGIN_CAST'
-            elif class_name == 'EndCastEntry':
-                event_type = 'END_CAST'
-            elif class_name == 'EffectChangedEntry':
-                event_type = 'EFFECT_CHANGED'
-            elif class_name == 'CombatEventEntry':
-                event_type = 'COMBAT_EVENT'
-            elif class_name == 'BeginCombatEntry':
-                event_type = 'BEGIN_COMBAT'
-            elif class_name == 'EndCombatEntry':
-                event_type = 'END_COMBAT'
-            elif class_name == 'TrialInitEntry':
-                event_type = 'TRIAL_INIT'
-            elif class_name == 'BeginTrialEntry':
-                event_type = 'BEGIN_TRIAL'
-            elif class_name == 'EndTrialEntry':
-                event_type = 'END_TRIAL'
-            elif class_name == 'HealthRegenEntry':
-                event_type = 'HEALTH_REGEN'
-            elif class_name == 'EndlessDungeonBeginEntry':
-                event_type = 'ENDLESS_DUNGEON_BEGIN'
-            elif class_name == 'EndlessDungeonStageEndEntry':
-                event_type = 'ENDLESS_DUNGEON_STAGE_END'
-            elif class_name == 'EndlessDungeonBuffAddedEntry':
-                event_type = 'ENDLESS_DUNGEON_BUFF_ADDED'
-            elif class_name == 'EndlessDungeonBuffRemovedEntry':
-                event_type = 'ENDLESS_DUNGEON_BUFF_REMOVED'
-            else:
-                event_type = class_name.replace('Entry', '').upper()
-        else:
-            event_type = "UNKNOWN"
-            
+        """Convert structured parser result to legacy ESOLogEntry format.
+
+        The event type and the timestamp's source come from a table by the
+        entry's class (_legacy_kind), and the fields from the split that
+        parse_line already made of the line (eso_log_structures.
+        _line_fields): until issue #108 this ran the CSV reader over every
+        line a third time and compared the class name against two chains
+        of some twenty names each."""
+        event_type, stamp_attr = _legacy_kind(type(structured_result))
+        timestamp = getattr(structured_result, stamp_attr, 0) if stamp_attr else 0
+
         # Use specific conversion methods for trial events
-        if class_name == 'TrialInitEntry':
+        if event_type == 'TRIAL_INIT':
             return self._convert_structured_to_legacy_trial_init(structured_result)
-        elif class_name == 'BeginTrialEntry':
+        elif event_type == 'BEGIN_TRIAL':
             return self._convert_structured_to_legacy_begin_trial(structured_result)
-        elif class_name == 'EndTrialEntry':
+        elif event_type == 'END_TRIAL':
             return self._convert_structured_to_legacy_end_trial(structured_result)
-        
-        # Parse the original line to get fields for backward compatibility
+
+        # The fields for backward compatibility, without the line number and
+        # event type (a copy: the split is the structured parser's)
         try:
-            reader = csv.reader(io.StringIO(original_line))
-            fields = next(reader)
-            # Remove line number and event type from fields
-            if len(fields) >= 2:
-                fields = fields[2:]
-        except:
+            fields = _line_fields(original_line)
+            fields = fields[2:] if len(fields) >= 2 else list(fields)
+        except Exception:
             fields = []
-            
-        
+
         # Create ESOLogEntry with proper fields
         return ESOLogEntry(
             timestamp=timestamp,
@@ -295,7 +261,7 @@ class ESOLogParser:
             fields=fields,
             original_line=original_line
         )
-    
+
     def parse_unit_added(self, entry: ESOLogEntry) -> Optional[UnitAddedEntry]:
         """
         Parse UNIT_ADDED entry with Phase 3 structured parser replacement.

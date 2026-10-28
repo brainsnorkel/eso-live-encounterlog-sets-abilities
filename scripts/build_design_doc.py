@@ -147,6 +147,10 @@ TOPICS = [
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",
         "src/gui/main_window.py#Qt objects are freed on the UI thread",
     ]),
+    ("Reviews: a thread of their own, and where a large log is cut", [
+        "src/review_load.py",
+        "src/gui/review_runner.py",
+    ]),
     ("Updates: the schedule, the conditional request and the button", [
         "src/update_check.py",
         "src/gui/update_poller.py",

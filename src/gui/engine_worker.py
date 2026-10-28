@@ -34,7 +34,6 @@ from engine_events import AnalyzerListener
 from esolog_tail import LogFileMonitor
 from fight_history import FightHistory
 from log_archiver import LogArchiver
-from log_open import open_log_text
 
 POLL_INTERVAL_MS = 1000
 WAIT_FOR_LOG_INTERVAL_MS = 2000
@@ -71,12 +70,19 @@ class SignalListener(AnalyzerListener):
     def on_diagnostic(self, message):
         self._emit("diagnostic", message)
 
+    def on_parse_progress(self, label, done, total):
+        self._emit("parse_progress", label, done, total)
+
+    def on_warning(self, source, message):
+        self._emit("warning", source, message)
+
 
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.
 
-    All slots run on the worker thread, so polling, manual archiving, review
-    replays, and monitoring restarts are naturally serialized.
+    All slots run on the worker thread, so polling, manual archiving and
+    monitoring restarts are naturally serialized. A review has a thread of
+    its own (gui/review_runner.py), so the poll never waits for one.
     """
 
     fight_completed = Signal(object)   # FightHistoryEntry
@@ -85,13 +91,15 @@ class EngineWorker(QObject):
     log_status = Signal(object)        # LogStatus
     archive_event = Signal(object)     # ArchiveEvent
     diagnostic = Signal(str)
+    # A lasting problem by source ('split', 'poll'): message, or None once
+    # it has cleared (issue #111)
+    warning = Signal(str, object)
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
     # A requested restart has begun: fights sent before this came from the
     # analyzer being replaced (queued signals arrive in emission order)
     monitoring_restarting = Signal()
-    review_loaded = Signal(str, list)  # path, [FightHistoryEntry]
-    # Parsing/import progress: (label, done_bytes, total_bytes).
+    # Catch-up progress: (label, done_bytes, total_bytes).
     # total == 0 -> indeterminate busy; done >= total > 0 -> finished (hide).
     parse_progress = Signal(str, int, int)
 
@@ -104,6 +112,7 @@ class EngineWorker(QObject):
         self._log_path = None
         self._poll_timer = None
         self._wait_timer = None
+        self._poll_failures = 0  # polls in a row that raised
 
     # ---- lifecycle ----
 
@@ -212,6 +221,8 @@ class EngineWorker(QObject):
     # Backlogs above this show a busy indicator while catching up
     CATCHUP_BUSY_BYTES = 8 * 1024 * 1024
     _CATCHUP_LABEL = "Catching up on new log data…"
+    # Polls in a row that raise before the window shows a lasting warning
+    POLL_FAILURES_WARN = 3
 
     def _poll(self):
         if self.monitor is None:
@@ -231,8 +242,16 @@ class EngineWorker(QObject):
                 busy = True
                 self.parse_progress.emit(self._CATCHUP_LABEL, 0, 0)
             self.monitor._process_new_lines()
+            if self._poll_failures >= self.POLL_FAILURES_WARN:
+                self.warning.emit("poll", None)
+            self._poll_failures = 0
         except Exception as exc:
             self.diagnostic.emit(f"poll error: {exc}")
+            # One failure is a status line; failing poll after poll (out of
+            # memory, a line the engine cannot take) is a lasting warning
+            self._poll_failures += 1
+            if self._poll_failures == self.POLL_FAILURES_WARN:
+                self.warning.emit("poll", f"Reading the log keeps failing: {exc}")
         finally:
             if busy:
                 self.parse_progress.emit(self._CATCHUP_LABEL, 1, 1)  # hide
@@ -267,40 +286,3 @@ class EngineWorker(QObject):
                     self._start_waiting()
                 elif polling:
                     self._poll_timer.start()
-
-    @Slot(str, str)
-    def open_review(self, path: str, member: str = ""):
-        """Replay an arbitrary log file and hand its fights to the UI. A zip
-        (a zipped split or an archive) is read through its log *member*, or
-        its only log when none is named (log_open)."""
-        review_path = Path(path)
-        shown = str(review_path)
-        label = f"Parsing {review_path.name}"
-        try:
-            analyzer = build_analyzer(self.config, [])
-            analyzer.current_log_file = str(review_path)
-            with open_log_text(review_path, member or None) as (f, total, shown):
-                # Emit at most ~200 updates (and no more than one per MB)
-                step = max(1024 * 1024, total // 200)
-                done = 0
-                last_emit = 0
-                self.parse_progress.emit(label, 0, total)
-                for line in f:
-                    # Char length approximates byte length for these logs;
-                    # progress is clamped to total either way
-                    done += len(line)
-                    if done - last_emit >= step:
-                        last_emit = done
-                        self.parse_progress.emit(label, min(done, total), total)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    entry = analyzer.log_parser.parse_line(line)
-                    if entry is not None:
-                        analyzer.process_log_entry(entry)
-            self.review_loaded.emit(shown, list(analyzer.fight_history.fights))
-        except Exception as exc:
-            self.diagnostic.emit(f"Review failed for {review_path}: {exc}")
-            self.review_loaded.emit(shown, [])
-        finally:
-            self.parse_progress.emit(label, 1, 1)  # hide
