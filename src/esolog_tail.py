@@ -3407,6 +3407,11 @@ class LogSplitter:
         # Another instance of the app holds this folder's lock: write nothing
         self.disabled = False
         self._lock_path = None
+        # The first failure to create or write the split file, until a line
+        # is written again (issue #111): the monitor shows it in the window
+        # (a full disk, a removed drive), where it was a diagnostic print
+        self.write_error: Optional[str] = None
+        self._batch_failed = False  # a write failed since the last flush
 
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
@@ -3574,6 +3579,8 @@ class LogSplitter:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+            if self.write_error is None:
+                self.write_error = f"could not create {self.temp_file_path}: {e}"
             self.current_split_file = None
             self.current_split_path = None
             self.current_encounter_info = None
@@ -3850,20 +3857,30 @@ class LogSplitter:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+                self._batch_failed = True
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
 
     def flush(self):
         """Push the lines written so far to the split file: the monitor's
         end of each batch of new lines, so a crash loses at most one poll's
         lines, which are still in the game's log for the split's catch-up
-        (_continue_existing) to restore."""
+        (_continue_existing) to restore. A batch whose writes and flush all
+        went through clears write_error (a full disk usually shows here,
+        when the buffer reaches the disk)."""
+        failed, self._batch_failed = self._batch_failed, False
         if self.file_handle:
             try:
                 self.file_handle.flush()
+                if not failed:
+                    self.write_error = None
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
-    
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
+
     def start_combat(self):
         """Mark that combat has started - rename file to current zone."""
         if not self.combat_started:
@@ -4038,6 +4055,7 @@ class LogFileMonitor:
         self.diagnostic = analyzer.diagnostic
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
+        self._split_warning = None  # the split failure last reported
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
@@ -4135,6 +4153,7 @@ class LogFileMonitor:
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
             self._process_range(start, end)
+            self._report_split_status()
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
             try:
@@ -4451,7 +4470,18 @@ class LogFileMonitor:
             self.last_entry_offset_ms,
         )
         self.analyzer._notify('on_log_status', status)
-    
+        self._report_split_status()
+
+    def _report_split_status(self):
+        """Tell listeners when split writing fails or works again (issue
+        #111): once per change, as an 'on_warning' from source 'split'."""
+        error = self.log_splitter.write_error if self.log_splitter is not None else None
+        if error == self._split_warning:
+            return
+        self._split_warning = error
+        self.analyzer._notify('on_warning', 'split',
+                              f"Split file writing stopped: {error}" if error else None)
+
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
         if not self.log_splitter:
