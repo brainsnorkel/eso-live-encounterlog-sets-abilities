@@ -148,11 +148,13 @@ Click a player's name, in either view, to open their build for that fight. The n
 
 Under the gear grid, the Resources section answers whether the player's sustain held: what they spent their magicka, stamina and ultimate on, where it came back from, and what went to waste. Every group member's pools are in the log, not only yours, so it works for anyone in the fight.
 
+![The Resources section of the build window](screencaps/build-resources.png)
+
 - **Spent**, with the rate per second: what the player's pools fell by. **On casts** is the part that fell at the moment of a cast, the cast's cost; **other spending** is the rest, blocking, sprinting and the costs the game writes later, which leave no line of their own. Light and heavy attacks and weapon swaps cost nothing and are never charged.
 - **Gained**, with the rate per second: what the pools rose by. **Logged gains** are the ones the log names (Undaunted Command, Bountiful Harvest, a potion); **regeneration and unlogged** is every other rise: base regeneration, the ultimate every player generates, and anything else the game does not write down. It is what is left over, not a measurement of regeneration.
 - **Wasted at a full pool**: logged gains that arrived while the pool was already full.
 - **Time at full** ultimate: the share of the fight the player sat on a full ultimate bar. The game never logs ultimate gained at a full pool, so this is the measure of wasted ultimate.
-- **Spent on** lists the casts the most went on, five per pool, with the casts that cost something, the average cost and the total. **Gained from** lists the five largest gains per pool, with the player who gave it when that was another group member (a healer's Bountiful Harvest, a Pillager's Profit). With [Hide names](#hiding-other-players-names) on, those names are hidden too.
+- **Spent on** lists the casts the most went on, five per pool, with the casts that cost something, the average cost and the total. **Gained from** lists the five largest gains per pool, with the players who gave it when that was another group member (a healer's Bountiful Harvest, a Pillager's Profit), the three who gave most named. With [Hide names](#hiding-other-players-names) on, those names are hidden too.
 
 The figures come from the pools' rises and falls between one logged state and the next, which the log writes about ten times a second for each player, so a cost and a gain inside the same tenth of a second cancel out. Read them as a fair picture of the fight, not as tooltip costs.
 

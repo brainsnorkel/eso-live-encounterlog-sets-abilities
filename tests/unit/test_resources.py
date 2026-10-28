@@ -76,7 +76,16 @@ class TestRecorder(unittest.TestCase):
         summary = recorder.fight_summary('1', 1000, 2000, 1.0, giver_name=lambda k: '@healer')
         magicka = summary['pools'][0]
         self.assertEqual((magicka['gained'], magicka['logged'], magicka['wasted']), (2000, 1000, 800))
-        self.assertEqual(summary['gained_from'][0]['giver'], '@healer')
+        self.assertEqual(summary['gained_from'][0]['givers'], ['@healer'])
+
+    def test_a_gain_from_several_givers_is_one_row(self):
+        recorder = resources.ResourceRecorder()
+        recorder.observe('1', 1000, '10000/20000', '1/1', '1/1')
+        recorder.observe('1', 1100, '10168/20000', '1/1', '1/1', energize=(0, '88401', 168, '2'))
+        recorder.observe('1', 1200, '10504/20000', '1/1', '1/1', energize=(0, '88401', 336, '3'))
+        recorder.observe('1', 1300, '10672/20000', '1/1', '1/1', energize=(0, '88401', 168, ''))
+        rows = recorder.fight_summary('1', 1000, 2000, 1.0, giver_name=lambda k: f'@p{k}')['gained_from']
+        self.assertEqual([(r['total'], r['givers']) for r in rows], [(672, ['@p3', '@p2'])])
 
     def test_time_at_full_ultimate_caps_each_step(self):
         recorder = resources.ResourceRecorder()
@@ -194,9 +203,9 @@ class TestEngine(unittest.TestCase):
         data = self.player['resources']
         self.assertEqual([(r['name'], r['casts'], r['total']) for r in data['spent_on']],
                          [('Force Pulse', 1, 2700), ('Ice Comet', 1, 250)])
-        self.assertEqual([(r['name'], r['giver'], r['total']) for r in data['gained_from']],
-                         [('Bountiful Harvest', '@healer', 1000),
-                          ('Undaunted Command Stamina Rest', '', 500)])
+        self.assertEqual([(r['name'], r['givers'], r['total']) for r in data['gained_from']],
+                         [('Bountiful Harvest', ['@healer'], 1000),
+                          ('Undaunted Command Stamina Rest', [], 500)])
 
     def test_time_at_full_ultimate(self):
         # Full from the first state to the Ice Comet (1,950 ms), then not
@@ -219,6 +228,13 @@ class TestRender(unittest.TestCase):
         self.assertIn('Ice Comet', page)
         self.assertIn('@healer', page)
         self.assertIn('32.8%', page)  # time at full ultimate
+
+    def test_givers_show_once_and_at_most_three(self):
+        fight = _fight()
+        player = next(p for p in fight.players if p['unit_id'] == '1')
+        player['resources']['gained_from'][0]['givers'] = ['@a', 'anon', '@b', 'anon', '@c', '@d']
+        page = render_build_html(fight, '1')
+        self.assertIn('@a, anon, @b +2', page)
 
     def test_hide_names_masks_the_giver(self):
         page = render_build_html(self.fight, '1', names=NameMask.for_entry(self.fight, True))

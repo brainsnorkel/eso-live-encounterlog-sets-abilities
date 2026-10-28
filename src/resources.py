@@ -239,7 +239,8 @@ class ResourceRecorder:
         'spent_ps' / 'gained_ps' over the fight's duration (or the share of
         it a player who left was there for); 'full_pct', the share of the
         time at full ultimate; 'spent_on' and 'gained_from', the top TOP of
-        each pool with a 'more' row for the rest."""
+        each pool with a 'more' row for the rest, a gain's 'givers' the
+        other players who gave it, the most first."""
         state = self._last.get(key)
         if state is not None:
             self._flush(key, state)
@@ -294,13 +295,20 @@ class ResourceRecorder:
             rest = sum(row[0] for row in rows[TOP:])
             if rest:
                 spent_on.append({"pool": pool, "more": len(rows) - TOP, "total": rest})
-            rows = sorted(((total, ability_id, giver)
-                           for (p, ability_id, giver), total in gains.items() if p == pool),
-                          reverse=True)
-            for total, ability_id, giver in rows[:TOP]:
+            # One row per gain, its givers in order of what each gave
+            by_ability: dict[str, dict[str, int]] = defaultdict(dict)
+            for (p, ability_id, giver), total in gains.items():
+                if p == pool:
+                    by_ability[ability_id][giver] = total
+            rows = sorted(((sum(givers.values()), ability_id, givers)
+                           for ability_id, givers in by_ability.items()),
+                          key=lambda row: (-row[0], row[1]))
+            for total, ability_id, givers in rows[:TOP]:
+                names = [giver_name(giver) for giver, _n in
+                         sorted(givers.items(), key=lambda kv: -kv[1]) if giver]
                 gained_from.append({"pool": pool, "id": ability_id,
                                     "name": name_of(ability_id) or ability_id,
-                                    "giver": giver_name(giver) if giver else "", "total": total})
+                                    "givers": names, "total": total})
             rest = sum(row[0] for row in rows[TOP:])
             if rest:
                 gained_from.append({"pool": pool, "more": len(rows) - TOP, "total": rest})

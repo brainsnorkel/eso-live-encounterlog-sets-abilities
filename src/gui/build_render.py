@@ -556,7 +556,8 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
     def row(label, values, sub=False):
         label_cell = cell(label, color=muted if sub else None,
                           extra="padding-left:14px" if sub else "")
-        return "<tr>" + label_cell + "".join(cell(v, "right") for v in values) + "</tr>"
+        return ("<tr>" + label_cell
+                + "".join(cell(v, "right", extra="padding-left:18px") for v in values) + "</tr>")
 
     def share(part, whole):
         return f"{round(100.0 * part / whole)}%" if whole else DASH
@@ -565,8 +566,8 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
         rate = f" <span style='color:{muted};{small}'>· {_rate(pool[kind + '_ps'])}</span>"
         return _num(pool[kind]) + rate
 
-    head = ("<tr>" + cell("") + "".join(cell(label, "right", muted, small) for label in POOL_LABELS)
-            + "</tr>")
+    head = ("<tr>" + cell("") + "".join(cell(label, "right", muted, f"{small};padding-left:18px")
+                                        for label in POOL_LABELS) + "</tr>")
     body = [
         head,
         row("Spent", [total_rate(pool, "spent") for pool in pools]),
@@ -609,10 +610,14 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
                 + cell(each, "right") + cell(_num(r["total"]), "right"))
 
     def gained_cells(r, pool, more):
-        giver = ""
-        if not more and r.get("giver"):
-            giver = names.html(str(r["giver"]), muted, base_pt * 0.85)
-        return (cell(pool, "right", muted, small) + cell(giver, color=muted, extra=small)
+        givers = ""
+        if not more:
+            # Each name once, the three who gave the most, then a count
+            seen = list(dict.fromkeys(str(giver) for giver in r.get("givers") or []))
+            givers = ", ".join(names.html(giver, muted, base_pt * 0.85) for giver in seen[:3])
+            if len(seen) > 3:
+                givers += f" +{len(seen) - 3}"
+        return (cell(pool, "right", muted, small) + cell(givers, color=muted, extra=small)
                 + cell(_num(r["total"]), "right"))
 
     parts.append(list_table("Spent on", data.get("spent_on") or [],

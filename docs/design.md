@@ -1064,7 +1064,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:626](../src/gui/build_render.py#L626)*
+*[src/gui/build_render.py:631](../src/gui/build_render.py#L631)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
