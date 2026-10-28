@@ -4,6 +4,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Added
+- **Resources in the build window** (#125): the magicka, stamina and ultimate a player spent and gained in the fight, each with its rate per second; how much of the spending went on casts and how much elsewhere (blocking, sprinting); logged gains against regeneration and unlogged gains; logged gains wasted at a full pool; the share of the fight spent on a full ultimate; and the five casts and five gains that counted most in each pool, with the group member who gave a gain (a healer's Bountiful Harvest, a Pillager's Profit). Every group member's pools are in the log, so it works for every player, not only the one who wrote the log
+
 ### Changed
 - **Detail view is Ctrl+D, and Tab moves the focus** (#77): Tab used to toggle Detail view, so a keyboard user could not leave the fight list; Tab and Shift+Tab now move between the fight list, the search field and the fight pane, and Ctrl+D toggles Detail view from any of them, the search field included. The toolbar button's hover names the key, and the user guide lists the keys under **Keyboard**
 

@@ -62,6 +62,9 @@ TOPICS = [
     ("Cast counts and casts per minute", [
         "src/casts.py",
     ]),
+    ("Magicka, stamina and ultimate spent and gained", [
+        "src/resources.py",
+    ]),
     ("Companions: a row of their own under their owner", [
         "src/companions.py",
     ]),

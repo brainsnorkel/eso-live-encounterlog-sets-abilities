@@ -39,6 +39,7 @@ from presence import present_share
 import casts
 import companions
 import pen_crit
+import resources
 import split_retention
 import werewolf
 
@@ -984,6 +985,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
         self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
+        # Each player's magicka, stamina and ultimate spent and gained
+        self.resources = resources.ResourceRecorder()
         # Companions (companions.py): whether their damage and healing are
         # their owner's too (the setting companions.accrue_to_owner), and
         # the skills each one cast this session, by (owner's player key,
@@ -1952,6 +1955,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters.clear()
         self.werewolf.reset()
         self.casts.reset()
+        self.resources.reset()
         self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
@@ -2051,8 +2055,13 @@ class ESOLogAnalyzer(ListenerMixin):
             if caster is not None:
                 self._remember_cast(entry.fields[2], ability_id)
                 # Counted for the build window and the cpm (casts.py)
-                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id,
-                                     casts.line_time(entry.original_line))
+                cast_time = casts.line_time(entry.original_line)
+                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time)
+                # The cast's cost is in the state it carries (resources.py)
+                self.resources.note_cast(caster.unit_id, cast_time, entry.fields[2], ability_id)
+                if len(entry.fields) >= 9:
+                    self.resources.observe(caster.unit_id, cast_time, entry.fields[6],
+                                           entry.fields[7], entry.fields[8])
                 # Werewolf form: the skills of the bar the log never writes,
                 # and the morph (werewolf.py)
                 if ability_id in werewolf.CAST_IDS:
@@ -2077,6 +2086,36 @@ class ESOLogAnalyzer(ListenerMixin):
                 # Also update enemy health if the caster is an enemy
                 self._parse_and_update_enemy_health(caster_unit_id, entry.fields[5:8])
 
+
+    def _observe_resources(self, entry: ESOLogEntry):
+        """A COMBAT_EVENT's source and target states for the players' pools
+        (resources.py). Fields after the time and event type: [7] the
+        source unit state's id, [9..11] its magicka, stamina and ultimate,
+        [17] the target's id or "*" (the source itself), [19..21] its
+        pools. A POWER_ENERGIZE's pool is the target's, given by the source
+        when that is another player."""
+        fields = entry.fields
+        enc = self.current_encounter
+        source = enc.player_of(fields[7])
+        target = enc.player_of(fields[17]) if fields[17] != "*" else source
+        energize = resources.energize_of(fields)
+        # A channel tick that carries its skill's cost (Fatecarver)
+        if source is not None and fields[6] in resources.CHANNEL_TICKS:
+            self.resources.note_cast(source.unit_id, entry.timestamp, fields[5],
+                                     resources.CHANNEL_TICKS[fields[6]], counted=False)
+        # The same player twice is observed once, with the gain
+        same = target is source
+        if source is not None:
+            self.resources.observe(
+                source.unit_id, entry.timestamp, fields[9], fields[10], fields[11],
+                energize + ("",) if energize is not None and same else None)
+        if not same and target is not None and len(fields) > 21:
+            giver = ""
+            if energize is not None and source is not None and source is not target:
+                giver = source.unit_id
+            self.resources.observe(
+                target.unit_id, entry.timestamp, fields[19], fields[20], fields[21],
+                energize + (giver,) if energize is not None else None)
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -2166,6 +2205,11 @@ class ESOLogAnalyzer(ListenerMixin):
         if not self.current_encounter.in_combat:
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
+
+        # The players' pools in the source and target states, and a gain the
+        # row logs (resources.py)
+        if len(entry.fields) > 17:
+            self._observe_resources(entry)
 
         # Track damage events for DPS calculation (only friendly damage)
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
@@ -2493,7 +2537,14 @@ class ESOLogAnalyzer(ListenerMixin):
             source_unit_id = extracted[2] if extracted else "0"
             target_unit_id = extracted[3] if extracted else source_unit_id
             self_target = target_unit_id == source_unit_id
-            
+
+            # The source's pools (resources.py): [6..8] of its unit state
+            if extracted is not None and len(entry.fields) > 8 and self.current_encounter:
+                source_player = self.current_encounter.player_of(source_unit_id)
+                if source_player is not None:
+                    self.resources.observe(source_player.unit_id, entry.timestamp,
+                                           entry.fields[6], entry.fields[7], entry.fields[8])
+
             if self.diagnostic and target_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
 
@@ -2535,6 +2586,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 if caster is not None:
                     self.casts.note_cast(caster.unit_id, cast_track_id,
                                          casts.CHANNEL_EFFECTS[ability_id], entry.timestamp)
+                    self.resources.note_cast(caster.unit_id, entry.timestamp, cast_track_id,
+                                             casts.CHANNEL_EFFECTS[ability_id])
 
             # A proc set's effect, sourced by its wearer: the build-issue
             # rule for a set that never fires (build_issues)
@@ -2921,6 +2974,11 @@ class ESOLogAnalyzer(ListenerMixin):
             cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time)
             entry.players[-1]['casts'] = casts.cast_summary(
                 cast_counts, duration, entry.players[-1].get('present_pct'))
+            # Magicka, stamina and ultimate spent and gained (resources.py)
+            entry.players[-1]['resources'] = self.resources.fight_summary(
+                player.unit_id, enc.start_time, enc.end_time, duration,
+                entry.players[-1].get('present_pct'), ability_name,
+                self._resolve_timeline_name)
             if not player.equipped_abilities:
                 # Back on another character whose build is not in the log
                 # yet: the class and the figures, nothing to judge
@@ -2995,6 +3053,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Not before the end: this fight's casts are needed once more if it
         # turns out to carry on (see COMBAT_RESUME_MS)
         self.casts.prune_before(enc.start_time)
+        self.resources.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
