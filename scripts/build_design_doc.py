@@ -170,6 +170,9 @@ TOPICS = [
         "src/gui/fight_view.py:FightView._show_hover_cue",
         "src/gui/glyphs.py",
     ]),
+    ("The text size", [
+        "src/gui/text_size.py",
+    ]),
 ]
 
 

@@ -1064,7 +1064,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:631](../src/gui/build_render.py#L631)*
+*[src/gui/build_render.py:632](../src/gui/build_render.py#L632)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1504,7 +1504,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:113](../src/app_config.py#L113)*
+*[src/app_config.py:122](../src/app_config.py#L122)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1766,8 +1766,9 @@ The group's line gets the upper panel and the players the lower, sharing
 the time axis, the crosshair and the tooltip. Drawing otherwise: hairline
 solid gridlines a step off the surface, 2 px lines with round joins, the
 group's heavier in the pane's text colour, the categorical hues in a fixed
-order (an eight-slot palette validated for colour-vision deficiency on both
-the light and the dark surface), text in the pane's own text colours and
+order (eight hues with a light and a dark step; Settings' colour-blind
+option swaps in seven measured to stay apart for the dichromacies, with a
+cycle of four strokes), text in the pane's own text colours and
 never in a series colour, and the end value of each line labelled when a
 panel shows four or fewer.
 
@@ -2125,7 +2126,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:202](../src/gui/timeline_strip.py#L202)*
+*[src/gui/timeline_strip.py:220](../src/gui/timeline_strip.py#L220)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -2292,7 +2293,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:767](../src/gui/main_window.py#L767)*
+*[src/gui/main_window.py:785](../src/gui/main_window.py#L785)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2302,7 +2303,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1259](../src/gui/main_window.py#L1259)*
+*[src/gui/main_window.py:1306](../src/gui/main_window.py#L1306)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2434,7 +2435,7 @@ to a dozen lines each and are one click away through the Changelog link.
 *[src/gui/icon_cache.py:26](../src/gui/icon_cache.py#L26)*
 
 A copy of *image* with a ring of *color* just inside its edge: about
-an eighth of the icon wide (5 px on the bundled 40 px icons), a dark
+an eighth of the icon wide (8 px on the bundled 64 px icons), a dark
 hairline outside it so it reads on any icon art, and a light hairline
 inside. *phase*, 0 to 1 around one glow cycle, brightens the ring from
 the colour itself (0) to a paler, lighter tone (0.5) and back, which the
@@ -2442,7 +2443,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:275](../src/gui/fight_view.py#L275)*
+*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2525,7 +2526,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:186](../src/gui/fight_view.py#L186)*
+*[src/gui/fight_view.py:217](../src/gui/fight_view.py#L217)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
@@ -2574,3 +2575,33 @@ logical size). Names stay plain, with their hover cue.
 The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
 (fight_render.glyph_html), which FightView.loadResource answers from here:
 one image per kind, colour, size and ratio, kept for the session.
+
+## The text size
+
+### src/gui/text_size.py
+
+*[src/gui/text_size.py:1](../src/gui/text_size.py#L1)*
+
+The app-wide text size (issue #77): one percentage of the system font,
+saved as display.text_scale, set from Settings or with Ctrl+=, Ctrl+- and
+Ctrl+0.
+
+Design: the size is applied with QApplication.setFont, so every widget
+that has not set a font of its own follows it, and every rendered page,
+which sizes its text from its view's font (base_pt), follows it on the
+next render. What is drawn in pixels rather than points (the timeline
+strip's rows and label column, the dps graph's margins and legend, the
+icons in rendered pages) asks scale() and grows with it, but never
+shrinks below its size at 100%: icons and rows that small stay legible,
+and at 100% everything is drawn exactly as before the setting existed.
+
+The system font is read once, before the first change, and every
+percentage is of that font, so stepping up and back down returns to the
+same size rather than drifting with rounding. Qt is imported only where a
+font is set, so the page renderers can ask scale() without it.
+
+QApplication.setFont posts the change to each widget rather than sending
+it, so straight after it every view still reports the old font, and a page
+rendered then from its view's font comes out at the old size (the
+Settings path did just that: Save, redraw, old size). apply() delivers the
+posted font changes before it returns.

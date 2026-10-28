@@ -21,7 +21,7 @@ except ImportError:
 _app = None
 BLOCK = "▒"
 IMG = re.compile(r'<img src="mask:([a-z_]+)\?color=([0-9a-f]{6})&amp;pt=([0-9.]+)&amp;b=([01])" '
-                 r'style="vertical-align:middle">')
+                 r'alt="hidden name" style="vertical-align:middle">')
 
 
 def _ensure_app():

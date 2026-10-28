@@ -41,6 +41,7 @@ from gui.fight_render import (
     form_share_text, issues_html, taken_href,
 )
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
@@ -48,7 +49,7 @@ from player_build import (
     quality_label, trait_label, weapon_type_label, weight_label,
 )
 
-BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 40 px)
+BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 64 px)
 MUNDUS_ICON_PX = 18
 DASH = "–"  # a slot the log did not list, or a detail that is not known
 SNAPSHOT_NOTE = "Build as logged at the start of this fight"
@@ -108,14 +109,14 @@ _CELLS = tuple("<td align='center'>" if align == "center" else "<td>"
                for _title, _width, align in COLUMNS[1:])
 
 # The game's quality colors; the light theme gets darker variants, since the
-# game's own are picked for a dark background
+# game's own are picked for a dark background, each 4.5:1 or more (#77)
 _QUALITY_COLORS = {
     True: {"TRASH": "#9aa0a6", "NORMAL": "#e8eaed", "MAGIC": "#5fd35f",
            "ARCANE": "#5aa9ff", "ARTIFACT": "#c58af9", "LEGENDARY": "#eeca2a",
            "MYTHIC_OVERRIDE": "#ff9d3c"},
-    False: {"TRASH": "#80868b", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
-            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#8a6d00",
-            "MYTHIC_OVERRIDE": "#c25e00"},
+    False: {"TRASH": "#686e72", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
+            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#856900",
+            "MYTHIC_OVERRIDE": "#ae5400"},
 }
 _RULES = {True: "#45494f", False: "#d6d9dc"}  # under the grid's header and groups
 
@@ -223,12 +224,12 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     fight = [e(str(getattr(entry, "boss_name", "") or "")),
              f"{e(zone)}{vet}" if zone else "",
              e(str(getattr(entry, "timestamp", "") or ""))]
-    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, BAR_ICON_PX,
+    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, scaled_px(BAR_ICON_PX),
                     taunt_color=theme["taunt"])
     skills = (f"<table cellpadding='4' cellspacing='0' width='100%' "
               f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
               f"border-collapse:collapse;background-color:{theme['frame_bg']}'>"
-              f"<tr><td width='8%' valign='middle' style='color:{muted}'>Skills</td>"
+              f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>Skills</td>"
               f"<td valign='middle'>{bar}</td></tr></table>"
               if bar else f"<p style='color:{muted}'>{NO_COMPANION_SKILLS}</p>")
     return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
@@ -247,8 +248,8 @@ def _mundus_food_html(p, theme, icons, e) -> str:
     stones = []
     for stone in p.get("mundus") or []:
         stem = str(stone.get("icon") or "")
-        icon = (f'<img src="icon:{stem}" width="{MUNDUS_ICON_PX}" '
-                f'height="{MUNDUS_ICON_PX}" style="vertical-align:middle">&nbsp;'
+        icon = (f'<img src="icon:{stem}" width="{scaled_px(MUNDUS_ICON_PX)}" '
+                f'height="{scaled_px(MUNDUS_ICON_PX)}" alt="" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         stones.append(f"{icon}{e(str(stone.get('name', '')))}")
     mundus = ", ".join(stones) or f"<span style='color:{muted}'>{NO_MUNDUS}</span>"
@@ -279,7 +280,7 @@ def _counted_bar_html(slots, theme, icons, links, base_pt: float, e) -> str:
     for index, slot in enumerate(slots):
         if index == 5 or (index and slot.get("ultimate")):
             cells.append("<td width='10'></td>")
-        icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, BAR_ICON_PX,
+        icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, scaled_px(BAR_ICON_PX),
                          taunt_color=theme["taunt"])
         count = int(slot.get("casts") or 0)
         cells.append(f"<td align='center' valign='bottom'>{icon}<br>"
@@ -314,13 +315,13 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
         # Counts under the icons once the entry has them (casts.py)
         if icons is not None and slots and any("casts" in slot for slot in slots):
             return _counted_bar_html(slots, theme, icons, links, base_pt, e)
-        return _bar_html(slots, names, icons, links, e, BAR_ICON_PX, taunt_color=theme["taunt"])
+        return _bar_html(slots, names, icons, links, e, scaled_px(BAR_ICON_PX), taunt_color=theme["taunt"])
 
     for label, slots_key, names_key in (("Front", "front_bar_slots", "front_bar"),
                                         ("Back", "back_bar_slots", "back_bar")):
         bar = bar_of(p.get(slots_key), p.get(names_key))
         if bar:
-            rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{label}</td>"
+            rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{label}</td>"
                         f"<td valign='middle'>{bar}</td></tr>")
     if p.get("werewolf_share"):
         slots = p.get("werewolf_bar_slots") or []
@@ -329,11 +330,11 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
         werewolf = (f"<table cellpadding='0' cellspacing='0'><tr><td valign='middle'>{bar}</td>"
                     f"<td valign='middle'>&nbsp;&nbsp;&nbsp;{note}</td></tr></table>"
                     if bar else note)
-        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{WEREWOLF_LABEL}</td>"
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{WEREWOLF_LABEL}</td>"
                     f"<td valign='middle'>{werewolf}</td></tr>")
     extras = _extras_html(p, theme, base_pt, e)
     if rows and extras:
-        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{CASTS_LABEL}</td>"
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{CASTS_LABEL}</td>"
                     f"<td valign='middle'>{extras}</td></tr>")
     if not rows:
         return ""

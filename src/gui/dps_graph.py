@@ -22,8 +22,9 @@ The group's line gets the upper panel and the players the lower, sharing
 the time axis, the crosshair and the tooltip. Drawing otherwise: hairline
 solid gridlines a step off the surface, 2 px lines with round joins, the
 group's heavier in the pane's text colour, the categorical hues in a fixed
-order (an eight-slot palette validated for colour-vision deficiency on both
-the light and the dark surface), text in the pane's own text colours and
+order (eight hues with a light and a dark step; Settings' colour-blind
+option swaps in seven measured to stay apart for the dichromacies, with a
+cycle of four strokes), text in the pane's own text colours and
 never in a series colour, and the end value of each line labelled when a
 panel shows four or fewer.
 """
@@ -31,7 +32,7 @@ panel shows four or fewer.
 import math
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget,
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
 from damage_stats import running_dps, smoothed_dps
 from gui.fight_render import _fmt_dps, _fmt_duration, _join
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from gui.timeline_strip import _fmt_tick, _tick_step_ms
 
 # The categorical palette, light and dark steps of the same eight hues
@@ -49,6 +51,19 @@ SERIES_COLORS = {
     True: ("#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"),
 }
 MAX_HUES = len(SERIES_COLORS[False])
+# The colour-blind set, a Settings option (issue #77, off by default): Paul
+# Tol's 'bright' seven, each lightened or darkened only until it stands 3:1
+# or more against the graph's surface, then tuned so the closest pair stays
+# as far apart as it can for normal vision and the three dichromacies
+# (CIEDE2000 after the Machado 2009 simulation: 9.8 at worst on light,
+# 13.1 on dark, where the default set measures 5 and 2). Each line also
+# takes the next of four strokes, so no two of the first 28 players share
+# both colour and stroke, and shape tells lines apart where hue cannot
+COLORBLIND_SERIES_COLORS = {
+    False: ("#4477aa", "#179fcd", "#1d742b", "#a4952d", "#ed5d6f", "#aa3377", "#939393"),
+    True: ("#6896c3", "#6fcfef", "#228833", "#ccbb44", "#f07887", "#c7448f", "#bbbbbb"),
+}
+DASH_CYCLE = (Qt.SolidLine, Qt.DashLine, Qt.DotLine, Qt.DashDotLine)
 GROUP = "Group"
 GROUP_PANEL, PLAYER_PANEL = 0, 1
 PANEL_TITLES = {GROUP_PANEL: "Group", PLAYER_PANEL: "Players"}
@@ -62,15 +77,26 @@ LINE_WIDTH = 2.0
 GROUP_LINE_WIDTH = 3.0
 MARKER_RADIUS = 4.0
 DIRECT_LABEL_MAX = 4  # lines labelled with their end value, per panel
+# Pixel sizes at 100% text, each grown with a larger text size (gui.text_size)
 MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 70, 10, 28
 PANEL_GAP = 22
 GROUP_PANEL_SHARE = 0.36  # of the plot height, when both panels show
 LEGEND_WIDTH = 230
 
 
-def series_color(index: int, dark: bool) -> QColor:
-    """The hue of the player ranked *index* (0-based) in the fight."""
-    return QColor(SERIES_COLORS[dark][index % MAX_HUES])
+def series_color(index: int, dark: bool, colorblind: bool = False) -> QColor:
+    """The hue of the player ranked *index* (0-based) in the fight, from
+    the colour-blind set when *colorblind*."""
+    colors = (COLORBLIND_SERIES_COLORS if colorblind else SERIES_COLORS)[dark]
+    return QColor(colors[index % len(colors)])
+
+
+def series_style(index: int, colorblind: bool = False):
+    """The stroke of the player ranked *index*: solid for the first eight
+    and dashed after them, or the colour-blind set's cycle of four."""
+    if colorblind:
+        return DASH_CYCLE[index % len(DASH_CYCLE)]
+    return Qt.DashLine if index >= MAX_HUES else Qt.SolidLine
 
 
 def _nice_step(span: float) -> float:
@@ -89,18 +115,22 @@ class Curve:
     """One line: a key (unit id, or GROUP), its legend name, colour (None
     for the pane's text colour), (x seconds, dps) points, style, and the
     panel it is drawn in."""
-    __slots__ = ('key', 'name', 'color', 'points', 'width', 'dashed', 'panel')
+    __slots__ = ('key', 'name', 'color', 'points', 'width', 'style', 'panel')
 
     def __init__(self, key: str, name: str, color: Optional[QColor],
                  points: List[Tuple[float, float]], width: float = LINE_WIDTH,
-                 dashed: bool = False, panel: int = PLAYER_PANEL):
+                 style=Qt.SolidLine, panel: int = PLAYER_PANEL):
         self.key = key
         self.name = name
         self.color = color
         self.points = points
         self.width = width
-        self.dashed = dashed
+        self.style = style
         self.panel = panel
+
+    @property
+    def dashed(self) -> bool:
+        return self.style != Qt.SolidLine
 
     def value_at(self, t: float) -> Optional[float]:
         """The curve's dps at second *t*: the nearest point within a
@@ -139,6 +169,10 @@ class DpsGraph(QWidget):
             self._y_step[panel] = step
             self._y_top[panel] = max(step, math.ceil(peak / step) * step)
         self.hover_second = None
+        # What a screen reader hears for the painted chart (issue #77): the
+        # lines drawn, each with its dps at the end of the fight
+        self.setAccessibleDescription("; ".join(
+            f"{c.name} {_fmt_dps(c.points[-1][1])} at the end" for c in self._curves))
         self.update()
 
     @property
@@ -156,9 +190,9 @@ class DpsGraph(QWidget):
 
     def _plot_rect(self) -> QRectF:
         """The whole plotting area, every panel and the gaps between."""
-        return QRectF(MARGIN_LEFT, MARGIN_TOP,
-                      max(1.0, self.width() - MARGIN_LEFT - MARGIN_RIGHT),
-                      max(1.0, self.height() - MARGIN_TOP - MARGIN_BOTTOM))
+        return QRectF(scaled_px(MARGIN_LEFT), scaled_px(MARGIN_TOP),
+                      max(1.0, self.width() - scaled_px(MARGIN_LEFT) - scaled_px(MARGIN_RIGHT)),
+                      max(1.0, self.height() - scaled_px(MARGIN_TOP) - scaled_px(MARGIN_BOTTOM)))
 
     def _panel_rect(self, panel: int) -> QRectF:
         plot = self._plot_rect()
@@ -254,7 +288,8 @@ class DpsGraph(QWidget):
             painter.setPen(QPen(grid, 1))
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             painter.setPen(dim)
-            painter.drawText(QRectF(0, y - metrics.height() / 2, MARGIN_LEFT - 8, metrics.height()),
+            painter.drawText(QRectF(0, y - metrics.height() / 2,
+                                    scaled_px(MARGIN_LEFT) - 8, metrics.height()),
                              Qt.AlignRight | Qt.AlignVCenter, _fmt_dps(value))
             value += step
         painter.setPen(QPen(dim, 1))
@@ -268,8 +303,7 @@ class DpsGraph(QWidget):
         painter.save()
         painter.setClipRect(rect.adjusted(-2, -2, 2, 2))
         for curve in curves:
-            pen = QPen(curve.color or text, curve.width,
-                       Qt.DashLine if curve.dashed else Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            pen = QPen(curve.color or text, curve.width, curve.style, Qt.RoundCap, Qt.RoundJoin)
             painter.setPen(pen)
             path = QPainterPath()
             for i, (t, y) in enumerate(curve.points):
@@ -295,7 +329,7 @@ class DpsGraph(QWidget):
                 painter.drawLine(QPointF(rect.right() + 4, y), QPointF(rect.right() + 14, y))
                 painter.setPen(text)
                 painter.drawText(QRectF(rect.right() + 18, y - metrics.height() / 2,
-                                        MARGIN_RIGHT - 20, metrics.height()),
+                                        scaled_px(MARGIN_RIGHT) - 20, metrics.height()),
                                  Qt.AlignLeft | Qt.AlignVCenter, _fmt_dps(curve.points[-1][1]))
 
     # ---- hover ----
@@ -337,13 +371,13 @@ class DpsGraph(QWidget):
         super().leaveEvent(event)
 
 
-def _line_icon(color: QColor, dashed: bool) -> QIcon:
-    """A short stroke of the series colour, the legend's key."""
+def _line_icon(color: QColor, style=Qt.SolidLine) -> QIcon:
+    """A short stroke of the series colour and stroke, the legend's key."""
     pixmap = QPixmap(28, 12)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setPen(QPen(color, 3, Qt.DashLine if dashed else Qt.SolidLine, Qt.RoundCap))
+    painter.setPen(QPen(color, 3, style, Qt.RoundCap))
     painter.drawLine(QPointF(3, 6), QPointF(25, 6))
     painter.end()
     return QIcon(pixmap)
@@ -367,6 +401,8 @@ class DpsGraphDialog(QDialog):
         self.setWindowTitle("DPS over time")
         self.resize(1040, 640)
         self._shown = None  # (entry, dark) on display
+        # The colour-blind series set and strokes (Settings → Display)
+        self.colorblind = False
         self._checked: Dict[str, bool] = {}  # legend choices by key, kept across fights
         self._players: List[Tuple[str, str, int]] = []  # (unit id, name, rank)
 
@@ -376,9 +412,10 @@ class DpsGraphDialog(QDialog):
         layout.addWidget(self.header)
         middle = QHBoxLayout()
         self.graph = DpsGraph()
+        self.graph.setAccessibleName("DPS over time")
         middle.addWidget(self.graph, 1)
         self.legend = QListWidget()
-        self.legend.setFixedWidth(LEGEND_WIDTH)
+        self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
         self.legend.itemChanged.connect(self._on_legend_changed)
         middle.addWidget(self.legend)
         layout.addLayout(middle, 1)
@@ -437,7 +474,7 @@ class DpsGraphDialog(QDialog):
         text_color = self.palette().color(QPalette.Text)
         boss_fight = float(getattr(entry, "group_boss_dps", 0) or 0) > 0
         self._players = []
-        group = QListWidgetItem(_line_icon(text_color, False), self._legend_label(
+        group = QListWidgetItem(_line_icon(text_color), self._legend_label(
             GROUP, entry.group_boss_dps, entry.group_dps, boss_fight))
         group.setData(Qt.UserRole, GROUP)
         group.setFlags(group.flags() | Qt.ItemIsUserCheckable)
@@ -449,7 +486,8 @@ class DpsGraphDialog(QDialog):
             # Hide names mask, so a hidden player reads as blocks there too
             name = names.text(_join(p.get("name", ""))) or unit_id
             self._players.append((unit_id, name, rank))
-            item = QListWidgetItem(_line_icon(series_color(rank, dark), rank >= MAX_HUES),
+            item = QListWidgetItem(_line_icon(series_color(rank, dark, self.colorblind),
+                                              series_style(rank, self.colorblind)),
                                    self._legend_label(name, p.get("boss_dps"), p.get("dps"),
                                                       boss_fight))
             item.setData(Qt.UserRole, unit_id)
@@ -504,9 +542,24 @@ class DpsGraphDialog(QDialog):
             points = _curve_points(damage.get("boss_series" if boss else "series"),
                                    damage.get("boss_window" if boss else "window"),
                                    mode_window, duration)
-            curves.append(Curve(unit_id, name, series_color(rank, dark), points,
-                                LINE_WIDTH, rank >= MAX_HUES, PLAYER_PANEL))
+            curves.append(Curve(unit_id, name, series_color(rank, dark, self.colorblind), points,
+                                LINE_WIDTH, series_style(rank, self.colorblind), PLAYER_PANEL))
         self.graph.set_curves(curves, duration)
+
+    def changeEvent(self, event):
+        # A new text size: the legend's names are wider, so is its column
+        if event.type() == QEvent.FontChange:
+            self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
+        super().changeEvent(event)
+
+    def set_colorblind(self, on: bool) -> None:
+        """Switch the series set; a graph on display is redrawn with it."""
+        if bool(on) == self.colorblind:
+            return
+        self.colorblind = bool(on)
+        if self._shown is not None:
+            entry, dark, names = self._shown
+            self.show_graph(entry, dark, names=names)
 
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the series colours follow it) or

@@ -49,6 +49,7 @@ from damage_kinds import (
 )
 from death_recap import RECAP_WINDOW_MS
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
 SKULL = "☠"
@@ -115,7 +116,7 @@ _THEMES = {
         "damage": "#c62828",
         "heal": "#2e7d32",
         "shield": "#1565c0",
-        "health": ("#2e7d32", "#8a6d00", "#b25a00", "#c62828"),
+        "health": ("#2e7d32", "#856900", "#aa5600", "#c62828"),
         "chip_fg": "#ffffff",
         "chip_bg": "#c62828",
         "rule": "#d6d9dc",
@@ -425,7 +426,7 @@ def fight_block_html(player: Optional[dict], theme: dict, icons, e, names,
                 f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
         parts.append(
             "<table cellpadding='3' cellspacing='0' width='99%'>"
-            f"<tr><td width='{ICON_PX}' {head}></td><td width='24%' {head}>Ability</td>"
+            f"<tr><td width='{scaled_px(ICON_PX)}' {head}></td><td width='24%' {head}>Ability</td>"
             f"<td width='10%' align='right' {head}>Damage</td>"
             f"<td width='6%' align='right' {head}>%</td>"
             f"<td {head}>Kind</td><td width='18%' {head}>Source</td></tr>")
@@ -435,7 +436,7 @@ def fight_block_html(player: Optional[dict], theme: dict, icons, e, names,
             source = str(row.get("source") or "")
             damage = int(row.get("damage") or 0)
             cells = (
-                (f" width='{ICON_PX}'", icon),
+                (f" width='{scaled_px(ICON_PX)}'", icon),
                 ("", e(str(row.get("name", "")))),
                 (" align='right'", f"<span style='color:{theme['damage']}'>{damage:,}</span>"),
                 (" align='right'", f"{round(100.0 * damage / summary['total'])}%"),
@@ -527,8 +528,8 @@ def _icon_html(row: dict, icons) -> str:
     stem = str(row.get("icon") or "")
     if icons is None or not icons.has(stem):
         return ""
-    return (f'<img src="icon:{stem}" width="{ICON_PX}" height="{ICON_PX}" '
-            f'style="vertical-align:middle">')
+    return (f'<img src="icon:{stem}" width="{scaled_px(ICON_PX)}" height="{scaled_px(ICON_PX)}" '
+            f'alt="" style="vertical-align:middle">')
 
 
 def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
@@ -585,7 +586,7 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         cells = (
             (" align='right'", f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
             (" align='right'", "", _health_html(row, theme)),
-            (f" width='{ICON_PX}'", "", icon),
+            (f" width='{scaled_px(ICON_PX)}'", "", icon),
             (" width='20%'", bold, e(str(row.get("ability", "")))),
             ("", bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
             (" align='right'", bold, _amount_html(row, theme)),

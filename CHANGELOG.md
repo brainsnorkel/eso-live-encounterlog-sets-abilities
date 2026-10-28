@@ -10,6 +10,22 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Changed
 - **Detail view is Ctrl+D, and Tab moves the focus** (#77): Tab used to toggle Detail view, so a keyboard user could not leave the fight list; Tab and Shift+Tab now move between the fight list, the search field and the fight pane, and Ctrl+D toggles Detail view from any of them, the search field included. The toolbar button's hover names the key, and the user guide lists the keys under **Keyboard**
 
+### Added
+- **Text size** (#77): Settings → Display has a slider from 80% to 200% of the system's text, and Ctrl+=, Ctrl+- and Ctrl+0 step it from any of the app's windows. It is saved and applies to the whole app at once: the fight list, the fight pane and every window are redrawn at the new size, and the timeline strip's rows, label column and axis, the DPS graph's margins and legend, and the ability icons in every page grow with it (never shrinking below their size at 100%). Settings' helper lines and the rule editor follow it too, and Settings scrolls sideways if a line no longer fits the screen
+- The bundled ability icons are the game's own 64 px rather than 40 px, so they stay sharp at a large text size or on a high-DPI screen; the icon folder grows from 15 MB to 25 MB
+
+- **Colour-blind DPS graph** (#77): Settings → Display → *Colour-blind colours and line styles in the DPS graph*, off by default. The lines take Paul Tol's 'bright' colours, adjusted for each theme so every line stands 3:1 against the graph, and each player in turn is drawn solid, dashed, dotted or dash-dotted. The closest two colours measure 9.8 (light) and 13.1 (dark) in CIEDE2000 for normal vision and each kind of colour blindness simulated, where the default colours measure 5 and 2 for red-blindness
+
+- **Screen readers** (#77): the fight pane and every window built like it (build, damage, damage taken, death recap) give a screen reader their text with each image read as words: an ability icon on a bar as the ability's name, the clickable glyphs as "DPS graph", "damage breakdown" and "damage taken", a hidden name as "hidden name" (Qt reads every image as an empty object otherwise). The timeline strip reads each row's label and whose effect it is, with "expected but not up" for a red row, and the DPS graph each drawn line with its dps at the end; the fight list, the search field and the fight pane are named
+- The user guide has an **Accessibility** section (#77): the keys, text size, colour, colour blindness, screen readers and motion in one place, and what is not yet checked; the README lists it, and the guide's pictures are retaken with the new Display settings and colours
+- **Reduce motion** (#77): Settings → Display; the ring on a taunt skill's icon stays still instead of pulsing
+
+### Changed
+- **Clearer colours on the light theme** (#77): the timeline strip's bars were the same pale tints in both themes and measured 1.3:1 (Major Courage) to 2.8:1 against the light window; each is now a darker shade of its hue there, 3:1 or more, and follows a live theme switch. Text under 4.5:1 is darkened a step: the link blue, the veteran and stale orange, the Trash, Legendary and Mythic gear qualities, the death recap's health colours, and Settings' grey and orange helper lines (now the theme's own muted and warning colours, in the dark theme too). A unit test pins every text colour at 4.5:1 and every bar at 3:1 against both themes
+
+### Fixed
+- The build window's Front, Back, Werewolf and Other labels no longer break a letter per line when the window is narrow or the text large
+
 ## [0.22.0] - 2026-10-28
 
 From the speed, memory and disk review (#105).

@@ -71,6 +71,7 @@ from typing import List, Optional, Tuple
 from ability_icons import slugify
 from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
 
@@ -115,6 +116,10 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # since any player takes damage, in the link colour like the (i)
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
+# What a screen reader says for each glyph (its alt text; FightView reads
+# alt text out in place of the image, issue #77)
+GLYPH_ALT = {GRAPH_GLYPH: "DPS graph", BREAKDOWN_GLYPH: "damage breakdown",
+             TAKEN_GLYPH: "damage taken"}
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -143,8 +148,9 @@ _THEMES = {
         "text": "#202124",
         "muted": "#5f6368",
         "detail": "#3c4043",
-        "vet": "#b25a00",
-        "link": "#1a73e8",
+        # 4.5:1 or more on the light window as well as the white page (#77)
+        "vet": "#aa5600",
+        "link": "#166ad8",
         "roles": {"T": "#1565c0", "H": "#2e7d32", "D": "#c62828"},
         "frame_border": "#d6d9dc",
         "frame_bg": "#f6f7f8",
@@ -215,7 +221,7 @@ def glyph_html(kind: str, color: str, px: int) -> str:
     """The <img> of a link glyph (see gui.glyphs) in *color* ('#rrggbb'),
     *px* pixels square."""
     return (f'<img src="{GLYPH_SCHEME}:{kind}?color={color.lstrip("#")}&amp;px={px}" '
-            f'style="vertical-align:middle">')
+            f'alt="{GLYPH_ALT.get(kind, "")}" style="vertical-align:middle">')
 
 
 def damage_href(unit_id) -> str:
@@ -654,16 +660,18 @@ def _taunt_mark(slot: dict, taunt_color: Optional[str]) -> str:
     return taunt_color if taunt_color and slot.get("taunt") else ""
 
 
-def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
+def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
               taunt_color: Optional[str] = None) -> str:
     """One ability bar. Slots render as icons where the cache has them and as
     names otherwise, each inside an anchor; the ultimate sits apart: the
     sixth slot, or one marked 'ultimate' (a rebuilt werewolf bar can have
     fewer than five skills). With no icon cache the bar is the plain joined
     name list.
-    px: the icons' edge (the build window draws them larger). taunt_color:
+    px: the icons' edge (the build window draws them larger; None, the
+    pane's ICON_PX at the text size in force). taunt_color:
     an ability the player taunted with gets a ring of it on its icon (see
     the view's loadResource) or its name in it."""
+    px = px or scaled_px(ICON_PX)
     if icons is None or not slots:
         if slots and any(_taunt_mark(slot, taunt_color) for slot in slots):
             return _join([
@@ -677,8 +685,9 @@ def _bar_html(slots, names, icons, links, e, px: int = ICON_PX,
         mark = _taunt_mark(slot, taunt_color)
         if icons.has(stem):
             ring = f"?ring={mark.lstrip('#')}" if mark else ""
+            # The ability's name as its alt text: the icon stands alone
             body = (f'<img src="icon:{stem}{ring}" width="{px}" height="{px}" '
-                    f'style="vertical-align:middle">')
+                    f'alt="{e(str(slot.get("name", "")), quote=True)}" style="vertical-align:middle">')
         elif mark:
             body = f"<span style='color:{mark};font-weight:bold'>{e(str(slot.get('name', '')))}</span>"
         else:
@@ -709,7 +718,7 @@ def form_share_text(share) -> str:
     return "in form <1%" if 0 < pct < 1 else f"in form {pct:.0f}%"
 
 
-def werewolf_bar_html(p, icons, links, e, theme, px: int = ICON_PX) -> str:
+def werewolf_bar_html(p, icons, links, e, theme, px: Optional[int] = None) -> str:
     """The rebuilt werewolf bar and 'in form 100%' for a player who spent
     some of the fight in werewolf form, '' for any other."""
     share = p.get("werewolf_share")
@@ -792,8 +801,8 @@ def _scribed_html(p, icons, links, script_links, e, color: str) -> str:
     chunks = []
     for slot in _scribed_slots(p):
         stem = str(slot.get("icon") or "")
-        icon = (f'<img src="icon:{stem}" width="{SCRIBED_ICON_PX}" '
-                f'height="{SCRIBED_ICON_PX}" style="vertical-align:middle">&nbsp;'
+        icon = (f'<img src="icon:{stem}" width="{scaled_px(SCRIBED_ICON_PX)}" '
+                f'height="{scaled_px(SCRIBED_ICON_PX)}" alt="" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         name = anchor(e(str(slot.get("name", ""))), _ability_href(slot, links))
         scripts = []
