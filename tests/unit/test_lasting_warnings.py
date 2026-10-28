@@ -26,7 +26,55 @@ class _FullDisk:
         pass
 
 
+class _FlushFails(_FullDisk):
+    """Writes into the buffer go through; the flush to disk fails, which is
+    how a full disk usually shows."""
+
+    def write(self, text):
+        pass
+
+    def flush(self):
+        raise OSError(28, 'No space left on device')
+
+
 class TestSplitWriteWarning(unittest.TestCase):
+
+    def test_a_failing_flush_warns_and_a_good_one_clears(self):
+        lines = [line for line in FIXTURE.read_text(encoding='utf-8').splitlines()
+                 if ',END_LOG' not in line]
+        # After BEGIN_COMBAT, where the split is renamed and reopened (which
+        # would replace the failing handle)
+        third = next(i for i, line in enumerate(lines) if ',BEGIN_COMBAT' in line) + 3
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'Encounter.log'
+            log.write_bytes(b'')
+            recorder = RecordingListener()
+            analyzer = ESOLogAnalyzer()
+            analyzer.fight_history = FightHistory()
+            analyzer.add_listener(recorder)
+            monitor = LogFileMonitor(analyzer, log, tail_and_split=True,
+                                     split_dir=Path(tmp) / 'splits')
+            splitter = monitor.log_splitter
+
+            def batch(part):
+                with open(log, 'a', encoding='utf-8') as f:
+                    f.write(''.join(line + '\n' for line in part))
+                monitor._process_new_lines()
+
+            try:
+                batch(lines[:third])  # the split file is open from here
+                # ...and before END_COMBAT, which closes the split
+                end = next(i for i, line in enumerate(lines) if ',END_COMBAT' in line)
+                real, splitter.file_handle = splitter.file_handle, _FlushFails()
+                batch(lines[third:end - 1])
+                warnings = recorder.of_kind('warning')
+                self.assertEqual(len(warnings), 1)
+                self.assertIn('No space left on device', warnings[0][2])
+                splitter.file_handle = real
+                batch(lines[end - 1:])
+                self.assertEqual(recorder.of_kind('warning')[-1], ('warning', 'split', None))
+            finally:
+                splitter.cleanup()
 
     def test_warned_once_and_cleared_when_writing_works_again(self):
         lines = [line for line in FIXTURE.read_text(encoding='utf-8').splitlines()
