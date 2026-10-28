@@ -79,7 +79,11 @@ class TestSplitWriteWarning(unittest.TestCase):
     def test_warned_once_and_cleared_when_writing_works_again(self):
         lines = [line for line in FIXTURE.read_text(encoding='utf-8').splitlines()
                  if ',END_LOG' not in line]
-        third = len(lines) // 3
+        # The failing handle goes in after BEGIN_COMBAT (where the split is
+        # renamed and reopened) and out before END_COMBAT (which closes it):
+        # either would replace it, on some platforms and not others
+        start = next(i for i, line in enumerate(lines) if ',BEGIN_COMBAT' in line) + 3
+        end = next(i for i, line in enumerate(lines) if ',END_COMBAT' in line)
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'Encounter.log'
             log.write_bytes(b'')
@@ -96,17 +100,17 @@ class TestSplitWriteWarning(unittest.TestCase):
                         f.write(''.join(line + '\n' for line in part))
                     monitor._process_new_lines()
 
-                batch(lines[:third])
+                batch(lines[:start])
                 self.assertEqual(recorder.of_kind('warning'), [])
                 real, splitter.file_handle = splitter.file_handle, _FullDisk()
-                batch(lines[third:2 * third])
-                batch(lines[2 * third:2 * third + 2])  # still failing: no second warning
+                batch(lines[start:end - 2])
+                batch(lines[end - 2:end - 1])  # still failing: no second warning
                 warnings = recorder.of_kind('warning')
                 self.assertEqual(len(warnings), 1)
                 self.assertEqual(warnings[0][1], 'split')
                 self.assertIn('No space left on device', warnings[0][2])
                 splitter.file_handle = real
-                batch(lines[2 * third + 2:])
+                batch(lines[end - 1:])
                 self.assertEqual(recorder.of_kind('warning')[-1], ('warning', 'split', None))
             finally:
                 splitter.cleanup()
