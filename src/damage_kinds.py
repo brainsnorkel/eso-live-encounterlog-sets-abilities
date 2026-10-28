@@ -33,7 +33,7 @@ the encounter log carries three of them on every COMBAT_EVENT line:
   summed. IMMUNE and REFLECTED are not counted.
 - **Healing.** HEAL and CRITICAL_HEAL are direct heals, HOT_TICK and
   HOT_TICK_CRITICAL heals over time (Focused Mending, Swift Renewal); the hit
-  value landed and the overflow is overheal (1.17B landed against 12.4B
+  value is healing received and the overflow is overheal (1.17B received against 12.4B
   overheal in the survey; 3.1M of 3.6M heal lines were pure overheal).
   HEAL_ABSORBED is healing a healing-absorb effect ate. The killing blow's
   overflow is overkill (written on 6,039 of 6,398 killing blows; a blow
@@ -66,7 +66,7 @@ by map, and no Warfare star reads it.
 A session's cast index and a fight's damage-taken tallies cost a few
 dictionaries: the (source, cast) map is cleared at each fight's end, the
 per-ability memory with the zone session (unit ids start over), and a cast's
-pending amounts are dropped the moment its second target lands.
+pending amounts are dropped the moment it hits a second target.
 """
 
 import json
@@ -295,7 +295,7 @@ class TakenTally:
         self.first_ms: int | None = None
         self.last_ms: int | None = None
         # ability id -> its row; (source, cast) -> [(ability id, amount)]
-        # counted as single until the cast's second target lands
+        # counted as single until the cast hits a second target
         self.abilities: dict[str, dict] = {}
         self._pending: dict[tuple[str, str], list[tuple[str, int]]] = {}
         # For the damage taken window (issue #98): every result line
@@ -397,7 +397,7 @@ class TakenTally:
                 pending.append((ability_id, hit))
 
     def _cast_became_area(self, key: tuple[str, str]) -> None:
-        """The cast's second target landed: its earlier hits were area."""
+        """The cast hit a second target: its earlier hits were area."""
         source = self.sources.get(key[0])
         for ability_id, hit in self._pending.pop(key, ()):
             self.single -= hit
@@ -417,7 +417,7 @@ class TakenTally:
                    ability_id: str = "", self_source: bool = False,
                    pet_owner: str = "") -> None:
         """A recap-result line that did not reach health: a shield absorb,
-        an avoided hit, a heal (landed and overheal), an absorbed heal.
+        an avoided hit, a heal (received and overheal), an absorbed heal.
 
         A heal with a *source_id* is kept by healer and ability for the
         damage taken window: *self_source* when the player healed
@@ -536,10 +536,10 @@ class TakenTally:
         return out
 
     def _healers_snapshot(self, name_of, icon_of, unit_name_of) -> list[dict]:
-        """The healing by the unit that did it, by landed amount: a pet's
+        """The healing by the unit that did it, by amount received: a pet's
         row is named after its owner and marked 'pet'; the unit the log
         leaves unnamed is the 'unnamed' row; each healer's abilities by
-        landed amount."""
+        amount received."""
         out = []
         for healer_id, healer in self.healers.items():
             unnamed = healer_id == "0"
@@ -611,7 +611,7 @@ def summary_of_rows(rows: list[dict], overheal: int | None = None) -> dict:
     (time: direct/dot, target: area/single, school: martial/magical), the
     damage types largest first, the amounts outside the two schools
     (oblivion, fall, drowning, untyped), what got through while blocking,
-    what shields absorbed, hits avoided, healing landed (direct and over
+    what shields absorbed, hits avoided, healing received (direct and over
     time) against overheal, absorbed healing and the killing blow's overkill.
     *overheal* is the recap's own sum when it kept one (pure overheals are
     not rows); else the rows' heal overflow is summed."""

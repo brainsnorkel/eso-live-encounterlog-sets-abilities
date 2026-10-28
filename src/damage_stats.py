@@ -76,6 +76,7 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 0.04%, in the 1.3 s after END_COMBAT 0.02%.
 """
 
+from array import array
 from collections import Counter
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -117,6 +118,54 @@ def series_of(buckets: Dict[int, int], origin_ms: Optional[int] = None) -> List[
     the fight's start; log seconds when none), each bucket a second long."""
     origin = (origin_ms or 0) / 1000.0
     return sorted([float(second) - origin, damage] for second, damage in buckets.items())
+
+
+class Series:
+    """A series_of result as a fight entry keeps it (issue #110): the same
+    [t, damage] pairs, read the same way (iterated, indexed, compared with
+    the list form), held in two arrays. A pair as a list of a float and an
+    int is about 124 bytes; here it is 16, and the values are the same
+    (doubles and 64-bit integers). Every player has two series per fight,
+    a second each, which was a ninth of the per-player data of a trial
+    night. Damage that is not a whole number keeps the list form."""
+    __slots__ = ('_t', '_d')
+    __hash__ = None
+
+    def __init__(self, pairs=()):
+        self._t = array('d')
+        self._d = array('q')
+        for t, d in pairs:
+            self._t.append(t)
+            self._d.append(d)
+
+    def __len__(self):
+        return len(self._t)
+
+    def __iter__(self):
+        for t, d in zip(self._t, self._d):
+            yield [t, d]
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [[t, d] for t, d in zip(self._t[index], self._d[index])]
+        return [self._t[index], self._d[index]]
+
+    def __eq__(self, other):
+        try:
+            return list(self) == [list(pair) for pair in other]
+        except TypeError:
+            return NotImplemented
+
+    def __repr__(self):
+        return repr(list(self))
+
+
+def compact_series(series: List[List[float]]):
+    """*series* as a Series, or as it is when a damage is not an int."""
+    try:
+        return Series(series)
+    except TypeError:
+        return series
 
 
 def per_second(series: List[List[float]], duration_s: float) -> List[int]:
@@ -314,8 +363,8 @@ class PlayerDamage:
         self.kinds: Dict[str, object] = {
             'direct': 0, 'dot': 0, 'area': 0, 'single': 0, 'martial': 0, 'magical': 0,
             'oblivion': 0, 'other': 0, 'shielded': 0, 'types': Counter(), 'rules': Counter()}
-        # cast key -> [(rows, hit)] counted single until the cast's second
-        # target lands and the watcher moves them to area
+        # cast key -> [(rows, hit)] counted single until the cast hits a second
+        # target and the watcher moves them to area
         self._pending: Dict[tuple, List[Tuple[tuple, int]]] = {}
 
     def note(self, ts: int, hit: int, result: str, ability_id: str, pet: bool,
@@ -373,7 +422,7 @@ class PlayerDamage:
                 pending.append((rows, hit))
 
     def _cast_became_area(self, cast_key) -> None:
-        """The cast's second target landed: its earlier hits were area."""
+        """The cast hit a second target: its earlier hits were area."""
         kinds = self.kinds
         for rows, hit in self._pending.pop(cast_key, ()):
             kinds['single'] -= hit
@@ -421,8 +470,8 @@ class PlayerDamage:
             'boss_window': self.boss_window.as_dict(origin_ms),
             'abilities': rows(self.abilities), 'boss_abilities': rows(self.boss_abilities),
             'targets': targets,
-            'series': series_of(self.buckets, origin_ms),
-            'boss_series': series_of(self.boss_buckets, origin_ms),
+            'series': compact_series(series_of(self.buckets, origin_ms)),
+            'boss_series': compact_series(series_of(self.boss_buckets, origin_ms)),
             # The kinds of the damage, for the build window (damage_kinds)
             'kinds': self.kinds_snapshot(),
         }
@@ -478,8 +527,8 @@ class FightDamage:
         the series for all targets and for the bosses, and the spans the
         running figures start and end at (see series_of, Window.as_dict)."""
         return {
-            'all': series_of(self.buckets, origin_ms),
-            'boss': series_of(self.boss_buckets, origin_ms),
+            'all': compact_series(series_of(self.buckets, origin_ms)),
+            'boss': compact_series(series_of(self.boss_buckets, origin_ms)),
             'window': self.window.as_dict(origin_ms),
             'boss_window': self.boss_window.as_dict(origin_ms),
         }

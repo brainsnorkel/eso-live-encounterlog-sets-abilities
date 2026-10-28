@@ -33,7 +33,7 @@ The last row, "Armour" (issue #55, pen_crit.armour_row), is not an effect
 but an estimate: the target's armour (18,200 in an instance, 9,100
 overland, 27,300 on a solo dungeon's boss) less the group's armour debuffs
 on it, second by second, drawn by height like Touch of Z'en's row so the
-bar drops as Breach, Crusher and Alkosh land and climbs back as they fall
+bar drops as Breach, Crusher and Alkosh are applied and climbs back as they fall
 off; the label carries the estimate and the time-averaged remainder. The
 row's intervals carry the debuffs' names and sum for the hover, and its
 click summary is its own (the sources-and-receivers popup makes no sense
@@ -73,11 +73,15 @@ from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 from effect_rules import DOTS_CAP
 from effect_summary import matrix, summarise
 from gui.name_mask import NO_MASK
+from gui.text_size import scale as text_scale, scaled_px
 
 EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
                 "Major Berserk", "Powerful Assault", "Major Vulnerability",
                 "Taunt"]
 
+# Each row's colour on a dark pane; on a light one the same hue darkened
+# until the bar stands 3:1 or more against the window (issue #77: the
+# Material 300 tints measured 1.3 to 2.8 there). row_color picks by theme
 EFFECT_COLORS = {
     "Major Slayer": QColor("#e57373"),
     "Major Force": QColor("#64b5f6"),
@@ -87,6 +91,16 @@ EFFECT_COLORS = {
     "Major Vulnerability": QColor("#4db6ac"),
     "Taunt": QColor("#9575cd"),
 }
+EFFECT_COLORS_LIGHT = {
+    "Major Slayer": QColor("#e15b5b"),
+    "Major Force": QColor("#0e8aee"),
+    "Major Courage": QColor("#a88000"),
+    "Major Berserk": QColor("#ba68c8"),
+    "Powerful Assault": QColor("#fe3d00"),
+    "Major Vulnerability": QColor("#3d958d"),
+    "Taunt": QColor("#9575cd"),
+}
+DEFAULT_ROW_COLORS = {False: QColor("#878787"), True: QColor("#9e9e9e")}
 
 EFFECT_SHORT = {
     "Major Slayer": "M.Slayer",
@@ -106,6 +120,8 @@ SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 # a height that follows the stack count over the fight's peak
 TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
                   QColor("#a1887f"), QColor("#90a4ae"), QColor("#ffb74d")]
+TRACKED_COLORS_LIGHT = [QColor("#ee4880"), QColor("#1c95a5"), QColor("#669331"),
+                        QColor("#9c8178"), QColor("#718b97"), QColor("#c27400")]
 # The label of an expected row that never came: dark red on a light pane, a
 # lighter red on a dark one (keyed by whether the pane is dark)
 MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
@@ -124,6 +140,8 @@ SPARSE_RECEIVER_LIMIT = 2
 SPARSE_BASE_ALPHA = 0.35
 SPARSE_HATCH_STEP = 8
 
+# Pixel sizes at 100% text; each grows with a larger text size
+# (gui.text_size.scaled_px), so the labels painted in the rows still fit
 ROW_HEIGHT = 10
 ROW_GAP = 2
 AXIS_HEIGHT = 14
@@ -248,6 +266,9 @@ class TimelineStrip(QWidget):
         self._names = NO_MASK  # the Hide names mask for the hover and the pop-ups
         self.setVisible(False)
         self.setCursor(Qt.PointingHandCursor)
+        # A painted widget is an empty one to a screen reader: its rows are
+        # given as text (issue #77, accessible_text)
+        self.setAccessibleName("Buff timeline")
 
     # ---- data ----
 
@@ -300,7 +321,7 @@ class TimelineStrip(QWidget):
                     # What the rule measured this fight: its scope, or the
                     # pack's mobs for a boss rule in a fight without a boss
                     "scope": item.get("units") or item.get("scope", ""),
-                    "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
+                    "tracked_index": index,
                     # A stacking rule's bar is as high as its count over the
                     # peak; a dots rule's over Z'en's five, where 0 is a level
                     "stacks_max": (DOTS_CAP if item.get("kind") == "dots"
@@ -321,7 +342,6 @@ class TimelineStrip(QWidget):
                     "sparse": False,
                     "label": armour.get("label", name),
                     "scope": armour.get("scope", "boss"),
-                    "color": self.armour_color(),
                     "stacks_max": int(armour["stacks_max"]),
                     "zero_level": True,
                     "armour": armour,
@@ -329,9 +349,22 @@ class TimelineStrip(QWidget):
                 debuffs.append(name)
         self._rows = buffs + debuffs
         self._divider = len(buffs) if buffs and debuffs else None
+        self.setAccessibleDescription(self.accessible_text())
         self.setVisible(bool(self._rows))
         self.updateGeometry()
         self.update()
+
+    def accessible_text(self) -> str:
+        """Each row as a screen reader should hear it, one per line: its
+        whole label and whose effect it is, and 'not up' for an expected
+        effect that never came (painted in red)."""
+        lines = []
+        for effect in self._rows:
+            info = self._row_info.get(effect, {})
+            line = " ".join(part for part in (self._full_label(effect, info), info.get("scope", ""))
+                            if part)
+            lines.append(f"{line}, expected but not up" if info.get("missing") else line)
+        return "\n".join(lines)
 
     def _intervals(self, effect):
         """The intervals of a row, built-in or tracked."""
@@ -344,11 +377,11 @@ class TimelineStrip(QWidget):
     def _strip_height(self) -> int:
         if not self._rows:
             return 0
-        return MARGIN + self._rows_height() + AXIS_HEIGHT + MARGIN
+        return MARGIN + self._rows_height() + scaled_px(AXIS_HEIGHT) + MARGIN
 
     def _rows_height(self) -> int:
         """The rows' height, the divider between buffs and debuffs included."""
-        return (len(self._rows) * (ROW_HEIGHT + ROW_GAP)
+        return (len(self._rows) * (scaled_px(ROW_HEIGHT) + ROW_GAP)
                 + (DIVIDER_GAP if self._divider is not None else 0))
 
     def sizeHint(self):
@@ -360,7 +393,7 @@ class TimelineStrip(QWidget):
         return QSize(200, self._strip_height())
 
     def _track_rect(self) -> QRectF:
-        left = LABEL_WIDTH + SCOPE_WIDTH
+        left = scaled_px(LABEL_WIDTH) + scaled_px(SCOPE_WIDTH)
         return QRectF(left, MARGIN,
                       max(1, self.width() - left - MARGIN),
                       self._rows_height())
@@ -368,8 +401,8 @@ class TimelineStrip(QWidget):
     def _row_rect(self, row: int) -> QRectF:
         track = self._track_rect()
         below = DIVIDER_GAP if self._divider is not None and row >= self._divider else 0
-        return QRectF(track.left(), MARGIN + row * (ROW_HEIGHT + ROW_GAP) + below,
-                      track.width(), ROW_HEIGHT)
+        return QRectF(track.left(), MARGIN + row * (scaled_px(ROW_HEIGHT) + ROW_GAP) + below,
+                      track.width(), scaled_px(ROW_HEIGHT))
 
     def _divider_y(self):
         """The y of the line between the buff and the debuff rows, or None."""
@@ -429,14 +462,14 @@ class TimelineStrip(QWidget):
                 painter.setPen(dim)
                 painter.setFont(label_font)
             painter.drawText(QRectF(MARGIN, rect.top() - 1,
-                                    LABEL_WIDTH - 2 * MARGIN, rect.height() + 2),
+                                    scaled_px(LABEL_WIDTH) - 2 * MARGIN, rect.height() + 2),
                              Qt.AlignRight | Qt.AlignVCenter,
                              self._painted_label(effect, info, painter.fontMetrics()))
             painter.setPen(dim)
             painter.setFont(label_font)
             # Whose effect this row is
-            painter.drawText(QRectF(LABEL_WIDTH + 2, rect.top() - 1,
-                                    SCOPE_WIDTH - 4, rect.height() + 2),
+            painter.drawText(QRectF(scaled_px(LABEL_WIDTH) + 2, rect.top() - 1,
+                                    scaled_px(SCOPE_WIDTH) - 4, rect.height() + 2),
                              Qt.AlignLeft | Qt.AlignVCenter, info.get("scope", ""))
             # Track background
             painter.fillRect(rect, track_bg)
@@ -444,7 +477,7 @@ class TimelineStrip(QWidget):
             # buff reached <=2 receivers (paint_sparse_span); otherwise each
             # interval, a stacking rule's bar as high as its count over the
             # peak
-            color = info.get("color") or EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
+            color = self.row_color(effect)
             stacks_max = info.get("stacks_max", 0)
             if info.get("sparse"):
                 for start_ms, end_ms in merged_spans(self._intervals(effect)):
@@ -498,7 +531,8 @@ class TimelineStrip(QWidget):
         while ms <= duration:
             x = self._x_for_ms(ms)
             painter.drawLine(int(x), int(axis_y), int(x), int(axis_y + 3))
-            painter.drawText(QRectF(x - 24, axis_y + 2, 48, AXIS_HEIGHT - 2),
+            painter.drawText(QRectF(x - scaled_px(24), axis_y + 2,
+                                    scaled_px(48), scaled_px(AXIS_HEIGHT) - 2),
                              Qt.AlignHCenter | Qt.AlignTop, _fmt_tick(ms))
             ms += step
 
@@ -511,6 +545,23 @@ class TimelineStrip(QWidget):
         red, or a lighter red when the pane's background is dark."""
         dark = self.palette().color(self.backgroundRole()).lightness() < 128
         return MISSING_COLORS[dark]
+
+    def _dark(self) -> bool:
+        return self.palette().color(self.backgroundRole()).lightness() < 128
+
+    def row_color(self, effect: str) -> QColor:
+        """The bar colour of *effect*'s row in the pane's theme, read when
+        painting so a theme switch repaints in the other set: the Armour
+        row's own, a tracked rule's by its place in Settings, else the
+        built-in effect's."""
+        info = self._row_info.get(effect, {})
+        dark = self._dark()
+        if info.get("armour"):
+            return self.armour_color()
+        if "tracked_index" in info:
+            colors = TRACKED_COLORS if dark else TRACKED_COLORS_LIGHT
+            return colors[info["tracked_index"] % len(colors)]
+        return (EFFECT_COLORS if dark else EFFECT_COLORS_LIGHT).get(effect, DEFAULT_ROW_COLORS[dark])
 
     def armour_color(self) -> QColor:
         """The Armour row's blue-grey, lighter on a dark pane."""
@@ -528,7 +579,9 @@ class TimelineStrip(QWidget):
     def _label_font(self) -> QFont:
         """The small font the labels, scope words and ticks are painted in."""
         small = QFont(self.font())
-        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2))
+        # Two points under the pane's text at 100%, in proportion above it,
+        # so a label keeps fitting its row as both grow (gui.text_size)
+        small.setPointSizeF(max(6.5, self.font().pointSizeF() - 2 * text_scale()))
         return small
 
     def _full_label(self, effect: str, info: dict) -> str:
@@ -541,14 +594,15 @@ class TimelineStrip(QWidget):
         and anything wider than the label column cut with an ellipsis."""
         label = info.get("label") or (f"{EFFECT_SHORT.get(effect, effect)} "
                                       f"{info.get('uptime_pct', 0)}%")
-        return metrics.elidedText(label, Qt.ElideRight, int(LABEL_WIDTH - 2 * MARGIN))
+        return metrics.elidedText(label, Qt.ElideRight, int(scaled_px(LABEL_WIDTH) - 2 * MARGIN))
 
     def _label_at(self, pos):
         """(whole label, scope word) of the row whose label or scope word
         is under *pos*, or None."""
         for row, effect in enumerate(self._rows):
             rect = self._row_rect(row)
-            band = QRectF(0, rect.top() - 1, LABEL_WIDTH + SCOPE_WIDTH, rect.height() + 2)
+            band = QRectF(0, rect.top() - 1, scaled_px(LABEL_WIDTH) + scaled_px(SCOPE_WIDTH),
+                          rect.height() + 2)
             if band.contains(pos):
                 info = self._row_info.get(effect, {})
                 return self._full_label(effect, info), info.get("scope", "")
@@ -706,6 +760,14 @@ class TimelineStrip(QWidget):
                         if iv["start_ms"] <= ms <= iv["end_ms"]]
                 return effect, ms, hits
         return None
+
+    def changeEvent(self, ev):
+        # A new text size: the rows, the label column and the axis are
+        # sized from it, so the strip asks its layout for a new height
+        if ev.type() == QEvent.FontChange:
+            self.updateGeometry()
+            self.update()
+        super().changeEvent(ev)
 
     def event(self, ev):
         if ev.type() == QEvent.ToolTip:

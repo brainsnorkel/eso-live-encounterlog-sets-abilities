@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QColor, QDesktopServices, QGuiApplication, QKeySequence, QPalette,
+    QAction, QColor, QDesktopServices, QFont, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from gui import text_size
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import PEN_CRIT_ANCHOR, player_for
@@ -35,16 +36,18 @@ from gui.fight_render import (
     issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
     render_plain_text, summary_line, taken_tooltips,
 )
-from gui.fight_view import FightView
+from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
+from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
 from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
-from log_open import is_zip, log_members
+from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
+import review_load
 import split_retention
 from update_check import format_release_date
 from version import __version__
@@ -56,7 +59,7 @@ IDLE_SECONDS = 30 * 60
 # State colors per theme: dark backgrounds need lighter accents and vice versa
 _STATE_COLORS = {
     True: {"live": "#81c784", "idle": None, "stale": "#ffb74d", "none": "#e57373"},
-    False: {"live": "#2e7d32", "idle": None, "stale": "#b25a00", "none": "#c62828"},
+    False: {"live": "#2e7d32", "idle": None, "stale": "#aa5600", "none": "#c62828"},
 }
 
 
@@ -72,6 +75,18 @@ RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000
 class _RetentionBridge(QObject):
     """Carries a retention run's events from its thread to this one."""
     event = Signal(object)  # split_retention.RetentionEvent
+
+
+class _ReviewBridge(QObject):
+    """Carries a review's events from its thread to this one."""
+    event = Signal(object)  # gui.review_runner.ReviewEvent
+
+
+def _duration_text(seconds: float) -> str:
+    """'about 40 seconds', 'about 9 minutes' for a review's time estimate."""
+    if seconds < 90:
+        return f"about {max(10, round(seconds / 10) * 10)} seconds"
+    return f"about {round(seconds / 60)} minutes"
 
 
 def state_style(state: str, dark: bool) -> str:
@@ -140,10 +155,14 @@ class MainWindow(QMainWindow):
         # sharing. One state behind the toolbar button, Ctrl+H and the
         # Settings box, saved whenever it flips
         self._hide_names = bool(config.get("privacy.hide_names", False))
+        # The text size, before any widget is made, so all of them start at it
+        text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
+        set_reduce_motion(bool(config.get("display.reduce_motion", False)))
 
         self._build_ui()
         self._build_update_poller()
         self._build_retention()
+        self._build_review()
         self._build_worker()  # last: the engine thread starts here
 
         # Follow live theme switches (e.g. Windows auto dark mode after
@@ -173,6 +192,7 @@ class MainWindow(QMainWindow):
         self._dark = dark
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
+        self._refresh_warning_label()
         self._style_update_buttons()
         self.timeline_strip.update()
         if self._death_dialog is not None:
@@ -201,7 +221,11 @@ class MainWindow(QMainWindow):
         self.detail_action = QAction("Detail view", self)
         self.detail_action.setCheckable(True)
         self.detail_action.setChecked(True)
-        self.detail_action.setShortcut(QKeySequence(Qt.Key_Tab))
+        # Not Tab, which this once was: Tab has to move the focus, or a
+        # keyboard user never leaves the fight list (#77)
+        self.detail_action.setShortcut(QKeySequence("Ctrl+D"))
+        self.detail_action.setToolTip(
+            "Show each player's ability bars as icons, or one line per player (Ctrl+D)")
         self.detail_action.toggled.connect(self._toggle_detail)
         toolbar.addAction(self.detail_action)
 
@@ -226,6 +250,17 @@ class MainWindow(QMainWindow):
             "sharing; the player writing the log stays visible (Ctrl+H)")
         self.hide_names_action.toggled.connect(self._toggle_hide_names)
         toolbar.addAction(self.hide_names_action)
+
+        # Text size (issue #77): Ctrl+= or Ctrl++ bigger, Ctrl+- smaller,
+        # Ctrl+0 back to 100%, from any of the app's windows, saved at once
+        for label, keys, direction in (("Bigger text", ("Ctrl+=", "Ctrl++"), 1),
+                                       ("Smaller text", ("Ctrl+-",), -1),
+                                       ("Normal text size", ("Ctrl+0",), 0)):
+            action = QAction(label, self)
+            action.setShortcuts([QKeySequence(key) for key in keys])
+            action.setShortcutContext(Qt.ApplicationShortcut)
+            action.triggered.connect(lambda _=False, d=direction: self._step_text_size(d))
+            self.addAction(action)
 
         toolbar.addSeparator()
 
@@ -274,6 +309,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         self.history_list = QListWidget()
+        self.history_list.setAccessibleName("Fights")
         self.history_list.currentRowChanged.connect(self._show_fight)
         splitter.addWidget(self.history_list)
 
@@ -297,6 +333,7 @@ class MainWindow(QMainWindow):
         self.search_field.setPlaceholderText(
             "Search in fight… (Ctrl+F, Enter jumps to next match; "
             "ability icons match by name)")
+        self.search_field.setAccessibleName("Search in fight")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self._apply_search)
         self.search_field.returnPressed.connect(self._goto_next_match)
@@ -307,6 +344,7 @@ class MainWindow(QMainWindow):
 
         # Serves bundled ability icons, hover names, and ESO-Hub link clicks
         self.fight_view = FightView()
+        self.fight_view.setAccessibleName("Fight")
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
@@ -335,12 +373,25 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.freshness_label)
         self.zone_label = QLabel("")
         self.statusBar().addWidget(self.zone_label)
-        # Shared work-progress bar (archiving, review parsing, catch-up);
-        # the worker thread serializes these, so one bar can't be contended
+        # Lasting problems (issue #111): split writing stopped, the log
+        # failing to read poll after poll. Permanent, so a status message
+        # never hides it; it goes when its source says the problem cleared
+        self._warnings = {}
+        self.warning_label = QLabel("")
+        self.warning_label.setVisible(False)
+        self.statusBar().addPermanentWidget(self.warning_label)
+        # Shared work-progress bar (archiving, review parsing, catch-up). A
+        # review runs on its own thread, so its progress can meet a live
+        # catch-up's here; the next review update shows it again
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(220)
         self.progress_bar.setVisible(False)
         self.statusBar().addPermanentWidget(self.progress_bar)
+        self.review_cancel_button = QToolButton()
+        self.review_cancel_button.setText("Cancel review")
+        self.review_cancel_button.setAutoRaise(True)
+        self.review_cancel_button.setVisible(False)
+        self.statusBar().addPermanentWidget(self.review_cancel_button)
 
         self._ticker = QTimer(self)
         self._ticker.setInterval(1000)
@@ -380,15 +431,14 @@ class MainWindow(QMainWindow):
         self.worker.log_status.connect(self._on_log_status)
         self.worker.archive_event.connect(self._on_archive_event)
         self.worker.diagnostic.connect(self._on_diagnostic)
+        self.worker.warning.connect(self._on_warning)
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
-        self.worker.review_loaded.connect(self._on_review_loaded)
         self.worker.parse_progress.connect(self._on_parse_progress)
 
         requests = ((self.request_archive, self.worker.archive_now),
-                    (self.request_restart, self.worker.restart_monitoring),
-                    (self.request_review, self.worker.open_review))
+                    (self.request_restart, self.worker.restart_monitoring))
         for signal, slot in requests:
             signal.connect(slot)
 
@@ -465,6 +515,113 @@ class MainWindow(QMainWindow):
         elif event.kind == "failed":
             self.statusBar().showMessage(f"Tidying split logs failed: {event.reason}", 30000)
 
+    # ---- review (gui/review_runner.py, issue #107) ----
+
+    def _build_review(self):
+        """Reviews run on a thread of their own and report through a QObject
+        that lives here; the thread holds it weakly, so it is never the one
+        to free it (see gui/engine_worker.py on freeing Qt objects)."""
+        self._review = ReviewRunner()
+        self._review_bridge = _ReviewBridge(self)
+        self._review_bridge.event.connect(self._on_review_event)
+        self.review_cancel_button.clicked.connect(self._review.cancel)
+        self.request_review.connect(self._start_review)
+
+    def _review_notify(self):
+        bridge = weakref.ref(self._review_bridge)
+
+        def notify(event):
+            target = bridge()
+            if target is not None:
+                target.event.emit(event)
+        return notify
+
+    def _set_review_busy(self, busy: bool):
+        self.review_cancel_button.setVisible(busy)
+        if not busy:
+            self.progress_bar.setVisible(False)
+
+    @Slot(str, str)
+    def _start_review(self, path, member=""):
+        """A log above review_load.LARGE_REVIEW_BYTES is outlined first and
+        the reader asked whether to read all of it; a smaller one replays
+        at once."""
+        if self._review.running:
+            self.statusBar().showMessage("A review is still loading: cancel it first", 8000)
+            return
+        try:
+            size = log_size(Path(path), member or None)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Review", f"Could not read {path}: {exc}")
+            return
+        self._set_review_busy(True)
+        if size > review_load.LARGE_REVIEW_BYTES:
+            self._on_parse_progress(f"Looking through {Path(path).name}", 0, 0)
+            self._review.outline(path, member, self._review_notify())
+        else:
+            self._review.replay(self.config, path, member, -1, self._review_notify())
+
+    @Slot(object)
+    def _on_review_event(self, event):
+        if event.kind == "progress":
+            self._on_parse_progress(event.label, event.done, event.total)
+            return
+        self._set_review_busy(False)
+        if event.kind == "outlined":
+            self._ask_review_range(event)
+        elif event.kind == "loaded":
+            self._on_review_loaded(event.shown, event.fights)
+        elif event.kind == "cancelled":
+            self.statusBar().showMessage(f"Review of {Path(event.path).name} cancelled", 8000)
+        elif event.kind == "failed":
+            self.statusBar().clearMessage()
+            QMessageBox.warning(self, "Review",
+                                f"Could not review {event.path}:\n{event.reason}")
+
+    def _ask_review_range(self, event):
+        """The whole log, or its most recent sessions holding at least
+        review_load.RECENT_FIGHTS fights (a cut is always at a session
+        start: see review_load)."""
+        # No fight counts here: the outline counts BEGIN_COMBAT lines, and
+        # the engine merges or drops some (62 counted, 47 listed, on a
+        # month's log), so sessions, size and time are what it states
+        outline = event.outline
+        name = Path(event.path).name
+        sessions = len(outline.starts)
+        recent = outline.recent()
+        box = QMessageBox(self)
+        box.setWindowTitle("Review")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"{name} is {split_retention.format_bytes(outline.total)}, "
+                    f"{sessions} session{'s' if sessions != 1 else ''} of play.")
+        box.setInformativeText(
+            f"Reading all of it takes {_duration_text(review_load.estimate_seconds(outline.total))}. "
+            f"Live monitoring carries on meanwhile.")
+        whole = box.addButton("Whole log", QMessageBox.AcceptRole)
+        recent_button = None
+        if recent > 0:
+            count = sessions - recent
+            size = outline.size_from(recent)
+            recent_button = box.addButton(
+                f"Last {count} session{'s' if count != 1 else ''}, "
+                f"{split_retention.format_bytes(size)} "
+                f"({_duration_text(review_load.estimate_seconds(size))})",
+                QMessageBox.AcceptRole)
+            box.setDefaultButton(recent_button)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        box.deleteLater()
+        if clicked is whole:
+            choice = -1
+        elif recent_button is not None and clicked is recent_button:
+            choice = outline.begin_log(recent)
+        else:
+            self.statusBar().clearMessage()
+            return
+        self._set_review_busy(True)
+        self._review.replay(self.config, event.path, event.member, choice, self._review_notify())
+
     @Slot()
     def _discard_worker(self):
         """Delete the worker on the UI thread, where leave_thread put it."""
@@ -479,6 +636,15 @@ class MainWindow(QMainWindow):
         self._retention_first.stop()
         self._retention_daily.stop()
         self._retention.stop()  # a zip in progress stops within one chunk
+        # A review stops within a megabyte of the log; its last event may
+        # already be queued, so the bridge is cut off from this window,
+        # which is being deleted
+        self._review.cancel()
+        self._review.wait(5)
+        try:
+            self._review_bridge.event.disconnect(self._on_review_event)
+        except (RuntimeError, TypeError):
+            pass
         self._save_window_layout()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
@@ -585,6 +751,23 @@ class MainWindow(QMainWindow):
     def _on_diagnostic(self, message):
         # Low-priority: transient status message only
         self.statusBar().showMessage(message, 4000)
+
+    @Slot(str, object)
+    def _on_warning(self, source, message):
+        """A lasting problem from *source*, or its end (message None)."""
+        if message:
+            self._warnings[source] = message
+        else:
+            self._warnings.pop(source, None)
+        self._refresh_warning_label()
+
+    def _refresh_warning_label(self):
+        text = "; ".join(self._warnings.values())
+        # The label is kept short; the hover has the whole text
+        self.warning_label.setText(f"⚠ {text[:90]}…" if len(text) > 90 else f"⚠ {text}")
+        self.warning_label.setToolTip(text)
+        self.warning_label.setStyleSheet(state_style("none", self._dark))
+        self.warning_label.setVisible(bool(text))
 
     @Slot(str)
     def _on_waiting_for_log(self, expected):
@@ -708,7 +891,7 @@ class MainWindow(QMainWindow):
 
     def _on_update_clicked(self):
         """The button: on Windows the download, and the installer as soon
-        as it lands (one click, the maintainer's choice of 2026-10-26);
+        once downloaded (one click, the maintainer's choice of 2026-10-26);
         elsewhere the release page."""
         info = self._update
         if info is None:
@@ -725,7 +908,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_update_ready(self, installer_path):
-        """The installer has landed: hand over to it and close. The click on
+        """The installer has downloaded: hand over to it and close. The click on
         the button was the consent; settings are kept and the installer
         relaunches the app."""
         import subprocess
@@ -937,6 +1120,7 @@ class MainWindow(QMainWindow):
             return
         if self._graph_dialog is None:
             self._graph_dialog = DpsGraphDialog(self)
+        self._graph_dialog.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self._graph_dialog.show_graph(fights[row], self._dark,
                                       names=self._names_for(fights[row]))
         self._graph_dialog.show()
@@ -1047,6 +1231,28 @@ class MainWindow(QMainWindow):
             if dialog is not None and dialog.isVisible() and dialog.entry is not None:
                 dialog.refresh(self._dark, names=self._names_for(dialog.entry))
 
+    # ---- text size ----
+
+    def _step_text_size(self, direction: int):
+        """Ctrl+= / Ctrl+- / Ctrl+0: one step bigger, smaller, or 100%."""
+        self.set_text_size(text_size.step(text_size.percent(), direction))
+
+    def set_text_size(self, pct):
+        """Apply and save the app-wide text size, then redraw every page.
+        A view zoomed with Ctrl + mouse wheel drops its own size and takes
+        the new one, so the setting is what the user sees everywhere."""
+        applied = text_size.apply(pct)
+        self.config.set(text_size.CONFIG_KEY, applied)
+        self.config.save()
+        for view in [self.fight_view] + [dialog.view for dialog in (
+                self._death_dialog, self._build_dialog, self._damage_dialog,
+                self._taken_dialog) if dialog is not None]:
+            view.setFont(QFont())  # inherit the application font again
+        # The pane and every open window are rendered from their view's
+        # font, as for a flip of Hide names
+        self._refresh_names()
+        self.statusBar().showMessage(f"Text size {applied}%", 3000)
+
     def _apply_privacy_settings(self):
         """Settings saved: the action follows the box (its toggled signal
         redraws when the state changed)."""
@@ -1084,6 +1290,12 @@ class MainWindow(QMainWindow):
             self.config.save()
             self._apply_update_settings()
             self._apply_privacy_settings()
+            set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
+            if self._graph_dialog is not None:
+                self._graph_dialog.set_colorblind(
+                    bool(self.config.get("display.colorblind_graph", False)))
+            if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
+                self.set_text_size(self.config.get(text_size.CONFIG_KEY))
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
             # The history is cleared when the engine reaches the restart
             # (see _on_monitoring_restarting); until then its fights are

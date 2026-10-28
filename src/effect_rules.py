@@ -55,7 +55,7 @@ up to 71 mobs hit). A ``boss`` rule has nothing to measure there, so it
 measures every hostile the group fought instead, and both it and an
 ``enemies`` rule then say how many of the pack's mobs the effect reached,
 ``Alkosh:45% on 7 of 12 mobs`` (the pack is the mobs the group hit, plus
-any a tracked effect landed on). In those fights Off-Balance reached up to
+any a tracked effect was applied to). In those fights Off-Balance reached up to
 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle
 18 of 32, the taunt 20 of 32. In a boss fight nothing changes: the boss
 rule reads the boss alone (its effect was on the adds too in about half
@@ -146,7 +146,7 @@ comes under several ids at once (45902 for most sources, 62988 for
 Elemental Blockade, 39077, 34733, 20806, 130139), so a union is needed,
 and its uptime on a trial boss was 4 to 28% per fight; Crux stacks to 3
 on the Arcanist alone; a pet-applied buff (a Glyphic's heal, Major
-Protection from a netch) lands on players like any other and needs no
+Protection from a netch) is applied to players like any other and needs no
 special case, since only the target's kind is looked at. Replaying the
 bundled examples through two of those logs (Sunspire, Kyne's Aegis):
 Off-Balance on the boss 12 to 28% per boss fight, to the decimal what an
@@ -158,7 +158,68 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
-SCOPES = ("self", "group", "pets", "boss", "enemies")
+
+class Interval:
+    """One span of an effect in a fight entry, read as the dict it was
+    ({'start_ms', 'end_ms', 'stacks', 'target', 'source'}: iv["start_ms"],
+    iv.get("stacks"), compared equal to that dict), held in slots (issue
+    #110). A trial night's entries hold tens of thousands of these (62,927
+    over 38 Sunspire fights), and as dicts they were a quarter of the
+    fight history. *stacks* None is a span without that key (the buff
+    timeline's)."""
+    __slots__ = ("start_ms", "end_ms", "stacks", "target", "source")
+    __hash__ = None
+
+    def __init__(self, start_ms, end_ms, stacks=None, target="", source=""):
+        self.start_ms = start_ms
+        self.end_ms = end_ms
+        self.stacks = stacks
+        self.target = target
+        self.source = source
+
+    def keys(self):
+        return [k for k in self.__slots__ if k != "stacks" or self.stacks is not None]
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __len__(self):
+        return len(self.keys())
+
+    def __contains__(self, key):
+        return key in _INTERVAL_KEYS and (key != "stacks" or self.stacks is not None)
+
+    def __getitem__(self, key):
+        # The strip reads these for every span it paints: no key list here
+        if key in _INTERVAL_KEYS and (key != "stacks" or self.stacks is not None):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        if key in _INTERVAL_KEYS and (key != "stacks" or self.stacks is not None):
+            return getattr(self, key)
+        return default
+
+    def items(self):
+        return [(k, getattr(self, k)) for k in self.keys()]
+
+    def as_dict(self) -> dict:
+        return dict(self.items())
+
+    def __eq__(self, other):
+        if isinstance(other, Interval):
+            return self.items() == other.items()
+        if isinstance(other, dict):
+            return self.as_dict() == other
+        return NotImplemented
+
+    def __repr__(self):
+        return repr(self.as_dict())
+
+
+_INTERVAL_KEYS = frozenset(Interval.__slots__)
+
+SCOPES =("self", "group", "pets", "boss", "enemies")
 KINDS = ("uptime", "stacks", "each", "dots")
 # Group sizes a rule can be expected in (issue #13): one player, two to
 # four, five or more; ``all`` is the three
@@ -826,10 +887,9 @@ class EffectTracker:
                 "units": measured,
                 "uptime_pct": round(uptime_pct, 1), "avg_stacks": round(mean_stacks, 2),
                 "max_stacks": peak, "mobs_reached": reached, "mobs": mobs, "text": text,
-                "intervals": [{"start_ms": s - fight_start_ms, "end_ms": e - fight_start_ms,
-                               "stacks": stacks,
-                               "target": name_of(target) if name_of else target,
-                               "source": (name_of(source) if name_of else source) if source else ""}
+                "intervals": [Interval(s - fight_start_ms, e - fight_start_ms, stacks,
+                                       name_of(target) if name_of else target,
+                                       (name_of(source) if name_of else source) if source else "")
                               for s, e, stacks, target, _kind, source in spans],
             })
         return out

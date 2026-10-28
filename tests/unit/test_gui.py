@@ -81,6 +81,16 @@ class GuiTestCase(unittest.TestCase):
         # Driven synchronously on this thread: we call start()/_poll() directly
         return EngineWorker(self.config)
 
+    def _reviewed(self, path=None, member='', progress=None):
+        """A review's fights, replayed on this thread as the review thread
+        does (review_load, issue #107)."""
+        import review_load
+        from app_startup import build_analyzer
+        shown, fights = review_load.replay_log(
+            build_analyzer(self.config, []), Path(path or FIXTURE_LOG), member or None,
+            progress=progress)
+        return {'path': shown, 'fights': fights}
+
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
 class TestWorkerSignalBridge(GuiTestCase):
@@ -123,11 +133,7 @@ class TestReviewMatchesGolden(GuiTestCase):
     """Task 4.3: review replay shows the same fights as the golden data."""
 
     def test_review_fixture_matches_golden(self):
-        worker = self._worker()
-        loaded = {}
-        worker.review_loaded.connect(lambda p, f: loaded.update(path=p, fights=f))
-        worker.open_review(str(FIXTURE_LOG))
-        _app.processEvents()
+        loaded = self._reviewed()
 
         golden = json.loads(GOLDEN_JSON.read_text(encoding='utf-8'))
         fights = loaded['fights']
@@ -141,11 +147,7 @@ class TestReviewMatchesGolden(GuiTestCase):
 
     def test_render_functions(self):
         from gui.fight_render import render_html, render_plain_text, summary_line
-        worker = self._worker()
-        loaded = {}
-        worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
-        worker.open_review(str(FIXTURE_LOG))
-        _app.processEvents()
+        loaded = self._reviewed()
         entry = loaded['fights'][0]
         line = summary_line(entry)
         self.assertIn('Coral Aerie', line)
@@ -319,11 +321,7 @@ class TestMainWindowStates(GuiTestCase):
         """Typing in the search field highlights every occurrence."""
         win = self._window()
         try:
-            worker = self._worker()
-            loaded = {}
-            worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
-            worker.open_review(str(FIXTURE_LOG))
-            _app.processEvents()
+            loaded = self._reviewed()
             for entry in loaded['fights']:
                 win._on_fight_completed(entry)
             win.history_list.setCurrentRow(0)
@@ -359,11 +357,7 @@ class TestMainWindowStates(GuiTestCase):
     def test_search_enter_cycles_matches(self):
         win = self._window()
         try:
-            worker = self._worker()
-            loaded = {}
-            worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
-            worker.open_review(str(FIXTURE_LOG))
-            _app.processEvents()
+            loaded = self._reviewed()
             win._on_fight_completed(loaded['fights'][0])
             win.history_list.setCurrentRow(0)
             win.search_field.setText('a')  # plenty of matches
@@ -622,21 +616,16 @@ class TestMainWindowStates(GuiTestCase):
             win.close()
 
     def test_review_emits_parse_progress(self):
-        worker = self._worker()
         events = []
-        worker.parse_progress.connect(lambda l, d, t: events.append((l, d, t)))
-        loaded = {}
-        worker.review_loaded.connect(lambda p, f: loaded.update(fights=f))
-        worker.open_review(str(FIXTURE_LOG))
-        _app.processEvents()
+        loaded = self._reviewed(progress=lambda l, d, t: events.append((l, d, t)))
         self.assertTrue(loaded['fights'])
-        self.assertGreaterEqual(len(events), 2)
+        self.assertGreaterEqual(len(events), 1)
         first_label, first_done, first_total = events[0]
         self.assertIn('golden_fight.log', first_label)
         self.assertEqual(first_done, 0)
         self.assertEqual(first_total, FIXTURE_LOG.stat().st_size)
-        last_label, last_done, last_total = events[-1]
-        self.assertGreaterEqual(last_done, last_total)  # hide event
+        # The window hides the bar on the review's own end event
+        # (MainWindow._on_review_event), so the replay sends none
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -664,12 +653,8 @@ class TestZippedReview(GuiTestCase):
     """Issue #86: a zipped split or an archive reviews like the log it holds."""
 
     def _review(self, path, member=''):
-        worker = self._worker()
-        loaded, progress = {}, []
-        worker.review_loaded.connect(lambda p, f: loaded.update(path=p, fights=f))
-        worker.parse_progress.connect(lambda *a: progress.append(a))
-        worker.open_review(str(path), member)
-        _app.processEvents()
+        progress = []
+        loaded = self._reviewed(path, member, lambda *a: progress.append(a))
         return loaded, progress
 
     def _fight_key(self, fights):
@@ -700,8 +685,9 @@ class TestZippedReview(GuiTestCase):
         self.assertTrue(loaded['fights'])
         self.assertTrue(loaded['path'].endswith('› Encounter.log'))
         # Without a choice it is refused, not guessed
-        loaded, _ = self._review(archive)
-        self.assertEqual(loaded['fights'], [])
+        from log_open import NoLogInZip
+        with self.assertRaises(NoLogInZip):
+            self._review(archive)
 
     def test_review_dialog_passes_the_member_and_filters_zips(self):
         import zipfile
@@ -716,7 +702,10 @@ class TestZippedReview(GuiTestCase):
         win.worker_thread.quit()
         win.worker_thread.wait(3000)
         try:
-            requests = []  # the ended worker is already cut off (_hand_back)
+            # Only the request is under test: no review runs (its thread
+            # would report a log with no fights in a modal box)
+            win.request_review.disconnect(win._start_review)
+            requests = []
             win.request_review.connect(lambda p, m: requests.append((p, m)))
             with mock.patch('gui.main_window.QFileDialog.getOpenFileName',
                             return_value=(str(archive), '')) as chooser, \

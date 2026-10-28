@@ -19,7 +19,7 @@ friend, which is what "the handle of the person logging" means.
 Which names are player names: a name is hidden when it is not the local
 player's handle or character name and either starts with ``@`` or is the
 character name of another player of the fight. The ``@`` rule reaches
-every nested place a handle lands (the source of a heal in a death recap,
+every nested place a handle appears (the source of a heal in a death recap,
 a caster in the penetration section, a timeline interval's source and
 target) without threading the player list into each; the character-name
 set reaches a player the log gave no handle. That set is read from the
@@ -118,7 +118,7 @@ def image_html(word: str, color: str, pt: float, bold: bool = False) -> str:
     token = word.replace(" ", "_")
     return (f'<img src="{MASK_SCHEME}:{token}?color={color.lstrip("#")}'
             f'&amp;pt={float(pt):.2f}&amp;b={1 if bold else 0}" '
-            f'style="vertical-align:middle">')
+            f'alt="hidden name" style="vertical-align:middle">')
 
 
 def mask_request(url: QUrl) -> tuple[str, str, float, bool] | None:

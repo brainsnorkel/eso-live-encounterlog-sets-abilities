@@ -92,7 +92,7 @@ class TestCue(IssuesGuiTestCase):
         for detailed in (True, False):
             html = render_html(entry, detailed=detailed)
             self.assertEqual(html.count('esolog:issues/'), 1, detailed)
-            self.assertIn('href="esolog:issues/2" style="text-decoration:none;color:#1a73e8">'
+            self.assertIn('href="esolog:issues/2" style="text-decoration:none;color:#166ad8">'
                           f'{ISSUES_CUE}</a>', html)
             # After the class text of that row, before the next row
             row = html[html.index('@dualwield'):html.index('</tr>', html.index('@dualwield'))]

@@ -13,8 +13,8 @@ import sys
 import time
 import csv
 import io
+import json
 import re
-import hashlib
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, FrozenSet, List, Optional, Tuple, Set
@@ -39,6 +39,7 @@ from presence import present_share
 import casts
 import companions
 import pen_crit
+import resources
 import split_retention
 import werewolf
 
@@ -960,6 +961,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
         self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
+        # Each player's magicka, stamina and ultimate spent and gained
+        self.resources = resources.ResourceRecorder()
         # Companions (companions.py): whether their damage and healing are
         # their owner's too (the setting companions.accrue_to_owner), and
         # the skills each one cast this session, by (owner's player key,
@@ -992,6 +995,12 @@ class ESOLogAnalyzer(ListenerMixin):
         # (timestamp, zone_name, zone_id, difficulty)
         self.zone_history: List[Tuple[int, str, str, str]] = []
         self.max_zone_history = 10  # Keep last 10 zone changes
+
+        # A player's gear rows as fight entries share them, by content
+        # (issue #110): the same gear pull after pull is one list, not a
+        # copy per fight (455 copies of 40 gear sets in a Sunspire night).
+        # The rows are only read once built
+        self._shared_gear: Dict[str, list] = {}
         
         
         # Session tracking for players going offline/online
@@ -1296,6 +1305,10 @@ class ESOLogAnalyzer(ListenerMixin):
                     # The race is not kept in session data: every UNIT_ADDED carries it
                     if added_player is not None:
                         added_player.race_id = race_id
+                        # A returning player is restored with the champion
+                        # points stored when first seen; this line's are newer
+                        if champion_points > 0:
+                            added_player.champion_points = champion_points
                         added_player.is_local = len(entry.fields) > 2 and entry.fields[2] == "T"
                         added_player.grouped = len(entry.fields) > 15 and entry.fields[15] == "T"
                         if long_unit_id and long_unit_id != "0":
@@ -1389,6 +1402,13 @@ class ESOLogAnalyzer(ListenerMixin):
                         player.name = clean_name
                     self._update_player_session(unit_id, player.name, player.handle,
                                                 class_id=player.class_id)
+                # A champion point earned mid-session (fields[7])
+                cp = entry.fields[7]
+                if cp.isdigit() and int(cp) > 0 and int(cp) != player.champion_points:
+                    player.champion_points = int(cp)
+                    if player.handle:
+                        self._update_player_session(unit_id, player.name, player.handle,
+                                                    champion_points=int(cp))
                 if len(entry.fields) > 10:
                     player.grouped = entry.fields[10] == "T"
                 return
@@ -1911,6 +1931,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters.clear()
         self.werewolf.reset()
         self.casts.reset()
+        self.resources.reset()
         self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
@@ -2010,8 +2031,13 @@ class ESOLogAnalyzer(ListenerMixin):
             if caster is not None:
                 self._remember_cast(entry.fields[2], ability_id)
                 # Counted for the build window and the cpm (casts.py)
-                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id,
-                                     casts.line_time(entry.original_line))
+                cast_time = casts.line_time(entry.original_line)
+                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time)
+                # The cast's cost is in the state it carries (resources.py)
+                self.resources.note_cast(caster.unit_id, cast_time, entry.fields[2], ability_id)
+                if len(entry.fields) >= 9:
+                    self.resources.observe(caster.unit_id, cast_time, entry.fields[6],
+                                           entry.fields[7], entry.fields[8])
                 # Werewolf form: the skills of the bar the log never writes,
                 # and the morph (werewolf.py)
                 if ability_id in werewolf.CAST_IDS:
@@ -2036,6 +2062,36 @@ class ESOLogAnalyzer(ListenerMixin):
                 # Also update enemy health if the caster is an enemy
                 self._parse_and_update_enemy_health(caster_unit_id, entry.fields[5:8])
 
+
+    def _observe_resources(self, entry: ESOLogEntry):
+        """A COMBAT_EVENT's source and target states for the players' pools
+        (resources.py). Fields after the time and event type: [7] the
+        source unit state's id, [9..11] its magicka, stamina and ultimate,
+        [17] the target's id or "*" (the source itself), [19..21] its
+        pools. A POWER_ENERGIZE's pool is the target's, given by the source
+        when that is another player."""
+        fields = entry.fields
+        enc = self.current_encounter
+        source = enc.player_of(fields[7])
+        target = enc.player_of(fields[17]) if fields[17] != "*" else source
+        energize = resources.energize_of(fields)
+        # A channel tick that carries its skill's cost (Fatecarver)
+        if source is not None and fields[6] in resources.CHANNEL_TICKS:
+            self.resources.note_cast(source.unit_id, entry.timestamp, fields[5],
+                                     resources.CHANNEL_TICKS[fields[6]], counted=False)
+        # The same player twice is observed once, with the gain
+        same = target is source
+        if source is not None:
+            self.resources.observe(
+                source.unit_id, entry.timestamp, fields[9], fields[10], fields[11],
+                energize + ("",) if energize is not None and same else None)
+        if not same and target is not None and len(fields) > 21:
+            giver = ""
+            if energize is not None and source is not None and source is not target:
+                giver = source.unit_id
+            self.resources.observe(
+                target.unit_id, entry.timestamp, fields[19], fields[20], fields[21],
+                energize + (giver,) if energize is not None else None)
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -2126,6 +2182,11 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
 
+        # The players' pools in the source and target states, and a gain the
+        # row logs (resources.py)
+        if len(entry.fields) > 17:
+            self._observe_resources(entry)
+
         # Track damage events for DPS calculation (only friendly damage)
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
         if len(entry.fields) >= 4:
@@ -2174,7 +2235,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 else:
                     self._remember_cast(entry.fields[5], entry.fields[6])
 
-            # Death recap: keep what lands on each player (damage, heals,
+            # Death recap: keep what each player receives (damage, heals,
             # shields, dodges) for the seconds before a death
             if combat_event_type in RECAP_RESULTS and len(entry.fields) > 17:
                 recap_target = entry.fields[17] if entry.fields[17] != '*' else entry.fields[7]
@@ -2452,7 +2513,14 @@ class ESOLogAnalyzer(ListenerMixin):
             source_unit_id = extracted[2] if extracted else "0"
             target_unit_id = extracted[3] if extracted else source_unit_id
             self_target = target_unit_id == source_unit_id
-            
+
+            # The source's pools (resources.py): [6..8] of its unit state
+            if extracted is not None and len(entry.fields) > 8 and self.current_encounter:
+                source_player = self.current_encounter.player_of(source_unit_id)
+                if source_player is not None:
+                    self.resources.observe(source_player.unit_id, entry.timestamp,
+                                           entry.fields[6], entry.fields[7], entry.fields[8])
+
             if self.diagnostic and target_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] EFFECT_CHANGED for unit_id 31: {entry.fields[9:12] if len(entry.fields) >= 12 else 'insufficient fields'}{Style.RESET_ALL}")
 
@@ -2494,6 +2562,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 if caster is not None:
                     self.casts.note_cast(caster.unit_id, cast_track_id,
                                          casts.CHANNEL_EFFECTS[ability_id], entry.timestamp)
+                    self.resources.note_cast(caster.unit_id, entry.timestamp, cast_track_id,
+                                             casts.CHANNEL_EFFECTS[ability_id])
 
             # A proc set's effect, sourced by its wearer: the build-issue
             # rule for a set that never fires (build_issues)
@@ -2730,7 +2800,7 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.damage_series = damage.series(enc.start_time)
         entry.deaths = self.fight_deaths  # this fight's player deaths
         # The recaps' rows are classed once more with every cast of the
-        # fight known (an area hit's second target may have landed late)
+        # fight known (an area cast's hit on a second target may come late)
         self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
         entry.first_damage_dealer = enc.first_damage_dealer
@@ -2880,6 +2950,11 @@ class ESOLogAnalyzer(ListenerMixin):
             cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time)
             entry.players[-1]['casts'] = casts.cast_summary(
                 cast_counts, duration, entry.players[-1].get('present_pct'))
+            # Magicka, stamina and ultimate spent and gained (resources.py)
+            entry.players[-1]['resources'] = self.resources.fight_summary(
+                player.unit_id, enc.start_time, enc.end_time, duration,
+                entry.players[-1].get('present_pct'), ability_name,
+                self._resolve_timeline_name)
             if not player.equipped_abilities:
                 # Back on another character whose build is not in the log
                 # yet: the class and the figures, nothing to judge
@@ -2890,6 +2965,10 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
                 self.ability_cache.get, self.ability_icons.get))
+            gear_rows = entry.players[-1].get('gear')
+            if gear_rows:
+                key = json.dumps(gear_rows, sort_keys=True, default=str)
+                entry.players[-1]['gear'] = self._shared_gear.setdefault(key, gear_rows)
             # The werewolf bar the log never writes, rebuilt from casts, and
             # the share of the fight spent in form (werewolf.py)
             entry.players[-1].update(self._werewolf_fields(player, enc))
@@ -2950,6 +3029,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Not before the end: this fight's casts are needed once more if it
         # turns out to carry on (see COMBAT_RESUME_MS)
         self.casts.prune_before(enc.start_time)
+        self.resources.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -3362,6 +3442,11 @@ class LogSplitter:
         # Another instance of the app holds this folder's lock: write nothing
         self.disabled = False
         self._lock_path = None
+        # The first failure to create or write the split file, until a line
+        # is written again (issue #111): the monitor shows it in the window
+        # (a full disk, a removed drive), where it was a diagnostic print
+        self.write_error: Optional[str] = None
+        self._batch_failed = False  # a write failed since the last flush
 
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
@@ -3529,6 +3614,8 @@ class LogSplitter:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+            if self.write_error is None:
+                self.write_error = f"could not create {self.temp_file_path}: {e}"
             self.current_split_file = None
             self.current_split_path = None
             self.current_encounter_info = None
@@ -3790,16 +3877,10 @@ class LogSplitter:
                 continue
         return False
 
-    def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
-        h = hashlib.md5()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                h.update(chunk)
-        return h.hexdigest()
-
     def write_log_line(self, line: str):
-        """Write a log line to the current split file."""
+        """Write a log line to the current split file. Not flushed here: a
+        flush per line made one OS write per log line (3.3 M for a 573 MB
+        session, issue #109); the monitor calls flush() once per batch."""
         if self.skip_current or self.disabled:
             return
         if self._catch_up is not None and self._catching_up(line):
@@ -3807,12 +3888,34 @@ class LogSplitter:
         if self.file_handle:
             try:
                 self.file_handle.write(line + '\n')
-                self.file_handle.flush()  # Ensure immediate write
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
-    
+                self._batch_failed = True
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
+
+    def flush(self):
+        """Push the lines written so far to the split file: the monitor's
+        end of each batch of new lines, so a crash loses at most one poll's
+        lines, which are still in the game's log for the split's catch-up
+        (_continue_existing) to restore. A batch whose writes and flush all
+        went through clears write_error (a full disk usually shows here,
+        when the buffer reaches the disk)."""
+        failed, self._batch_failed = self._batch_failed, False
+        if self.file_handle:
+            try:
+                self.file_handle.flush()
+                if not failed:
+                    self.write_error = None
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
+
     def start_combat(self):
         """Mark that combat has started - rename file to current zone."""
         if not self.combat_started:
@@ -3987,6 +4090,7 @@ class LogFileMonitor:
         self.diagnostic = analyzer.diagnostic
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
+        self._split_warning = None  # the split failure last reported
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
@@ -4033,10 +4137,8 @@ class LogFileMonitor:
         """Byte offset of the most recent BEGIN_LOG line before *end*."""
         return find_session_start_offset(self.log_file, end, self.PREAMBLE_LOOKBACK_BYTES)
 
-    # Latest sessions up to this size are fully replayed at attach (fights
-    # into history, splitter fed); larger ones fall back to the roster-only
-    # preamble sweep.
-    SESSION_REPLAY_CAP = 768 * 1024 * 1024
+    # A session replayed at attach above this size reports its progress
+    REPLAY_PROGRESS_BYTES = 8 * 1024 * 1024
 
     def _session_split_exists(self, session_start: int) -> bool:
         """True when a split file for this session's stamp already exists."""
@@ -4065,15 +4167,22 @@ class LogFileMonitor:
         Gives a mid-session attach the same state as having run since the
         session began: full roster, this session's fights in history, and
         the session's split file (created only if absent). Best-effort:
-        failures leave plain tailing, and oversized sessions fall back to
-        the roster-only preamble sweep.
+        failures leave plain tailing.
+
+        Every session is replayed whole, however large. Until issue #107 one
+        over 768 MB got only the roster-only preamble sweep, which is not
+        enough: who owns which companion and pet is learned from the rest
+        of the session, and fights rebuilt that way differed in every one
+        of 18 measured on a Dreadsail Reef split. The sweep is left for a
+        session whose BEGIN_LOG is beyond the 2 GB lookback, and for a
+        replay that fails.
         """
         try:
             end = self.last_position
             if end <= 0:
                 return
             start = self._find_session_start_offset(end)
-            if start is None or end - start > self.SESSION_REPLAY_CAP:
+            if start is None:
                 self._backfill_session_preamble()
                 return
             # The session's split file, when it exists, is continued by the
@@ -4084,6 +4193,7 @@ class LogFileMonitor:
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
             self._process_range(start, end)
+            self._report_split_status()
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
             try:
@@ -4092,16 +4202,35 @@ class LogFileMonitor:
                 pass
 
     def _process_range(self, start: int, end: int):
-        """Stream lines in [start, end) through the normal processing path."""
-        with open(self.log_file, 'rb') as f:
-            f.seek(start)
-            while f.tell() < end:
-                raw = f.readline()
-                if not raw:
-                    break
-                line = raw.decode('utf-8', errors='ignore').strip()
-                if line:
-                    self._process_one_line(line)
+        """Stream lines in [start, end) through the normal processing path.
+        A range over REPLAY_PROGRESS_BYTES reports its progress (the
+        window's progress bar), about every 1%."""
+        total = end - start
+        report = total > self.REPLAY_PROGRESS_BYTES
+        label = "Loading last session"
+        step = max(1, total // 100)
+        done = last = 0
+        if report:
+            self.analyzer._notify('on_parse_progress', label, 0, total)
+        try:
+            with open(self.log_file, 'rb') as f:
+                f.seek(start)
+                while f.tell() < end:
+                    raw = f.readline()
+                    if not raw:
+                        break
+                    done += len(raw)
+                    if report and done - last >= step:
+                        last = done
+                        self.analyzer._notify('on_parse_progress', label, min(done, total), total)
+                    line = raw.decode('utf-8', errors='ignore').strip()
+                    if line:
+                        self._process_one_line(line)
+        finally:
+            if self.log_splitter:
+                self.log_splitter.flush()
+            if report:
+                self.analyzer._notify('on_parse_progress', label, total, total)
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
@@ -4358,6 +4487,8 @@ class LogFileMonitor:
                     # Advance last_position by the bytes consumed so far so resume
                     # doesn't re-process already-handled lines.
                     self.last_position += sum(len(l) for l in new_lines[:idx])
+                    if self.log_splitter:
+                        self.log_splitter.flush()
                     if self.diagnostic:
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
                         _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
@@ -4367,6 +4498,8 @@ class LogFileMonitor:
             if line:
                 self._process_one_line(line)
 
+        if self.log_splitter:
+            self.log_splitter.flush()
         self.last_position = new_end_position
         if new_lines:
             self._emit_log_status(new_end_position)
@@ -4394,7 +4527,18 @@ class LogFileMonitor:
             self.last_entry_offset_ms,
         )
         self.analyzer._notify('on_log_status', status)
-    
+        self._report_split_status()
+
+    def _report_split_status(self):
+        """Tell listeners when split writing fails or works again (issue
+        #111): once per change, as an 'on_warning' from source 'split'."""
+        error = self.log_splitter.write_error if self.log_splitter is not None else None
+        if error == self._split_warning:
+            return
+        self._split_warning = error
+        self.analyzer._notify('on_warning', 'split',
+                              f"Split file writing stopped: {error}" if error else None)
+
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
         if not self.log_splitter:
