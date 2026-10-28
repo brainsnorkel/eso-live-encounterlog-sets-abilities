@@ -79,6 +79,9 @@ EFFECT_ORDER = ["Major Slayer", "Major Force", "Major Courage",
                 "Major Berserk", "Powerful Assault", "Major Vulnerability",
                 "Taunt"]
 
+# Each row's colour on a dark pane; on a light one the same hue darkened
+# until the bar stands 3:1 or more against the window (issue #77: the
+# Material 300 tints measured 1.3 to 2.8 there). row_color picks by theme
 EFFECT_COLORS = {
     "Major Slayer": QColor("#e57373"),
     "Major Force": QColor("#64b5f6"),
@@ -88,6 +91,16 @@ EFFECT_COLORS = {
     "Major Vulnerability": QColor("#4db6ac"),
     "Taunt": QColor("#9575cd"),
 }
+EFFECT_COLORS_LIGHT = {
+    "Major Slayer": QColor("#e15b5b"),
+    "Major Force": QColor("#0e8aee"),
+    "Major Courage": QColor("#a88000"),
+    "Major Berserk": QColor("#ba68c8"),
+    "Powerful Assault": QColor("#fe3d00"),
+    "Major Vulnerability": QColor("#3d958d"),
+    "Taunt": QColor("#9575cd"),
+}
+DEFAULT_ROW_COLORS = {False: QColor("#878787"), True: QColor("#9e9e9e")}
 
 EFFECT_SHORT = {
     "Major Slayer": "M.Slayer",
@@ -107,6 +120,8 @@ SINGLE_TARGET_EFFECTS = {"Major Vulnerability", "Taunt"}
 # a height that follows the stack count over the fight's peak
 TRACKED_COLORS = [QColor("#f06292"), QColor("#4dd0e1"), QColor("#aed581"),
                   QColor("#a1887f"), QColor("#90a4ae"), QColor("#ffb74d")]
+TRACKED_COLORS_LIGHT = [QColor("#ee4880"), QColor("#1c95a5"), QColor("#669331"),
+                        QColor("#9c8178"), QColor("#718b97"), QColor("#c27400")]
 # The label of an expected row that never came: dark red on a light pane, a
 # lighter red on a dark one (keyed by whether the pane is dark)
 MISSING_COLORS = {False: QColor("#b71c1c"), True: QColor("#ef5350")}
@@ -303,7 +318,7 @@ class TimelineStrip(QWidget):
                     # What the rule measured this fight: its scope, or the
                     # pack's mobs for a boss rule in a fight without a boss
                     "scope": item.get("units") or item.get("scope", ""),
-                    "color": TRACKED_COLORS[index % len(TRACKED_COLORS)],
+                    "tracked_index": index,
                     # A stacking rule's bar is as high as its count over the
                     # peak; a dots rule's over Z'en's five, where 0 is a level
                     "stacks_max": (DOTS_CAP if item.get("kind") == "dots"
@@ -324,7 +339,6 @@ class TimelineStrip(QWidget):
                     "sparse": False,
                     "label": armour.get("label", name),
                     "scope": armour.get("scope", "boss"),
-                    "color": self.armour_color(),
                     "stacks_max": int(armour["stacks_max"]),
                     "zero_level": True,
                     "armour": armour,
@@ -447,7 +461,7 @@ class TimelineStrip(QWidget):
             # buff reached <=2 receivers (paint_sparse_span); otherwise each
             # interval, a stacking rule's bar as high as its count over the
             # peak
-            color = info.get("color") or EFFECT_COLORS.get(effect, QColor("#9e9e9e"))
+            color = self.row_color(effect)
             stacks_max = info.get("stacks_max", 0)
             if info.get("sparse"):
                 for start_ms, end_ms in merged_spans(self._intervals(effect)):
@@ -515,6 +529,23 @@ class TimelineStrip(QWidget):
         red, or a lighter red when the pane's background is dark."""
         dark = self.palette().color(self.backgroundRole()).lightness() < 128
         return MISSING_COLORS[dark]
+
+    def _dark(self) -> bool:
+        return self.palette().color(self.backgroundRole()).lightness() < 128
+
+    def row_color(self, effect: str) -> QColor:
+        """The bar colour of *effect*'s row in the pane's theme, read when
+        painting so a theme switch repaints in the other set: the Armour
+        row's own, a tracked rule's by its place in Settings, else the
+        built-in effect's."""
+        info = self._row_info.get(effect, {})
+        dark = self._dark()
+        if info.get("armour"):
+            return self.armour_color()
+        if "tracked_index" in info:
+            colors = TRACKED_COLORS if dark else TRACKED_COLORS_LIGHT
+            return colors[info["tracked_index"] % len(colors)]
+        return (EFFECT_COLORS if dark else EFFECT_COLORS_LIGHT).get(effect, DEFAULT_ROW_COLORS[dark])
 
     def armour_color(self) -> QColor:
         """The Armour row's blue-grey, lighter on a dark pane."""

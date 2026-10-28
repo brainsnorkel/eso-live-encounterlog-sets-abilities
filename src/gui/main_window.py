@@ -59,7 +59,7 @@ IDLE_SECONDS = 30 * 60
 # State colors per theme: dark backgrounds need lighter accents and vice versa
 _STATE_COLORS = {
     True: {"live": "#81c784", "idle": None, "stale": "#ffb74d", "none": "#e57373"},
-    False: {"live": "#2e7d32", "idle": None, "stale": "#b25a00", "none": "#c62828"},
+    False: {"live": "#2e7d32", "idle": None, "stale": "#aa5600", "none": "#c62828"},
 }
 
 
@@ -1116,6 +1116,7 @@ class MainWindow(QMainWindow):
             return
         if self._graph_dialog is None:
             self._graph_dialog = DpsGraphDialog(self)
+        self._graph_dialog.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self._graph_dialog.show_graph(fights[row], self._dark,
                                       names=self._names_for(fights[row]))
         self._graph_dialog.show()
@@ -1285,6 +1286,9 @@ class MainWindow(QMainWindow):
             self.config.save()
             self._apply_update_settings()
             self._apply_privacy_settings()
+            if self._graph_dialog is not None:
+                self._graph_dialog.set_colorblind(
+                    bool(self.config.get("display.colorblind_graph", False)))
             if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
                 self.set_text_size(self.config.get(text_size.CONFIG_KEY))
             self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)

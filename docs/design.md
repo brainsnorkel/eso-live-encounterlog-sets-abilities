@@ -1448,7 +1448,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:118](../src/app_config.py#L118)*
+*[src/app_config.py:120](../src/app_config.py#L120)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1710,8 +1710,9 @@ The group's line gets the upper panel and the players the lower, sharing
 the time axis, the crosshair and the tooltip. Drawing otherwise: hairline
 solid gridlines a step off the surface, 2 px lines with round joins, the
 group's heavier in the pane's text colour, the categorical hues in a fixed
-order (an eight-slot palette validated for colour-vision deficiency on both
-the light and the dark surface), text in the pane's own text colours and
+order (eight hues with a light and a dark step; Settings' colour-blind
+option swaps in seven measured to stay apart for the dichromacies, with a
+cycle of four strokes), text in the pane's own text colours and
 never in a series colour, and the end value of each line labelled when a
 panel shows four or fewer.
 
@@ -2069,7 +2070,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:205](../src/gui/timeline_strip.py#L205)*
+*[src/gui/timeline_strip.py:220](../src/gui/timeline_strip.py#L220)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -2246,7 +2247,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1297](../src/gui/main_window.py#L1297)*
+*[src/gui/main_window.py:1301](../src/gui/main_window.py#L1301)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
