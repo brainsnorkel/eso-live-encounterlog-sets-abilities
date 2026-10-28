@@ -52,7 +52,7 @@ DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal A
 
 ### A player's row in detail
 
-With **Detail view** on (the default; Tab toggles it), each row shows the player's two ability bars as the game's icons, front bar left and back bar right, the ultimate set apart.
+With **Detail view** on (the default; Ctrl+D toggles it), each row shows the player's two ability bars as the game's icons, front bar left and back bar right, the ultimate set apart.
 
 - Hover an icon for the ability's name; click it to open the skill on [ESO-Hub](https://eso-hub.com). An ability without a bundled icon shows its name instead.
 - An ability the player taunted with in this fight is ringed in purple (or its name is purple).
@@ -109,6 +109,20 @@ The rules are fixed in this version; what each finding says is meant to be enoug
 Type in the search field above the fight (Ctrl+F puts the cursor there). Every match is highlighted and counted, Enter jumps to the next one, Esc clears. Icons match by the ability they stand for, so searching `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights.
 
 ![Searching a fight for an ability name](screencaps/search.png)
+
+### Keyboard
+
+| Key | Does |
+|---|---|
+| Tab, Shift+Tab | Move between the fight list, the search field and the fight |
+| Up, Down | Pick a fight in the list |
+| Ctrl+D | Detail view on or off |
+| Ctrl+F | Put the cursor in the search field; Enter jumps to the next match, Esc clears |
+| Ctrl+C | Copy fight |
+| Ctrl+H | [Hide names](#hiding-other-players-names) on or off, from any of the app's windows |
+| Ctrl + mouse wheel | Make the fight pane's text bigger or smaller, until the app closes |
+
+Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
 
 ## A player's build
 
