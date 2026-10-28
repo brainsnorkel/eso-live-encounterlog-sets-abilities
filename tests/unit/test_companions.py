@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""A companion has a row of its own under its owner (issue #74).
+"""A companion has a row of its own under its owner (issue #74), with its
+casts, its ultimate and its healing to others (issue #130).
 
 The lines have the shape of the real ones (two solo Moon Hunter Keep logs
 of 2026-10-26 and the trial logs surveyed for companions.py): the logging
 player's own companion is a MONSTER with reaction COMPANION and its owner
 set; another member's is FRIENDLY with owner 0 until a UNIT_CHANGED names
-the owner; a re-summoned companion has a new unit id.
+the owner; a re-summoned companion has a new unit id; Isobel's Baneslayer
+writes two BEGIN_CAST lines under one castTrackId.
 """
 
 import tempfile
 import unittest
 from pathlib import Path
 
+import companions
 from app_config import DEFAULTS, AppConfig
 from app_startup import build_analyzer
 from engine_events import RecordingListener
@@ -21,9 +24,11 @@ from gui.damage_render import render_damage_html
 from gui.fight_render import (
     COMPANION_INDENT,
     build_href,
+    build_tooltips,
     damage_href,
     render_html,
     render_plain_text,
+    ultimate_gap,
 )
 
 EPOCH = 1759600000000
@@ -32,6 +37,15 @@ ABILITY = 12345
 ISOBEL = "106616"
 BEAM = 163684
 LIGHT_ATTACK = 157069
+BANESLAYER = 163763  # Isobel's ultimate
+BLOCK = 156219  # a companion's block
+
+
+class _AllIcons:
+    """Stand-in for the fight view's IconCache that has every icon."""
+
+    def has(self, stem):
+        return bool(stem)
 
 
 def _player(unit_id, health=20000):
@@ -66,8 +80,9 @@ def _heal(ts, source_state, value, target_state):
     return f"{ts},COMBAT_EVENT,HEAL,MAGIC,1,{value},0,901,{ABILITY},{source_state},{target_state}"
 
 
-def _cast(ts, source_state, ability):
-    return f"{ts},BEGIN_CAST,0,F,{ts},{ability},{source_state},{_boss(BOSS_HEALTH)}"
+def _cast(ts, source_state, ability, track=None):
+    return (f"{ts},BEGIN_CAST,0,F,{track if track is not None else ts},{ability},"
+            f"{source_state},{_boss(BOSS_HEALTH)}")
 
 
 def _died(ts, unit_state):
@@ -84,6 +99,9 @@ BASE = [
     (f'2600,ABILITY_INFO,{BEAM},"Beam of Reproach",'
      f'"/esoui/art/icons/ability_companion_templar_purifying_light.dds",F,T'),
     f'2600,ABILITY_INFO,{LIGHT_ATTACK},"Light Attack","/esoui/art/icons/death_recap_magic_ranged.dds",F,T',
+    (f'2600,ABILITY_INFO,{BANESLAYER},"Baneslayer",'
+     f'"/esoui/art/icons/ability_companion_templar_baneslayer.dds",F,T'),
+    f'2600,ABILITY_INFO,{BLOCK},"Block","/esoui/art/icons/ability_warrior_008.dds",F,T',
 ]
 FIGHT_START = [
     '10000,BEGIN_COMBAT',
@@ -224,7 +242,8 @@ class TestCompanionViews(unittest.TestCase):
         self.assertIn(build_href('c1-106616'), html)
         self.assertIn(damage_href('c1-106616'), html)
         self.assertLess(html.index('@brainsnorkel'), html.index('Isobel Veloise'))
-        self.assertIn('H 33.0k</td>', html)  # health only
+        # A health pool only, and its casts per minute: one cast in 20 s
+        self.assertIn('H 33.0k · CPM 3</td>', html)
         self.assertIn('☠</span>', html)  # its death, muted, no recap
 
     def test_the_copy_indents_the_companion(self):
@@ -242,6 +261,128 @@ class TestCompanionViews(unittest.TestCase):
     def test_the_damage_window_reads_the_companion_row(self):
         html = render_damage_html(self.fight, 'c1-106616')
         self.assertIn('Beam of Reproach', html)
+
+
+def _casting_fight():
+    """Isobel casts Baneslayer at 0.5 s (two lines, one cast) and 7 s, two
+    light attacks, a block and Beam of Reproach in a 20 s fight, and heals
+    her owner for 5,000; the templar heals the owner for 3,000."""
+    return _run([OWN] + FIGHT_START + [
+        _cast(10500, _companion(23), BANESLAYER),
+        _cast(10520, _companion(23), BANESLAYER, track=10500),
+        _cast(11000, _companion(23), LIGHT_ATTACK),
+        _cast(11500, _companion(23), LIGHT_ATTACK),
+        _cast(12500, _companion(23), BLOCK),
+        _cast(13000, _companion(23), BEAM),
+        _cast(17000, _companion(23), BANESLAYER),
+        PLAYER_HIT, COMPANION_HIT,
+        _heal(14000, _companion(23), 5000, _player(1)),
+        _heal(14500, _player(2), 3000, _player(1)),
+    ] + FIGHT_END).fight_history.fights[0]
+
+
+class TestCompanionCasts(unittest.TestCase):
+    """Issue #130: the engine's fields."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fight = _casting_fight()
+        cls.row = cls.fight.players[1]
+
+    def test_its_casts_are_counted_like_a_players(self):
+        summary = self.row['casts']
+        self.assertEqual(summary['total'], 6)  # the two Baneslayer lines are one cast
+        self.assertAlmostEqual(summary['cpm'], 18.0)  # over the 20 s fight
+        self.assertEqual({kind: summary[kind] for kind in ('light', 'bash', 'block', 'dodge',
+                                                           'break_free')},
+                         {'light': 2, 'bash': 0, 'block': 1, 'dodge': 0, 'break_free': 0})
+        self.assertNotIn('heavy', summary)  # a companion's own kinds
+
+    def test_a_players_casts_keep_their_kinds(self):
+        self.assertEqual(set(self.fight.players[0]['casts']),
+                         {'total', 'cpm', 'light', 'heavy', 'bash', 'swap', 'dodge',
+                          'synergy', 'potion', 'break_free'})
+
+    def test_the_ultimate_is_last_on_the_bar_and_marked(self):
+        self.assertEqual(self.row['front_bar'], ['Beam of Reproach', 'Baneslayer'])
+        beam, baneslayer = self.row['front_bar_slots']
+        self.assertEqual((beam['casts'], baneslayer['casts']), (1, 2))
+        self.assertTrue(baneslayer['ultimate'])
+        self.assertNotIn('ultimate', beam)
+
+    def test_its_ultimates_with_their_times(self):
+        self.assertEqual(self.row['ultimates'],
+                         [{'id': str(BANESLAYER), 'name': 'Baneslayer', 'at': [0.5, 7.0]}])
+
+    def test_its_healing_to_others(self):
+        self.assertEqual((self.row['healing'], self.fight.players[2]['healing']), (5000, 3000))
+
+    def test_no_ultimate_cast_is_an_empty_list(self):
+        fight = _run([OWN] + FIGHT_START + [PLAYER_HIT, COMPANION_HIT] + FIGHT_END
+                     ).fight_history.fights[0]
+        self.assertEqual(fight.players[1]['ultimates'], [])
+
+    def test_the_bar_order_puts_the_ultimate_last(self):
+        self.assertEqual(companions.bar_order([BANESLAYER, BEAM, LIGHT_ATTACK]),
+                         [str(BEAM), str(LIGHT_ATTACK), str(BANESLAYER)])
+
+
+class TestCompanionCastViews(unittest.TestCase):
+    """Issue #130: the pane, its hover, the copy and the companion window."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fight = _casting_fight()
+
+    def test_the_row_has_cpm_and_the_ultimate(self):
+        self.assertIn('H 33.0k · CPM 18 · Ult ×2</td>', render_html(self.fight, detailed=True))
+        self.assertIn(' · CPM 18 · Ult ×2', render_plain_text(self.fight))
+
+    def test_the_hover_names_the_ultimate_and_the_healing(self):
+        tips = build_tooltips(self.fight)
+        companion = tips[build_href('c1-106616')]
+        self.assertIn('Baneslayer cast at 0:00 and 0:07 into the fight', companion)
+        self.assertIn('5,000 healing to others, 250 a second of the fight', companion)
+        self.assertIn("with this fight's casts", companion)
+        # A player's healing to others too; none on the owner, who healed nobody
+        self.assertIn('3,000 healing to others, 150 a second of the fight',
+                      tips[build_href('2')])
+        self.assertNotIn('healing to others', tips[build_href('1')])
+        self.assertNotIn(' cast at ', tips[build_href('1')])
+
+    def test_the_window_counts_its_casts(self):
+        page = render_build_html(self.fight, 'c1-106616', icons=_AllIcons())
+        self.assertIn('>Other</td>', page)
+        self.assertIn('Light attacks 2 · Bashes 0 · Blocks 1 · Dodges 0 · Break Free 0 · '
+                      '6 casts, 18 per minute', page)
+        self.assertNotIn('Heavy attacks', page)
+        # Counts under the icons, the ultimate set apart once
+        self.assertIn("<td align='center' valign='bottom'>", page)
+        self.assertEqual(page.count("<td width='10'></td>"), 1)
+        self.assertIn('Baneslayer cast at 0:00 and 0:07 into the fight · '
+                      '5,000 healing to others, 250 a second of the fight', page)
+
+    def test_an_entry_built_before_the_counts(self):
+        fight = _casting_fight()
+        row = fight.players[1]
+        del row['casts'], row['ultimates']
+        for slot in row['front_bar_slots']:
+            del slot['casts']
+        isobel_row = render_html(fight, detailed=True).split('Isobel Veloise')[1].split('</tr>')[0]
+        self.assertTrue(isobel_row.endswith('H 33.0k</td>'))  # health only, as before
+        self.assertNotIn('Ult ×', render_plain_text(fight))
+        page = render_build_html(fight, 'c1-106616', icons=_AllIcons())
+        self.assertNotIn('>Other</td>', page)
+        self.assertNotIn("valign='bottom'", page)
+        self.assertIn('Beam of Reproach', page)
+
+    def test_a_marked_bar_sets_apart_only_the_marked_slot(self):
+        seven = [{}] * 6 + [{'ultimate': True}]
+        self.assertEqual([ultimate_gap(slot, index, True) for index, slot in enumerate(seven)],
+                         [False] * 6 + [True])
+        six = [{}] * 6
+        self.assertEqual([ultimate_gap(slot, index, False) for index, slot in enumerate(six)],
+                         [False] * 5 + [True])
 
 
 class TestCompanionSetting(unittest.TestCase):

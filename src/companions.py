@@ -36,9 +36,9 @@ October 2026):
   it. Its casts carry its own ability ids, whose icons are the game's
   ability_companion_* family (124 of them bundled): the row's bar is the
   skills it was seen casting this session, in first-cast order
-  (bar_ability), the way werewolf.py rebuilds a werewolf's bar. Light and
-  heavy attacks, block, bash, dodge roll and break free have other icons
-  and are left out.
+  (bar_ability), the way werewolf.py rebuilds a werewolf's bar, with its
+  ultimate set apart at the end (bar_order). Light attacks, block, bash,
+  dodge roll and break free have other icons and are left out.
 - A companion's death is a DIED line naming it as the dying unit; it is
   shown on its row, not counted in the fight's Deaths, which stay player
   deaths.
@@ -49,6 +49,48 @@ October 2026):
 The effect rules still see a companion as a pet (ESOLogAnalyzer._unit_kind),
 so ``pets`` rules, the group size an expectation reads and the pen/crit
 figures do not move with the companion rows.
+
+Casts, ultimates and healing (issue #130), from a second survey of 214
+split logs with a companion, January to October 2026, that forgets a
+companion's unit id at its UNIT_REMOVED (the game hands those ids to
+players later, and the first survey counted those players' casts as the
+companion's):
+
+- Every cast of a companion is a BEGIN_CAST under its unit id, as a
+  player's is, so the cast counter (casts.py) counts a companion's casts
+  under its row key: the re-summons of one companion are one row's casts.
+  Besides its skills it casts light attacks, Block, Roll Dodge, Bash and
+  CPN Break Free under ids of its own; it never heavy attacks, swaps
+  weapons, takes a synergy or drinks a potion (casts.COMPANION_EXTRA_KINDS).
+- Each companion has one ultimate (ULTIMATES). Each id was cast by its own
+  companion's monster id only: 213 casts, Raging Storm 76, Impeccable
+  Shot 63, Baneslayer 23, Blade of the Crossing 18, Gore 11, Vigorous
+  Tentacular Eruption 10, Unleashed Rage 7, Ruinous Outburst 5.
+- Every line a companion is the source of carries an ultimate pool out of
+  500, and an ultimate costs about 200 of it; but the cost is not always
+  written after the cast (a Baneslayer's own BEGIN_CAST often reads 0 or 1
+  already), so the ultimates are counted by their cast ids, not from the
+  pool. The other way round, every fall of 150 or more in a companion's
+  pool is one of these casts: one in 214 logs is not within 4 s of one, a
+  Raging Storm cost written 5.5 s late. So no ultimate goes unlogged.
+- An ultimate is counted as any cast is, on its BEGIN_CAST. Of the 213,
+  206 ended COMPLETED, one INTERRUPTED, one PLAYER_CANCELLED and five
+  have no END_CAST (two with no effect, damage or cost: the fight ended
+  under them), so the count can be about 2% over the ultimates that went
+  off. The parser drops an END_CAST with a cancel reason, which a rule on
+  the outcome would need.
+- Its healing is the engine's healing to others
+  (CombatEncounter.add_healing_to_player): the heals that landed on a
+  player, its owner included; not its heals on itself or on pets, and not
+  the overheal.
+- Two skills carry the game's generic icon (Storm Barricade 157226 and
+  Fire Barricade 157145, 42 casts in combat in the 214 logs), so
+  bar_ability leaves them off the bar: they count in the casts and the
+  cpm only. Sepulchral Chill writes a second id (213284, the generic
+  icon) under its own cast's castTrackId, which the counter counts once.
+- A UNIT_CHANGED that sets a companion's owner to 0 is it leaving: 189 of
+  them, after which came 3 casts and 0.04% of companion damage. None cast
+  in combat before its owner was known.
 """
 
 from dataclasses import dataclass, field
@@ -64,6 +106,19 @@ COMPANION_MONSTER_IDS = {
     "112374": "Azandar",
     "120245": "Tanlorin",
     "120246": "Zerith-var",
+}
+
+# Each companion's ultimate by ability id, with the English name for
+# reference only (the window shows the name the log gave)
+ULTIMATES = {
+    "164191": "Raging Storm",                    # Ember
+    "157259": "Impeccable Shot",                 # Mirri Elendis
+    "163763": "Baneslayer",                      # Isobel Veloise
+    "213169": "Blade of the Crossing",           # Zerith-var
+    "186488": "Gore",                            # Sharp-as-Night
+    "195103": "Vigorous Tentacular Eruption",    # Azandar
+    "157016": "Unleashed Rage",                  # Bastian Hallix
+    "215215": "Ruinous Outburst",                # Tanlorin
 }
 
 COMPANION_REACTION = "COMPANION"
@@ -91,6 +146,14 @@ def is_row_key(unit_id) -> bool:
 def bar_ability(icon_stem: str) -> bool:
     """Whether a cast with this icon is a companion skill for its bar."""
     return str(icon_stem or "").startswith(SKILL_ICON_PREFIX)
+
+
+def bar_order(ability_ids) -> list[str]:
+    """A companion's bar: its skills in first-cast order, then its
+    ultimate, which a bar sets apart as it does a player's sixth slot."""
+    ability_ids = [str(ability_id) for ability_id in ability_ids]
+    return ([ability_id for ability_id in ability_ids if ability_id not in ULTIMATES]
+            + [ability_id for ability_id in ability_ids if ability_id in ULTIMATES])
 
 
 @dataclass
