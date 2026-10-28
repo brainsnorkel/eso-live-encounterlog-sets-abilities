@@ -70,6 +70,12 @@ class SignalListener(AnalyzerListener):
     def on_diagnostic(self, message):
         self._emit("diagnostic", message)
 
+    def on_parse_progress(self, label, done, total):
+        self._emit("parse_progress", label, done, total)
+
+    def on_warning(self, source, message):
+        self._emit("warning", source, message)
+
 
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.
@@ -85,6 +91,9 @@ class EngineWorker(QObject):
     log_status = Signal(object)        # LogStatus
     archive_event = Signal(object)     # ArchiveEvent
     diagnostic = Signal(str)
+    # A lasting problem by source ('split', 'poll'): message, or None once
+    # it has cleared (issue #111)
+    warning = Signal(str, object)
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
     # A requested restart has begun: fights sent before this came from the
@@ -103,6 +112,7 @@ class EngineWorker(QObject):
         self._log_path = None
         self._poll_timer = None
         self._wait_timer = None
+        self._poll_failures = 0  # polls in a row that raised
 
     # ---- lifecycle ----
 
@@ -211,6 +221,8 @@ class EngineWorker(QObject):
     # Backlogs above this show a busy indicator while catching up
     CATCHUP_BUSY_BYTES = 8 * 1024 * 1024
     _CATCHUP_LABEL = "Catching up on new log data…"
+    # Polls in a row that raise before the window shows a lasting warning
+    POLL_FAILURES_WARN = 3
 
     def _poll(self):
         if self.monitor is None:
@@ -230,8 +242,16 @@ class EngineWorker(QObject):
                 busy = True
                 self.parse_progress.emit(self._CATCHUP_LABEL, 0, 0)
             self.monitor._process_new_lines()
+            if self._poll_failures >= self.POLL_FAILURES_WARN:
+                self.warning.emit("poll", None)
+            self._poll_failures = 0
         except Exception as exc:
             self.diagnostic.emit(f"poll error: {exc}")
+            # One failure is a status line; failing poll after poll (out of
+            # memory, a line the engine cannot take) is a lasting warning
+            self._poll_failures += 1
+            if self._poll_failures == self.POLL_FAILURES_WARN:
+                self.warning.emit("poll", f"Reading the log keeps failing: {exc}")
         finally:
             if busy:
                 self.parse_progress.emit(self._CATCHUP_LABEL, 1, 1)  # hide
