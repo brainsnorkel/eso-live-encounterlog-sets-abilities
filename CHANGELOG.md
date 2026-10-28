@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.25.0] - 2026-10-29
 
 ### Added
 - **The fight list in blocks by instance** (#129): a bold header names the zone and its difficulty, `Sunspire · Veteran`, above the fights fought there one after another, and the fight lines leave the zone out. Neighbouring blocks alternate between a plain and a faintly shaded background (worked out from the theme's own colours). A new block starts in another zone or difficulty, or at the first fight after a completed run even in the same trial; walking back in after a wipe keeps the block
