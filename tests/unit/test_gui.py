@@ -324,7 +324,7 @@ class TestMainWindowStates(GuiTestCase):
             loaded = self._reviewed()
             for entry in loaded['fights']:
                 win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
 
             # Substring, case-insensitive: "wild" hits "Tide-Born Wildstalker"
             win.search_field.setText('wild')
@@ -335,7 +335,7 @@ class TestMainWindowStates(GuiTestCase):
             self.assertEqual(len(win.fight_view.extraSelections()), hits)
 
             # Switching fights re-applies the search to the new content
-            win.history_list.setCurrentRow(1)
+            win.history_list.select_fight(1)
             self.assertGreaterEqual(len(win.fight_view.extraSelections()), 1)
 
             # Highlighted ranges actually cover the search text
@@ -359,7 +359,7 @@ class TestMainWindowStates(GuiTestCase):
         try:
             loaded = self._reviewed()
             win._on_fight_completed(loaded['fights'][0])
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.search_field.setText('a')  # plenty of matches
             matches = win._search_matches()
             self.assertGreater(len(matches), 2)

@@ -214,7 +214,7 @@ class TestGraphWindow(unittest.TestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry(players=10))
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIsNone(win._graph_dialog)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
             dialog = win._graph_dialog
@@ -243,7 +243,7 @@ class TestGraphWindow(unittest.TestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry(players=2, boss=True))
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
             dialog = win._graph_dialog
             self.assertTrue(dialog.boss_only.isVisibleTo(dialog))
@@ -258,7 +258,7 @@ class TestGraphWindow(unittest.TestCase):
             self.assertEqual(keys, {'Group', '1'})
             # A fight without boss damage hides the switch and clears it
             win._on_fight_completed(_entry(players=2))
-            win.history_list.setCurrentRow(1)
+            win.history_list.select_fight(1)
             win.graph_action.trigger()
             self.assertFalse(dialog.boss_only.isVisibleTo(dialog))
             self.assertFalse(dialog.boss_only.isChecked())
@@ -271,7 +271,7 @@ class TestGraphWindow(unittest.TestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry(players=3))
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
             dialog = win._graph_dialog
             dialog.legend.item(2).setCheckState(Qt.Unchecked)
@@ -298,7 +298,7 @@ class TestGraphWindow(unittest.TestCase):
             self.assertEqual([[round(t, 2), d] for t, d in entry.damage_series['all']],
                              [[1.01, 90000], [11.01, 60000], [21.01, 30000]])
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
             dialog = win._graph_dialog
             self.assertEqual(dialog.legend.count(), 4)

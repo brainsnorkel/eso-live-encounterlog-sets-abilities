@@ -398,7 +398,7 @@ class TestSearchFindsAbilityIcons(FightViewTestCase):
         try:
             win.fight_view.icons = IconCache(self.icons_root)
             win._on_fight_completed(_entry_with_bars())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertNotIn('Biting Jabs', win.fight_view.toPlainText())
 
             win.search_field.setText('jabs')

@@ -76,7 +76,7 @@ class IssuesGuiTestCase(unittest.TestCase):
         win.worker_thread.quit()
         win.worker_thread.wait(3000)
         win._on_fight_completed(entry)
-        win.history_list.setCurrentRow(0)
+        win.history_list.select_fight(0)
         return win
 
     def _popups(self):
@@ -269,12 +269,12 @@ class TestHistoryListCue(IssuesGuiTestCase):
         from gui.fight_render import ISSUES_LIST_CUE
         win = self._window(_entry())
         try:
-            self.assertIn(ISSUES_LIST_CUE, win.history_list.item(0).text())
+            self.assertIn(ISSUES_LIST_CUE, win.history_list.fight_item(0).text())
             clean = _entry()
             for p in clean.players:
                 p['build_issues'] = []
             win._on_fight_completed(clean)
-            self.assertNotIn(ISSUES_LIST_CUE, win.history_list.item(1).text())
+            self.assertNotIn(ISSUES_LIST_CUE, win.history_list.fight_item(1).text())
         finally:
             win.close()
 

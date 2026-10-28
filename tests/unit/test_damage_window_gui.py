@@ -243,7 +243,7 @@ class TestDamageWindow(DamageWindowTestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIsNone(win._damage_dialog)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
@@ -279,7 +279,7 @@ class TestDamageWindow(DamageWindowTestCase):
         try:
             entry = fights()[0]
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
             dialog = win._damage_dialog
             self.assertEqual(dialog.windowTitle(), 'Damage – @brainsnorkel')
@@ -299,7 +299,7 @@ class TestDamageWindow(DamageWindowTestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
             dialog = win._damage_dialog
             before = dialog.view.toHtml()

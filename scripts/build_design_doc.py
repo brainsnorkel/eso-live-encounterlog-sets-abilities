@@ -126,6 +126,10 @@ TOPICS = [
         "src/esolog_tail.py:LogSplitter",
         "scripts/dedupe_splits.py",
     ]),
+    ("A trial's result, and the fight list in blocks by instance", [
+        "src/trial_result.py",
+        "src/gui/fight_list.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),

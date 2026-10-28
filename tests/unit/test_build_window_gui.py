@@ -118,7 +118,7 @@ class BuildGuiTestCase(unittest.TestCase):
             _app.processEvents()
         if entry is not None:
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
         return win
 
     def _point_on(self, view, text, offset=2):
@@ -373,7 +373,7 @@ class TestHoverCue(BuildGuiTestCase):
             self._hover(view, '@brainsnorkel')
             self.assertTrue(view._hover_selections)
             win._on_fight_completed(_entry())   # becomes the fight on screen
-            self.assertEqual(win.history_list.currentRow(), 1)
+            self.assertEqual(win.history_list.current_fight_index(), 1)
             self.assertEqual((view.hovered_build_link, view._hover_selections,
                               view.extraSelections()), ('', [], []))
         finally:
@@ -946,12 +946,12 @@ class TestBuildWindow(BuildGuiTestCase):
             later.boss_name = 'Another Boss'
             _player(later, '1')['gear'] = []
             win._on_fight_completed(later)
-            self.assertEqual(win.history_list.currentRow(), 1)
+            self.assertEqual(win.history_list.current_fight_index(), 1)
             self.assertIn('Another Boss', win.fight_view.toPlainText())
             self.assertEqual(dialog.view.toHtml(), shown)
             self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
             # Selecting the older fight again changes nothing either
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertEqual(dialog.view.toHtml(), shown)
         finally:
             win.close()

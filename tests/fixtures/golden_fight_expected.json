@@ -41,7 +41,7 @@
         }
       ],
       "timestamp": "T9",
-      "trial_info": null,
+      "trial_result": null,
       "zone_name": "Coral Aerie"
     },
     {
@@ -85,7 +85,7 @@
         }
       ],
       "timestamp": "T99",
-      "trial_info": null,
+      "trial_result": null,
       "zone_name": "Coral Aerie"
     }
   ],

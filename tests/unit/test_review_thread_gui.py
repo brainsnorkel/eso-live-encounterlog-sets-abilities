@@ -48,7 +48,7 @@ class TestReviewThread(GuiTestCase):
                 self.assertTrue(_pump(app, lambda: win._review_fights is not None))
             self.assertEqual(threads, ['review'])
             self.assertTrue(win._review_fights)
-            self.assertEqual(win.history_list.count(), len(win._review_fights))
+            self.assertEqual(win.history_list.fight_count(), len(win._review_fights))
             self.assertFalse(win.review_cancel_button.isVisibleTo(win))
         finally:
             win.close()

@@ -69,7 +69,7 @@ class TestKeyboard(unittest.TestCase):
         self.win.activateWindow()
         self.assertTrue(QTest.qWaitForWindowActive(self.win, 2000))
         self.win._on_fight_completed(_entry())
-        self.win.history_list.setCurrentRow(0)
+        self.win.history_list.select_fight(0)
 
     def tearDown(self):
         self.win.close()
@@ -147,12 +147,12 @@ class TestKeyboard(unittest.TestCase):
         second.boss_name = "Ozezan"
         self.win._on_fight_completed(second)
         self._focus(self.win.history_list)
-        row = self.win.history_list.currentRow()
+        row = self.win.history_list.current_fight_index()
         self._key(Qt.Key_Down if row == 0 else Qt.Key_Up)
-        self.assertNotEqual(self.win.history_list.currentRow(), row)
+        self.assertNotEqual(self.win.history_list.current_fight_index(), row)
         shown = self.win.fight_view.toPlainText()
         self._key(Qt.Key_Up if row == 0 else Qt.Key_Down)
-        self.assertEqual(self.win.history_list.currentRow(), row)
+        self.assertEqual(self.win.history_list.current_fight_index(), row)
         self.assertNotEqual(self.win.fight_view.toPlainText(), shown)
 
     def test_ctrl_wheel_zooms_the_fight_pane(self):

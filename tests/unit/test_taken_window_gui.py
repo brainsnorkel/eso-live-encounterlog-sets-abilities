@@ -397,7 +397,7 @@ class TestTakenWindow(TakenWindowTestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIsNone(win._taken_dialog)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
@@ -424,7 +424,7 @@ class TestTakenWindow(TakenWindowTestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win._show_build('1')
             win._build_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
             self.assertIsNotNone(win._taken_dialog)
@@ -441,7 +441,7 @@ class TestTakenWindow(TakenWindowTestCase):
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
             dialog = win._taken_dialog
             before = dialog.view.toHtml()

@@ -236,7 +236,7 @@ class TestTheWindows(HideNamesTestCase):
             win.hide_names_action.setChecked(True)
             win.hide_names_action.setChecked(False)
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIn("@friend", win.fight_view.toPlainText())
             win.hide_names_action.setChecked(True)
             text = win.fight_view.toPlainText()
@@ -257,7 +257,7 @@ class TestTheWindows(HideNamesTestCase):
         try:
             self.assertTrue(win.hide_names_action.isChecked())
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertNotIn("@friend", win.fight_view.toPlainText())
         finally:
             win.close()
@@ -268,7 +268,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             dialog = SettingsDialog(win.config, win)
             self.assertFalse(dialog.hide_names.isChecked())
             dialog.hide_names.setChecked(True)
@@ -290,7 +290,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             build = win._build_dialog
             self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
@@ -334,7 +334,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             build = win._build_dialog
             build.hide()
@@ -352,7 +352,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window(hide=True)
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             strip = win.timeline_strip
             summary = strip.summary_html("Major Force")
             self.assertIn("@me", summary)
@@ -380,10 +380,10 @@ class TestTheWindows(HideNamesTestCase):
             first, second = _entry(), _entry(local="2")  # in the second, @friend wrote the log
             win._on_fight_completed(first)
             win._on_fight_completed(second)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             build = win._build_dialog
-            win.history_list.setCurrentRow(1)
+            win.history_list.select_fight(1)
             win.hide_names_action.setChecked(True)
             pane = win.fight_view.toPlainText()
             self.assertIn("@friend", pane)
@@ -396,7 +396,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             strip = win.timeline_strip
             self.assertIn("@friend", strip.summary_html("Major Force"))
             win.hide_names_action.setChecked(True)
@@ -419,7 +419,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window(hide=True)
         try:
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.graph_action.trigger()
             hover = win._graph_dialog.graph.tooltip_html(3)
             self.assertIn("@me", hover)
@@ -438,7 +438,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window(hide=True)
         try:
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/2"))
             recap = win._death_dialog
             self.assertEqual(recap.windowTitle(), f"Death recap – {FRIEND}")
@@ -455,7 +455,7 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window(hide=True)
         try:
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             build = win._build_dialog
             build.refresh(True)
@@ -476,7 +476,7 @@ class TestTheWindows(HideNamesTestCase):
             win.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
             win._on_fight_completed(_entry())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             QTest.keyClick(win, Qt.Key_H, Qt.ControlModifier)
             self.assertTrue(win.hide_names_action.isChecked())
             self.assertNotIn("@friend", win.fight_view.toPlainText())
@@ -501,7 +501,7 @@ class TestTheWindows(HideNamesTestCase):
             entry = _entry()
             entry.players = entry.players * 20
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             view = win.fight_view
             # Qt lays a long document out lazily; asking for its size lays
             # it out whole and sizes the scrollbar (the Linux runner never

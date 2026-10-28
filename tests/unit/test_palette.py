@@ -243,7 +243,7 @@ class TestColourblindGraphOption(unittest.TestCase):
         win.worker_thread.wait(3000)
         self.addCleanup(win.close)
         win._on_fight_completed(self._entry(3))
-        win.history_list.setCurrentRow(0)
+        win.history_list.select_fight(0)
         win._show_graph()
         self.assertTrue(win._graph_dialog.colorblind)
         win._graph_dialog.close()

@@ -8,7 +8,7 @@ The **[home page](https://xop.co/eso-live-encounterlog-sets-abilities/)** is the
 
 ## Features
 
-- **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time and deaths, with every fight of the session kept in a history list.
+- **Fight summaries as combat ends**: boss or mob name, duration, group DPS, zone, time and deaths, with every fight of the session kept in a history list, grouped by instance, and each completed trial's vitality, score and time under its last fight.
 - **Players ranked by boss damage, then all damage**, with role (Tank/Healer/DPS), class and borrowed skill lines or Class Mastery passives, boss DPS beside total DPS, damage share, and resource pools.
 - **Builds at a glance**: both ability bars as the game's own icons, scribed skills with their scripts (`Chilling Contingency (Lingering Torment / Intellect and Endurance)`), and every equipped gear set with piece counts.
 - **Full build per player**: click a name for gear slot by slot (set, type, quality, trait, enchant, slotted poison), both bars, mundus stone, food and Class Mastery passives.

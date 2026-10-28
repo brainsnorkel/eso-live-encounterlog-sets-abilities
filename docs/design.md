@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2481](../src/esolog_tail.py#L2481)*
+*[src/esolog_tail.py:2427](../src/esolog_tail.py#L2427)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:80](../src/esolog_tail.py#L80)*
+*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1817](../src/esolog_tail.py#L1817)*
+*[src/esolog_tail.py:1785](../src/esolog_tail.py#L1785)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1832](../src/esolog_tail.py#L1832)*
+*[src/esolog_tail.py:1800](../src/esolog_tail.py#L1800)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:74](../src/esolog_tail.py#L74)*
+*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4164](../src/esolog_tail.py#L4164)*
+*[src/esolog_tail.py:4104](../src/esolog_tail.py#L4104)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:350](../src/esolog_tail.py#L350)*
+*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -1565,7 +1565,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:876](../src/esolog_tail.py#L876)*
+*[src/esolog_tail.py:877](../src/esolog_tail.py#L877)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1606,13 +1606,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
+*[src/esolog_tail.py:90](../src/esolog_tail.py#L90)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:400](../src/esolog_tail.py#L400)*
+*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1696,7 +1696,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:106](../src/esolog_tail.py#L106)*
+*[src/esolog_tail.py:107](../src/esolog_tail.py#L107)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1704,7 +1704,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:124](../src/esolog_tail.py#L124)*
+*[src/esolog_tail.py:125](../src/esolog_tail.py#L125)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1851,7 +1851,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:616](../src/esolog_tail.py#L616)*
+*[src/esolog_tail.py:617](../src/esolog_tail.py#L617)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1874,7 +1874,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:742](../src/esolog_tail.py#L742)*
+*[src/esolog_tail.py:743](../src/esolog_tail.py#L743)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1900,7 +1900,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3366](../src/esolog_tail.py#L3366)*
+*[src/esolog_tail.py:3306](../src/esolog_tail.py#L3306)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -1961,6 +1961,84 @@ be undone. Zipped splits and the ``keep`` folder are left alone.
 ```
 
 Without --dir the split folder from the app's config is used.
+
+## A trial's result, and the fight list in blocks by instance
+
+### src/trial_result.py
+
+*[src/trial_result.py:1](../src/trial_result.py#L1)*
+
+A trial's result as the game writes it: vitality left, score and time.
+
+Design: when a trial (or an arena) is completed the log writes one line,
+
+```
+    END_TRIAL,id,durationMS,success,finalScore,finalVitalityBonus
+```
+
+e.g. ``1415661,END_TRIAL,12,1351407,T,253117,35000``: Sunspire (id 12) in
+22:31, score 253,117, 35 of 36 vitality left. What the line tells, measured
+on every completed run in a year of split logs (146 runs, 2026-01 to -10):
+
+- Vitality left is finalVitalityBonus / 1000. The bonus is always a
+  multiple of 1,000, at most 36,000 (a deathless Maw of Lorkhaj) and at
+  least 0 (87 runs with 36 deaths or more). The 35/36 Sunspire run of
+  2026-10-21 wrote 35000 with one player death in the log.
+- The maximum is 36 in the 12-player trials, all of which were veteran
+  runs; an arena's is not (a Dragonstar Arena run with 7 deaths kept 14),
+  and a normal trial's was never seen. So the maximum is shown only for a
+  veteran run of a trial in TRIALS, and an arena's or an unknown run's
+  vitality as the points alone.
+- success is T in every END_TRIAL: a run that fails or is abandoned writes
+  none, so there is never a failed result to show.
+- Vitality is the log's figure, never 36 less the deaths the engine counts.
+  In 38 runs the log holds fewer player deaths than the game charged (3
+  logged against 13 in an Aetherian Archive run, 8 against 23 in Hel Ra):
+  the log carries the events around the player writing it, so after a wipe
+  in which that player released, the others' deaths are not all there.
+  Eight runs also began in an earlier split than the one with END_TRIAL.
+- The name is the zone's at the time (ZONE_CHANGED), the id's from
+  TRIAL_NAMES only when there is none. A split's file name can be another
+  trial's: one named for Dreadsail Reef ends Kyne's Aegis (id 13).
+
+The line comes inside the final fight in 144 of the 146 runs (33 ms after
+the last hit of a Sunspire run) and so belongs to that fight. In the other
+two, both Blackrose Prison, it comes about 4 seconds after END_COMBAT, and
+the engine gives it to the fight it has just sent (ESOLogAnalyzer.
+_handle_end_trial), which frontends then redraw.
+
+### src/gui/fight_list.py
+
+*[src/gui/fight_list.py:1](../src/gui/fight_list.py#L1)*
+
+The fight list: the session's fights in blocks, one per instance.
+
+Design (issue #129): the fights fought one after another in the same
+instance form a block. A header row above it names the zone and its
+difficulty, so the fight rows leave the zone out; when the block ended a
+trial or an arena, an inert row under its last fight gives the run's
+result (trial_result: vitality, score, time); and the blocks lie on
+alternate backgrounds, a faint band and none, so neighbours stand apart.
+
+A new block starts at a fight in another zone or at another difficulty
+than the fight before, or at the first fight after a completed run, even
+in the same zone. A wipe and a walk back in through the same door keep the
+block: the zone and difficulty are the same and no run was completed. The
+zone is told by its id (a solo dungeon shares its name with the group
+dungeon, pen_crit.zone_kind) and by its name only when the entry has none.
+
+Header and result rows are not enabled, so a click or a key never makes
+one current: the arrow keys step from fight to fight over them, and Home,
+End and the page keys go on to the nearest fight (moveCursor). Their text
+takes the list's own text colour, which a disabled row would otherwise
+grey out. The list therefore maps rows to fights itself (entry_at,
+row_of) and offers the fight-index calls the window and tests use
+(select_fight, fight_item, current_fight_index).
+
+The band is the list's base colour moved BAND_MIX of the way towards its
+text colour, so it follows the theme and keeps the text's contrast; it is
+worked out again, with the header's bold font, whenever the palette or the
+font changes (a theme switch, a new text size).
 
 ## Death recaps
 
@@ -2368,7 +2446,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:785](../src/gui/main_window.py#L785)*
+*[src/gui/main_window.py:778](../src/gui/main_window.py#L778)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2378,7 +2456,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1306](../src/gui/main_window.py#L1306)*
+*[src/gui/main_window.py:1288](../src/gui/main_window.py#L1288)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 

@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **The fight list in blocks by instance** (#129): a bold header names the zone and its difficulty, `Sunspire · Veteran`, above the fights fought there one after another, and the fight lines leave the zone out. Neighbouring blocks alternate between a plain and a faintly shaded background (worked out from the theme's own colours). A new block starts in another zone or difficulty, or at the first fight after a completed run even in the same trial; walking back in after a wipe keeps the block
+- **A trial's result** (#129): under the fight that completed a trial or an arena, a line gives the run's result as the game scored it, `✓ Sunspire vet · Vitality 35/36 · 253,117 · 22:31`: vitality left, score and the trial timer. The same line is a strip across the top of that fight's pane, and **Copy fight** adds it. Vitality is the game's own figure from the log's `END_TRIAL` line, out of 36 in a veteran trial; an arena's maximum is not known, so it shows the points alone. Checked against 146 completed runs from January to October 2026, among them the 35/36 Sunspire run of 21 October. The header and result lines cannot be selected, and the arrow, Home, End and page keys step over them
+
+### Fixed
+- The trial ids' names were wrong (id 12, Sunspire, was called Red Petal Bastion); they are now the names of the zones each id was written in across a year of logs. A completed run recorded before a session started (the `TRIAL_INIT` line on entering an instance) is no longer taken for one of that session's results
+
 ## [0.24.0] - 2026-10-28
 
 ### Changed
