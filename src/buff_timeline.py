@@ -14,6 +14,8 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
+from effect_rules import Interval
+
 # Effect name -> ability IDs observed in live logs. A named buff can be
 # applied by several distinct ability IDs (different sources/sets).
 TRACKED_TIMELINE_EFFECTS: Dict[str, set] = {
@@ -109,12 +111,14 @@ class BuffTimelineRecorder:
             for start, end, source_id, target_id in candidates:
                 if end <= fight_start_ms or start >= fight_end_ms:
                     continue
-                rows.append({
-                    "start_ms": max(start, fight_start_ms) - fight_start_ms,
-                    "end_ms": min(end, fight_end_ms) - fight_start_ms,
-                    "source": resolve_name(source_id),
-                    "target": resolve_name(target_id),
-                })
+                # Read as the dict it was ({start_ms, end_ms, source,
+                # target}), in slots (effect_rules.Interval, issue #110)
+                rows.append(Interval(
+                    max(start, fight_start_ms) - fight_start_ms,
+                    min(end, fight_end_ms) - fight_start_ms,
+                    target=resolve_name(target_id),
+                    source=resolve_name(source_id),
+                ))
             if rows:
                 rows.sort(key=lambda r: (r["start_ms"], r["end_ms"]))
                 effects[effect] = rows

@@ -7,6 +7,24 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 ### Changed
 - **Detail view is Ctrl+D, and Tab moves the focus** (#77): Tab used to toggle Detail view, so a keyboard user could not leave the fight list; Tab and Shift+Tab now move between the fight list, the search field and the fight pane, and Ctrl+D toggles Detail view from any of them, the search field included. The toolbar button's hover names the key, and the user guide lists the keys under **Keyboard**
 
+## [0.22.0] - 2026-10-28
+
+From the speed, memory and disk review (#105).
+
+### Added
+- **Reviews run on a thread of their own** (#107): live fights keep arriving while a log opened for review loads (a live fight showed 4 s into a review that had made it wait 41 s before). **Cancel review** beside the progress bar stops it. A log over 1 GB is looked through first (a few seconds per GB) and the app offers the whole log or its last few sessions, with the time each takes: a 4.7 GB month-long log reads in about 8 minutes, its last three sessions in about one. The cut is always at a session's start, which gives exactly the fights the whole log gives; starting mid-session was measured and gave different fights
+- **Lasting warnings** (#111): a red note in the status bar, kept until the problem clears, when split files cannot be written (a full disk, a removed drive) or reading the log fails poll after poll. Both were a passing status line or a diagnostic print before
+- The startup replay of the current session shows its progress on the progress bar
+
+### Changed
+- **Replays are 37% faster** (#108): each log line is split once instead of three times, and event types are looked up in tables. Startup, a Settings save and a review all replay; a 390 MB trial log went from 40 to 25 seconds
+- **Fight history takes 27% less memory** (#110): damage series, effect spans and repeated gear are held compactly (a trial night's history 63 → 46 MB), with every figure the same
+- **Split files are written once per batch** (#109), not once per line: 72 thousand disk writes instead of 3.3 million for a 573 MB session, and the startup replay with splitting on is about a sixth quicker. A crash loses at most one second of lines, which the next start restores from the game's log
+- The current session is replayed in full at startup however large it is (#107). A session over 768 MB used to get only its roster read, which could leave its early fights with the wrong companion and pet rows
+
+### Fixed
+- **Champion points** follow the log: a player seen earlier in the same log file kept the champion points first seen, and a point earned mid-session never showed (158 of 2,856 player rows in 19 split logs now show the newer figure)
+
 ## [0.21.1] - 2026-10-28
 
 ### Changed
