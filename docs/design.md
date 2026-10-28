@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2444](../src/esolog_tail.py#L2444)*
+*[src/esolog_tail.py:2461](../src/esolog_tail.py#L2461)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1821](../src/esolog_tail.py#L1821)*
+*[src/esolog_tail.py:1838](../src/esolog_tail.py#L1838)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1836](../src/esolog_tail.py#L1836)*
+*[src/esolog_tail.py:1853](../src/esolog_tail.py#L1853)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,15 +65,22 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4086](../src/esolog_tail.py#L4086)*
+*[src/esolog_tail.py:4129](../src/esolog_tail.py#L4129)*
 
 Replay the log's most recent session up to the attach point.
 
 Gives a mid-session attach the same state as having run since the
 session began: full roster, this session's fights in history, and
 the session's split file (created only if absent). Best-effort:
-failures leave plain tailing, and oversized sessions fall back to
-the roster-only preamble sweep.
+failures leave plain tailing.
+
+Every session is replayed whole, however large. Until issue #107 one
+over 768 MB got only the roster-only preamble sweep, which is not
+enough: who owns which companion and pet is learned from the rest
+of the session, and fights rebuilt that way differed in every one
+of 18 measured on a Dreadsail Reef split. The sweep is left for a
+session whose BEGIN_LOG is beyond the 2 GB lookback, and for a
+replay that fails.
 
 ## Log freshness
 
@@ -1389,7 +1396,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:555](../src/effect_rules.py#L555)*
+*[src/effect_rules.py:616](../src/effect_rules.py#L616)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -1406,7 +1413,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:751](../src/effect_rules.py#L751)*
+*[src/effect_rules.py:812](../src/effect_rules.py#L812)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1652,7 +1659,7 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 
 ### dps_time_s
 
-*[src/damage_stats.py:93](../src/damage_stats.py#L93)*
+*[src/damage_stats.py:94](../src/damage_stats.py#L94)*
 
 A dps time: the span in seconds, floored at a second like LibCombat.
 
@@ -1762,7 +1769,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3310](../src/esolog_tail.py#L3310)*
+*[src/esolog_tail.py:3331](../src/esolog_tail.py#L3331)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2019,7 +2026,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:628](../src/effect_rules.py#L628)*
+*[src/effect_rules.py:689](../src/effect_rules.py#L689)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
@@ -2230,7 +2237,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:624](../src/gui/main_window.py#L624)*
+*[src/gui/main_window.py:785](../src/gui/main_window.py#L785)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2240,9 +2247,49 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1145](../src/gui/main_window.py#L1145)*
+*[src/gui/main_window.py:1306](../src/gui/main_window.py#L1306)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+## Reviews: a thread of their own, and where a large log is cut
+
+### src/review_load.py
+
+*[src/review_load.py:1](../src/review_load.py#L1)*
+
+Replaying a log for review (issue #107): the engine side of "Open log for
+review…", with no Qt in it, so it runs on a thread of its own while live
+monitoring keeps its poll.
+
+A large log is first outlined: one pass over the line heads that finds each
+session's start (``BEGIN_LOG``) and counts its fights (``BEGIN_COMBAT``),
+so the window can offer the whole log or only its most recent sessions.
+The cut is always at a session start. Starting in the middle of a session
+was measured and rejected: the roster lines alone do not carry what the
+engine learns from the rest of the session (who owns which companion and
+pet), and on a Dreadsail Reef split every one of the last 18 fights came
+out different. A replay from a ``BEGIN_LOG`` matched a replay of the whole
+file in 75 of 75 fights (once champion points followed the log).
+
+Lines before the first session read are skipped unparsed, so a cut log
+costs a pass over its head plus the engine's time for the rest. The engine
+runs at about 10 MB/s on the maintainer's machine, which the time estimate
+uses.
+
+### src/gui/review_runner.py
+
+*[src/gui/review_runner.py:1](../src/gui/review_runner.py#L1)*
+
+A review on a thread of its own (issue #107). Until 0.21 a review ran on
+the engine thread, whose poll timer then waited for it: a month-sized log
+took 8.6 minutes with no live fights shown. Now the engine polls on while a
+review replays through an analyzer of its own.
+
+The thread holds no Qt object. It reports through *notify*, which the
+window turns into a signal on an object living on the UI thread (as split
+retention does), so nothing Qt is created or freed here; the analyzer and
+its fights are plain Python. The settings are a snapshot taken when the
+review starts, since Settings may change them meanwhile.
 
 ## Updates: the schedule, the conditional request and the button
 
