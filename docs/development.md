@@ -114,7 +114,15 @@ python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Eld
 :: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
 python scripts\generate_esohub_links.py
 
-:: Gear set data, after dropping a new LibSets_SetData.xlsm into data/gear_sets/
+:: Set names from your installed game, and a check of every bundled name
+:: against it (needs UESP's EsoExtractData; about 20 seconds). It lists each
+:: name that differs from the game's and exits 1 when there is one; run it
+:: first, then the scripts below whose tables it names
+python scripts\check_client_names.py --write-sets
+
+:: Gear set data: names from the game (the step above), set types from
+:: LibSets_SetData.xlsm in data/gear_sets/ (drop in a new one when LibSets
+:: publishes it)
 python scripts\generate_gear_data.py
 
 :: Class skill line and Class Mastery passives by ability id, for the skill
@@ -144,9 +152,13 @@ python scripts\generate_armor_weights.py
 python scripts\generate_ability_targets.py
 
 :: What each set does for penetration and critical damage, for the build
-:: window's two sections, from UESP's set summary (network access; or --from a
-:: reply of theirs already saved)
+:: window's two sections, and every set's bonus text, from UESP's set summary
+:: (network access; or --from a reply of theirs already saved)
 python scripts\generate_set_offense.py
+
+:: The hidden abilities set bonuses fire, by ability id, with their set, from
+:: UESP's mined skills (network access, about 5 MB; or --from a saved reply)
+python scripts\generate_set_procs.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.

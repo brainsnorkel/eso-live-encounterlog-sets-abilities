@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2505](../src/esolog_tail.py#L2505)*
+*[src/esolog_tail.py:2481](../src/esolog_tail.py#L2481)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1841](../src/esolog_tail.py#L1841)*
+*[src/esolog_tail.py:1817](../src/esolog_tail.py#L1817)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1856](../src/esolog_tail.py#L1856)*
+*[src/esolog_tail.py:1832](../src/esolog_tail.py#L1832)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4188](../src/esolog_tail.py#L4188)*
+*[src/esolog_tail.py:4164](../src/esolog_tail.py#L4164)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:374](../src/esolog_tail.py#L374)*
+*[src/esolog_tail.py:350](../src/esolog_tail.py#L350)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -764,13 +764,75 @@ exactly this mapping, publishes a workbook with every set's id, name, type
 (crafted, trial, mythic, ...) and item ids; this script reads it at build
 time with openpyxl and writes a Python module, so nothing is parsed at run
 time and the workbook is not bundled. The CI build runs the script, so a
-change here is what ships. Set names are shown as the game spells them: the
-workbook's spelling differs for a few dozen sets ("Perfect" for
-"Perfected", "Blood Spawn", three Cyrodiil sets one id out of place), so
-NAME_CORRECTIONS carries the name from the installed client's own English
-string table for each of those ids, and the script reports a correction
-the workbook no longer needs. ESO-Hub links for sets are looked up by the
-corrected name (see src/ability_icons.py).
+change here is what ships. Set names are the game's own (issue #79): the
+installed client's English string table, committed as
+data/client/set_names_en.json by scripts/check_client_names.py, names every
+set, and the workbook's spelling differed for 26 of them on Update 51
+("Perfect" for "Perfected", "Blood Spawn", three Cyrodiil sets one id out of
+place). The workbook gives the set type, the one field the app reads from it
+(the five-piece reading in esolog_tail.has_five_piece_bonus, the mythic one
+in player_build.is_mythic_set), and the names of the template and "(OLD)"
+rows the client lacks. A set the client has and the workbook does not yet is
+included under its client name with no type, so it reads as a five-piece,
+non-mythic set until the workbook catches up. ESO-Hub links for sets are
+looked up by name (see src/ability_icons.py).
+
+### scripts/check_client_names.py
+
+*[scripts/check_client_names.py:1](../scripts/check_client_names.py#L1)*
+
+Compare every name the app bundles by game id with the installed client's own
+English text, and keep the committed snapshot of the client's set names.
+
+Design (issue #79): the client's language file, gamedata\lang\en.lang in
+depot\eso.mnf, holds the game's name for every set, ability and item, keyed
+by id, and it is right on patch day. It holds no structure: not which items
+are poisons, not a set's type or bonuses, not an ability's skill line. So the
+external sources (the LibSets workbook, UESP, LibFoodDrinkBuff) stay for
+structure, and this script checks their names against the client:
+
+  table      Index      what is checked against it
+  38727365   set id     src/gear_set_data.py, the set ids named in
+                        src/build_issues.py, data/sets/offense.json, and the
+                        names data/esohub/sets_en.json is keyed by
+  198758357  ability    data/skills/class_passives.json (a mastery's effect
+                        by the buff it grants, which is the effect's own
+                        name), data/skills/weapon_skill_lines.json, and the
+                        skill id lists in src/build_issues.py against their
+                        name lists
+  242841733  item id    data/items/poisons_en.json (the client writes a tiered
+                        poison without its numeral, as the table does)
+
+Item names carry grammar markers ("battle axe^n"); they are cut at the caret
+before comparing. The code lists are read with ast, so nothing in src/ is
+imported. Food and drink buffs are not checked: data/buffs/food_drink.json
+holds ids and kinds only, no names.
+
+Two kinds of finding. A name that differs from the client's, or a name the
+client does not have at all, is a difference and makes the run exit 1. An id
+the client has no name for is counted, not failed: UESP's tables keep the
+rank II to IV ids that skills had before Update 34, which the client no
+longer names (432 in weapon_skill_lines.json and 39 in build_issues.py's
+skill lists on Update 51), and the LibSets workbook keeps template and
+"(OLD)" rows (11). They are harmless in a lookup table, and failing on them
+would make the check fail for good. The set lists are stricter: a set id in
+build_issues.py or offense.json that the client does not name is a
+difference, since every set there was chosen by hand.
+
+Set names are also written to data/client/set_names_en.json with --write-sets.
+scripts/generate_gear_data.py takes its set names from that snapshot (CI has
+no game client, so the client's names have to be committed) and only the set
+type from the LibSets workbook. Refresh it after every ESO update:
+
+```
+    python scripts/check_client_names.py --write-sets
+```
+
+The run extracts en.lang into a temporary folder with UESP's EsoExtractData
+(about 20 s, read-only on the game folder; see scripts/extract_ability_icons.py
+for how the extractor and the client are found), or reads an extracted
+en.lang.csv given with --lang-csv. Then rerun scripts/generate_gear_data.py,
+which reports the sets the snapshot added.
 
 ## Solo dungeons: the run's Misfortunes
 
@@ -1055,6 +1117,18 @@ is flat; a sentence that opens with a condition (When, While, After,
 Whenever, Dealing, Touching, On, If, Each, Every) is conditional. A set the
 export does not describe, or a bonus worded in a way this script does not
 read, is simply absent: the section then shows nothing for it.
+
+The same reply also gives data/sets/bonuses_en.json (issue #79): every set's
+bonus lines as the game words them, by set id, for a set's description in the
+app. The game's client files do not hold this text (the client assembles a
+set's tooltip from server data at run time), so UESP's copy, which its
+uespLog addon reads from the game, is the source; it is bundled so nothing
+is asked of UESP at run time, and it carries UESP's CC-BY-SA 2.5 attribution
+like this file. Each line keeps its piece count, whether it is a perfected
+bonus ("(2 perfected items)"), and its text with runs of spaces closed up;
+the figures stay as written ("Adds 15-657 Critical Chance": the second value
+is the one at Champion Point 160). Set names in it are UESP's; the app names
+a set from its own table by id.
 
 Run after an ESO update that adds or changes sets (one request to UESP; UESP
 asks heavy users to go lightly, so do not loop it):
@@ -1490,7 +1564,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:900](../src/esolog_tail.py#L900)*
+*[src/esolog_tail.py:876](../src/esolog_tail.py#L876)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1537,7 +1611,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:424](../src/esolog_tail.py#L424)*
+*[src/esolog_tail.py:400](../src/esolog_tail.py#L400)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1776,7 +1850,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:640](../src/esolog_tail.py#L640)*
+*[src/esolog_tail.py:616](../src/esolog_tail.py#L616)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1799,7 +1873,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:766](../src/esolog_tail.py#L766)*
+*[src/esolog_tail.py:742](../src/esolog_tail.py#L742)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1825,7 +1899,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3390](../src/esolog_tail.py#L3390)*
+*[src/esolog_tail.py:3366](../src/esolog_tail.py#L3366)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 

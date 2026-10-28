@@ -381,29 +381,105 @@ class TestGearSetNames(unittest.TestCase):
             self.assertEqual(SET_ID_TO_NAME[set_id], name)
             self.assertEqual(links[name], page)
 
-    def test_a_correction_replaces_the_workbooks_name_for_its_set_only(self):
+    def test_the_clients_name_wins_and_neither_source_loses_a_set(self):
         try:
             script = _load('generate_gear_data.py')
         except ImportError:
             self.skipTest('openpyxl is not installed (requirements-build.txt)')
-        said = io.StringIO()
-        with mock.patch.object(script, 'NAME_CORRECTIONS', {'711': "Right Name"}), \
-                contextlib.redirect_stdout(said):
-            self.assertEqual(script.corrected_name('711', "Wrong Name"), "Right Name")
-            self.assertEqual(script.corrected_name('712', "Wrong Name"), "Wrong Name")
-            self.assertNotIn("can go", said.getvalue())
-            # A workbook that has caught up: same result, and it says so
-            self.assertEqual(script.corrected_name('711', "Right Name"), "Right Name")
-        self.assertIn("NAME_CORRECTIONS can go", said.getvalue())
+        workbook = {'711': "Jerall Mountains Warchief", '163': "Blood Spawn",
+                    '483': "Template_Drop_Magi"}
+        client = {'711': "Colovian Highlands General", '163': "Bloodspawn",
+                  '900': "Brand New Set"}
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            names = script.set_names(workbook, client)
+        self.assertEqual(names, {'711': "Colovian Highlands General", '163': "Bloodspawn",
+                                 '483': "Template_Drop_Magi", '900': "Brand New Set"})
+        self.assertIn("2 named by the client where the workbook differs, 1 from the client only",
+                      said.getvalue())
+        self.assertIn("client only 900: Brand New Set", said.getvalue())
 
-    def test_every_correction_is_in_the_committed_data(self):
+    def test_a_missing_snapshot_leaves_the_workbooks_names(self):
         try:
             script = _load('generate_gear_data.py')
         except ImportError:
             self.skipTest('openpyxl is not installed (requirements-build.txt)')
-        from gear_set_data import SET_ID_TO_NAME
-        for set_id, name in script.NAME_CORRECTIONS.items():
+        with tempfile.TemporaryDirectory() as temp, \
+                contextlib.redirect_stdout(io.StringIO()) as said:
+            self.assertEqual(script.load_client_names(Path(temp) / 'none.json'), {})
+        self.assertIn("Warning", said.getvalue())
+
+    def test_every_client_name_is_in_the_committed_data(self):
+        # data/client/set_names_en.json is what CI builds src/gear_set_data.py from
+        from gear_set_data import SET_ID_TO_NAME, SET_INFO
+        path = REPO_ROOT / 'data' / 'client' / 'set_names_en.json'
+        client = json.loads(path.read_text(encoding='utf-8'))['sets']
+        self.assertGreater(len(client), 700)
+        for set_id, name in client.items():
             self.assertEqual(SET_ID_TO_NAME.get(set_id), name)
+            self.assertEqual(SET_INFO[name]['set_id'], set_id)
+        # The workbook still types the sets it has
+        self.assertEqual(SET_INFO["Bloodspawn"]['set_type'], 'LIBSETS_SETTYPE_MONSTER')
+
+    def test_every_mythic_the_workbook_types_reads_as_mythic(self):
+        # The fight pane used a hand-kept list of 20 names, two of them not
+        # set names ("Kilt", "Antiquarian's Eye"); it missed 19 of 36 mythics
+        from player_build import is_mythic_set
+        for name in ("Harpooner's Wading Kilt", "Belharza's Band", "Rourken Steamguards",
+                     "Prowler's Talisman", "Oakensoul Ring"):
+            self.assertTrue(is_mythic_set(name), name)
+        for name in ("Bloodspawn", "Perfected Arms of Relequen", "Kilt", "Antiquarian's Eye"):
+            self.assertFalse(is_mythic_set(name), name)
+
+
+class TestClientNameCheck(unittest.TestCase):
+    """scripts/check_client_names.py: the patch-day check of the bundled
+    names against the client's en.lang (issue #79)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script = _load('check_client_names.py')
+
+    def test_reads_only_the_wanted_tables_and_drops_grammar_markers(self):
+        rows = ('"ID","Unknown","Index","Offset","Text"\n'
+                '"38727365","0","270","1","Slimecraw"\n'
+                '"242841733","0","251","2","battle axe^n"\n'
+                '"198758357","0","16536","3","Meteor, the ""big"" one"\n'
+                '"162658389","0","1592","4","March of Sacrifices"\n')
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'en.lang.csv'
+            path.write_text(rows, encoding='utf-8')
+            tables = self.script.read_tables(path, ('38727365', '198758357', '242841733'))
+        self.assertEqual(tables, {'38727365': {'270': "Slimecraw"},
+                                  '198758357': {'16536': 'Meteor, the "big" one'},
+                                  '242841733': {'251': "battle axe"}})
+
+    def test_a_rename_is_a_difference_and_an_unnamed_id_is_not(self):
+        renamed, unnamed = self.script.by_id(
+            "t", {'1': "Same", '2': "Old", '3': "Gone"}, {'1': "Same", '2': "New"})
+        self.assertEqual(renamed, ["t: 2 is 'Old' here, 'New' in the client"])
+        self.assertEqual(unnamed, ["t: 3"])
+        # A hand-kept set list holds no retired id
+        strict, none = self.script.by_id("t", {'3': "Gone"}, {}, strict=True)
+        self.assertEqual((strict, none), (["t: 3 'Gone' is not in the client"], []))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.script.report({'s': ([], unnamed)}), 0)
+            self.assertEqual(self.script.report({'s': (renamed, unnamed)}), 1)
+
+    def test_a_skill_id_must_carry_one_of_its_lists_names(self):
+        renamed, unnamed = self.script.ids_named(
+            "TAUNT", {'28306', '99', '41473'}, {"Puncture"},
+            {'28306': "Puncture", '99': "Meteor"})
+        self.assertEqual(renamed, ["TAUNT: 99 is 'Meteor' in the client, not one of the listed names"])
+        self.assertEqual(unnamed, ["TAUNT: 41473"])
+
+    def test_reads_the_code_lists_without_importing_them(self):
+        issues = REPO_ROOT / 'src' / 'build_issues.py'
+        proc = self.script.literal(issues, 'PROC_SETS')
+        self.assertEqual(proc['232'], "Roar of Alkosh")
+        self.assertIn('39095', self.script.literal(issues, 'ELEMENTAL_DRAIN_IDS'))
+        self.assertEqual(self.script.literal(issues, 'GROUP_SETS')['768'], "Lucent Echoes")
+        with self.assertRaises(KeyError):
+            self.script.literal(issues, 'NO_SUCH_NAME')
 
 
 class TestWeaponSkillLines(unittest.TestCase):
@@ -666,6 +742,68 @@ class TestAbilityTargets(unittest.TestCase):
         from damage_kinds import reset_target_table, table_target
         reset_target_table()
         self.assertEqual(table_target('28800'), 'area')
+
+
+class TestSetTextAndProcs(unittest.TestCase):
+    """Issue #79: set bonus text (scripts/generate_set_offense.py, a second
+    table from the same reply) and set proc abilities
+    (scripts/generate_set_procs.py)."""
+
+    SUMMARY = {"setSummary": [
+        {"gameId": "232", "setName": "Roar of Alkosh",
+         "setBonusDesc1": "(2 items) Adds 15-657 Critical Chance",
+         "setBonusDesc2": "(5 items) When you activate a synergy, you send a shockwave.  It scales.",
+         "setBonusDesc3": ""},
+        {"gameId": "393", "setName": "Perfected Arms of Relequen",
+         "setBonusDesc1": "(2 perfected items) Adds 1096 Maximum Stamina"},
+        {"gameId": "", "setName": "No Id"},
+        {"gameId": "999", "setName": "No Lines", "setBonusDesc1": "no piece count"},
+    ]}
+
+    def test_every_bonus_line_is_kept_with_its_piece_count(self):
+        gen = _load('generate_set_offense.py')
+        self.assertEqual(gen.set_texts(self.SUMMARY), {
+            "232": {"name": "Roar of Alkosh", "bonuses": [
+                {"pieces": 2, "text": "Adds 15-657 Critical Chance"},
+                {"pieces": 5, "text": "When you activate a synergy, you send a shockwave. It scales."}]},
+            "393": {"name": "Perfected Arms of Relequen", "bonuses": [
+                {"pieces": 2, "text": "Adds 1096 Maximum Stamina", "perfected": True}]},
+        })
+
+    def test_the_committed_text_covers_every_set_the_offense_table_names(self):
+        sets = REPO_ROOT / 'data' / 'sets'
+        text = json.loads((sets / 'bonuses_en.json').read_text(encoding='utf-8'))
+        offense = json.loads((sets / 'offense.json').read_text(encoding='utf-8'))
+        self.assertIn('CC-BY-SA', text['attribution'])
+        self.assertGreater(text['count'], 700)
+        self.assertEqual(sorted(set(offense['sets']) - set(text['sets'])), [])
+        alkosh = text['sets']['232']['bonuses']
+        self.assertEqual([b['pieces'] for b in alkosh], [2, 3, 4, 5])
+        self.assertIn("Minor Slayer", alkosh[1]['text'])
+
+    def test_a_proc_is_keyed_by_ability_and_named_by_its_set_id(self):
+        gen = _load('generate_set_procs.py')
+        payload = {"minedSkills": [
+            {"id": "135923", "setName": "Roaring Opportunist"},
+            {"id": "142012", "setName": "CP:Cutting Defense"},
+            {"id": "61746", "setName": ""},
+            {"id": "", "setName": "Roar of Alkosh"},
+            {"id": "75752", "setName": "Roar of Alkosh"},
+        ]}
+        procs, unknown = gen.set_procs(payload, {"Roaring Opportunist": "496", "Roar of Alkosh": "232"})
+        self.assertEqual(procs, {"135923": {"set_id": "496", "set": "Roaring Opportunist"},
+                                 "75752": {"set_id": "232", "set": "Roar of Alkosh"}})
+        self.assertEqual(unknown, ["CP:Cutting Defense"])
+
+    def test_a_short_reply_writes_nothing(self):
+        gen = _load('generate_set_procs.py')
+        with tempfile.TemporaryDirectory() as temp:
+            reply, out = Path(temp) / 'reply.json', Path(temp) / 'out.json'
+            reply.write_text(json.dumps({"minedSkills": [{"id": "1", "setName": "Roar of Alkosh"}]}),
+                             encoding='utf-8')
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(gen.main(['--from', str(reply), '--out', str(out)]), 1)
+            self.assertFalse(out.exists())
 
 
 if __name__ == '__main__':

@@ -43,6 +43,18 @@ Whenever, Dealing, Touching, On, If, Each, Every) is conditional. A set the
 export does not describe, or a bonus worded in a way this script does not
 read, is simply absent: the section then shows nothing for it.
 
+The same reply also gives data/sets/bonuses_en.json (issue #79): every set's
+bonus lines as the game words them, by set id, for a set's description in the
+app. The game's client files do not hold this text (the client assembles a
+set's tooltip from server data at run time), so UESP's copy, which its
+uespLog addon reads from the game, is the source; it is bundled so nothing
+is asked of UESP at run time, and it carries UESP's CC-BY-SA 2.5 attribution
+like this file. Each line keeps its piece count, whether it is a perfected
+bonus ("(2 perfected items)"), and its text with runs of spaces closed up;
+the figures stay as written ("Adds 15-657 Critical Chance": the second value
+is the one at Champion Point 160). Set names in it are UESP's; the app names
+a set from its own table by id.
+
 Run after an ESO update that adds or changes sets (one request to UESP; UESP
 asks heavy users to go lightly, so do not loop it):
     python scripts/generate_set_offense.py
@@ -60,13 +72,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "data" / "sets" / "offense.json"
+TEXT_OUT_PATH = REPO_ROOT / "data" / "sets" / "bonuses_en.json"
 EXPORT_URL = "https://esolog.uesp.net/exportJson.php?table=setSummary"
 USER_AGENT = ("esolog-tail build script "
               "(+https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities)")
 ATTRIBUTION = "Set data from UESP (esolog.uesp.net), CC-BY-SA 2.5"
 MIN_SETS = 500  # the game has 700-odd; fewer means a bad response
 
-_BONUS_RE = re.compile(r"^\((\d+) (?:perfected )?items?\)\s*(.*)$", re.DOTALL)
+_BONUS_RE = re.compile(r"^\((\d+) (perfected )?items?\)\s*(.*)$", re.DOTALL)
 # "Adds 34-1487 Offensive Penetration", "Gain 100000 Offensive Penetration",
 # "Adds 2-110 Weapon and Spell Damage and 28-1240 Offensive Penetration"
 _FLAT_PEN_RE = re.compile(r"^(?:Adds|Gain)\b[^.]*?(?:\d+-)?(\d+) Offensive Penetration\.?$", re.IGNORECASE)
@@ -216,12 +229,52 @@ def set_offense(payload: dict) -> dict:
             m = _BONUS_RE.match(text.strip())
             if not m:
                 continue
-            record = classify_bonus(int(m.group(1)), m.group(2), name)
+            record = classify_bonus(int(m.group(1)), m.group(3), name)
             if record:
                 bonuses.append(record)
         if bonuses:
             out[set_id] = {"name": name, "bonuses": bonuses}
     return out
+
+
+def set_texts(payload: dict) -> dict:
+    """set id -> {'name', 'bonuses': [{'pieces', 'text'} plus 'perfected':
+    true on a perfected bonus]}, every bonus line of every set, in order."""
+    rows = payload.get("setSummary") if isinstance(payload, dict) else None
+    out = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        set_id = str(row.get("gameId", "")).strip()
+        name = str(row.get("setName", "")).strip()
+        if not set_id.isdigit() or not name:
+            continue
+        bonuses = []
+        for index in range(1, 13):
+            m = _BONUS_RE.match((row.get(f"setBonusDesc{index}") or "").strip())
+            if not m:
+                continue
+            bonus = {"pieces": int(m.group(1)), "text": " ".join(m.group(3).split())}
+            if m.group(2):
+                bonus["perfected"] = True
+            bonuses.append(bonus)
+        if bonuses:
+            out[set_id] = {"name": name, "bonuses": bonuses}
+    return out
+
+
+def fetched_note(from_file: Path) -> str:
+    """' fetched <time>' from the esobuild export's index.json beside a saved
+    reply, so the table says how old its text is; empty when unknown."""
+    index = from_file.parent / "index.json"
+    try:
+        entries = json.loads(index.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    for entry in entries.values() if isinstance(entries, dict) else []:
+        if isinstance(entry, dict) and entry.get("url") == EXPORT_URL and entry.get("fetched"):
+            return f" fetched {entry['fetched']}"
+    return ""
 
 
 def render(sets: dict, generated: str, source: str) -> str:
@@ -245,10 +298,11 @@ def main(argv=None) -> int:
     parser.add_argument("--from", dest="from_file", type=Path,
                         help="a saved setSummary reply instead of fetching one")
     parser.add_argument("--out", type=Path, default=OUT_PATH)
+    parser.add_argument("--text-out", type=Path, default=TEXT_OUT_PATH)
     args = parser.parse_args(argv)
     if args.from_file:
         text = args.from_file.read_text(encoding="utf-8")
-        source = EXPORT_URL + f" (from {args.from_file.name})"
+        source = EXPORT_URL + f" (from {args.from_file.name}{fetched_note(args.from_file)})"
     else:
         text = fetch(EXPORT_URL)
         source = EXPORT_URL
@@ -268,6 +322,11 @@ def main(argv=None) -> int:
                 if key in bonus:
                     kinds[key] += 1
     print(f"Wrote {args.out}: {len(sets)} sets; bonus lines by kind: {kinds}")
+    texts = set_texts(payload)
+    args.text_out.write_text(render(texts, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                    source), encoding="utf-8")
+    print(f"Wrote {args.text_out}: {len(texts)} sets, "
+          f"{sum(len(data['bonuses']) for data in texts.values())} bonus lines")
     return 0
 
 

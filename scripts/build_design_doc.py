@@ -79,6 +79,7 @@ TOPICS = [
     ("Set names", [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
+        "scripts/check_client_names.py",
     ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",

@@ -430,7 +430,9 @@ def _default_set_name(set_id: str) -> Optional[str]:
     return gear_set_db.get_set_name_by_set_id(set_id)
 
 
-def _default_is_mythic(set_name: str) -> bool:
+def is_mythic_set(set_name: str) -> bool:
+    """True for a set the LibSets workbook types as mythic. A set too new
+    for the workbook has no type yet and reads as not mythic."""
     from gear_set_database import gear_set_db
     info = gear_set_db.get_set_info(set_name) or {}
     return info.get("set_type") == MYTHIC_SET_TYPE
@@ -462,7 +464,7 @@ def gear_rows(gear: Dict[str, List[str]],
     armor weights and weapon types; tests pass their own.
     """
     set_name_of = set_name_of or _default_set_name
-    is_mythic = is_mythic or _default_is_mythic
+    is_mythic = is_mythic or is_mythic_set
     counts = piece_counts(gear)
     rows = []
     for slot in SLOT_ORDER:

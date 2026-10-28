@@ -33,7 +33,7 @@ from build_issues import (
     worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
-from player_build import build_fields, food_ids, has_restoration_staff, is_two_handed, race_name
+from player_build import build_fields, food_ids, has_restoration_staff, is_mythic_set, is_two_handed, race_name
 from misfortunes import run_misfortunes
 from presence import present_share
 import casts
@@ -135,30 +135,6 @@ DAMAGE_RESULTS = frozenset(
 # Import our ESO analysis modules
 from damage_stats import FightDamage, dps as dps_over
 from eso_sets import ESOSubclassAnalyzer, lines_from_passives, mastery_of_effect, skill_lines_of
-
-# Known mythic item sets (these typically have only 1 piece and unique bonuses)
-MYTHIC_SETS = {
-    "Velothi Ur-Mage's Amulet",
-    "Kilt",  # Harpooner's Wading Kilt
-    "Ring of the Pale Order",
-    "Snow Treaders",
-    "Gaze of Sithis",
-    "Thrassian Stranglers",
-    "Antiquarian's Eye",
-    "Malacath's Band of Brutality",
-    "Spaulder of Ruin",
-    "Markyn Ring of Majesty",
-    "Dov-rha Sabatons",
-    "Lefthander's Aegis Belt",
-    "Mora's Whispers",
-    "Oakensoul Ring",
-    "Pearls of Ehlnofey",
-    "Sea-Serpent's Coil",
-    "Shapeshifter's Chain",
-    "Torc of Tonal Constancy",
-    "Huntsman's Warmask",
-    "Pearls of Ehlnofey",
-}
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
 NO_FIVE_PIECE_SET_TYPES = {
@@ -2919,7 +2895,7 @@ class ESOLogAnalyzer(ListenerMixin):
                             pc = 2
                         set_counts[set_name] = set_counts.get(set_name, 0) + pc
                 for sn, cnt in sorted(set_counts.items(), key=lambda x: -x[1]):
-                    is_mythic = sn in MYTHIC_SETS
+                    is_mythic = is_mythic_set(sn)
                     all_sets.append((cnt, sn))
                     if is_mythic or (has_five_piece_bonus(sn) and cnt >= 5):
                         player_sets.append((cnt, sn, is_mythic))
