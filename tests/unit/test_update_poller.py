@@ -98,7 +98,7 @@ class TestUpdatePoller(unittest.TestCase):
 
     def test_available_arrives_on_the_ui_thread(self):
         fn = self._check(CheckResult(info=_info(), etag='"abc"'))
-        fn.assert_called_once_with('0.14.2', None, None)
+        fn.assert_called_once_with('0.14.2', None, None, channel='stable')
         self.assertEqual([i.version for i in self.available], ['9.9.9'])
         self.assertIs(self.threads[0], _app.thread())
         self.assertEqual(self.outcomes[-1], 'update check: 9.9.9 available')
@@ -106,7 +106,7 @@ class TestUpdatePoller(unittest.TestCase):
     def test_not_modified_changes_nothing_and_sends_the_etag(self):
         self._check(CheckResult(info=_info(), etag='"abc"'))
         fn = self._check_tick(CheckResult(not_modified=True))
-        fn.assert_called_once_with('0.14.2', None, '"abc"')
+        fn.assert_called_once_with('0.14.2', None, '"abc"', channel='stable')
         self.assertEqual(len(self.available), 1)
         self.assertEqual(self.gone, [])
         self.assertEqual(self.outcomes[-1], 'update check: not modified')
@@ -136,7 +136,32 @@ class TestUpdatePoller(unittest.TestCase):
     def test_skipped_version_is_passed_to_the_check(self):
         self.config.set('update.skip_version', '9.9.9')
         fn = self._check(CheckResult())
-        fn.assert_called_once_with('0.14.2', '9.9.9', None)
+        fn.assert_called_once_with('0.14.2', '9.9.9', None, channel='stable')
+
+    def test_the_configured_channel_is_passed_to_the_check(self):
+        self.config.set('update.channel', 'beta')
+        fn = self._check(CheckResult())
+        fn.assert_called_once_with('0.14.2', None, None, channel='beta')
+        self.config.set('update.channel', 'junk')
+        fn = self._check(CheckResult())
+        fn.assert_called_once_with('0.14.2', None, None, channel='stable')
+
+    def test_an_etag_is_never_sent_to_the_other_channel(self):
+        # The channels ask different endpoints (issue #134)
+        self._check(CheckResult(etag='"stable-1"'))
+        self.config.set('update.channel', 'beta')
+        fn = self._check_tick(CheckResult(etag='"beta-1"'))
+        fn.assert_called_once_with('0.14.2', None, None, channel='beta')
+        fn = self._check_tick(CheckResult(not_modified=True))
+        fn.assert_called_once_with('0.14.2', None, '"beta-1"', channel='beta')
+
+    def test_leaving_beta_withdraws_an_offer_stable_does_not_make(self):
+        self.config.set('update.channel', 'beta')
+        self._check(CheckResult(info=_info('0.15.0')))
+        self.config.set('update.channel', 'stable')
+        self.poller.start()   # what a Settings save does
+        self._check(CheckResult())
+        self.assertEqual(self.gone, [True])
 
     def test_rate_limit_wait_skips_the_next_tick(self):
         self._check(CheckResult(error='rate limited (403)',

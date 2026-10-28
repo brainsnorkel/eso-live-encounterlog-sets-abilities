@@ -40,7 +40,7 @@ from gui.fight_render import (
 from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
 from gui.review_runner import ReviewRunner
-from gui.settings_dialog import SettingsDialog
+from gui.settings_dialog import CHANNEL_CHOICES, SettingsDialog
 from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
@@ -50,7 +50,7 @@ from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
 import split_retention
-from update_check import format_release_date
+from update_check import format_release_date, normalize_channel
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -830,15 +830,28 @@ class MainWindow(QMainWindow):
 
     def _apply_update_settings(self):
         """Settings saved: the check on starts a full check now and the
-        schedule; off stops both and withdraws the offer."""
+        schedule (on the channel saved, which the title names); off stops
+        both and withdraws the offer."""
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
         else:
             self.update_poller.stop()
             self._on_update_gone()
+        self._apply_title()
+
+    def _update_channel(self):
+        """The channel checks run on, or None while checks are off."""
+        if not bool(self.config.get("update.check_enabled", True)):
+            return None
+        return normalize_channel(self.config.get("update.channel"))
 
     def _apply_title(self):
+        """The version, " · beta" on the Beta channel (the maintainer's
+        choice of 2026-10-29, issue #134, so a screenshot shows it), and
+        the release on offer."""
         title = f"ESO Log Tail v{__version__}"
+        if self._update_channel() == "beta":
+            title += " · beta"
         if self._update is not None:
             title += f" · {self._update.version} available"
         self.setWindowTitle(title)
@@ -1263,7 +1276,14 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         """Version, project link, and credits (ESO-Hub links, ZeniMax icons)."""
         from gui.about import show_about
-        show_about(self, __version__)
+        channel = self._update_channel()
+        if channel is None:
+            updates = "Updates: not checked (turned off in Settings)"
+        else:
+            name, offers = next((name, offers) for key, name, offers in CHANNEL_CHOICES
+                                if key == channel)
+            updates = f"Update channel: {name} ({offers})"
+        show_about(self, __version__, updates)
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)

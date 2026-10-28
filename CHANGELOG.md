@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Update channels** (#134): Settings → Updates has a *Channel*, **Stable** (the default) or **Beta**. Beta offers every release as soon as it is published; Stable offers a release once it has been used in real fights for a while with nothing found. Until releases are published to Beta first, which the release workflow takes up next, both channels offer the same release. On Beta the window title ends `· beta`, and About names the channel. Moving from Beta to Stable never offers a lower version: you keep the one you have until a Stable release is newer
+- **Changes since your version** in the update's ⓘ popup: a link to every change between the version you run and the one on offer, however many releases lie between
+
+### Changed
+- The update check counts a release only when its tag is exactly `vX.Y.Z`, so a data release in the same list can never be read as an app version
+
 ## [0.25.0] - 2026-10-29
 
 ### Added

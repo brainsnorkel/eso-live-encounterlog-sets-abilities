@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2430](../src/esolog_tail.py#L2430)*
+*[src/esolog_tail.py:2434](../src/esolog_tail.py#L2434)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4127](../src/esolog_tail.py#L4127)*
+*[src/esolog_tail.py:4131](../src/esolog_tail.py#L4131)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -1632,7 +1632,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:122](../src/app_config.py#L122)*
+*[src/app_config.py:123](../src/app_config.py#L123)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1953,7 +1953,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3329](../src/esolog_tail.py#L3329)*
+*[src/esolog_tail.py:3333](../src/esolog_tail.py#L3333)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2509,7 +2509,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1288](../src/gui/main_window.py#L1288)*
+*[src/gui/main_window.py:1308](../src/gui/main_window.py#L1308)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2583,6 +2583,20 @@ The release body is GitHub's generated notes (one line per pull request
 and a compare link), shown in the ⓘ popup beside the Update button; the
 release date comes from ``published_at``.
 
+Two channels (issue #134, 2026-10-29). Stable reads ``/releases/latest``,
+which GitHub never points at a prerelease or a draft, so it follows a
+release made Stable, or taken back, exactly. Beta reads the newest ten
+releases (``/releases?per_page=10``, about 80 KB for a full reply, then
+304s like the latest endpoint) and offers the highest version among them,
+prerelease or not. Until the release job publishes betas as prereleases
+(the second step of #134) every release is a full one, and both channels
+offer the same release. A release counts only when its tag is exactly
+``vX.Y.Z``: the list also carries data releases (``esobuild-assets-<update>-
+<date>``), and a search for three dotted numbers anywhere in a tag would
+read any such tag as a version. Neither channel offers a version lower
+than the one running, so someone who leaves Beta keeps the version they
+have until a Stable release passes it.
+
 ### src/gui/update_poller.py
 
 *[src/gui/update_poller.py:1](../src/gui/update_poller.py#L1)*
@@ -2619,6 +2633,12 @@ start() clears the ETag so its first request is a full one: Settings saved
 with the check on also clears a skipped version, and a 304 would otherwise
 hide the release that was skipped and is wanted again.
 
+Each check reads the channel from the config (``update.channel``, issue
+#134). The two channels ask different endpoints, so the ETag is kept with
+the channel it came from and never sent to the other: a Settings save
+restarts the schedule anyway, but a validator from one endpoint sent to the
+other would only ever cost a full reply, never a wrong 304.
+
 ### src/gui/update_popup.py
 
 *[src/gui/update_popup.py:1](../src/gui/update_popup.py#L1)*
@@ -2633,6 +2653,10 @@ The notes are GitHub's generated release notes (one line per pull request
 with its link, and a compare link), rendered from markdown; the
 maintainer chose them on 2026-10-26 over the CHANGELOG entries, which run
 to a dozen lines each and are one click away through the Changelog link.
+The notes are the offered release's own, so someone several releases
+behind (a Stable user, issue #134, skips every beta in between) would see
+only the last step; the "Changes since" link compares the running version
+with the offered one on GitHub, however many releases lie between.
 
 ## Taunt marks that pulse in a text page
 

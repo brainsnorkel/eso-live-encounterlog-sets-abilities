@@ -279,6 +279,9 @@ def main():
 
     # Settings, and the example-rules picker it opens
     dialog = SettingsDialog(win.config, win)
+    # The box only, not the config (no check runs): the guide shows the
+    # update channel as a user with checks on sees it
+    dialog.update_check.setChecked(True)
     dialog.show()
     # No window manager offscreen, and the dialog opens no taller than the
     # 800 px virtual screen with the rest scrolling (0.18.0); the guide

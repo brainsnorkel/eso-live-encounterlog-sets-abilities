@@ -22,6 +22,7 @@ from effect_rules import DEFAULT_RULES, parse_rules
 from gui import text_size
 from gui.fight_render import _theme
 from recycle_bin import TRASH_NAME
+from update_check import normalize_channel
 from pen_crit import (
     FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND, SOLO_BOSS_ARMOUR,
 )
@@ -57,6 +58,16 @@ COMPANION_HELP = ("A companion that is out has its own row under its owner. Off,
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
                   "Applies when Settings is saved, to the fights already listed.")
+# The update channels (issue #134): key, name, what it offers. The About
+# dialog names the channel in the same words.
+CHANNEL_CHOICES = (
+    ("stable", "Stable", "releases that have been in use for a while"),
+    ("beta", "Beta", "every release, as soon as it is published"),
+)
+CHANNEL_HELP = ("Beta gets every release as it is published. Stable gets a release once it "
+                "has been used in real fights for a while with nothing found. Moving from Beta "
+                "to Stable never takes you back a version: you keep the one you have until a "
+                "Stable release is newer.")
 RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
               "seconds before the death. Five is usually one mechanic; ten shows the lead-up. "
               "Saving replays the session, so the fights already listed are rebuilt with the "
@@ -251,6 +262,21 @@ class SettingsDialog(QDialog):
             "and show an Update button in the toolbar")
         self.update_check.setChecked(bool(config.get("update.check_enabled", True)))
         update_form.addRow(self.update_check)
+        self.update_channel = QComboBox()
+        for key, name, offers in CHANNEL_CHOICES:
+            self.update_channel.addItem(f"{name}: {offers}", key)
+        current = normalize_channel(config.get("update.channel"))
+        index = next((i for i, (key, _name, _offers) in enumerate(CHANNEL_CHOICES)
+                      if key == current), 0)
+        self.update_channel.setCurrentIndex(index)
+        # The channel means nothing while checks are off
+        self.update_channel.setEnabled(self.update_check.isChecked())
+        self.update_check.toggled.connect(self.update_channel.setEnabled)
+        update_form.addRow("Channel:", self.update_channel)
+        channel_help = QLabel(CHANNEL_HELP)
+        channel_help.setWordWrap(True)
+        channel_help.setStyleSheet(self._small_style("muted"))
+        update_form.addRow(channel_help)
         layout.addWidget(update_group)
 
         # Display: the app-wide text size (issue #77, gui.text_size), applied
@@ -569,6 +595,7 @@ class SettingsDialog(QDialog):
         self.config.set("archive.dir", self.archive_dir.value())
         self.config.set("archive.delete_original", self.delete_original.isChecked())
         self.config.set("update.check_enabled", self.update_check.isChecked())
+        self.config.set("update.channel", self.update_channel.currentData())
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
         self.config.set(text_size.CONFIG_KEY, self.text_size.value())
         self.config.set("display.colorblind_graph", self.colorblind_graph.isChecked())

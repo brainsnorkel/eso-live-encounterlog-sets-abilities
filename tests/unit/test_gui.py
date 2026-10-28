@@ -475,6 +475,30 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_title_names_the_beta_channel(self):
+        from version import __version__
+        win = self._window()
+        try:
+            plain = f'ESO Log Tail v{__version__}'
+            # Checks are off in tests: no channel in the title, whatever it is
+            win.config.set('update.channel', 'beta')
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), plain)
+            # On (the poller is not started here): Beta is named, Stable is not
+            win.config.set('update.check_enabled', True)
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), f'{plain} · beta')
+            win._on_update_available(self._update_info())
+            self.assertEqual(win.windowTitle(), f'{plain} · beta · 9.9.9 available')
+            win._on_update_gone()
+            win.config.set('update.channel', 'stable')
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), plain)
+        finally:
+            win.config.set('update.check_enabled', False)
+            win.config.set('update.channel', 'stable')
+            win.close()
+
     def test_update_click_downloads_then_installs(self):
         from unittest.mock import patch
         win = self._window()

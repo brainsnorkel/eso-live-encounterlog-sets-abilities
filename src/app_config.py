@@ -52,6 +52,7 @@ DEFAULTS = {
     "update": {
         "check_enabled": True,   # check GitHub releases at startup
         "skip_version": None,    # release the user chose to skip
+        "channel": "stable",     # "stable" or "beta" (issue #134; update_check.CHANNELS)
     },
     # The build window's Penetration and Critical damage sections (pen_crit):
     # Champion Point stars the log cannot show, assumed or not, and the

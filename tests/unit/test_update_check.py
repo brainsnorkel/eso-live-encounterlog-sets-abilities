@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import update_check
 from update_check import (
-    FetchResult, changelog_url, check_for_update, download_file,
-    fetch_latest_release, format_release_date, is_newer, parse_version,
-    release_to_update_info,
+    FetchResult, changelog_url, check_for_update, compare_url, download_file,
+    fetch_latest_release, fetch_releases, format_release_date, is_newer,
+    newest_release, normalize_channel, parse_version, release_to_update_info,
 )
 
 
@@ -117,6 +117,49 @@ class TestReleaseParsing(unittest.TestCase):
         self.assertIsNone(release_to_update_info(_release(tag='nightly')))
         self.assertIsNone(release_to_update_info(None))
 
+    def test_only_a_whole_version_tag_counts(self):
+        # The release list carries data releases too (issue #134): three
+        # dotted numbers somewhere in a tag do not make it a version
+        for tag in ('esobuild-assets-u51-20261006', 'esobuild-assets-1.2.3',
+                    'v1.2.3-beta.1', '1.2.3', 'v1.2.3.4'):
+            self.assertIsNone(release_to_update_info(_release(tag=tag), 'win32'), tag)
+        self.assertIsNotNone(release_to_update_info(_release(tag='v1.2.3'), 'win32'))
+
+    def test_prerelease_only_when_allowed(self):
+        beta = _release(prerelease=True)
+        self.assertIsNone(release_to_update_info(beta, 'win32'))
+        self.assertEqual(release_to_update_info(beta, 'win32', allow_prerelease=True).version,
+                         '0.4.0')
+        self.assertIsNone(release_to_update_info(_release(draft=True), 'win32',
+                                                 allow_prerelease=True))
+
+    def test_compare_link(self):
+        self.assertTrue(compare_url('0.24.0', 'v0.26.1').endswith('/compare/v0.24.0...v0.26.1'))
+        self.assertIn(update_check.GITHUB_REPO, compare_url('0.24.0', 'v0.26.1'))
+
+
+class TestChannels(unittest.TestCase):
+
+    def test_unknown_channel_is_stable(self):
+        self.assertEqual(normalize_channel('beta'), 'beta')
+        self.assertEqual(normalize_channel('stable'), 'stable')
+        for value in (None, '', 'Beta', 'nightly', 3):
+            self.assertEqual(normalize_channel(value), 'stable')
+
+    def test_newest_release_takes_the_highest_version_prerelease_or_not(self):
+        releases = [
+            _release('v0.6.1', assets=[]),                    # no asset for any platform
+            _release('v0.7.0', draft=True),                   # drafts never
+            _release('esobuild-assets-9.9.9'),                # data release
+            _release('v0.6.0', prerelease=True),
+            _release('v0.5.0'),
+            _release('v0.10.0', prerelease=True),             # by version, not by text
+        ]
+        self.assertEqual(newest_release(releases, 'win32').version, '0.10.0')
+        self.assertEqual(newest_release(releases[:5], 'linux').version, '0.6.0')
+        self.assertIsNone(newest_release([], 'win32'))
+        self.assertIsNone(newest_release(None, 'win32'))
+
 
 class _Response:
     """What urlopen yields for a full reply."""
@@ -198,6 +241,46 @@ class TestFetchLatestRelease(unittest.TestCase):
         self.assertIn('timed out', result.error)
         self.assertFalse(result.not_modified)
 
+    def test_latest_reads_the_latest_endpoint(self):
+        payload = json.dumps(_release('v1.2.3')).encode('utf-8')
+        _, request = self._fetch(_Response(payload, {}))
+        self.assertEqual(request.full_url, update_check.LATEST_RELEASE_URL)
+
+
+class TestFetchReleases(unittest.TestCase):
+    """The Beta channel's request: the newest releases, as a list."""
+
+    def _fetch(self, urlopen_result, etag=None):
+        kwargs = ({'side_effect': urlopen_result} if isinstance(urlopen_result, BaseException)
+                  else {'return_value': urlopen_result})
+        with patch.object(update_check.urllib.request, 'urlopen', **kwargs) as urlopen:
+            result = fetch_releases(etag)
+        return result, urlopen.call_args[0][0]
+
+    def test_a_list_reply(self):
+        payload = json.dumps([_release('v1.2.4', prerelease=True),
+                              _release('v1.2.3')]).encode('utf-8')
+        result, request = self._fetch(_Response(payload, {'ETag': 'W/"l1"'}))
+        self.assertEqual(request.full_url, update_check.RELEASES_URL)
+        self.assertIn('per_page=10', request.full_url)
+        self.assertEqual([r['tag_name'] for r in result.releases], ['v1.2.4', 'v1.2.3'])
+        self.assertIsNone(result.release)
+        self.assertEqual(result.etag, 'W/"l1"')
+        self.assertIsNone(result.error)
+
+    def test_not_modified_and_the_etag_sent(self):
+        result, request = self._fetch(_http_error(304), etag='W/"l1"')
+        self.assertTrue(result.not_modified)
+        self.assertIsNone(result.releases)
+        self.assertEqual(request.get_header('If-none-match'), 'W/"l1"')
+
+    def test_a_reply_that_is_not_a_list_is_an_error(self):
+        payload = json.dumps({'message': 'Not Found'}).encode('utf-8')
+        result, _ = self._fetch(_Response(payload, {}))
+        self.assertIsNone(result.releases)
+        self.assertIsNone(result.release)
+        self.assertEqual(result.error, 'unexpected reply')
+
 
 class TestCheckForUpdate(unittest.TestCase):
 
@@ -246,6 +329,47 @@ class TestCheckForUpdate(unittest.TestCase):
         self.assertEqual(result.error, 'timed out')
         result, _ = self._check(FetchResult(error='rate limited (403)', retry_at=5.0), '0.3.0')
         self.assertEqual(result.retry_at, 5.0)
+
+    def _check_beta(self, fetched, *args, **kwargs):
+        with patch.object(update_check, 'fetch_releases', return_value=fetched) as fetch, \
+                patch.object(update_check, 'fetch_latest_release') as latest:
+            result = check_for_update(*args, channel='beta', **kwargs)
+        latest.assert_not_called()
+        return result, fetch
+
+    def test_beta_offers_the_newest_release_prerelease_or_not(self):
+        fetched = FetchResult(releases=[_release('v0.27.0', prerelease=True),
+                                        _release('v0.26.0')], etag='W/"l1"')
+        result, fetch = self._check_beta(fetched, '0.26.0', None, 'W/"l0"')
+        fetch.assert_called_once_with('W/"l0"')
+        self.assertEqual(result.info.version, '0.27.0')
+        self.assertEqual(result.etag, 'W/"l1"')
+
+    def test_beta_never_offers_a_lower_version(self):
+        # Left Beta for Stable and back: a beta newer than every release stays
+        fetched = FetchResult(releases=[_release('v0.26.0')])
+        self.assertIsNone(self._check_beta(fetched, '0.27.0')[0].info)
+
+    def test_beta_honours_skip_and_reports_failures(self):
+        fetched = FetchResult(releases=[_release('v0.27.0', prerelease=True)])
+        self.assertIsNone(self._check_beta(fetched, '0.26.0', '0.27.0')[0].info)
+        result, _ = self._check_beta(FetchResult(not_modified=True, etag='W/"l1"'), '0.26.0')
+        self.assertTrue(result.not_modified)
+        self.assertIsNone(result.info)
+        result, _ = self._check_beta(FetchResult(error='timed out'), '0.26.0')
+        self.assertEqual(result.error, 'timed out')
+
+    def test_stable_ignores_a_prerelease(self):
+        # /releases/latest never names one; if it ever did, Stable would not take it
+        result, _ = self._check(FetchResult(release=_release('v9.9.9', prerelease=True)),
+                                '0.3.0', channel='stable')
+        self.assertIsNone(result.info)
+
+    def test_an_unknown_channel_reads_the_latest_release(self):
+        result, fetch = self._check(FetchResult(release=_release('v9.9.9')), '0.3.0',
+                                    channel='nightly')
+        fetch.assert_called_once_with(None)
+        self.assertEqual(result.info.version, '9.9.9')
 
 
 class TestDownload(unittest.TestCase):

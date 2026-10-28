@@ -88,6 +88,34 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         dialog.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
+    def test_the_update_channel_is_offered_and_saved(self):
+        from gui.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self.config)
+        # Stable by default; the choice is off while checks are off (issue #134)
+        self.assertEqual(dialog.update_channel.currentData(), "stable")
+        self.assertEqual([dialog.update_channel.itemData(i)
+                          for i in range(dialog.update_channel.count())], ["stable", "beta"])
+        dialog.update_check.setChecked(False)
+        self.assertFalse(dialog.update_channel.isEnabled())
+        dialog.update_check.setChecked(True)
+        self.assertTrue(dialog.update_channel.isEnabled())
+        dialog.update_channel.setCurrentIndex(1)
+        dialog.apply_to_config()
+        self.assertEqual(self.config.get("update.channel"), "beta")
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        again = SettingsDialog(self.config)
+        self.assertEqual(again.update_channel.currentData(), "beta")
+        again.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        # A hand-edited value reads as Stable
+        self.config.set("update.channel", "nightly")
+        edited = SettingsDialog(self.config)
+        self.assertEqual(edited.update_channel.currentData(), "stable")
+        edited.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.config.set("update.channel", "stable")
+
     def test_the_death_recap_window_is_bounded_and_saved(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)
