@@ -139,8 +139,8 @@ rule, player-fights / distinct characters in that survey:
   veteran DPS player-fights, 7%, and 29 of 225 characters, in the 84 newest
   trial split logs of May to October 2026 with 1,581 fights and 18,684
   player-fights). Minor Slayer is 5% more damage to dungeon, trial and
-  arena monsters. Every trial's sets grant it at three pieces, so do Ossein
-  Cage's four, and Oakensoul Ring grants it outright: SLAYER_SETS holds the
+  arena monsters. Every trial's sets grant it at three pieces and Oakensoul
+  Ring grants it outright: SLAYER_SETS holds the
   38 three-piece sets by game set id, from UESP's set summary (the
   esobuild asset export's set_summary.json, its gameId field), and the ring
   is OAKENSOUL_SET_ID. The maintainer's scope (2026-10-26): damage dealers
@@ -161,7 +161,8 @@ rule, player-fights / distinct characters in that survey:
   start is the fact, and a changed build clears it next fight. The builds
   without were Deadly Strike with Tide-Born Wildstalker or Spattering
   Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
-  Order's Wrath, so the finding names the complete sets worn instead.
+  Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
+  once named the complete sets worn instead, which read as noise.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
@@ -215,8 +216,8 @@ GROUP_SETS = {
     "769": "Xoryn's Masterpiece", "770": "Perfected Xoryn's Masterpiece",
 }
 # The sets whose three-piece bonus is Minor Slayer, by set id (UESP's set
-# summary by game id): every trial's sets and Ossein Cage's. Oakensoul Ring
-# (OAKENSOUL_SET_ID) grants the buff at one piece
+# summary by game id): every trial's sets. Oakensoul Ring (OAKENSOUL_SET_ID)
+# grants the buff at one piece
 SLAYER_PIECES = 3
 SLAYER_SETS = {
     "172": "Infallible Mage", "173": "Vicious Serpent",
@@ -239,7 +240,6 @@ SLAYER_SETS = {
     "814": "Harmony in Chaos", "821": "Perfected Harmony in Chaos",
     "815": "Kazpian's Cruel Signet", "820": "Perfected Kazpian's Cruel Signet",
 }
-COMPLETE_PIECES = 5  # a set worn complete, for naming what a build has instead
 
 # Taunts and pulls, by the ids a bar can carry (UESP playerSkills for every
 # rank, plus the ids the bars held in the September and October 2026 logs)
@@ -360,13 +360,8 @@ FOOD_RAN_OUT_DETAIL = (
     "rest of it was fought without the consumable's maximum stats or recovery.")
 SLAYER_TITLE = "No Minor Slayer in a veteran trial group"
 SLAYER_DETAIL = (
-    "Minor Slayer is 5% more damage to dungeon, trial and arena monsters for as long as it "
-    "is up. Every trial's sets grant it at three pieces, so do Ossein Cage's, and Oakensoul "
-    "Ring grants it outright; nothing on this build does.{wore} The rule judges damage "
-    "dealers in a veteran group of five or more, from the gear logged at combat start; a "
-    "listed set at three pieces on one bar is enough.")
-SLAYER_WORE_ONE = " The complete set here, {sets}, gives other things."
-SLAYER_WORE = " The complete sets here, {sets}, give other things."
+    "No trial set at three pieces and no Oakensoul Ring, so no Minor Slayer: 5% more damage "
+    "to dungeon, trial and arena monsters.")
 
 
 def _clock(ms: int) -> str:
@@ -471,21 +466,6 @@ def slayer_sets(gear: Dict[str, List[str]]) -> Set[str]:
     return {set_id for set_id, (front, back) in piece_counts(gear or {}).items()
             if set_id in SLAYER_SETS
             and (front >= SLAYER_PIECES or (back or 0) >= SLAYER_PIECES)}
-
-
-def complete_sets(gear: Dict[str, List[str]],
-                  set_name_of: Optional[Callable[[str], Optional[str]]] = None) -> List[str]:
-    """The names of the sets this build wears complete (five pieces on
-    either bar), sorted; a set the names do not know is 'set <id>'."""
-    return sorted(
-        (set_name_of(set_id) if set_name_of else None) or SLAYER_SETS.get(set_id) or f"set {set_id}"
-        for set_id, (front, back) in piece_counts(gear or {}).items()
-        if front >= COMPLETE_PIECES or (back or 0) >= COMPLETE_PIECES)
-
-
-def _join(names: List[str]) -> str:
-    """'A', 'A and B', 'A, B and C'."""
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _slot_is(slot: dict, names: frozenset, ids: frozenset, focus: str, prefix: str) -> bool:
@@ -627,12 +607,7 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
     if (role == "D" and not taunted and veteran and gear
             and group_size_class(players or 0) == "large"
             and not oakensoul and not slayer_sets(gear)):
-        complete = complete_sets(gear, set_name_of)
-        wore = ("" if not complete
-                else (SLAYER_WORE_ONE if len(complete) == 1 else SLAYER_WORE)
-                .format(sets=_join(complete)))
-        findings.append(_finding(
-            "no-minor-slayer", SLAYER_TITLE, SLAYER_DETAIL.format(wore=wore)))
+        findings.append(_finding("no-minor-slayer", SLAYER_TITLE, SLAYER_DETAIL))
 
     # A tank with nothing to hold the boss. The role's health pool alone is
     # not a tank (see the module notes), so tank gear, a small share of the

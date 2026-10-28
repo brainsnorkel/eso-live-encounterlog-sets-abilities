@@ -345,18 +345,8 @@ class TestMinorSlayer(unittest.TestCase):
         self.assertEqual(_rules(findings), ['no-minor-slayer'])
         self.assertEqual(findings[0]['title'], 'No Minor Slayer in a veteran trial group')
         self.assertIn('5% more damage to dungeon, trial and arena monsters', findings[0]['detail'])
-        self.assertIn('The complete set here, Deadly Strike, gives other things.', findings[0]['detail'])
-        self.assertIn('three pieces on one bar is enough', findings[0]['detail'])
+        self.assertNotIn('Ossein', findings[0]['detail'])
         self.assertEqual(findings[0]['set'], '')
-        # Two complete sets are both named; an unnamed set reads by its id
-        gear = self._deadly()
-        for slot in ('HAND', 'WAIST', 'LEGS', 'FEET', 'NECK'):
-            gear[slot][6] = '809'
-        findings = _findings(gear, players=12, veteran=True, set_name_of=names)
-        self.assertIn('The complete sets here, Deadly Strike and Tide-Born Wildstalker, give',
-                      findings[0]['detail'])
-        findings = _findings(self._deadly(), players=12, veteran=True)
-        self.assertIn('The complete set here, set 429, gives', findings[0]['detail'])
 
     def test_a_listed_set_at_three_pieces_on_either_bar_or_oakensoul_is_a_source(self):
         judged = {'players': 12, 'veteran': True}
