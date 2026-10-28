@@ -13,6 +13,9 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 - **Colour-blind DPS graph** (#77): Settings → Display → *Colour-blind colours and line styles in the DPS graph*, off by default. The lines take Paul Tol's 'bright' colours, adjusted for each theme so every line stands 3:1 against the graph, and each player in turn is drawn solid, dashed, dotted or dash-dotted. The closest two colours measure 9.8 (light) and 13.1 (dark) in CIEDE2000 for normal vision and each kind of colour blindness simulated, where the default colours measure 5 and 2 for red-blindness
 
+- **Screen readers** (#77): the fight pane and every window built like it (build, damage, damage taken, death recap) give a screen reader their text with each image read as words: an ability icon on a bar as the ability's name, the clickable glyphs as "DPS graph", "damage breakdown" and "damage taken", a hidden name as "hidden name" (Qt reads every image as an empty object otherwise). The timeline strip reads each row's label and whose effect it is, with "expected but not up" for a red row, and the DPS graph each drawn line with its dps at the end; the fight list, the search field and the fight pane are named
+- **Reduce motion** (#77): Settings → Display; the ring on a taunt skill's icon stays still instead of pulsing
+
 ### Changed
 - **Clearer colours on the light theme** (#77): the timeline strip's bars were the same pale tints in both themes and measured 1.3:1 (Major Courage) to 2.8:1 against the light window; each is now a darker shade of its hue there, 3:1 or more, and follows a live theme switch. Text under 4.5:1 is darkened a step: the link blue, the veteran and stale orange, the Trash, Legendary and Mythic gear qualities, the death recap's health colours, and Settings' grey and orange helper lines (now the theme's own muted and warning colours, in the dark theme too). A unit test pins every text colour at 4.5:1 and every bar at 3:1 against both themes
 

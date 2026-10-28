@@ -87,6 +87,8 @@ DEFAULTS = {
         "text_scale": 100,
         # The DPS graph's colour-blind colours and strokes (gui.dps_graph)
         "colorblind_graph": False,
+        # The taunt ring stays still rather than pulsing (gui.fight_view)
+        "reduce_motion": False,
     },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close

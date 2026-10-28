@@ -284,6 +284,10 @@ class SettingsDialog(QDialog):
         colorblind_help.setWordWrap(True)
         colorblind_help.setStyleSheet(self._small_style("muted"))
         display_form.addRow(colorblind_help)
+        self.reduce_motion = QCheckBox(
+            "Reduce motion: the ring on a taunt skill's icon stays still instead of pulsing")
+        self.reduce_motion.setChecked(bool(config.get("display.reduce_motion", False)))
+        display_form.addRow(self.reduce_motion)
         layout.addWidget(display_group)
 
         # Privacy: the Hide names switch (issue #72, gui.name_mask), the
@@ -568,6 +572,7 @@ class SettingsDialog(QDialog):
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
         self.config.set(text_size.CONFIG_KEY, self.text_size.value())
         self.config.set("display.colorblind_graph", self.colorblind_graph.isChecked())
+        self.config.set("display.reduce_motion", self.reduce_motion.isChecked())
         self.config.set("companions.accrue_to_owner", self.companion_accrual.isChecked())
         self.config.set("death_recap.window_s", self.recap_window.value())
         self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())

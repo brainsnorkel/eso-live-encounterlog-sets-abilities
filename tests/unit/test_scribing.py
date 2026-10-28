@@ -503,7 +503,7 @@ class TestScribedSkillRendering(unittest.TestCase):
         # The small grimoire icon sits outside the anchor, so a search for the
         # skill does not count it as a second icon match
         self.assertIn('<img src="icon:ability_grimoire_support" width="14" height="14" '
-                      'style="vertical-align:middle">&nbsp;<a ', html)
+                      'alt="" style="vertical-align:middle">&nbsp;<a ', html)
         # Smaller than the 9pt pane font, inside the build card
         self.assertIn("<span style='font-size:7.65pt'>", html)
 

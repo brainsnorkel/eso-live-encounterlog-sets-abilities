@@ -116,6 +116,10 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # since any player takes damage, in the link colour like the (i)
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
+# What a screen reader says for each glyph (its alt text; FightView reads
+# alt text out in place of the image, issue #77)
+GLYPH_ALT = {GRAPH_GLYPH: "DPS graph", BREAKDOWN_GLYPH: "damage breakdown",
+             TAKEN_GLYPH: "damage taken"}
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -217,7 +221,7 @@ def glyph_html(kind: str, color: str, px: int) -> str:
     """The <img> of a link glyph (see gui.glyphs) in *color* ('#rrggbb'),
     *px* pixels square."""
     return (f'<img src="{GLYPH_SCHEME}:{kind}?color={color.lstrip("#")}&amp;px={px}" '
-            f'style="vertical-align:middle">')
+            f'alt="{GLYPH_ALT.get(kind, "")}" style="vertical-align:middle">')
 
 
 def damage_href(unit_id) -> str:
@@ -681,8 +685,9 @@ def _bar_html(slots, names, icons, links, e, px: Optional[int] = None,
         mark = _taunt_mark(slot, taunt_color)
         if icons.has(stem):
             ring = f"?ring={mark.lstrip('#')}" if mark else ""
+            # The ability's name as its alt text: the icon stands alone
             body = (f'<img src="icon:{stem}{ring}" width="{px}" height="{px}" '
-                    f'style="vertical-align:middle">')
+                    f'alt="{e(str(slot.get("name", "")), quote=True)}" style="vertical-align:middle">')
         elif mark:
             body = f"<span style='color:{mark};font-weight:bold'>{e(str(slot.get('name', '')))}</span>"
         else:
@@ -797,7 +802,7 @@ def _scribed_html(p, icons, links, script_links, e, color: str) -> str:
     for slot in _scribed_slots(p):
         stem = str(slot.get("icon") or "")
         icon = (f'<img src="icon:{stem}" width="{scaled_px(SCRIBED_ICON_PX)}" '
-                f'height="{scaled_px(SCRIBED_ICON_PX)}" style="vertical-align:middle">&nbsp;'
+                f'height="{scaled_px(SCRIBED_ICON_PX)}" alt="" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         name = anchor(e(str(slot.get("name", ""))), _ability_href(slot, links))
         scripts = []

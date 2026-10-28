@@ -266,6 +266,9 @@ class TimelineStrip(QWidget):
         self._names = NO_MASK  # the Hide names mask for the hover and the pop-ups
         self.setVisible(False)
         self.setCursor(Qt.PointingHandCursor)
+        # A painted widget is an empty one to a screen reader: its rows are
+        # given as text (issue #77, accessible_text)
+        self.setAccessibleName("Buff timeline")
 
     # ---- data ----
 
@@ -346,9 +349,22 @@ class TimelineStrip(QWidget):
                 debuffs.append(name)
         self._rows = buffs + debuffs
         self._divider = len(buffs) if buffs and debuffs else None
+        self.setAccessibleDescription(self.accessible_text())
         self.setVisible(bool(self._rows))
         self.updateGeometry()
         self.update()
+
+    def accessible_text(self) -> str:
+        """Each row as a screen reader should hear it, one per line: its
+        whole label and whose effect it is, and 'not up' for an expected
+        effect that never came (painted in red)."""
+        lines = []
+        for effect in self._rows:
+            info = self._row_info.get(effect, {})
+            line = " ".join(part for part in (self._full_label(effect, info), info.get("scope", ""))
+                            if part)
+            lines.append(f"{line}, expected but not up" if info.get("missing") else line)
+        return "\n".join(lines)
 
     def _intervals(self, effect):
         """The intervals of a row, built-in or tracked."""

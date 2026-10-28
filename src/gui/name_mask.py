@@ -118,7 +118,7 @@ def image_html(word: str, color: str, pt: float, bold: bool = False) -> str:
     token = word.replace(" ", "_")
     return (f'<img src="{MASK_SCHEME}:{token}?color={color.lstrip("#")}'
             f'&amp;pt={float(pt):.2f}&amp;b={1 if bold else 0}" '
-            f'style="vertical-align:middle">')
+            f'alt="hidden name" style="vertical-align:middle">')
 
 
 def mask_request(url: QUrl) -> tuple[str, str, float, bool] | None:
