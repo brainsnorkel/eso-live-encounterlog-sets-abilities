@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **A companion's ultimate, casts and casts per minute** (#130): a companion's row ends `CPM 38 · Ult ×2` after its health when it cast its ultimate in the fight (Ember's Raging Storm, Mirri's Impeccable Shot, Isobel's Baneslayer, Zerith-var's Blade of the Crossing, Sharp-as-Night's Gore, Azandar's Vigorous Tentacular Eruption, Bastian's Unleashed Rage, Tanlorin's Ruinous Outburst), and the hover on its name gives each cast's time, `Raging Storm cast at 0:07 and 1:38 into the fight`. Its window shows how many times it cast each skill in the fight under the skill, its ultimate set apart at the end of the bar, and an **Other** row with its light attacks, bashes, blocks, dodges and Break Free, every cast and the casts per minute. **Copy fight** adds the CPM and the Ult mark. The ultimates are known by their ability ids, each checked against the companion that cast it in 214 logs; every ultimate-sized fall in a companion's ultimate pool in those logs was one of these casts
+- **Healing to others** (#130): the hover on a player's or companion's name gives the healing they did to other players in the fight and its rate, `5,000 healing to others, 250 a second of the fight`, when there was some; the companion window gives it under its skills. It is the figure the role heuristic has always used: heals that landed on another player, not self-heals or overheal
+
+### Fixed
+- The user guide said a companion whose owner the log never named still counted in the group's damage; it counts nowhere
+
 ## [0.24.0] - 2026-10-28
 
 ### Changed

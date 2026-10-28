@@ -50,6 +50,26 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual(recorder.fight_counts('1', 1000, 3000)[FORCE_PULSE], 2)
         self.assertEqual(recorder.fight_counts('2', 1000, 3000), Counter())
 
+    def test_fight_times_of_chosen_casts(self):
+        recorder = casts.CastRecorder()
+        recorder.note_cast('c1-106616', '1', '163763', 900)    # before the fight
+        recorder.note_cast('c1-106616', '2', '163763', 1500)
+        recorder.note_cast('c1-106616', '3', FORCE_PULSE, 1600)
+        recorder.note_cast('c1-106616', '4', '163763', 2500)
+        self.assertEqual(recorder.fight_times('c1-106616', 1000, 3000, {'163763'}),
+                         [(1500, '163763'), (2500, '163763')])
+
+    def test_a_companions_kinds(self):
+        counts = Counter({'157069': 3, '154302': 1, '156219': 2, '157039': 1, '156633': 1,
+                          '157419': 1, '163684': 4})
+        summary = casts.cast_summary(counts, 60.0, kinds=casts.COMPANION_EXTRA_KINDS)
+        self.assertEqual(summary, {'total': 13, 'cpm': 13.0, 'light': 4, 'bash': 1,
+                                   'block': 2, 'dodge': 1, 'break_free': 1})
+        # No companion id is one of a player's kinds
+        player_ids = set().union(*(ids for _kind, ids in casts.EXTRA_KINDS))
+        companion_ids = set().union(*(ids for _kind, ids in casts.COMPANION_EXTRA_KINDS))
+        self.assertFalse(player_ids & companion_ids)
+
     def test_prune_and_reset(self):
         recorder = casts.CastRecorder()
         recorder.note_cast('1', '1', FORCE_PULSE, 900)

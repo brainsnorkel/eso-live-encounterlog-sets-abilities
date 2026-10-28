@@ -58,6 +58,17 @@ the skill-line synergies (class, guild, Undaunted, werewolf), not the
 trials' mechanics; POTIONS the alchemy block 45221 to 45241, the vendor,
 Alliance War and Crown potions. Werewolf light and heavy attacks count as
 light and heavy attacks.
+
+A companion's casts are counted the same way, under its row key
+(companions.py) and over the whole fight (issue #130). Its light attacks,
+block, dodge, bash and break free have ids of their own, none of them in
+the player's sets (its light attacks are plain "Light Attack", one id per
+weapon look), and it never heavy attacks, swaps weapons, takes a synergy
+or drinks a potion: over 214 split logs with a companion its casts that
+are not skills were those ids and Mount Up. So its extras line has kinds
+of its own (COMPANION_EXTRA_KINDS), Block among them, which a player's
+never needs (a player's block writes no cast), and a player's 'casts'
+stays as it was.
 """
 
 from collections import Counter, defaultdict
@@ -154,6 +165,23 @@ EXTRA_KINDS: tuple[tuple[str, frozenset], ...] = (
     ("break_free", BREAK_FREE),
 )
 
+# A companion's own ids (companions.py): its light attacks, one per weapon
+# look (casts in combat over the survey: 3,125, 2,255, 1,642, 1,374, 1,064,
+# 427, 416 and 112), then its block, dodge, bash and break free
+COMPANION_LIGHT_ATTACKS = frozenset({
+    "157069", "157065", "154302", "154279", "154304", "155514", "157035", "154282",
+})
+COMPANION_BLOCKS = frozenset({"156219"})
+COMPANION_DODGES = frozenset({"157039"})  # Roll Dodge
+COMPANION_BASHES = frozenset({"157419"})
+COMPANION_BREAK_FREE = frozenset({"156633"})  # CPN Break Free
+# A companion's extras line's kinds, in display order
+COMPANION_EXTRA_KINDS: tuple[tuple[str, frozenset], ...] = (
+    ("light", COMPANION_LIGHT_ATTACKS), ("bash", COMPANION_BASHES),
+    ("block", COMPANION_BLOCKS), ("dodge", COMPANION_DODGES),
+    ("break_free", COMPANION_BREAK_FREE),
+)
+
 
 def line_time(line: str) -> int:
     """A log line's time, its first field, in ms since BEGIN_LOG. The
@@ -209,6 +237,12 @@ class CastRecorder:
         return Counter(ability_id for timestamp, ability_id in self._casts.get(key, ())
                        if start <= timestamp <= end)
 
+    def fight_times(self, key: str, start: int, end: int, ability_ids) -> list[tuple[int, str]]:
+        """(time, ability id) of each cast of one of *ability_ids* begun
+        from *start* to *end*, in the order cast."""
+        return [(timestamp, ability_id) for timestamp, ability_id in self._casts.get(key, ())
+                if start <= timestamp <= end and ability_id in ability_ids]
+
     def prune_before(self, timestamp: int) -> None:
         """Forget the casts begun before *timestamp* (and the track ids,
         which only ever matter within a cast)."""
@@ -237,15 +271,17 @@ def mark_slot_casts(counts: Counter, bars: Iterable[list], name_of: Callable[[st
                                        for name in slot_names or {""}))
 
 
-def cast_summary(counts: Counter, duration_s: float, present_pct: float | None = None) -> dict:
+def cast_summary(counts: Counter, duration_s: float, present_pct: float | None = None,
+                 kinds: tuple[tuple[str, frozenset], ...] = EXTRA_KINDS) -> dict:
     """The fight entry's 'casts' for a player: 'total', 'cpm' (casts per
     minute over the fight, or the share of it a player who left was there
-    for) and a count per extras kind."""
+    for) and a count per extras kind of *kinds* (a companion's are
+    COMPANION_EXTRA_KINDS)."""
     total = sum(counts.values())
     minutes = duration_s / 60.0
     if present_pct is not None:
         minutes *= max(0.0, min(100.0, float(present_pct))) / 100.0
     summary = {"total": total, "cpm": total / minutes if minutes > 0 else 0.0}
-    for kind, ids in EXTRA_KINDS:
+    for kind, ids in kinds:
         summary[kind] = sum(n for ability_id, n in counts.items() if ability_id in ids)
     return summary

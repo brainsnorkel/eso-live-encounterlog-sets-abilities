@@ -2047,10 +2047,13 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
 
-            # A companion's skills, for the bar on its row (companions.py)
+            # A companion's skills, for the bar on its row, and its casts,
+            # counted like a player's under its row key (companions.py)
             companion = self.current_encounter.companion_key(caster_unit_id)
             if companion is not None:
                 self._note_companion_cast(companion, ability_id)
+                self.casts.note_cast(companion, entry.fields[2], ability_id,
+                                     casts.line_time(entry.original_line))
 
             if ability_id in self.ability_cache:
                 ability_name = self.ability_cache[ability_id]
@@ -3019,7 +3022,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Each companion that was out during the fight, on a row of its own
         # straight under its owner's (companions.py); one whose owner has
         # no row is left out, like a player whose build never reached the log
-        by_owner = self._companion_rows(enc, ability_name, ability_icon)
+        by_owner = self._companion_rows(enc, ability_name, ability_icon, duration)
         if by_owner:
             ordered = []
             for row in entry.players:
@@ -3086,13 +3089,17 @@ class ESOLogAnalyzer(ListenerMixin):
                 return True
         return False
 
-    def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon) -> dict[str, list[dict]]:
+    def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon,
+                        duration: float) -> dict[str, list[dict]]:
         """The fight's companion rows by owner unit id (companions.py): every
         companion that was out during the fight or dealt damage, healed or
         died in it. A row has the keys a player's row has that make sense
         for a companion (the dps figures and shares, the damage window's
-        data, health, the bar of skills it cast this session) and
-        'companion': True, 'owner_unit_id' and 'level'."""
+        data, health, healing, the bar of skills it cast this session with
+        this fight's casts of each, the casts and cpm over the fight) and
+        'companion': True, 'owner_unit_id', 'level' and 'ultimates', its
+        ultimate's casts this fight: {'id', 'name', 'at'} with 'at' the
+        seconds into the fight of each, [] when it cast none (issue #130)."""
         damage = enc.damage
         rows: dict[str, list[dict]] = {}
         total = enc.total_damage
@@ -3104,9 +3111,22 @@ class ESOLogAnalyzer(ListenerMixin):
             dealt = enc.player_damage.get(key, 0)
             boss = enc.player_boss_damage.get(key, 0)
             figures = damage.player(key)
-            casts = self.companion_casts.get(
+            skills = self.companion_casts.get(
                 (self._scribing_player_key(record.owner_unit_id), record.monster_id), [])
-            slots = [self._ability_slot(ability_id) for ability_id in casts]
+            slots = [self._ability_slot(ability_id) for ability_id in companions.bar_order(skills)]
+            for slot in slots:
+                if slot['id'] in companions.ULTIMATES:
+                    slot['ultimate'] = True
+            # This fight's casts, under each skill of the bar, and the
+            # ultimate's with their times (casts.py)
+            cast_counts = self.casts.fight_counts(key, enc.start_time, enc.end_time)
+            casts.mark_slot_casts(cast_counts, (slots,), ability_name)
+            ultimates: dict[str, dict] = {}
+            for at, ability_id in self.casts.fight_times(key, enc.start_time, enc.end_time,
+                                                         companions.ULTIMATES):
+                ultimate = ultimates.setdefault(ability_id, {
+                    'id': ability_id, 'name': ability_name(ability_id), 'at': []})
+                ultimate['at'].append(round((at - enc.start_time) / 1000.0, 1))
             rows.setdefault(record.owner_unit_id, []).append({
                 'companion': True,
                 'owner_unit_id': record.owner_unit_id,
@@ -3131,6 +3151,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 'back_bar_slots': [], 'back_bar': [],
                 'sets': [], 'all_sets': [], 'skill_lines': [], 'class_lines': [],
                 'masteries': [], 'taunts': [], 'build_issues': [],
+                'casts': casts.cast_summary(cast_counts, duration,
+                                            kinds=casts.COMPANION_EXTRA_KINDS),
+                'ultimates': list(ultimates.values()),
             })
         return rows
 
