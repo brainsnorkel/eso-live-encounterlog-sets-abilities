@@ -35,6 +35,22 @@ def log_members(path: Path) -> list[str]:
                 if not info.is_dir() and info.filename.lower().endswith(".log")]
 
 
+def log_size(path: Path, member: str | None = None) -> int:
+    """The log's own size in bytes: the file's, or in a zip its member's
+    (its only log when *member* is None; NoLogInZip when that is unclear)."""
+    path = Path(path)
+    if not is_zip(path):
+        return path.stat().st_size
+    with zipfile.ZipFile(path) as zf:
+        if member is None:
+            members = log_members(path)
+            if len(members) != 1:
+                raise NoLogInZip(f"{path.name} holds no encounter log" if not members
+                                 else f"{path.name} holds {len(members)} logs; choose one")
+            member = members[0]
+        return zf.getinfo(member).file_size
+
+
 @contextmanager
 def open_log_text(path: Path, member: str | None = None
                   ) -> Iterator[tuple[TextIO, int, str]]:

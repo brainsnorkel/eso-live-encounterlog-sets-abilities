@@ -181,6 +181,15 @@ class AppConfig:
             node = node[part]
         return node
 
+    def snapshot(self) -> "AppConfig":
+        """A copy of the settings as they are now, for work on another
+        thread (a review, issue #107) while Settings may change these; it
+        is read, never saved."""
+        copy = object.__new__(AppConfig)
+        copy.path = self.path
+        copy.data = deepcopy(self.data)
+        return copy
+
     def set(self, dotted_key: str, value: Any) -> None:
         parts = dotted_key.split(".")
         node = self.data

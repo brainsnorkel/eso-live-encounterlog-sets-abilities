@@ -209,5 +209,29 @@ class TestEveryLineReachesTheSplit(unittest.TestCase):
             self.assertIn(rejected.encode('utf-8') + b'\r\n', split.read_bytes())
 
 
+class TestSplitFlushedPerBatch(unittest.TestCase):
+    """The splitter no longer flushes each line (issue #109): every batch the
+    monitor reads must still be on disk when the batch ends, with the split
+    file open, as a crash would leave it."""
+
+    def test_each_poll_batch_is_on_disk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'Encounter.log'
+            log.write_bytes(b'')
+            folder = Path(tmp) / 'splits'
+            monitor = LogFileMonitor(ESOLogAnalyzer(), log, tail_and_split=True, split_dir=folder)
+            try:
+                lines = [line for line in _lines() if ',END_LOG' not in line]
+                half = len(lines) // 2
+                for batch in (lines[:half], lines[half:]):
+                    with open(log, 'ab') as f:
+                        f.write(''.join(line + '\n' for line in batch).encode('utf-8'))
+                    monitor._process_new_lines()
+                    (split,) = [p for p in folder.iterdir() if p.suffix == '.log']
+                    self.assertTrue(split.read_bytes().endswith(batch[-1].encode('utf-8') + b'\r\n'))
+            finally:
+                monitor.log_splitter.cleanup()
+
+
 if __name__ == '__main__':
     unittest.main()
