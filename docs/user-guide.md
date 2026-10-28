@@ -101,7 +101,7 @@ The rules:
 - **A tank with no taunt or pull.** The player reads as a tank on more than the health pool: a shield, an ice staff or five heavy pieces, and under half an equal share of the group's damage in the fight. Yet neither bar holds a taunt (Puncture and its morphs, Inner Fire and its morphs, Destructive Clench on an ice staff, Runic Jolt and its morphs, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no taunt of theirs was logged this session. A restoration staff, or more healing than damage, marks a healer, who is not judged.
 - **No food or drink at combat start.** Nothing on the player's buff list as the fight began matched the app's list of the game's food and drink effects (the one the build window's Food line uses), so they fought without a consumable's maximum stats or recovery. A meal eaten during the fight is noted with its time. A consumable newer than the bundled list reads the same way; the list is refreshed with the game data.
 - **Food that ran out.** The player's food or drink was up as the fight began and faded during it, with nothing eaten before the end. The finding names it and says when. A drink the game logs as several effects counts as gone only when all of them have faded.
-- **No Minor Slayer in a veteran trial group.** Minor Slayer is 5% more damage to dungeon, trial and arena monsters. Every trial's sets grant it at three pieces, so do Ossein Cage's, and Oakensoul Ring grants it outright. A damage dealer pulling in a veteran group of five or more with none of them is flagged, and the finding names the complete sets they wore instead; a listed set at three pieces on one bar is enough. Healers and tanks are not judged, nor a player who has taunted this session, a normal-difficulty run, or a build the log wrote with no gear.
+- **No Minor Slayer in a veteran trial group.** Minor Slayer is 5% more damage to dungeon, trial and arena monsters. Every trial's sets grant it at three pieces and Oakensoul Ring grants it outright. A damage dealer pulling in a veteran group of five or more with none of them is flagged; a listed set at three pieces on one bar is enough. Healers and tanks are not judged, nor a player who has taunted this session, a normal-difficulty run, or a build the log wrote with no gear.
 
 The rules are fixed in this version; what each finding says is meant to be enough to act on, or to disagree with.
 
@@ -149,14 +149,14 @@ Click a player's name, in either view, to open their build for that fight. The n
 
 ### Resources
 
-Under the gear grid, the Resources section answers whether the player's sustain held: what they spent their magicka, stamina and ultimate on, where it came back from, and what went to waste. Every group member's pools are in the log, not only yours, so it works for anyone in the fight.
+Under the gear grid, the Resources section answers whether the player's sustain held: what they spent their magicka, stamina and ultimate on, where it came back from, and what came in over cap. Every group member's pools are in the log, not only yours, so it works for anyone in the fight.
 
 ![The Resources section of the build window](screencaps/build-resources.png)
 
 - **Spent**, with the rate per second: what the player's pools fell by. **On casts** is the part that fell at the moment of a cast, the cast's cost; **other spending** is the rest, blocking, sprinting and the costs the game writes later, which leave no line of their own. Light and heavy attacks and weapon swaps cost nothing and are never charged.
 - **Gained**, with the rate per second: what the pools rose by. **Logged gains** are the ones the log names (Undaunted Command, Bountiful Harvest, a potion); **regeneration and unlogged** is every other rise: base regeneration, the ultimate every player generates, and anything else the game does not write down. It is what is left over, not a measurement of regeneration.
-- **Wasted at a full pool**: logged gains that arrived while the pool was already full.
-- **Time at full** ultimate: the share of the fight the player sat on a full ultimate bar. The game never logs ultimate gained at a full pool, so this is the measure of wasted ultimate.
+- **Gained over cap**: logged gains that arrived while the pool was already full.
+- **Time at cap** for ultimate: the share of the fight the player sat on a full ultimate bar. The game never logs ultimate gained at cap, so this stands in for ultimate gained over cap.
 - **Spent on** lists the casts the most went on, five per pool, with the casts that cost something, the average cost and the total. **Gained from** lists the five largest gains per pool, with the players who gave it when that was another group member (a healer's Bountiful Harvest, a Pillager's Profit), the three who gave most named. With [Hide names](#hiding-other-players-names) on, those names are hidden too.
 
 The figures come from the pools' rises and falls between one logged state and the next, which the log writes about ten times a second for each player, so a cost and a gain inside the same tenth of a second cancel out. Read them as a fair picture of the fight, not as tooltip costs.

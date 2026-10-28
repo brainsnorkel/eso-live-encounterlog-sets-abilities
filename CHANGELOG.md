@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Shorter texts** (#127): the no-Minor-Slayer finding is one sentence ("No trial set at three pieces and no Oakensoul Ring, so no Minor Slayer: 5% more damage to dungeon, trial and arena monsters.") and no longer names Ossein Cage separately or lists the complete sets worn; the Resources note is two sentences. The Resources rows read **Gained over cap** and **Time at cap** instead of *Wasted at a full pool* and *Time at full*
+
 ## [0.23.0] - 2026-10-28
 
 ### Added

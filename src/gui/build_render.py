@@ -75,14 +75,9 @@ RESOURCES_CAPTION = "as the log's unit states show them"
 NO_RESOURCES = "No magicka, stamina or ultimate was logged for this player in this fight."
 RESOURCES_NOT_RECORDED = "Resources were not recorded for this fight."
 POOL_LABELS = ("Magicka", "Stamina", "Ultimate")
-RESOURCES_NOTE = ("Spent and gained are the falls and rises of the player's pools from one logged "
-                  "state to the next, so a cost and a gain in the same tenth of a second cancel. "
-                  "A fall at the moment of a cast is that cast's cost; blocking, sprinting and "
-                  "costs the log writes later leave no line of their own and are the other "
-                  "spending. Logged gains are the ones the log names; regeneration and unlogged "
-                  "is every other rise, base regeneration and ultimate generation among them. "
-                  "The game never logs ultimate gained at a full pool, so its waste is the time "
-                  "spent at full.")
+RESOURCES_NOTE = ("Spent and gained are the falls and rises between logged states, so a cost and "
+                  "a gain in the same tenth of a second cancel. Other spending is blocking, "
+                  "sprinting and costs logged after the cast.")
 PEN_TITLE = "Penetration"
 CRIT_TITLE = "Critical damage"
 PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
@@ -532,10 +527,9 @@ def _rate(value) -> str:
 def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
     """The Resources section (resources.py, issue #125): magicka, stamina
     and ultimate spent (on casts and otherwise) and gained (logged and
-    not), each with its rate over the fight, the logged gains wasted at a
-    full pool and the time at full ultimate; then the casts the most went
-    on and the gains that gave the most, each giver through the Hide names
-    mask."""
+    not), each with its rate over the fight, the logged gains over cap and
+    the time at ultimate cap; then the casts the most went on and the
+    gains that gave the most, each giver through the Hide names mask."""
     muted, rule = theme["muted"], _RULES[bool(dark)]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
     heading = f"padding-top:7px;color:{muted};font-weight:bold"
@@ -579,8 +573,8 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
         row("logged gains", [_num(pool["logged"]) for pool in pools], sub=True),
         row("regeneration and unlogged", [_num(max(0, pool["gained"] - pool["logged"]))
                                           for pool in pools], sub=True),
-        row("Wasted at a full pool", [_num(pools[0]["wasted"]), _num(pools[1]["wasted"]), DASH]),
-        row("Time at full", [DASH, DASH, _num(data.get("full_pct"), True)]),
+        row("Gained over cap", [_num(pools[0]["wasted"]), _num(pools[1]["wasted"]), DASH]),
+        row("Time at cap", [DASH, DASH, _num(data.get("full_pct"), True)]),
     ]
     parts = [title, "<table cellpadding='3' cellspacing='0'>", *body, "</table>"]
 

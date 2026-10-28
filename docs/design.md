@@ -1138,7 +1138,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:632](../src/gui/build_render.py#L632)*
+*[src/gui/build_render.py:626](../src/gui/build_render.py#L626)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1293,8 +1293,8 @@ rule, player-fights / distinct characters in that survey:
   veteran DPS player-fights, 7%, and 29 of 225 characters, in the 84 newest
   trial split logs of May to October 2026 with 1,581 fights and 18,684
   player-fights). Minor Slayer is 5% more damage to dungeon, trial and
-  arena monsters. Every trial's sets grant it at three pieces, so do Ossein
-  Cage's four, and Oakensoul Ring grants it outright: SLAYER_SETS holds the
+  arena monsters. Every trial's sets grant it at three pieces and Oakensoul
+  Ring grants it outright: SLAYER_SETS holds the
   38 three-piece sets by game set id, from UESP's set summary (the
   esobuild asset export's set_summary.json, its gameId field), and the ring
   is OAKENSOUL_SET_ID. The maintainer's scope (2026-10-26): damage dealers
@@ -1315,7 +1315,8 @@ rule, player-fights / distinct characters in that survey:
   start is the fact, and a changed build clears it next fight. The builds
   without were Deadly Strike with Tide-Born Wildstalker or Spattering
   Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
-  Order's Wrath, so the finding names the complete sets worn instead.
+  Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
+  once named the complete sets worn instead, which read as noise.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
@@ -1324,7 +1325,7 @@ weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:735](../src/build_issues.py#L735)*
+*[src/build_issues.py:710](../src/build_issues.py#L710)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, and who has taunted (the heavy-armor rule's
