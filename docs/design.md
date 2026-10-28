@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2444](../src/esolog_tail.py#L2444)*
+*[src/esolog_tail.py:2481](../src/esolog_tail.py#L2481)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:79](../src/esolog_tail.py#L79)*
+*[src/esolog_tail.py:80](../src/esolog_tail.py#L80)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1821](../src/esolog_tail.py#L1821)*
+*[src/esolog_tail.py:1817](../src/esolog_tail.py#L1817)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1836](../src/esolog_tail.py#L1836)*
+*[src/esolog_tail.py:1832](../src/esolog_tail.py#L1832)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:73](../src/esolog_tail.py#L73)*
+*[src/esolog_tail.py:74](../src/esolog_tail.py#L74)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,15 +65,22 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4086](../src/esolog_tail.py#L4086)*
+*[src/esolog_tail.py:4164](../src/esolog_tail.py#L4164)*
 
 Replay the log's most recent session up to the attach point.
 
 Gives a mid-session attach the same state as having run since the
 session began: full roster, this session's fights in history, and
 the session's split file (created only if absent). Best-effort:
-failures leave plain tailing, and oversized sessions fall back to
-the roster-only preamble sweep.
+failures leave plain tailing.
+
+Every session is replayed whole, however large. Until issue #107 one
+over 768 MB got only the roster-only preamble sweep, which is not
+enough: who owns which companion and pet is learned from the rest
+of the session, and fights rebuilt that way differed in every one
+of 18 measured on a Dreadsail Reef split. The sweep is left for a
+session whose BEGIN_LOG is beyond the 2 GB lookback, and for a
+replay that fails.
 
 ## Log freshness
 
@@ -101,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:373](../src/esolog_tail.py#L373)*
+*[src/esolog_tail.py:350](../src/esolog_tail.py#L350)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -461,6 +468,62 @@ trials' mechanics; POTIONS the alchemy block 45221 to 45241, the vendor,
 Alliance War and Crown potions. Werewolf light and heavy attacks count as
 light and heavy attacks.
 
+## Magicka, stamina and ultimate spent and gained
+
+### src/resources.py
+
+*[src/resources.py:1](../src/resources.py#L1)*
+
+Magicka, stamina and ultimate spent and gained in a fight (engine side, no
+Qt). Issue #125.
+
+Design: every unit state in the log is ``unitId, health, magicka, stamina,
+ultimate, werewolf, shield, x, y, heading`` with each pool as
+``current/max``, and every group member's pools are real values, not only
+the logging player's (each of 12 players in an Aetherian Archive split of
+2026-10-24 had 1,100 to 2,600 distinct states, sampled in combat at a p95
+gap of about 100 ms). Nothing logs a cost: a skill's cost is a drop in the
+caster's state, nearly always already in the state its BEGIN_CAST line
+carries (Stampede -3,443 stamina 141 of 141 times), and sometimes on a line
+written at the same millisecond just before it. So the figures are read
+from the states:
+
+- Spent is the sum of the drops between a player's consecutive states, and
+  a drop at the millisecond of one of the player's casts is that cast's
+  cost; light and heavy attacks and weapon swaps cost nothing and are never
+  charged. Over the AA and Sunspire splits that put 70 to 91% of magicka
+  and 60 to 78% of stamina spending on casts; the rest (blocking,
+  sprinting, a cost written later, like Killer's Blade's on the next line)
+  leaves no line of its own and is shown as other spending, not guessed.
+- A gain the game logs is a COMBAT_EVENT POWER_ENERGIZE, whose powerType
+  is a flag (1 magicka, 2 werewolf, 4 stamina, 8 ultimate) and whose unit
+  state is the one after the gain (8,455 of 9,262 rows moved the pool by
+  the logged amount). Its ``overflow`` is always 0, so the gain booked to
+  the row's ability is the pool's own rise there, and a row arriving at a
+  full pool is waste (logged amount less the rise). The giver is the row's
+  source when that is another player (Pillager's Profit, Bountiful
+  Harvest); a source that is not a player, like the enemy carrying Minor
+  Magickasteal, names nobody.
+- Every other rise is "regeneration and unlogged": base regeneration, base
+  ultimate generation and ultimate on hit have no line (only 38 to 55% of
+  magicka and stamina rises, and a quarter of ultimate rises, were on an
+  energize row). It is a residual, not a measurement of regeneration.
+- Logged ultimate never arrived at a full pool (0 of 5,728 points), so lost
+  ultimate cannot be counted; the time at full ultimate is the figure (0 to
+  46% of combat across the AA group). A state's current can exceed its max
+  (19,062 magicka states in AA: the max lags), so "full" is current >= max.
+
+The figures are net per observation: a cost and a gain inside one gap
+cancel. On trial logs that is a few percent; reading the effect lines'
+source states too, as the engine does, keeps it there (a solo March of
+Sacrifices split read stamina spent 29k without them, 41k with).
+
+The engine can resume a fight the game cut in two (COMBAT_RESUME_MS), so
+the figures are kept in one-second buckets per player and summed over the
+fight's window, then pruned at fight end as casts.py prunes its casts. A
+step between two states is capped at MAX_STEP_MS for the time at full, so
+the first state of a fight does not carry the idle time before it.
+
 ## Companions: a row of their own under their owner
 
 ### src/companions.py
@@ -563,7 +626,7 @@ The rules (Chris, 2026-10-27):
    MONSTER added on their unit id marks them gone too, and that id is no
    longer theirs.
 3. The same character back in the zone is the same row: the new unit id is
-   an alias of the record, so the damage before and after the drop lands on
+   an alias of the record, so the damage before and after the drop goes to
    one row and its dps time spans both, the gap included (as Combat Metrics
    counts it). At the next BEGIN_COMBAT the record takes the new id as its
    own, its companion and pets following, so later fights are keyed as for
@@ -701,13 +764,75 @@ exactly this mapping, publishes a workbook with every set's id, name, type
 (crafted, trial, mythic, ...) and item ids; this script reads it at build
 time with openpyxl and writes a Python module, so nothing is parsed at run
 time and the workbook is not bundled. The CI build runs the script, so a
-change here is what ships. Set names are shown as the game spells them: the
-workbook's spelling differs for a few dozen sets ("Perfect" for
-"Perfected", "Blood Spawn", three Cyrodiil sets one id out of place), so
-NAME_CORRECTIONS carries the name from the installed client's own English
-string table for each of those ids, and the script reports a correction
-the workbook no longer needs. ESO-Hub links for sets are looked up by the
-corrected name (see src/ability_icons.py).
+change here is what ships. Set names are the game's own (issue #79): the
+installed client's English string table, committed as
+data/client/set_names_en.json by scripts/check_client_names.py, names every
+set, and the workbook's spelling differed for 26 of them on Update 51
+("Perfect" for "Perfected", "Blood Spawn", three Cyrodiil sets one id out of
+place). The workbook gives the set type, the one field the app reads from it
+(the five-piece reading in esolog_tail.has_five_piece_bonus, the mythic one
+in player_build.is_mythic_set), and the names of the template and "(OLD)"
+rows the client lacks. A set the client has and the workbook does not yet is
+included under its client name with no type, so it reads as a five-piece,
+non-mythic set until the workbook catches up. ESO-Hub links for sets are
+looked up by name (see src/ability_icons.py).
+
+### scripts/check_client_names.py
+
+*[scripts/check_client_names.py:1](../scripts/check_client_names.py#L1)*
+
+Compare every name the app bundles by game id with the installed client's own
+English text, and keep the committed snapshot of the client's set names.
+
+Design (issue #79): the client's language file, gamedata\lang\en.lang in
+depot\eso.mnf, holds the game's name for every set, ability and item, keyed
+by id, and it is right on patch day. It holds no structure: not which items
+are poisons, not a set's type or bonuses, not an ability's skill line. So the
+external sources (the LibSets workbook, UESP, LibFoodDrinkBuff) stay for
+structure, and this script checks their names against the client:
+
+  table      Index      what is checked against it
+  38727365   set id     src/gear_set_data.py, the set ids named in
+                        src/build_issues.py, data/sets/offense.json, and the
+                        names data/esohub/sets_en.json is keyed by
+  198758357  ability    data/skills/class_passives.json (a mastery's effect
+                        by the buff it grants, which is the effect's own
+                        name), data/skills/weapon_skill_lines.json, and the
+                        skill id lists in src/build_issues.py against their
+                        name lists
+  242841733  item id    data/items/poisons_en.json (the client writes a tiered
+                        poison without its numeral, as the table does)
+
+Item names carry grammar markers ("battle axe^n"); they are cut at the caret
+before comparing. The code lists are read with ast, so nothing in src/ is
+imported. Food and drink buffs are not checked: data/buffs/food_drink.json
+holds ids and kinds only, no names.
+
+Two kinds of finding. A name that differs from the client's, or a name the
+client does not have at all, is a difference and makes the run exit 1. An id
+the client has no name for is counted, not failed: UESP's tables keep the
+rank II to IV ids that skills had before Update 34, which the client no
+longer names (432 in weapon_skill_lines.json and 39 in build_issues.py's
+skill lists on Update 51), and the LibSets workbook keeps template and
+"(OLD)" rows (11). They are harmless in a lookup table, and failing on them
+would make the check fail for good. The set lists are stricter: a set id in
+build_issues.py or offense.json that the client does not name is a
+difference, since every set there was chosen by hand.
+
+Set names are also written to data/client/set_names_en.json with --write-sets.
+scripts/generate_gear_data.py takes its set names from that snapshot (CI has
+no game client, so the client's names have to be committed) and only the set
+type from the LibSets workbook. Refresh it after every ESO update:
+
+```
+    python scripts/check_client_names.py --write-sets
+```
+
+The run extracts en.lang into a temporary folder with UESP's EsoExtractData
+(about 20 s, read-only on the game folder; see scripts/extract_ability_icons.py
+for how the extractor and the client are found), or reads an extracted
+en.lang.csv given with --lang-csv. Then rerun scripts/generate_gear_data.py,
+which reports the sets the snapshot added.
 
 ## Solo dungeons: the run's Misfortunes
 
@@ -1013,7 +1138,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:508](../src/gui/build_render.py#L508)*
+*[src/gui/build_render.py:632](../src/gui/build_render.py#L632)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1301,7 +1426,7 @@ up to 71 mobs hit). A ``boss`` rule has nothing to measure there, so it
 measures every hostile the group fought instead, and both it and an
 ``enemies`` rule then say how many of the pack's mobs the effect reached,
 ``Alkosh:45% on 7 of 12 mobs`` (the pack is the mobs the group hit, plus
-any a tracked effect landed on). In those fights Off-Balance reached up to
+any a tracked effect was applied to). In those fights Off-Balance reached up to
 27 of 32 mobs with 7 at once, Major Vulnerability 7 of 18, Minor Brittle
 18 of 32, the taunt 20 of 32. In a boss fight nothing changes: the boss
 rule reads the boss alone (its effect was on the adds too in about half
@@ -1392,7 +1517,7 @@ comes under several ids at once (45902 for most sources, 62988 for
 Elemental Blockade, 39077, 34733, 20806, 130139), so a union is needed,
 and its uptime on a trial boss was 4 to 28% per fight; Crux stacks to 3
 on the Arcanist alone; a pet-applied buff (a Glyphic's heal, Major
-Protection from a netch) lands on players like any other and needs no
+Protection from a netch) is applied to players like any other and needs no
 special case, since only the target's kind is looked at. Replaying the
 bundled examples through two of those logs (Sunspire, Kyne's Aegis):
 Off-Balance on the boss 12 to 28% per boss fight, to the decimal what an
@@ -1401,7 +1526,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:555](../src/effect_rules.py#L555)*
+*[src/effect_rules.py:616](../src/effect_rules.py#L616)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -1418,7 +1543,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:751](../src/effect_rules.py#L751)*
+*[src/effect_rules.py:812](../src/effect_rules.py#L812)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -1439,7 +1564,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:899](../src/esolog_tail.py#L899)*
+*[src/esolog_tail.py:876](../src/esolog_tail.py#L876)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1453,7 +1578,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:113](../src/app_config.py#L113)*
+*[src/app_config.py:122](../src/app_config.py#L122)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1480,13 +1605,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
+*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:423](../src/esolog_tail.py#L423)*
+*[src/esolog_tail.py:400](../src/esolog_tail.py#L400)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1570,7 +1695,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:105](../src/esolog_tail.py#L105)*
+*[src/esolog_tail.py:106](../src/esolog_tail.py#L106)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1578,7 +1703,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:123](../src/esolog_tail.py#L123)*
+*[src/esolog_tail.py:124](../src/esolog_tail.py#L124)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1664,7 +1789,7 @@ damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
 
 ### dps_time_s
 
-*[src/damage_stats.py:93](../src/damage_stats.py#L93)*
+*[src/damage_stats.py:94](../src/damage_stats.py#L94)*
 
 A dps time: the span in seconds, floored at a second like LibCombat.
 
@@ -1715,8 +1840,9 @@ The group's line gets the upper panel and the players the lower, sharing
 the time axis, the crosshair and the tooltip. Drawing otherwise: hairline
 solid gridlines a step off the surface, 2 px lines with round joins, the
 group's heavier in the pane's text colour, the categorical hues in a fixed
-order (an eight-slot palette validated for colour-vision deficiency on both
-the light and the dark surface), text in the pane's own text colours and
+order (eight hues with a light and a dark step; Settings' colour-blind
+option swaps in seven measured to stay apart for the dichromacies, with a
+cycle of four strokes), text in the pane's own text colours and
 never in a series colour, and the end value of each line labelled when a
 panel shows four or fewer.
 
@@ -1724,7 +1850,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:639](../src/esolog_tail.py#L639)*
+*[src/esolog_tail.py:616](../src/esolog_tail.py#L616)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1747,7 +1873,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:765](../src/esolog_tail.py#L765)*
+*[src/esolog_tail.py:742](../src/esolog_tail.py#L742)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1773,7 +1899,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3310](../src/esolog_tail.py#L3310)*
+*[src/esolog_tail.py:3366](../src/esolog_tail.py#L3366)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -1844,7 +1970,7 @@ Without --dir the split folder from the app's config is used.
 Death recap recording: what hit and healed a player in the seconds before
 each death, for the GUI's per-player recap.
 
-The analyzer passes every COMBAT_EVENT that lands on a player to record();
+The analyzer passes every COMBAT_EVENT whose target is a player to record();
 a short per-player history is kept, and note_death() turns that history into
 the recap a frontend renders. Times are raw log-relative milliseconds.
 
@@ -1920,7 +2046,7 @@ the encounter log carries three of them on every COMBAT_EVENT line:
   summed. IMMUNE and REFLECTED are not counted.
 - **Healing.** HEAL and CRITICAL_HEAL are direct heals, HOT_TICK and
   HOT_TICK_CRITICAL heals over time (Focused Mending, Swift Renewal); the hit
-  value landed and the overflow is overheal (1.17B landed against 12.4B
+  value is healing received and the overflow is overheal (1.17B received against 12.4B
   overheal in the survey; 3.1M of 3.6M heal lines were pure overheal).
   HEAL_ABSORBED is healing a healing-absorb effect ate. The killing blow's
   overflow is overkill (written on 6,039 of 6,398 killing blows; a blow
@@ -1953,7 +2079,7 @@ by map, and no Warfare star reads it.
 A session's cast index and a fight's damage-taken tallies cost a few
 dictionaries: the (source, cast) map is cleared at each fight's end, the
 per-ability memory with the zone session (unit ids start over), and a cast's
-pending amounts are dropped the moment its second target lands.
+pending amounts are dropped the moment it hits a second target.
 
 ## The damage taken window: by source and by healer, over the whole fight
 
@@ -1993,13 +2119,13 @@ player-fights with damage taken; 2026-10-27):
   512.
 - Healing is grouped by healer, with the healer's abilities under them.
   Six to eight units healed each player in the median fight (every group
-  HoT counts) with 15-19 abilities between them; the largest healer landed
-  51-65%, a tank's own heals 23% of what landed on them, a healer's own
+  HoT counts) with 15-19 abilities between them; the largest healer gave
+  51-65%, a tank's own heals 23% of what they received, a healer's own
   61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
   after the owner, since the log names no pet.
 - Overheal is a share per row, never an amount: 91-96% of all healing on a
-  player overflowed, so the amounts would be ten to twenty times the landed
-  figures and bury them. Landed healing is the headline; the share tells a
+  player overflowed, so the amounts would be ten to twenty times the received
+  figures and bury them. Healing received is the headline; the share tells a
   healer which HoTs were wasted on this player.
 - Shields absorbed 54-67% as much again as the damage that reached health
   (tanks most), so the header gives the absorbed amount with that ratio,
@@ -2030,7 +2156,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:628](../src/effect_rules.py#L628)*
+*[src/effect_rules.py:689](../src/effect_rules.py#L689)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
@@ -2074,7 +2200,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:202](../src/gui/timeline_strip.py#L202)*
+*[src/gui/timeline_strip.py:220](../src/gui/timeline_strip.py#L220)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -2241,7 +2367,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:602](../src/gui/main_window.py#L602)*
+*[src/gui/main_window.py:785](../src/gui/main_window.py#L785)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2251,9 +2377,49 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1094](../src/gui/main_window.py#L1094)*
+*[src/gui/main_window.py:1306](../src/gui/main_window.py#L1306)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+## Reviews: a thread of their own, and where a large log is cut
+
+### src/review_load.py
+
+*[src/review_load.py:1](../src/review_load.py#L1)*
+
+Replaying a log for review (issue #107): the engine side of "Open log for
+review…", with no Qt in it, so it runs on a thread of its own while live
+monitoring keeps its poll.
+
+A large log is first outlined: one pass over the line heads that finds each
+session's start (``BEGIN_LOG``) and counts its fights (``BEGIN_COMBAT``),
+so the window can offer the whole log or only its most recent sessions.
+The cut is always at a session start. Starting in the middle of a session
+was measured and rejected: the roster lines alone do not carry what the
+engine learns from the rest of the session (who owns which companion and
+pet), and on a Dreadsail Reef split every one of the last 18 fights came
+out different. A replay from a ``BEGIN_LOG`` matched a replay of the whole
+file in 75 of 75 fights (once champion points followed the log).
+
+Lines before the first session read are skipped unparsed, so a cut log
+costs a pass over its head plus the engine's time for the rest. The engine
+runs at about 10 MB/s on the maintainer's machine, which the time estimate
+uses.
+
+### src/gui/review_runner.py
+
+*[src/gui/review_runner.py:1](../src/gui/review_runner.py#L1)*
+
+A review on a thread of its own (issue #107). Until 0.21 a review ran on
+the engine thread, whose poll timer then waited for it: a month-sized log
+took 8.6 minutes with no live fights shown. Now the engine polls on while a
+review replays through an analyzer of its own.
+
+The thread holds no Qt object. It reports through *notify*, which the
+window turns into a signal on an object living on the UI thread (as split
+retention does), so nothing Qt is created or freed here; the analyzer and
+its fights are plain Python. The settings are a snapshot taken when the
+review starts, since Settings may change them meanwhile.
 
 ## Updates: the schedule, the conditional request and the button
 
@@ -2343,7 +2509,7 @@ to a dozen lines each and are one click away through the Changelog link.
 *[src/gui/icon_cache.py:26](../src/gui/icon_cache.py#L26)*
 
 A copy of *image* with a ring of *color* just inside its edge: about
-an eighth of the icon wide (5 px on the bundled 40 px icons), a dark
+an eighth of the icon wide (8 px on the bundled 64 px icons), a dark
 hairline outside it so it reads on any icon art, and a light hairline
 inside. *phase*, 0 to 1 around one glow cycle, brightens the ring from
 the colour itself (0) to a paler, lighter tone (0.5) and back, which the
@@ -2351,7 +2517,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:275](../src/gui/fight_view.py#L275)*
+*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2388,7 +2554,7 @@ friend, which is what "the handle of the person logging" means.
 Which names are player names: a name is hidden when it is not the local
 player's handle or character name and either starts with ``@`` or is the
 character name of another player of the fight. The ``@`` rule reaches
-every nested place a handle lands (the source of a heal in a death recap,
+every nested place a handle appears (the source of a heal in a death recap,
 a caster in the penetration section, a timeline interval's source and
 target) without threading the player list into each; the character-name
 set reaches a player the log gave no handle. That set is read from the
@@ -2434,7 +2600,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:186](../src/gui/fight_view.py#L186)*
+*[src/gui/fight_view.py:217](../src/gui/fight_view.py#L217)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
@@ -2483,3 +2649,33 @@ logical size). Names stay plain, with their hover cue.
 The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
 (fight_render.glyph_html), which FightView.loadResource answers from here:
 one image per kind, colour, size and ratio, kept for the session.
+
+## The text size
+
+### src/gui/text_size.py
+
+*[src/gui/text_size.py:1](../src/gui/text_size.py#L1)*
+
+The app-wide text size (issue #77): one percentage of the system font,
+saved as display.text_scale, set from Settings or with Ctrl+=, Ctrl+- and
+Ctrl+0.
+
+Design: the size is applied with QApplication.setFont, so every widget
+that has not set a font of its own follows it, and every rendered page,
+which sizes its text from its view's font (base_pt), follows it on the
+next render. What is drawn in pixels rather than points (the timeline
+strip's rows and label column, the dps graph's margins and legend, the
+icons in rendered pages) asks scale() and grows with it, but never
+shrinks below its size at 100%: icons and rows that small stay legible,
+and at 100% everything is drawn exactly as before the setting existed.
+
+The system font is read once, before the first change, and every
+percentage is of that font, so stepping up and back down returns to the
+same size rather than drifting with rounding. Qt is imported only where a
+font is set, so the page renderers can ask scale() without it.
+
+QApplication.setFont posts the change to each widget rather than sending
+it, so straight after it every view still reports the old font, and a page
+rendered then from its view's font comes out at the old size (the
+Settings path did just that: Save, redraw, old size). apply() delivers the
+posted font changes before it returns.

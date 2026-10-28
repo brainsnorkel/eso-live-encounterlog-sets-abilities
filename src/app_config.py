@@ -81,6 +81,15 @@ DEFAULTS = {
     "death_recap": {
         "window_s": 5,
     },
+    # The app-wide text size, a percentage of the system font (gui.text_size,
+    # issue #77): 80 to 200, set in Settings or with Ctrl+=, Ctrl+- and Ctrl+0
+    "display": {
+        "text_scale": 100,
+        # The DPS graph's colour-blind colours and strokes (gui.dps_graph)
+        "colorblind_graph": False,
+        # The taunt ring stays still rather than pulsing (gui.fight_view)
+        "reduce_motion": False,
+    },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close
         "splitter": None,        # base64 QSplitter.saveState() of the main split
@@ -175,6 +184,15 @@ class AppConfig:
                 return default
             node = node[part]
         return node
+
+    def snapshot(self) -> "AppConfig":
+        """A copy of the settings as they are now, for work on another
+        thread (a review, issue #107) while Settings may change these; it
+        is read, never saved."""
+        copy = object.__new__(AppConfig)
+        copy.path = self.path
+        copy.data = deepcopy(self.data)
+        return copy
 
     def set(self, dotted_key: str, value: Any) -> None:
         parts = dotted_key.split(".")

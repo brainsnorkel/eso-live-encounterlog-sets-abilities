@@ -9,13 +9,18 @@ exactly this mapping, publishes a workbook with every set's id, name, type
 (crafted, trial, mythic, ...) and item ids; this script reads it at build
 time with openpyxl and writes a Python module, so nothing is parsed at run
 time and the workbook is not bundled. The CI build runs the script, so a
-change here is what ships. Set names are shown as the game spells them: the
-workbook's spelling differs for a few dozen sets ("Perfect" for
-"Perfected", "Blood Spawn", three Cyrodiil sets one id out of place), so
-NAME_CORRECTIONS carries the name from the installed client's own English
-string table for each of those ids, and the script reports a correction
-the workbook no longer needs. ESO-Hub links for sets are looked up by the
-corrected name (see src/ability_icons.py).
+change here is what ships. Set names are the game's own (issue #79): the
+installed client's English string table, committed as
+data/client/set_names_en.json by scripts/check_client_names.py, names every
+set, and the workbook's spelling differed for 26 of them on Update 51
+("Perfect" for "Perfected", "Blood Spawn", three Cyrodiil sets one id out of
+place). The workbook gives the set type, the one field the app reads from it
+(the five-piece reading in esolog_tail.has_five_piece_bonus, the mythic one
+in player_build.is_mythic_set), and the names of the template and "(OLD)"
+rows the client lacks. A set the client has and the workbook does not yet is
+included under its client name with no type, so it reads as a five-piece,
+non-mythic set until the workbook catches up. ESO-Hub links for sets are
+looked up by name (see src/ability_icons.py).
 """
 
 import json
@@ -29,55 +34,40 @@ def filled(value) -> bool:
     """True when a worksheet cell holds something."""
     return value is not None and value != ''
 
-# Names the workbook has wrong, by set id. Each is the game's own name, read
-# from the English language table of the installed client (Update 51): string
-# table 38727365 of gamedata\lang\en.lang, where the index is the set id.
-# "EsoExtractData eso.mnf <folder>\ -n en.lang" extracts that file and writes
-# it as a CSV. UESP's setSummary export and LibSets' own Lua data agree. The
-# workbook has the names of three Cyrodiil sets (711 to 713) one set out of
-# place and spells the others differently from the game; these are all the
-# names that differed when the 725 were compared. A correction the workbook no
-# longer needs is reported, so that it can be removed.
-NAME_CORRECTIONS = {
-    "163": "Bloodspawn",                     # workbook: Blood Spawn
-    "392": "Perfected Aegis of Galenwe",     # workbook: Perfect Aegis of Galenwe
-    "393": "Perfected Arms of Relequen",     # workbook: Perfect Arms of Relequen
-    "394": "Perfected Mantle of Siroria",    # workbook: Perfect Mantle of Siroria
-    "395": "Perfected Vestment of Olorime",  # workbook: Perfect Vestment of Olorime
-    "423": "Perfected Gallant Charge",       # workbook: Perfect Gallant Charge
-    "424": "Perfected Radial Uppercut",      # workbook: Perfect Radial Uppercut
-    "425": "Perfected Spectral Cloak",       # workbook: Perfect Spectral Cloak
-    "426": "Perfected Virulent Shot",        # workbook: Perfect Virulent Shot
-    "427": "Perfected Wild Impulse",         # workbook: Perfect Wild Impulse
-    "428": "Perfected Mender's Ward",        # workbook: Perfect Mender's Ward
-    "431": "Icy Conjurer",                   # workbook: Icy Conjuror
-    "446": "Claw of Yolnahkriin",            # workbook: Claw of Yolnakhriin
-    "451": "Perfected Claw of Yolnahkriin",  # workbook: Perfected Claw of Yolnakhriin
-    "577": "Encratis's Behemoth",            # workbook: Encrati's Behemoth
-    "635": "Lady Malygda",                   # workbook: Lady Malydga
-    "668": "Languor of Peryite",             # workbook: Langour of Peryite
-    "673": "Bastion of the Draoife",         # workbook: Bastion of Draoife
-    "690": "Judgment of Akatosh",            # workbook: Judgement of Akatosh
-    "711": "Colovian Highlands General",     # workbook: Jerall Mountains Warchief
-    "712": "Jerall Mountains Warchief",      # workbook: Nibenay Bay Battlereeve
-    "713": "Nibenay Bay Battlereeve",        # workbook: Colovian Highlands General
-    "732": "Black-Glove Grounding",          # workbook: Black-Grove Grounding
-    "759": "Ayleid Refuge",                  # workbook: Ayleid Rufuge
-    "780": "Aetheric Lancer",                # workbook: Aetheric Lance
-    "854": "Prowler's Talisman",             # workbook: The Prowler's Talisman
-}
+# The game's own set names, by set id: string table 38727365 of the installed
+# client's gamedata\lang\en.lang, committed as data/client/set_names_en.json by
+# scripts/check_client_names.py --write-sets (CI has no client to read). They
+# replace the workbook's names, which differed for 26 sets on Update 51
+# ("Perfect" for "Perfected", "Blood Spawn", three Cyrodiil sets one id out of
+# place). The workbook still gives each set's type, and the names of the
+# template and "(OLD)" rows the client does not have.
+CLIENT_NAMES_PATH = Path(__file__).resolve().parent.parent / "data" / "client" / "set_names_en.json"
 
-def corrected_name(set_id: str, workbook_name: str) -> str:
-    """The game's name for a set the workbook misnames, else the workbook's."""
-    right_name = NAME_CORRECTIONS.get(set_id)
-    if right_name is None:
-        return workbook_name
-    if right_name == workbook_name:
-        print(f"Note: the workbook now names set {set_id} {workbook_name!r}; "
-              f"its entry in NAME_CORRECTIONS can go")
-    else:
-        print(f"Corrected set {set_id}: {workbook_name!r} -> {right_name!r}")
-    return right_name
+
+def load_client_names(path: Path = CLIENT_NAMES_PATH) -> Dict[str, str]:
+    """{set id: name} from the committed client snapshot; empty, with a
+    warning, when it is missing."""
+    if not path.is_file():
+        print(f"Warning: {path} not found; set names come from the workbook only")
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))["sets"]
+
+
+def set_names(workbook: Dict[str, str], client: Dict[str, str]) -> Dict[str, str]:
+    """{set id: name} for every set either source has: the client's name
+    when it has one, else the workbook's. A set only the client has (new
+    since the workbook) is included under its client name."""
+    names = {set_id: client.get(set_id, name) for set_id, name in workbook.items()}
+    for set_id, name in client.items():
+        names.setdefault(set_id, name)
+    renamed = sorted((k for k in workbook if k in client and client[k] != workbook[k]), key=int)
+    client_only = sorted(set(client) - set(workbook), key=int)
+    print(f"Set names: {len(names)} sets, {len(renamed)} named by the client where the "
+          f"workbook differs, {len(client_only)} from the client only")
+    for set_id in client_only:
+        print(f"  client only {set_id}: {client[set_id]} (no set type until the workbook has it)")
+    return names
+
 
 def extract_gear_data():
     """Extract gear set data from the XLSM file."""
@@ -112,35 +102,38 @@ def extract_gear_data():
             'known_ability_mappings': {}
         }
         
-        # Process each row
+        # The workbook's name, type and comment per set id
+        workbook_names = {}
+        workbook_info = {}
         for row in table:
             set_id = row.get('ESO ingame setId')
             set_name_en = row.get('Name EN')
             set_type = row.get('Set Type', '')
             comment = row.get('Comment', '')
-            
+
             if filled(set_id) and filled(set_name_en):
                 set_id_str = str(int(set_id))
                 # The workbook carries Lua escapes in a few names
                 # ("Mara\’s Balm", "Siegemaster'\s Focus"). The backslash is
                 # never part of a set's name, and the typographic apostrophe
                 # becomes the plain one every other name uses.
-                set_name = (str(set_name_en).strip().strip('"')
-                            .replace("\\", "").replace("’", "'"))
-                set_name = corrected_name(set_id_str, set_name)
+                workbook_names[set_id_str] = (str(set_name_en).strip().strip('"')
+                                              .replace("\\", "").replace("’", "'"))
+                workbook_info[set_id_str] = (str(set_type) if filled(set_type) else '',
+                                             str(comment) if filled(comment) else '')
 
-                # Build mappings
-                gear_data['set_id_to_name'][set_id_str] = set_name
-                gear_data['set_name_to_id'][set_name] = set_id_str
-                
-                # Store set info
-                gear_data['set_info'][set_name] = {
-                    'set_id': set_id_str,
-                    'set_type': str(set_type) if filled(set_type) else '',
-                    'comment': str(comment) if filled(comment) else '',
-                    'items': [],
-                    'abilities': []
-                }
+        # Names from the client, type from the workbook
+        for set_id_str, set_name in set_names(workbook_names, load_client_names()).items():
+            set_type, comment = workbook_info.get(set_id_str, ('', ''))
+            gear_data['set_id_to_name'][set_id_str] = set_name
+            gear_data['set_name_to_id'][set_name] = set_id_str
+            gear_data['set_info'][set_name] = {
+                'set_id': set_id_str,
+                'set_type': set_type,
+                'comment': comment,
+                'items': [],
+                'abilities': []
+            }
         
         # Add known item and ability mappings (from the current fallback data)
         gear_data['known_item_mappings'] = {

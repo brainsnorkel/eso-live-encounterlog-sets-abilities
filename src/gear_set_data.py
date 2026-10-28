@@ -712,13 +712,16 @@ SET_ID_TO_NAME: Dict[str, str] = {
     "84": "Orgnum's Scales",
     "845": "Huntsman's Warmask",
     "846": "Xanmeer Genesis",
+    "847": "Monster Prototype 3",
     "848": "Shattered Paths Signet",
     "849": "Glittering Goad",
     "85": "Almalexia's Mercy",
     "850": "Thousand Eyes",
     "851": "The Ruckus",
+    "853": "Prototype Mythic Ring - u49 Mythic Proto 4",
     "854": "Prowler's Talisman",
     "855": "Gorethief",
+    "856": "Prototype Mythic Necklace - u49 Mythic Proto 1",
     "86": "Queen's Elegance",
     "87": "Eyes of Mara",
     "876": "Tarcyr",
@@ -1066,6 +1069,7 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Molag Kena": "183",
     "Monolith of Storms": "727",
     "Monomyth Reforged": "813",
+    "Monster Prototype 3": "847",
     "Moon Hunter": "402",
     "Moondancer": "230",
     "Mora Scribe's Thesis": "766",
@@ -1195,6 +1199,8 @@ SET_NAME_TO_ID: Dict[str, str] = {
     "Prior Thierric": "608",
     "Prisoner's Rags": "26",
     "Prophet's": "380",
+    "Prototype Mythic Necklace - u49 Mythic Proto 1": "856",
+    "Prototype Mythic Ring - u49 Mythic Proto 4": "853",
     "Prowler's Talisman": "854",
     "Puncturing Remedy": "314",
     "Pyrebrand": "776",
@@ -3757,6 +3763,13 @@ SET_INFO: Dict[str, Dict] = {
         "items": [],
         "abilities": []
     },
+    "Monster Prototype 3": {
+        "set_id": "847",
+        "set_type": "",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
     "Moon Hunter": {
         "set_id": "402",
         "set_type": "LIBSETS_SETTYPE_DUNGEON",
@@ -4657,6 +4670,20 @@ SET_INFO: Dict[str, Dict] = {
         "set_id": "380",
         "set_type": "LIBSETS_SETTYPE_SPECIAL",
         "comment": "Level up advisor grants this set during levelling",
+        "items": [],
+        "abilities": []
+    },
+    "Prototype Mythic Necklace - u49 Mythic Proto 1": {
+        "set_id": "856",
+        "set_type": "",
+        "comment": "",
+        "items": [],
+        "abilities": []
+    },
+    "Prototype Mythic Ring - u49 Mythic Proto 4": {
+        "set_id": "853",
+        "set_type": "",
+        "comment": "",
         "items": [],
         "abilities": []
     },

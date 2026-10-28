@@ -13,6 +13,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [The buff timeline](#the-buff-timeline)
 - [Reviewing and copying fights](#reviewing-and-copying-fights)
 - [Settings](#settings)
+- [Accessibility](#accessibility)
 - [The status bar](#the-status-bar)
 - [What the numbers are based on](#what-the-numbers-are-based-on)
 - [When something looks wrong](#when-something-looks-wrong)
@@ -27,7 +28,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 2. **Start the app**, before or during play; both work. It looks for `Encounter.log` in the usual ESO folders, including a Documents folder that OneDrive has moved, and picks the most recently written one (see [Where the app looks for the log](#where-the-app-looks-for-the-log)). If there is no log yet, it waits and attaches the moment the file appears.
 3. **Check the status bar.** **Last entry** turns green as soon as new lines arrive, so you can confirm logging is on from the app.
 
-Joining mid-raid, the app replays the logging session already in the file: the session's fights load into the history and the whole group, their gear and their bars are known, so you do not start with a half-empty group. A session over 768 MB falls back to a faster sweep that reads only the roster.
+Joining mid-raid, the app replays the logging session already in the file: the session's fights load into the history and the whole group, their gear and their bars are known, so you do not start with a half-empty group. The whole session is replayed however long it is, with the progress bar showing how far it has got; a session's worth of trials (500 MB or so) takes about a minute.
 
 ## The main window
 
@@ -52,7 +53,7 @@ DPS includes what a player's pets did: a Necromancer's Blastbones and Skeletal A
 
 ### A player's row in detail
 
-With **Detail view** on (the default; Tab toggles it), each row shows the player's two ability bars as the game's icons, front bar left and back bar right, the ultimate set apart.
+With **Detail view** on (the default; Ctrl+D toggles it), each row shows the player's two ability bars as the game's icons, front bar left and back bar right, the ultimate set apart.
 
 - Hover an icon for the ability's name; click it to open the skill on [ESO-Hub](https://eso-hub.com). An ability without a bundled icon shows its name instead.
 - An ability the player taunted with in this fight is ringed in purple (or its name is purple).
@@ -110,6 +111,22 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 
 ![Searching a fight for an ability name](screencaps/search.png)
 
+### Keyboard
+
+| Key | Does |
+|---|---|
+| Tab, Shift+Tab | Move between the fight list, the search field and the fight |
+| Up, Down | Pick a fight in the list |
+| Ctrl+D | Detail view on or off |
+| Ctrl+F | Put the cursor in the search field; Enter jumps to the next match, Esc clears |
+| Ctrl+C | Copy fight |
+| Ctrl+H | [Hide names](#hiding-other-players-names) on or off, from any of the app's windows |
+| Ctrl+= (or Ctrl++), Ctrl+- | [Text size](#settings) a step bigger or smaller, from any of the app's windows; saved |
+| Ctrl+0 | Text size back to 100% |
+| Ctrl + mouse wheel | Zoom the one page under the pointer until the app closes; the next text size change resets it |
+
+Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
+
 ## A player's build
 
 Click a player's name, in either view, to open their build for that fight. The name carries no mark, unlike the DPS figures; it is underlined while the pointer is over it. The window stays open beside the main window and keeps the fight it was opened for; clicking another name reuses it.
@@ -124,10 +141,25 @@ Click a player's name, in either view, to open their build for that fight. The n
 - **Gear**: one row per slot under Armor, Jewelry, Front bar and Back bar, with the set (a link to its ESO-Hub page), quality, trait, enchant and the enchant's quality. A slot with nothing logged shows a dash, a mythic piece is marked Mythic, and a slotted poison gets a row under its bar.
 - **Type** is the armor weight, or what a weapon is: `Inferno Staff`, `Dagger`, `Greatsword`, `Shield` and so on. The Armor heading counts the pieces of each weight, `5 medium, 1 light, 1 heavy`. A dash means the app does not know the piece (see [Limitations](#limitations)).
 - **Pcs** is the number of pieces of the row's set that are active, counted per weapon bar: armor and jewelry count on both bars, and each bar adds its own weapons, a two-handed one as two. `5` means five on either bar. `5/3` means five on the front bar and three on the back: that set's five-piece bonus is live on the front bar only.
+- **Resources**: the magicka, stamina and ultimate the player spent and gained in the fight, each with its rate per second, see [Resources](#resources) below.
 - **Damage dealt**: the kinds of the player's damage in the fight, the same three bars as the [death recap](#death-recaps) draws for damage taken: direct against over time (Master-at-Arms, Thaumaturge), area against single target (Biting Aura, Deadly Aim), Martial against Magical (Mighty, War Mage), with the damage types under them and what enemy shields absorbed named apart. For a player's own skills the area side comes from the casts (a cast that struck two or more units) and, against a lone boss where every cast strikes one unit, from UESP's skill table (Impulse is an area skill, Crystal Fragments single target); a line under the bars says how much of the damage the table classed. A side's label links to its star on ESO-Hub and names it on hover.
 - **Penetration** and **Critical damage**: where the player's figures come from and how they stand against the caps, see below.
 
 ![The Damage dealt section of the build window](screencaps/build-damage-dealt.png)
+
+### Resources
+
+Under the gear grid, the Resources section answers whether the player's sustain held: what they spent their magicka, stamina and ultimate on, where it came back from, and what went to waste. Every group member's pools are in the log, not only yours, so it works for anyone in the fight.
+
+![The Resources section of the build window](screencaps/build-resources.png)
+
+- **Spent**, with the rate per second: what the player's pools fell by. **On casts** is the part that fell at the moment of a cast, the cast's cost; **other spending** is the rest, blocking, sprinting and the costs the game writes later, which leave no line of their own. Light and heavy attacks and weapon swaps cost nothing and are never charged.
+- **Gained**, with the rate per second: what the pools rose by. **Logged gains** are the ones the log names (Undaunted Command, Bountiful Harvest, a potion); **regeneration and unlogged** is every other rise: base regeneration, the ultimate every player generates, and anything else the game does not write down. It is what is left over, not a measurement of regeneration.
+- **Wasted at a full pool**: logged gains that arrived while the pool was already full.
+- **Time at full** ultimate: the share of the fight the player sat on a full ultimate bar. The game never logs ultimate gained at a full pool, so this is the measure of wasted ultimate.
+- **Spent on** lists the casts the most went on, five per pool, with the casts that cost something, the average cost and the total. **Gained from** lists the five largest gains per pool, with the players who gave it when that was another group member (a healer's Bountiful Harvest, a Pillager's Profit), the three who gave most named. With [Hide names](#hiding-other-players-names) on, those names are hidden too.
+
+The figures come from the pools' rises and falls between one logged state and the next, which the log writes about ten times a second for each player, so a cost and a gain inside the same tenth of a second cancel out. Read them as a fair picture of the fight, not as tooltip costs.
 
 ### Penetration and critical damage
 
@@ -162,10 +194,10 @@ Click the shield after a player's name, in either view, for everything that reac
 
 ![The damage taken window: the figures, the kinds, damage by source, healing by healer](screencaps/taken-window.png)
 
-- **Header**: the player, then the fight, then the figures: the damage taken and the rate per second of the fight, pull to end (not the dps time: a quiet stretch is part of the answer, and two pulls compare); how long the hits spanned; the healing that landed, its rate, and the share of all healing on the player that was overheal; what damage shields absorbed, as a share of the damage that reached health; how many of the direct hits were blocked; and the hits dodged or missed. What a block, armour or resistances prevented is not in the log, so it is never stated.
+- **Header**: the player, then the fight, then the figures: the damage taken and the rate per second of the fight, pull to end (not the dps time: a quiet stretch is part of the answer, and two pulls compare); how long the hits spanned; the healing received, its rate, and the share of all healing on the player that was overheal; what damage shields absorbed, as a share of the damage that reached health; how many of the direct hits were blocked; and the hits dodged or missed. What a block, armour or resistances prevented is not in the log, so it is never stated.
 - **Kinds of damage**: the bars and lines the [death recap](#death-recaps) draws, over the whole fight.
 - **Damage by source**: every unit that hurt the player, bosses first (marked `boss`), then by damage. Several units of one name are one row with their count, `Alkosh's Will ×4`; damage the log credits to no unit (fall damage, some set procs) is the `No unit named in the log` row. Under each unit, its abilities largest first, with the damage, its share of all the damage taken, hits, largest hit, average hit, and the kind words the recap uses, `direct · area · fire`.
-- **Healing received**: every unit that healed the player, by what landed, with the player's own heals marked `own` and a pet's heals (a Twilight Matriarch's) in a row of their own, named after the owner and marked `pet`. Under each healer, their abilities. **Overheal** is the share of that row's healing that overflowed, not an amount: in a trial about nine tenths of all healing on a player is overheal, so the amounts would bury the landed figures; a row near 100% is a HoT ticking on a full bar. **Kind** says `HoT`, `direct`, or the mix.
+- **Healing received**: every unit that healed the player, by the healing the player received from it, with the player's own heals marked `own` and a pet's heals (a Twilight Matriarch's) in a row of their own, named after the owner and marked `pet`. Under each healer, their abilities. **Overheal** is the share of that row's healing that overflowed, not an amount: in a trial about nine tenths of all healing on a player is overheal, so the amounts would bury the healing received; a row near 100% is a HoT ticking on a full bar. **Kind** says `HoT`, `direct`, or the mix.
 
 With **Hide names** on, other players are masked here as everywhere, as sources and as healers. A fight recorded by an older version says `Damage kinds were not recorded for this fight`; one recorded before the window had its by-source and by-healer tables says so under those headings.
 
@@ -176,7 +208,7 @@ Click the group DPS figure in the fight header, the one ending in a small graph 
 ![The DPS graph: the group and the players over a fight](screencaps/dps-graph.png)
 
 - **Show** picks the curve: the average over a window of 1, 5 (the default, as in Combat Metrics), 10 or 30 seconds, or the running figure, which is the live dps as it stood at each second and ends at the fight's dps.
-- **Legend**: tick the group and the players to draw. The first eight players are on to begin with, and a player past the eighth draws dashed in a reused colour, since eight is as many colours as can be told apart. Each entry shows the player's dps (`boss / total` in a fight with a boss). The choices are kept from one fight to the next while the window is open.
+- **Legend**: tick the group and the players to draw. The first eight players are on to begin with, and a player past the eighth draws dashed in a reused colour, since eight is as many colours as can be told apart. With *Colour-blind colours and line styles in the DPS graph* on (Settings → Display), the lines take seven colours chosen to stay apart for red-green and blue-yellow colour blindness, and each player in turn is drawn solid, dashed, dotted or dash-dotted, so no two of the first 28 players look alike. Each entry shows the player's dps (`boss / total` in a fight with a boss). The choices are kept from one fight to the next while the window is open.
 - **Hover** the chart for a crosshair with every drawn line's value at that second; with four lines or fewer, each line's end value is labelled.
 - **Boss targets only** narrows every line to the damage on the units the game flags as bosses.
 
@@ -194,7 +226,7 @@ The kinds are the splits the Warfare champion point stars act on, each a two-col
 - **area** against **single target** (Unassailable and Duelist's Rebuff). The log does not say whether an attack was an area attack, so the app reads the cast: a cast that struck two or more players in the fight is area, and the row says `area · hit 8 players`. An ability that struck a group earlier in the session reads as area on a lone hit too; a cast that struck one player, of an ability never seen on two, reads as single target.
 - **Martial** against **Magical** (Hardy and Elemental Aegis): physical, bleed, poison and disease damage on one side; magic, fire, frost and shock on the other. Under the bar, the damage types behind them, `fire 64% · physical 19% · frost 17%`. Oblivion damage, fall damage and drowning belong to neither and are named apart.
 
-Under the bars: what got through while blocking (the log writes what a block let through, never what it saved), what damage shields absorbed, hits dodged or missed, the healing that landed against the overheal (direct heals and HoTs apart: Focused Mending and Swift Renewal), and the killing blow's overkill. Each side's label links to the first star's ESO-Hub page, and hovering it names every Warfare star for that side with the game's text. The app never knows which stars a player has: the log does not carry them.
+Under the bars: what got through while blocking (the log writes what a block let through, never what it saved), what damage shields absorbed, hits dodged or missed, the healing received against the overheal (direct heals and HoTs apart: Focused Mending and Swift Renewal), and the killing blow's overkill. Each side's label links to the first star's ESO-Hub page, and hovering it names every Warfare star for that side with the game's text. The app never knows which stars a player has: the log does not carry them.
 
 The event table:
 
@@ -252,13 +284,13 @@ A compact strip above each fight shows every tracked effect across the fight's l
 - **Rows**: the strip's built-in rows, Major Slayer, Major Force, Major Courage, Major Berserk, Powerful Assault, Major Vulnerability and Taunt, then one row for each of your [tracked-effect rules](#tracked-effects) (a rule with the same name as a built-in row does not get a second one). Major Berserk and Major Vulnerability are built-in rows only; they are not in the copied text line. A rule whose effect never occurred has a row only when it is [expected](#tracked-effects) in a group of that size, an empty one reading `0%` with its label in dark red and bold (a lighter red on the dark theme); otherwise it is left out, and the strip disappears when there is nothing to show.
 - **Buffs above, debuffs below**: rows whose effect is on your side (`group`, `self`, `pets`) come first, then the rows on the enemy (`boss`, `enemies`, `mobs`), with a thin line between the two. Each side keeps the order its rows come in: built-in rows first, then your rules in the order you wrote them.
 - **Each row** is filled where the effect was up, with its uptime in the label and time ticks underneath. Beside the label a word says whose effect it is: `group`, `boss` for Major Vulnerability and the taunt, and each rule's scope (`self`, `pets`, `enemies`, or `mobs` for a boss rule measured on the pack of a fight without a boss). A stacking rule's bar rises and falls with the count, and Touch of Z'en's against its five DoTs. A group buff that reached only one or two people is cross-hatched rather than solid: the span is unbroken, so it still reads as up, and the hatch says it was not on the whole group (clicking the row says how many it reached).
-- **Armour**, the last row, is not an effect but an estimate: the target's armour (18,200 for the bosses and mobs of dungeons, trials and arenas, 9,100 overland, 27,300 for a solo dungeon's bosses) less the group's armour debuffs on it, second by second, over the time the group was hitting that target. The bar is full while nothing is on the boss and drops as Major and Minor Breach, Crusher, Roar of Alkosh and the rest land, so what is left is what each player's own penetration has to cover. Before the first hit on the target, after the last, and through a gap of more than five seconds between hits (a dragon in the air) the row is blank, since there was nothing to debuff: on a Xoryn pull, where the combat starts at the Defense Prisms and reaches Xoryn some seven minutes in, the row begins when he is engaged, and hovering the blank says so. The label gives the estimate and the armour left averaged over the drawn time; hover the bar for the figure at that moment and the debuffs behind it, hover the label for where the estimate comes from, click for the average, the lowest point, how much of that time had no armour debuff at all, the window when it is not the whole fight, and the same remainder weighed by the damage dealt, which is how the build window's effective figures read. On a solo dungeon's boss a dashed line marks the game's 25,000 cap on an enemy's armour: above it nothing counts until the debuffs bring the armour under, and the final boss, at 36,400, has more than the row assumes. The row follows the penetration cap in Settings when it is set to a number. The row is drawn on the target the group damaged most (the mobs of a trash fight at an instance's 18,200, and among a pack's equal mobs the one fought longest; a boss that returns as a new unit, as Nahviintaas does at each landing, keeps one row), and only on fights recorded since 0.14.0; a fight recorded before the window was added is drawn over the whole fight as it was.
+- **Armour**, the last row, is not an effect but an estimate: the target's armour (18,200 for the bosses and mobs of dungeons, trials and arenas, 9,100 overland, 27,300 for a solo dungeon's bosses) less the group's armour debuffs on it, second by second, over the time the group was hitting that target. The bar is full while nothing is on the boss and drops as Major and Minor Breach, Crusher, Roar of Alkosh and the rest are applied, so what is left is what each player's own penetration has to cover. Before the first hit on the target, after the last, and through a gap of more than five seconds between hits (a dragon in the air) the row is blank, since there was nothing to debuff: on a Xoryn pull, where the combat starts at the Defense Prisms and reaches Xoryn some seven minutes in, the row begins when he is engaged, and hovering the blank says so. The label gives the estimate and the armour left averaged over the drawn time; hover the bar for the figure at that moment and the debuffs behind it, hover the label for where the estimate comes from, click for the average, the lowest point, how much of that time had no armour debuff at all, the window when it is not the whole fight, and the same remainder weighed by the damage dealt, which is how the build window's effective figures read. On a solo dungeon's boss a dashed line marks the game's 25,000 cap on an enemy's armour: above it nothing counts until the debuffs bring the armour under, and the final boss, at 36,400, has more than the row assumes. The row follows the penetration cap in Settings when it is set to a number. The row is drawn on the target the group damaged most (the mobs of a trash fight at an instance's 18,200, and among a pack's equal mobs the one fought longest; a boss that returns as a new unit, as Nahviintaas does at each landing, keeps one row), and only on fights recorded since 0.14.0; a fight recorded before the window was added is drawn over the whole fight as it was.
 - **Hover** a segment for who cast it and who received it at that moment. Hover a label for its full text when it is cut short.
 - **Click** a row, label or bar, for a summary of the whole fight: who applied the effect (each caster's uptime, how much of it no other caster covered, and how many spans), who had it (each receiver's uptime, and for a stacking rule its peak and the time at the peak), and, when there are only a few of each, a grid of caster against receiver. A click elsewhere or Esc closes it.
 
 ## Reviewing and copying fights
 
-**Open log for review** loads any log file, a split file, a zipped split or an `Encounter-*.zip` archive, and lists its fights while live monitoring carries on underneath. A zip is read as it stands, never unpacked to disk; if it holds more than one log, the app asks which. A banner shows which file is open; **Back to live** returns to the live session.
+**Open log for review** loads any log file, a split file, a zipped split or an `Encounter-*.zip` archive, and lists its fights while live monitoring carries on underneath. A zip is read as it stands, never unpacked to disk; if it holds more than one log, the app asks which. A review reads its file on a thread of its own, so live fights keep arriving while it loads; **Cancel review** beside the progress bar stops it. A log over 1 GB (an old month-long `Encounter.log`, say) is looked through first, which takes a few seconds per GB, and the app offers the whole log or only its last few sessions, with the time each takes: reading a 4.7 GB log takes about 8 minutes, its last three sessions about one. The cut is always at the start of a session, so the fights shown are exactly what the whole log gives for them. A banner shows which file is open; **Back to live** returns to the live session.
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
@@ -287,6 +319,7 @@ Open **Settings…** from the toolbar.
 - **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists. See [below](#automatic-updates).
+- **Display**: *Text size*, 80% to 200% of the system's text in steps of 10, for the whole app: the fight list, the pages, every window, Settings and the timeline strip, whose rows and labels grow with it. Ability icons grow above 100% and never shrink below it. Ctrl+=, Ctrl+- and Ctrl+0 change it without opening Settings. It applies as soon as Settings is saved; no replay is needed for it. *Colour-blind colours and line styles in the DPS graph* (off by default) swaps the graph's colours for a set measured to stay apart for colour-blind readers, and gives each line a stroke of its own as well; see [DPS over time](#dps-over-time). *Reduce motion* keeps the ring on a taunt skill's icon still instead of pulsing.
 - **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
 - **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
 - **Death recaps**: how many seconds before each death the recap keeps, 5 to 10 (5 by default). Saving replays the session, so the fights already listed are rebuilt with the new window. See [Death recaps](#death-recaps).
@@ -335,6 +368,19 @@ With *Move split logs to the Recycle Bin when older than M weeks* on (52 weeks u
 - **Never deleted outright**: a split the Recycle Bin cannot take (on a network or removable drive, a drive whose bin is set to delete at once, or a file larger than the bin's limit) is left where it is and the status bar says so. Restore anything from the Recycle Bin as usual.
 - **The Recycle Bin has a size limit** (by default about 5% of the drive). When it is full, Windows makes room by emptying its oldest items for good, other files you deleted included. Moving tens of GB of splits at once can push those out, so check the bin before the first run, or start with a large M and lower it in steps.
 - The same files are never touched as for zipping: the newest session's split, the `keep` folder, and anything that is not one of the app's splits.
+
+## Accessibility
+
+What the app does for readers who use the keyboard, need bigger text, see colour differently, use a screen reader or are bothered by motion.
+
+- **Keyboard**: Tab and Shift+Tab move between the fight list, the search field and the fight; the arrow keys pick a fight; every toolbar switch has a key. See [Keyboard](#keyboard).
+- **Text size**: Settings → Display → *Text size*, 80% to 200%, or Ctrl+=, Ctrl+- and Ctrl+0 from any window. Everything follows it: the list, the pages, every window, Settings, the timeline strip's rows and labels, the DPS graph's legend and the ability icons, which are bundled at the game's own 64 px so they stay sharp when they grow.
+- **Colour**: text stands at least 4.5:1 against its background and bars and lines at least 3:1, in the light and the dark theme alike, and a unit test keeps it so. Nothing is said by colour alone: a player's role is a printed letter, health has its percentage beside it, a heal has a `+`, a buff on one or two players is cross-hatched rather than paler, an expected buff that never came is bold as well as red, and the clickable figures carry a small mark.
+- **Colour blindness**: Settings → Display → *Colour-blind colours and line styles in the DPS graph* swaps the graph's colours for a set chosen to stay apart for red-green and blue-yellow colour blindness and draws each player solid, dashed, dotted or dash-dotted in turn. The timeline strip's rows are named, so its colours never have to be told apart.
+- **Screen readers**: the fight pane and the build, damage, damage taken and death recap windows give a screen reader their text with each picture read as words: an ability icon on a bar as the ability's name, the marks after a figure as what they open ("DPS graph", "damage breakdown", "damage taken"), a hidden player as "hidden name". The timeline strip reads each row's label, whose effect it is and "expected but not up" for a red row; the DPS graph reads each drawn line with its dps at the end, and its legend is an ordinary list. The fight list, the search field and the fight pane are named. **Copy fight** (Ctrl+C) gives the whole fight as plain text, for reading anywhere.
+- **Motion**: the ring on a taunt skill's icon pulses; Settings → Display → *Reduce motion* keeps it still. Nothing else on screen moves by itself.
+
+Not yet checked: Windows' High Contrast themes (the app picks its colours from whether the background is light or dark, not from the theme's own colours), and every screen reader; tell us on the [issue tracker](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/issues) what does not work for you.
 
 ## The status bar
 

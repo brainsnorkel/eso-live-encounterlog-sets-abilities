@@ -2,6 +2,59 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Every mythic shows on the fight pane's set row**: the row decided what was a mythic from a hand-kept list of 20 names, two of which were not set names ("Kilt" for Harpooner's Wading Kilt, "Antiquarian's Eye"), so 19 of the game's 36 mythics never showed there, among them Belharza's Band, Rourken Steamguards, Ring of the Wild Hunt and Prowler's Talisman. It now asks the set's type, as the build window already did
+
+### Changed
+- **Set names come from the game** (#79): the bundled set table takes every set's name from the installed client's own English text, committed as `data/client/set_names_en.json`, and only the set type from the LibSets workbook; the 26 hand-typed name corrections are gone. No name the app shows changes today. A set the workbook does not have yet appears under its name at once, read as a five-piece set until LibSets types it
+- **`scripts/check_client_names.py`** compares every name the app bundles by id with the client after a patch: set names (the set table, the build issue rules' set lists, the penetration and critical table, the ESO-Hub link keys), class passives and mastery effects, weapon skills, the taunt, pull and Elemental Drain id lists, and poison names. It prints each name that differs and exits 1 when one does; ids the game no longer names (the old rank II to IV ids UESP keeps, 488 of them) are counted, not failed. On the Update 51 client every bundled name matches
+### Added
+- **Resources in the build window** (#125): the magicka, stamina and ultimate a player spent and gained in the fight, each with its rate per second; how much of the spending went on casts and how much elsewhere (blocking, sprinting); logged gains against regeneration and unlogged gains; logged gains wasted at a full pool; the share of the fight spent on a full ultimate; and the five casts and five gains that counted most in each pool, with the group member who gave a gain (a healer's Bountiful Harvest, a Pillager's Profit). Every group member's pools are in the log, so it works for every player, not only the one who wrote the log
+
+### Changed
+- **Detail view is Ctrl+D, and Tab moves the focus** (#77): Tab used to toggle Detail view, so a keyboard user could not leave the fight list; Tab and Shift+Tab now move between the fight list, the search field and the fight pane, and Ctrl+D toggles Detail view from any of them, the search field included. The toolbar button's hover names the key, and the user guide lists the keys under **Keyboard**
+
+### Added
+- **Text size** (#77): Settings → Display has a slider from 80% to 200% of the system's text, and Ctrl+=, Ctrl+- and Ctrl+0 step it from any of the app's windows. It is saved and applies to the whole app at once: the fight list, the fight pane and every window are redrawn at the new size, and the timeline strip's rows, label column and axis, the DPS graph's margins and legend, and the ability icons in every page grow with it (never shrinking below their size at 100%). Settings' helper lines and the rule editor follow it too, and Settings scrolls sideways if a line no longer fits the screen
+- The bundled ability icons are the game's own 64 px rather than 40 px, so they stay sharp at a large text size or on a high-DPI screen; the icon folder grows from 15 MB to 25 MB
+
+- **Colour-blind DPS graph** (#77): Settings → Display → *Colour-blind colours and line styles in the DPS graph*, off by default. The lines take Paul Tol's 'bright' colours, adjusted for each theme so every line stands 3:1 against the graph, and each player in turn is drawn solid, dashed, dotted or dash-dotted. The closest two colours measure 9.8 (light) and 13.1 (dark) in CIEDE2000 for normal vision and each kind of colour blindness simulated, where the default colours measure 5 and 2 for red-blindness
+
+- **Screen readers** (#77): the fight pane and every window built like it (build, damage, damage taken, death recap) give a screen reader their text with each image read as words: an ability icon on a bar as the ability's name, the clickable glyphs as "DPS graph", "damage breakdown" and "damage taken", a hidden name as "hidden name" (Qt reads every image as an empty object otherwise). The timeline strip reads each row's label and whose effect it is, with "expected but not up" for a red row, and the DPS graph each drawn line with its dps at the end; the fight list, the search field and the fight pane are named
+- The user guide has an **Accessibility** section (#77): the keys, text size, colour, colour blindness, screen readers and motion in one place, and what is not yet checked; the README lists it, and the guide's pictures are retaken with the new Display settings and colours
+- **Reduce motion** (#77): Settings → Display; the ring on a taunt skill's icon stays still instead of pulsing
+
+### Changed
+- **Clearer colours on the light theme** (#77): the timeline strip's bars were the same pale tints in both themes and measured 1.3:1 (Major Courage) to 2.8:1 against the light window; each is now a darker shade of its hue there, 3:1 or more, and follows a live theme switch. Text under 4.5:1 is darkened a step: the link blue, the veteran and stale orange, the Trash, Legendary and Mythic gear qualities, the death recap's health colours, and Settings' grey and orange helper lines (now the theme's own muted and warning colours, in the dark theme too). A unit test pins every text colour at 4.5:1 and every bar at 3:1 against both themes
+
+### Fixed
+- The build window's Front, Back, Werewolf and Other labels no longer break a letter per line when the window is narrow or the text large
+
+## [0.22.0] - 2026-10-28
+
+From the speed, memory and disk review (#105).
+
+### Added
+- **Reviews run on a thread of their own** (#107): live fights keep arriving while a log opened for review loads (a live fight showed 4 s into a review that had made it wait 41 s before). **Cancel review** beside the progress bar stops it. A log over 1 GB is looked through first (a few seconds per GB) and the app offers the whole log or its last few sessions, with the time each takes: a 4.7 GB month-long log reads in about 8 minutes, its last three sessions in about one. The cut is always at a session's start, which gives exactly the fights the whole log gives; starting mid-session was measured and gave different fights
+- **Lasting warnings** (#111): a red note in the status bar, kept until the problem clears, when split files cannot be written (a full disk, a removed drive) or reading the log fails poll after poll. Both were a passing status line or a diagnostic print before
+- The startup replay of the current session shows its progress on the progress bar
+
+### Changed
+- **Replays are 37% faster** (#108): each log line is split once instead of three times, and event types are looked up in tables. Startup, a Settings save and a review all replay; a 390 MB trial log went from 40 to 25 seconds
+- **Fight history takes 27% less memory** (#110): damage series, effect spans and repeated gear are held compactly (a trial night's history 63 → 46 MB), with every figure the same
+- **Split files are written once per batch** (#109), not once per line: 72 thousand disk writes instead of 3.3 million for a 573 MB session, and the startup replay with splitting on is about a sixth quicker. A crash loses at most one second of lines, which the next start restores from the game's log
+- The current session is replayed in full at startup however large it is (#107). A session over 768 MB used to get only its roster read, which could leave its early fights with the wrong companion and pet rows
+
+### Fixed
+- **Champion points** follow the log: a player seen earlier in the same log file kept the champion points first seen, and a point earned mid-session never showed (158 of 2,856 player rows in 19 split logs now show the newer figure)
+
+## [0.21.1] - 2026-10-28
+
+### Changed
+- Healing reads **healing received** where it read "healing landed" (#102): the fight pane's shield hover, the damage taken window's header, its **Received** column under Healing received and its no-healing line, the death recap's healing star hover, and the user guide
+
 ## [0.21.0] - 2026-10-28
 
 ### Added

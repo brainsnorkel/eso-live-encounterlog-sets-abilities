@@ -811,7 +811,7 @@ class TestBuildRender(BuildGuiTestCase):
     def test_one_mundus_stone_with_its_icon(self):
         html = self._html()
         self.assertIn('Mundus</span>&nbsp; <img src="icon:ability_mundusstones_003" '
-                      'width="18" height="18" style="vertical-align:middle">&nbsp;The Thief',
+                      'width="18" height="18" alt="" style="vertical-align:middle">&nbsp;The Thief',
                       html)
 
     def test_two_mundus_stones(self):

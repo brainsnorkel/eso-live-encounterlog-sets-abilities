@@ -13,7 +13,10 @@ Free) ending in every cast and the casts per minute (casts.py, issue #94);
 then the fight view's line of scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
-poison row under a bar that has one slotted; then the Penetration and
+poison row under a bar that has one slotted; then Resources, the magicka,
+stamina and ultimate spent and gained in the fight, the casts the most
+went on and the gains that gave the most (resources.py, issue #125); then
+Damage dealt; then the Penetration and
 Critical damage sections (issue #37): the player's own sources from the
 build, the Champion Point rows the Settings assume, the fight's debuffs on
 the boss with uptime and casters and the buffs on the player, and the
@@ -38,6 +41,7 @@ from gui.fight_render import (
     form_share_text, issues_html, taken_href,
 )
 from gui.name_mask import NO_MASK
+from gui.text_size import scaled_px
 from pen_crit import CRIT_BASE, CRIT_CAP, ENEMY_ARMOUR_CAP, SOLO_FINAL_BOSS_ARMOUR, player_totals
 from player_build import (
     ARMOR_SLOTS, BACK_BAR_SLOTS, FRONT_BAR_SLOTS, POISON_SLOTS, SLOT_GROUPS, SLOT_LABELS,
@@ -45,7 +49,7 @@ from player_build import (
     quality_label, trait_label, weapon_type_label, weight_label,
 )
 
-BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 40 px)
+BAR_ICON_PX = 36  # ability icons in the window (the bundled PNGs are 64 px)
 MUNDUS_ICON_PX = 18
 DASH = "–"  # a slot the log did not list, or a detail that is not known
 SNAPSHOT_NOTE = "Build as logged at the start of this fight"
@@ -65,6 +69,20 @@ CASTS_LABEL = "Other"  # the card's last row: the casts no slot holds
 EXTRA_LABELS = (("light", "Light attacks"), ("heavy", "Heavy attacks"), ("bash", "Bashes"),
                 ("swap", "Swaps"), ("dodge", "Dodges"), ("synergy", "Synergies"),
                 ("potion", "Potions"), ("break_free", "Break Free"))
+RESOURCES_TITLE = "Resources"
+RESOURCES_ANCHOR = "resources"  # <a name>, where the section begins
+RESOURCES_CAPTION = "as the log's unit states show them"
+NO_RESOURCES = "No magicka, stamina or ultimate was logged for this player in this fight."
+RESOURCES_NOT_RECORDED = "Resources were not recorded for this fight."
+POOL_LABELS = ("Magicka", "Stamina", "Ultimate")
+RESOURCES_NOTE = ("Spent and gained are the falls and rises of the player's pools from one logged "
+                  "state to the next, so a cost and a gain in the same tenth of a second cancel. "
+                  "A fall at the moment of a cast is that cast's cost; blocking, sprinting and "
+                  "costs the log writes later leave no line of their own and are the other "
+                  "spending. Logged gains are the ones the log names; regeneration and unlogged "
+                  "is every other rise, base regeneration and ultimate generation among them. "
+                  "The game never logs ultimate gained at a full pool, so its waste is the time "
+                  "spent at full.")
 PEN_TITLE = "Penetration"
 CRIT_TITLE = "Critical damage"
 PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
@@ -91,14 +109,14 @@ _CELLS = tuple("<td align='center'>" if align == "center" else "<td>"
                for _title, _width, align in COLUMNS[1:])
 
 # The game's quality colors; the light theme gets darker variants, since the
-# game's own are picked for a dark background
+# game's own are picked for a dark background, each 4.5:1 or more (#77)
 _QUALITY_COLORS = {
     True: {"TRASH": "#9aa0a6", "NORMAL": "#e8eaed", "MAGIC": "#5fd35f",
            "ARCANE": "#5aa9ff", "ARTIFACT": "#c58af9", "LEGENDARY": "#eeca2a",
            "MYTHIC_OVERRIDE": "#ff9d3c"},
-    False: {"TRASH": "#80868b", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
-            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#8a6d00",
-            "MYTHIC_OVERRIDE": "#c25e00"},
+    False: {"TRASH": "#686e72", "NORMAL": "#3c4043", "MAGIC": "#1e7e34",
+            "ARCANE": "#1565c0", "ARTIFACT": "#7b1fa2", "LEGENDARY": "#856900",
+            "MYTHIC_OVERRIDE": "#ae5400"},
 }
 _RULES = {True: "#45494f", False: "#d6d9dc"}  # under the grid's header and groups
 
@@ -206,12 +224,12 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     fight = [e(str(getattr(entry, "boss_name", "") or "")),
              f"{e(zone)}{vet}" if zone else "",
              e(str(getattr(entry, "timestamp", "") or ""))]
-    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, BAR_ICON_PX,
+    bar = _bar_html(p.get("front_bar_slots"), p.get("front_bar"), icons, links, e, scaled_px(BAR_ICON_PX),
                     taunt_color=theme["taunt"])
     skills = (f"<table cellpadding='4' cellspacing='0' width='100%' "
               f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
               f"border-collapse:collapse;background-color:{theme['frame_bg']}'>"
-              f"<tr><td width='8%' valign='middle' style='color:{muted}'>Skills</td>"
+              f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>Skills</td>"
               f"<td valign='middle'>{bar}</td></tr></table>"
               if bar else f"<p style='color:{muted}'>{NO_COMPANION_SKILLS}</p>")
     return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
@@ -230,8 +248,8 @@ def _mundus_food_html(p, theme, icons, e) -> str:
     stones = []
     for stone in p.get("mundus") or []:
         stem = str(stone.get("icon") or "")
-        icon = (f'<img src="icon:{stem}" width="{MUNDUS_ICON_PX}" '
-                f'height="{MUNDUS_ICON_PX}" style="vertical-align:middle">&nbsp;'
+        icon = (f'<img src="icon:{stem}" width="{scaled_px(MUNDUS_ICON_PX)}" '
+                f'height="{scaled_px(MUNDUS_ICON_PX)}" alt="" style="vertical-align:middle">&nbsp;'
                 if icons is not None and icons.has(stem) else "")
         stones.append(f"{icon}{e(str(stone.get('name', '')))}")
     mundus = ", ".join(stones) or f"<span style='color:{muted}'>{NO_MUNDUS}</span>"
@@ -262,7 +280,7 @@ def _counted_bar_html(slots, theme, icons, links, base_pt: float, e) -> str:
     for index, slot in enumerate(slots):
         if index == 5 or (index and slot.get("ultimate")):
             cells.append("<td width='10'></td>")
-        icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, BAR_ICON_PX,
+        icon = _bar_html([slot], [str(slot.get("name", ""))], icons, links, e, scaled_px(BAR_ICON_PX),
                          taunt_color=theme["taunt"])
         count = int(slot.get("casts") or 0)
         cells.append(f"<td align='center' valign='bottom'>{icon}<br>"
@@ -297,13 +315,13 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
         # Counts under the icons once the entry has them (casts.py)
         if icons is not None and slots and any("casts" in slot for slot in slots):
             return _counted_bar_html(slots, theme, icons, links, base_pt, e)
-        return _bar_html(slots, names, icons, links, e, BAR_ICON_PX, taunt_color=theme["taunt"])
+        return _bar_html(slots, names, icons, links, e, scaled_px(BAR_ICON_PX), taunt_color=theme["taunt"])
 
     for label, slots_key, names_key in (("Front", "front_bar_slots", "front_bar"),
                                         ("Back", "back_bar_slots", "back_bar")):
         bar = bar_of(p.get(slots_key), p.get(names_key))
         if bar:
-            rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{label}</td>"
+            rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{label}</td>"
                         f"<td valign='middle'>{bar}</td></tr>")
     if p.get("werewolf_share"):
         slots = p.get("werewolf_bar_slots") or []
@@ -312,11 +330,11 @@ def _bars_html(p, theme, icons, links, script_links, base_pt: float, e) -> str:
         werewolf = (f"<table cellpadding='0' cellspacing='0'><tr><td valign='middle'>{bar}</td>"
                     f"<td valign='middle'>&nbsp;&nbsp;&nbsp;{note}</td></tr></table>"
                     if bar else note)
-        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{WEREWOLF_LABEL}</td>"
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{WEREWOLF_LABEL}</td>"
                     f"<td valign='middle'>{werewolf}</td></tr>")
     extras = _extras_html(p, theme, base_pt, e)
     if rows and extras:
-        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted}'>{CASTS_LABEL}</td>"
+        rows.append(f"<tr><td width='8%' valign='middle' style='color:{muted};white-space:nowrap'>{CASTS_LABEL}</td>"
                     f"<td valign='middle'>{extras}</td></tr>")
     if not rows:
         return ""
@@ -502,6 +520,112 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
         parts.append(f"<p style='margin:1px 0;color:{muted};font-size:{base_pt * 0.85:.2f}pt'>"
                      f"area or single target: {round(100.0 * table_share / summary['total'])}% "
                      f"of the damage classed by the skill table, the rest by the casts</p>")
+    return "".join(parts)
+
+
+def _rate(value) -> str:
+    """'2,100/s', or '3.4/s' below a hundred."""
+    value = float(value or 0)
+    return f"{value:,.0f}/s" if value >= 100 else f"{value:.1f}/s"
+
+
+def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
+    """The Resources section (resources.py, issue #125): magicka, stamina
+    and ultimate spent (on casts and otherwise) and gained (logged and
+    not), each with its rate over the fight, the logged gains wasted at a
+    full pool and the time at full ultimate; then the casts the most went
+    on and the gains that gave the most, each giver through the Hide names
+    mask."""
+    muted, rule = theme["muted"], _RULES[bool(dark)]
+    small = f"font-size:{base_pt * 0.85:.2f}pt"
+    heading = f"padding-top:7px;color:{muted};font-weight:bold"
+    under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
+    title = (f"<a name='{RESOURCES_ANCHOR}'></a>"
+             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{RESOURCES_TITLE}"
+             f" <span style='font-weight:normal;{small}'>· {RESOURCES_CAPTION}</span></p>")
+    if "resources" not in p:
+        return title + f"<p style='margin:0;color:{muted}'>{RESOURCES_NOT_RECORDED}</p>"
+    data = p.get("resources")
+    if not data:
+        return title + f"<p style='margin:0;color:{muted}'>{NO_RESOURCES}</p>"
+    pools = data["pools"]
+
+    def cell(text, align="left", color=None, extra=""):
+        style = ";".join(s for s in (f"color:{color}" if color else "", extra) if s)
+        return f"<td align='{align}' style='{style}'>{text}</td>"
+
+    def row(label, values, sub=False):
+        label_cell = cell(label, color=muted if sub else None,
+                          extra="padding-left:14px" if sub else "")
+        return ("<tr>" + label_cell
+                + "".join(cell(v, "right", extra="padding-left:18px") for v in values) + "</tr>")
+
+    def share(part, whole):
+        return f"{round(100.0 * part / whole)}%" if whole else DASH
+
+    def total_rate(pool, kind):
+        rate = f" <span style='color:{muted};{small}'>· {_rate(pool[kind + '_ps'])}</span>"
+        return _num(pool[kind]) + rate
+
+    head = ("<tr>" + cell("") + "".join(cell(label, "right", muted, f"{small};padding-left:18px")
+                                        for label in POOL_LABELS) + "</tr>")
+    body = [
+        head,
+        row("Spent", [total_rate(pool, "spent") for pool in pools]),
+        row("on casts", [share(pool["on_casts"], pool["spent"]) for pool in pools], sub=True),
+        row("other spending", [share(pool["spent"] - pool["on_casts"], pool["spent"])
+                               for pool in pools], sub=True),
+        row("Gained", [total_rate(pool, "gained") for pool in pools]),
+        row("logged gains", [_num(pool["logged"]) for pool in pools], sub=True),
+        row("regeneration and unlogged", [_num(max(0, pool["gained"] - pool["logged"]))
+                                          for pool in pools], sub=True),
+        row("Wasted at a full pool", [_num(pools[0]["wasted"]), _num(pools[1]["wasted"]), DASH]),
+        row("Time at full", [DASH, DASH, _num(data.get("full_pct"), True)]),
+    ]
+    parts = [title, "<table cellpadding='3' cellspacing='0'>", *body, "</table>"]
+
+    def list_table(label, rows, columns, cells_of):
+        if not rows:
+            return ""
+        out = ["<table cellpadding='3' cellspacing='0'>",
+               "<tr>" + cell(label, extra=heading)
+               + "".join(cell(c, "right" if c != "from" else "left", muted, small) for c in columns)
+               + "</tr>"]
+        for r in rows:
+            pool = POOL_LABELS[int(r.get("pool") or 0)].lower()
+            if r.get("more"):
+                name = f"<span style='color:{muted}'>{int(r['more'])} more</span>"
+                out.append("<tr>" + cell(name) + cells_of(r, pool, True) + "</tr>")
+            else:
+                out.append("<tr>" + cell(e(str(r.get("name") or ""))) + cells_of(r, pool, False)
+                           + "</tr>")
+        out.append("</table>")
+        return "".join(out)
+
+    def spent_cells(r, pool, more):
+        if more:
+            return cell(pool, "right", muted, small) + cell("") + cell("") + cell(_num(r["total"]), "right")
+        casts = int(r.get("casts") or 0)
+        each = _num(r["total"] / casts) if casts else DASH
+        return (cell(pool, "right", muted, small) + cell(_num(casts), "right")
+                + cell(each, "right") + cell(_num(r["total"]), "right"))
+
+    def gained_cells(r, pool, more):
+        givers = ""
+        if not more:
+            # Each name once, the three who gave the most, then a count
+            seen = list(dict.fromkeys(str(giver) for giver in r.get("givers") or []))
+            givers = ", ".join(names.html(giver, muted, base_pt * 0.85) for giver in seen[:3])
+            if len(seen) > 3:
+                givers += f" +{len(seen) - 3}"
+        return (cell(pool, "right", muted, small) + cell(givers, color=muted, extra=small)
+                + cell(_num(r["total"]), "right"))
+
+    parts.append(list_table("Spent on", data.get("spent_on") or [],
+                            ("pool", "casts", "each", "total"), spent_cells))
+    parts.append(list_table("Gained from", data.get("gained_from") or [],
+                            ("pool", "from", "total"), gained_cells))
+    parts.append(f"<p style='margin:6px 0;color:{muted};{small}'>{RESOURCES_NOTE}</p>")
     return "".join(parts)
 
 
@@ -695,6 +819,8 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
+        # Magicka, stamina and ultimate spent and gained (resources)
+        _resources_html(p, dark, theme, base_pt, e, names),
         # The kinds of the damage dealt (damage_kinds), before the
         # penetration and critical damage figures
         _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]), base_pt, e),

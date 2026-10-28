@@ -132,17 +132,36 @@ class TestPreambleBackfill(unittest.TestCase):
         self.assertEqual(splits, [split_dir / f'{stamp}-Coral-Aerie-vet-1.log', existing])
         self.assertEqual(existing.read_text(encoding='utf-8'), 'partial split from earlier run\n')
 
-    def test_oversized_session_falls_back_to_roster_sweep(self):
+    def test_a_large_session_is_replayed_whole_with_progress(self):
+        """No size cap (issue #107): a large session is replayed, not swept
+        for its roster, and reports progress that ends at its total."""
         self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
                             encoding='utf-8')
         from unittest.mock import patch
-        with patch.object(LogFileMonitor, 'SESSION_REPLAY_CAP', 10):
-            analyzer = self._attach_and_fight()
-        fights = analyzer.fight_history.fights
-        # Old combat is not replayed, but the roster is still known
-        self.assertEqual(len(fights), 1)
-        self.assertEqual(sorted(p.get('name') for p in fights[0].players),
-                         ['@brainsnorkel', '@templar'])
+
+        from engine_events import RecordingListener
+        recorder = RecordingListener()
+        analyzer = ESOLogAnalyzer()
+        analyzer.fight_history = FightHistory()
+        analyzer.add_listener(recorder)
+        with patch.object(LogFileMonitor, 'REPLAY_PROGRESS_BYTES', 10):
+            LogFileMonitor(analyzer, self.log)
+        self.assertEqual(len(analyzer.fight_history.fights), 1)  # the old fight
+        progress = recorder.of_kind('parse_progress')
+        size = self.log.stat().st_size
+        self.assertEqual(progress[0][2:], (0, size))
+        self.assertEqual(progress[-1][2:], (size, size))
+
+    def test_a_small_session_reports_no_progress(self):
+        self.log.write_text('\n'.join(PREAMBLE + OLD_FIGHT) + '\n',
+                            encoding='utf-8')
+        from engine_events import RecordingListener
+        recorder = RecordingListener()
+        analyzer = ESOLogAnalyzer()
+        analyzer.fight_history = FightHistory()
+        analyzer.add_listener(recorder)
+        LogFileMonitor(analyzer, self.log)
+        self.assertEqual(recorder.of_kind('parse_progress'), [])
 
     def test_no_begin_log_still_sweeps_roster(self):
         """Fallback: roster events are swept even without a reachable BEGIN_LOG."""

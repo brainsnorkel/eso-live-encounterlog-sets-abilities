@@ -16,6 +16,7 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
+    build-resources.png             the same window scrolled to its Resources section
     build-damage-dealt.png          the same window scrolled to its Damage dealt section
     build-pen-crit.png              the same window scrolled to its penetration and crit sections
     build-issues.png                the (i) popup of a player's possible build issues
@@ -55,6 +56,12 @@ def main():
     parser.add_argument("--hide-names", action="store_true",
                         help="capture with the Hide names switch on: every player but the one "
                              "who wrote the log is pixelated (the guide's pictures are taken so)")
+    parser.add_argument("--text-size", type=int, default=100,
+                        help="the app's text size in percent, 80 to 200 (Settings → Display)")
+    parser.add_argument("--colorblind-graph", action="store_true",
+                        help="the DPS graph's colour-blind colours and strokes (Settings → Display)")
+    parser.add_argument("--dark", action="store_true",
+                        help="the dark theme (the Windows 11 style's dark palette, set by hand)")
     args = parser.parse_args()
     log = Path(args.log).resolve()
     if not log.exists():
@@ -72,6 +79,20 @@ def main():
 
     app = QApplication([])
     app.setFont(QFont("Segoe UI", 9))
+    if args.dark:
+        # The offscreen platform ignores the colour scheme hint, so the
+        # dark palette of Qt's Windows 11 style is set by hand
+        from PySide6.QtGui import QColor, QPalette
+        palette = QPalette()
+        for role, value in ((QPalette.Window, "#1e1e1e"), (QPalette.Base, "#2d2d2d"),
+                            (QPalette.AlternateBase, "#353535"), (QPalette.Button, "#2d2d2d"),
+                            (QPalette.WindowText, "#ffffff"), (QPalette.Text, "#ffffff"),
+                            (QPalette.ButtonText, "#ffffff"), (QPalette.ToolTipBase, "#2d2d2d"),
+                            (QPalette.ToolTipText, "#ffffff"), (QPalette.Highlight, "#4cc2ff"),
+                            (QPalette.HighlightedText, "#000000"), (QPalette.Link, "#99ebff"),
+                            (QPalette.PlaceholderText, "#9d9d9d")):
+            palette.setColor(role, QColor(value))
+        app.setPalette(palette)
 
     from app_config import AppConfig
     from gui.main_window import MainWindow
@@ -84,6 +105,7 @@ def main():
         "split": {"enabled": False},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
         "update": {"check_enabled": False},
+        "display": {"text_scale": args.text_size, "colorblind_graph": args.colorblind_graph},
     }), encoding="utf-8")
 
     # The engine says "monitoring started" once it has replayed the log's
@@ -159,9 +181,12 @@ def main():
         win._show_build(players[0]["unit_id"])
         pump(1.5)
         save(win._build_dialog, "build-window.png")
-        # The Damage dealt section sits under the gear grid, the
-        # Penetration and Critical damage sections under it
-        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR
+        # Resources sits under the gear grid, then Damage dealt, then the
+        # Penetration and Critical damage sections
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
+        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
+        pump(0.5)
+        save(win._build_dialog, "build-resources.png")
         win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-damage-dealt.png")
@@ -259,7 +284,7 @@ def main():
     # 800 px virtual screen with the rest scrolling (0.18.0); the guide
     # wants every group, so the window takes the scrolled content's own
     # height plus the buttons and margins
-    dialog.resize(720, dialog._scroll.widget().sizeHint().height() + 72)
+    dialog.resize(720 * max(100, args.text_size) // 100, dialog._scroll.widget().sizeHint().height() + 72)
     pump(1)
     save(dialog, "settings.png")
     from effect_rules import parse_rules

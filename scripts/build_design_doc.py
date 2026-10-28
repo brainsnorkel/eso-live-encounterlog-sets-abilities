@@ -62,6 +62,9 @@ TOPICS = [
     ("Cast counts and casts per minute", [
         "src/casts.py",
     ]),
+    ("Magicka, stamina and ultimate spent and gained", [
+        "src/resources.py",
+    ]),
     ("Companions: a row of their own under their owner", [
         "src/companions.py",
     ]),
@@ -76,6 +79,7 @@ TOPICS = [
     ("Set names", [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
+        "scripts/check_client_names.py",
     ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
@@ -147,6 +151,10 @@ TOPICS = [
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",
         "src/gui/main_window.py#Qt objects are freed on the UI thread",
     ]),
+    ("Reviews: a thread of their own, and where a large log is cut", [
+        "src/review_load.py",
+        "src/gui/review_runner.py",
+    ]),
     ("Updates: the schedule, the conditional request and the button", [
         "src/update_check.py",
         "src/gui/update_poller.py",
@@ -162,6 +170,9 @@ TOPICS = [
     ("Links in the fight pane: the hover cue and the dps glyphs", [
         "src/gui/fight_view.py:FightView._show_hover_cue",
         "src/gui/glyphs.py",
+    ]),
+    ("The text size", [
+        "src/gui/text_size.py",
     ]),
 ]
 
