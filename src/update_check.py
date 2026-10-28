@@ -51,7 +51,13 @@ from typing import Optional
 GITHUB_REPO = "brainsnorkel/eso-live-encounterlog-sets-abilities"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=10"
-CHANNELS = ("stable", "beta")
+# The update channels (issue #134): key, name, what it offers. Settings and
+# About show these words; CHANNELS is derived so the two cannot disagree.
+CHANNEL_CHOICES = (
+    ("stable", "Stable", "releases that have been in use for a while"),
+    ("beta", "Beta", "every release, as soon as it is published"),
+)
+CHANNELS = tuple(key for key, _name, _offers in CHANNEL_CHOICES)
 DEFAULT_CHANNEL = "stable"
 # Release asset that carries the update on each platform: (name prefix, suffix).
 # Windows gets the installer; Linux the tarball. Other platforms have no build.
@@ -79,9 +85,9 @@ class UpdateInfo:
 
 @dataclass
 class FetchResult:
-    """What one request to the latest-release endpoint came back with."""
-    release: Optional[dict] = None     # the JSON of a full reply
-    releases: Optional[list] = None    # the list a full reply of the releases endpoint holds
+    """What one request to a releases endpoint came back with."""
+    release: Optional[dict] = None     # the latest endpoint's full reply
+    releases: Optional[list] = None    # the releases endpoint's full reply
     etag: Optional[str] = None         # the validator to send next time
     not_modified: bool = False         # 304: the release is as it was
     retry_at: Optional[float] = None   # epoch seconds: no request before this
@@ -159,13 +165,17 @@ def release_to_update_info(release: dict,
     )
 
 
-def newest_release(releases, platform: Optional[str] = None) -> Optional[UpdateInfo]:
+def newest_release(releases, platform: Optional[str] = None,
+                   skip_version: Optional[str] = None) -> Optional[UpdateInfo]:
     """The highest version in *releases* (the releases endpoint's list) that
-    carries *platform*'s asset, prerelease or not; never a draft."""
+    carries *platform*'s asset, prerelease or not; never a draft, and never
+    *skip_version*, so skipping a bad beta still offers the release below
+    it when that one is newer than the running version."""
+    skipped = parse_version(skip_version) if skip_version else None
     best = None
     for release in releases or []:
         info = release_to_update_info(release, platform, allow_prerelease=True)
-        if info is None:
+        if info is None or parse_version(info.version) == skipped:
             continue
         if best is None or parse_version(info.version) > parse_version(best.version):
             best = info
@@ -213,23 +223,25 @@ def _retry_at(headers) -> Optional[float]:
 
 def fetch_latest_release(etag: Optional[str] = None) -> FetchResult:
     """One request for the latest release; conditional when *etag* is given."""
-    return _fetch(LATEST_RELEASE_URL, etag)
+    body, result = _fetch(LATEST_RELEASE_URL, etag)
+    result.release = body
+    return result
 
 
 def fetch_releases(etag: Optional[str] = None) -> FetchResult:
     """One request for the newest releases (the Beta channel), conditional
     when *etag* is given; a full reply's list is in ``releases``."""
-    result = _fetch(RELEASES_URL, etag)
-    if result.release is not None:
-        body, result.release = result.release, None
-        if isinstance(body, list):
-            result.releases = body
-        else:
-            result.error = "unexpected reply"
+    body, result = _fetch(RELEASES_URL, etag)
+    if isinstance(body, list):
+        result.releases = body
+    elif body is not None:
+        result.error = "unexpected reply"
     return result
 
 
-def _fetch(url: str, etag: Optional[str]) -> FetchResult:
+def _fetch(url: str, etag: Optional[str]):
+    """One conditional GET: (the parsed JSON of a full reply or None, the
+    result with everything but the body)."""
     headers = {"User-Agent": "esolog-tail-update-check",
                "Accept": "application/vnd.github+json"}
     if etag:
@@ -238,17 +250,16 @@ def _fetch(url: str, etag: Optional[str]) -> FetchResult:
     try:
         with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
             body = json.loads(response.read().decode("utf-8", errors="replace"))
-            return FetchResult(release=body,
-                               etag=response.headers.get("ETag") or etag)
+            return body, FetchResult(etag=response.headers.get("ETag") or etag)
     except urllib.error.HTTPError as exc:
         if exc.code == 304:
-            return FetchResult(not_modified=True, etag=etag)
+            return None, FetchResult(not_modified=True, etag=etag)
         if exc.code in _RATE_LIMIT_CODES:
-            return FetchResult(retry_at=_retry_at(exc.headers),
-                               error=f"rate limited ({exc.code})")
-        return FetchResult(error=f"HTTP {exc.code}")
+            return None, FetchResult(retry_at=_retry_at(exc.headers),
+                                     error=f"rate limited ({exc.code})")
+        return None, FetchResult(error=f"HTTP {exc.code}")
     except Exception as exc:
-        return FetchResult(error=str(exc) or exc.__class__.__name__)
+        return None, FetchResult(error=str(exc) or exc.__class__.__name__)
 
 
 def check_for_update(current_version: str,
@@ -265,7 +276,7 @@ def check_for_update(current_version: str,
         if fetched.releases is None:
             info, replied = None, False
         else:
-            info, replied = newest_release(fetched.releases), True
+            info, replied = newest_release(fetched.releases, skip_version=skip_version), True
     else:
         fetched = fetch_latest_release(etag)
         replied = fetched.release is not None

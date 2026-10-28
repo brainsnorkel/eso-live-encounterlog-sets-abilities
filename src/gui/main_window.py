@@ -40,7 +40,7 @@ from gui.fight_render import (
 from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
 from gui.review_runner import ReviewRunner
-from gui.settings_dialog import CHANNEL_CHOICES, SettingsDialog
+from gui.settings_dialog import SettingsDialog
 from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
@@ -50,7 +50,7 @@ from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
 import split_retention
-from update_check import format_release_date, normalize_channel
+from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -828,10 +828,22 @@ class MainWindow(QMainWindow):
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
 
-    def _apply_update_settings(self):
+    def _update_settings_key(self):
+        """What the update checks depend on: on or off, the channel, and the
+        skipped version (a save with checks on clears it)."""
+        return (bool(self.config.get("update.check_enabled", True)),
+                normalize_channel(self.config.get("update.channel")),
+                self.config.get("update.skip_version"))
+
+    def _apply_update_settings(self, before=None):
         """Settings saved: the check on starts a full check now and the
         schedule (on the channel saved, which the title names); off stops
-        both and withdraws the offer."""
+        both and withdraws the offer. *before* is _update_settings_key()
+        from before the save: when nothing about updates changed the
+        schedule runs on, keeping its ETag and any rate-limit wait (a
+        restart costs a full reply, about 80 KB on Beta, per save)."""
+        if before is not None and before == self._update_settings_key():
+            return
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
         else:
@@ -1280,17 +1292,18 @@ class MainWindow(QMainWindow):
         if channel is None:
             updates = "Updates: not checked (turned off in Settings)"
         else:
-            name, offers = next((name, offers) for key, name, offers in CHANNEL_CHOICES
-                                if key == channel)
+            name, offers = {key: (name, offers)
+                            for key, name, offers in CHANNEL_CHOICES}[channel]
             updates = f"Update channel: {name} ({offers})"
         show_about(self, __version__, updates)
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)
+        updates_before = self._update_settings_key()
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
-            self._apply_update_settings()
+            self._apply_update_settings(updates_before)
             self._apply_privacy_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
             if self._graph_dialog is not None:

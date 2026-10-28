@@ -2509,7 +2509,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1308](../src/gui/main_window.py#L1308)*
+*[src/gui/main_window.py:1321](../src/gui/main_window.py#L1321)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2634,10 +2634,13 @@ with the check on also clears a skipped version, and a 304 would otherwise
 hide the release that was skipped and is wanted again.
 
 Each check reads the channel from the config (``update.channel``, issue
-#134). The two channels ask different endpoints, so the ETag is kept with
-the channel it came from and never sent to the other: a Settings save
-restarts the schedule anyway, but a validator from one endpoint sent to the
-other would only ever cost a full reply, never a wrong 304.
+#134). The two channels ask different endpoints, and the channel changes
+only through a Settings save, which calls start(): that clears the ETag, so
+no validator is ever sent to the other endpoint. start() also withdraws an
+offer the previous channel made at once, rather than when (or if) the
+first check on the new channel succeeds: someone who leaves Beta while
+offline or rate limited must not be left one click from the beta they
+opted out of.
 
 ### src/gui/update_popup.py
 

@@ -22,17 +22,25 @@ The app SHALL offer two update channels, chosen in Settings → Updates: **Stabl
 - **WHEN** a release tagged `esobuild-assets-u52-20261101` is the newest in the list
 - **THEN** the Beta channel ignores it
 
+#### Scenario: A skipped beta
+- **WHEN** 0.25.0 is running on Beta, 0.27.0 (a beta) has been skipped, and 0.26.0 exists
+- **THEN** the Update button offers 0.26.0
+
 ### Requirement: The channel is shown
 
-While update checks are on and the channel is Beta, the window title SHALL end with " · beta" before any " · X available" suffix. The About dialog SHALL name the channel and what it offers, or say that updates are not checked when the checks are off. Saving Settings SHALL apply the channel at once: a full check on the new channel, and an offer the new channel does not make withdrawn.
+While update checks are on and the channel is Beta, the window title SHALL end with " · beta" before any " · X available" suffix. The About dialog SHALL name the channel and what it offers, or say that updates are not checked when the checks are off. Saving Settings with a different channel SHALL apply it at once: an offer made on the previous channel is withdrawn whether or not the next check succeeds, and a full check runs on the new channel. A save that changes nothing about updates SHALL leave the checks running as they were.
 
 #### Scenario: Switching to Beta
 - **WHEN** Beta is chosen and Settings saved with checks on
 - **THEN** the title ends " · beta" AND a check runs within seconds on the Beta channel
 
 #### Scenario: Back to Stable with a beta on offer
-- **WHEN** Stable is chosen and Settings saved while the button offers a beta that Stable does not offer
-- **THEN** the button and the ⓘ disappear AND the title has neither suffix
+- **WHEN** Stable is chosen and Settings saved while the button offers a beta, and GitHub cannot be reached
+- **THEN** the button and the ⓘ disappear at once AND the title has neither suffix
+
+#### Scenario: Another setting saved
+- **WHEN** only the text size is changed and Settings saved
+- **THEN** the update checks carry on with their validator and any rate-limit wait
 
 ### Requirement: The notes popup links every change since the running version
 

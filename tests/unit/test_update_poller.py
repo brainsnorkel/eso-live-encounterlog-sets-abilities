@@ -146,22 +146,31 @@ class TestUpdatePoller(unittest.TestCase):
         fn = self._check(CheckResult())
         fn.assert_called_once_with('0.14.2', None, None, channel='stable')
 
-    def test_an_etag_is_never_sent_to_the_other_channel(self):
-        # The channels ask different endpoints (issue #134)
+    def test_a_channel_change_sends_no_etag(self):
+        # The channels ask different endpoints (issue #134); a Settings
+        # save, the only way the channel changes, restarts the poller
         self._check(CheckResult(etag='"stable-1"'))
         self.config.set('update.channel', 'beta')
+        self.poller.start()
         fn = self._check_tick(CheckResult(etag='"beta-1"'))
         fn.assert_called_once_with('0.14.2', None, None, channel='beta')
-        fn = self._check_tick(CheckResult(not_modified=True))
-        fn.assert_called_once_with('0.14.2', None, '"beta-1"', channel='beta')
 
-    def test_leaving_beta_withdraws_an_offer_stable_does_not_make(self):
+    def test_leaving_beta_withdraws_its_offer_at_once(self):
+        # Not when the first Stable check succeeds: offline or rate limited,
+        # that may be an hour or never, and one click would install the beta
         self.config.set('update.channel', 'beta')
         self._check(CheckResult(info=_info('0.15.0')))
         self.config.set('update.channel', 'stable')
         self.poller.start()   # what a Settings save does
-        self._check(CheckResult())
         self.assertEqual(self.gone, [True])
+        self._check(CheckResult(error='timed out'))
+        self.assertEqual(self.gone, [True])
+        self.assertEqual(len(self.available), 1)
+
+    def test_a_restart_on_the_same_channel_keeps_the_offer(self):
+        self._check(CheckResult(info=_info('0.15.0')))
+        self.poller.start()
+        self.assertEqual(self.gone, [])
 
     def test_rate_limit_wait_skips_the_next_tick(self):
         self._check(CheckResult(error='rate limited (403)',

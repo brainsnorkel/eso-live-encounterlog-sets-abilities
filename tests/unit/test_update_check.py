@@ -160,6 +160,18 @@ class TestChannels(unittest.TestCase):
         self.assertIsNone(newest_release([], 'win32'))
         self.assertIsNone(newest_release(None, 'win32'))
 
+    def test_a_skipped_version_leaves_the_one_below_it(self):
+        releases = [_release('v0.27.0', prerelease=True), _release('v0.26.0')]
+        self.assertEqual(newest_release(releases, 'win32', skip_version='0.27.0').version,
+                         '0.26.0')
+        self.assertEqual(newest_release(releases, 'win32', skip_version='0.26.0').version,
+                         '0.27.0')
+
+    def test_the_choices_and_the_channels_agree(self):
+        self.assertEqual(update_check.CHANNELS,
+                         tuple(key for key, _n, _o in update_check.CHANNEL_CHOICES))
+        self.assertIn(update_check.DEFAULT_CHANNEL, update_check.CHANNELS)
+
 
 class _Response:
     """What urlopen yields for a full reply."""
@@ -353,6 +365,11 @@ class TestCheckForUpdate(unittest.TestCase):
     def test_beta_honours_skip_and_reports_failures(self):
         fetched = FetchResult(releases=[_release('v0.27.0', prerelease=True)])
         self.assertIsNone(self._check_beta(fetched, '0.26.0', '0.27.0')[0].info)
+        # A skipped bad beta does not hide a good release below it
+        fetched = FetchResult(releases=[_release('v0.27.0', prerelease=True),
+                                        _release('v0.26.0')])
+        self.assertEqual(self._check_beta(fetched, '0.25.0', '0.27.0')[0].info.version,
+                         '0.26.0')
         result, _ = self._check_beta(FetchResult(not_modified=True, etag='W/"l1"'), '0.26.0')
         self.assertTrue(result.not_modified)
         self.assertIsNone(result.info)

@@ -624,8 +624,19 @@ class TestMainWindowStates(GuiTestCase):
             self.config.set('update.check_enabled', True)
             win._apply_update_settings()
             self.assertTrue(win.update_poller.is_running())
+            # A save that changed nothing about updates keeps the schedule
+            # and its ETag; a channel change restarts it without one
+            win.update_poller._etag = '"kept"'
+            win._apply_update_settings(win._update_settings_key())
+            self.assertEqual(win.update_poller._etag, '"kept"')
+            before = win._update_settings_key()
+            self.config.set('update.channel', 'beta')
+            win._apply_update_settings(before)
+            self.assertIsNone(win.update_poller._etag)
+            self.assertTrue(win.update_poller.is_running())
             win.update_poller.stop()  # before its first check reaches GitHub
         finally:
+            self.config.set('update.channel', 'stable')
             win.close()
 
     def test_update_info_button_follows_the_theme(self):
