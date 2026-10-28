@@ -121,7 +121,7 @@ class TextSizeTestCase(unittest.TestCase):
             win.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
         win._on_fight_completed(_entry())
-        win.history_list.setCurrentRow(0)
+        win.history_list.select_fight(0)
         return win
 
     def _press(self, target, key_text):

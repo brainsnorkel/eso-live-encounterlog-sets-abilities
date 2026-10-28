@@ -41,6 +41,7 @@ import companions
 import pen_crit
 import resources
 import split_retention
+import trial_result
 import werewolf
 
 
@@ -483,8 +484,8 @@ class CombatEncounter:
         self.highest_health_hostile: Optional[EnemyInfo] = None
         self.most_damaged_hostile: Optional[EnemyInfo] = None
 
-        # Trial completion tracking
-        self.trial_info: Optional[Dict] = None  # Store trial completion information
+        # The run's result when this fight completed a trial (trial_result)
+        self.trial_result: Optional[Dict] = None
         
         # Track first damage dealer
         self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
@@ -927,32 +928,6 @@ class CombatEncounter:
 class ESOLogAnalyzer(ListenerMixin):
     """Main analyzer class for processing ESO encounter logs."""
 
-    # Trial ID to name mapping
-    TRIAL_NAMES = {
-        1: "Aetherian Archive",
-        2: "Hel Ra Citadel", 
-        3: "Sanctum Ophidia",
-        4: "Maw of Lorkhaj",
-        5: "Halls of Fabrication",
-        6: "Asylum Sanctorium",
-        7: "Cloudrest",
-        8: "Sunspire",
-        9: "Kyne's Aegis",
-        10: "Rockgrove",
-        11: "Dread Sail Reef",
-        12: "Red Petal Bastion",
-        13: "Dreadsail Reef",
-        14: "Graven Deep",
-        15: "Sanity's Edge",
-        16: "Bal Sunnar",
-        17: "Oaxiltso",
-        18: "Lucent Citadel",
-        19: "Sanity's Edge",
-        20: "Bal Sunnar",
-        21: "Oaxiltso",
-        22: "Lucent Citadel"
-    }
-
     def __init__(self, list_hostiles: bool = False, diagnostic: bool = False):
         ListenerMixin.__init__(self)
         self.current_encounter: Optional[CombatEncounter] = None
@@ -1062,14 +1037,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def get_trial_name(self, trial_id: int) -> str:
         """Get trial name from trial ID."""
-        return self.TRIAL_NAMES.get(trial_id, f"Unknown Trial (ID: {trial_id})")
-    
-    def format_duration_minutes_seconds(self, duration_ms: int) -> str:
-        """Format duration in milliseconds to minutes:seconds format."""
-        duration_sec = duration_ms / 1000.0
-        minutes = int(duration_sec // 60)
-        seconds = int(duration_sec % 60)
-        return f"{minutes}m {seconds}s"
+        return trial_result.trial_name(trial_id)
 
     def _add_zone_to_history(self, timestamp: int, zone_name: str, zone_id: str = "",
                              difficulty: str = ""):
@@ -1935,72 +1903,54 @@ class ESOLogAnalyzer(ListenerMixin):
         self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
-        """Handle TRIAL_INIT events to track trial initialization."""
+        """TRIAL_INIT: the state of the instance's trial on entering it.
+        Only reported: a completed=T here is a run finished before this
+        session or split, not one of its fights' (trial_result)."""
         # TRIAL_INIT format: timestamp,TRIAL_INIT,id,inProgress,completed,startTimeMS,durationMS,success,finalScore
-        if len(entry.fields) >= 8:
-            trial_info = {
-                'trial_id': entry.fields[0],
-                'in_progress': entry.fields[1] == 'T',
-                'completed': entry.fields[2] == 'T',
-                'start_time_ms': int(entry.fields[3]) if entry.fields[3].isdigit() else 0,
-                'duration_ms': int(entry.fields[4]) if entry.fields[4].isdigit() else 0,
-                'success': entry.fields[5] == 'T',
-                'final_score': int(entry.fields[6]) if entry.fields[6].isdigit() else 0
-            }
-            
-            if self.current_encounter:
-                self.current_encounter.trial_info = trial_info
-            
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: TRIAL_INIT - ID: {trial_info['trial_id']}, Completed: {trial_info['completed']}, Success: {trial_info['success']}, Score: {trial_info['final_score']}{Style.RESET_ALL}")
+        if len(entry.fields) >= 8 and self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: TRIAL_INIT - ID: {entry.fields[0]}, "
+                     f"Completed: {entry.fields[2]}, Success: {entry.fields[5]}, "
+                     f"Score: {entry.fields[6]}{Style.RESET_ALL}")
 
     def _handle_begin_trial(self, entry: ESOLogEntry):
-        """Handle BEGIN_TRIAL events to track trial start."""
+        """BEGIN_TRIAL: the trial's timer started. Only reported."""
         # BEGIN_TRIAL format: timestamp,BEGIN_TRIAL,id,startTimeMS
-        if len(entry.fields) >= 3:
+        if len(entry.fields) >= 2 and self.diagnostic:
             trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
-            trial_name = self.current_zone or self.get_trial_name(trial_id)
-            start_time_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
-
-            if self.current_encounter:
-                if not self.current_encounter.trial_info:
-                    self.current_encounter.trial_info = {}
-                self.current_encounter.trial_info['trial_id'] = trial_id
-                self.current_encounter.trial_info['trial_name'] = trial_name
-                self.current_encounter.trial_info['start_time_ms'] = start_time_ms
-            
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_TRIAL - {trial_name} (ID: {trial_id}), Start: {start_time_ms}{Style.RESET_ALL}")
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: BEGIN_TRIAL - "
+                     f"{self.current_zone or self.get_trial_name(trial_id)} (ID: {trial_id}), "
+                     f"Start: {entry.fields[1]}{Style.RESET_ALL}")
 
     def _handle_end_trial(self, entry: ESOLogEntry):
-        """Handle END_TRIAL events to track trial completion."""
+        """END_TRIAL: the run's result (trial_result), for the fight it
+        ended. The line comes inside the final fight, which carries it from
+        END_COMBAT on; when it comes after that fight was sent (an arena's,
+        about 4 seconds later), the sent entry takes it and frontends are
+        told. A run that did not succeed has no result."""
         # END_TRIAL format: timestamp,END_TRIAL,id,durationMS,success,finalScore,finalVitalityBonus
-        if len(entry.fields) >= 5:
-            trial_id = int(entry.fields[0]) if entry.fields[0].isdigit() else 0
-            trial_name = self.current_zone or self.get_trial_name(trial_id)
-            duration_ms = int(entry.fields[1]) if entry.fields[1].isdigit() else 0
-            success = entry.fields[2] == 'T'
-            final_score = int(entry.fields[3]) if entry.fields[3].isdigit() else 0
-            vitality_bonus = int(entry.fields[4]) if entry.fields[4].isdigit() else 0
-            
-            if self.current_encounter:
-                if not self.current_encounter.trial_info:
-                    self.current_encounter.trial_info = {}
-                self.current_encounter.trial_info.update({
-                    'trial_id': trial_id,
-                    'trial_name': trial_name,
-                    'duration_ms': duration_ms,
-                    'success': success,
-                    'final_score': final_score,
-                    'vitality_bonus': vitality_bonus,
-                    'completed': True
-                })
-            
-            if self.diagnostic:
-                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
-                _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - {trial_name} (ID: {trial_id}), Success: {success}, Score: {final_score}, Vitality: {vitality_bonus}{Style.RESET_ALL}")
+        result = trial_result.from_end_trial(entry.fields, self.current_zone,
+                                             self.current_difficulty)
+        if self.diagnostic:
+            timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+            _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - "
+                     f"{trial_result.result_text(result) if result else entry.fields}{Style.RESET_ALL}")
+        enc = self.current_encounter
+        if result is None or enc is None:
+            return
+        # Finalized, not in_combat, tells a fight already sent: any combat
+        # event after END_COMBAT sets in_combat again (Blackrose Prison's
+        # END_TRIAL follows a few such events)
+        if enc.finalized:
+            if self._last_fight_entry is not None:
+                # On the encounter too: should the fight carry on (see
+                # COMBAT_RESUME_MS), its entry is built again from it
+                enc.trial_result = result
+                self._last_fight_entry.trial_result = result
+                self._notify('on_fight_updated', self._last_fight_entry)
+        elif enc.in_combat:
+            enc.trial_result = result
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
         """Handle END_LOG events."""
@@ -2787,7 +2737,9 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.ended_at = time.time()
         entry.timestamp = enc.get_combat_start_time_formatted(self.current_log_file, self.log_start_unix_timestamp)
         entry.zone_name = zone_name or self.current_zone or "Unknown"
-        entry.is_vet = bool(self.current_difficulty and self.current_difficulty.upper() == "VETERAN")
+        entry.zone_id = self.current_zone_id
+        entry.difficulty = (self.current_difficulty or "").upper()
+        entry.is_vet = entry.difficulty == "VETERAN"
 
         duration = (enc.end_time - enc.start_time) / 1000.0
         entry.duration_s = duration
@@ -3063,15 +3015,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 lambda ability_id: self.ability_icons.get(ability_id, ""),
                 lambda ability_id: self.ability_cache.get(ability_id, ""))]
 
-        if enc.trial_info and enc.trial_info.get('completed'):
-            trial = enc.trial_info
-            trial_name = trial.get('trial_name', 'Unknown')
-            parts = [trial_name]
-            if trial.get('duration_ms', 0) > 0:
-                parts.append(f"Duration: {self.format_duration_minutes_seconds(trial['duration_ms'])}")
-            if trial.get('final_score', 0) > 0:
-                parts.append(f"Score: {trial['final_score']:,}")
-            entry.trial_info = " | ".join(parts)
+        entry.trial_result = enc.trial_result
 
         return entry
 

@@ -15,8 +15,8 @@ from PySide6.QtGui import (
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox, QProgressBar, QSizePolicy, QSplitter,
+    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
+    QMessageBox, QProgressBar, QSizePolicy, QSplitter,
     QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -31,10 +31,11 @@ from gui.death_recap_dialog import DeathRecapDialog
 from gui.death_render import death_tooltips
 from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
+from gui.fight_list import FightList
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
-    render_plain_text, summary_line, taken_tooltips,
+    render_plain_text, taken_tooltips,
 )
 from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
@@ -205,10 +206,8 @@ class MainWindow(QMainWindow):
             self._taken_dialog.refresh(dark)
         if self._graph_dialog is not None:
             self._graph_dialog.refresh(dark)
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if 0 <= row < len(fights):
-            self._show_fight(row)
+        if self.history_list.current_entry() is not None:
+            self._show_fight()
         elif self._last_placeholder:
             self._show_placeholder(self._last_placeholder)
 
@@ -308,8 +307,9 @@ class MainWindow(QMainWindow):
         self._style_update_buttons()
 
         splitter = QSplitter(Qt.Horizontal)
-        self.history_list = QListWidget()
-        self.history_list.setAccessibleName("Fights")
+        # The fights in blocks by instance, with each completed run's result
+        # (gui.fight_list, issue #129)
+        self.history_list = FightList()
         self.history_list.currentRowChanged.connect(self._show_fight)
         splitter.addWidget(self.history_list)
 
@@ -670,29 +670,22 @@ class MainWindow(QMainWindow):
             return  # from the analyzer Settings is replacing
         self._fights.append(entry)
         if self._review_fights is None:
-            item = QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True))
-            self.history_list.addItem(item)
+            row = self.history_list.add_fight(entry)
             if self._follow_live:
-                self.history_list.setCurrentRow(self.history_list.count() - 1)
+                self.history_list.setCurrentRow(row)
 
     @Slot(object)
     def _on_fight_updated(self, entry):
         """A delivered fight changed: it gained a death (logged just after
-        combat ended), or the game had cut it in two and it has now really
-        ended. Its history line is rewritten, and the pane is redrawn if it
-        is the fight on screen."""
+        combat ended), the game had cut it in two and it has now really
+        ended, or the run's result came just after it (trial_result). Its
+        history line is rewritten, and the pane is redrawn if it is the
+        fight on screen."""
         if self._restart_pending:
             return
-        fights = self._current_fights()
-        # Both happen to the newest fight, so look from the end
-        row = next((i for i in range(len(fights) - 1, -1, -1)
-                    if fights[i] is entry), -1)
-        item = self.history_list.item(row) if row >= 0 else None
-        if item is None:
-            return
-        item.setText(summary_line(entry, death_cue=True, issue_cue=True))
-        if row == self.history_list.currentRow():
-            self._show_fight(row)
+        row = self.history_list.update_fight(entry)
+        if row is not None and row == self.history_list.currentRow():
+            self._show_fight()
 
     @Slot(str, str)
     def _on_zone_changed(self, zone, difficulty):
@@ -966,20 +959,18 @@ class MainWindow(QMainWindow):
         return self._review_fights if self._review_fights is not None else self._fights
 
     def _reload_list(self, fights):
-        self.history_list.clear()
-        for entry in fights:
-            self.history_list.addItem(
-                QListWidgetItem(summary_line(entry, death_cue=True, issue_cue=True)))
-        if fights:
-            self.history_list.setCurrentRow(len(fights) - 1)
+        self.history_list.set_fights(fights)
+        self.history_list.select_fight(-1)
 
-    def _show_fight(self, row):
-        fights = self._current_fights()
-        if row < 0 or row >= len(fights):
+    def _show_fight(self, *_):
+        """The current fight in the pane and the strip (the list's
+        currentRowChanged passes the row, which a header row never is)."""
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
+        fights = self._current_fights()
         self._follow_live = (self._review_fights is None
-                             and row == len(fights) - 1)
-        entry = fights[row]
+                             and bool(fights) and entry is fights[-1])
         # The Settings' assumed Champion Point rows and cap, read at render
         # time (pen_crit): the row tokens, their hover text and the strip's
         # Armour row follow them
@@ -1031,16 +1022,15 @@ class MainWindow(QMainWindow):
 
     def _show_death_recap(self, unit_id):
         """A player's death-recap button was clicked in the fight on screen."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
         if self._death_dialog is None:
             self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
             # The fight block's link to the damage taken window (issue #98)
             self._death_dialog.view.taken_requested.connect(self._show_taken)
-        self._death_dialog.show_recap(fights[row], unit_id, self._dark,
-                                      names=self._names_for(fights[row]))
+        self._death_dialog.show_recap(entry, unit_id, self._dark,
+                                      names=self._names_for(entry))
         self._death_dialog.show()
         self._death_dialog.raise_()
         self._death_dialog.activateWindow()
@@ -1048,9 +1038,8 @@ class MainWindow(QMainWindow):
     def _show_build(self, unit_id, scroll_to=None):
         """A player's name was clicked in the fight on screen (*scroll_to*:
         the anchor the window opens at, for the pen/crit token)."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
         if self._build_dialog is None:
             self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
@@ -1058,23 +1047,22 @@ class MainWindow(QMainWindow):
             self._build_dialog.view.taken_requested.connect(self._show_taken)
         # The Settings' assumed Champion Point rows and cap, read at render
         # time so a change applies to the next build window without a restart
-        self._build_dialog.show_build(fights[row], unit_id, self._dark,
+        self._build_dialog.show_build(entry, unit_id, self._dark,
                                       pen_crit_options=self.config.get("pen_crit") or {},
-                                      scroll_to=scroll_to, names=self._names_for(fights[row]))
+                                      scroll_to=scroll_to, names=self._names_for(entry))
         self._build_dialog.show()
         self._build_dialog.raise_()
         self._build_dialog.activateWindow()
 
     def _show_damage(self, unit_id):
         """A player's dps figure was clicked in the fight on screen."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
         if self._damage_dialog is None:
             self._damage_dialog = DamageDialog(self, icons=self.fight_view.icons)
-        self._damage_dialog.show_damage(fights[row], unit_id, self._dark,
-                                        names=self._names_for(fights[row]))
+        self._damage_dialog.show_damage(entry, unit_id, self._dark,
+                                        names=self._names_for(entry))
         self._damage_dialog.show()
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
@@ -1085,14 +1073,13 @@ class MainWindow(QMainWindow):
         fight's damage taken and healing received (taken_render, issue #98).
         The dialogs' fights are the same objects the list holds, so the
         window shows the fight on screen like the others."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
         if self._taken_dialog is None:
             self._taken_dialog = TakenDialog(self, icons=self.fight_view.icons)
-        self._taken_dialog.show_taken(fights[row], unit_id, self._dark,
-                                      names=self._names_for(fights[row]))
+        self._taken_dialog.show_taken(entry, unit_id, self._dark,
+                                      names=self._names_for(entry))
         self._taken_dialog.show()
         self._taken_dialog.raise_()
         self._taken_dialog.activateWindow()
@@ -1102,11 +1089,10 @@ class MainWindow(QMainWindow):
         build issues, each with its rule, in a popup at the pointer. The
         popup owns itself (Qt.Popup, deleted on close), so nothing here
         keeps a reference to it."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
-        text = issues_html(player_for(fights[row], unit_id), self._dark,
+        text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
             BuildIssuesPopup(text, self).show_at(QCursor.pos())
@@ -1114,15 +1100,14 @@ class MainWindow(QMainWindow):
     def _show_graph(self):
         """The toolbar's DPS graph, or the header's group dps figure, was
         clicked: the dps over time graph of the fight on screen."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if row < 0 or row >= len(fights):
+        entry = self.history_list.current_entry()
+        if entry is None:
             return
         if self._graph_dialog is None:
             self._graph_dialog = DpsGraphDialog(self)
         self._graph_dialog.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
-        self._graph_dialog.show_graph(fights[row], self._dark,
-                                      names=self._names_for(fights[row]))
+        self._graph_dialog.show_graph(entry, self._dark,
+                                      names=self._names_for(entry))
         self._graph_dialog.show()
         self._graph_dialog.raise_()
         self._graph_dialog.activateWindow()
@@ -1195,7 +1180,7 @@ class MainWindow(QMainWindow):
 
     def _toggle_detail(self, checked):
         self._detailed = checked
-        self._show_fight(self.history_list.currentRow())
+        self._show_fight()
 
     # ---- hidden names ----
 
@@ -1218,13 +1203,11 @@ class MainWindow(QMainWindow):
         mask: the pane and the strip through _show_fight, and each open
         window with a mask for the fight it holds, which may not be the
         one on screen."""
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if 0 <= row < len(fights):
+        if self.history_list.current_entry() is not None:
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
             scroll = self.fight_view.verticalScrollBar().value()
-            self._show_fight(row)
+            self._show_fight()
             self.fight_view.restore_scroll(scroll)
         for dialog in (self._death_dialog, self._build_dialog,
                        self._damage_dialog, self._taken_dialog, self._graph_dialog):
@@ -1259,12 +1242,11 @@ class MainWindow(QMainWindow):
         self.hide_names_action.setChecked(bool(self.config.get("privacy.hide_names", False)))
 
     def _copy_current(self):
-        fights = self._current_fights()
-        row = self.history_list.currentRow()
-        if 0 <= row < len(fights):
+        entry = self.history_list.current_entry()
+        if entry is not None:
             QGuiApplication.clipboard().setText(render_plain_text(
-                fights[row], pen_crit_options=self.config.get("pen_crit") or {},
-                names=self._names_for(fights[row])))
+                entry, pen_crit_options=self.config.get("pen_crit") or {},
+                names=self._names_for(entry)))
             self.statusBar().showMessage("Fight summary copied to clipboard", 3000)
 
     # ---- actions ----

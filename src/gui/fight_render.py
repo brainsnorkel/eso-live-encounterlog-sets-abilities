@@ -83,6 +83,7 @@ from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
+from trial_result import result_text
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS", "C": "Companion"}
 COMPANION_INDENT = "↳ "  # before a companion's name, under its owner's row (companions.py)
@@ -639,23 +640,25 @@ def _mastery_text(p) -> str:
     return ", ".join(str(name) for name in (p.get("masteries") or []) if name)
 
 
-def summary_line(entry, death_cue: bool = False, issue_cue: bool = False) -> str:
+def summary_line(entry, death_cue: bool = False, issue_cue: bool = False,
+                 zone: bool = True) -> str:
     """Fight line: boss · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
     boss or mob name; issue_cue: mark a fight in which a player's build has
     a possible issue (build_issues) with ISSUES_LIST_CUE after that. The
     history list asks for both; the clipboard copy, which is read without
-    the app's legend, does not.
+    the app's legend, does not. zone=False leaves the zone out, for the
+    history list, whose block header names it (gui.fight_list).
     """
-    vet = " vet" if entry.is_vet else ""
-    zone = entry.zone_name or "Unknown"
     parts = []
     if entry.boss_name:
         parts.append(entry.boss_name)
     parts.append(_fmt_duration(entry.duration_s))
     parts.append(f"{_fmt_dps(entry.group_dps)} gdps")
-    parts.append(f"{zone}{vet}")
+    if zone:
+        vet = " vet" if entry.is_vet else ""
+        parts.append(f"{entry.zone_name or 'Unknown'}{vet}")
     parts.append(str(entry.timestamp))
     if death_cue and entry.deaths:
         parts[0] = f"{parts[0]} {DEATH_CUE}"
@@ -1011,9 +1014,20 @@ def render_html(entry, detailed: bool, dark: bool = False,
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
              f" · Deaths {entry.deaths}")
+    # The fight that completed a trial: the run's result in a strip across
+    # the top, framed like a build card (trial_result)
+    result = getattr(entry, "trial_result", None)
+    parts = []
+    if result:
+        parts.append(
+            f"<table cellpadding='5' cellspacing='0' width='99%' "
+            f"style='border-style:solid;border-width:1px;"
+            f"border-color:{theme['frame_border']};border-collapse:collapse;"
+            f"background-color:{theme['frame_bg']};margin-bottom:6px'>"
+            f"<tr><td><b>{e(result_text(result))}</b></td></tr></table>")
     # Not an <h3>: Qt would scale the nested stats by the heading's size
     # adjustment on top of their point size
-    parts = [
+    parts += [
         f"<p style='margin:0'>"
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
@@ -1217,6 +1231,9 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
     pane hides."""
     names = names or NO_MASK
     lines = [summary_line(entry)]
+    result = getattr(entry, "trial_result", None)
+    if result:
+        lines.append(result_text(result))
     misfortunes = misfortunes_text(entry)
     if misfortunes:
         lines.append(misfortunes)

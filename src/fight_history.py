@@ -11,14 +11,19 @@ class FightHistoryEntry:
     """Compact summary of a completed fight for frontend display."""
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
                  'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
-                 'trial_info', 'ended_at', 'boss_name', 'buff_timeline',
+                 'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
-                 'damage_series', 'pen_crit', 'player_names', 'misfortunes']
+                 'damage_series', 'pen_crit', 'player_names', 'misfortunes',
+                 'zone_id', 'difficulty']
 
     def __init__(self):
         self.timestamp = ""
         self.ended_at = 0.0  # time.time() when fight ended, for elapsed timer
         self.zone_name = ""
+        # The zone's id and difficulty (VETERAN, NORMAL or NONE) from
+        # ZONE_CHANGED: the fight list groups fights by them (gui.fight_list)
+        self.zone_id = ""
+        self.difficulty = ""
         self.is_vet = False
         # The fight time: BEGIN_COMBAT to END_COMBAT
         self.duration_s = 0.0
@@ -52,7 +57,10 @@ class FightHistoryEntry:
         self.player_names = []
         self.buff_summary = ""
         self.first_damage_dealer = None
-        self.trial_info = None
+        # The run's result when this fight completed a trial or an arena:
+        # trial_id, name, is_vet, duration_ms, score, vitality, vitality_max
+        # (see trial_result.from_end_trial); None for any other fight
+        self.trial_result = None
         self.boss_name = ""
         # EXPERIMENTAL: {'duration_ms', 'effects': {name: [interval, ...]}}
         # or None when the buff-timeline experiment is off (the default)

@@ -176,12 +176,12 @@ class TestDeathCueInHistoryList(DeathRecapGuiTestCase):
         try:
             win._on_fight_completed(_entry_no_deaths())
             win._on_fight_completed(_entry_with_deaths())
-            texts = [win.history_list.item(i).text() for i in range(2)]
+            texts = [win.history_list.fight_item(i).text() for i in range(2)]
             self.assertNotIn('☠', texts[0])
             self.assertTrue(texts[1].startswith('Sharpfang ☠ · '))
             # Review mode builds its list the same way
             win._on_review_loaded('old.log', [_entry_with_deaths(), _entry_no_deaths()])
-            texts = [win.history_list.item(i).text() for i in range(2)]
+            texts = [win.history_list.fight_item(i).text() for i in range(2)]
             self.assertIn('☠', texts[0])
             self.assertNotIn('☠', texts[1])
         finally:
@@ -495,7 +495,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry_with_deaths())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIsNone(win._death_dialog)
 
@@ -529,7 +529,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             # log" placeholder would replace the fight drawn below)
             _app.processEvents()
             win._on_fight_completed(_entry_with_deaths())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             view = win.fight_view
             found = view.document().find('☠')
             self.assertFalse(found.isNull())
@@ -549,7 +549,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry_with_deaths())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertIn('esolog:deaths/1', win.fight_view._tooltips)
             win.detail_action.setChecked(False)
             self.assertIn('☠', win.fight_view.toPlainText())
@@ -562,34 +562,34 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         try:
             entry = _entry_no_deaths()
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             self.assertNotIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 0', win.fight_view.toPlainText())
-            self.assertNotIn('☠', win.history_list.item(0).text())
+            self.assertNotIn('☠', win.history_list.fight_item(0).text())
 
             entry.deaths = 1
             entry.death_recaps = [_death('1', '@tester', 20085, 'Sharpfang', 'Slap', [])]
             win._on_fight_updated(entry)
             self.assertIn('☠', win.fight_view.toPlainText())
             self.assertIn('Deaths 1', win.fight_view.toPlainText())
-            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang ☠ '))
+            self.assertTrue(win.history_list.fight_item(0).text().startswith('Sharpfang ☠ '))
 
             # An update for a fight that is not on screen leaves the pane
             # alone, but its history line still gets the cue
             other = _entry_no_deaths()
             win._on_fight_completed(other)
-            win.history_list.setCurrentRow(1)
+            win.history_list.select_fight(1)
             shown = win.fight_view.toHtml()
-            win.history_list.item(0).setText('stale')
+            win.history_list.fight_item(0).setText('stale')
             win._on_fight_updated(entry)
             self.assertEqual(win.fight_view.toHtml(), shown)
-            self.assertTrue(win.history_list.item(0).text().startswith('Sharpfang ☠ '))
-            self.assertNotIn('☠', win.history_list.item(1).text())
+            self.assertTrue(win.history_list.fight_item(0).text().startswith('Sharpfang ☠ '))
+            self.assertNotIn('☠', win.history_list.fight_item(1).text())
 
             # A fight the list does not hold (the live one, while reviewing
             # another log) is ignored
             win._on_fight_updated(_entry_with_deaths())
-            self.assertNotIn('☠', win.history_list.item(1).text())
+            self.assertNotIn('☠', win.history_list.fight_item(1).text())
         finally:
             win.close()
 
@@ -601,14 +601,14 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             entry = _entry_no_deaths()
             entry.duration_s, entry.group_dps = 66.8, 544635.0
             win._on_fight_completed(entry)
-            win.history_list.setCurrentRow(0)
-            self.assertIn(' · 1:07 · 544.6k gdps · ', win.history_list.item(0).text())
+            win.history_list.select_fight(0)
+            self.assertIn(' · 1:07 · 544.6k gdps · ', win.history_list.fight_item(0).text())
 
             entry.duration_s, entry.group_dps, entry.deaths = 129.5, 558974.0, 2
             win._on_fight_updated(entry)
-            self.assertEqual(win.history_list.count(), 1)
-            self.assertEqual(win.history_list.currentRow(), 0)
-            self.assertTrue(win.history_list.item(0).text().startswith(
+            self.assertEqual(win.history_list.fight_count(), 1)
+            self.assertEqual(win.history_list.current_fight_index(), 0)
+            self.assertTrue(win.history_list.fight_item(0).text().startswith(
                 'Sharpfang ☠ · 2:10 · 559.0k gdps · '))
             shown = win.fight_view.toPlainText()
             self.assertIn('2:10', shown)
@@ -623,7 +623,7 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         win = self._window()
         try:
             win._on_fight_completed(_entry_with_deaths())
-            win.history_list.setCurrentRow(0)
+            win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
             dialog = win._death_dialog
             self.assertIn(_THEMES[False]['damage'], dialog.view.toHtml())

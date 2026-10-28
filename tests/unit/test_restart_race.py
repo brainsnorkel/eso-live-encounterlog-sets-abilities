@@ -70,8 +70,8 @@ class TestSaveDuringAReplay(unittest.TestCase):
         self.win._open_settings()
 
     def _listed(self):
-        return [self.win.history_list.item(i).text().split(" · ")[0]
-                for i in range(self.win.history_list.count())]
+        return [self.win.history_list.fight_item(i).text().split(" · ")[0]
+                for i in range(self.win.history_list.fight_count())]
 
     def test_fights_from_the_old_replay_are_dropped_and_the_new_ones_listed(self):
         win = self.win

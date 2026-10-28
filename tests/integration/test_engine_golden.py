@@ -80,7 +80,7 @@ def _fight_entry_to_dict(entry) -> dict:
         'deaths': entry.deaths,
         'boss_name': entry.boss_name,
         'buff_summary': _strip_ansi(entry.buff_summary or ''),
-        'trial_info': entry.trial_info,
+        'trial_result': entry.trial_result,
         'players': [
             {
                 'role': p.get('role'),
