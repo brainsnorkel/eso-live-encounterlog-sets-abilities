@@ -27,7 +27,7 @@ A walk through the app, screen by screen, and the reference for every setting. T
 2. **Start the app**, before or during play; both work. It looks for `Encounter.log` in the usual ESO folders, including a Documents folder that OneDrive has moved, and picks the most recently written one (see [Where the app looks for the log](#where-the-app-looks-for-the-log)). If there is no log yet, it waits and attaches the moment the file appears.
 3. **Check the status bar.** **Last entry** turns green as soon as new lines arrive, so you can confirm logging is on from the app.
 
-Joining mid-raid, the app replays the logging session already in the file: the session's fights load into the history and the whole group, their gear and their bars are known, so you do not start with a half-empty group. A session over 768 MB falls back to a faster sweep that reads only the roster.
+Joining mid-raid, the app replays the logging session already in the file: the session's fights load into the history and the whole group, their gear and their bars are known, so you do not start with a half-empty group. The whole session is replayed however long it is, with the progress bar showing how far it has got; a session's worth of trials (500 MB or so) takes about a minute.
 
 ## The main window
 
@@ -274,7 +274,7 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ## Reviewing and copying fights
 
-**Open log for review** loads any log file, a split file, a zipped split or an `Encounter-*.zip` archive, and lists its fights while live monitoring carries on underneath. A zip is read as it stands, never unpacked to disk; if it holds more than one log, the app asks which. A banner shows which file is open; **Back to live** returns to the live session.
+**Open log for review** loads any log file, a split file, a zipped split or an `Encounter-*.zip` archive, and lists its fights while live monitoring carries on underneath. A zip is read as it stands, never unpacked to disk; if it holds more than one log, the app asks which. A review reads its file on a thread of its own, so live fights keep arriving while it loads; **Cancel review** beside the progress bar stops it. A log over 1 GB (an old month-long `Encounter.log`, say) is looked through first, which takes a few seconds per GB, and the app offers the whole log or only its last few sessions, with the time each takes: reading a 4.7 GB log takes about 8 minutes, its last three sessions about one. The cut is always at the start of a session, so the fights shown are exactly what the whole log gives for them. A banner shows which file is open; **Back to live** returns to the live session.
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
