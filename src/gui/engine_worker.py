@@ -71,6 +71,9 @@ class SignalListener(AnalyzerListener):
     def on_diagnostic(self, message):
         self._emit("diagnostic", message)
 
+    def on_parse_progress(self, label, done, total):
+        self._emit("parse_progress", label, done, total)
+
     def on_warning(self, source, message):
         self._emit("warning", source, message)
 

@@ -73,6 +73,10 @@ class AnalyzerListener:
     def on_diagnostic(self, message: str) -> None:
         """Informational/diagnostic message (previously terminal output)."""
 
+    def on_parse_progress(self, label: str, done: int, total: int) -> None:
+        """A long replay (the session replayed at attach) has read *done* of
+        *total* bytes; done >= total ends it."""
+
     def on_warning(self, source: str, message: str | None) -> None:
         """A lasting problem from *source* ('split'), shown until it is
         cleared by the same source with message None."""
@@ -124,6 +128,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_diagnostic(self, message: str) -> None:
         self.events.append(("diagnostic", message))
+
+    def on_parse_progress(self, label: str, done: int, total: int) -> None:
+        self.events.append(("parse_progress", label, done, total))
 
     def on_warning(self, source: str, message: str | None) -> None:
         self.events.append(("warning", source, message))

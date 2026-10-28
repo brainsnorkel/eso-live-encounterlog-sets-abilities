@@ -4102,10 +4102,8 @@ class LogFileMonitor:
         """Byte offset of the most recent BEGIN_LOG line before *end*."""
         return find_session_start_offset(self.log_file, end, self.PREAMBLE_LOOKBACK_BYTES)
 
-    # Latest sessions up to this size are fully replayed at attach (fights
-    # into history, splitter fed); larger ones fall back to the roster-only
-    # preamble sweep.
-    SESSION_REPLAY_CAP = 768 * 1024 * 1024
+    # A session replayed at attach above this size reports its progress
+    REPLAY_PROGRESS_BYTES = 8 * 1024 * 1024
 
     def _session_split_exists(self, session_start: int) -> bool:
         """True when a split file for this session's stamp already exists."""
@@ -4134,15 +4132,22 @@ class LogFileMonitor:
         Gives a mid-session attach the same state as having run since the
         session began: full roster, this session's fights in history, and
         the session's split file (created only if absent). Best-effort:
-        failures leave plain tailing, and oversized sessions fall back to
-        the roster-only preamble sweep.
+        failures leave plain tailing.
+
+        Every session is replayed whole, however large. Until issue #107 one
+        over 768 MB got only the roster-only preamble sweep, which is not
+        enough: who owns which companion and pet is learned from the rest
+        of the session, and fights rebuilt that way differed in every one
+        of 18 measured on a Dreadsail Reef split. The sweep is left for a
+        session whose BEGIN_LOG is beyond the 2 GB lookback, and for a
+        replay that fails.
         """
         try:
             end = self.last_position
             if end <= 0:
                 return
             start = self._find_session_start_offset(end)
-            if start is None or end - start > self.SESSION_REPLAY_CAP:
+            if start is None:
                 self._backfill_session_preamble()
                 return
             # The session's split file, when it exists, is continued by the
@@ -4162,18 +4167,35 @@ class LogFileMonitor:
                 pass
 
     def _process_range(self, start: int, end: int):
-        """Stream lines in [start, end) through the normal processing path."""
-        with open(self.log_file, 'rb') as f:
-            f.seek(start)
-            while f.tell() < end:
-                raw = f.readline()
-                if not raw:
-                    break
-                line = raw.decode('utf-8', errors='ignore').strip()
-                if line:
-                    self._process_one_line(line)
-        if self.log_splitter:
-            self.log_splitter.flush()
+        """Stream lines in [start, end) through the normal processing path.
+        A range over REPLAY_PROGRESS_BYTES reports its progress (the
+        window's progress bar), about every 1%."""
+        total = end - start
+        report = total > self.REPLAY_PROGRESS_BYTES
+        label = "Loading last session"
+        step = max(1, total // 100)
+        done = last = 0
+        if report:
+            self.analyzer._notify('on_parse_progress', label, 0, total)
+        try:
+            with open(self.log_file, 'rb') as f:
+                f.seek(start)
+                while f.tell() < end:
+                    raw = f.readline()
+                    if not raw:
+                        break
+                    done += len(raw)
+                    if report and done - last >= step:
+                        last = done
+                        self.analyzer._notify('on_parse_progress', label, min(done, total), total)
+                    line = raw.decode('utf-8', errors='ignore').strip()
+                    if line:
+                        self._process_one_line(line)
+        finally:
+            if self.log_splitter:
+                self.log_splitter.flush()
+            if report:
+                self.analyzer._notify('on_parse_progress', label, total, total)
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
