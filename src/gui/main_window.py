@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
         self._dark = dark
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
+        self._refresh_warning_label()
         self._style_update_buttons()
         self.timeline_strip.update()
         if self._death_dialog is not None:
@@ -335,6 +336,13 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.freshness_label)
         self.zone_label = QLabel("")
         self.statusBar().addWidget(self.zone_label)
+        # Lasting problems (issue #111): split writing stopped, the log
+        # failing to read poll after poll. Permanent, so a status message
+        # never hides it; it goes when its source says the problem cleared
+        self._warnings = {}
+        self.warning_label = QLabel("")
+        self.warning_label.setVisible(False)
+        self.statusBar().addPermanentWidget(self.warning_label)
         # Shared work-progress bar (archiving, review parsing, catch-up);
         # the worker thread serializes these, so one bar can't be contended
         self.progress_bar = QProgressBar()
@@ -380,6 +388,7 @@ class MainWindow(QMainWindow):
         self.worker.log_status.connect(self._on_log_status)
         self.worker.archive_event.connect(self._on_archive_event)
         self.worker.diagnostic.connect(self._on_diagnostic)
+        self.worker.warning.connect(self._on_warning)
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
@@ -585,6 +594,23 @@ class MainWindow(QMainWindow):
     def _on_diagnostic(self, message):
         # Low-priority: transient status message only
         self.statusBar().showMessage(message, 4000)
+
+    @Slot(str, object)
+    def _on_warning(self, source, message):
+        """A lasting problem from *source*, or its end (message None)."""
+        if message:
+            self._warnings[source] = message
+        else:
+            self._warnings.pop(source, None)
+        self._refresh_warning_label()
+
+    def _refresh_warning_label(self):
+        text = "; ".join(self._warnings.values())
+        # The label is kept short; the hover has the whole text
+        self.warning_label.setText(f"⚠ {text[:90]}…" if len(text) > 90 else f"⚠ {text}")
+        self.warning_label.setToolTip(text)
+        self.warning_label.setStyleSheet(state_style("none", self._dark))
+        self.warning_label.setVisible(bool(text))
 
     @Slot(str)
     def _on_waiting_for_log(self, expected):

@@ -77,6 +77,10 @@ class AnalyzerListener:
         """A long replay (the session replayed at attach) has read *done* of
         *total* bytes; done >= total ends it."""
 
+    def on_warning(self, source: str, message: str | None) -> None:
+        """A lasting problem from *source* ('split'), shown until it is
+        cleared by the same source with message None."""
+
 
 class ListenerMixin:
     """Mixin providing listener registration and safe fan-out notification."""
@@ -127,6 +131,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_parse_progress(self, label: str, done: int, total: int) -> None:
         self.events.append(("parse_progress", label, done, total))
+
+    def on_warning(self, source: str, message: str | None) -> None:
+        self.events.append(("warning", source, message))
 
     def of_kind(self, kind: str):
         return [e for e in self.events if e[0] == kind]

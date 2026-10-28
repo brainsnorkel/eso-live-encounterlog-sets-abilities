@@ -128,6 +128,8 @@ def _replay_pipeline(tmpdir: Path) -> dict:
             continue
         _mod._handle_replay_log_splitting(splitter, entry, line)
         analyzer.process_log_entry(entry)
+    # The end of a batch, as LogFileMonitor flushes it (issue #109)
+    splitter.flush()
 
     fights = [_fight_entry_to_dict(f) for f in analyzer.fight_history.fights]
 

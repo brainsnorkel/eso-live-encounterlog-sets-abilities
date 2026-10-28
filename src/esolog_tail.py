@@ -13,8 +13,8 @@ import sys
 import time
 import csv
 import io
+import json
 import re
-import hashlib
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, FrozenSet, List, Optional, Tuple, Set
@@ -1016,6 +1016,12 @@ class ESOLogAnalyzer(ListenerMixin):
         # (timestamp, zone_name, zone_id, difficulty)
         self.zone_history: List[Tuple[int, str, str, str]] = []
         self.max_zone_history = 10  # Keep last 10 zone changes
+
+        # A player's gear rows as fight entries share them, by content
+        # (issue #110): the same gear pull after pull is one list, not a
+        # copy per fight (455 copies of 40 gear sets in a Sunspire night).
+        # The rows are only read once built
+        self._shared_gear: Dict[str, list] = {}
         
         
         # Session tracking for players going offline/online
@@ -1320,6 +1326,10 @@ class ESOLogAnalyzer(ListenerMixin):
                     # The race is not kept in session data: every UNIT_ADDED carries it
                     if added_player is not None:
                         added_player.race_id = race_id
+                        # A returning player is restored with the champion
+                        # points stored when first seen; this line's are newer
+                        if champion_points > 0:
+                            added_player.champion_points = champion_points
                         added_player.is_local = len(entry.fields) > 2 and entry.fields[2] == "T"
                         added_player.grouped = len(entry.fields) > 15 and entry.fields[15] == "T"
                         if long_unit_id and long_unit_id != "0":
@@ -1413,6 +1423,13 @@ class ESOLogAnalyzer(ListenerMixin):
                         player.name = clean_name
                     self._update_player_session(unit_id, player.name, player.handle,
                                                 class_id=player.class_id)
+                # A champion point earned mid-session (fields[7])
+                cp = entry.fields[7]
+                if cp.isdigit() and int(cp) > 0 and int(cp) != player.champion_points:
+                    player.champion_points = int(cp)
+                    if player.handle:
+                        self._update_player_session(unit_id, player.name, player.handle,
+                                                    champion_points=int(cp))
                 if len(entry.fields) > 10:
                     player.grouped = entry.fields[10] == "T"
                 return
@@ -2914,6 +2931,10 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players[-1].update(build_fields(
                 player.gear, player.long_term_effects,
                 self.ability_cache.get, self.ability_icons.get))
+            gear_rows = entry.players[-1].get('gear')
+            if gear_rows:
+                key = json.dumps(gear_rows, sort_keys=True, default=str)
+                entry.players[-1]['gear'] = self._shared_gear.setdefault(key, gear_rows)
             # The werewolf bar the log never writes, rebuilt from casts, and
             # the share of the fight spent in form (werewolf.py)
             entry.players[-1].update(self._werewolf_fields(player, enc))
@@ -3386,6 +3407,11 @@ class LogSplitter:
         # Another instance of the app holds this folder's lock: write nothing
         self.disabled = False
         self._lock_path = None
+        # The first failure to create or write the split file, until a line
+        # is written again (issue #111): the monitor shows it in the window
+        # (a full disk, a removed drive), where it was a diagnostic print
+        self.write_error: Optional[str] = None
+        self._batch_failed = False  # a write failed since the last flush
 
         # Ensure split directory exists
         self.split_dir.mkdir(parents=True, exist_ok=True)
@@ -3553,6 +3579,8 @@ class LogSplitter:
             if self.diagnostic:
                 timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                 _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to create temporary file {self.temp_file_path}: {e}{Style.RESET_ALL}")
+            if self.write_error is None:
+                self.write_error = f"could not create {self.temp_file_path}: {e}"
             self.current_split_file = None
             self.current_split_path = None
             self.current_encounter_info = None
@@ -3814,16 +3842,10 @@ class LogSplitter:
                 continue
         return False
 
-    def _get_file_hash(self, file_path):
-        """Get MD5 hash of file content (chunked to avoid memory spikes)."""
-        h = hashlib.md5()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(65536), b''):
-                h.update(chunk)
-        return h.hexdigest()
-
     def write_log_line(self, line: str):
-        """Write a log line to the current split file."""
+        """Write a log line to the current split file. Not flushed here: a
+        flush per line made one OS write per log line (3.3 M for a 573 MB
+        session, issue #109); the monitor calls flush() once per batch."""
         if self.skip_current or self.disabled:
             return
         if self._catch_up is not None and self._catching_up(line):
@@ -3831,12 +3853,34 @@ class LogSplitter:
         if self.file_handle:
             try:
                 self.file_handle.write(line + '\n')
-                self.file_handle.flush()  # Ensure immediate write
             except Exception as e:
                 if self.diagnostic:
                     timestamp_str = time.strftime("%H:%M:%S", time.localtime())
                     _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
-    
+                self._batch_failed = True
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
+
+    def flush(self):
+        """Push the lines written so far to the split file: the monitor's
+        end of each batch of new lines, so a crash loses at most one poll's
+        lines, which are still in the game's log for the split's catch-up
+        (_continue_existing) to restore. A batch whose writes and flush all
+        went through clears write_error (a full disk usually shows here,
+        when the buffer reaches the disk)."""
+        failed, self._batch_failed = self._batch_failed, False
+        if self.file_handle:
+            try:
+                self.file_handle.flush()
+                if not failed:
+                    self.write_error = None
+            except Exception as e:
+                if self.diagnostic:
+                    timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                    _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: Failed to write to split file: {e}{Style.RESET_ALL}")
+                if self.write_error is None:
+                    self.write_error = f"could not write to {self.current_split_path}: {e}"
+
     def start_combat(self):
         """Mark that combat has started - rename file to current zone."""
         if not self.combat_started:
@@ -4011,6 +4055,7 @@ class LogFileMonitor:
         self.diagnostic = analyzer.diagnostic
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
+        self._split_warning = None  # the split failure last reported
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
@@ -4113,6 +4158,7 @@ class LogFileMonitor:
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
             self._process_range(start, end)
+            self._report_split_status()
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
             try:
@@ -4146,6 +4192,8 @@ class LogFileMonitor:
                     if line:
                         self._process_one_line(line)
         finally:
+            if self.log_splitter:
+                self.log_splitter.flush()
             if report:
                 self.analyzer._notify('on_parse_progress', label, total, total)
 
@@ -4404,6 +4452,8 @@ class LogFileMonitor:
                     # Advance last_position by the bytes consumed so far so resume
                     # doesn't re-process already-handled lines.
                     self.last_position += sum(len(l) for l in new_lines[:idx])
+                    if self.log_splitter:
+                        self.log_splitter.flush()
                     if self.diagnostic:
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
                         _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
@@ -4413,6 +4463,8 @@ class LogFileMonitor:
             if line:
                 self._process_one_line(line)
 
+        if self.log_splitter:
+            self.log_splitter.flush()
         self.last_position = new_end_position
         if new_lines:
             self._emit_log_status(new_end_position)
@@ -4440,7 +4492,18 @@ class LogFileMonitor:
             self.last_entry_offset_ms,
         )
         self.analyzer._notify('on_log_status', status)
-    
+        self._report_split_status()
+
+    def _report_split_status(self):
+        """Tell listeners when split writing fails or works again (issue
+        #111): once per change, as an 'on_warning' from source 'split'."""
+        error = self.log_splitter.write_error if self.log_splitter is not None else None
+        if error == self._split_warning:
+            return
+        self._split_warning = error
+        self.analyzer._notify('on_warning', 'split',
+                              f"Split file writing stopped: {error}" if error else None)
+
     def _handle_log_splitting(self, entry, line: str):
         """Handle log splitting logic based on log entry type."""
         if not self.log_splitter:
