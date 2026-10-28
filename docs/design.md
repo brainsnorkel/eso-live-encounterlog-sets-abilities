@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2461](../src/esolog_tail.py#L2461)*
+*[src/esolog_tail.py:2505](../src/esolog_tail.py#L2505)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:79](../src/esolog_tail.py#L79)*
+*[src/esolog_tail.py:80](../src/esolog_tail.py#L80)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1838](../src/esolog_tail.py#L1838)*
+*[src/esolog_tail.py:1841](../src/esolog_tail.py#L1841)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1853](../src/esolog_tail.py#L1853)*
+*[src/esolog_tail.py:1856](../src/esolog_tail.py#L1856)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:73](../src/esolog_tail.py#L73)*
+*[src/esolog_tail.py:74](../src/esolog_tail.py#L74)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4129](../src/esolog_tail.py#L4129)*
+*[src/esolog_tail.py:4188](../src/esolog_tail.py#L4188)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:373](../src/esolog_tail.py#L373)*
+*[src/esolog_tail.py:374](../src/esolog_tail.py#L374)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -467,6 +467,62 @@ the skill-line synergies (class, guild, Undaunted, werewolf), not the
 trials' mechanics; POTIONS the alchemy block 45221 to 45241, the vendor,
 Alliance War and Crown potions. Werewolf light and heavy attacks count as
 light and heavy attacks.
+
+## Magicka, stamina and ultimate spent and gained
+
+### src/resources.py
+
+*[src/resources.py:1](../src/resources.py#L1)*
+
+Magicka, stamina and ultimate spent and gained in a fight (engine side, no
+Qt). Issue #125.
+
+Design: every unit state in the log is ``unitId, health, magicka, stamina,
+ultimate, werewolf, shield, x, y, heading`` with each pool as
+``current/max``, and every group member's pools are real values, not only
+the logging player's (each of 12 players in an Aetherian Archive split of
+2026-10-24 had 1,100 to 2,600 distinct states, sampled in combat at a p95
+gap of about 100 ms). Nothing logs a cost: a skill's cost is a drop in the
+caster's state, nearly always already in the state its BEGIN_CAST line
+carries (Stampede -3,443 stamina 141 of 141 times), and sometimes on a line
+written at the same millisecond just before it. So the figures are read
+from the states:
+
+- Spent is the sum of the drops between a player's consecutive states, and
+  a drop at the millisecond of one of the player's casts is that cast's
+  cost; light and heavy attacks and weapon swaps cost nothing and are never
+  charged. Over the AA and Sunspire splits that put 70 to 91% of magicka
+  and 60 to 78% of stamina spending on casts; the rest (blocking,
+  sprinting, a cost written later, like Killer's Blade's on the next line)
+  leaves no line of its own and is shown as other spending, not guessed.
+- A gain the game logs is a COMBAT_EVENT POWER_ENERGIZE, whose powerType
+  is a flag (1 magicka, 2 werewolf, 4 stamina, 8 ultimate) and whose unit
+  state is the one after the gain (8,455 of 9,262 rows moved the pool by
+  the logged amount). Its ``overflow`` is always 0, so the gain booked to
+  the row's ability is the pool's own rise there, and a row arriving at a
+  full pool is waste (logged amount less the rise). The giver is the row's
+  source when that is another player (Pillager's Profit, Bountiful
+  Harvest); a source that is not a player, like the enemy carrying Minor
+  Magickasteal, names nobody.
+- Every other rise is "regeneration and unlogged": base regeneration, base
+  ultimate generation and ultimate on hit have no line (only 38 to 55% of
+  magicka and stamina rises, and a quarter of ultimate rises, were on an
+  energize row). It is a residual, not a measurement of regeneration.
+- Logged ultimate never arrived at a full pool (0 of 5,728 points), so lost
+  ultimate cannot be counted; the time at full ultimate is the figure (0 to
+  46% of combat across the AA group). A state's current can exceed its max
+  (19,062 magicka states in AA: the max lags), so "full" is current >= max.
+
+The figures are net per observation: a cost and a gain inside one gap
+cancel. On trial logs that is a few percent; reading the effect lines'
+source states too, as the engine does, keeps it there (a solo March of
+Sacrifices split read stamina spent 29k without them, 41k with).
+
+The engine can resume a fight the game cut in two (COMBAT_RESUME_MS), so
+the figures are kept in one-second buckets per player and summed over the
+fight's window, then pruned at fight end as casts.py prunes its casts. A
+step between two states is capped at MAX_STEP_MS for the time at full, so
+the first state of a fight does not carry the idle time before it.
 
 ## Companions: a row of their own under their owner
 
@@ -1008,7 +1064,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:508](../src/gui/build_render.py#L508)*
+*[src/gui/build_render.py:626](../src/gui/build_render.py#L626)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1434,7 +1490,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:899](../src/esolog_tail.py#L899)*
+*[src/esolog_tail.py:900](../src/esolog_tail.py#L900)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1475,13 +1531,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
+*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:423](../src/esolog_tail.py#L423)*
+*[src/esolog_tail.py:424](../src/esolog_tail.py#L424)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1565,7 +1621,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:105](../src/esolog_tail.py#L105)*
+*[src/esolog_tail.py:106](../src/esolog_tail.py#L106)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1573,7 +1629,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:123](../src/esolog_tail.py#L123)*
+*[src/esolog_tail.py:124](../src/esolog_tail.py#L124)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1719,7 +1775,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:639](../src/esolog_tail.py#L639)*
+*[src/esolog_tail.py:640](../src/esolog_tail.py#L640)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1742,7 +1798,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:765](../src/esolog_tail.py#L765)*
+*[src/esolog_tail.py:766](../src/esolog_tail.py#L766)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1768,7 +1824,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3331](../src/esolog_tail.py#L3331)*
+*[src/esolog_tail.py:3390](../src/esolog_tail.py#L3390)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
