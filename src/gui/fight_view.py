@@ -36,14 +36,14 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
-    QColor, QCursor, QDesktopServices, QFontMetrics, QPalette, QTextCharFormat, QTextCursor,
+    QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument, QTextFormat,
 )
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, ISSUES_GLYPH, build_unit_from_href,
+    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, build_unit_from_href,
     damage_unit_from_href, issues_unit_from_href, pen_crit_unit_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
@@ -86,15 +86,9 @@ def _ring_color(url: QUrl) -> Optional[str]:
     return _query_color(url, _RING_QUERY)
 
 
-def _glyph(url: QUrl, dpr: float, line_px: int = 0):
+def _glyph(url: QUrl, dpr: float):
     """The link glyph a glyph:<kind>?color=rrggbb&px=<n> URL asks for (see
-    gui.glyphs), drawn at device pixel ratio *dpr*; None for a bad URL.
-
-    The build-issues glyph is as tall as the text line, which the page can
-    only estimate from its point size (fight_render.issues_glyph_px: right
-    for Segoe UI, 2 px over for DejaVu Sans's shorter line). So it is held
-    to *line_px*, the view's own line height, when that is smaller: taller
-    than the line, a top-aligned image would make the row taller."""
+    gui.glyphs), drawn at device pixel ratio *dpr*; None for a bad URL."""
     color = _query_color(url, "color")
     try:
         px = int(QUrlQuery(url).queryItemValue("px") or 0)
@@ -102,8 +96,6 @@ def _glyph(url: QUrl, dpr: float, line_px: int = 0):
         return None
     if color is None or px <= 0:
         return None
-    if url.path() == ISSUES_GLYPH and line_px > 0:
-        px = min(px, line_px)
     return glyph_image(url.path(), color, px, dpr)
 
 
@@ -298,7 +290,7 @@ class FightView(QTextBrowser):
                         self._pulse.start()
                 return image
         if resource_type == QTextDocument.ImageResource and name.scheme() == GLYPH_SCHEME:
-            image = _glyph(name, self.devicePixelRatioF(), QFontMetrics(self.font()).height())
+            image = _glyph(name, self.devicePixelRatioF())
             if image is not None:
                 return image
         if resource_type == QTextDocument.ImageResource and name.scheme() == MASK_SCHEME:

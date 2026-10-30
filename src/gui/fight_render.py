@@ -34,11 +34,11 @@ A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
 A player whose build has a possible issue (see build_issues) gets a circled
-i after their class, in the link color, the same mark the fight list puts
-on the fight; hovering it lists the findings and
-clicking it opens a popup with each finding and the rule behind it
-(issues_html, which the build window shows too). A player without findings
-keeps a plain row.
+i right after their name, beside the first-damage *, drawn bold with a
+faint halo in the link color (a glyph, see gui.glyphs; issue #140);
+hovering it lists the findings and clicking it opens a popup with each
+finding and the rule behind it (issues_html, which the build window shows
+too). A player without findings keeps a plain row.
 
 A player's name is a link to their build window (see build_render): it looks
 like the plain bold name it replaces, and the fight view underlines it in the
@@ -133,10 +133,10 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
 # The (i) of possible build issues after a player's name, drawn bold with a
-# faint halo (gui.glyphs, issue #140) on an image as tall as the text line
-# (Segoe UI's line is 1.3 em; FightView holds the image to a shorter line,
-# such as DejaVu Sans's), so the halo has room around a ring the size of
-# the font's ⓘ
+# faint halo (gui.glyphs, issue #140) on an image as tall as the text line,
+# so the halo has room around a ring the size of the font's ⓘ. The main
+# window gives render_html the pane's line height; without it the line is
+# estimated as 1.3 em, Segoe UI's
 ISSUES_GLYPH = "issues"
 ISSUES_GLYPH_LINE = 1.3
 # What a screen reader says for each glyph (its alt text; FightView reads
@@ -255,14 +255,18 @@ def glyph_html(kind: str, color: str, px: int, align: str = "middle") -> str:
             f'alt="{GLYPH_ALT.get(kind, "")}" style="vertical-align:{align}">')
 
 
-def issues_glyph_px(base_pt: float) -> int:
-    """Edge of the build-issues glyph in a pane whose font is *base_pt*
-    points: 16 px at 9 pt, the line's height, so the ring inside is about
-    the font's ⓘ (11 px) and the halo fits around it."""
+def issues_glyph_px(base_pt: float, line_px: int = 0) -> int:
+    """Edge of the build-issues glyph: the pane's line height *line_px*
+    when the caller knows it (the main window gives its fight view's),
+    else an estimate from the font's *base_pt* points; 16 px at 9 pt
+    either way in Segoe UI, so the ring inside is about the font's ⓘ
+    (11 px) and the halo fits around it. Never under 10 px."""
+    if line_px and int(line_px) > 0:
+        return max(10, int(line_px))
     return max(10, round(float(base_pt) * 96 / 72 * ISSUES_GLYPH_LINE))
 
 
-def issues_cue_html(unit_id, color: str, base_pt: float) -> str:
+def issues_cue_html(unit_id, color: str, base_pt: float, line_px: int = 0) -> str:
     """The build-issues mark after a player's name: the bold, faintly
     glowing (i) glyph in *color*, a link to the player's findings.
 
@@ -273,7 +277,7 @@ def issues_cue_html(unit_id, color: str, base_pt: float) -> str:
     its ring then sits centred on the capitals of the name beside it."""
     return (f'<a href="{html.escape(issues_href(unit_id), quote=True)}" '
             f'style="text-decoration:none">'
-            f'{glyph_html(ISSUES_GLYPH, color, issues_glyph_px(base_pt), "top")}</a>')
+            f'{glyph_html(ISSUES_GLYPH, color, issues_glyph_px(base_pt, line_px), "top")}</a>')
 
 
 def damage_href(unit_id) -> str:
@@ -984,7 +988,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
                 text_color: Optional[str] = None, pen_crit_options=None,
-                names=None) -> str:
+                names=None, line_px: int = 0) -> str:
     """Render one fight as HTML for a QTextBrowser.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
@@ -998,6 +1002,8 @@ def render_html(entry, detailed: bool, dark: bool = False,
     although it is a link; the theme's default when not given.
     names: the Hide names mask (gui.name_mask): with it on, every player
     name but the logging player's is drawn as a pixelated stand-in.
+    line_px: the pane's line height in pixels (its font's), which sizes
+    the build-issues mark; estimated from base_pt when not given.
     """
     theme = _theme(dark)
     names = names or NO_MASK
@@ -1108,7 +1114,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # (gui.glyphs, issue #140). After the name's anchor, so a hidden
         # name's stand-in never takes it in
         if unit_id and p.get("build_issues"):
-            name = f"{name}&nbsp;{issues_cue_html(unit_id, theme['link'], base_pt)}"
+            name = f"{name}&nbsp;{issues_cue_html(unit_id, theme['link'], base_pt, line_px)}"
         # Death-recap button for a player who died in this fight
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
@@ -1134,8 +1140,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if note:
             subclass_html += f" <span style='color:{muted}'>· {e(note)}</span>"
         # The shield that opens the player's damage taken window (issue
-        # #98): on every player, since any player takes damage, after the
-        # marks that may precede it; a glyph (gui.glyphs) in the link colour
+        # #98): on every player, since any player takes damage, last in the
+        # cell, after the class text and any death chip; a glyph
+        # (gui.glyphs) in the link colour
         taken_cue = ""
         if unit_id and not p.get("companion"):
             taken_cue = (f' <a href="{e(taken_href(unit_id), quote=True)}" '

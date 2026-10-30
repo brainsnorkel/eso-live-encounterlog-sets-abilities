@@ -36,12 +36,15 @@ contrast (issue #77). The image is as tall as the text line, so the halo
 has 2 to 3 px around the ring, and aligned to the line's top: Qt centres
 a middle-aligned image on half the x-height above the baseline, which
 pushed a line-tall image 2 px under the line and made each marked row
-taller. The page estimates the line from its point size, and the view
-holds the image to its own font's line height (FightView, _glyph) for a
-font whose line is shorter. At 100% scaling the ring's inside is 8 px
-tall, and a dot and stem placed freely ran together into a bar touching
-the ring, so the i is laid out in whole device pixels: a 2 px dot, a clear
-pixel, a 3 px stem, and a clear pixel above and below. No
+taller. The main window passes the fight view's line height into the page
+(render_html's line_px), so the image fits whatever font the system gives;
+without it the page estimates the line as 1.3 em, Segoe UI's. A death
+chip or a hidden name's stand-in on the same line adds only descent, so
+the line's top, and the ring with it, stays level with the name. At 100%
+scaling the ring's inside is 8 px tall, and a dot and stem placed freely
+ran together into a bar touching the ring, so the i is laid out in whole
+device pixels from the image's own width (issues_i_layout): a 2 px dot, a
+clear pixel, a 3 px stem, and a clear pixel above and below. No
 pulse: a still mark, so Reduce motion has nothing to stop. The fight
 list's ⓘ is list text, which cannot be bold or glow without a delegate,
 and the popup is a label that cannot serve these images; the build window
@@ -51,6 +54,8 @@ The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
 (fight_render.glyph_html), which FightView.loadResource answers from here:
 one image per kind, colour, size and ratio, kept for the session.
 """
+
+import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QRadialGradient
@@ -117,7 +122,7 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
         path.closeSubpath()
         painter.drawPath(path)
     elif kind == ISSUES_GLYPH:
-        _draw_issues(painter, color, px, dpr)
+        _draw_issues(painter, color, size, dpr)
     else:
         # A breakdown: three bars, the longest on top, as the damage
         # window ranks abilities
@@ -132,20 +137,29 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
     return image
 
 
-def _draw_issues(painter: QPainter, color: QColor, px: int, dpr: float) -> None:
-    """The build-issues (i): a ring and an i, both heavier than the font's
-    ⓘ, over a halo of the same colour that fades out from the ring to the
-    image's edge. The ring's inside stays clear, so the i keeps the full
-    contrast of the link colour on the pane."""
-    centre = px / 2.0
-    stroke = max(1.5, px / 10.0)
-    outer = px * ISSUES_RING
+def _draw_issues(painter: QPainter, color: QColor, size: int, dpr: float) -> None:
+    """The build-issues (i) on an image *size* device pixels square: a ring
+    and an i, both heavier than the font's ⓘ, over a halo of the same
+    colour that fades out from the ring to the image's edge. The ring's
+    inside stays clear, so the i keeps the full contrast of the link colour
+    on the pane.
+
+    Drawn in device pixels, from the image's own width: at a scaling such
+    as 150% a glyph's logical size times the ratio is not a whole number,
+    the image is rounded to one, and an i laid out from the unrounded size
+    lands between pixels and blurs."""
+    painter.save()
+    painter.scale(1.0 / dpr, 1.0 / dpr)
+    centre = size / 2.0
+    stroke = max(1.5 * dpr, size / 10.0)
+    outer = size * ISSUES_RING
     ring = outer - stroke / 2.0
+    inner = ring - stroke / 2.0
     # The halo: clear inside the ring, strongest at its outer edge, then a
     # soft fall to nothing (a third of the way out it is under half)
     halo = QRadialGradient(QPointF(centre, centre), centre)
     glow = QColor(color)
-    for at, alpha in ((0.0, 0.0), ((ring - stroke / 2.0) / centre, 0.0),
+    for at, alpha in ((0.0, 0.0), (inner / centre, 0.0),
                       (outer / centre, ISSUES_HALO_ALPHA),
                       ((outer + (centre - outer) * 0.35) / centre, ISSUES_HALO_ALPHA * 0.45),
                       (1.0, 0.0)):
@@ -158,24 +172,47 @@ def _draw_issues(painter: QPainter, color: QColor, px: int, dpr: float) -> None:
     painter.setBrush(Qt.NoBrush)
     painter.setPen(QPen(color, stroke))
     painter.drawEllipse(QPointF(centre, centre), ring, ring)
-    # The i: a dot over a stem, laid out in whole device pixels so it stays
-    # crisp at 100% scaling, where the ring's inside is only 8 px tall and
-    # a dot and stem placed freely run together into one bar. The stem's
-    # width has the parity of the image's, so it sits on the ring's centre
+    # The i, in whole pixels (issues_i_layout); its width has the parity of
+    # the image's, so it sits on the ring's centre
+    width, dot_top, dot_rows, stem_top, stem_rows = issues_i_layout(size, inner, stroke * 1.1)
+    left = (size - width) / 2.0
     painter.setPen(Qt.NoPen)
     painter.setBrush(color)
-    edge = px * dpr
-    middle = edge / 2.0
-    inner = (ring - stroke / 2.0) * dpr
-    raw = stroke * 1.1 * dpr
-    width = max(1, round(raw))
-    if abs(edge - round(edge)) < 1e-6 and (width - round(edge)) % 2:
-        width = max(1, width + (1 if raw > width else -1))
-    left = middle - width / 2.0
-    dot_top = round(middle - inner * 0.75)
-    stem_top = dot_top + width + max(1, round(inner * 0.2))
-    stem_bottom = max(stem_top + width, round(middle + inner * 0.78))
-    painter.drawRoundedRect(QRectF(left / dpr, dot_top / dpr, width / dpr, width / dpr),
-                            width * 0.35 / dpr, width * 0.35 / dpr)
-    painter.drawRect(QRectF(left / dpr, stem_top / dpr, width / dpr,
-                            (stem_bottom - stem_top) / dpr))
+    corner = min(width, dot_rows) * 0.35
+    painter.drawRoundedRect(QRectF(left, dot_top, width, dot_rows), corner, corner)
+    painter.drawRect(QRectF(left, stem_top, width, stem_rows))
+    painter.restore()
+
+
+def issues_i_layout(size: int, inner: float, raw_width: float) -> tuple:
+    """Where the (i)'s i goes, in whole device pixels, inside a ring whose
+    inner edge is *inner* pixels from the centre of an image *size* pixels
+    square: (width, dot top row, dot rows, stem top row, stem rows).
+
+    At 100% scaling the ring's inside is only 8 px tall, and a dot and stem
+    placed freely run together into a bar that touches the ring. So the i
+    is a square dot, a clear row, and a stem about three quarters of the
+    inner radius long, centred in the rows the ring leaves clear (a row a
+    third covered by the ring's anti-aliased edge still counts), with a
+    clear row above and below. A small text size leaves too few rows: the
+    stem shortens to the dot's height first, then the dot to one row, and
+    only then do the clear rows above and below go."""
+    width = max(1, round(raw_width))
+    if (width - size) % 2:
+        width += 1 if raw_width > width or width == 1 else -1
+    centre = size / 2.0
+    first = math.ceil(centre - inner - 0.35)
+    last = math.floor(centre + inner - 0.65)
+    rows = max(1, last - first + 1)
+    dot, gap, stem = width, max(1, round(inner * 0.2)), max(1, round(inner * 0.75))
+    room = rows - 2
+    while dot + gap + stem > room and stem > dot:
+        stem -= 1
+    while dot + gap + stem > room and dot > 1:
+        dot -= 1
+    if dot + gap + stem > room:
+        room = rows
+        while dot + gap + stem > room and stem > 1:
+            stem -= 1
+    top = first + max(0, rows - (dot + gap + stem)) // 2
+    return width, top, dot, top + dot + gap, stem

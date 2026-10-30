@@ -136,7 +136,7 @@ class TestCue(IssuesGuiTestCase):
     def test_the_mark_leaves_the_rows_their_height(self):
         """A marked row is as tall as an unmarked one, at three text sizes:
         the image is no taller than the line and aligned to its top."""
-        from PySide6.QtGui import QFont
+        from PySide6.QtGui import QFont, QFontMetrics
 
         from gui.fight_render import render_html
         from gui.fight_view import FightView
@@ -149,7 +149,9 @@ class TestCue(IssuesGuiTestCase):
                         p['build_issues'] = []
                 view = FightView()
                 view.setFont(QFont(view.font().family(), pt))
-                view.setHtml(render_html(entry, detailed=False, base_pt=pt))
+                # The line height, as the main window passes it
+                view.setHtml(render_html(entry, detailed=False, base_pt=pt,
+                                         line_px=QFontMetrics(view.font()).height()))
                 # Wide enough that no cell wraps even in the fallback font
                 # CI draws with (no font directory: every glyph a wide box)
                 view.document().setTextWidth(20000)
@@ -166,25 +168,33 @@ class TestCue(IssuesGuiTestCase):
         self.assertIn('@dualwield possible build issues', ' '.join(view.accessible_text().split()))
         view.deleteLater()
 
-    def test_the_view_holds_the_mark_to_its_line(self):
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QFont, QFontMetrics, QTextDocument
+    def test_the_mark_is_as_tall_as_the_panes_line(self):
+        from gui.fight_render import issues_glyph_px
+        self.assertEqual(issues_glyph_px(9.0), 16)  # Segoe UI's line, estimated
+        self.assertEqual(issues_glyph_px(9.0, line_px=14), 14)  # DejaVu Sans's
+        self.assertEqual(issues_glyph_px(12.0, line_px=21), 21)
+        self.assertEqual(issues_glyph_px(5.0, line_px=7), 10)  # the floor
 
-        from gui.fight_view import FightView
-        view = FightView()
-        view.setFont(QFont(view.font().family(), 9))
-        line = QFontMetrics(view.font()).height()
-        served = view.loadResource(QTextDocument.ImageResource,
-                                   QUrl(f'glyph:issues?color=166ad8&px={line + 4}'))
-        self.assertEqual(served.width(), line)
-        served = view.loadResource(QTextDocument.ImageResource,
-                                   QUrl(f'glyph:issues?color=166ad8&px={line - 2}'))
-        self.assertEqual(served.width(), line - 2)
-        # Only this glyph: the others keep the size asked for
-        served = view.loadResource(QTextDocument.ImageResource,
-                                   QUrl(f'glyph:graph?color=166ad8&px={line + 4}'))
-        self.assertEqual(served.width(), line + 4)
-        view.deleteLater()
+    def test_the_window_sizes_the_mark_from_its_panes_font(self):
+        from PySide6.QtGui import QFontMetrics
+        win = self._window(_entry())
+        try:
+            line = QFontMetrics(win.fight_view.font()).height()
+            sizes = set()
+            block = win.fight_view.document().begin()
+            while block.isValid():
+                it = block.begin()
+                while not it.atEnd():
+                    fmt = it.fragment().charFormat()
+                    if fmt.isImageFormat():
+                        name = fmt.toImageFormat().name()
+                        if name.startswith('glyph:issues'):
+                            sizes.add(name.rsplit('px=', 1)[1])
+                    it += 1
+                block = block.next()
+            self.assertEqual(sizes, {str(max(10, line))})
+        finally:
+            win.close()
 
     def test_the_mark_is_a_bold_ring_and_i_over_a_faint_halo(self):
         from gui.glyphs import glyph_image
@@ -215,6 +225,35 @@ class TestCue(IssuesGuiTestCase):
         # On a scaled display: twice the pixels, the same logical size
         hidpi = glyph_image('issues', '#166ad8', 16, dpr=2.0)
         self.assertEqual((hidpi.width(), hidpi.devicePixelRatio()), (32, 2.0))
+
+    def test_the_i_stays_clear_of_the_ring_at_every_size_and_scaling(self):
+        """Down the middle column: ring, a clear row, the dot, a clear row,
+        the stem in whole pixels, a clear row, ring. At the smallest text
+        size (80% of 9 pt, 12 px) and at fractional scalings, where a
+        layout from the unrounded size blurred the stem (review of #142)."""
+        from gui.glyphs import glyph_image
+        for px, dpr in ((12, 1.0), (13, 1.0), (16, 1.0), (21, 1.0), (31, 1.0),
+                        (15, 1.5), (16, 1.25), (16, 1.5), (13, 1.25), (16, 2.0), (12, 1.75)):
+            image = glyph_image('issues', '#166ad8', px, dpr)
+            size = image.width()
+            column = [image.pixelColor(size // 2, y).alpha() for y in range(size)]
+            marks = ''.join('#' if a == 255 else '+' if a > 200 else '.' if a < 128 else '-'
+                            for a in column)
+            label = f'{px}@{dpr}: {marks} {column}'
+            runs = [run for run in marks.replace('-', '.').split('.') if run]
+            self.assertEqual(len(runs), 4, label)  # ring, dot, stem, ring
+            self.assertEqual(set(runs[2]), {'#'}, label)  # the stem: solid, not blurred
+            # A clear row on each side of the dot and of the stem, inside the
+            # ring's anti-aliased edge ('-')
+            inside = marks[marks.index(runs[0]) + len(runs[0]):marks.rindex(runs[3])].strip('-')
+            self.assertTrue(inside.startswith('.') and inside.endswith('.'), label)
+
+    def test_at_the_smallest_mark_dot_and_stem_still_part(self):
+        from gui.glyphs import issues_i_layout
+        width, dot_top, dot, stem_top, stem = issues_i_layout(10, 2.1, 1.65)
+        self.assertEqual(width, 2)
+        self.assertGreaterEqual(stem_top, dot_top + dot + 1)  # a clear row between
+        self.assertGreaterEqual(stem, 1)
 
     def test_no_findings_no_cue(self):
         from gui.fight_render import render_html
