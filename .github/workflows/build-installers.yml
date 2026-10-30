@@ -196,6 +196,11 @@ jobs:
       id: guard
       run: python3 scripts/release_guard.py "$GITHUB_REF_NAME" "$GITHUB_SHA"
 
+    # docs/design.md is rebuilt by the release commit only (issue #134):
+    # a tag whose design notes lag the code is refused, as above
+    - name: Check the design notes are current
+      run: python3 scripts/build_design_doc.py --check
+
     - name: Download build artifacts
       uses: actions/download-artifact@v8
       with:

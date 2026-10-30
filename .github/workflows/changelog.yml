@@ -1,0 +1,30 @@
+name: Changelog
+
+# Every pull request adds a changelog fragment and leaves CHANGELOG.md and
+# docs/design.md to the release commit, unless it is a release or carries
+# the no-changelog label (issue #134). The label events rerun the check.
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    # The labels are text anyone opening a pull request chooses, so they
+    # reach the script through the environment, never the command line
+    - name: Check the fragment
+      env:
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+        LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+      run: python3 scripts/changelog_check.py "$BASE" "$HEAD" --labels "$LABELS"

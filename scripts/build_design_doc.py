@@ -165,6 +165,8 @@ TOPICS = [
         "src/gui/update_popup.py",
     ]),
     ("Releases: every tag a beta, and a beta made Stable", [
+        "scripts/release.py",
+        "scripts/changelog_check.py",
         "scripts/release_guard.py",
         "scripts/promote_release.py",
         "scripts/build_site.py",
@@ -247,7 +249,8 @@ def extract(source):
     return qualname, path, node.lineno, text
 
 
-def render():
+def build() -> str:
+    """The document's text, from the code as it stands."""
     out = [
         "# Design notes",
         "",
@@ -274,10 +277,28 @@ def render():
                     out += ["```", stripped, "```", ""]
                 else:
                     out += [stripped, ""]
-    OUT.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def render():
+    OUT.write_text(build(), encoding="utf-8")
     return len(TOPICS)
 
 
+def is_current(path=OUT) -> bool:
+    """True when *path* holds what the code would build now. The release
+    commit rebuilds the document and the release job checks it (issue
+    #134): between releases it may lag the docstrings, at a tag it may not."""
+    return path.is_file() and path.read_text(encoding="utf-8") == build()
+
+
 if __name__ == "__main__":
-    n = render()
-    print(f"wrote {OUT.relative_to(ROOT)} from {n} topics")
+    if sys.argv[1:] == ["--check"]:
+        if not is_current():
+            sys.exit(f"{OUT.relative_to(ROOT)} is not what the code builds: the release "
+                     f"commit should have rebuilt it (python scripts/release.py, or "
+                     f"python scripts/build_design_doc.py)")
+        print(f"{OUT.relative_to(ROOT)} is current")
+    else:
+        n = render()
+        print(f"wrote {OUT.relative_to(ROOT)} from {n} topics")
