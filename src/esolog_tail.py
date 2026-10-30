@@ -135,7 +135,8 @@ DAMAGE_RESULTS = frozenset(
 
 # Import our ESO analysis modules
 from damage_stats import FightDamage, dps as dps_over
-from eso_sets import ESOSubclassAnalyzer, lines_from_passives, mastery_of_effect, skill_lines_of
+from eso_sets import (ESOSubclassAnalyzer, lines_from_passives, mastery_effect_table, mastery_of_effect,
+                      skill_lines_of)
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
 NO_FIVE_PIECE_SET_TYPES = {
@@ -2021,7 +2022,10 @@ class ESOLogAnalyzer(ListenerMixin):
         its source, when that is a player of the mastery's class
         (eso_sets.mastery_of_effect). Kept on the player and in their
         session for the rest of the session, a mastery not changing
-        between fights."""
+        between fights. Any other id returns at once: resource gains are
+        among the commonest lines."""
+        if str(ability_id) not in mastery_effect_table():
+            return
         holder = self.current_encounter.player_of(source_unit_id)
         if holder is None:
             return
@@ -2158,7 +2162,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
         # A mastery that gives resources is logged only as the gain, the
         # source its holder (Conservation of Energy, Share the Spoils)
-        if len(entry.fields) > 7 and entry.fields[0] == "POWER_ENERGIZE":
+        if len(entry.fields) > 7 and entry.fields[0] == resources.ENERGIZE:
             self._note_mastery(entry.fields[7], entry.fields[6])
 
         # Track damage events for DPS calculation (only friendly damage)

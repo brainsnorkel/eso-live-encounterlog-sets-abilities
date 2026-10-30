@@ -91,7 +91,9 @@ CLASSES = ("Dragonknight", "Sorcerer", "Nightblade", "Warden", "Necromancer",
            "Templar", "Arcanist")
 SECONDS_BETWEEN_REQUESTS = 5
 # Effects a mastery fires under its buff's name, not its own (see the module
-# docstring for how each was pinned to its mastery)
+# docstring for how each was pinned to its mastery). An id may be a gained
+# effect or a resource gain (POWER_ENERGIZE), whichever the log writes: the
+# engine reads a mastery from both
 SIGNATURE_EFFECTS = {
     "263306": "Lead from the Front",   # Major Berserk, Dragonknights only
     "263307": "Lead from the Front",   # Major Protection, with it

@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2455](../src/esolog_tail.py#L2455)*
+*[src/esolog_tail.py:2459](../src/esolog_tail.py#L2459)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1785](../src/esolog_tail.py#L1785)*
+*[src/esolog_tail.py:1786](../src/esolog_tail.py#L1786)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1800](../src/esolog_tail.py#L1800)*
+*[src/esolog_tail.py:1801](../src/esolog_tail.py#L1801)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4143](../src/esolog_tail.py#L4143)*
+*[src/esolog_tail.py:4147](../src/esolog_tail.py#L4147)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
+*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -1635,7 +1635,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:877](../src/esolog_tail.py#L877)*
+*[src/esolog_tail.py:878](../src/esolog_tail.py#L878)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1682,7 +1682,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
+*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1921,7 +1921,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:617](../src/esolog_tail.py#L617)*
+*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1944,7 +1944,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:743](../src/esolog_tail.py#L743)*
+*[src/esolog_tail.py:744](../src/esolog_tail.py#L744)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1970,7 +1970,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3345](../src/esolog_tail.py#L3345)*
+*[src/esolog_tail.py:3349](../src/esolog_tail.py#L3349)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 

@@ -638,6 +638,8 @@ class TestArmourRow(unittest.TestCase):
         self.assertEqual(row["label"], "Armour 27,300 · 15,226")
         self.assertIn("final boss 36,400", row["explain"])
         self.assertIn("averaged over time", row["explain"])
+        # The label's bare second figure is named in its hover (#137)
+        self.assertIn("the label's second figure is that armour left", row["explain"])
         # A series from before the window (issue #64) covers the whole fight
         self.assertEqual((row["window"], row["window_ms"], row["drawn_ms"], row["fight_ms"],
                           row["weighted_left"]),
