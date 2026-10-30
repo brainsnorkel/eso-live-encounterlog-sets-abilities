@@ -2588,9 +2588,12 @@ which GitHub never points at a prerelease or a draft, so it follows a
 release made Stable, or taken back, exactly. Beta reads the newest ten
 releases (``/releases?per_page=10``, about 80 KB for a full reply, then
 304s like the latest endpoint) and offers the highest version among them,
-prerelease or not. Until the release job publishes betas as prereleases
-(the second step of #134) every release is a full one, and both channels
-offer the same release. A release counts only when its tag is exactly
+prerelease or not. Every release is published as a prerelease, a beta, and
+a promotion makes one a full release (scripts/promote_release.py), so Beta
+gets each release at once and Stable the ones made Stable; until the first
+beta (0.26.0 and before) every release was a full one. A demoted release
+is a draft again, which neither endpoint shows without a login. A release
+counts only when its tag is exactly
 ``vX.Y.Z``: the list also carries data releases (``esobuild-assets-<update>-
 <date>``), and a search for three dotted numbers anywhere in a tag would
 read any such tag as a version. Neither channel offers a version lower
@@ -2720,12 +2723,15 @@ A beta may be promoted when:
 - the maintainer used it live, in at least one session with fights; the
   script cannot see that, so ``--used-live`` says so;
 - no issue labelled ``regression`` affects it. A regression issue names the
-  version that brought the fault in: the first ``X.Y.Z`` in its title, else
-  in its body. While open it affects that version and every later one;
-  once closed, those published before it was closed, since the fix can only
-  be in a later release. So a fixed regression still marks the versions
-  that carried it, which is the rule "no later beta fixes a fault in it".
-  An issue that turns out not to be a regression loses the label.
+  version that brought the fault in as the first ``X.Y.Z`` in its title
+  (never its body, where a pasted "Python 3.14.10" would read as a
+  version). While open it affects that version and every later one; once
+  closed, those published before it was closed, since the fix can only be
+  in a later release. So a fixed regression still marks the versions that
+  carried it, which is the rule "no later beta fixes a fault in it". A
+  regression whose title names no version affects every release until its
+  title does: a rule that cannot be read must stop a promotion, not let it
+  through. An issue that turns out not to be a regression loses the label.
 
 ``--force "<reason>"`` overrides the last three rules and writes the reason
 into the release notes (a crash fix that cannot wait two days); the first
@@ -2736,21 +2742,26 @@ release: every pull request line of the releases in between, oldest first,
 without repeats, and the compare link. The app's update popup shows a
 Stable user these notes, and a Stable user skips every beta in between.
 
-The edit is made with the maintainer's own ``gh`` login, so GitHub starts
-the Pages workflow on its ``released`` event (one raised with a workflow's
-own token would start nothing). ``/releases/latest`` can lag a minute
-behind a change (seen on 2026-10-28), so the check of it retries once.
+``/releases/latest`` can lag a minute behind a change (seen on
+2026-10-28), so the check of it retries once. The script then starts the
+Pages workflow, which rebuilds the home page's buttons on main: a
+``release`` event would run on the tag, and the github-pages environment
+deploys from main only.
 
-``--demote`` turns the Stable release back into a pre-release and marks the
-previous Stable release latest. Installs already updated keep it; new
-Stable users are no longer offered it. That edit raises no event Pages
-listens to, so the script starts the Pages workflow itself.
+``--demote`` pulls a bad Stable release: it becomes a draft again and the
+previous Stable release is marked latest. A draft is invisible to the app
+(both channels read without a login, which never sees drafts), to the home
+page and to ``--candidates``; left a pre-release it would still be the
+newest beta, offered on Beta and on the home page. Installs that already
+updated keep it. ``gh release edit <tag> --draft=false --prerelease``
+publishes it again as a beta.
 
 ``--candidates`` lists the betas newer than Stable and what each still
 lacks: a session uses it to propose a promotion, never to make one.
-``--remind`` (the weekly workflow) opens an issue when a beta that meets
-the time and regression rules was published more than 14 days after the
-Stable release, unless one is open already.
+``--remind`` (the weekly workflow) opens an issue when the oldest beta that
+meets the time and regression rules was published more than 14 days ago,
+which is a beta that has waited two weeks for a decision, unless one is
+open already.
 
 Needs the GitHub CLI, logged in (``GH_TOKEN`` in a workflow).
 
@@ -2788,7 +2799,9 @@ newest beta when one is newer than Stable (the maintainer's choice of
 2026-10-29), and nothing otherwise. It is a nicety: if the release list
 cannot be read, the page is built without it rather than not at all. It
 says to choose Beta in Settings, since the app starts on Stable whichever
-installer it came from.
+installer it came from. The beta is picked by the app's own
+``update_check.newest_release`` (src/, standard library only), so the page
+and the app's Beta channel cannot disagree on which release is the beta.
 
 Standard library only, so the Pages job installs nothing.
 

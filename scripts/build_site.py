@@ -21,7 +21,9 @@ newest beta when one is newer than Stable (the maintainer's choice of
 2026-10-29), and nothing otherwise. It is a nicety: if the release list
 cannot be read, the page is built without it rather than not at all. It
 says to choose Beta in Settings, since the app starts on Stable whichever
-installer it came from.
+installer it came from. The beta is picked by the app's own
+``update_check.newest_release`` (src/, standard library only), so the page
+and the app's Beta channel cannot disagree on which release is the beta.
 
 Standard library only, so the Pages job installs nothing.
 """
@@ -37,6 +39,9 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+import update_check  # src/, standard library only
+
 SITE_DIR = ROOT / "site"
 SCREENCAPS_DIR = ROOT / "docs" / "screencaps"
 DEFAULT_OUT = ROOT / "_site"
@@ -66,10 +71,9 @@ class SiteBuildError(Exception):
     """Anything that must stop the build rather than publish a wrong page."""
 
 
-def fetch_latest_release(url: str = LATEST_RELEASE_URL):
-    """The latest release's JSON from GitHub (or, with RELEASES_URL, the
-    newest releases); GITHUB_TOKEN raises the rate limit when set (the
-    Pages job passes the workflow token)."""
+def fetch_json(url: str):
+    """One GitHub API reply as JSON; GITHUB_TOKEN raises the rate limit when
+    set (the Pages job passes the workflow token)."""
     headers = {"User-Agent": "esolog-tail-site-build",
                "Accept": "application/vnd.github+json"}
     token = os.environ.get("GITHUB_TOKEN")
@@ -79,8 +83,13 @@ def fetch_latest_release(url: str = LATEST_RELEASE_URL):
     try:
         with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
             return json.loads(response.read().decode("utf-8"))
-    except Exception as exc:  # any failure stops the build
-        raise SiteBuildError(f"could not read the latest release: {exc}") from exc
+    except Exception as exc:  # the caller decides whether this stops the build
+        raise SiteBuildError(f"could not read {url}: {exc}") from exc
+
+
+def fetch_latest_release() -> dict:
+    """The latest release, the Stable one; any failure stops the build."""
+    return fetch_json(LATEST_RELEASE_URL)
 
 
 def release_values(release: dict) -> dict:
@@ -117,31 +126,17 @@ def release_values(release: dict) -> dict:
 
 
 def beta_line(releases, stable_version: str) -> str:
-    """The page's line for the newest beta newer than *stable_version* with
-    a Windows installer, or '' when there is none."""
-    stable = tuple(int(part) for part in stable_version.split("."))
-    prefix, suffix = ASSETS["windows_setup_url"]
-    best = None
-    for release in releases or []:
-        if not isinstance(release, dict) or release.get("draft") or not release.get("prerelease"):
-            continue
-        match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", release.get("tag_name") or "")
-        if not match:
-            continue
-        version = tuple(int(part) for part in match.groups())
-        setup = next((a.get("browser_download_url") for a in release.get("assets") or []
-                      if (a.get("name") or "").startswith(prefix)
-                      and (a.get("name") or "").endswith(suffix)), None)
-        if version > stable and setup and (best is None or version > best[0]):
-            best = (version, setup, release.get("html_url") or "")
-    if best is None:
+    """The page's line for the newest release newer than *stable_version*
+    with a Windows installer (a beta: only a promotion makes a release the
+    latest), as the app's Beta channel picks it; '' when there is none."""
+    beta = update_check.newest_release(releases, platform="win32")
+    if beta is None or not update_check.is_newer(beta.version, stable_version):
         return ""
-    version, setup, page = best
-    name = ".".join(str(part) for part in version)
-    notes = f' (<a href="{html_lib.escape(page)}">release notes</a>)' if page else ""
-    return (f'<p class="also">Newer, still being tried out: <a href="{html_lib.escape(setup)}">'
-            f'beta {name}</a> for Windows{notes}. To keep getting betas, choose Beta '
-            f'under Settings → Updates.</p>')
+    notes = (f' (<a href="{html_lib.escape(beta.page_url)}">release notes</a>)'
+             if beta.page_url else "")
+    return (f'<p class="also">Newer, still being tried out: '
+            f'<a href="{html_lib.escape(beta.installer_url)}">beta {beta.version}</a> for '
+            f'Windows{notes}. To keep getting betas, choose Beta under Settings → Updates.</p>')
 
 
 def render(template: str, values: dict) -> str:
@@ -227,7 +222,7 @@ def main(argv=None) -> int:
             releases = []
         else:
             try:
-                releases = fetch_latest_release(RELEASES_URL)
+                releases = fetch_json(RELEASES_URL)
             except SiteBuildError as exc:
                 print(f"warning: no beta line: {exc}", file=sys.stderr)
                 releases = []

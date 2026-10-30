@@ -180,12 +180,17 @@ class RulesTests(unittest.TestCase):
                                       {'name': 'esolog-tail-linux-x86_64-0.27.0.tar.gz'}])
         self.assertFalse(promote.has_all_assets(two))
 
-    def test_a_regression_names_its_version_in_the_title_or_body(self):
+    def test_a_regression_names_its_version_in_the_title(self):
         self.assertEqual(promote.introduced_in(_issue(1, 'Regression in v0.27.0: x')), (0, 27, 0))
-        self.assertEqual(promote.introduced_in(_issue(1, 'Bars wrong', body='since 0.26.1')),
-                         (0, 26, 1))
-        self.assertIsNone(promote.introduced_in(_issue(1, 'Bars wrong', body='no idea')))
+        # Never the body: a pasted environment would read as a version
+        self.assertIsNone(promote.introduced_in(_issue(1, 'Bars wrong',
+                                                       body='Python 3.14.10, Qt 6.12.0')))
         self.assertIsNone(promote.introduced_in(_issue(1, 'IP 10.0.0.1 is not a version')))
+
+    def test_a_regression_without_a_version_blocks_every_release(self):
+        vague = _issue(8, 'Crash since the last beta', body='Python 3.14.10')
+        for tag in ('v0.26.1', 'v0.27.0', 'v0.27.1'):
+            self.assertEqual(promote.regressions_affecting(BY_TAG[tag], [vague]), [8], tag)
 
     def test_which_releases_a_regression_affects(self):
         open_issue = _issue(5, 'Regression in v0.27.0')
@@ -206,6 +211,9 @@ class RulesTests(unittest.TestCase):
         self.assertTrue(any('not newer' in p for p in promote.hard_problems(older, stable)))
         bare = _rel('v0.27.0', assets=[])
         self.assertIn('it lacks one of the three files', promote.hard_problems(bare, stable))
+        data = BY_TAG['esobuild-assets-u52-20261101']
+        self.assertEqual(promote.hard_problems(data, stable),
+                         ['it is not an app release (vX.Y.Z)'])
 
     def test_what_force_overrides(self):
         self.assertEqual(promote.soft_problems(BY_TAG['v0.27.0'], NOW, [], used_live=True), [])
@@ -284,15 +292,26 @@ class ActionTests(unittest.TestCase):
         self.assertIn('## Changes since v0.26.0', notes)
         self.assertEqual(calls, [])
 
-    def test_promotion_flips_the_release_and_checks_latest(self):
+    def test_promotion_flips_the_release_checks_latest_and_starts_pages(self):
         calls = self._github(latest=('v0.26.0', 'v0.27.0'))
         promote.promote('v0.27.0', used_live=True, now=NOW)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         args = calls[0]
         self.assertEqual(args[:3], ('release', 'edit', 'v0.27.0'))
         self.assertIn('--prerelease=false', args)
         self.assertIn('--latest', args)
         self.assertIn('--notes-file', args)
+        # On main: the github-pages environment deploys from main only
+        self.assertEqual(calls[1][:3], ('workflow', 'run', 'pages.yml'))
+
+    def test_a_data_release_as_latest_is_refused_cleanly(self):
+        self._github(latest=('esobuild-assets-u52-20261101',))
+        with self.assertRaisesRegex(promote.PromotionError, 'not an app release'):
+            promote.promote('v0.27.0', used_live=True, dry_run=True, now=NOW)
+        self._github(latest=('v0.26.0',))
+        with self.assertRaisesRegex(promote.PromotionError, 'not an app release'):
+            promote.promote('esobuild-assets-u52-20261101', used_live=True, dry_run=True,
+                            now=NOW)
 
     def test_latest_that_never_moves_is_an_error(self):
         self._github(latest=('v0.26.0', 'v0.26.0', 'v0.26.0'))
@@ -309,14 +328,15 @@ class ActionTests(unittest.TestCase):
                                 now=NOW)
         self.assertIn('before meeting every rule: crash fix', notes)
 
-    def test_demotion_falls_back_to_the_previous_stable(self):
+    def test_demotion_pulls_the_release_and_falls_back(self):
         releases = [dict(r) for r in RELEASES]
         releases[2]['prerelease'] = False          # v0.27.0 had been made Stable
         calls = self._github(latest=('v0.27.0', 'v0.26.0'))
         with patch.object(promote, 'fetch_releases', return_value=releases):
             self.assertEqual(promote.demote('v0.27.0'), 'v0.26.0')
+        # A draft, not a pre-release: a pre-release would still be the newest beta
         self.assertEqual(calls[0][:3], ('release', 'edit', 'v0.27.0'))
-        self.assertIn('--prerelease', calls[0])
+        self.assertIn('--draft', calls[0])
         self.assertEqual(calls[1][:3], ('release', 'edit', 'v0.26.0'))
         self.assertIn('--latest', calls[1])
         self.assertEqual(calls[2][:3], ('workflow', 'run', 'pages.yml'))
@@ -327,25 +347,31 @@ class ActionTests(unittest.TestCase):
             promote.demote('v0.27.0')
 
     def test_the_reminder_waits_for_fourteen_days(self):
-        # v0.27.0 is the newest ready beta, four days after Stable
+        # The oldest beta that qualifies, v0.26.1, has waited nine days
         calls = self._github()
         self.assertIsNone(promote.remind(now=NOW))
         self.assertEqual(calls, [])
 
-    def test_the_reminder_opens_one_issue(self):
-        late = [dict(r) for r in RELEASES]
-        late[3]['published_at'] = '2026-11-20T12:00:00Z'     # v0.27.1, 21 days after Stable
+    def test_the_reminder_measures_the_wait_not_the_gap_to_stable(self):
+        # v0.26.1 came two days after Stable; three weeks on, nobody has decided
         later_now = datetime(2026, 11, 23, tzinfo=timezone.utc)
         calls = self._github()
-        with patch.object(promote, 'fetch_releases', return_value=late):
-            title = promote.remind(now=later_now)
+        title = promote.remind(now=later_now)
         self.assertEqual(title, 'Stable is behind: v0.27.1 could be made Stable')
         self.assertEqual(calls[-1][:2], ('issue', 'create'))
         # One open already: nothing new
         calls = self._github(open_titles=('Stable is behind: v0.27.1 could be made Stable',))
-        with patch.object(promote, 'fetch_releases', return_value=late):
-            self.assertIsNone(promote.remind(now=later_now))
+        self.assertIsNone(promote.remind(now=later_now))
         self.assertFalse(any(c[:2] == ('issue', 'create') for c in calls))
+
+    def test_no_reminder_right_after_a_promotion(self):
+        # v0.27.0 made Stable today: the betas left are newer and young
+        promoted = [dict(r) for r in RELEASES]
+        promoted[2]['prerelease'] = False
+        calls = self._github(latest=('v0.27.0',))
+        with patch.object(promote, 'fetch_releases', return_value=promoted):
+            self.assertIsNone(promote.remind(now=NOW))
+        self.assertEqual(calls, [])
 
     def test_the_command_line(self):
         self._github(latest=('v0.26.0',) * 2)

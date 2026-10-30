@@ -16,12 +16,15 @@ A beta may be promoted when:
 - the maintainer used it live, in at least one session with fights; the
   script cannot see that, so ``--used-live`` says so;
 - no issue labelled ``regression`` affects it. A regression issue names the
-  version that brought the fault in: the first ``X.Y.Z`` in its title, else
-  in its body. While open it affects that version and every later one;
-  once closed, those published before it was closed, since the fix can only
-  be in a later release. So a fixed regression still marks the versions
-  that carried it, which is the rule "no later beta fixes a fault in it".
-  An issue that turns out not to be a regression loses the label.
+  version that brought the fault in as the first ``X.Y.Z`` in its title
+  (never its body, where a pasted "Python 3.14.10" would read as a
+  version). While open it affects that version and every later one; once
+  closed, those published before it was closed, since the fix can only be
+  in a later release. So a fixed regression still marks the versions that
+  carried it, which is the rule "no later beta fixes a fault in it". A
+  regression whose title names no version affects every release until its
+  title does: a rule that cannot be read must stop a promotion, not let it
+  through. An issue that turns out not to be a regression loses the label.
 
 ``--force "<reason>"`` overrides the last three rules and writes the reason
 into the release notes (a crash fix that cannot wait two days); the first
@@ -32,21 +35,26 @@ release: every pull request line of the releases in between, oldest first,
 without repeats, and the compare link. The app's update popup shows a
 Stable user these notes, and a Stable user skips every beta in between.
 
-The edit is made with the maintainer's own ``gh`` login, so GitHub starts
-the Pages workflow on its ``released`` event (one raised with a workflow's
-own token would start nothing). ``/releases/latest`` can lag a minute
-behind a change (seen on 2026-10-28), so the check of it retries once.
+``/releases/latest`` can lag a minute behind a change (seen on
+2026-10-28), so the check of it retries once. The script then starts the
+Pages workflow, which rebuilds the home page's buttons on main: a
+``release`` event would run on the tag, and the github-pages environment
+deploys from main only.
 
-``--demote`` turns the Stable release back into a pre-release and marks the
-previous Stable release latest. Installs already updated keep it; new
-Stable users are no longer offered it. That edit raises no event Pages
-listens to, so the script starts the Pages workflow itself.
+``--demote`` pulls a bad Stable release: it becomes a draft again and the
+previous Stable release is marked latest. A draft is invisible to the app
+(both channels read without a login, which never sees drafts), to the home
+page and to ``--candidates``; left a pre-release it would still be the
+newest beta, offered on Beta and on the home page. Installs that already
+updated keep it. ``gh release edit <tag> --draft=false --prerelease``
+publishes it again as a beta.
 
 ``--candidates`` lists the betas newer than Stable and what each still
 lacks: a session uses it to propose a promotion, never to make one.
-``--remind`` (the weekly workflow) opens an issue when a beta that meets
-the time and regression rules was published more than 14 days after the
-Stable release, unless one is open already.
+``--remind`` (the weekly workflow) opens an issue when the oldest beta that
+meets the time and regression rules was published more than 14 days ago,
+which is a beta that has waited two weeks for a decision, unless one is
+open already.
 
 Needs the GitHub CLI, logged in (``GH_TOKEN`` in a workflow).
 
@@ -114,23 +122,21 @@ def has_all_assets(release) -> bool:
 
 
 def introduced_in(issue):
-    """The version a regression issue names: the first X.Y.Z in its title,
-    else in its body; None when it names none."""
-    for text in (issue.get("title"), issue.get("body")):
-        match = _VERSION_IN_TEXT_RE.search(text or "")
-        if match:
-            return tuple(int(part) for part in match.groups())
-    return None
+    """The version a regression issue names: the first X.Y.Z in its title;
+    None when the title names none."""
+    match = _VERSION_IN_TEXT_RE.search(issue.get("title") or "")
+    return tuple(int(part) for part in match.groups()) if match else None
 
 
 def regressions_affecting(release, issues):
-    """The numbers of the regression issues that affect *release*."""
+    """The numbers of the regression issues that affect *release*; one that
+    names no version affects every release."""
     version = version_of(release)
     published = parse_time(release.get("published_at"))
     hits = []
     for issue in issues:
-        introduced = introduced_in(issue)
-        if introduced is None or version < introduced:
+        introduced = introduced_in(issue) or (0, 0, 0)
+        if version < introduced:
             continue
         closed = parse_time(issue.get("closedAt")) if issue.get("state") == "CLOSED" else None
         if closed is None or published is None or published < closed:
@@ -144,6 +150,8 @@ def hard_problems(release, stable):
     """What no --force can override."""
     if release is None:
         return ["there is no such release"]
+    if version_of(release) is None:
+        return ["it is not an app release (vX.Y.Z)"]
     problems = []
     if release.get("draft"):
         problems.append("it is a draft")
@@ -280,7 +288,11 @@ def _state():
     releases = fetch_releases()
     latest = fetch_latest_tag()
     by_tag = {r.get("tag_name"): r for r in releases}
-    return releases, by_tag, by_tag.get(latest)
+    stable = by_tag.get(latest)
+    if stable is not None and version_of(stable) is None:
+        raise PromotionError(f"the latest release, {latest}, is not an app release; "
+                             "mark the newest Stable app release latest first")
+    return releases, by_tag, stable
 
 
 def promote(tag, used_live=False, reason=None, dry_run=False, now=None):
@@ -304,7 +316,8 @@ def promote(tag, used_live=False, reason=None, dry_run=False, now=None):
     _with_file(notes, lambda path: gh("release", "edit", tag, "--repo", REPO,
                                       "--prerelease=false", "--latest", "--notes-file", path))
     wait_for_latest(tag)
-    print(f"Done: {tag} is Stable. Pages rebuilds on the release's 'released' event.")
+    gh("workflow", "run", "pages.yml", "--repo", REPO)
+    print(f"Done: {tag} is Stable; the Pages workflow was started.")
     return notes
 
 
@@ -318,11 +331,11 @@ def demote(tag, dry_run=False):
     if not earlier:
         raise PromotionError("there is no earlier Stable release to fall back to")
     previous = earlier[-1]["tag_name"]
-    print(f"{tag} goes back to being a beta; {previous} becomes the Stable release again.")
+    print(f"{tag} is pulled (a draft again); {previous} becomes the Stable release again.")
     if dry_run:
         print("Dry run; nothing changed.")
         return previous
-    gh("release", "edit", tag, "--repo", REPO, "--prerelease")
+    gh("release", "edit", tag, "--repo", REPO, "--draft")
     gh("release", "edit", previous, "--repo", REPO, "--latest")
     wait_for_latest(previous)
     gh("workflow", "run", "pages.yml", "--repo", REPO)
@@ -361,10 +374,11 @@ def remind(dry_run=False, now=None):
     if not ready:
         print("No beta meets the time and regression rules.")
         return None
-    newest = ready[-1]
-    gap = parse_time(newest["published_at"]) - parse_time(stable["published_at"])
-    if gap <= STALE:
-        print(f"{newest['tag_name']} is {gap.days} days newer than Stable; not yet behind.")
+    oldest, newest = ready[0], ready[-1]
+    waited = now - parse_time(oldest["published_at"])
+    if waited <= STALE:
+        print(f"The oldest beta that qualifies, {oldest['tag_name']}, has waited "
+              f"{waited.days} days; not yet behind.")
         return None
     open_issues = json.loads(gh("issue", "list", "--repo", REPO, "--state", "open",
                                 "--search", f'"{REMINDER_TITLE}" in:title',
@@ -373,9 +387,9 @@ def remind(dry_run=False, now=None):
         print("A reminder is open already.")
         return None
     title = f"{REMINDER_TITLE}: {newest['tag_name']} could be made Stable"
-    body = (f"Stable is {stable['tag_name']}. {newest['tag_name']} was published {gap.days} "
-            f"days after it, has been out more than {SOAK.total_seconds() / 3600:.0f} hours, "
-            f"and no regression issue is against it.\n\n"
+    body = (f"Stable is {stable['tag_name']}. {oldest['tag_name']} has met the time and "
+            f"regression rules for a while and was published {waited.days} days ago; the "
+            f"newest beta that meets them is {newest['tag_name']}.\n\n"
             f"If it has been used live in a session with fights, make it Stable:\n\n"
             f"    python scripts/promote_release.py {newest['tag_name']} --used-live\n\n"
             f"The betas newer than Stable:\n\n```\n{format_candidates(stable, report, now)}\n```\n\n"
