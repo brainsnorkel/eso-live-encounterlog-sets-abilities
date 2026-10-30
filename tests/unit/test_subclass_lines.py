@@ -138,15 +138,17 @@ class TestSkillLinesFromPassives(unittest.TestCase):
         self.assertEqual(mastery_of_effect('263306', 'Dragonknight', table), 'Lead from the Front')
         self.assertEqual(mastery_of_effect('263306', 'Nightblade', table), '')
         self.assertEqual(mastery_of_effect('263306', None, table), 'Lead from the Front')
-        # The bundled one: 60 effects, 5 signature effects, the 35 passives,
+        # The bundled one: 60 effects, 7 signature effects, the 35 passives,
         # no monster ability
         bundled = mastery_effect_table()
-        self.assertEqual(len(bundled), 100)
+        self.assertEqual(len(bundled), 102)
         self.assertEqual(bundled['263411'], ('Unbound Potential', 'Arcanist'))       # proc effect
         self.assertEqual(bundled['263604'], ('An Eye for Exploitation', 'Nightblade'))  # the passive
         self.assertEqual(bundled['268274'], ('Calculated Defense', 'Sorcerer'))      # group effect
         self.assertEqual(bundled['263825'], ("Tundra's Maw", 'Warden'))             # Major Brittle
         self.assertEqual(bundled['268257'], ('Bountiful Harvest', 'Warden'))        # Major Heroism
+        self.assertEqual(bundled['263619'], ('Devout Guardian', 'Templar'))         # Hold the Line
+        self.assertEqual(bundled['263877'], ('Conservation of Energy', 'Sorcerer'))  # a Magicka gain
         self.assertNotIn('107994', bundled)                                         # Pound of Flesh, a monster's
         self.assertEqual(mastery_of_effect('263369'), 'Abyssal Emergence')
         self.assertEqual(mastery_of_effect('263306', 'Warden'), '')

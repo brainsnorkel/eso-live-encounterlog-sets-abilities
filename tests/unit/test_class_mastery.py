@@ -128,6 +128,77 @@ class TestClassMastery(unittest.TestCase):
         self.assertEqual(_masteries(fights[0], 2), [])
         self.assertEqual(_masteries(fights[0], 1), [])
 
+    def test_resource_masteries_from_the_gain_their_holder_gives(self):
+        # Conservation of Energy fires no effect, only the Magicka gain to
+        # the Sorcerer (263877); Share the Spoils only the Ultimate the
+        # Nightblade (2) gives the group (263689): its holder is the source
+        def energize(ts, ability_id, source, target, power_type=1):
+            return (f'{ts},COMBAT_EVENT,POWER_ENERGIZE,GENERIC,{power_type},1500,0,900,{ability_id},'
+                    f'{_player(source)},{target}')
+        base = ['2000,UNIT_ADDED,3,PLAYER,F,3,0,F,2,4,"Sorc","@sorc",1003,50,3225,0,PLAYER_ALLY,T']
+        fight = _fight(10000, [
+            energize(12000, 263877, 3, '*'),
+            energize(12500, 263689, 2, _player(1), power_type=8),
+            # The same gain from a monster names no one
+            f'13000,COMBAT_EVENT,POWER_ENERGIZE,GENERIC,1,1500,0,900,263877,'
+            f'{_monster(70, 50000, 50000)},{_player(1)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+                      _hit(11000, 3, 5000, 70)]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Conservation of Energy'])
+        self.assertEqual(_masteries(fights[0], 2), ['Share the Spoils'])
+        self.assertEqual(_masteries(fights[0], 1), [])
+
+    def test_a_resource_gain_needs_the_masterys_class(self):
+        # A Warden sourcing Conservation of Energy's gain is not a Sorcerer;
+        # a Nightblade's Nocturnal Inspiration (263613) and a Templar's Hold
+        # the Line Ultimate (263621) name their own masteries
+        def energize(ts, ability_id, source):
+            return (f'{ts},COMBAT_EVENT,POWER_ENERGIZE,GENERIC,8,1,0,900,{ability_id},'
+                    f'{_player(source)},*')
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,4,"Templar","@templar",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,4,4,"Warden","@warden",1004,50,3225,0,PLAYER_ALLY,T',
+        ]
+        fight = _fight(10000, [
+            energize(12000, 263877, 4),
+            energize(12000, 263613, 2),
+            energize(12000, 263621, 3),
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 4), [])
+        self.assertEqual(_masteries(fights[0], 2), ['Nocturnal Inspiration'])
+        self.assertEqual(_masteries(fights[0], 3), ['Devout Guardian'])
+
+    def test_devout_guardian_from_its_hold_the_line_shield(self):
+        # 263619, Hold the Line: the shield a Templar gains on themselves.
+        # A Warden sourcing the id is not a Templar, and another player's
+        # hit the shield absorbed names no one
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,4,"Templar","@templar",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,4,4,"Warden","@warden",1004,50,3225,0,PLAYER_ALLY,T',
+        ]
+        fight = _fight(10000, [
+            _gained(12000, 263619, 3),
+            _gained(12000, 263619, 4),
+            f'12500,COMBAT_EVENT,DAMAGE_SHIELDED,GENERIC,0,900,0,901,263619,{_player(1)},{_player(3)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Devout Guardian'])
+        self.assertEqual(_masteries(fights[0], 4), [])
+        self.assertEqual(_masteries(fights[0], 1), [])
+
     def test_session_cache_carries_a_fired_mastery(self):
         analyzer, _fights = _run(_fight(10000, [_gained(12000, UNBOUND_POTENTIAL, 1)], HEMORRHAGE))
         session = analyzer.player_sessions['@brainsnorkel+Arcanist']

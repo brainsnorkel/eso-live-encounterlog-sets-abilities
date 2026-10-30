@@ -640,7 +640,7 @@ class TestClassPassives(unittest.TestCase):
         self.assertEqual(self.script.mastery_effects(self.MINED, {}), {})
         for mastery in self.script.SIGNATURE_EFFECTS.values():
             self.assertIn(mastery, {'Lead from the Front', "Tundra's Maw", 'Bountiful Harvest',
-                                    "Cutthroat's Focus"})
+                                    "Cutthroat's Focus", 'Devout Guardian'})
 
     def test_file_is_json_one_passive_per_line(self):
         passives = self.script.class_passives(self.SAMPLE)

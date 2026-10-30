@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2434](../src/esolog_tail.py#L2434)*
+*[src/esolog_tail.py:2459](../src/esolog_tail.py#L2459)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1785](../src/esolog_tail.py#L1785)*
+*[src/esolog_tail.py:1786](../src/esolog_tail.py#L1786)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1800](../src/esolog_tail.py#L1800)*
+*[src/esolog_tail.py:1801](../src/esolog_tail.py#L1801)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4131](../src/esolog_tail.py#L4131)*
+*[src/esolog_tail.py:4147](../src/esolog_tail.py#L4147)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
+*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -181,8 +181,8 @@ player whose class is unknown shows every line found.
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
 colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
-the build window's mundus and food line too. Two sources name them,
-because the PLAYER_INFO list holds only the passives whose effect is always
+the build window's mundus and food line too. The PLAYER_INFO list names
+only some of them, because it holds only the passives whose effect is always
 on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
 Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
 in the log as an EFFECT_CHANGED the player is the source of, under one of
@@ -201,9 +201,26 @@ Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
 Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
 those as signature effects (scripts/generate_class_passives.py says how
 each was pinned down), and mastery_of_effect checks the source's class for
-them. The other five (Share the Spoils, Nocturnal Inspiration,
-Conservation of Energy, Bastion of Light, Devout Guardian) work through
-resources, ultimate or unnamed heals and shields and stay invisible.
+them.
+
+Three of the other five give resources and fire no effect at all, only the
+gain: a COMBAT_EVENT POWER_ENERGIZE whose source is the holder, under an id
+carrying the mastery's name (Conservation of Energy's Magicka and Stamina
+to the Sorcerer, Nocturnal Inspiration's Ultimate to the Nightblade, Share
+the Spoils' Magicka, Stamina and Ultimate to the Nightblade's group). The
+engine reads a mastery from those as well. In 103 split logs of September
+and October 2026, every POWER_ENERGIZE under a mastery id, about 244,000
+lines over twelve ids, came from a player of that mastery's class.
+Devout Guardian's shield is an effect called Hold the Line, kept as a
+signature effect. Bastion of Light alone stays invisible: it heals through
+Sacred Ground and gives Ultimate, and nothing in the logs names it.
+
+The game lets a character take two masteries ("selecting two passives",
+its own text). A third shown beside the class means an id fired for
+someone who does not hold its mastery. Font of Power's 263878 has: three
+or four gains late in a session from Sorcerers whose Calculated Defense
+and Conservation of Energy fire from the first minutes to the last; most
+sessions that show Font of Power show dozens to hundreds of gains.
 
 ## Ability icons and ESO-Hub links
 
@@ -1618,7 +1635,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:877](../src/esolog_tail.py#L877)*
+*[src/esolog_tail.py:878](../src/esolog_tail.py#L878)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1665,7 +1682,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
+*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1904,7 +1921,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:617](../src/esolog_tail.py#L617)*
+*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1927,7 +1944,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:743](../src/esolog_tail.py#L743)*
+*[src/esolog_tail.py:744](../src/esolog_tail.py#L744)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1953,7 +1970,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3333](../src/esolog_tail.py#L3333)*
+*[src/esolog_tail.py:3349](../src/esolog_tail.py#L3349)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 

@@ -135,7 +135,8 @@ DAMAGE_RESULTS = frozenset(
 
 # Import our ESO analysis modules
 from damage_stats import FightDamage, dps as dps_over
-from eso_sets import ESOSubclassAnalyzer, lines_from_passives, mastery_of_effect, skill_lines_of
+from eso_sets import (ESOSubclassAnalyzer, lines_from_passives, mastery_effect_table, mastery_of_effect,
+                      skill_lines_of)
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
 NO_FIVE_PIECE_SET_TYPES = {
@@ -2016,6 +2017,25 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._parse_and_update_enemy_health(caster_unit_id, entry.fields[5:8])
 
 
+    def _note_mastery(self, source_unit_id: str, ability_id: str):
+        """Note the Class Mastery a gained effect or a resource gain names on
+        its source, when that is a player of the mastery's class
+        (eso_sets.mastery_of_effect). Kept on the player and in their
+        session for the rest of the session, a mastery not changing
+        between fights. Any other id returns at once: resource gains are
+        among the commonest lines."""
+        if str(ability_id) not in mastery_effect_table():
+            return
+        holder = self.current_encounter.player_of(source_unit_id)
+        if holder is None:
+            return
+        holder_class = holder.get_class_name()
+        mastery = mastery_of_effect(ability_id, None if holder_class == "Unknown" else holder_class)
+        if mastery and mastery not in holder.masteries_seen:
+            holder.masteries_seen.append(mastery)
+            self._update_player_session(holder.unit_id, holder.name, holder.handle,
+                                        masteries=holder.masteries_seen)
+
     def _observe_resources(self, entry: ESOLogEntry):
         """A COMBAT_EVENT's source and target states for the players' pools
         (resources.py). Fields after the time and event type: [7] the
@@ -2139,6 +2159,11 @@ class ESOLogAnalyzer(ListenerMixin):
         # row logs (resources.py)
         if len(entry.fields) > 17:
             self._observe_resources(entry)
+
+        # A mastery that gives resources is logged only as the gain, the
+        # source its holder (Conservation of Energy, Share the Spoils)
+        if len(entry.fields) > 7 and entry.fields[0] == resources.ENERGIZE:
+            self._note_mastery(entry.fields[7], entry.fields[6])
 
         # Track damage events for DPS calculation (only friendly damage)
         # COMBAT_EVENT format: timestamp,COMBAT_EVENT,event_type,damage_type,source_unit_id,damage_value,...
@@ -2535,18 +2560,9 @@ class ESOLogAnalyzer(ListenerMixin):
                                                 entry.timestamp)
 
             # A Class Mastery effect names its holder, the source: a proc
-            # mastery is never in the PLAYER_INFO passive list (eso_sets).
-            # Kept on the player and in their session for the rest of the
-            # session, a mastery not changing between fights
+            # mastery is never in the PLAYER_INFO passive list (eso_sets)
             if effect_type == "GAINED" and self.current_encounter:
-                holder = self.current_encounter.player_of(source_unit_id)
-                holder_class = holder.get_class_name() if holder is not None else ""
-                mastery = (mastery_of_effect(ability_id, None if holder_class == "Unknown" else holder_class)
-                           if holder is not None else "")
-                if mastery and mastery not in holder.masteries_seen:
-                    holder.masteries_seen.append(mastery)
-                    self._update_player_session(holder.unit_id, holder.name, holder.handle,
-                                                masteries=holder.masteries_seen)
+                self._note_mastery(source_unit_id, ability_id)
 
             # Enemy health from the unit states: the target's own ten fields
             # when the target is explicit, the source's when it is "*"

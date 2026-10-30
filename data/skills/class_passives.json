@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-15T08:02:32+00:00",
+ "generated": "2026-10-30T10:49:52+00:00",
  "source": ["https://esolog.uesp.net/exportJson.php?table=playerSkills&fields=id,name,classType,skillLine,baseAbilityId,rank,isPassive,skillType", "https://esolog.uesp.net/exportJson.php?table=minedSkills&fields=id,name,isPassive,target"],
  "attribution": "Skill data from UESP (esolog.uesp.net), CC-BY-SA 2.5",
  "count": 203,
@@ -208,7 +208,7 @@
   "263873": {"class": "Sorcerer", "line": "Class Mastery", "name": "Calculated Defense", "rank": 1},
   "263874": {"class": "Sorcerer", "line": "Class Mastery", "name": "Sphere of Influence", "rank": 1}
  },
- "mastery_effects_count": 65,
+ "mastery_effects_count": 67,
  "mastery_effects": {
   "263197": {"class": "Dragonknight", "name": "Inexorable Descent"},
   "263200": {"class": "Dragonknight", "name": "Booming Voice"},
@@ -241,6 +241,8 @@
   "263553": {"class": "Necromancer", "name": "Pound of Flesh"},
   "263555": {"class": "Necromancer", "name": "Veil's Forfeit"},
   "263613": {"class": "Nightblade", "name": "Nocturnal Inspiration"},
+  "263619": {"class": "Templar", "name": "Devout Guardian", "effect": "Hold the Line"},
+  "263621": {"class": "Templar", "name": "Devout Guardian", "effect": "Hold the Line"},
   "263640": {"class": "Nightblade", "name": "An Eye for Exploitation"},
   "263643": {"class": "Templar", "name": "Steadfast Candescence"},
   "263644": {"class": "Templar", "name": "Steadfast Candescence"},
