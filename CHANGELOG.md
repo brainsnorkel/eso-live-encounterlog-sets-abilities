@@ -2,7 +2,7 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [Unreleased]
+## [0.27.0] - 2026-10-31
 
 ### Added
 - For the maintainer (#134): the release job refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's version, or is not on `main`; `scripts/promote_release.py` makes a beta Stable (or pulls a bad Stable release back to a draft) and lists the betas that could be; a weekly workflow opens an issue when a beta that qualifies has waited more than two weeks
