@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- The buff timeline's Armour row label drops the word "left": `Armour 18,200 · 6,456` (#137). The hover and the click still say the second figure is the armour left on average
+
+### Fixed
+- **Four more Class Masteries show beside the class**: Conservation of Energy, Share the Spoils and Nocturnal Inspiration, which the log writes only as the Magicka, Stamina or Ultimate they give, and Devout Guardian, whose shield the log calls Hold the Line. Each was checked in 103 split logs of September and October 2026: every one of these lines came from a player of the mastery's own class. Bastion of Light is the one mastery the log never names
+
 ## [0.26.0] - 2026-10-30
 
 ### Added

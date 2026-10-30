@@ -48,8 +48,8 @@ player whose class is unknown shows every line found.
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
 colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
-the build window's mundus and food line too. Two sources name them,
-because the PLAYER_INFO list holds only the passives whose effect is always
+the build window's mundus and food line too. The PLAYER_INFO list names
+only some of them, because it holds only the passives whose effect is always
 on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
 Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
 in the log as an EFFECT_CHANGED the player is the source of, under one of
@@ -68,9 +68,26 @@ Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
 Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
 those as signature effects (scripts/generate_class_passives.py says how
 each was pinned down), and mastery_of_effect checks the source's class for
-them. The other five (Share the Spoils, Nocturnal Inspiration,
-Conservation of Energy, Bastion of Light, Devout Guardian) work through
-resources, ultimate or unnamed heals and shields and stay invisible.
+them.
+
+Three of the other five give resources and fire no effect at all, only the
+gain: a COMBAT_EVENT POWER_ENERGIZE whose source is the holder, under an id
+carrying the mastery's name (Conservation of Energy's Magicka and Stamina
+to the Sorcerer, Nocturnal Inspiration's Ultimate to the Nightblade, Share
+the Spoils' Magicka, Stamina and Ultimate to the Nightblade's group). The
+engine reads a mastery from those as well. In 103 split logs of September
+and October 2026, every POWER_ENERGIZE under a mastery id, about 244,000
+lines over twelve ids, came from a player of that mastery's class.
+Devout Guardian's shield is an effect called Hold the Line, kept as a
+signature effect. Bastion of Light alone stays invisible: it heals through
+Sacred Ground and gives Ultimate, and nothing in the logs names it.
+
+The game lets a character take two masteries ("selecting two passives",
+its own text). A third shown beside the class means an id fired for
+someone who does not hold its mastery. Font of Power's 263878 has: three
+or four gains late in a session from Sorcerers whose Calculated Defense
+and Conservation of Energy fire from the first minutes to the last; most
+sessions that show Font of Power show dozens to hundreds of gains.
 """
 
 import json
@@ -435,8 +452,8 @@ def class_passive_table() -> Dict[str, dict]:
 @lru_cache(maxsize=1)
 def mastery_effect_table() -> Dict[str, Tuple[str, str]]:
     """{ability id: (mastery name, class)} for the effects the masteries fire
-    and the mastery passives themselves (both show as EFFECT_CHANGED from
-    the holder); {} when the file is absent or malformed."""
+    and the mastery passives themselves (EFFECT_CHANGED or POWER_ENERGIZE
+    lines from the holder); {} when the file is absent or malformed."""
     effects = _class_passive_file().get("mastery_effects")
     table = {str(ability_id): (str(entry.get("name") or ""), str(entry.get("class") or ""))
              for ability_id, entry in (effects or {}).items()

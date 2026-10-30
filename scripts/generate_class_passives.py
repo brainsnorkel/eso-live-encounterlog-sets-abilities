@@ -23,8 +23,10 @@ Candescence procs), and a passive's icon does not tell it from an active
 The PLAYER_INFO list holds only the passives whose effect is always on. A
 mastery that works by a proc (Unbound Potential, Abyssal Emergence, Wildfire
 Embers, Bright Harbinger...) is never in it; it shows in the log as an
-EFFECT_CHANGED the player is the source of, under one of a few effect ids
-that carry the mastery's name. UESP's mined skill table lists those ids
+EFFECT_CHANGED the player is the source of, or as a POWER_ENERGIZE when it
+gives resources (Conservation of Energy, Share the Spoils, Nocturnal
+Inspiration), under one of a few ids that carry the mastery's name.
+UESP's mined skill table lists those ids
 (97 ids carry a mastery's name on the Update 51 client, the 35 passives
 among them); the ones that are not the passives themselves are kept under
 'mastery_effects'. Two monster abilities are also called Pound of Flesh and
@@ -42,6 +44,17 @@ October 2026 in which each id was sourced by one class alone (263306 and
 times) and whose durations match the masteries' text; the engine checks
 the source's class as well. Nothing in UESP's tables ties them to their
 mastery, so a new one has to be found the same way.
+
+Devout Guardian's shield is called Hold the Line (103 split logs of
+September and October 2026): 263619 is a 6-second effect gained by
+a Templar on themselves (5,989 times, seven named Templars and some
+anonymous ones, never another class), put on
+cooldown after it fires and absorbing hits, and 263621 the Ultimate the
+same Templars gain when it breaks (1,803 POWER_ENERGIZE lines, Templars
+only), as the mastery's text says. Other classes appear on 263619 only as
+the source of a hit the Templar's shield absorbed, which the engine does
+not read. No Templar who gained it showed two other masteries in the same
+session (the game allows two).
 
 Run after an ESO update that adds a class or a skill line (two requests to
 UESP, five seconds apart; UESP asks heavy users to go lightly, so do not
@@ -85,6 +98,8 @@ SIGNATURE_EFFECTS = {
     "263825": "Tundra's Maw",          # Major Brittle for 2.1 s, Wardens only
     "268257": "Bountiful Harvest",     # Major Heroism for 3 s, Wardens only
     "268259": "Cutthroat's Focus",     # Cutthroat's Mockery for 5 s, Nightblades only
+    "263619": "Devout Guardian",       # Hold the Line, a 6 s shield, Templars only
+    "263621": "Devout Guardian",       # Hold the Line, Ultimate when the shield breaks
 }
 
 
