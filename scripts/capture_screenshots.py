@@ -112,6 +112,7 @@ def main():
     # session; the fight list is complete only then (a long fight can take
     # seconds to replay, during which the list looks finished)
     started = {"flag": False}
+    problems = []  # pictures that need another fight, reported at the end
 
     def pump(seconds, until_started=False):
         t0 = time.time()
@@ -195,7 +196,13 @@ def main():
         win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-resources.png")
-        win._build_dialog.view.verticalScrollBar().setValue(0)
+        bar = win._build_dialog.view.verticalScrollBar()
+        top = _anchor_top(win._build_dialog.view.document(), RESOURCES_ANCHOR)
+        if top is not None and bar.value() < int(top) - 1:
+            problems.append("build-resources.png opens on the window's end, not on the Resources "
+                            "heading: this player's Resources section is shorter than the window. "
+                            "Pick a trial fight (--boss) for the guide's picture.")
+        bar.setValue(0)
         win._build_dialog.hide()
 
     # The (i) popup: the first player of the fight with a possible build issue
@@ -315,6 +322,25 @@ def main():
     win.close()
     pump(1)
     scratch.cleanup()
+    if problems:
+        # The pictures are saved; say which one needs another fight
+        sys.exit("\n".join(problems))
+
+
+def _anchor_top(doc, name):
+    """The top of the block that carries the named anchor, as
+    QTextEdit.scrollToAnchor reads it, or None."""
+    block = doc.begin()
+    while block.isValid():
+        if name in block.charFormat().anchorNames():
+            return doc.documentLayout().blockBoundingRect(block).top()
+        it = block.begin()
+        while not it.atEnd():
+            if name in it.fragment().charFormat().anchorNames():
+                return doc.documentLayout().blockBoundingRect(block).top()
+            it += 1
+        block = block.next()
+    return None
 
 
 if __name__ == "__main__":

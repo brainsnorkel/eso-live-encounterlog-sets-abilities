@@ -425,11 +425,10 @@ def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
 
 def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float, e) -> str:
     gear = {str(row.get("slot")): row for row in p.get("gear") or []}
-    muted, rule = theme["muted"], _RULES[bool(dark)]
+    muted = theme["muted"]
     if not gear:
         return f"<p style='margin:8px 0;color:{muted}'>{NO_GEAR}</p>"
-    under = (f"border-bottom-style:solid;border-bottom-width:1px;"
-             f"border-bottom-color:{rule}")
+    under = _rule_css(dark)
     # Not 100% wide: Qt rounds percentage columns up to a pixel past the pane
     parts = ["<table cellpadding='3' cellspacing='0' width='99%'><tr>"]
     parts.extend(f"<td width='{width}%' align='{align}' style='color:{muted};{under}'>"
@@ -503,19 +502,31 @@ def _casters_text(casters, e, names, color: str, pt: float) -> str:
     return ", ".join(parts)
 
 
-def _heading_html(title: str, extra: str, dark: bool, theme, anchor: str) -> str:
+def _heading_css(theme) -> str:
+    """A section heading's text: bold, in the muted colour, with room above."""
+    return f"padding-top:7px;color:{theme['muted']};font-weight:bold"
+
+
+def _rule_css(dark: bool) -> str:
+    """The rule under a heading or a table head, on a table cell (the one
+    element Qt rich text draws a border on)."""
+    return (f"border-bottom-style:solid;border-bottom-width:1px;"
+            f"border-bottom-color:{_RULES[bool(dark)]}")
+
+
+def _heading_html(title: str, extra: str, dark: bool, theme, anchor: str = "") -> str:
     """A section heading with its rule, as a one-cell table head: Qt rich
     text draws borders on table cells and never on a <p>, so the Damage
     dealt and Resources headings, <p> elements with a border-bottom until
     issue #143, had no rule while the gear grid and the Penetration and
-    Critical damage heads (the same form inside their tables) had one.
-    *extra* follows the title (a link, a caption); the anchor goes first,
-    where scrollToAnchor finds it."""
-    muted, rule = theme["muted"], _RULES[bool(dark)]
-    return (f"<a name='{anchor}'></a>"
-            f"<table cellpadding='3' cellspacing='0' width='99%'><tr>"
-            f"<td style='padding-top:7px;color:{muted};font-weight:bold;"
-            f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}'>"
+    Critical damage heads (the same form inside their tables) had one; the
+    damage taken window's section titles (taken_render) take this form too.
+    *extra* follows the title (a link, a caption); the anchor, when there
+    is one, goes first, where scrollToAnchor finds it: Qt hangs an empty
+    named anchor on the next text it lays out, the heading cell."""
+    name = f"<a name='{anchor}'></a>" if anchor else ""
+    return (f"{name}<table cellpadding='3' cellspacing='0' width='99%'><tr>"
+            f"<td style='{_heading_css(theme)};{_rule_css(dark)}'>"
             f"{title}{extra}</td></tr></table>")
 
 
@@ -580,7 +591,7 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
     gains that gave the most, each giver through the Hide names mask."""
     muted = theme["muted"]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
-    heading = f"padding-top:7px;color:{muted};font-weight:bold"
+    heading = _heading_css(theme)
     title = _heading_html(RESOURCES_TITLE,
                           f" <span style='font-weight:normal;{small}'>· {RESOURCES_CAPTION}</span>",
                           dark, theme, RESOURCES_ANCHOR)
@@ -690,10 +701,9 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
     group = getattr(entry, "pen_crit", None) or {}
     if not data and not group:
         return ""
-    muted, rule = theme["muted"], _RULES[bool(dark)]
+    muted = theme["muted"]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
-    heading = f"padding-top:7px;color:{muted};font-weight:bold"
-    under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
+    heading, under = _heading_css(theme), _rule_css(dark)
     # The same sums and effective figures the fight pane's row shows
     totals = player_totals(data, group, options)
     instanced, cap, crit_cap = totals["instanced"], totals["cap"], totals["crit_cap"]

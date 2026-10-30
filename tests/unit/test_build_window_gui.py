@@ -1108,6 +1108,49 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
             self.assertIn('border-bottom-style:solid', cell, title)
         self.assertNotIn("<p style='margin:6px 0 2px 0;padding-top:7px", html)
 
+    def test_the_anchors_scroll_the_window_to_their_headings(self):
+        # The empty <a name> now precedes a <table>: Qt hangs it on the
+        # heading cell, where scrollToAnchor (the pen/crit token's click,
+        # the screenshot script) must find it
+        from PySide6.QtWidgets import QApplication
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
+        dialog = BuildDialog()
+        try:
+            dialog.show_build(_entry(), '1', dark=False)
+            dialog.show()
+            QApplication.processEvents()
+            view, bar = dialog.view, dialog.view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            for anchor in (DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR):
+                top = _anchor_top(view.document(), anchor)
+                self.assertIsNotNone(top, anchor)
+                view.scrollToAnchor(anchor)
+                self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1, anchor)
+                self.assertGreater(bar.value(), 0, anchor)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+
+def _anchor_top(doc, name):
+    """The top of the block that carries the named anchor, as
+    QTextEdit.scrollToAnchor reads it (on the block's format for an anchor
+    before a <p>, on a fragment's for one before a <table>); None if the
+    document has no such anchor."""
+    block = doc.begin()
+    while block.isValid():
+        if name in block.charFormat().anchorNames():
+            return doc.documentLayout().blockBoundingRect(block).top()
+        it = block.begin()
+        while not it.atEnd():
+            if name in it.fragment().charFormat().anchorNames():
+                return doc.documentLayout().blockBoundingRect(block).top()
+            it += 1
+        block = block.next()
+    return None
+
 
 if __name__ == '__main__':
     unittest.main()
