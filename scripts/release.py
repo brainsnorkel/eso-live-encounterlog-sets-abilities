@@ -13,17 +13,21 @@ Three changes together end that:
   headings CHANGELOG.md uses. Two pull requests never edit the same file,
   and the CI check (scripts/changelog_check.py) asks every pull request for
   one.
-- ``docs/design.md`` is regenerated in the release commit only. Between
-  releases the docstrings it is built from are the source; the release job
-  refuses a tag whose design notes are stale (build_design_doc --check).
+- ``docs/design.md`` is rebuilt in the release commit only. Between
+  releases the docstrings it is built from are the source; a tag whose
+  design notes lag the code is refused, here before the tag is made and in
+  the tag's workflow run before either build (build_design_doc --check).
 - This script makes the release commit's edits the same way every time:
   the version in src/version.py, the fragments gathered under
-  ``## [X.Y.Z] - YYYY-MM-DD`` at the top of CHANGELOG.md (any
-  ``[Unreleased]`` section a branch from before fragments still carries is
-  folded in, not lost), the fragments removed, the design notes rebuilt,
-  and one commit, ``chore: release X.Y.Z``. Sections come out in Keep a
-  Changelog's order and, within a section, in fragment file name order, so
-  the same fragments always give the same text.
+  ``## [X.Y.Z] - YYYY-MM-DD`` at the top of CHANGELOG.md (an
+  ``[Unreleased]`` section a branch from before fragments still carries at
+  the top is folded in, not lost), the fragments removed, the design notes
+  rebuilt, and one commit, ``chore: release X.Y.Z``. Sections come out in
+  Keep a Changelog's order and, within a section, in fragment file name
+  order, so the same fragments always give the same text. Everything that
+  can refuse (an unreadable fragment, one git does not track yet, a design
+  note that cannot be built) is checked before the first file is written,
+  so a refusal never leaves a release half made.
 
 The release commit goes inside the last pull request of the release, or one
 of its own, since main takes pull requests only. The script refuses to
@@ -32,27 +36,39 @@ than the current one. ``minor`` or ``patch`` picks the next number; the
 choice stays the releasing session's (a release with only Fixed entries is
 a patch).
 
-Once that pull request is merged, ``--tag X.Y.Z`` finds the commit on
+A fragment can reach the release branch after the release commit: the
+branch must be up to date with main to merge, and a merge of main brings in
+whatever merged meanwhile. Its change would ship in the build while its
+note waited for the next release. The Changelog check refuses a release
+pull request that still holds fragments, and ``--tag`` refuses such a merge
+commit; the remedy is to drop the release commit (``git revert``) and run
+the script again.
+
+Once the pull request is merged, ``--tag X.Y.Z`` finds the commit on
 origin/main that first carries the version (the merge commit, on main's
-first-parent line), runs the release job's own checks on it
-(scripts/release_guard.py) and makes the annotated tag. Pushing the tag
-publishes a beta to every install on the Beta channel, so it happens only
-with ``--push``; ``--watch`` then waits for the tag's workflow run and
-checks what it published: a pre-release with all three files, and
-``/releases/latest`` (Stable) not moved. Making a beta Stable stays
-scripts/promote_release.py's, on the maintainer's word.
+first-parent line), runs the release job's tag checks on it
+(scripts/release_guard.py), checks its design notes and its changelog.d/,
+and makes the annotated tag. Pushing the tag publishes a beta to every
+install on the Beta channel, so it happens only with ``--push``, and
+``--dry-run`` runs every check and makes nothing. ``--watch`` then follows
+the tag's workflow run and checks what it published: a pre-release with
+all three files, and ``/releases/latest`` (Stable) not moved. Making a beta
+Stable stays scripts/promote_release.py's, on the maintainer's word.
 
 Needs git; ``--watch`` needs the GitHub CLI, logged in.
 
     python scripts/release.py minor|patch|X.Y.Z [--date YYYY-MM-DD] [--trailer TEXT] [--dry-run]
-    python scripts/release.py --tag X.Y.Z [--push] [--watch]
+    python scripts/release.py --tag X.Y.Z [--dry-run | --push [--watch]]
 """
 
 import argparse
+import io
 import json
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -125,12 +141,17 @@ def merge(into: dict, notes: dict) -> dict:
     return into
 
 
+def is_fragment_name(name: str) -> bool:
+    """A fragment is a ``.md`` file directly in changelog.d/, not the guide."""
+    return name.endswith(".md") and name != FRAGMENT_GUIDE and "/" not in name
+
+
 def fragment_files(root: Path) -> list:
-    """The fragments in changelog.d/, by file name; the guide is not one."""
+    """The fragments in changelog.d/, by file name."""
     folder = root / FRAGMENTS
     if not folder.is_dir():
         return []
-    return sorted(p for p in folder.glob("*.md") if p.name != FRAGMENT_GUIDE)
+    return sorted(p for p in folder.glob("*.md") if is_fragment_name(p.name))
 
 
 def gather(root: Path) -> tuple:
@@ -221,6 +242,8 @@ def git(root: Path, *args, check: bool = True) -> str:
 
 
 def current_version(root: Path) -> str:
+    """``__version__`` in the working tree's src/version.py (the release
+    commit is made from the working tree; release_guard reads commits)."""
     match = re.search(r"""^__version__\s*=\s*["']([^"']+)["']""",
                       (root / "src" / "version.py").read_text(encoding="utf-8"), re.MULTILINE)
     if not match:
@@ -228,12 +251,21 @@ def current_version(root: Path) -> str:
     return match.group(1)
 
 
+def build_design_text() -> str:
+    """docs/design.md as the code builds it; build_design_doc exits on a
+    source it cannot read, which is a refusal here."""
+    try:
+        return build_design_doc.build()
+    except SystemExit as exc:
+        raise ReleaseError(f"the design notes cannot be built: {exc}") from None
+
+
 # ---- the release commit ----
 
 def prepare(wanted: str, day: str = "", trailers=(), dry_run: bool = False,
-            root: Path = ROOT, regenerate=None) -> str:
-    """Make the release commit; returns the version. *regenerate* rebuilds
-    docs/design.md (build_design_doc.render unless a test passes its own)."""
+            root: Path = ROOT, build_design=None) -> str:
+    """Make the release commit; returns the version. *build_design* gives
+    docs/design.md's text (build_design_text unless a test passes its own)."""
     if not dry_run:
         branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
         if branch in ("main", "HEAD"):
@@ -241,6 +273,11 @@ def prepare(wanted: str, day: str = "", trailers=(), dry_run: bool = False,
         if git(root, "status", "--porcelain", "--untracked-files=no"):
             raise ReleaseError("uncommitted changes: commit or set them aside first, so the "
                                "release commit holds only the release")
+    untracked = git(root, "ls-files", "--others", "--exclude-standard", "--", FRAGMENTS,
+                    check=False)
+    if untracked and not dry_run:
+        raise ReleaseError(f"fragments git does not track yet: {untracked.replace(chr(10), ', ')}; "
+                           f"commit them first")
     current = current_version(root)
     changelog_path = root / "CHANGELOG.md"
     changelog, leftover = split_unreleased(changelog_path.read_text(encoding="utf-8"))
@@ -250,22 +287,24 @@ def prepare(wanted: str, day: str = "", trailers=(), dry_run: bool = False,
         raise ReleaseError(f"nothing to release: no fragments in {FRAGMENTS}/ and no "
                            f"[Unreleased] section")
     version = next_version(current, wanted)
-    # The maintainer's local date, as the releases before the script had it
     day = day or datetime.now(timezone.utc).astimezone().date().isoformat()
     section = release_section(version, day, notes)
     print(f"{current} -> {version} (the notes suggest a {suggested_bump(notes)} release); "
           f"{len(files)} fragment{'s' if len(files) != 1 else ''}"
-          f"{' and the [Unreleased] section' if leftover else ''}\n")
+          f"{' and the [Unreleased] section' if leftover else ''}"
+          f"{' (some not tracked by git yet)' if untracked else ''}\n")
     print(section)
     if dry_run:
         return version
+    # Everything that can refuse is done; from here only writes
+    design_text = (build_design or build_design_text)()
     version_path = root / "src" / "version.py"
     version_path.write_text(set_version(version_path.read_text(encoding="utf-8"), version),
                             encoding="utf-8")
     changelog_path.write_text(add_release(changelog, section), encoding="utf-8")
+    (root / "docs" / "design.md").write_text(design_text, encoding="utf-8")
     if files:
         git(root, "rm", "-q", "--", *[p.relative_to(root).as_posix() for p in files])
-    (regenerate or build_design_doc.render)()
     git(root, "add", "--", "src/version.py", "CHANGELOG.md", "docs/design.md")
     message = f"chore: release {version}"
     if trailers:
@@ -290,9 +329,33 @@ def merge_commit_of(version: str, ref: str = "origin/main", root: Path = ROOT) -
     return ""
 
 
-def make_tag(version: str, push: bool = False, ref: str = "origin/main", fetch: bool = True,
-             root: Path = ROOT) -> str:
-    """Tag the merged release *version*; returns the tagged commit."""
+def fragments_at(commit: str, root: Path = ROOT) -> list:
+    """The fragments *commit* still holds in changelog.d/."""
+    names = git(root, "ls-tree", "--name-only", f"{commit}:{FRAGMENTS}", check=False)
+    return [name for name in names.splitlines() if is_fragment_name(name)]
+
+
+def design_current_at(commit: str, root: Path = ROOT) -> bool:
+    """True when docs/design.md at *commit* is what that commit's code
+    builds: its src/, scripts/ and design.md, unpacked in a scratch folder
+    and checked with that commit's own build_design_doc.py."""
+    done = subprocess.run(["git", "archive", "--format=tar", commit, "src", "scripts",
+                           "docs/design.md"], cwd=root, capture_output=True, check=False)
+    if done.returncode != 0:
+        raise ReleaseError(f"git archive failed: {done.stderr.decode(errors='replace').strip()}")
+    with tempfile.TemporaryDirectory() as tmp:
+        with tarfile.open(fileobj=io.BytesIO(done.stdout)) as archive:
+            archive.extractall(tmp, filter="data")
+        check = subprocess.run([sys.executable, "-I", str(Path(tmp) / "scripts" / "build_design_doc.py"),
+                                "--check"], cwd=tmp, capture_output=True, text=True, check=False)
+    return check.returncode == 0
+
+
+def make_tag(version: str, push: bool = False, dry_run: bool = False, ref: str = "origin/main",
+             fetch: bool = True, root: Path = ROOT, design_check=None) -> str:
+    """Tag the merged release *version*; returns the commit it is (or, in a
+    dry run, would be) on. *design_check* is design_current_at unless a
+    test passes its own."""
     tag = f"v{version}"
     parse_version(version)
     if fetch:
@@ -306,10 +369,23 @@ def make_tag(version: str, push: bool = False, ref: str = "origin/main", fetch: 
         raise ReleaseError(f"no commit on {ref} carries {version}: is the release pull "
                            f"request merged (and fetched)?")
     errors = release_guard.check(tag, commit, release_guard.version_at(commit, root), ref, root)
+    left = fragments_at(commit, root)
+    if left:
+        errors.append(f"changelog.d/ at {commit[:12]} still holds {', '.join(left)}: merged "
+                      f"after the release commit, so their changes ship in {tag} with their "
+                      f"notes left for the next release; revert the release commit on a "
+                      f"branch and run release.py again")
+    if not (design_check or design_current_at)(commit, root):
+        errors.append(f"docs/design.md at {commit[:12]} is not what its code builds: the tag's "
+                      f"run would refuse it; rebuild it in a release commit")
     if errors:
         raise ReleaseError("; ".join(errors))
+    subject = git(root, "log", "-1", "--format=%s", commit)
+    if dry_run:
+        print(f"Would tag {tag} on {commit[:12]} ({subject}); every check passed")
+        return commit
     git(root, "tag", "-a", tag, "-m", TAG_MESSAGE.format(version=version), commit)
-    print(f"Tagged {tag} on {commit[:12]} ({git(root, 'log', '-1', '--format=%s', commit)})")
+    print(f"Tagged {tag} on {commit[:12]} ({subject})")
     if push:
         git(root, "push", "-q", "origin", tag)
         print(f"Pushed {tag}: the Build Installers run publishes it as a beta")
@@ -319,7 +395,10 @@ def make_tag(version: str, push: bool = False, ref: str = "origin/main", fetch: 
 
 
 def gh(*args) -> str:
-    done = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    """The GitHub CLI on this repository, whatever folder the script is
+    run from."""
+    done = subprocess.run(["gh", *args, "--repo", REPO], capture_output=True, text=True,
+                          check=False)
     if done.returncode != 0:
         raise ReleaseError(f"gh {' '.join(args[:2])} failed: {done.stderr.strip()}")
     return done.stdout
@@ -327,7 +406,8 @@ def gh(*args) -> str:
 
 def published_problems(release: dict, latest_tag: str, tag: str) -> list:
     """What is wrong with a just-published beta: it must be a pre-release,
-    not a draft, with all three files, and not GitHub's latest release."""
+    not a draft, with all three files named, and not GitHub's latest
+    release."""
     problems = []
     if not release.get("isPrerelease"):
         problems.append(f"{tag} is not a pre-release")
@@ -344,7 +424,7 @@ def published_problems(release: dict, latest_tag: str, tag: str) -> list:
 
 
 def watch(version: str) -> list:
-    """Wait for the tag's Build Installers run, then check the release."""
+    """Follow the tag's Build Installers run, then check the release."""
     tag = f"v{version}"
     run_id = ""
     deadline = time.monotonic() + RUN_APPEARS_S
@@ -356,11 +436,13 @@ def watch(version: str) -> list:
             time.sleep(10)
     if not run_id:
         raise ReleaseError(f"no Build Installers run for {tag} after {RUN_APPEARS_S} s")
-    print(f"Watching run {run_id} ...", flush=True)
-    done = subprocess.run(["gh", "run", "watch", run_id, "--exit-status", "--interval", "30"],
-                          capture_output=True, text=True, check=False)
+    print(f"Following run {run_id}", flush=True)
+    # The run's progress goes straight to the terminal: a build takes 15 minutes
+    done = subprocess.run(["gh", "run", "watch", run_id, "--repo", REPO, "--exit-status",
+                           "--interval", "30"], check=False)
     if done.returncode != 0:
-        raise ReleaseError(f"run {run_id} failed: gh run view {run_id} --log-failed")
+        raise ReleaseError(f"run {run_id} failed; nothing was published "
+                           f"(gh run view {run_id} --repo {REPO} --log-failed)")
     release = json.loads(gh("release", "view", tag, "--json", "isPrerelease,isDraft,assets"))
     latest = gh("api", f"repos/{REPO}/releases/latest", "--jq", ".tag_name").strip()
     problems = published_problems(release, latest, tag)
@@ -381,14 +463,17 @@ def main(argv=None) -> int:
                         help="a line for the end of the commit message (repeatable)")
     parser.add_argument("--push", action="store_true", help="push the tag (publishes the beta)")
     parser.add_argument("--watch", action="store_true",
-                        help="after --push, wait for the run and check the release")
-    parser.add_argument("--dry-run", action="store_true", help="show the notes, change nothing")
+                        help="after --push, follow the run and check the release")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="run every check, show the result, change nothing")
     args = parser.parse_args(argv)
     try:
         if args.tag:
+            if args.dry_run and (args.push or args.watch):
+                parser.error("--dry-run makes no tag, so there is nothing to push or watch")
             if args.watch and not args.push:
-                parser.error("--watch waits for the run a pushed tag starts: add --push")
-            make_tag(args.tag, push=args.push)
+                parser.error("--watch follows the run a pushed tag starts: add --push")
+            make_tag(args.tag, push=args.push, dry_run=args.dry_run)
             if args.watch and watch(args.tag):
                 return 1
         elif args.version:

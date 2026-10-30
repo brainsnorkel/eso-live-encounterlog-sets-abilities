@@ -96,6 +96,13 @@ jobs:
         python-version: '3.14'
         check-latest: true
 
+    # docs/design.md is rebuilt by the release commit only (issue #134): a
+    # tag whose design notes lag the code fails here, in a second, before
+    # either build, and the release job never runs
+    - name: Check the design notes are current
+      if: startsWith(github.ref, 'refs/tags/')
+      run: python scripts/build_design_doc.py --check
+
     # Qt's X11 and Wayland plugins link against these. PyInstaller bundles
     # the ones it finds, so installing them here is what lets the tarball
     # start on a desktop that lacks them (libxcb-cursor0 is a common gap).
@@ -195,11 +202,6 @@ jobs:
     - name: Check the tag
       id: guard
       run: python3 scripts/release_guard.py "$GITHUB_REF_NAME" "$GITHUB_SHA"
-
-    # docs/design.md is rebuilt by the release commit only (issue #134):
-    # a tag whose design notes lag the code is refused, as above
-    - name: Check the design notes are current
-      run: python3 scripts/build_design_doc.py --check
 
     - name: Download build artifacts
       uses: actions/download-artifact@v8

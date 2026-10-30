@@ -13,4 +13,4 @@ Each change adds its release notes here as a file of its own, instead of editing
 
 A fragment with text outside those headings, or with none of them, is refused when the release is cut, and by the unit tests before that.
 
-A pull request that needs no entry (a typo in the guide, a CI change, tests alone) carries the `no-changelog` label instead. The *Changelog* check on every pull request asks for one or the other, and refuses edits to `CHANGELOG.md` and `docs/design.md`, which only the release commit writes.
+A pull request that needs no entry (a typo in the guide, a CI change, tests alone) carries the `no-changelog` label instead. The *Changelog* check on every pull request asks for a new fragment of the pull request's own or the label. Whatever the label, it refuses edits to `CHANGELOG.md` and `docs/design.md`, which only the release commit writes.

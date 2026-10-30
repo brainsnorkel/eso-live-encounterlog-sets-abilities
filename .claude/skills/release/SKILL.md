@@ -12,7 +12,7 @@ Every release of ESO Log Tail is first a **beta**: the tag's workflow run publis
 
 **A change's changelog entry** (every pull request, not only releases)
 
-Add `changelog.d/<issue>-<short-slug>.md` with the entry under `### Added`, `### Changed` or `### Fixed` (also `Deprecated`, `Removed`, `Security`), written for the app's users, the way `CHANGELOG.md` reads. Never edit `CHANGELOG.md` or `docs/design.md` in a pull request: the release commit writes both, and the *Changelog* check refuses them. A pull request that needs no entry gets the `no-changelog` label (`gh pr edit <n> --add-label no-changelog`). Format and example: `changelog.d/README.md`.
+Add `changelog.d/<issue>-<short-slug>.md` with the entry under `### Added`, `### Changed` or `### Fixed` (also `Deprecated`, `Removed`, `Security`), written for the app's users, the way `CHANGELOG.md` reads. Never edit `CHANGELOG.md` or `docs/design.md` in a pull request: the release commit writes both, and the *Changelog* check refuses them, label or not. A pull request that needs no entry gets the `no-changelog` label (`gh pr edit <n> --add-label no-changelog`), which waives the fragment only. Format and example: `changelog.d/README.md`.
 
 **Cutting a beta**
 
@@ -24,13 +24,14 @@ Add `changelog.d/<issue>-<short-slug>.md` with the entry under `### Added`, `###
    python scripts/release.py minor --trailer "Co-Authored-By: <the attribution line this session uses>"
    ```
    `minor` for anything Added, Changed, Deprecated or Removed; `patch` when there are only Fixed or Security entries (the script prints its suggestion); `X.Y.Z` to name it. The script refuses on `main`, over uncommitted changes, with no fragments, or with a version that is not higher.
-4. Push, open or update the pull request, wait for its checks (`gh pr checks <n> --watch`). The release commit needs no new review under the review-on-open rule.
+4. Push, open or update the pull request, wait for its checks (`gh pr checks <n> --watch`). The release commit needs no new review under the review-on-open rule. If the branch has to take a merge of `main` and that brings in new fragments, the *Changelog* check refuses the release: `git revert --no-edit <release commit>`, then run step 3 again, so their notes are in this release, which ships their changes.
 5. Merge: `gh pr merge <n> --merge`. If the merge is refused, give the maintainer the link and stop; never merge locally and push `main`.
 6. Tag, publish and check:
    ```
+   python scripts/release.py --tag X.Y.Z --dry-run
    python scripts/release.py --tag X.Y.Z --push --watch
    ```
-   It finds the merge commit, runs the release job's checks on it, pushes the annotated tag, waits for the *Build Installers* run and checks that the release is a pre-release with its three files and that `/releases/latest` (Stable) did not move. If the run fails, nothing was published: read `gh run view <id> --log-failed` and ask the maintainer before moving or deleting the tag.
+   It finds the merge commit, runs the release job's tag checks on it, checks its design notes and that `changelog.d/` holds no fragments there, pushes the annotated tag, waits for the *Build Installers* run and checks that the release is a pre-release with its three files and that `/releases/latest` (Stable) did not move. If the run fails, nothing was published: read `gh run view <id> --log-failed` and ask the maintainer before moving or deleting the tag.
 7. Report: the version, the pull request, the tag, the check's result, and the earliest time it could be made Stable (48 hours after publication, and only after the maintainer has used it live).
 
 **Making a beta Stable** is never part of this. Only on the maintainer's explicit word ("promote", "make it Stable"): `python scripts/promote_release.py vX.Y.Z --used-live --dry-run`, then without `--dry-run`. A session may list candidates (`--candidates`) and propose one.
