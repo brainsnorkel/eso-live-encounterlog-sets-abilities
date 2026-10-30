@@ -117,8 +117,9 @@ PEN_CRIT_HREF = "esolog:pencrit/"
 # under the header, whose hover gives what it does (misfortunes.py)
 MISFORTUNE_HREF = "esolog:misfortune/"
 PEN_CRIT_TITLE = "Penetration and critical damage"
-# The cue itself, a circled i like the fight list's mark (ISSUES_LIST_CUE),
-# shown only on a player with a finding
+# The circled i beside each finding in the popup and the build window, the
+# same as the fight list's mark (ISSUES_LIST_CUE); on the fight pane's rows
+# the cue is the drawn ISSUES_GLYPH, bold and glowing (issue #140)
 ISSUES_CUE = "ⓘ"
 ISSUES_TITLE = "Possible build issues"
 # The glyph after a dps figure that says it can be clicked (see gui.glyphs):
@@ -131,10 +132,17 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # since any player takes damage, in the link colour like the (i)
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
+# The (i) of possible build issues after a player's name, drawn bold with a
+# faint halo (gui.glyphs, issue #140) on an image as tall as the text line
+# (Segoe UI's line is 1.3 em; FightView holds the image to a shorter line,
+# such as DejaVu Sans's), so the halo has room around a ring the size of
+# the font's ⓘ
+ISSUES_GLYPH = "issues"
+ISSUES_GLYPH_LINE = 1.3
 # What a screen reader says for each glyph (its alt text; FightView reads
 # alt text out in place of the image, issue #77)
 GLYPH_ALT = {GRAPH_GLYPH: "DPS graph", BREAKDOWN_GLYPH: "damage breakdown",
-             TAKEN_GLYPH: "damage taken"}
+             TAKEN_GLYPH: "damage taken", ISSUES_GLYPH: "possible build issues"}
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -239,11 +247,33 @@ def glyph_px(base_pt: float) -> int:
     return max(8, round(float(base_pt) * 96 / 72 * 1.1))
 
 
-def glyph_html(kind: str, color: str, px: int) -> str:
+def glyph_html(kind: str, color: str, px: int, align: str = "middle") -> str:
     """The <img> of a link glyph (see gui.glyphs) in *color* ('#rrggbb'),
-    *px* pixels square."""
+    *px* pixels square, aligned on its line by *align* (a CSS
+    vertical-align Qt knows)."""
     return (f'<img src="{GLYPH_SCHEME}:{kind}?color={color.lstrip("#")}&amp;px={px}" '
-            f'alt="{GLYPH_ALT.get(kind, "")}" style="vertical-align:middle">')
+            f'alt="{GLYPH_ALT.get(kind, "")}" style="vertical-align:{align}">')
+
+
+def issues_glyph_px(base_pt: float) -> int:
+    """Edge of the build-issues glyph in a pane whose font is *base_pt*
+    points: 16 px at 9 pt, the line's height, so the ring inside is about
+    the font's ⓘ (11 px) and the halo fits around it."""
+    return max(10, round(float(base_pt) * 96 / 72 * ISSUES_GLYPH_LINE))
+
+
+def issues_cue_html(unit_id, color: str, base_pt: float) -> str:
+    """The build-issues mark after a player's name: the bold, faintly
+    glowing (i) glyph in *color*, a link to the player's findings.
+
+    Aligned to the line's top, not its middle: Qt centres a middle-aligned
+    image on half the x-height above the baseline, which pushes an image as
+    tall as the line 2 px below it and makes every marked row taller. A
+    top-aligned image no taller than the line leaves the line alone, and
+    its ring then sits centred on the capitals of the name beside it."""
+    return (f'<a href="{html.escape(issues_href(unit_id), quote=True)}" '
+            f'style="text-decoration:none">'
+            f'{glyph_html(ISSUES_GLYPH, color, issues_glyph_px(base_pt), "top")}</a>')
 
 
 def damage_href(unit_id) -> str:
@@ -1070,6 +1100,15 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if first_dealer and unit_id == first_dealer:
             name = f"{name} <b>*</b>"
             starred = True
+        # The (i) of possible build issues (build_issues): only on a player
+        # with at least one. It sits on the name, after the first-damage *,
+        # where the eye lands, not after the class text, where it drifted
+        # with the text's length among muted words; drawn bold with a faint
+        # halo in the link colour, since Qt rich text has no text-shadow
+        # (gui.glyphs, issue #140). After the name's anchor, so a hidden
+        # name's stand-in never takes it in
+        if unit_id and p.get("build_issues"):
+            name = f"{name}&nbsp;{issues_cue_html(unit_id, theme['link'], base_pt)}"
         # Death-recap button for a player who died in this fight
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
@@ -1094,12 +1133,6 @@ def render_html(entry, detailed: bool, dark: bool = False,
         note = presence_note(p)
         if note:
             subclass_html += f" <span style='color:{muted}'>· {e(note)}</span>"
-        # The (i) of possible build issues (build_issues): only on a player
-        # with at least one, in the link color so it reads as a cue
-        issues_cue = ""
-        if unit_id and p.get("build_issues"):
-            issues_cue = (f' <a href="{e(issues_href(unit_id), quote=True)}" '
-                          f'style="text-decoration:none;color:{theme["link"]}">{ISSUES_CUE}</a>')
         # The shield that opens the player's damage taken window (issue
         # #98): on every player, since any player takes damage, after the
         # marks that may precede it; a glyph (gui.glyphs) in the link colour
@@ -1128,7 +1161,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
         pct_style = f" style='color:{muted}'" if left else ""
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
-               f"{subclass_html}{issues_cue}{recap_html}{taken_cue}</td>"
+               f"{subclass_html}{recap_html}{taken_cue}</td>"
                f"<td align='right'>{dps}</td>"
                f"<td align='right'{pct_style}>{_pct_text(p, boss_fight)}</td>"
                f"<td align='right' style='color:{muted}'>{caps}</td>"
