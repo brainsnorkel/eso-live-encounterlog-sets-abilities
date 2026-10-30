@@ -217,7 +217,7 @@ class TestTimelineStrip(unittest.TestCase):
         from PySide6.QtGui import QHelpEvent
         from PySide6.QtWidgets import QToolTip
         from gui.timeline_strip import LABEL_WIDTH
-        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 15,000 left",
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 15,000",
                   "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 15000,
                   "lowest_left": 0, "no_debuff_pct": 33, "target": "Balorgh",
                   "explain": "A solo dungeon's bosses have 27,300 armour.", "intervals": [
@@ -261,7 +261,7 @@ class TestTimelineStrip(unittest.TestCase):
         pos = QPoint(int(LABEL_WIDTH / 2), int(rect.center().y()))
         self.assertTrue(self.strip.event(QHelpEvent(QEvent.ToolTip, pos, self.strip.mapToGlobal(pos))))
         text = QToolTip.text()
-        self.assertIn("Armour 27,300 · 15,000 left", text)
+        self.assertIn("Armour 27,300 · 15,000", text)
         self.assertIn("solo dungeon's bosses", text)
         # The click summary is the row's own
         html = self.strip.summary_html("Armour")
@@ -281,7 +281,7 @@ class TestTimelineStrip(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPoint
         from PySide6.QtGui import QHelpEvent
         from PySide6.QtWidgets import QToolTip
-        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189 left",
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189",
                   "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 9189,
                   "lowest_left": 0, "no_debuff_pct": 0, "target": "Balorgh",
                   "window": [[20_000, 30_000], [45_000, 55_000]], "window_ms": [20_000, 55_000],
@@ -328,7 +328,7 @@ class TestTimelineStrip(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPoint
         from PySide6.QtGui import QHelpEvent
         from PySide6.QtWidgets import QToolTip
-        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189 left",
+        armour = {"name": "Armour", "estimate": 27300, "label": "Armour 27,300 · 9,189",
                   "scope": "boss", "stacks_max": 27300, "game_cap": 25000, "average_left": 9189,
                   "lowest_left": 0, "no_debuff_pct": 0, "target": "Balorgh",
                   "window": [[45_000, 55_000]], "window_ms": [45_000, 55_000],
@@ -383,7 +383,7 @@ class TestTimelineStrip(unittest.TestCase):
         # A fight without a boss: the row is the pack reading
         trash = dict(armour, scope="mobs", pack_only=True, window=[[5_000, 30_000]],
                      window_ms=[5_000, 30_000], drawn_ms=25_000, average_left=20_000,
-                     label="Armour 18,200 · 20,000 left", intervals=armour["intervals"][:2])
+                     label="Armour 18,200 · 20,000", intervals=armour["intervals"][:2])
         self.strip.set_timeline(_sample_timeline(), [], trash)
         html = self.strip.summary_html("Armour")
         self.assertIn("Read each second on the unit the group hit hardest, 3 units in all, from 5s to 30s", html)

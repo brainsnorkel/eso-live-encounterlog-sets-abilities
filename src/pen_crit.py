@@ -1278,8 +1278,9 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
         reason = _ZONE_EXPLAIN.get(kind, _ZONE_EXPLAIN["overland"])
     row = {"name": ARMOUR_ROW, "estimate": estimate,
            # Short enough for the strip's label column: the hover and the
-           # click say the figure is an estimate and why
-           "label": f"{ARMOUR_ROW} {estimate:,} · {shown['average_left']:,} left",
+           # click say the first figure is an estimate and why, and the
+           # second the armour left on average (#137)
+           "label": f"{ARMOUR_ROW} {estimate:,} · {shown['average_left']:,}",
            "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
            "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
            "average_left": shown["average_left"], "lowest_left": shown["lowest_left"],

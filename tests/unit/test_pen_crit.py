@@ -450,7 +450,7 @@ class TestZones(unittest.TestCase):
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (12252, 12252, 0))
         self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
                          ([3000, 16000], 3000, 20000, 12252))
-        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252")
         # Hits four seconds apart are bridged into one range
         entry, _players = pen_crit.fight_fields(
             tracker, 10000, 30000, units, {"70": {13: 100, 18: 100}}, {},
@@ -530,7 +530,7 @@ class TestPackReading(unittest.TestCase):
         self.assertEqual(pack["weighted_pen"], round(5948 * 1000 / 1500))
         row = pen_crit.armour_row(entry)
         self.assertFalse(row["pack_only"])
-        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")  # the boss's figure
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252")  # the boss's figure
         self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"], iv["target"], bool(iv.get("pack")))
                           for iv in row["intervals"]],
                          [(1000, 3000, 12252, "Prism", True), (3000, 4000, 18200, "Slasher", True),
@@ -562,7 +562,7 @@ class TestPackReading(unittest.TestCase):
         row = pen_crit.armour_row(entry)
         # The pack reading is the row: its average is the label's
         self.assertTrue(row["pack_only"])
-        self.assertEqual(row["label"], "Armour 18,200 · 13,739 left")
+        self.assertEqual(row["label"], "Armour 18,200 · 13,739")
         self.assertEqual((row["average_left"], row["window"], row["window_ms"], row["drawn_ms"]),
                          (13739, [[1000, 5000]], [1000, 5000], 4000))
         self.assertTrue(all(iv.get("pack") for iv in row["intervals"]))
@@ -635,7 +635,7 @@ class TestArmourRow(unittest.TestCase):
                          ("Major Breach, Minor Breach", 8922, "Balorgh"))
         # Averaged over time: (27,300 + 18,378 + 0) / 3
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (15226, 0, 33))
-        self.assertEqual(row["label"], "Armour 27,300 · 15,226 left")
+        self.assertEqual(row["label"], "Armour 27,300 · 15,226")
         self.assertIn("final boss 36,400", row["explain"])
         self.assertIn("averaged over time", row["explain"])
         # A series from before the window (issue #64) covers the whole fight
@@ -653,7 +653,7 @@ class TestArmourRow(unittest.TestCase):
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (9189, 0, 0))
         self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
                          ([10000, 30000], 20000, 30000, 7300))
-        self.assertEqual(row["label"], "Armour 27,300 · 9,189 left")
+        self.assertEqual(row["label"], "Armour 27,300 · 9,189")
         # Two ranges with a blank between: a span is cut at the range's edge
         split = dict(self.GROUP, armour=dict(self.GROUP["armour"], window=[[0, 5000], [25000, 30000]]))
         row = pen_crit.armour_row(split)
