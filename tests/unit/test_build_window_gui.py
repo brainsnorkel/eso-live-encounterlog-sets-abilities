@@ -1073,5 +1073,41 @@ class TestDamageDealtSection(unittest.TestCase):
             dialog.deleteLater()
 
 
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestSectionOrderAndHeadings(unittest.TestCase):
+    """Below the gear grid (issue #143): Damage dealt, then Penetration and
+    Critical damage, then Resources last; and the Damage dealt and
+    Resources headings drawn as table heads, the one form Qt rules."""
+
+    def setUp(self):
+        _ensure_app()
+
+    def test_damage_dealt_then_the_cap_sections_then_resources(self):
+        from gui.build_render import (
+            DEALT_ANCHOR,
+            DEALT_TITLE,
+            PEN_CRIT_ANCHOR,
+            RESOURCES_ANCHOR,
+            render_build_html,
+        )
+        html = render_build_html(_entry(), '1')
+        positions = [html.index(f"name='{a}'")
+                     for a in (DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(html.index('>Back bar</td>'), html.index(DEALT_TITLE))
+        # The pen/crit credits note precedes the Resources heading; the
+        # page no longer ends with it
+        self.assertLess(html.index('skinnycheeks.gg'), html.index(f"name='{RESOURCES_ANCHOR}'"))
+
+    def test_the_two_headings_are_table_heads_with_a_rule(self):
+        from gui.build_render import DEALT_TITLE, RESOURCES_TITLE, render_build_html
+        html = render_build_html(_entry(), '1')
+        for title in (DEALT_TITLE, RESOURCES_TITLE):
+            start = html.index(f"'>{title}")
+            cell = html[html.rindex('<td', 0, start):start]
+            self.assertIn('border-bottom-style:solid', cell, title)
+        self.assertNotIn("<p style='margin:6px 0 2px 0;padding-top:7px", html)
+
+
 if __name__ == '__main__':
     unittest.main()

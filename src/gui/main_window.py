@@ -1052,8 +1052,10 @@ class MainWindow(QMainWindow):
             return
         if self._death_dialog is None:
             self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
-            # The fight block's link to the damage taken window (issue #98)
-            self._death_dialog.view.taken_requested.connect(self._show_taken)
+            # The fight block's link to the damage taken window (issue #98),
+            # for the fight the recap shows (issue #143)
+            self._death_dialog.view.taken_requested.connect(
+                lambda unit_id: self._show_taken(unit_id, self._death_dialog.entry))
         self._death_dialog.show_recap(entry, unit_id, self._dark,
                                       names=self._names_for(entry))
         self._death_dialog.show()
@@ -1068,8 +1070,10 @@ class MainWindow(QMainWindow):
             return
         if self._build_dialog is None:
             self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
-            # The Damage dealt heading's link to the damage taken window (issue #98)
-            self._build_dialog.view.taken_requested.connect(self._show_taken)
+            # The Damage dealt heading's link to the damage taken window
+            # (issue #98), for the fight the build window shows (issue #143)
+            self._build_dialog.view.taken_requested.connect(
+                lambda unit_id: self._show_taken(unit_id, self._build_dialog.entry))
         # The Settings' assumed Champion Point rows and cap, read at render
         # time so a change applies to the next build window without a restart
         self._build_dialog.show_build(entry, unit_id, self._dark,
@@ -1092,13 +1096,16 @@ class MainWindow(QMainWindow):
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
 
-    def _show_taken(self, unit_id):
+    def _show_taken(self, unit_id, entry=None):
         """A player's damage-taken shield was clicked in the fight on screen,
         or the link to it in their build or death recap window: the whole
         fight's damage taken and healing received (taken_render, issue #98).
-        The dialogs' fights are the same objects the list holds, so the
-        window shows the fight on screen like the others."""
-        entry = self.history_list.current_entry()
+        The shield opens the fight on screen; a window's link passes the
+        fight that window shows (*entry*), which stays the fight it was
+        opened for while the list moves on to each new pull as the app
+        follows the live log (issue #143)."""
+        if entry is None:
+            entry = self.history_list.current_entry()
         if entry is None:
             return
         if self._taken_dialog is None:

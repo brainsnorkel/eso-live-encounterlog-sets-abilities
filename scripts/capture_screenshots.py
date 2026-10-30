@@ -16,9 +16,9 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
-    build-resources.png             the same window scrolled to its Resources section
     build-damage-dealt.png          the same window scrolled to its Damage dealt section
     build-pen-crit.png              the same window scrolled to its penetration and crit sections
+    build-resources.png             the same window scrolled to its Resources section, the last
     build-issues.png                the (i) popup of a player's possible build issues
     update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
     update-notes.png                the ⓘ popup with that release's notes
@@ -181,18 +181,20 @@ def main():
         win._show_build(players[0]["unit_id"])
         pump(1.5)
         save(win._build_dialog, "build-window.png")
-        # Resources sits under the gear grid, then Damage dealt, then the
-        # Penetration and Critical damage sections
+        # Under the gear grid: Damage dealt, then the Penetration and
+        # Critical damage sections, then Resources last (issue #143); the
+        # Resources heading reaches the top of the view only when its
+        # section is taller than the view, as a trial player's is
         from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
-        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-resources.png")
         win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-damage-dealt.png")
         win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-pen-crit.png")
+        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
+        pump(0.5)
+        save(win._build_dialog, "build-resources.png")
         win._build_dialog.view.verticalScrollBar().setValue(0)
         win._build_dialog.hide()
 
