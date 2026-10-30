@@ -9,6 +9,10 @@ The notes are GitHub's generated release notes (one line per pull request
 with its link, and a compare link), rendered from markdown; the
 maintainer chose them on 2026-10-26 over the CHANGELOG entries, which run
 to a dozen lines each and are one click away through the Changelog link.
+The notes are the offered release's own, so someone several releases
+behind (a Stable user, issue #134, skips every beta in between) would see
+only the last step; the "Changes since" link compares the running version
+with the offered one on GitHub, however many releases lie between.
 """
 
 from PySide6.QtCore import QPoint, Qt, QUrl, Signal
@@ -16,7 +20,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QLabel, QTextBrowser, QVBoxLayout
 
 from gui.build_issues_popup import place_popup
-from update_check import changelog_url, format_release_date
+from update_check import changelog_url, compare_url, format_release_date
 
 POPUP_WIDTH = 520
 NOTES_MAX_HEIGHT = 400
@@ -61,8 +65,12 @@ class UpdateNotesPopup(QFrame):
         self.links = QLabel(
             f"<a href='{info.page_url}'>Release page</a> · "
             f"<a href='{changelog_url(info.tag)}'>Changelog</a> · "
+            f"<a href='{compare_url(current_version, info.tag)}'>"
+            f"Changes since {current_version}</a> · "
             f"<a href='{SKIP_HREF}'>Don't show this version again</a>")
         self.links.setTextFormat(Qt.RichText)
+        self.links.setWordWrap(True)
+        self.links.setFixedWidth(POPUP_WIDTH)
         self.links.setOpenExternalLinks(False)
         self.links.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self.links.linkActivated.connect(self._on_link)

@@ -18,11 +18,13 @@ COMBATMETRICS_SOURCE_URL = "https://github.com/Solinur/CombatMetrics"
 LIBCOMBAT_URL = "https://github.com/Solinur/LibCombat"
 
 
-def about_html(version: str) -> str:
+def about_html(version: str, updates: str = "") -> str:
+    """*updates* is the update channel line (issue #134), left out when empty."""
     return (
         f"<h3 style='margin-bottom:2px'>ESO Log Tail {version}</h3>"
         f"<p style='margin-top:0'>Live fight summaries from Elder Scrolls Online "
         f"encounter logs.<br><a href='{REPO_URL}'>{REPO_URL}</a></p>"
+        + (f"<p>{updates}</p>" if updates else "") +
         f"<p><b>Credits</b></p>"
         f"<ul>"
         f"<li><b>ESO-Hub.com</b>: skill and gear set links open pages on "
@@ -54,5 +56,5 @@ def about_html(version: str) -> str:
     )
 
 
-def show_about(parent, version: str) -> None:
-    QMessageBox.about(parent, "About ESO Log Tail", about_html(version))
+def show_about(parent, version: str, updates: str = "") -> None:
+    QMessageBox.about(parent, "About ESO Log Tail", about_html(version, updates))

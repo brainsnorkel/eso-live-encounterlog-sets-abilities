@@ -32,6 +32,13 @@ class TestAbout(unittest.TestCase):
         self.assertIn('LibSets', html)
         self.assertIn('EsoExtractData', html)
 
+    def test_the_update_channel_line(self):
+        from gui.about import about_html
+        line = 'Update channel: Beta (every release, as soon as it is published)'
+        self.assertIn(f'<p>{line}</p>', about_html('0.26.0', line))
+        self.assertNotIn('Update channel', about_html('0.26.0'))
+        self.assertNotIn('<p></p>', about_html('0.26.0'))
+
     def test_credits_name_the_build_window_data_sources(self):
         from gui.about import about_html
         html = about_html('0.6.0')

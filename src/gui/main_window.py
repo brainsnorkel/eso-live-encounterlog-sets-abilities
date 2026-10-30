@@ -50,7 +50,7 @@ from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
 import split_retention
-from update_check import format_release_date
+from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -828,17 +828,42 @@ class MainWindow(QMainWindow):
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
 
-    def _apply_update_settings(self):
+    def _update_settings_key(self):
+        """What the update checks depend on: on or off, the channel, and the
+        skipped version (a save with checks on clears it)."""
+        return (bool(self.config.get("update.check_enabled", True)),
+                normalize_channel(self.config.get("update.channel")),
+                self.config.get("update.skip_version"))
+
+    def _apply_update_settings(self, before=None):
         """Settings saved: the check on starts a full check now and the
-        schedule; off stops both and withdraws the offer."""
+        schedule (on the channel saved, which the title names); off stops
+        both and withdraws the offer. *before* is _update_settings_key()
+        from before the save: when nothing about updates changed the
+        schedule runs on, keeping its ETag and any rate-limit wait (a
+        restart costs a full reply, about 80 KB on Beta, per save)."""
+        if before is not None and before == self._update_settings_key():
+            return
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
         else:
             self.update_poller.stop()
             self._on_update_gone()
+        self._apply_title()
+
+    def _update_channel(self):
+        """The channel checks run on, or None while checks are off."""
+        if not bool(self.config.get("update.check_enabled", True)):
+            return None
+        return normalize_channel(self.config.get("update.channel"))
 
     def _apply_title(self):
+        """The version, " · beta" on the Beta channel (the maintainer's
+        choice of 2026-10-29, issue #134, so a screenshot shows it), and
+        the release on offer."""
         title = f"ESO Log Tail v{__version__}"
+        if self._update_channel() == "beta":
+            title += " · beta"
         if self._update is not None:
             title += f" · {self._update.version} available"
         self.setWindowTitle(title)
@@ -1263,14 +1288,22 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         """Version, project link, and credits (ESO-Hub links, ZeniMax icons)."""
         from gui.about import show_about
-        show_about(self, __version__)
+        channel = self._update_channel()
+        if channel is None:
+            updates = "Updates: not checked (turned off in Settings)"
+        else:
+            name, offers = {key: (name, offers)
+                            for key, name, offers in CHANNEL_CHOICES}[channel]
+            updates = f"Update channel: {name} ({offers})"
+        show_about(self, __version__, updates)
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)
+        updates_before = self._update_settings_key()
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
-            self._apply_update_settings()
+            self._apply_update_settings(updates_before)
             self._apply_privacy_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
             if self._graph_dialog is not None:

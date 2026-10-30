@@ -40,7 +40,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `gear_set_database.py`, `gear_set_data.py` | Gear set lookups. `gear_set_data.py` is generated; do not edit it. |
 | `ability_icons.py` | Icon file names and ESO-Hub link lookups. |
 | `log_archiver.py`, `log_freshness.py` | Archiving an oversized log; the "Last entry" indicator. |
-| `update_check.py`, `autostart.py` | The GitHub release check; the start-at-login toggle. |
+| `update_check.py`, `autostart.py` | The GitHub release check on the Stable or Beta channel; the start-at-login toggle. |
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/update_poller.py`, `gui/update_popup.py` | The 15-minute release check and the installer download on their own thread; the ⓘ popup with the release notes. |
@@ -185,7 +185,7 @@ python scripts\export_esobuild_assets.py --update u51 --previous <the last bundl
 
 `--update` is the site's tag for the update the client is on; it is never guessed. The client version in the bundle's manifest comes from the game's own build stamp. Icons come from the installed game, as for the app's own icons. Abilities and sets come from [UESP's ESO log export](https://esolog.uesp.net) (CC-BY-SA 2.5): four requests per run, a few seconds apart, with the replies kept under `build\esobuild-assets\sources\` and reused for a day, so further runs ask UESP nothing; if UESP refuses a request the script stops and does not retry. `--check-fixtures <folder>` runs the site's hand-over checks against its fixture files, and `--check-log <Encounter.log>` compares the tables with what the client itself logged, which shows whether UESP has caught up with a new update.
 
-The bundle is not committed. It is published as a release asset under a tag of its own, `esobuild-assets-<update>-<date>`, created with `gh release create ... --latest=false`: the app's update check reads the repository's latest release, which must stay an app release. The steps are packaged as the `export-esobuild-assets` skill.
+The bundle is not committed. It is published as a release asset under a tag of its own, `esobuild-assets-<update>-<date>`, created with `gh release create ... --latest=false`: the app's Stable channel reads the repository's latest release, which must stay an app release, and its Beta channel reads the newest releases and counts only tags of exactly `vX.Y.Z`. The steps are packaged as the `export-esobuild-assets` skill.
 
 ## Documentation
 
