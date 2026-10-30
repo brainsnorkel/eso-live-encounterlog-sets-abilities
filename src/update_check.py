@@ -28,9 +28,12 @@ which GitHub never points at a prerelease or a draft, so it follows a
 release made Stable, or taken back, exactly. Beta reads the newest ten
 releases (``/releases?per_page=10``, about 80 KB for a full reply, then
 304s like the latest endpoint) and offers the highest version among them,
-prerelease or not. Until the release job publishes betas as prereleases
-(the second step of #134) every release is a full one, and both channels
-offer the same release. A release counts only when its tag is exactly
+prerelease or not. Every release is published as a prerelease, a beta, and
+a promotion makes one a full release (scripts/promote_release.py), so Beta
+gets each release at once and Stable the ones made Stable; until the first
+beta (0.26.0 and before) every release was a full one. A demoted release
+is a draft again, which neither endpoint shows without a login. A release
+counts only when its tag is exactly
 ``vX.Y.Z``: the list also carries data releases (``esobuild-assets-<update>-
 <date>``), and a search for three dotted numbers anywhere in a tag would
 read any such tag as a version. Neither channel offers a version lower

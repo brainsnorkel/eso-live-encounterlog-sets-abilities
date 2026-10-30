@@ -58,12 +58,10 @@ COMPANION_HELP = ("A companion that is out has its own row under its owner. Off,
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
                   "Applies when Settings is saved, to the fights already listed.")
-# Issue #134. The sentence on both channels getting every release holds
-# until the release job publishes betas first (step 2), which removes it.
+# Issue #134
 CHANNEL_HELP = ("Beta gets every release as it is published. Stable gets a release once it "
-                "has been used in real fights for a while with nothing found; until releases "
-                "start going to Beta first, both get every release. Moving from Beta to "
-                "Stable never takes you back a version: you keep the one you have until a "
+                "has been used in real fights for a while with nothing found. Moving from Beta "
+                "to Stable never takes you back a version: you keep the one you have until a "
                 "Stable release is newer.")
 RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
               "seconds before the death. Five is usually one mechanic; ten shows the lead-up. "
