@@ -164,6 +164,11 @@ TOPICS = [
         "src/gui/update_poller.py",
         "src/gui/update_popup.py",
     ]),
+    ("Releases: every tag a beta, and a beta made Stable", [
+        "scripts/release_guard.py",
+        "scripts/promote_release.py",
+        "scripts/build_site.py",
+    ]),
     ("Taunt marks that pulse in a text page", [
         "src/gui/icon_cache.py:ringed",
         "src/gui/fight_view.py:FightView._pulse_step",

@@ -20,8 +20,8 @@ The maintainer chose option A of #134 on 2026-10-29: every tag is published as a
 **Step 2, the release process (a later PR, after step 1 is released):**
 
 - The release job checks out the history, refuses a tag that is not `vX.Y.Z`, does not match `src/version.py` or is not on `main`, and publishes with `prerelease: true`, `make_latest: false` and `previous_tag`.
-- `scripts/promote_release.py` makes a beta Stable (and `--demote` takes one back) on the maintainer's word; Pages rebuilds on the `released` event and keeps rebuilding after every tag for the home page's new Beta link.
-- A weekly workflow opens an issue when a beta that meets the promotion rules is more than 14 days ahead of Stable.
+- `scripts/promote_release.py` makes a beta Stable (and `--demote` pulls a bad one back to a draft) on the maintainer's word, then starts Pages on `main`; Pages also keeps rebuilding after every tag for the home page's new Beta link.
+- A weekly workflow opens an issue when a beta that meets the promotion rules has waited more than 14 days.
 - `scripts/release.py X.Y.Z` makes the release commit's edits; changelog fragments per PR and `docs/design.md` regenerated only in the release commit remove the two files every PR edits.
 
 ## Capabilities

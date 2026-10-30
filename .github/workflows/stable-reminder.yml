@@ -1,0 +1,26 @@
+name: Stable reminder
+
+# Once a week, an issue when a beta that meets the time and regression
+# rules has waited more than 14 days for a decision (issue #134), unless
+# one is open already. Making a beta Stable stays a person's
+# decision; this only asks. scripts/promote_release.py has the rules.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Open a reminder if Stable is behind
+      run: python3 scripts/promote_release.py --remind
+      env:
+        GH_TOKEN: ${{ github.token }}

@@ -183,6 +183,19 @@ jobs:
     permissions:
       contents: write
     steps:
+    # The guard and the notes' starting point need the history and the tags
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    # Nothing is published unless the tag is a plain vX.Y.Z, names the
+    # version in src/version.py, and sits on main (issue #134); the script
+    # also names the previous tag for the notes
+    - name: Check the tag
+      id: guard
+      run: python3 scripts/release_guard.py "$GITHUB_REF_NAME" "$GITHUB_SHA"
+
     - name: Download build artifacts
       uses: actions/download-artifact@v8
       with:
@@ -200,5 +213,12 @@ jobs:
           dist/esolog-tail-linux-x86_64-${{ needs.build-windows.outputs.version }}.tar.gz
         generate_release_notes: true
         fail_on_unmatched_files: true
+        # Every release is born a beta (issue #134): a pre-release, which
+        # GitHub never makes the latest, so the app's Stable channel and the
+        # home page's buttons stay where they are until
+        # scripts/promote_release.py makes it Stable
+        prerelease: true
+        make_latest: false
+        previous_tag: ${{ steps.guard.outputs.previous }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

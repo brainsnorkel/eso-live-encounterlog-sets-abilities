@@ -4,8 +4,12 @@ All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will
 
 ## [Unreleased]
 
+### Added
+- For the maintainer (#134): the release job refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's version, or is not on `main`; `scripts/promote_release.py` makes a beta Stable (or pulls a bad Stable release back to a draft) and lists the betas that could be; a weekly workflow opens an issue when a beta that qualifies has waited more than two weeks
+
 ### Changed
-- The buff timeline's Armour row label drops the word "left": `Armour 18,200 · 6,456` (#137). The hover and the click still say the second figure is the armour left on average
+- **Releases go to Beta first** (#134): every release is now published as a beta, which the Beta channel offers at once. A beta becomes the Stable release, which the Stable channel and the home page's download buttons offer, once it has been used in real fights for a while with nothing found. The home page names a newer beta in a smaller line under the buttons. Settings → Updates no longer says that both channels get every release
+- The buff timeline's Armour row label drops the word "left": `Armour 18,200 · 6,456` (#137). Hovering the label says the second figure is the armour left, averaged over time
 
 ### Fixed
 - **Four more Class Masteries show beside the class**: Conservation of Energy, Share the Spoils and Nocturnal Inspiration, which the log writes only as the Magicka, Stamina or Ultimate they give, and Devout Guardian, whose shield the log calls Hold the Line. Each was checked in 103 split logs of September and October 2026: every one of these lines came from a player of the mastery's own class. Bastion of Light is the one mastery the log never names

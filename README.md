@@ -23,7 +23,7 @@ The **[home page](https://xop.co/eso-live-encounterlog-sets-abilities/)** is the
 - **Accessible**: works from the keyboard, text size from 80% to 200% (Ctrl+= and Ctrl+-), contrast checked in both themes, an optional colour-blind DPS graph, screen reader text for the pages and the painted strip and graph, and Reduce motion. See [Accessibility](docs/user-guide.md#accessibility).
 - **Hide names** (Ctrl+H) for screenshots and sharing: every player but you is pixelated in the fight pane and the windows, and reads as `@▒▒▒▒▒▒` in hover text and the copied fight. The pictures here are taken that way.
 - **Log housekeeping**: per-encounter split files, automatic archiving of the ever-growing log, and a freshness indicator so you can tell at a glance that logging is on.
-- **Zero-friction startup**: finds the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and shows an **Update** button in the toolbar when a newer release is on GitHub (checked every 15 minutes, never a pop-up).
+- **Zero-friction startup**: finds the log (including OneDrive-relocated Documents folders), replays the current session so the group is complete when you start mid-raid, can start with Windows, and shows an **Update** button in the toolbar when a newer release is on GitHub (checked every 15 minutes, never a pop-up), on the Stable channel by default or on Beta for every release as it is published.
 
 ## Installation
 
