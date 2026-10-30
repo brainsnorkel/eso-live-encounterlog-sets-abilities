@@ -10,13 +10,24 @@ card, and the screenshots it uses from docs/screencaps/ into _site/.
 .github/workflows/pages.yml runs it and publishes _site/.
 
 Placeholders in index.html are {{name}} for the names in release_values()
-plus {{site_url}}. A placeholder left unfilled, a missing asset or an
-unreadable release fails the build: a page with holes must not be published.
+plus {{site_url}} and {{beta_line}}. A placeholder left unfilled, a missing
+asset or an unreadable release fails the build: a page with holes must not
+be published.
+
+The buttons name the latest release, which is the Stable one: every release
+is published as a pre-release, a beta, and only a promotion makes one the
+latest (issue #134). {{beta_line}} is a smaller line under them naming the
+newest beta when one is newer than Stable (the maintainer's choice of
+2026-10-29), and nothing otherwise. It is a nicety: if the release list
+cannot be read, the page is built without it rather than not at all. It
+says to choose Beta in Settings, since the app starts on Stable whichever
+installer it came from.
 
 Standard library only, so the Pages job installs nothing.
 """
 
 import argparse
+import html as html_lib
 import json
 import os
 import re
@@ -32,6 +43,7 @@ DEFAULT_OUT = ROOT / "_site"
 
 GITHUB_REPO = "brainsnorkel/eso-live-encounterlog-sets-abilities"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20"
 # Where GitHub serves the page: the account's user site carries the custom
 # domain xop.co, so every project site of the account lives under it, and
 # the github.io path redirects there. Absolute URLs (canonical, og:image)
@@ -54,9 +66,10 @@ class SiteBuildError(Exception):
     """Anything that must stop the build rather than publish a wrong page."""
 
 
-def fetch_latest_release(url: str = LATEST_RELEASE_URL) -> dict:
-    """The latest release's JSON from GitHub; GITHUB_TOKEN raises the rate
-    limit when set (the Pages job passes the workflow token)."""
+def fetch_latest_release(url: str = LATEST_RELEASE_URL):
+    """The latest release's JSON from GitHub (or, with RELEASES_URL, the
+    newest releases); GITHUB_TOKEN raises the rate limit when set (the
+    Pages job passes the workflow token)."""
     headers = {"User-Agent": "esolog-tail-site-build",
                "Accept": "application/vnd.github+json"}
     token = os.environ.get("GITHUB_TOKEN")
@@ -103,6 +116,34 @@ def release_values(release: dict) -> dict:
     return values
 
 
+def beta_line(releases, stable_version: str) -> str:
+    """The page's line for the newest beta newer than *stable_version* with
+    a Windows installer, or '' when there is none."""
+    stable = tuple(int(part) for part in stable_version.split("."))
+    prefix, suffix = ASSETS["windows_setup_url"]
+    best = None
+    for release in releases or []:
+        if not isinstance(release, dict) or release.get("draft") or not release.get("prerelease"):
+            continue
+        match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", release.get("tag_name") or "")
+        if not match:
+            continue
+        version = tuple(int(part) for part in match.groups())
+        setup = next((a.get("browser_download_url") for a in release.get("assets") or []
+                      if (a.get("name") or "").startswith(prefix)
+                      and (a.get("name") or "").endswith(suffix)), None)
+        if version > stable and setup and (best is None or version > best[0]):
+            best = (version, setup, release.get("html_url") or "")
+    if best is None:
+        return ""
+    version, setup, page = best
+    name = ".".join(str(part) for part in version)
+    notes = f' (<a href="{html_lib.escape(page)}">release notes</a>)' if page else ""
+    return (f'<p class="also">Newer, still being tried out: <a href="{html_lib.escape(setup)}">'
+            f'beta {name}</a> for Windows{notes}. To keep getting betas, choose Beta '
+            f'under Settings → Updates.</p>')
+
+
 def render(template: str, values: dict) -> str:
     """Fill every {{name}} in *template*; an unknown name is an error."""
     missing = sorted(set(_PLACEHOLDER_RE.findall(template)) - set(values))
@@ -123,12 +164,14 @@ def page_images(html: str) -> list:
 
 def build(out_dir: Path, release: dict, site_url: str = SITE_URL,
           site_dir: Path = SITE_DIR,
-          screencaps_dir: Path = SCREENCAPS_DIR) -> Path:
-    """Write the finished site to *out_dir* (emptied first) and return it."""
+          screencaps_dir: Path = SCREENCAPS_DIR, releases=None) -> Path:
+    """Write the finished site to *out_dir* (emptied first) and return it;
+    *releases* (the newest releases) gives the beta line."""
     if not site_url.endswith("/"):
         site_url += "/"
     values = release_values(release)
     values["site_url"] = site_url
+    values["beta_line"] = beta_line(releases, values["version"])
     html = render((site_dir / "index.html").read_text(encoding="utf-8"), values)
 
     # Empty the folder rather than remove it: a local server left serving
@@ -167,6 +210,9 @@ def main(argv=None) -> int:
     parser.add_argument("--release-json", type=Path,
                         help="build from a saved release JSON instead of "
                              "asking the GitHub API")
+    parser.add_argument("--releases-json", type=Path,
+                        help="the newest releases (for the beta line) from a saved "
+                             "list instead of asking the GitHub API")
     parser.add_argument("--site-url", default=SITE_URL,
                         help=f"the page's absolute URL (default: {SITE_URL})")
     args = parser.parse_args(argv)
@@ -175,7 +221,17 @@ def main(argv=None) -> int:
             release = json.loads(args.release_json.read_text(encoding="utf-8"))
         else:
             release = fetch_latest_release()
-        out = build(args.out, release, args.site_url)
+        if args.releases_json:
+            releases = json.loads(args.releases_json.read_text(encoding="utf-8"))
+        elif args.release_json:
+            releases = []
+        else:
+            try:
+                releases = fetch_latest_release(RELEASES_URL)
+            except SiteBuildError as exc:
+                print(f"warning: no beta line: {exc}", file=sys.stderr)
+                releases = []
+        out = build(args.out, release, args.site_url, releases=releases)
     except SiteBuildError as exc:
         print(f"site build failed: {exc}", file=sys.stderr)
         return 1

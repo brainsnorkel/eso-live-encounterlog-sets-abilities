@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Releases go to Beta first** (#134): every release is now published as a beta, which the Beta channel offers at once. A beta becomes the Stable release, which the Stable channel and the home page's download buttons offer, once it has been used in real fights for a while with nothing found. The home page names a newer beta in a smaller line under the buttons. Settings → Updates no longer says that both channels get every release
+
+### Added
+- For the maintainer (#134): the release job refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's version, or is not on `main`; `scripts/promote_release.py` makes a beta Stable (or takes a Stable release back) and lists the betas that could be; a weekly workflow opens an issue when Stable falls more than two weeks behind a beta that qualifies
+
 ## [0.26.0] - 2026-10-30
 
 ### Added

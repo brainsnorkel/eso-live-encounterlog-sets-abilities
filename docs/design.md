@@ -2661,6 +2661,137 @@ behind (a Stable user, issue #134, skips every beta in between) would see
 only the last step; the "Changes since" link compares the running version
 with the offered one on GitHub, however many releases lie between.
 
+## Releases: every tag a beta, and a beta made Stable
+
+### scripts/release_guard.py
+
+*[scripts/release_guard.py:1](../scripts/release_guard.py#L1)*
+
+Check a version tag before the release job publishes it, and name the
+tag its notes start from.
+
+Design (issue #134, 2026-10-29): the release job publishes whatever tag
+reaches it, and nothing checked the tag until now. Three refusals, each
+before anything is published:
+
+- the tag must be exactly ``vX.Y.Z``: the app's update check counts only
+  such tags, and data releases (``esobuild-assets-<update>-<date>``) are
+  created by hand, never by this job;
+- it must equal ``v`` + ``__version__`` in the tagged commit's
+  ``src/version.py`` (read from the commit, not the checkout): the assets
+  are named from that file, and the app compares its own version with the
+  tag, so a mismatch would offer an installer that reports the wrong
+  version (a tag pushed on the wrong commit, or a release commit missing);
+- its commit must be on ``main`` (``git merge-base --is-ancestor``): tags
+  are outside the branch ruleset, so a tag on an unmerged branch would
+  publish code no pull request merged.
+
+The previous ``v*`` tag (``git describe`` from the tagged commit's first
+parent, which for a merge commit is main as it was) goes to the job's
+output as ``previous``: GitHub's generated notes then cover the changes
+since the release before this one, whichever release GitHub would
+otherwise have picked as the base. Every release is now born a beta, and
+with a Stable release as the latest GitHub may compare against that.
+
+Standard library and git only; the job runs it on the runner's own Python.
+
+```
+    python3 scripts/release_guard.py <tag> <commit> [--main-ref origin/main]
+```
+
+### scripts/promote_release.py
+
+*[scripts/promote_release.py:1](../scripts/promote_release.py#L1)*
+
+Make a beta the Stable release, take a Stable release back, list the
+betas that could be promoted, or open a reminder when Stable falls behind.
+
+Design (issue #134, the maintainer's decisions of 2026-10-29): every tag is
+published as a GitHub pre-release, a beta. Promoting turns that same
+release into a full one and marks it latest, so Stable users run exactly
+the build beta users ran, and ``/releases/latest``, which the app's Stable
+channel and the home page read, moves to it. Nothing is rebuilt or
+retagged.
+
+A beta may be promoted when:
+
+- it is newer than the Stable release and carries all three files;
+- it was published at least 48 hours ago;
+- the maintainer used it live, in at least one session with fights; the
+  script cannot see that, so ``--used-live`` says so;
+- no issue labelled ``regression`` affects it. A regression issue names the
+  version that brought the fault in: the first ``X.Y.Z`` in its title, else
+  in its body. While open it affects that version and every later one;
+  once closed, those published before it was closed, since the fix can only
+  be in a later release. So a fixed regression still marks the versions
+  that carried it, which is the rule "no later beta fixes a fault in it".
+  An issue that turns out not to be a regression loses the label.
+
+``--force "<reason>"`` overrides the last three rules and writes the reason
+into the release notes (a crash fix that cannot wait two days); the first
+is never overridden.
+
+The release notes are rewritten as the changes since the previous Stable
+release: every pull request line of the releases in between, oldest first,
+without repeats, and the compare link. The app's update popup shows a
+Stable user these notes, and a Stable user skips every beta in between.
+
+The edit is made with the maintainer's own ``gh`` login, so GitHub starts
+the Pages workflow on its ``released`` event (one raised with a workflow's
+own token would start nothing). ``/releases/latest`` can lag a minute
+behind a change (seen on 2026-10-28), so the check of it retries once.
+
+``--demote`` turns the Stable release back into a pre-release and marks the
+previous Stable release latest. Installs already updated keep it; new
+Stable users are no longer offered it. That edit raises no event Pages
+listens to, so the script starts the Pages workflow itself.
+
+``--candidates`` lists the betas newer than Stable and what each still
+lacks: a session uses it to propose a promotion, never to make one.
+``--remind`` (the weekly workflow) opens an issue when a beta that meets
+the time and regression rules was published more than 14 days after the
+Stable release, unless one is open already.
+
+Needs the GitHub CLI, logged in (``GH_TOKEN`` in a workflow).
+
+```
+    python scripts/promote_release.py vX.Y.Z --used-live [--dry-run]
+    python scripts/promote_release.py vX.Y.Z --force "crash fix" [--dry-run]
+    python scripts/promote_release.py --demote vX.Y.Z [--dry-run]
+    python scripts/promote_release.py --candidates
+    python scripts/promote_release.py --remind [--dry-run]
+```
+
+### scripts/build_site.py
+
+*[scripts/build_site.py:1](../scripts/build_site.py#L1)*
+
+Build the home page (site/) into _site/ for GitHub Pages.
+
+The page is a hand-written index.html whose download buttons need the
+current release: the release assets carry the version in their names
+(esolog-tail-windows-setup-0.13.3.exe), so no fixed link can point at the
+latest installer. This script reads the latest release from the GitHub API,
+fills the page's placeholders, and copies the page, its favicon and social
+card, and the screenshots it uses from docs/screencaps/ into _site/.
+.github/workflows/pages.yml runs it and publishes _site/.
+
+Placeholders in index.html are {{name}} for the names in release_values()
+plus {{site_url}} and {{beta_line}}. A placeholder left unfilled, a missing
+asset or an unreadable release fails the build: a page with holes must not
+be published.
+
+The buttons name the latest release, which is the Stable one: every release
+is published as a pre-release, a beta, and only a promotion makes one the
+latest (issue #134). {{beta_line}} is a smaller line under them naming the
+newest beta when one is newer than Stable (the maintainer's choice of
+2026-10-29), and nothing otherwise. It is a nicety: if the release list
+cannot be read, the page is built without it rather than not at all. It
+says to choose Beta in Settings, since the app starts on Stable whichever
+installer it came from.
+
+Standard library only, so the Pages job installs nothing.
+
 ## Taunt marks that pulse in a text page
 
 ### ringed

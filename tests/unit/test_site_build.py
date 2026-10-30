@@ -84,7 +84,7 @@ class RenderTests(unittest.TestCase):
 
     def test_page_uses_only_known_placeholders(self):
         html = (REPO_ROOT / 'site' / 'index.html').read_text(encoding='utf-8')
-        known = set(build_site.release_values(_release())) | {'site_url'}
+        known = set(build_site.release_values(_release())) | {'site_url', 'beta_line'}
         used = set(build_site._PLACEHOLDER_RE.findall(html))
         self.assertTrue(used <= known, used - known)
         # The buttons and the card need these; a page without them is wrong
@@ -111,6 +111,46 @@ class BuildTests(unittest.TestCase):
             for name in build_site.page_images(html):
                 self.assertTrue((out / 'img' / name).is_file(), name)
             self.assertIn('main-window.png', build_site.page_images(html))
+
+    def test_the_beta_line_names_the_newest_beta_newer_than_stable(self):
+        releases = [_release('v0.27.1', prerelease=True),
+                    _release('v0.27.2', prerelease=True),
+                    _release('v0.28.0', prerelease=True, draft=True),
+                    _release('v0.27.0'),
+                    _release('esobuild-assets-9.9.9', prerelease=True),
+                    _release('v0.29.0', prerelease=True, assets=[])]   # no installer
+        line = build_site.beta_line(releases, '0.27.0')
+        self.assertIn('beta 0.27.2</a> for Windows', line)
+        self.assertIn('esolog-tail-windows-setup-0.27.2.exe', line)
+        self.assertIn('releases/tag/v0.27.2', line)
+        self.assertIn('choose Beta under Settings', line)
+        # Nothing newer than Stable, or nothing at all: no line
+        self.assertEqual(build_site.beta_line(releases, '0.27.2'), '')
+        self.assertEqual(build_site.beta_line([], '0.27.0'), '')
+        self.assertEqual(build_site.beta_line(None, '0.27.0'), '')
+
+    def test_the_page_carries_the_beta_line_only_when_there_is_a_beta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = build_site.build(Path(tmp) / 'a', _release('v0.27.0'),
+                                   releases=[_release('v0.27.1', prerelease=True)])
+            html = (out / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('beta 0.27.1</a>', html)
+            out = build_site.build(Path(tmp) / 'b', _release('v0.27.0'))
+            html = (out / 'index.html').read_text(encoding='utf-8')
+            self.assertNotIn('still being tried out', html)
+            self.assertNotIn('{{', html)
+
+    def test_main_reads_a_saved_release_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = Path(tmp) / 'release.json'
+            saved.write_text(json.dumps(_release('v0.27.0')), encoding='utf-8')
+            listed = Path(tmp) / 'releases.json'
+            listed.write_text(json.dumps([_release('v0.27.3', prerelease=True)]),
+                              encoding='utf-8')
+            out = Path(tmp) / 'site'
+            self.assertEqual(build_site.main(['--out', str(out), '--release-json', str(saved),
+                                              '--releases-json', str(listed)]), 0)
+            self.assertIn('beta 0.27.3', (out / 'index.html').read_text(encoding='utf-8'))
 
     def test_site_url_override_gets_a_trailing_slash(self):
         with tempfile.TemporaryDirectory() as tmp:

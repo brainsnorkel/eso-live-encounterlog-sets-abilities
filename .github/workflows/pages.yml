@@ -1,9 +1,11 @@
 name: Pages
 
 # Publishes the home page (site/, built by scripts/build_site.py) with
-# GitHub Pages. The page's download buttons name the latest release, so it
-# is rebuilt after every release as well as after every change to its
-# sources. Settings > Pages must have "GitHub Actions" as the source.
+# GitHub Pages. The page's download buttons name the Stable release (the
+# latest) and a smaller link names the newest beta, so it is rebuilt after
+# every release (a beta), when a beta is made Stable, and after every
+# change to its sources. Settings > Pages must have "GitHub Actions" as the
+# source.
 on:
   push:
     branches: [ main ]
@@ -19,6 +21,12 @@ on:
   workflow_run:
     workflows: [ "Build Installers" ]
     types: [ completed ]
+  # A beta made Stable (scripts/promote_release.py, issue #134): the edit is
+  # made with the maintainer's own login, so this event does start a run.
+  # Taking a Stable release back raises no such event; the script starts
+  # this workflow itself
+  release:
+    types: [ released ]
   workflow_dispatch:
 
 permissions:
