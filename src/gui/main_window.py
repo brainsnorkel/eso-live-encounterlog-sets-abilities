@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QColor, QDesktopServices, QFont, QGuiApplication, QKeySequence, QPalette,
+    QAction, QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
@@ -1037,7 +1037,8 @@ class MainWindow(QMainWindow):
                                             script_links=esohub_script_url,
                                             text_color=text_color,
                                             pen_crit_options=pen_crit_options,
-                                            names=names))
+                                            names=names,
+                                            line_px=QFontMetrics(self.fight_view.font()).height()))
         self._apply_search()
 
     def _show_pen_crit(self, unit_id):

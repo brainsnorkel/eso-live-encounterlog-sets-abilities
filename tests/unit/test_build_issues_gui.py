@@ -87,20 +87,173 @@ class IssuesGuiTestCase(unittest.TestCase):
 class TestCue(IssuesGuiTestCase):
 
     def test_only_a_player_with_findings_carries_the_cue_in_both_views(self):
-        from gui.fight_render import ISSUES_CUE, render_html
+        import re
+
+        from gui.fight_render import render_html
         entry = _entry()
         for detailed in (True, False):
             html = render_html(entry, detailed=detailed)
             self.assertEqual(html.count('esolog:issues/'), 1, detailed)
-            self.assertIn('href="esolog:issues/2" style="text-decoration:none;color:#166ad8">'
-                          f'{ISSUES_CUE}</a>', html)
-            # After the class text of that row, before the next row
-            row = html[html.index('@dualwield'):html.index('</tr>', html.index('@dualwield'))]
-            self.assertIn('esolog:issues/2', row)
-        self.assertIn(f'color:#8ab4f8">{ISSUES_CUE}</a>', render_html(entry, detailed=True, dark=True))
-        # The same mark as the fight list's
-        from gui.fight_render import ISSUES_LIST_CUE
+            # The anchor holds the drawn (i) in the link colour, as tall as
+            # the line and aligned to its top (issue #140)
+            cue = re.search(r'<a href="esolog:issues/2" style="text-decoration:none">(.*?)</a>',
+                            html).group(1)
+            self.assertEqual(cue, '<img src="glyph:issues?color=166ad8&amp;px=16" '
+                                  'alt="possible build issues" style="vertical-align:top">')
+            # Right after the name, before the class text of that row
+            row = html[html.index('esolog:build/2'):html.index('</tr>', html.index('esolog:build/2'))]
+            self.assertIn('>@dualwield</a>&nbsp;<a href="esolog:issues/2"', row)
+            self.assertLess(row.index('esolog:issues/2'), row.index('NB'))
+        self.assertIn('glyph:issues?color=8ab4f8&amp;px=16',
+                      render_html(entry, detailed=True, dark=True))
+        # The glyph follows the pane's font size
+        self.assertIn('glyph:issues?color=166ad8&amp;px=21',
+                      render_html(entry, detailed=False, base_pt=12.0))
+
+    def test_the_cue_follows_the_first_damage_star(self):
+        from gui.fight_render import render_html
+        entry = _entry()
+        entry.first_damage_dealer = '2'
+        html = render_html(entry, detailed=False)
+        self.assertIn('>@dualwield</a> <b>*</b>&nbsp;<a href="esolog:issues/2"', html)
+
+    def test_a_hidden_name_does_not_take_the_cue_in(self):
+        from gui.fight_render import render_html
+        from gui.name_mask import NameMask
+        entry = _entry()
+        html = render_html(entry, detailed=False, names=NameMask.for_entry(entry, True))
+        row = html[html.index('esolog:build/2'):html.index('</tr>', html.index('esolog:build/2'))]
+        self.assertNotIn('@dualwield', row)
+        # The stand-in image, the name's anchor closed, then the cue
+        self.assertLess(row.index('mask:'), row.index('</a>&nbsp;<a href="esolog:issues/2"'))
+
+    def test_the_fight_list_popup_and_build_window_keep_the_text_mark(self):
+        from gui.fight_render import ISSUES_CUE, ISSUES_LIST_CUE, issues_html
         self.assertEqual(ISSUES_CUE, ISSUES_LIST_CUE)
+        p = next(p for p in _entry().players if p['unit_id'] == '2')
+        self.assertEqual(issues_html(p).count(ISSUES_CUE), len(FINDINGS))
+
+    def test_the_mark_leaves_the_rows_their_height(self):
+        """A marked row is as tall as an unmarked one, at three text sizes:
+        the image is no taller than the line and aligned to its top."""
+        from PySide6.QtGui import QFont, QFontMetrics
+
+        from gui.fight_render import render_html
+        from gui.fight_view import FightView
+        for pt in (9.0, 12.0, 18.0):
+            heights = []
+            for marked in (False, True):
+                entry = _entry()
+                if not marked:
+                    for p in entry.players:
+                        p['build_issues'] = []
+                view = FightView()
+                view.setFont(QFont(view.font().family(), pt))
+                # The line height, as the main window passes it
+                view.setHtml(render_html(entry, detailed=False, base_pt=pt,
+                                         line_px=QFontMetrics(view.font()).height()))
+                # Wide enough that no cell wraps even in the fallback font
+                # CI draws with (no font directory: every glyph a wide box)
+                view.document().setTextWidth(20000)
+                # The whole page laid out, not only what a pane would show
+                heights.append(view.document().documentLayout().documentSize().height())
+                view.deleteLater()
+            self.assertEqual(heights[0], heights[1], pt)
+
+    def test_a_screen_reader_hears_what_the_mark_is(self):
+        from gui.fight_render import render_html
+        from gui.fight_view import FightView
+        view = FightView()
+        view.setHtml(render_html(_entry(), detailed=False))
+        self.assertIn('@dualwield possible build issues', ' '.join(view.accessible_text().split()))
+        view.deleteLater()
+
+    def test_the_mark_is_as_tall_as_the_panes_line(self):
+        from gui.fight_render import issues_glyph_px
+        self.assertEqual(issues_glyph_px(9.0), 16)  # Segoe UI's line, estimated
+        self.assertEqual(issues_glyph_px(9.0, line_px=14), 14)  # DejaVu Sans's
+        self.assertEqual(issues_glyph_px(12.0, line_px=21), 21)
+        self.assertEqual(issues_glyph_px(5.0, line_px=7), 10)  # the floor
+
+    def test_the_window_sizes_the_mark_from_its_panes_font(self):
+        from PySide6.QtGui import QFontMetrics
+        win = self._window(_entry())
+        try:
+            line = QFontMetrics(win.fight_view.font()).height()
+            sizes = set()
+            block = win.fight_view.document().begin()
+            while block.isValid():
+                it = block.begin()
+                while not it.atEnd():
+                    fmt = it.fragment().charFormat()
+                    if fmt.isImageFormat():
+                        name = fmt.toImageFormat().name()
+                        if name.startswith('glyph:issues'):
+                            sizes.add(name.rsplit('px=', 1)[1])
+                    it += 1
+                block = block.next()
+            self.assertEqual(sizes, {str(max(10, line))})
+        finally:
+            win.close()
+
+    def test_the_mark_is_a_bold_ring_and_i_over_a_faint_halo(self):
+        from gui.glyphs import glyph_image
+        image = glyph_image('issues', '#166ad8', 16)
+        self.assertEqual((image.width(), image.height()), (16, 16))
+
+        def alpha(x, y):
+            return image.pixelColor(x, y).alpha()
+
+        # Across the middle: halo, ring, the clear inside, the ring again
+        middle = [alpha(x, 8) for x in range(16)]
+        self.assertTrue(0 < middle[1] < 80, middle)  # the halo: faint
+        self.assertGreater(middle[3], 230, middle)  # the ring
+        self.assertEqual(middle[5], 0, middle)  # inside the ring: clear
+        self.assertGreater(middle[12], 230, middle)
+        self.assertEqual(alpha(0, 0), 0)  # a clear corner
+        # Down the i: a clear pixel, the dot, a clear pixel, the stem, a
+        # clear pixel, so the two never run together at 100% scaling
+        column = [alpha(7, y) for y in range(4, 12)]
+        self.assertEqual([a > 200 for a in column],
+                         [False, True, True, False, True, True, True, False], column)
+        self.assertTrue(all(a < 5 for a, solid in zip(column, [0, 1, 1, 0, 1, 1, 1, 0])
+                            if not solid), column)
+        # Solid pixels are the link colour itself
+        solid = {image.pixelColor(x, y).name() for x in range(16) for y in range(16)
+                 if alpha(x, y) == 255}
+        self.assertEqual(solid, {'#166ad8'})
+        # On a scaled display: twice the pixels, the same logical size
+        hidpi = glyph_image('issues', '#166ad8', 16, dpr=2.0)
+        self.assertEqual((hidpi.width(), hidpi.devicePixelRatio()), (32, 2.0))
+
+    def test_the_i_stays_clear_of_the_ring_at_every_size_and_scaling(self):
+        """Down the middle column: ring, a clear row, the dot, a clear row,
+        the stem in whole pixels, a clear row, ring. At the smallest text
+        size (80% of 9 pt, 12 px) and at fractional scalings, where a
+        layout from the unrounded size blurred the stem (review of #142)."""
+        from gui.glyphs import glyph_image
+        for px, dpr in ((12, 1.0), (13, 1.0), (16, 1.0), (21, 1.0), (31, 1.0),
+                        (15, 1.5), (16, 1.25), (16, 1.5), (13, 1.25), (16, 2.0), (12, 1.75)):
+            image = glyph_image('issues', '#166ad8', px, dpr)
+            size = image.width()
+            column = [image.pixelColor(size // 2, y).alpha() for y in range(size)]
+            marks = ''.join('#' if a == 255 else '+' if a > 200 else '.' if a < 128 else '-'
+                            for a in column)
+            label = f'{px}@{dpr}: {marks} {column}'
+            runs = [run for run in marks.replace('-', '.').split('.') if run]
+            self.assertEqual(len(runs), 4, label)  # ring, dot, stem, ring
+            self.assertEqual(set(runs[2]), {'#'}, label)  # the stem: solid, not blurred
+            # A clear row on each side of the dot and of the stem, inside the
+            # ring's anti-aliased edge ('-')
+            inside = marks[marks.index(runs[0]) + len(runs[0]):marks.rindex(runs[3])].strip('-')
+            self.assertTrue(inside.startswith('.') and inside.endswith('.'), label)
+
+    def test_at_the_smallest_mark_dot_and_stem_still_part(self):
+        from gui.glyphs import issues_i_layout
+        width, dot_top, dot, stem_top, stem = issues_i_layout(10, 2.1, 1.65)
+        self.assertEqual(width, 2)
+        self.assertGreaterEqual(stem_top, dot_top + dot + 1)  # a clear row between
+        self.assertGreaterEqual(stem, 1)
 
     def test_no_findings_no_cue(self):
         from gui.fight_render import render_html
