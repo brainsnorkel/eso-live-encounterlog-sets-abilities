@@ -13,17 +13,21 @@ Free) ending in every cast and the casts per minute (casts.py, issue #94);
 then the fight view's line of scribed skills;
 and a gear grid with one row per slot (armor weight or weapon type, set,
 pieces of that set active, quality, trait, enchant, enchant quality), a
-poison row under a bar that has one slotted; then Resources, the magicka,
-stamina and ultimate spent and gained in the fight, the casts the most
-went on and the gains that gave the most (resources.py, issue #125); then
-Damage dealt; then the Penetration and
-Critical damage sections (issue #37): the player's own sources from the
-build, the Champion Point rows the Settings assume, the fight's debuffs on
-the boss with uptime and casters and the buffs on the player, and the
-totals against the caps, the effective figure being the damage-weighted
-one pen_crit computes the way Combat Metrics does. The data is the fight
-entry's player dict as the engine's player_build and pen_crit modules
-filled it in, and the labels come from those modules too.
+poison row under a bar that has one slotted; then Damage dealt; then the
+Penetration and Critical damage sections (issue #37): the player's own
+sources from the build, the Champion Point rows the Settings assume, the
+fight's debuffs on the boss with uptime and casters and the buffs on the
+player, and the totals against the caps, the effective figure being the
+damage-weighted one pen_crit computes the way Combat Metrics does, framed
+as the conclusion; and last Resources, the magicka, stamina and ultimate
+spent and gained in the fight, the casts the most went on and the gains
+that gave the most (resources.py, issue #125). Damage dealt and the two
+cap sections read as one block about what the player did with the build,
+and Resources, the tallest section (taller than the window on most trial
+pages), comes after them (issue #143, which moved it from between the gear
+and Damage dealt, where #125 had put it). The data is the fight entry's
+player dict as the engine's player_build and pen_crit modules filled it
+in, and the labels come from those modules too.
 
 A companion's window is shorter (companions.py): its skills with this
 fight's casts under each and its ultimate set apart, the casts no skill
@@ -421,11 +425,10 @@ def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
 
 def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float, e) -> str:
     gear = {str(row.get("slot")): row for row in p.get("gear") or []}
-    muted, rule = theme["muted"], _RULES[bool(dark)]
+    muted = theme["muted"]
     if not gear:
         return f"<p style='margin:8px 0;color:{muted}'>{NO_GEAR}</p>"
-    under = (f"border-bottom-style:solid;border-bottom-width:1px;"
-             f"border-bottom-color:{rule}")
+    under = _rule_css(dark)
     # Not 100% wide: Qt rounds percentage columns up to a pixel past the pane
     parts = ["<table cellpadding='3' cellspacing='0' width='99%'><tr>"]
     parts.extend(f"<td width='{width}%' align='{align}' style='color:{muted};{under}'>"
@@ -499,6 +502,34 @@ def _casters_text(casters, e, names, color: str, pt: float) -> str:
     return ", ".join(parts)
 
 
+def _heading_css(theme) -> str:
+    """A section heading's text: bold, in the muted colour, with room above."""
+    return f"padding-top:7px;color:{theme['muted']};font-weight:bold"
+
+
+def _rule_css(dark: bool) -> str:
+    """The rule under a heading or a table head, on a table cell (the one
+    element Qt rich text draws a border on)."""
+    return (f"border-bottom-style:solid;border-bottom-width:1px;"
+            f"border-bottom-color:{_RULES[bool(dark)]}")
+
+
+def _heading_html(title: str, extra: str, dark: bool, theme, anchor: str = "") -> str:
+    """A section heading with its rule, as a one-cell table head: Qt rich
+    text draws borders on table cells and never on a <p>, so the Damage
+    dealt and Resources headings, <p> elements with a border-bottom until
+    issue #143, had no rule while the gear grid and the Penetration and
+    Critical damage heads (the same form inside their tables) had one; the
+    damage taken window's section titles (taken_render) take this form too.
+    *extra* follows the title (a link, a caption); the anchor, when there
+    is one, goes first, where scrollToAnchor finds it: Qt hangs an empty
+    named anchor on the next text it lays out, the heading cell."""
+    name = f"<a name='{anchor}'></a>" if anchor else ""
+    return (f"{name}<table cellpadding='3' cellspacing='0' width='99%'><tr>"
+            f"<td style='{_heading_css(theme)};{_rule_css(dark)}'>"
+            f"{title}{extra}</td></tr></table>")
+
+
 def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
     """The Damage dealt section (damage_kinds, issue #73): the kinds of the
     player's damage in the fight from the damage record's 'kinds', drawn by
@@ -506,9 +537,6 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
     shield absorbs sit outside the splits and are named; the hover on a
     side's label names the Warfare stars for damage dealt."""
     muted = theme["muted"]
-    heading = f"padding-top:7px;color:{muted};font-weight:bold"
-    under = (f"border-bottom-style:solid;border-bottom-width:1px;"
-             f"border-bottom-color:{_RULES[bool(dark)]}")
     # Beside the heading, the way to the other side: the player's damage
     # taken window (taken_render, issue #98); not for a companion, which
     # has no tally
@@ -518,8 +546,7 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
         taken_link = (f" <span style='font-weight:normal;font-size:{base_pt * 0.85:.2f}pt'>"
                       f"<a href='{e(taken_href(unit_id), quote=True)}' style='text-decoration:none;"
                       f"color:{theme['link']}'>{TAKEN_LINK}</a></span>")
-    title = (f"<a name='{DEALT_ANCHOR}'></a>"
-             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{DEALT_TITLE}{taken_link}</p>")
+    title = _heading_html(DEALT_TITLE, taken_link, dark, theme, DEALT_ANCHOR)
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"
@@ -562,13 +589,12 @@ def _resources_html(p, dark: bool, theme, base_pt: float, e, names) -> str:
     not), each with its rate over the fight, the logged gains over cap and
     the time at ultimate cap; then the casts the most went on and the
     gains that gave the most, each giver through the Hide names mask."""
-    muted, rule = theme["muted"], _RULES[bool(dark)]
+    muted = theme["muted"]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
-    heading = f"padding-top:7px;color:{muted};font-weight:bold"
-    under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
-    title = (f"<a name='{RESOURCES_ANCHOR}'></a>"
-             f"<p style='margin:6px 0 2px 0;{heading};{under}'>{RESOURCES_TITLE}"
-             f" <span style='font-weight:normal;{small}'>· {RESOURCES_CAPTION}</span></p>")
+    heading = _heading_css(theme)
+    title = _heading_html(RESOURCES_TITLE,
+                          f" <span style='font-weight:normal;{small}'>· {RESOURCES_CAPTION}</span>",
+                          dark, theme, RESOURCES_ANCHOR)
     if "resources" not in p:
         return title + f"<p style='margin:0;color:{muted}'>{RESOURCES_NOT_RECORDED}</p>"
     data = p.get("resources")
@@ -661,15 +687,23 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
     the boss (uptime, value, casters) and the buffs on the player, then the
     totals: own, with every debuff at full uptime, and effective (each
     second of the player's damage capped, as Combat Metrics caps each
-    hit), against the cap."""
+    hit), against the cap. The effective line is the conclusion, so it
+    sits in a framed row of its own with a 3 px bar at its left edge
+    (issue #143): a box rather than an underline, because the app's one
+    underline is the hover cue on a clickable name or figure; a table
+    cell rather than a <p>, because Qt rich text draws borders on cells
+    only; the frame is the build card's hairline, and the bar in the muted
+    colour gives the cue the contrast a hairline lacks (about 6:1 against
+    the page in either theme), so it is seen without colour vision. The
+    muted 'no damage measured' line stays in the plain row: a frame round
+    an absence would draw the eye to nothing."""
     data = p.get("pen_crit") or {}
     group = getattr(entry, "pen_crit", None) or {}
     if not data and not group:
         return ""
-    muted, rule = theme["muted"], _RULES[bool(dark)]
+    muted = theme["muted"]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
-    heading = f"padding-top:7px;color:{muted};font-weight:bold"
-    under = f"border-bottom-style:solid;border-bottom-width:1px;border-bottom-color:{rule}"
+    heading, under = _heading_css(theme), _rule_css(dark)
     # The same sums and effective figures the fight pane's row shows
     totals = player_totals(data, group, options)
     instanced, cap, crit_cap = totals["instanced"], totals["cap"], totals["crit_cap"]
@@ -714,12 +748,19 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
         return (f"<tr>{cell(name)}{cell(value, 'right')}"
                 f"{cell(detail, color=muted, extra=small)}</tr>")
 
-    def table(title, cap_text, columns, body, totals):
+    # The conclusion's frame: the build card's hairline on four sides and
+    # the bar at the left (see the docstring)
+    frame = (f"border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
+             f"border-left-width:3px;border-left-color:{muted};padding:5px;padding-left:8px")
+
+    def table(title, cap_text, columns, body, totals, conclusion=""):
         head = (f"<tr><td colspan='3' style='{heading};{under}'>{title}"
                 f" <span style='font-weight:normal'>· {cap_text}</span></td></tr>")
         parts = ["<table cellpadding='3' cellspacing='0' width='99%'>", head]
         parts.extend(body)
         parts.append(f"<tr><td colspan='3' style='padding-top:6px'>{'<br>'.join(totals)}</td></tr>")
+        if conclusion:
+            parts.append(f"<tr><td colspan='3' style='{frame}'>{conclusion}</td></tr>")
         parts.append("</table>")
         return "".join(parts)
 
@@ -752,9 +793,10 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
         gap = full_pen - cap
         pen_totals.append(f"With the group's debuffs at full uptime {_num(full_pen)}, "
                           + (f"over the cap by {_num(gap)}" if gap >= 0 else f"missing {_num(-gap)}"))
+    pen_effective = ""
     if eff_pen.get("damage"):
-        pen_totals.append(f"<b>Effective {_num(eff_pen['effective'])} of {_num(cap)}</b> over this player's damage, "
-                          f"{eff_pen['over_pct']:.0f}% of it dealt over the cap")
+        pen_effective = (f"<b>Effective {_num(eff_pen['effective'])} of {_num(cap)}</b> over this player's damage, "
+                         f"{eff_pen['over_pct']:.0f}% of it dealt over the cap")
     elif not pen_debuffs:
         pen_totals.append(f"<span style='color:{muted}'>{NO_DAMAGE_MEASURED}</span>")
     kind = group.get("kind") or ("instanced" if instanced else "overland")
@@ -770,7 +812,7 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
     else:
         where = " overland"
     cap_text = f"cap {_num(cap)}{where}"
-    pen_table = table(PEN_TITLE, cap_text, 3, pen_body, pen_totals)
+    pen_table = table(PEN_TITLE, cap_text, 3, pen_body, pen_totals, pen_effective)
 
     # Critical damage
     crit_body = [f"<tr>{cell('Base')}{cell(_num(CRIT_BASE, True), 'right')}{cell('every character', color=muted, extra=small)}</tr>"]
@@ -795,13 +837,14 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
         gap = full_crit - crit_cap
         crit_totals.append(f"With every buff and debuff at full uptime {_num(full_crit, True)}, "
                            + (f"over the cap by {_num(gap, True)}" if gap >= 0 else f"missing {_num(-gap, True)}"))
+    crit_effective = ""
     if eff_crit.get("damage"):
-        crit_totals.append(f"<b>Effective {_num(eff_crit['effective'], True)} of {_num(crit_cap, True)}</b> over this player's damage, "
-                           f"{eff_crit['over_pct']:.0f}% of it dealt over the cap")
+        crit_effective = (f"<b>Effective {_num(eff_crit['effective'], True)} of {_num(crit_cap, True)}</b> "
+                          f"over this player's damage, {eff_crit['over_pct']:.0f}% of it dealt over the cap")
     elif not (buffs or crit_debuffs):
         crit_totals.append(f"<span style='color:{muted}'>{NO_DAMAGE_MEASURED}</span>")
     crit_cap_text = f"cap {_num(crit_cap, True)}" + (" with Above and Beyond" if crit_cap != CRIT_CAP else "")
-    crit_table = table(CRIT_TITLE, crit_cap_text, 3, crit_body, crit_totals)
+    crit_table = table(CRIT_TITLE, crit_cap_text, 3, crit_body, crit_totals, crit_effective)
 
     # The named anchor lets a reader (the screenshot script) scroll to here
     return (f"<a name='{PEN_CRIT_ANCHOR}'></a>" + pen_table + crit_table
@@ -845,10 +888,12 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
         _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
-        # Magicka, stamina and ultimate spent and gained (resources)
-        _resources_html(p, dark, theme, base_pt, e, names),
-        # The kinds of the damage dealt (damage_kinds), before the
-        # penetration and critical damage figures
+        # What the player did with the build, as one block: the kinds of
+        # the damage dealt (damage_kinds), then the penetration and
+        # critical damage figures weighed by that damage
         _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]), base_pt, e),
         _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e, names),
+        # Magicka, stamina and ultimate spent and gained (resources), the
+        # tallest section, last (issue #143)
+        _resources_html(p, dark, theme, base_pt, e, names),
     ))

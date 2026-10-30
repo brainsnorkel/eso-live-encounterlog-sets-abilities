@@ -843,6 +843,33 @@ class TestRender(unittest.TestCase):
     def test_cap_setting_overrides_the_zone(self):
         self.assertIn("cap 9,100", self._html({"cap": 9100}))
 
+    def test_the_effective_line_sits_in_a_framed_row(self):
+        # Issue #143: each section's conclusion in a cell of its own with a
+        # frame and a bar at the left; the working stays in the plain cell
+        import re
+        for dark in (False, True):
+            html = self._html(None, dark)
+            boxes = re.findall(r"<td colspan='3' style='border-style:solid;[^']*"
+                               r"border-left-width:3px;[^']*'>(.*?)</td>", html)
+            self.assertEqual(len(boxes), 2)
+            self.assertTrue(all(box.startswith("<b>Effective ") for box in boxes), boxes)
+            self.assertNotIn("Own ", "".join(boxes))
+            self.assertNotIn("background-color", "".join(
+                re.findall(r"<td colspan='3' style='(border-style:solid;[^']*)'>", html)))
+
+    def test_no_damage_measured_is_not_framed(self):
+        import copy
+
+        from gui.build_render import NO_DAMAGE_MEASURED, render_build_html
+        entry = copy.deepcopy(self.entry)
+        entry.pen_crit = dict(entry.pen_crit, debuffs=[])
+        for p in entry.players:
+            if p.get("pen_crit"):
+                p["pen_crit"] = dict(p["pen_crit"], pen_hist=[], crit_hist=[], buffs=[])
+        html = render_build_html(entry, "1")
+        self.assertIn(NO_DAMAGE_MEASURED, html)
+        self.assertNotIn("border-left-width:3px", html)
+
     def test_an_old_entry_without_the_fields_renders(self):
         import copy
         entry = copy.deepcopy(self.entry)

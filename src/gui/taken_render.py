@@ -58,7 +58,7 @@ from damage_kinds import (
     DIRECT_RESULTS,
     summary_of_taken,
 )
-from gui.build_render import player_for
+from gui.build_render import _heading_html, player_for
 from gui.death_render import (
     _THEMES,
     HOT_LABEL,
@@ -194,11 +194,10 @@ def _figures_html(entry, taken: dict, theme, e) -> str:
 
 
 def _section_title(text: str, theme, dark: bool, anchor: str = "") -> str:
-    rule = "#45494f" if dark else "#d6d9dc"
-    name = f"<a name='{anchor}'></a>" if anchor else ""
-    return (f"{name}<p style='margin:10px 0 2px 0;padding-top:7px;color:{theme['muted']};"
-            f"font-weight:bold;border-bottom-style:solid;border-bottom-width:1px;"
-            f"border-bottom-color:{rule}'>{text}</p>")
+    """A section title with its rule, in the build window's table-head form
+    (build_render._heading_html): a <p> with a border draws no rule in Qt
+    rich text, so these titles had none until issue #143."""
+    return _heading_html(text, "", dark, theme, anchor)
 
 
 def _table_open(columns, theme) -> str:

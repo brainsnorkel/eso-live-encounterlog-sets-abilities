@@ -89,6 +89,9 @@ TOPICS = [
         "scripts/generate_set_offense.py",
         "src/gui/build_render.py:_pen_crit_html",
     ]),
+    ("Section headings: the one element Qt rich text draws a rule on", [
+        "src/gui/build_render.py:_heading_html",
+    ]),
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
         "src/build_issues.py:BuildIssueTracker",

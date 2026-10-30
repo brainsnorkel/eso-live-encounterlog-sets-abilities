@@ -8,7 +8,13 @@ import unittest
 import resources
 from engine_events import RecordingListener
 from esolog_tail import ESOLogAnalyzer, FightHistory
-from gui.build_render import RESOURCES_TITLE, render_build_html
+from gui.build_render import (
+    DEALT_ANCHOR,
+    PEN_CRIT_ANCHOR,
+    RESOURCES_ANCHOR,
+    RESOURCES_TITLE,
+    render_build_html,
+)
 from gui.name_mask import NameMask
 
 EPOCH = 1759600000000
@@ -219,10 +225,16 @@ class TestRender(unittest.TestCase):
     def setUpClass(cls):
         cls.fight = _fight()
 
-    def test_the_section_sits_between_gear_and_damage_dealt(self):
+    def test_the_section_closes_the_window_after_the_cap_sections(self):
+        # Damage dealt, Penetration and Critical damage first, as one block
+        # about what the player did; the tallest section last (issue #143)
         page = render_build_html(self.fight, '1')
         self.assertIn(RESOURCES_TITLE, page)
-        self.assertLess(page.index("name='resources'"), page.index("name='damage-dealt'"))
+        dealt, resources = page.index(f"name='{DEALT_ANCHOR}'"), page.index(f"name='{RESOURCES_ANCHOR}'")
+        self.assertLess(dealt, resources)
+        if f"name='{PEN_CRIT_ANCHOR}'" in page:
+            self.assertLess(dealt, page.index(f"name='{PEN_CRIT_ANCHOR}'"))
+            self.assertLess(page.index(f"name='{PEN_CRIT_ANCHOR}'"), resources)
         self.assertIn('2,700', page)
         self.assertIn('45.0/s', page)
         self.assertIn('Ice Comet', page)

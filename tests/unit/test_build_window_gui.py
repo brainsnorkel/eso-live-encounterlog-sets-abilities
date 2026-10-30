@@ -1073,5 +1073,84 @@ class TestDamageDealtSection(unittest.TestCase):
             dialog.deleteLater()
 
 
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestSectionOrderAndHeadings(unittest.TestCase):
+    """Below the gear grid (issue #143): Damage dealt, then Penetration and
+    Critical damage, then Resources last; and the Damage dealt and
+    Resources headings drawn as table heads, the one form Qt rules."""
+
+    def setUp(self):
+        _ensure_app()
+
+    def test_damage_dealt_then_the_cap_sections_then_resources(self):
+        from gui.build_render import (
+            DEALT_ANCHOR,
+            DEALT_TITLE,
+            PEN_CRIT_ANCHOR,
+            RESOURCES_ANCHOR,
+            render_build_html,
+        )
+        html = render_build_html(_entry(), '1')
+        positions = [html.index(f"name='{a}'")
+                     for a in (DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(html.index('>Back bar</td>'), html.index(DEALT_TITLE))
+        # The pen/crit credits note precedes the Resources heading; the
+        # page no longer ends with it
+        self.assertLess(html.index('skinnycheeks.gg'), html.index(f"name='{RESOURCES_ANCHOR}'"))
+
+    def test_the_two_headings_are_table_heads_with_a_rule(self):
+        from gui.build_render import DEALT_TITLE, RESOURCES_TITLE, render_build_html
+        html = render_build_html(_entry(), '1')
+        for title in (DEALT_TITLE, RESOURCES_TITLE):
+            start = html.index(f"'>{title}")
+            cell = html[html.rindex('<td', 0, start):start]
+            self.assertIn('border-bottom-style:solid', cell, title)
+        self.assertNotIn("<p style='margin:6px 0 2px 0;padding-top:7px", html)
+
+    def test_the_anchors_scroll_the_window_to_their_headings(self):
+        # The empty <a name> now precedes a <table>: Qt hangs it on the
+        # heading cell, where scrollToAnchor (the pen/crit token's click,
+        # the screenshot script) must find it
+        from PySide6.QtWidgets import QApplication
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
+        dialog = BuildDialog()
+        try:
+            dialog.show_build(_entry(), '1', dark=False)
+            dialog.show()
+            QApplication.processEvents()
+            view, bar = dialog.view, dialog.view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            for anchor in (DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR):
+                top = _anchor_top(view.document(), anchor)
+                self.assertIsNotNone(top, anchor)
+                view.scrollToAnchor(anchor)
+                self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1, anchor)
+                self.assertGreater(bar.value(), 0, anchor)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+
+def _anchor_top(doc, name):
+    """The top of the block that carries the named anchor, as
+    QTextEdit.scrollToAnchor reads it (on the block's format for an anchor
+    before a <p>, on a fragment's for one before a <table>); None if the
+    document has no such anchor."""
+    block = doc.begin()
+    while block.isValid():
+        if name in block.charFormat().anchorNames():
+            return doc.documentLayout().blockBoundingRect(block).top()
+        it = block.begin()
+        while not it.atEnd():
+            if name in it.fragment().charFormat().anchorNames():
+                return doc.documentLayout().blockBoundingRect(block).top()
+            it += 1
+        block = block.next()
+    return None
+
+
 if __name__ == '__main__':
     unittest.main()
