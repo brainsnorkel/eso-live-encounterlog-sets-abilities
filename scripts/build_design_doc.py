@@ -81,6 +81,9 @@ TOPICS = [
         "scripts/generate_gear_data.py",
         "scripts/check_client_names.py",
     ]),
+    ("Set buffs: which set a Major or Minor buff came from", [
+        "scripts/generate_set_buffs.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),

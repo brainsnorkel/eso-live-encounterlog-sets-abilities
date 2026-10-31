@@ -744,10 +744,9 @@ class TestAbilityTargets(unittest.TestCase):
         self.assertEqual(table_target('28800'), 'area')
 
 
-class TestSetTextAndProcs(unittest.TestCase):
+class TestSetText(unittest.TestCase):
     """Issue #79: set bonus text (scripts/generate_set_offense.py, a second
-    table from the same reply) and set proc abilities
-    (scripts/generate_set_procs.py)."""
+    table from the same reply)."""
 
     SUMMARY = {"setSummary": [
         {"gameId": "232", "setName": "Roar of Alkosh",
@@ -781,29 +780,128 @@ class TestSetTextAndProcs(unittest.TestCase):
         self.assertEqual([b['pieces'] for b in alkosh], [2, 3, 4, 5])
         self.assertIn("Minor Slayer", alkosh[1]['text'])
 
-    def test_a_proc_is_keyed_by_ability_and_named_by_its_set_id(self):
-        gen = _load('generate_set_procs.py')
-        payload = {"minedSkills": [
-            {"id": "135923", "setName": "Roaring Opportunist"},
-            {"id": "142012", "setName": "CP:Cutting Defense"},
-            {"id": "61746", "setName": ""},
-            {"id": "", "setName": "Roar of Alkosh"},
-            {"id": "75752", "setName": "Roar of Alkosh"},
-        ]}
-        procs, unknown = gen.set_procs(payload, {"Roaring Opportunist": "496", "Roar of Alkosh": "232"})
-        self.assertEqual(procs, {"135923": {"set_id": "496", "set": "Roaring Opportunist"},
-                                 "75752": {"set_id": "232", "set": "Roar of Alkosh"}})
-        self.assertEqual(unknown, ["CP:Cutting Defense"])
 
-    def test_a_short_reply_writes_nothing(self):
-        gen = _load('generate_set_procs.py')
+def _gear(*pieces):
+    """A PLAYER_INFO gear list of (slot, set id) pairs."""
+    return '[' + ','.join(f'[{slot},95044,T,16,ARMOR_DIVINES,LEGENDARY,{set_id},MAGICKA,T,16,LEGENDARY]'
+                          for slot, set_id in pieces) + ']'
+
+
+# Five Roaring Opportunist pieces, two of them perfected
+RO_GEAR = _gear(('HEAD', 496), ('CHEST', 496), ('SHOULDERS', 496), ('LEGS', 497), ('WAIST', 497))
+BEGIN_LOG = '0,BEGIN_LOG,1700000000000,15,"NA Megaserver","en","eso.live.11.0"'
+SLAYER_INFO = '1,ABILITY_INFO,135923,"Major Slayer","/esoui/art/icons/x.dds",F,T'
+
+
+def _effect(ability, source):
+    return f'20,EFFECT_CHANGED,GAINED,1,7,{ability},{source},20000/20000,0/0,0/0,0/0,0/0,0,0.5,0.5,0.0,*'
+
+
+class TestSetBuffs(unittest.TestCase):
+    """Issue #79, decision 5: the set behind a Major or Minor buff, from split
+    logs and the bundled bonus text (scripts/generate_set_buffs.py)."""
+
+    def test_a_perfected_set_and_its_base_are_one_family(self):
+        gen = _load('generate_set_buffs.py')
+        ids, buffs, family_of = gen.set_families({
+            "496": {"name": "Roaring Opportunist", "bonuses": [
+                {"pieces": 5, "text": "you and up to 5 group members gain Major Slayer"}]},
+            "497": {"name": "Perfected Roaring Opportunist", "bonuses": [
+                {"pieces": 3, "text": "Gain Minor Slayer at all times"},
+                {"pieces": 5, "text": "you and up to 5 group members gain Major Slayer"}]},
+            "19": {"name": "Vestments of the Warlock", "bonuses": [
+                {"pieces": 2, "text": "Adds 3-129 Magicka Recovery"}]},
+        })
+        self.assertEqual(ids["Roaring Opportunist"], ["496", "497"])
+        self.assertEqual(buffs, {"Roaring Opportunist": {"Major Slayer": 5, "Minor Slayer": 3}})
+        self.assertEqual(family_of["497"], "Roaring Opportunist")
+
+    def test_sessions_hold_each_players_worn_sets_and_sourced_effects(self):
+        gen = _load('generate_set_buffs.py')
+        names = {}
+        lines = [BEGIN_LOG, SLAYER_INFO,
+                 f'5,PLAYER_INFO,1,[13975],[1],{RO_GEAR},[1],[2]',
+                 '5,PLAYER_INFO,2,[13975],[1],[],[1],[2]',
+                 _effect(135923, 1),
+                 _effect(135923, 3),  # no PLAYER_INFO, so not a player session
+                 BEGIN_LOG,
+                 f'5,PLAYER_INFO,1,[13975],[1],{_gear(("HEAD", 496), ("CHEST", 497))},[1],[2]']
+        family_of = {"496": "Roaring Opportunist", "497": "Roaring Opportunist"}
+        self.assertEqual(gen.read_sessions(lines, family_of, names), [
+            ({"Roaring Opportunist": 5}, {"135923"}),
+            ({}, set()),
+            ({"Roaring Opportunist": 2}, set()),
+        ])
+        self.assertEqual(names, {"135923": "Major Slayer"})
+
+    def test_a_buff_is_tied_when_named_worn_and_rare_elsewhere(self):
+        gen = _load('generate_set_buffs.py')
+        family_buffs = {"Roaring Opportunist": {"Major Slayer": 5},
+                        "War Machine": {"Major Slayer": 5},
+                        "Mender's Ward": {"Major Vitality": 2},
+                        "Few Wearers": {"Major Force": 5}}
+        names = {"135923": "Major Slayer", "93442": "Major Slayer", "93109": "Major Slayer",
+                 "61713": "Major Vitality", "113653": "Major Vitality", "1": "Major Force"}
+        ro = {"Roaring Opportunist": 5}
+        sessions = (
+            [(ro, {"135923", "93109"})] * 5
+            # worn with Jorvuld's Guidance, which names no Major Slayer: still RO's
+            + [({**ro, "Jorvuld's Guidance": 5}, {"135923", "93109"})] * 5
+            + [({"War Machine": 5}, {"93442", "93109"})] * 5
+            + [({"Mender's Ward": 2}, {"61713", "113653"})] * 5
+            + [({"Few Wearers": 5}, {"1"})] * 4
+            + [({}, {"61713"})] * 3  # 3% of the others write that id too
+            + [({}, set())] * 97)
+        tied, shared = gen.tie_buffs(sessions, family_buffs, names)
+        self.assertEqual({a: row[:3] for a, row in tied.items()}, {
+            "135923": ("Roaring Opportunist", "Major Slayer", 10),
+            "93442": ("War Machine", "Major Slayer", 5),
+            "113653": ("Mender's Ward", "Major Vitality", 5),
+        })
+        self.assertEqual(shared, {"93109": ["Roaring Opportunist", "War Machine"]})
+
+    def test_main_reads_a_session_copied_twice_once(self):
+        gen = _load('generate_set_buffs.py')
+        session = [BEGIN_LOG, SLAYER_INFO, f'5,PLAYER_INFO,1,[13975],[1],{RO_GEAR},[1],[2]',
+                   '5,PLAYER_INFO,2,[13975],[1],[],[1],[2]', _effect(135923, 1)]
+        text = '\n'.join(session * 5) + '\n'
         with tempfile.TemporaryDirectory() as temp:
-            reply, out = Path(temp) / 'reply.json', Path(temp) / 'out.json'
-            reply.write_text(json.dumps({"minedSkills": [{"id": "1", "setName": "Roar of Alkosh"}]}),
-                             encoding='utf-8')
+            folder, out = Path(temp) / 'splits', Path(temp) / 'set_buffs.json'
+            folder.mkdir()
+            for name in ('261001120000-Sunspire-vet.log', '261001120000-Sunspire-vet-2.log',
+                         '261001130000-temp.log'):
+                (folder / name).write_text(text, encoding='utf-8')
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(gen.main(['--dir', str(folder), '--out', str(out)]), 0)
+            data = json.loads(out.read_text(encoding='utf-8'))
+        self.assertEqual(data['source'], "1 split logs, 10 player sessions")
+        self.assertEqual(data['buffs'], {"135923": {
+            "name": "Major Slayer", "set": "Roaring Opportunist", "set_ids": ["496", "497"],
+            "sessions": 5, "wearers": 1.0, "others": 0.0}})
+
+    def test_a_folder_with_no_players_writes_nothing(self):
+        gen = _load('generate_set_buffs.py')
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / 'set_buffs.json'
+            (Path(temp) / '261001120000-Sunspire-vet.log').write_text(BEGIN_LOG + '\n', encoding='utf-8')
             with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(gen.main(['--from', str(reply), '--out', str(out)]), 1)
+                self.assertEqual(gen.main(['--dir', temp, '--out', str(out)]), 1)
             self.assertFalse(out.exists())
+
+    def test_the_committed_table_names_each_buff_in_its_sets_text(self):
+        sets = REPO_ROOT / 'data' / 'sets'
+        buffs = json.loads((sets / 'set_buffs.json').read_text(encoding='utf-8'))['buffs']
+        text = json.loads((sets / 'bonuses_en.json').read_text(encoding='utf-8'))['sets']
+        self.assertGreaterEqual(len(buffs), 30)
+        for ability_id, row in buffs.items():
+            self.assertEqual(set(row), {"name", "set", "set_ids", "sessions", "wearers", "others"})
+            self.assertTrue(any(row['name'] in bonus['text']
+                                for set_id in row['set_ids'] for bonus in text[set_id]['bonuses']),
+                            ability_id)
+        # Roaring Opportunist's own Major Slayer, while 93109 is shared with
+        # War Machine and Master Architect
+        self.assertEqual(buffs['135923']['set'], "Roaring Opportunist")
+        self.assertNotIn('93109', buffs)
 
 
 if __name__ == '__main__':
