@@ -122,10 +122,20 @@ SCRIPTED_ABILITIES = frozenset((
     "121308",  # Look At (Nahviintaas)
     "157215",  # Music Musicer (Archwizard Twelvane, Tho'at Replicanum, Xalvakka)
 ))
-# Zones whose enemies spawn in waves: the first seconds are the spawn
+# Zones whose enemies spawn in waves: the first seconds are the spawn. Known
+# by zone id, which every client language writes alike (the split logs
+# confirm Infinite Archive 1436, Blackrose Prison 1082 and Dragonstar Arena
+# 635; Maelstrom Arena 677 and Vateshran Hollows 1227 are in none of them),
+# and by the English name for an entry without one
+ARENA_ZONE_IDS = frozenset(("1436", "1082", "635", "677", "1227"))
 ARENA_ZONES = frozenset((
     "Infinite Archive", "Blackrose Prison", "Dragonstar Arena", "Maelstrom Arena",
     "Vateshran Hollows"))
+
+
+def is_arena(zone_id, zone_name) -> bool:
+    """Whether a fight's zone spawns its enemies in waves."""
+    return str(zone_id or "") in ARENA_ZONE_IDS or (zone_name or "") in ARENA_ZONES
 
 
 @dataclass(frozen=True)
@@ -340,11 +350,11 @@ class OpenerRecorder:
     def begin_combat(self, start_ms: int) -> FightOpening:
         """A new fight's BEGIN_COMBAT: the memory becomes its candidates.
         The line's own millisecond stays pending and settles into it."""
-        if self._fight is not None:  # the last fight never ended
-            self._settle_all()
-            self._fight.close()
-        elif self._pending and self._pending_ts < start_ms:
+        if self._pending and self._pending_ts < start_ms:
             self._settle()
+        if self._fight is not None:  # the last fight never ended
+            self._fight.close()
+            self._fight = None
         opening = FightOpening(start_ms, self._memory_start)
         horizon = start_ms - OPENER_WINDOW_MS
         for act in self._memory:
@@ -581,7 +591,7 @@ def opener_parts(entry) -> list[list]:
     if not opener and not monster:
         return []
     rows = {str(p.get("unit_id", "")): p for p in (getattr(entry, "players", None) or [])}
-    arena = (getattr(entry, "zone_name", "") or "") in ARENA_ZONES
+    arena = is_arena(getattr(entry, "zone_id", ""), getattr(entry, "zone_name", ""))
     if monster:
         target = _target_parts(monster, rows)
         action = monster.get("action") or ""
@@ -640,10 +650,20 @@ def _actor_parts(fields: dict, rows: dict) -> list:
                        _role_class(rows.get(str(fields.get("owner_id", "")))))
     via = fields.get("via")
     if via == "pet":
-        return [owner, f"'s {fields.get('pet') or 'pet'}"]
+        return [owner, *_pet_parts(fields.get("pet"))]
     if via == "companion":
         return [owner, "'s Companion"]
     return [owner]
+
+
+def _pet_parts(pet) -> list:
+    """After the owner's name: the pet's own name, through the mask too,
+    since a unit the engine does not know as a companion can carry a handle
+    ("@handle's Companion"); such a unit reads as its owner's Companion."""
+    pet = str(pet or "") or "pet"
+    if pet.endswith("'s Companion"):
+        return ["'s Companion"]
+    return ["'s ", PlayerName(pet)]
 
 
 def _target_parts(monster: dict, rows: dict) -> list:

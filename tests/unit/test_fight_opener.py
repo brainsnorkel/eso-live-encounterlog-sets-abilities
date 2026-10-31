@@ -180,6 +180,16 @@ class TestTheMemoryBeforeTheLine(unittest.TestCase):
         self.assertIsNone(fight.opener)
         self.assertIsNone(fight.monster_first)
 
+    def test_the_lines_millisecond_goes_to_the_new_fight_when_the_last_never_ended(self):
+        """A BEGIN_COMBAT with no END_COMBAT before it (never in the 9,571 of
+        the survey): the last fight closes, and the acts written in the new
+        line's millisecond, before it, open the new one."""
+        fights = _fights("3000,BEGIN_COMBAT", _player_cast(9900, 3, 6001, INNER_RAGE),
+                         _hit(10000, 3, 6001, INNER_RAGE), _taunt(10000, 3, 6001),
+                         "10000,BEGIN_COMBAT", "20000,END_COMBAT")
+        opener = fights[-1].opener
+        self.assertEqual((opener["kind"], opener["name"], opener["time_ms"]), ("taunt", "@tank", 0))
+
 
 class TestTaunts(unittest.TestCase):
     CAST = (_player_cast(9900, 3, 6001, INNER_RAGE),)
@@ -465,6 +475,15 @@ class TestTheLine(unittest.TestCase):
         self.assertEqual(_lines(_entry(companion)),
                          ["@brainsnorkel's Companion hit Dreadhorn Scrapper first: Light Attack"])
 
+    def test_a_pet_whose_name_carries_a_handle(self):
+        """A unit the engine does not know as a companion, named by the game
+        "@handle's Companion", reads as its owner's Companion; any other pet
+        name goes through the mask like a player's."""
+        named = _opener(name="@templar", owner="2", via="pet", pet="@templar's Companion")
+        self.assertEqual(_lines(_entry(named)), ["@templar's Companion hit Sail Ripper first: Light Attack (Ice)"])
+        parts = opener_parts(_entry(_opener(name="@templar", owner="2", via="pet", pet="Wild Guardian")))
+        self.assertIn(PlayerName("Wild Guardian"), parts[0])
+
     def test_a_monster_first_opening_is_two_lines(self):
         entry = _entry(_opener(name="@brainsnorkel", owner="1", ability="Burning",
                                target="Tazkad the Packmaster", time_ms=201),
@@ -499,6 +518,10 @@ class TestTheLine(unittest.TestCase):
                          ["@tank hit Sail Ripper first: Light Attack (Ice)"])
         self.assertEqual(_lines(_entry(_opener(time_ms=-2400), zone="Infinite Archive")),
                          ["@tank hit Sail Ripper first: Light Attack (Ice), 2.4 s before the fight's start"])
+        # By zone id, whatever the client's language calls it
+        german = _entry(_opener(time_ms=2400), zone="Unendliches Archiv")
+        german.zone_id = "1436"
+        self.assertEqual(_lines(german), ["@tank hit Sail Ripper first: Light Attack (Ice)"])
 
     def test_seconds_round_half_up(self):
         self.assertEqual([seconds_text(ms) for ms in (1050, 1149, 1150, -2874, 5845)],

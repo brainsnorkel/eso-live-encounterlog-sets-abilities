@@ -2810,18 +2810,18 @@ class ESOLogAnalyzer(ListenerMixin):
         if player is not None:
             return fight_opener.Side(unit_id, 'player', player.unit_id, player.unit_id,
                                      player.get_display_name())
+        # A pet's or companion's owner is kept by its record id
+        # (track_pet_ownership), so the lookup is direct
         companion = enc.companion_key(unit_id)
         if companion is not None:
             record = enc.companions.get(companion)
-            owner = enc.find_player_by_unit_id(record.owner_unit_id) if record else None
+            owner = enc.players.get(record.owner_unit_id) if record else None
             if owner is None:
                 return None
             return fight_opener.Side(unit_id, 'companion', companion, owner.unit_id,
                                      owner.get_display_name())
         owner_id = enc.pet_ownership.get(unit_id)
-        if owner_id is None:
-            return None
-        owner = enc.find_player_by_unit_id(owner_id)
+        owner = enc.players.get(owner_id) if owner_id is not None else None
         if owner is None:
             return None
         pet = enc.enemies.get(unit_id)
