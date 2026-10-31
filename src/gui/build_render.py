@@ -146,7 +146,7 @@ def build_title(entry, unit_id, names=None) -> str:
     character = str(player.get("character") or "")
     title = names.text(name)
     if player.get("companion"):
-        return f"Companion – {title}" if title else "Companion"
+        return title or "Companion"  # '@handle's Companion' (companions.shown_name)
     if title and character and character != name:
         title += f" ({names.text(character)})"
     return f"Build – {title}" if title else "Build"
@@ -211,23 +211,20 @@ def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> 
 
 def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
                     text_color: str) -> str:
-    """A companion's window (companions.py): its name, level and owner, the
-    fight, and the skills it was seen casting this session with this
-    fight's casts under each and its ultimate set apart, then the casts no
-    skill holds and its casts per minute (issue #130); under the card,
+    """A companion's window (companions.py): its name, which names its
+    owner, its level, the fight, and the skills it was seen casting this
+    session with this fight's casts under each and its ultimate set apart,
+    then the casts no skill holds and its casts per minute (issue #130); under the card,
     when it cast its ultimate this fight and the healing it did to others.
     The log writes no bar, gear or perks for a companion, so there is
     nothing else of a build; render_build_html adds the kinds of its damage
     under it."""
     muted = theme["muted"]
-    owner = player_for(entry, p.get("owner_unit_id")) or {}
-    owner_name = _join(owner.get("name", ""))
     level = p.get("level") or 0
     facts = ["Companion", f"level {level}" if level else ""]
     title_pt = base_pt * 1.3
     title = (f"<span style='font-size:{title_pt:.2f}pt;font-weight:bold'>"
-             f"{e(_join(p.get('name', '')))}</span>")
-    of_owner = (f" · of {names.html(owner_name, muted, base_pt)}" if owner_name else "")
+             f"{names.html(_join(p.get('name', '')), text_color, title_pt, bold=True)}</span>")
     vet = (f" <span style='color:{theme['vet']};font-weight:bold'>[VET]</span>"
            if getattr(entry, "is_vet", False) else "")
     zone = str(getattr(entry, "zone_name", "") or "")
@@ -257,7 +254,7 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     after_html = (f"<p style='margin:4px 0;color:{muted}'>"
                   f"{' · '.join(e(line) for line in after if line)}</p>" if any(after) else "")
     return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
-            f"{' · '.join(e(fact) for fact in facts if fact)}{of_owner}</span></p>"
+            f"{' · '.join(e(fact) for fact in facts if fact)}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>{' · '.join(part for part in fight if part)}</p>"
             f"<p style='margin:8px 0 6px 0;color:{muted}'>{COMPANION_NOTE}</p>"
             f"{no_skills}{card}{after_html}")

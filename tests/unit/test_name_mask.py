@@ -121,6 +121,24 @@ class TestWhoIsHidden(unittest.TestCase):
         self.assertEqual(mask.html("@me", "#202124", 9.0), "@me")
         self.assertEqual(mask.html("Sharp<fang>", "#202124", 9.0), "Sharp&lt;fang&gt;")
 
+    def test_a_companion_is_hidden_as_its_owner_is(self):
+        """A companion's name is its owner's, "<owner>'s Companion": the
+        owner part is hidden or kept as the owner's name, the rest shows."""
+        from gui.name_mask import NameMask
+        mask = NameMask.for_entry(_entry(), True)
+        self.assertFalse(mask.hides("@me's Companion"))
+        self.assertEqual(mask.text("@me's Companion"), "@me's Companion")
+        self.assertTrue(mask.hides("@friend's Companion"))
+        self.assertEqual(mask.text("@friend's Companion"), "@" + BLOCK * 6 + "'s Companion")
+        self.assertEqual(mask.text("Nameless One's Companion"), BLOCK * 12 + "'s Companion")
+        # anon names nobody, however many anonymous players there are
+        self.assertFalse(mask.hides("anon's Companion"))
+        hidden = mask.html("@friend's Companion", "#202124", 9.0)
+        self.assertTrue(hidden.startswith("@<img"), hidden)
+        self.assertTrue(hidden.endswith(">&#x27;s Companion"), hidden)
+        self.assertIsNotNone(IMG.fullmatch(hidden[1:-len("&#x27;s Companion")]), hidden)
+        self.assertEqual(mask.html("@me's Companion", "#202124", 9.0), "@me&#x27;s Companion")
+
     def test_a_player_without_a_row_is_known_from_the_roster(self):
         """A player whose build never reached the log has no row, but the
         entry's roster names them, so their character name is hidden in

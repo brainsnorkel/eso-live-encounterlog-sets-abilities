@@ -23,10 +23,27 @@ October 2026):
   in the level field and a health pool only.
 - The logging player's own companion is added with reaction COMPANION and
   ownerUnitId set to the logging player. Another member's is added as
-  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner (sometimes
-  renaming the unit "<handle>'s Companion"), which track_pet_ownership
-  reads for every pet. A companion is known by its reaction or its monster
-  id, and its name is taken from its UNIT_ADDED, never from the rename.
+  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner, which
+  track_pet_ownership reads for every pet. A companion is known by its
+  reaction or its monster id.
+- Another member's companion is nearly always added under the name
+  "<handle>'s Companion" (141 of 150 such UNIT_ADDED lines in the October
+  2026 splits; the logging player's own is always added under its own
+  name). That handle can be one the log keeps from the owner: a player
+  added with neither name nor handle (the engine's ``anon``) is named only
+  by their companion in 217 file and handle pairs over 117 split logs,
+  199 handles. Replayed, 65 companion rows read "@handle's Companion"
+  straight under an ``anon`` row, and the name reached the buff timeline,
+  the penetration casters and the death recaps.
+- So the log's name for a companion is never used. Every companion, the
+  logging player's own included, is "<owner>'s Companion" (shown_name;
+  Chris, 2026-10-29): the owner's handle, or ``anon`` for an owner the log
+  gave no handle, however many anonymous players there are, and for a
+  companion whose owner is not known yet. The name follows the owner: it
+  is set when the owner is (CombatEncounter.name_companions), and again
+  when an anonymous owner is named on joining the group (presence.py,
+  rule 6). The Hide names mask hides the owner part as it hides the
+  owner's own name (gui.name_mask).
 - A companion gets a new unit id every time it is summoned again (after a
   death, a zone change, a dismissal): four unit ids for one Isobel in a
   solo Moon Hunter Keep run of 2026-10-26, where she died five times, so
@@ -96,7 +113,7 @@ companion's):
 from dataclasses import dataclass, field
 
 # Monster ids seen in the logs, with the English name for reference only
-# (the row shows the name the log gave, in the client's language)
+# (a companion is shown as its owner's, shown_name)
 COMPANION_MONSTER_IDS = {
     "100208": "Bastian Hallix",
     "103089": "Mirri Elendis",
@@ -125,12 +142,21 @@ COMPANION_REACTION = "COMPANION"
 # The icon family of companion skills (ABILITY_INFO's .dds path)
 SKILL_ICON_PREFIX = "ability_companion_"
 ROLE = "C"  # the role cell of a companion row
+ANON = "anon"  # the engine's name for a player with neither handle nor name
+NAME_SUFFIX = "'s Companion"  # after the owner's name, in every companion's name
 
 
 def is_companion(monster_id: str, reaction: str) -> bool:
     """Whether a MONSTER unit is a companion: the logging player's own is
     added with reaction COMPANION, another member's is known by its id."""
     return reaction == COMPANION_REACTION or str(monster_id) in COMPANION_MONSTER_IDS
+
+
+def shown_name(owner_handle: str | None) -> str:
+    """The name a companion is shown under: "<owner>'s Companion", the
+    owner's handle, or anon when there is no handle or no owner yet."""
+    handle = str(owner_handle or "")
+    return f"{handle if handle.startswith('@') else ANON}{NAME_SUFFIX}"
 
 
 def row_key(owner_unit_id: str, monster_id: str) -> str:
