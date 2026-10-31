@@ -10,7 +10,7 @@ cursor-navigable collection of those summaries.
 class FightHistoryEntry:
     """Compact summary of a completed fight for frontend display."""
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
-                 'group_boss_dps', 'deaths', 'players', 'buff_summary', 'opener',
+                 'group_boss_dps', 'deaths', 'players', 'buff_summary', 'opener', 'monster_first',
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
@@ -65,6 +65,13 @@ class FightHistoryEntry:
         # negative before it) and edge (at the memory's edge: nobody can be
         # called first). None when nobody hit or taunted an enemy
         self.opener = None
+        # A monster's act on a player-side unit before any hit or taunt:
+        # unit_id, name, action, action_id, target_kind ('player', 'pet' or
+        # 'companion'), target_id (the player's or owner's record id),
+        # target_row, target_name, target_pet, in_flight (a player's cast at
+        # a living enemy already begun: the actor's fields as above with
+        # skill and skill_id, or None), time_ms and edge. None otherwise
+        self.monster_first = None
         # The run's result when this fight completed a trial or an arena:
         # trial_id, name, is_vet, duration_ms, score, vitality, vitality_max
         # (see trial_result.from_end_trial); None for any other fight

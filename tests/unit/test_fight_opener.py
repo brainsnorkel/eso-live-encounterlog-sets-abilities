@@ -25,6 +25,8 @@ from fight_opener import (
 
 EPOCH = 1759600000000
 BOSS_ID, MOB_ID = 1000001, 1000002
+KNOT_ID = 122316  # a scripted mechanic (fight_opener.SCRIPTED_MONSTERS)
+LOOK_AT = 121308  # a scripted cast (fight_opener.SCRIPTED_ABILITIES)
 LA, INNER_RAGE, TAUNT, GOADING = 100, 200, 38254, 210
 CONCUSSION, SUSCEPTIBILITY, SUNDERED = 300, 301, 302
 CALTROPS, CALTROPS_TICK = 400, 401
@@ -88,6 +90,14 @@ def _cast(ts, cast, ability, source, target="*"):
 
 def _player_cast(ts, player, cast, ability, target=70, target_health=1000000):
     return _cast(ts, cast, ability, _p(player), _m(target, target_health))
+
+
+def _monster_cast(ts, monster, cast, ability, player, monster_health=1000000):
+    return _cast(ts, cast, ability, _m(monster, monster_health), _p(player))
+
+
+def _monster_hit(ts, monster, player, result="DAMAGE", ability=SHOCK, cast=0, value=500):
+    return _ev(ts, result, value, cast, ability, _m(monster), _p(player))
 
 
 def _died(ts, monster):
@@ -166,7 +176,9 @@ class TestTheMemoryBeforeTheLine(unittest.TestCase):
         self.assertEqual((second["name"], second["time_ms"], second["edge"]), ("@tank", -5000, True))
 
     def test_an_empty_fight_has_neither_record(self):
-        self.assertIsNone(_in_fight().opener)
+        fight = _in_fight()
+        self.assertIsNone(fight.opener)
+        self.assertIsNone(fight.monster_first)
 
 
 class TestTaunts(unittest.TestCase):
@@ -297,6 +309,87 @@ class TestDeadEnemies(unittest.TestCase):
         fight = _in_fight(_hit(10500, 3), pre=[_hit(9000, 2, target=71), _died(9500, 71)])
         self.assertEqual(fight.opener["name"], "@tank")
 
+    def test_so_is_a_monsters_act_whose_source_died(self):
+        fight = _in_fight(_hit(10500, 3), pre=[_monster_cast(9000, 71, 9301, SHOCK, 2), _died(9500, 71)])
+        self.assertIsNone(fight.monster_first)
+
+
+class TestMonsterFirst(unittest.TestCase):
+
+    def test_a_hostiles_cast_at_a_player_before_any_hit(self):
+        fight = _in_fight(_monster_cast(10200, 71, 9401, SHOCK, 2), _hit(10500, 3))
+        monster, opener = fight.monster_first, fight.opener
+        self.assertEqual((monster["name"], monster["action"], monster["target_kind"],
+                          monster["target_name"], monster["time_ms"], monster["in_flight"]),
+                         ("Sail Ripper", "Shock", "player", "@templar", 200, None))
+        self.assertEqual((opener["name"], opener["time_ms"], opener["edge"]), ("@tank", 500, False))
+
+    def test_the_margin_is_100_ms(self):
+        self.assertIsNone(_in_fight(_monster_cast(10450, 71, 9402, SHOCK, 2), _hit(10500, 3)).monster_first)
+        self.assertIsNotNone(_in_fight(_monster_cast(10400, 71, 9403, SHOCK, 2),
+                                       _hit(10500, 3)).monster_first)
+
+    def test_before_the_line_its_time_is_negative(self):
+        fight = _in_fight(_hit(10500, 3), pre=[_monster_cast(9800, 71, 9404, SHOCK, 2)])
+        self.assertEqual(fight.monster_first["time_ms"], -200)
+
+    def test_nobody_answered(self):
+        fight = _in_fight(_monster_hit(10200, 71, 3, result="SNARED"))
+        self.assertIsNone(fight.opener)
+        self.assertEqual(fight.monster_first["action"], "Shock")
+
+    def test_a_monster_going_for_a_pet(self):
+        monster = _in_fight(_cast(10200, 9501, SHOCK, _m(71), _pet(90)), _hit(10500, 3), pre=[
+            _monster_added(3000, 90, "Wild Guardian", owner=2, reaction="NPC_ALLY")]).monster_first
+        self.assertEqual((monster["target_kind"], monster["target_name"], monster["target_pet"]),
+                         ("pet", "@templar", "Wild Guardian"))
+
+
+class TestNoiseIsNeverTheMonstersOpening(unittest.TestCase):
+
+    def _first(self, *acts, pre=()):
+        return _in_fight(*acts, _hit(15000, 3), pre=pre).monster_first
+
+    def test_a_dead_monster_a_hazard_a_tick_and_a_listed_mechanic(self):
+        self.assertIsNone(self._first(_monster_cast(10200, 71, 9601, SHOCK, 2, monster_health=0)))
+        self.assertIsNone(self._first(_monster_hit(10200, 72, 2, ability=BARRIER),
+                                      pre=[_monster_added(3000, 72, "Scorching Barrier")]))
+        self.assertIsNone(self._first(_monster_hit(10200, 71, 2, result="DOT_TICK")))
+        self.assertIsNone(self._first(_monster_cast(10200, 74, 9602, SHOCK, 2),
+                                      pre=[_monster_added(3000, 74, "Arcane Knot", KNOT_ID)]))
+        self.assertIsNone(self._first(_monster_cast(10200, 71, 9603, LOOK_AT, 2)))
+
+    def test_a_cast_at_three_players_at_once_but_not_two(self):
+        fan = [_monster_cast(10200, 71, 9700 + p, SHOCK, p) for p in (1, 2, 3)]
+        self.assertIsNone(self._first(*fan))
+        self.assertIsNotNone(self._first(*fan[:2]))
+
+    def test_a_released_pet_a_self_cast_and_results_that_are_no_act(self):
+        released = [_monster_added(3000, 90, "Wild Guardian", owner=2, reaction="NPC_ALLY"),
+                    _unit_changed(9000, 90, "Wild Guardian", 0, "HOSTILE")]
+        self.assertIsNone(self._first(_monster_hit(10200, 90, 1), pre=released))
+        self.assertIsNone(self._first(_cast(10200, 9801, SHOCK, _m(71))))
+        for result in ("DIED", "ABILITY_ON_COOLDOWN"):
+            self.assertIsNone(self._first(_monster_hit(10200, 71, 2, result=result)), result)
+
+
+class TestACastAlreadyInFlight(unittest.TestCase):
+
+    def test_a_players_cast_begun_before_the_monster_acted(self):
+        for pre, acts in (
+                ([], [_player_cast(10100, 1, 9901, INNER_RAGE), _monster_cast(10300, 71, 9902, SHOCK, 2)]),
+                ([_player_cast(9500, 1, 9901, INNER_RAGE), _monster_cast(9800, 71, 9902, SHOCK, 2)], [])):
+            fight = _in_fight(*acts, _hit(10900, 1, 9901, INNER_RAGE), pre=pre)
+            flight = fight.monster_first["in_flight"]
+            self.assertEqual((flight["name"], flight["skill"], flight["via"]),
+                             ("@brainsnorkel", "Inner Rage", "player"))
+
+    def test_not_one_at_a_dead_monster(self):
+        fight = _in_fight(_player_cast(10100, 1, 9903, INNER_RAGE, target=71, target_health=0),
+                          _monster_cast(10300, 70, 9904, SHOCK, 2), _hit(10900, 1))
+        self.assertIsNone(fight.monster_first["in_flight"])
+
+
 # -- the line --------------------------------------------------------------------
 
 def _row(unit_id, name, role="D", cls="NB", is_local=False, character=""):
@@ -313,7 +406,7 @@ ROWS = [_row("1", "@brainsnorkel", "D", "Arcanist", True, "Coworker"),
         _row("5", "anon", "T", "DK"), _row("6", "anon", "D", "NB")]
 
 
-def _entry(opener=None, zone="Dreadsail Reef", rows=ROWS):
+def _entry(opener=None, monster=None, zone="Dreadsail Reef", rows=ROWS):
     entry = FightHistoryEntry()
     entry.zone_name = zone
     entry.boss_name = "Reef Guardian"
@@ -322,7 +415,7 @@ def _entry(opener=None, zone="Dreadsail Reef", rows=ROWS):
     entry.players = rows
     entry.player_names = [{"name": r["name"], "character": r["character"],
                            "is_local": r["is_local"]} for r in rows]
-    entry.opener = opener
+    entry.opener, entry.monster_first = opener, monster
     return entry
 
 
@@ -331,6 +424,14 @@ def _opener(name="@tank", owner="3", kind="hit", ability="Light Attack (Ice)", s
     return {"kind": kind, "unit_id": unit_id or owner, "via": via, "owner_id": owner, "name": name,
             "pet": pet, "ability": ability, "ability_id": "1", "skill": skill,
             "skill_id": "2" if skill else "", "target": target, "target_id": "71",
+            "time_ms": time_ms, "edge": edge}
+
+
+def _monster(name="Reclaimer", action="Shock", target_name="@templar", target_id="2",
+             target_kind="player", target_pet="", time_ms=2000, edge=False, in_flight=None):
+    return {"unit_id": "71", "name": name, "action": action, "action_id": "500",
+            "target_kind": target_kind, "target_id": target_id, "target_row": target_id,
+            "target_name": target_name, "target_pet": target_pet, "in_flight": in_flight,
             "time_ms": time_ms, "edge": edge}
 
 
@@ -364,6 +465,27 @@ class TestTheLine(unittest.TestCase):
         self.assertEqual(_lines(_entry(companion)),
                          ["@brainsnorkel's Companion hit Dreadhorn Scrapper first: Light Attack"])
 
+    def test_a_monster_first_opening_is_two_lines(self):
+        entry = _entry(_opener(name="@brainsnorkel", owner="1", ability="Burning",
+                               target="Tazkad the Packmaster", time_ms=201),
+                       _monster("Murkwater Durzog", "Rend", "@brainsnorkel", "1", time_ms=38))
+        self.assertEqual(_lines(entry), [
+            "Murkwater Durzog went for @brainsnorkel first (Rend), before any hit or taunt",
+            "@brainsnorkel hit Tazkad the Packmaster first: Burning"])
+
+    def test_times(self):
+        before = _entry(_opener(target="Draugr Feral-Fiend", time_ms=-857),
+                        _monster("Draugr Thrall", "Pound", "@tank", "3", time_ms=-2874))
+        self.assertEqual(_lines(before), [
+            ("Draugr Thrall went for @tank first (Pound), before any hit or taunt, "
+             "2.9 s before the fight's start"),
+            "@tank hit Draugr Feral-Fiend first: Light Attack (Ice), 2.0 s later"])
+        slow = _entry(_opener(name="@dps", owner="1", ability="Light Attack (Dual Wield)",
+                              target="Reducer", time_ms=7879), _monster(time_ms=2034))
+        self.assertEqual(_lines(slow), [
+            "Reclaimer went for @templar first (Shock), before any hit or taunt, 2.0 s into the fight",
+            "@dps hit Reducer first: Light Attack (Dual Wield), 5.8 s later"])
+
     def test_the_time_rule_starts_at_1050_ms_and_never_says_into_an_arena_fight(self):
         self.assertEqual(TIME_SHOWN_MS, 1050)
         self.assertEqual(_lines(_entry(_opener(time_ms=1049))),
@@ -383,10 +505,34 @@ class TestTheLine(unittest.TestCase):
                          ["1.1", "1.1", "1.2", "2.9", "5.8"])
         self.assertEqual(time_text(0, False), "")
 
+    def test_a_cast_already_on_its_way(self):
+        flight = {"via": "player", "unit_id": "3", "owner_id": "3", "name": "@tank", "pet": "",
+                  "skill": "Inner Rage", "skill_id": "200"}
+        entry = _entry(_opener(kind="taunt", ability="Inner Rage", target="Dreadsail Keelcutter",
+                               time_ms=1398),
+                       _monster("Harpy Windcaller", "Talon", "@tank", "3", time_ms=1065, in_flight=flight))
+        self.assertEqual(_lines(entry), [
+            ("Harpy Windcaller went for @tank (Talon), with @tank's Inner Rage already on its way, "
+             "1.1 s into the fight"),
+            "@tank taunted Dreadsail Keelcutter first: Inner Rage"])
+
+    def test_a_monster_going_for_a_pet_in_an_arena(self):
+        entry = _entry(None, _monster("Dremora Conduit", "Shock", "@brainsnorkel", "1", "pet",
+                                      "Wild Guardian", time_ms=3120), zone="Infinite Archive")
+        self.assertEqual(_lines(entry), [
+            "Dremora Conduit went for @brainsnorkel's Wild Guardian first (Shock), before any hit or taunt"])
+
+    def test_nobody_answered(self):
+        self.assertEqual(_lines(_entry(None, _monster("Strangler", "Spit", "@tank", "3", time_ms=2006))),
+                         ["Strangler went for @tank first (Spit), before any hit or taunt, 2.0 s into the fight"])
+
     def test_at_the_memorys_edge_nobody_is_first(self):
         edge = _entry(_opener(kind="taunt", ability="Goading Throw", target="Yokeda Kai",
                               time_ms=-4377, edge=True))
         self.assertEqual(_lines(edge), ["@tank was already fighting Yokeda Kai (Goading Throw) when the fight began"])
+        monster = _entry(_opener(time_ms=-4377), _monster("Yokeda Kai", "Flare", "@tank", "3",
+                                                          time_ms=-4377 - 200, edge=True))
+        self.assertEqual(_lines(monster), ["Yokeda Kai was already fighting @tank (Flare) when the fight began"])
 
     def test_a_name_that_picks_out_no_row_gets_its_role_and_class(self):
         anon = _opener(name="anon", owner="5", kind="taunt", ability="Goading Throw", target="Reef Guardian")
@@ -422,6 +568,13 @@ class TestThePane(unittest.TestCase):
         text = render_plain_text(entry)
         self.assertTrue(text.endswith("\n@tank hit Sail Ripper first: Light Attack (Ice)"))
 
+    def test_two_lines_are_one_paragraph(self):
+        from gui.fight_render import render_html
+        entry = _entry(_opener(), _monster())
+        html = render_html(entry, detailed=False)
+        self.assertIn("before any hit or taunt, 2.0 s into the fight<br>@tank hit", html)
+
+
 class TestHideNames(unittest.TestCase):
     """Every player's name in the line goes through the mask; a hidden one
     is followed by its row's role and class."""
@@ -441,10 +594,13 @@ class TestHideNames(unittest.TestCase):
 
     def test_a_companion_is_named_from_its_hidden_owner(self):
         entry = _entry(_opener(name="@templar", owner="2", via="companion", unit_id="c2-106616",
-                               target="Reef Guardian"))
+                               target="Reef Guardian"),
+                       _monster(target_name="@templar", target_id="2", target_kind="companion"))
         lines = _lines(entry, self._mask(entry))
-        self.assertEqual(lines, ["@▒▒▒▒▒▒▒ (H, Templar)'s Companion hit Reef Guardian first: Light Attack (Ice)"])
-        self.assertEqual(_lines(entry)[0].count("@templar"), 1)
+        self.assertTrue(all("@templar" not in line and line.count("Companion") == 1 for line in lines), lines)
+        self.assertEqual(lines[1], "@▒▒▒▒▒▒▒ (H, Templar)'s Companion hit Reef Guardian first: Light Attack (Ice)")
+        plain = _lines(entry)
+        self.assertEqual(plain[1].count("@templar"), 1)
         anon = _entry(_opener(name="anon", owner="5", via="companion", unit_id="c5-106616"))
         self.assertEqual(_lines(anon, self._mask(anon)),
                          ["anon (T, DK)'s Companion hit Sail Ripper first: Light Attack (Ice)"])

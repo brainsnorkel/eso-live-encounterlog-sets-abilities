@@ -171,6 +171,7 @@ class TestFightCutInTwo(unittest.TestCase):
         engine.feed(SECOND_PART)
         fight = engine.fights[0]
         self.assertEqual((fight.opener['name'], fight.opener['time_ms']), ('@templar', 1000))
+        self.assertIsNone(fight.monster_first)
 
     def test_deaths_of_both_parts_are_counted_once_each(self):
         engine = Engine().feed(FIRST_PART + [

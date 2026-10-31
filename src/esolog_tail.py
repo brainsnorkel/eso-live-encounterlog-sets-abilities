@@ -434,6 +434,9 @@ class EnemyInfo:
         # A player's companion (companions.is_companion) and its level
         self.is_companion: bool = False
         self.level: int = 0
+        # It has had a player owner: a pet released at its end turns HOSTILE
+        # with owner 0, and is never a monster (fight_opener)
+        self.was_owned: bool = False
 
 class CombatEncounter:
     """Represents a single combat encounter."""
@@ -489,8 +492,8 @@ class CombatEncounter:
         # The run's result when this fight completed a trial (trial_result)
         self.trial_result: Optional[Dict] = None
         
-        # Who opened the fight, decided by the analyzer's
-        # fight_opener.OpenerRecorder from BEGIN_COMBAT on;
+        # Who opened the fight and the monster's act before it, decided by
+        # the analyzer's fight_opener.OpenerRecorder from BEGIN_COMBAT on;
         # None for a fight that had no BEGIN_COMBAT
         self.opening: fight_opener.FightOpening | None = None
 
@@ -643,6 +646,9 @@ class CombatEncounter:
             # id keeps (presence.py, rule 7)
             self.pet_ownership[pet_unit_id] = owner.unit_id
             self._link_companion(pet_unit_id, owner.unit_id)
+            unit = self.enemies.get(pet_unit_id)
+            if unit is not None:
+                unit.was_owned = True
         else:
             self.pet_ownership.pop(pet_unit_id, None)
             self.companion_units.pop(pet_unit_id, None)
@@ -1015,7 +1021,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self._cast_abilities: Dict[str, str] = {}
         # Who opened each fight, and with what: the line under the fight
         # pane's table (fight_opener, issue #159)
-        self.opener = fight_opener.OpenerRecorder(DAMAGE_RESULTS)
+        self.opener = fight_opener.OpenerRecorder(
+            lambda ability_id: self.ability_cache.get(ability_id, ""), DAMAGE_RESULTS)
 
         # Which units each cast struck, for the area rule of the kinds of
         # damage (damage_kinds): shared by the recap recorder, the damage
@@ -2002,9 +2009,12 @@ class ESOLogAnalyzer(ListenerMixin):
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
 
-            # The opener (fight_opener): every cast names its cast id, which
-            # names the skill behind a hit or a taunt
+            # The opener (fight_opener): every cast names its cast id; a
+            # player-side cast at a hostile, or a hostile's at a player-side
+            # unit, is weighed
             self.opener.note_cast(entry.fields[2], ability_id)
+            if self.opener.listening and len(entry.fields) > 15:
+                self._feed_opener_cast(entry, ability_id, caster_unit_id)
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
@@ -2279,7 +2289,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ENEMY_HIT_RESULTS and len(entry.fields) > 17:
                 self._note_enemy_hit(entry)
 
-            # The opener (fight_opener): any line of the group's on a
+            # The opener (fight_opener): any line between the group and a
             # hostile, whatever its result or value, since a shield absorb's
             # partner can carry 0
             if self.opener.listening and len(entry.fields) > 17:
@@ -2818,10 +2828,51 @@ class ESOLogAnalyzer(ListenerMixin):
         return fight_opener.Side(unit_id, 'pet', owner.unit_id, owner.unit_id,
                                  owner.get_display_name(), pet.name if pet is not None else "")
 
+    def _opener_monster(self, enc: CombatEncounter, unit_id: str) -> EnemyInfo | None:
+        """A hostile unit that can act as a monster: never a companion, and
+        never a unit that had a player owner (a released pet turns HOSTILE)."""
+        enemy = enc.enemies.get(unit_id)
+        if enemy is None or not enemy.is_hostile or enemy.is_companion or enemy.was_owned:
+            return None
+        return enemy
+
+    @staticmethod
+    def _zero_health(health: str) -> bool:
+        """A unit state's 'current/max' health reads 0 of more than 0."""
+        current, _, maximum = health.partition("/")
+        return current == "0" and maximum not in ("", "0")
+
+    def _feed_opener_cast(self, entry: ESOLogEntry, ability_id: str, caster_unit_id: str):
+        """A BEGIN_CAST for the opener: a player-side cast at a hostile, or
+        a hostile's cast at a player-side unit (fields: castTrackId 2,
+        caster 4 and its health 5, target 14 and its health 15)."""
+        enc = self.current_encounter
+        target_id = entry.fields[14]
+        if target_id == '*':
+            return
+        cast_time = casts.line_time(entry.original_line)
+        target = enc.enemies.get(target_id)
+        if target is not None and target.is_hostile:
+            caster = self._opener_side(enc, caster_unit_id)
+            if caster is not None:
+                self.opener.note_player_cast(cast_time, entry.fields[2], ability_id, caster,
+                                             target_id, target.name, target,
+                                             target_dead=self._zero_health(entry.fields[15]))
+            return
+        monster = self._opener_monster(enc, caster_unit_id)
+        if monster is not None:
+            side = self._opener_side(enc, target_id)
+            if side is not None:
+                self.opener.note_monster_event(
+                    cast_time, fight_opener.CAST, entry.fields[2], ability_id, caster_unit_id,
+                    monster.name, monster.monster_id, monster, side,
+                    source_dead=self._zero_health(entry.fields[5]))
+
     def _feed_opener_event(self, entry: ESOLogEntry, result: str):
-        """A COMBAT_EVENT for the opener: a player-side unit's on a
-        hostile, of any result (fields: hitValue 3, castTrackId 5,
-        abilityId 6, source 7, target 17)."""
+        """A COMBAT_EVENT for the opener: a player-side unit's on a hostile,
+        or a hostile's on a player-side unit, of any result (fields:
+        hitValue 3, castTrackId 5, abilityId 6, source 7 and its health 8,
+        target 17)."""
         enc = self.current_encounter
         fields = entry.fields
         source_id, target_id = fields[7], fields[17]
@@ -2837,6 +2888,14 @@ class ESOLogAnalyzer(ListenerMixin):
                     hit_value = 0
                 self.opener.note_player_event(entry.timestamp, result, hit_value, fields[5],
                                               fields[6], actor, target_id, target.name, target)
+            return
+        monster = self._opener_monster(enc, source_id)
+        if monster is not None:
+            side = self._opener_side(enc, target_id)
+            if side is not None:
+                self.opener.note_monster_event(
+                    entry.timestamp, result, fields[5], fields[6], source_id, monster.name,
+                    monster.monster_id, monster, side, source_dead=self._zero_health(fields[8]))
 
     def _opener_player_name(self, record_id: str, fallback: str) -> str:
         """A player's display name for the opener line, as the fight ends:
@@ -2892,9 +2951,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight known (an area cast's hit on a second target may come late)
         self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
-        # Who opened the fight and with what, names resolved now
-        # (fight_opener)
-        entry.opener = fight_opener.opener_record(
+        # Who opened the fight and with what, and the monster's act before
+        # it, names resolved now (fight_opener)
+        entry.opener, entry.monster_first = fight_opener.opener_records(
             enc.opening, lambda ability_id: (self.ability_cache.get(ability_id)
                                              or self.log_parser.get_ability_name(ability_id)
                                              or ""),

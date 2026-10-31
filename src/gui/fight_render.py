@@ -84,8 +84,9 @@ same in words (issue #149).
 Under the table, a muted line says who opened the fight and with what:
 '@tank taunted Reef Guardian first: Inner Rage' (fight_opener.opener_parts,
 issue #159; it replaced the '*' after the player who dealt the first
-damage). The line follows the pane's text size, as 'Also died' does,
-and comes before it.
+damage). When a monster acted before anyone hit or taunted an enemy, a
+first line says whom it went for and a second who hit first. The line
+follows the pane's text size, as 'Also died' does, and comes before it.
 Every player's name in it goes through the Hide names mask, and a name
 that picks out no single row ('anon', or a hidden name) is followed by the
 row's role and class; the plain-text copy ends with the same lines.
