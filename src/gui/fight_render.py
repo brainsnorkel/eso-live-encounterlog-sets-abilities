@@ -103,6 +103,7 @@ from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
+from pull_outcome import dead_row_text, first_death_parts, first_death_text, outcome_text
 from scribing import scribed_label, slot_label
 from trial_result import result_text
 
@@ -809,19 +810,24 @@ def _mastery_text(p) -> str:
 
 
 def summary_line(entry, death_cue: bool = False, issue_cue: bool = False,
-                 zone: bool = True) -> str:
-    """Fight line: boss · duration · gdps · zone · timestamp.
+                 zone: bool = True, cut: bool = False, went_on: bool = False) -> str:
+    """Fight line: boss · outcome · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
     boss or mob name; issue_cue: mark a fight in which a player's build has
     a possible issue (build_issues) with ISSUES_LIST_CUE after that. The
     history list asks for both; the clipboard copy, which is read without
     the app's legend, does not. zone=False leaves the zone out, for the
-    history list, whose block header names it (gui.fight_list).
+    history list, whose block header names it (gui.fight_list). The
+    outcome is the pull's verdict ('Kill', 'Wipe 62%'; pull_outcome), with
+    cut and went_on from the fights after it, which only the list knows.
     """
     parts = []
     if entry.boss_name:
         parts.append(entry.boss_name)
+    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name, cut, went_on)
+    if outcome:
+        parts.append(outcome)
     parts.append(_fmt_duration(entry.duration_s))
     parts.append(f"{_fmt_dps(entry.group_dps)} gdps")
     if zone:
@@ -1179,7 +1185,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 f'{gdps} gdps&nbsp;{glyph_html(GRAPH_GLYPH, theme["link"], px)}</a>')
     else:
         gdps = f"{gdps} gdps"
-    stats = (f"{duration}"
+    # The pull's verdict first, as in the fight list ('Wipe 62%';
+    # pull_outcome)
+    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name)
+    stats = ((f"{e(outcome)} · " if outcome else "")
+             + f"{duration}"
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
@@ -1244,9 +1254,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # name's stand-in never takes it in
         if unit_id and p.get("build_issues"):
             name = f"{name}&nbsp;{issues_cue_html(unit_id, theme['link'], base_pt, line_px)}"
-        # Death-recap button for a player who died in this fight
+        # Death-recap button for a player who died in this fight, and their
+        # time dead when it was a tenth of the fight or more (pull_outcome)
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
+        dead_text = dead_row_text(entry, unit_id) if unit_id in deaths else ""
+        if dead_text:
+            recap_html += f"&nbsp;<span style='color:{muted}'>{e(dead_text)}</span>"
         # A companion's row (companions.py) hangs under its owner's, and its
         # deaths are a muted mark: the log keeps no recap of them
         if p.get("companion"):
@@ -1365,6 +1379,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
     opener = opener_html(opener_parts(entry), names, muted, base_pt)
     if opener:
         parts.append(f"<p style='margin:4px 0;color:{muted}'>{opener}</p>")
+    # Who died first and to what, how many died, and how long a wipe went
+    # on after it (pull_outcome, issue #169); names through the mask, as
+    # in the opener's line
+    first_death = "".join(names.html(part[1], muted, base_pt) if isinstance(part, tuple)
+                          else e(part) for part in first_death_parts(entry))
+    if first_death:
+        parts.append(f"<p style='margin:4px 0;color:{muted}'>{first_death}</p>")
     # Deaths of players the table does not list (their build never reached
     # the log) still get their recap button
     listed = {str(p.get("unit_id", "")) for p in entry.players}
@@ -1466,10 +1487,12 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         ult = ultimate_text(p)
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
+        dead = "" if p.get("companion") else dead_row_text(entry, p.get("unit_id", ""))
         lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
-                     + (f" · {ult}" if ult else "") + (f" · {note}" if note else ""))
+                     + (f" · {ult}" if ult else "") + (f" · {dead}" if dead else "")
+                     + (f" · {note}" if note else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")
@@ -1497,4 +1520,8 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
             lines.append(f"      {sets}")
     # Who opened the fight, as the pane's line under the table (issue #159)
     lines.extend(opener_text(opener_parts(entry), names))
+    # And who died first, as the pane's next line (issue #169)
+    first_death = first_death_text(entry, names)
+    if first_death:
+        lines.append(first_death)
     return "\n".join(lines)
