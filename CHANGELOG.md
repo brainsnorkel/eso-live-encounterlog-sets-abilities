@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.29.0] - 2026-11-01
+
+### Changed
+- **A companion is named after its owner** everywhere in the app (#145): `@handle's Companion`, or `anon's Companion` for an owner the log gives no handle (every anonymous player's companion alike), your own companion included, instead of the name the log gave it. An anonymous player named on joining the group names their companion from then on. With **Hide names** on, only the owner's part is hidden, so your companion stays readable and another player's reads `@▒▒▒▒'s Companion`. The companion window's title is its name, and its `of <owner>` is gone
+- **Who opened the fight, in a line under the table** (#159): the `*` after a player's name is gone. The line names who hit or taunted an enemy first, with which skill or effect and on which enemy, and counts the hits that land a moment before your own combat starts. When a monster went for someone before anyone hit or taunted an enemy, the line says so and still names who hit first. **Hide names** hides the handles in it, and **Copy fight** adds it
+
+### Fixed
+- **A companion gave away an anonymous player's handle** (#145): the game writes another member's companion into the log as `@handle's Companion`, also for a player it lists with neither name nor handle (`anon` in the app), so the companion's row read `↳ @handle's Companion` straight under an `anon` row, and the handle showed in the timeline strip, the penetration casters and death recaps too. In the split logs of January to October 2026, 199 handles reached the log only this way, over 117 logs; Hide names already masked them. The companion window's title also skipped Hide names
+
 ## [0.28.1] - 2026-10-31
 
 ### Changed
