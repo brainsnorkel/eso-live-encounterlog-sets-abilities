@@ -826,6 +826,17 @@ class TestBuildRender(BuildGuiTestCase):
         # No mastery (a subclassed build, or an old log): no label at all
         self.assertNotIn('Mastery', self._html(self._with(masteries=[])))
         self.assertNotIn('Mastery', self._html(self._with(skill_lines=['Herald of the Tome'])))
+        self.assertNotIn('second not seen', html)
+
+    def test_a_lone_mastery_names_the_likely_second(self):
+        # Issue #149: a Templar healer showing Devout Guardian
+        lines = ["Aedric Spear", "Dawn's Wrath", 'Restoring Light']
+        html = self._html(self._with(masteries=['Devout Guardian'], class_name='Templar', role='H',
+                                     skill_lines=lines, class_lines=lines))
+        self.assertIn("Mastery</span>&nbsp; Devout Guardian <span style='color:", html)
+        self.assertIn("· second not seen, most likely Bright Harbinger, Judgment&#x27;s Brand, "
+                      "Steadfast Candescence or Bastion of Light (never shows in the log)</span></p>",
+                      html)
 
     def test_translated_mundus_name_is_shown_as_logged(self):
         stone = [{'id': '13975', 'name': 'Segen: Der Dieb', 'icon': 'ability_mundusstones_003'}]
