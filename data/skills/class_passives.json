@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-30T10:49:52+00:00",
+ "generated": "2026-10-31T01:02:51+00:00",
  "source": ["https://esolog.uesp.net/exportJson.php?table=playerSkills&fields=id,name,classType,skillLine,baseAbilityId,rank,isPassive,skillType", "https://esolog.uesp.net/exportJson.php?table=minedSkills&fields=id,name,isPassive,target"],
  "attribution": "Skill data from UESP (esolog.uesp.net), CC-BY-SA 2.5",
  "count": 203,
@@ -277,5 +277,15 @@
   "268275": {"class": "Sorcerer", "name": "Sphere of Influence"},
   "268372": {"class": "Arcanist", "name": "Fate Realigned"},
   "270020": {"class": "Dragonknight", "name": "Booming Voice"}
- }
+ },
+ "mastery_order": {
+  "Dragonknight": {"D": ["Wildfire Embers", "Inexorable Descent", "Lead from the Front", "Resolute Defense", "Booming Voice"], "H": ["Inexorable Descent", "Wildfire Embers", "Lead from the Front", "Resolute Defense", "Booming Voice"], "T": ["Lead from the Front", "Resolute Defense", "Inexorable Descent", "Wildfire Embers", "Booming Voice"]},
+  "Sorcerer": {"D": ["Font of Power", "Static Reverberation", "Calculated Defense", "Conservation of Energy", "Sphere of Influence"], "H": ["Conservation of Energy", "Sphere of Influence", "Font of Power", "Calculated Defense", "Static Reverberation"], "T": ["Calculated Defense", "Conservation of Energy", "Sphere of Influence", "Font of Power", "Static Reverberation"]},
+  "Nightblade": {"D": ["Above and Beyond", "An Eye for Exploitation", "Cutthroat's Focus", "Share the Spoils", "Nocturnal Inspiration"], "H": ["Share the Spoils", "Nocturnal Inspiration", "Above and Beyond", "An Eye for Exploitation", "Cutthroat's Focus"], "T": ["Cutthroat's Focus", "An Eye for Exploitation", "Share the Spoils", "Above and Beyond", "Nocturnal Inspiration"]},
+  "Warden": {"D": ["Wild Adaptation", "Glacial Obstinance", "Tundra's Maw", "Bountiful Harvest", "Green-Keeper's Hide"], "H": ["Tundra's Maw", "Bountiful Harvest", "Wild Adaptation", "Glacial Obstinance", "Green-Keeper's Hide"], "T": ["Tundra's Maw", "Bountiful Harvest", "Wild Adaptation", "Glacial Obstinance", "Green-Keeper's Hide"]},
+  "Necromancer": {"D": ["Cycle Unending", "Nothing Wasted", "Malevolent Promise", "Pound of Flesh", "Veil's Forfeit"], "H": ["Malevolent Promise", "Veil's Forfeit", "Nothing Wasted", "Cycle Unending", "Pound of Flesh"], "T": ["Nothing Wasted", "Cycle Unending", "Pound of Flesh", "Veil's Forfeit", "Malevolent Promise"]},
+  "Templar": {"D": ["Bright Harbinger", "Judgment's Brand", "Devout Guardian", "Steadfast Candescence", "Bastion of Light"], "H": ["Bright Harbinger", "Devout Guardian", "Judgment's Brand", "Steadfast Candescence", "Bastion of Light"], "T": ["Bright Harbinger", "Judgment's Brand", "Devout Guardian", "Steadfast Candescence", "Bastion of Light"]},
+  "Arcanist": {"D": ["Unbound Potential", "Abyssal Emergence", "Fate Realigned", "Ink-Scribe's Verve", "Erudite's Rigor"], "H": ["Ink-Scribe's Verve", "Erudite's Rigor", "Fate Realigned", "Unbound Potential", "Abyssal Emergence"], "T": ["Unbound Potential", "Fate Realigned", "Abyssal Emergence", "Ink-Scribe's Verve", "Erudite's Rigor"]}
+ },
+ "masteries_never_logged": ["Bastion of Light"]
 }

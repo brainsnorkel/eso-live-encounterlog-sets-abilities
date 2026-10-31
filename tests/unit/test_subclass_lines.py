@@ -153,6 +153,24 @@ class TestSkillLinesFromPassives(unittest.TestCase):
         self.assertEqual(mastery_of_effect('263369'), 'Abyssal Emergence')
         self.assertEqual(mastery_of_effect('263306', 'Warden'), '')
 
+    def test_likely_second_mastery_in_the_roles_order(self):
+        from eso_sets import MAX_MASTERIES, likely_masteries, masteries_never_logged
+        table = {'Templar': {'D': ['A', 'B', 'C'], 'H': ['C', 'B', 'A']}}
+        self.assertEqual(likely_masteries('Templar', 'H', ['B'], table), ['C', 'A'])
+        self.assertEqual(likely_masteries('Templar', 'D', ['B'], table), ['A', 'C'])
+        # A role the table lacks reads as a damage dealer's; a class it
+        # lacks has nothing to offer
+        self.assertEqual(likely_masteries('Templar', 'C', ['A'], table), ['B', 'C'])
+        self.assertEqual(likely_masteries('Warden', 'D', ['A'], table), [])
+        # The bundled order: a Templar healer showing Devout Guardian;
+        # Bastion of Light, which the log never names, last
+        self.assertEqual(likely_masteries('Templar', 'H', ['Devout Guardian']),
+                         ['Bright Harbinger', "Judgment's Brand", 'Steadfast Candescence',
+                          'Bastion of Light'])
+        self.assertEqual(likely_masteries('Necromancer', 'D', ['Nothing Wasted'])[0], 'Cycle Unending')
+        self.assertEqual(masteries_never_logged(), frozenset({'Bastion of Light'}))
+        self.assertEqual(MAX_MASTERIES, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

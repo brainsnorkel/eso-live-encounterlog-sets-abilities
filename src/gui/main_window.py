@@ -34,7 +34,8 @@ from gui.engine_worker import EngineWorker
 from gui.fight_list import FightList
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
+    issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
+    render_html,
     render_plain_text, taken_tooltips,
 )
 from gui.fight_view import FightView, set_reduce_motion
@@ -1015,6 +1016,7 @@ class MainWindow(QMainWindow):
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
+        tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
         if self._detailed:
