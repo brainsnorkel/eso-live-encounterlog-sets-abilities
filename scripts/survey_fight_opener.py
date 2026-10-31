@@ -9,7 +9,7 @@ open: a player first, a monster first (with a player's cast already on its
 way, or not), nobody, and of the player-first fights the taunts, the
 openers before BEGIN_COMBAT, those at the memory's edge and the lines that
 carry a time. A trial is a fight with 9 or more player rows, a dungeon 3 to
-8, solo or duo fewer, an arena any fight in fight_opener.ARENA_ZONES.
+8, solo or duo fewer, an arena any fight fight_opener.is_arena names.
 
 usage: python scripts/survey_fight_opener.py <logs dir | log ...> [--workers N]
            [--margin MS] [--survey-rules] [--dump out.jsonl]
@@ -47,7 +47,10 @@ def replay(job):
     if survey_rules:
         analyzer.opener.drop_gone = False
         analyzer.opener.scripted = False
+    # Keyed by session and start: the log's ms restart at every BEGIN_LOG,
+    # and a cut fight's second publish replaces its first
     fights = {}
+    session = [0]
     publish = analyzer._publish_fight
 
     def recording_publish(zone_name=None, *args, **kwargs):
@@ -55,8 +58,9 @@ def replay(job):
         result = publish(zone_name, *args, **kwargs)
         entry = analyzer._last_fight_entry
         if entry is not None:
-            fights[start] = {
-                "log": os.path.basename(path), "start": start, "zone": entry.zone_name,
+            fights[(session[0], start)] = {
+                "log": os.path.basename(path), "session": session[0], "start": start,
+                "zone": entry.zone_name, "zone_id": entry.zone_id,
                 "players": sum(1 for p in entry.players if not p.get("companion")),
                 "opener": entry.opener, "monster_first": entry.monster_first}
         return result
@@ -67,25 +71,28 @@ def replay(job):
         for line in fh:
             entry = analyzer.log_parser.parse_line(line.rstrip("\n"))
             if entry is not None:
+                if entry.event_type == "BEGIN_LOG":
+                    session[0] += 1
                 analyzer.process_log_entry(entry)
     return list(fights.values())
 
 
-def group_of(fight, arenas) -> str:
-    if fight["zone"] in arenas:
+def group_of(fight, is_arena) -> str:
+    if is_arena(fight.get("zone_id"), fight["zone"]):
         return "arena"
     if fight["players"] >= 9:
         return "trial"
     return "dungeon" if fight["players"] >= 3 else "solo or duo"
 
 
-def report(fights, arenas, time_text) -> None:
+def report(fights, is_arena, time_text) -> None:
     groups = ("all", "trial", "dungeon", "solo or duo", "arena")
     rows = {g: Counter() for g in groups}
     leads = []
     for fight in fights:
         opener, monster = fight["opener"], fight["monster_first"]
-        for g in ("all", group_of(fight, arenas)):
+        arena = is_arena(fight.get("zone_id"), fight["zone"])
+        for g in ("all", group_of(fight, is_arena)):
             row = rows[g]
             row["fights"] += 1
             if monster:
@@ -97,7 +104,7 @@ def report(fights, arenas, time_text) -> None:
                 row["  before BEGIN_COMBAT"] += opener.get("time_ms", 0) < 0
                 row["  at the memory's edge"] += bool(opener.get("edge"))
                 row["  a time shown"] += bool(not opener.get("edge") and time_text(
-                    opener.get("time_ms", 0), fight["zone"] in arenas))
+                    opener.get("time_ms", 0), arena))
             else:
                 row["nobody"] += 1
         if opener and not monster and opener.get("time_ms", 0) < 0:
@@ -144,7 +151,7 @@ def main():
     if not paths:
         sys.exit(__doc__)
     sys.path.insert(0, SRC)
-    from fight_opener import ARENA_ZONES, time_text
+    from fight_opener import is_arena, time_text
     paths.sort(key=lambda p: -os.path.getsize(p))  # the longest first, for the pool
     fights = []
     with ProcessPoolExecutor(workers) as pool:
@@ -155,7 +162,7 @@ def main():
             out.writelines(json.dumps(fight) + "\n" for fight in fights)
     print(f"{len(paths)} logs, {len(fights)} fights"
           + (", the first survey's rules" if survey_rules else ""))
-    report(fights, ARENA_ZONES, time_text)
+    report(fights, is_arena, time_text)
 
 
 if __name__ == "__main__":

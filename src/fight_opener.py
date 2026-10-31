@@ -264,8 +264,8 @@ class OpenerRecorder:
     the module's design note). The engine owns one, calls it in log order,
     and asks *listening* before doing the work of a call.
 
-    *ability_name* names an ability id from the session's ABILITY_INFO (''
-    when unknown); *damage_results* are the results that count as damage
+    *ability_name* names an ability id from the session's ABILITY_INFO (None
+    or '' when unknown); *damage_results* are the results that count as damage
     (the engine's DAMAGE_RESULTS). The margin, the list of scripted
     mechanics and the dead-enemy drop are options, so a replay can run the
     survey's rules."""
@@ -671,7 +671,7 @@ def _target_parts(monster: dict, rows: dict) -> list:
                        _role_class(rows.get(str(monster.get("target_id", "")))))
     kind = monster.get("target_kind")
     if kind == "pet":
-        return [owner, f"'s {monster.get('target_pet') or 'pet'}"]
+        return [owner, *_pet_parts(monster.get("target_pet"))]
     if kind == "companion":
         return [owner, "'s Companion"]
     return [owner]

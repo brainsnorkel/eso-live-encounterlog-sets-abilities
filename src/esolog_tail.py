@@ -1021,8 +1021,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self._cast_abilities: Dict[str, str] = {}
         # Who opened each fight, and with what: the line under the fight
         # pane's table (fight_opener, issue #159)
-        self.opener = fight_opener.OpenerRecorder(
-            lambda ability_id: self.ability_cache.get(ability_id, ""), DAMAGE_RESULTS)
+        # (the cache's own get, not a lambda over self, which would tie the
+        # analyzer in a reference cycle that only the cyclic GC frees)
+        self.opener = fight_opener.OpenerRecorder(self.ability_cache.get, DAMAGE_RESULTS)
 
         # Which units each cast struck, for the area rule of the kinds of
         # damage (damage_kinds): shared by the recap recorder, the damage
@@ -2828,9 +2829,10 @@ class ESOLogAnalyzer(ListenerMixin):
         return fight_opener.Side(unit_id, 'pet', owner.unit_id, owner.unit_id,
                                  owner.get_display_name(), pet.name if pet is not None else "")
 
-    def _opener_monster(self, enc: CombatEncounter, unit_id: str) -> EnemyInfo | None:
-        """A hostile unit that can act as a monster: never a companion, and
-        never a unit that had a player owner (a released pet turns HOSTILE)."""
+    def _opener_enemy(self, enc: CombatEncounter, unit_id: str) -> EnemyInfo | None:
+        """A hostile unit that counts as an enemy, hit or acting: never a
+        companion, and never a unit that had a player owner (a pet released
+        at its end turns HOSTILE with owner 0)."""
         enemy = enc.enemies.get(unit_id)
         if enemy is None or not enemy.is_hostile or enemy.is_companion or enemy.was_owned:
             return None
@@ -2851,15 +2853,15 @@ class ESOLogAnalyzer(ListenerMixin):
         if target_id == '*':
             return
         cast_time = casts.line_time(entry.original_line)
-        target = enc.enemies.get(target_id)
-        if target is not None and target.is_hostile:
+        target = self._opener_enemy(enc, target_id)
+        if target is not None:
             caster = self._opener_side(enc, caster_unit_id)
             if caster is not None:
                 self.opener.note_player_cast(cast_time, entry.fields[2], ability_id, caster,
                                              target_id, target.name, target,
                                              target_dead=self._zero_health(entry.fields[15]))
             return
-        monster = self._opener_monster(enc, caster_unit_id)
+        monster = self._opener_enemy(enc, caster_unit_id)
         if monster is not None:
             side = self._opener_side(enc, target_id)
             if side is not None:
@@ -2878,8 +2880,8 @@ class ESOLogAnalyzer(ListenerMixin):
         source_id, target_id = fields[7], fields[17]
         if target_id == '*':
             return
-        target = enc.enemies.get(target_id)
-        if target is not None and target.is_hostile:
+        target = self._opener_enemy(enc, target_id)
+        if target is not None:
             actor = self._opener_side(enc, source_id)
             if actor is not None:
                 try:
@@ -2889,7 +2891,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.opener.note_player_event(entry.timestamp, result, hit_value, fields[5],
                                               fields[6], actor, target_id, target.name, target)
             return
-        monster = self._opener_monster(enc, source_id)
+        monster = self._opener_enemy(enc, source_id)
         if monster is not None:
             side = self._opener_side(enc, target_id)
             if side is not None:

@@ -382,6 +382,12 @@ class TestNoiseIsNeverTheMonstersOpening(unittest.TestCase):
         for result in ("DIED", "ABILITY_ON_COOLDOWN"):
             self.assertIsNone(self._first(_monster_hit(10200, 71, 2, result=result)), result)
 
+    def test_nor_is_a_released_pet_the_enemy_a_player_hit(self):
+        released = [_monster_added(3000, 90, "Blighted Blastbones", owner=2, reaction="NPC_ALLY"),
+                    _unit_changed(9000, 90, "Blighted Blastbones", 0, "HOSTILE")]
+        fight = _in_fight(_hit(10200, 3, target=90), _hit(10500, 1), pre=released)
+        self.assertEqual((fight.opener["name"], fight.opener["target"]), ("@brainsnorkel", "Reef Guardian"))
+
 
 class TestACastAlreadyInFlight(unittest.TestCase):
 
@@ -544,6 +550,11 @@ class TestTheLine(unittest.TestCase):
                                       "Wild Guardian", time_ms=3120), zone="Infinite Archive")
         self.assertEqual(_lines(entry), [
             "Dremora Conduit went for @brainsnorkel's Wild Guardian first (Shock), before any hit or taunt"])
+        # A target unit named with a handle reads as its owner's Companion
+        handle = _entry(None, _monster("Dremora Conduit", "Shock", "@templar", "2", "pet",
+                                       "@templar's Companion", time_ms=300))
+        self.assertEqual(_lines(handle), [
+            "Dremora Conduit went for @templar's Companion first (Shock), before any hit or taunt"])
 
     def test_nobody_answered(self):
         self.assertEqual(_lines(_entry(None, _monster("Strangler", "Spit", "@tank", "3", time_ms=2006))),
