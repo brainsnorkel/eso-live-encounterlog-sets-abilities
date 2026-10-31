@@ -1773,6 +1773,10 @@ class ESOLogAnalyzer(ListenerMixin):
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
 
+        # Where the group stands is sampled from here, in a new fight or
+        # one that carries on; not in the seconds between (positions.py)
+        self.positions.begin_combat(entry.timestamp)
+
         # The fight that just ended, cut in two by the game: carry on with it
         if self._continues_last_fight(entry.timestamp):
             self._resume_last_fight()
@@ -1838,7 +1842,6 @@ class ESOLogAnalyzer(ListenerMixin):
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
         self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
-        self.positions.begin_combat(entry.timestamp)
 
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -1874,7 +1877,6 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = self._last_fight_entry
         # The opener stands; what came between the two lines is dropped
         self.opener.resume()
-        self.positions.resume()
 
     def _note_positions(self, timestamp: int, fields: List[str], source: int,
                         target: Optional[int]):
@@ -1885,13 +1887,7 @@ class ESOLogAnalyzer(ListenerMixin):
         recorder = self.positions
         if recorder.active and timestamp >= recorder.next_tick:
             recorder.sample(timestamp, self._position_units())
-        count = len(fields)
-        if count > source + 8:
-            recorder.note(fields[source], fields[source + 1], fields[source + 7],
-                          fields[source + 8], timestamp)
-        if target is not None and count > target + 8 and fields[target] != '*':
-            recorder.note(fields[target], fields[target + 1], fields[target + 7],
-                          fields[target + 8], timestamp)
+        recorder.note_line(fields, source, target, timestamp)
 
     def _position_units(self) -> List[tuple]:
         """The unit ids of each group member, for the position samples: the

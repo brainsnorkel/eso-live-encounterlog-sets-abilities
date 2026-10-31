@@ -105,16 +105,27 @@ class PositionRecorder:
         """A unit state on a line: the unit's latest position, kept raw."""
         self._latest[unit_id] = (x, y, timestamp, self._current, health)
 
+    def note_line(self, fields: list[str], source: int, target: int | None,
+                  timestamp: int) -> None:
+        """A line's unit states, as note does for each: the source's at
+        fields[source], the target's at fields[target] when the line has one
+        ('*' is the source again). One call per line, since it is made for
+        most of the log's lines."""
+        latest = self._latest
+        count = len(fields)
+        if count > source + 8:
+            latest[fields[source]] = (fields[source + 7], fields[source + 8], timestamp,
+                                      self._current, fields[source + 1])
+        if target is not None and count > target + 8 and fields[target] != '*':
+            latest[fields[target]] = (fields[target + 7], fields[target + 8], timestamp,
+                                      self._current, fields[target + 1])
+
     def begin_combat(self, timestamp: int) -> None:
-        """BEGIN_COMBAT: the first sample is now."""
+        """BEGIN_COMBAT: the first sample is now. For a fight the game cut
+        in two (the engine's COMBAT_RESUME_MS) as well, so the seconds
+        between its END_COMBAT and this line have none."""
         self.active = True
         self.next_tick = timestamp
-
-    def resume(self) -> None:
-        """The fight the game cut in two carries on (the engine's
-        COMBAT_RESUME_MS): sampling starts again, and the seconds between
-        the two lines have none."""
-        self.active = True
 
     def end_combat(self, timestamp: int) -> None:
         """END_COMBAT: the seconds up to it are sampled, then no more."""

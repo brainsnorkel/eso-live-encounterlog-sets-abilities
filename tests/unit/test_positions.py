@@ -122,6 +122,19 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual(recorder.fight_maps(0, 99000)[0]["seconds"], 4)
         self.assertEqual(recorder.next_tick, 61000)
 
+    def test_a_fight_cut_in_two_has_no_samples_between_its_parts(self):
+        recorder = _recorder()
+        recorder.begin_combat(1000)
+        recorder.note("1", "1/1", "0.2", "0.2", 1000)
+        recorder.sample(2000, [("1",)])
+        recorder.end_combat(2500)
+        self.assertFalse(recorder.active)                # the engine takes no samples now
+        recorder.note("1", "1/1", "0.2", "0.2", 3000)   # between END_ and BEGIN_COMBAT
+        recorder.begin_combat(4500)                      # the engine carries the fight on
+        recorder.sample(5000, [("1",)])
+        self.assertEqual(recorder.fight_maps(2001, 4499), [])
+        self.assertEqual(recorder.fight_maps(0, 9000)[0]["seconds"], 3)
+
     def test_the_freshest_of_a_members_unit_ids(self):
         recorder = _recorder()
         recorder.begin_combat(2000)
