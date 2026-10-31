@@ -81,6 +81,11 @@ class AnalyzerListener:
         """A lasting problem from *source* ('split'), shown until it is
         cleared by the same source with message None."""
 
+    def on_data_check(self, check) -> None:  # check: data_staleness.DataCheck
+        """The logging session's game version against the bundled data's,
+        and what the log named that the data does not know (issue #173):
+        sent as a session begins and whenever something new is found."""
+
 
 class ListenerMixin:
     """Mixin providing listener registration and safe fan-out notification."""
@@ -134,6 +139,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_warning(self, source: str, message: str | None) -> None:
         self.events.append(("warning", source, message))
+
+    def on_data_check(self, check) -> None:
+        self.events.append(("data_check", check))
 
     def of_kind(self, kind: str):
         return [e for e in self.events if e[0] == kind]

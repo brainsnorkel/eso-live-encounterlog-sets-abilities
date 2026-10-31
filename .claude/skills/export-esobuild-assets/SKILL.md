@@ -35,6 +35,12 @@ esobuild.com (repository `brainsnorkel/eso-build-o-rama`) shows top builds with 
    python scripts\generate_esohub_links.py
    ```
 
+   The maps are the app's own data too. When they changed and are kept, stamp the bundle so `data/version.json` carries their new dates (the unit tests fail until it does), and commit both:
+
+   ```cmd
+   python scripts\stamp_data_version.py --game-version eso.live.12.2
+   ```
+
 2. Dry run (about 15 seconds; extracts no icons, writes no bundle, fetches the sources once):
 
    ```cmd

@@ -69,6 +69,10 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# The bundled data's game version and each table's date
+# (scripts/stamp_data_version.py), for the staleness check and About
+if os.path.exists('data/version.json'):
+    a.datas += [('data/version.json', 'data/version.json', 'DATA')]
 pyz = PYZ(a.pure)
 
 exe = EXE(

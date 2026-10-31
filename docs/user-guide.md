@@ -395,6 +395,7 @@ Not yet checked: Windows' High Contrast themes (the app picks its colours from w
 
 - **Last entry**: the time of the newest log line and how long ago it was: green while **live** (under two minutes), plain while idle, amber when **stale** (over thirty minutes), and red **No log file** when nothing is monitored. A `~` means the time came from the file's clock rather than its content.
 - **Zone**: the current zone and difficulty.
+- **Game data**, in amber on the right, only when there is something to say: `Game 12.2, data built for 12.1: 3 unknown sets, 2 icons missing`. The log names the game version that wrote it, and the app's bundled game data (set names, item types, skill icons, ESO-Hub links) was built for one version. After a game update, what the update added shows as `Set#<id>`, as a dash in the build window's Type column, or as a skill's name where its icon would be, until a release of the app brings new data; this line says so once, rather than leaving each symptom to be puzzled over. Hover it for the set ids, item ids and skill names the log named that the data does not know. Nothing else in the fight is affected. **About** lists the version the data was built for and the date of each table.
 - A progress bar on the right while the app parses a reviewed log, catches up on a large backlog, archives, or downloads an update.
 
 ## What the numbers are based on
@@ -438,6 +439,7 @@ The [design notes](design.md), collected from the code itself, go into each of t
 - **No fights appear**: logging is off in-game (see [First run](#first-run)); **Last entry** turns green while the log is being written. A fight appears only once combat ends.
 - **"Waiting for Encounter.log"**: logging has never been enabled, or the log lives somewhere unusual: point Settings → Encounter log at it.
 - **DPS differs from Combat Metrics or ESO Logs**: a player's own figure counts the same hits over the same dps time as Combat Metrics, so it should agree. Check three things. In a fight with a boss, the first figure is boss DPS (`boss / total`). The group's DPS divides by the group's own first-to-last span, where Combat Metrics divides the group's damage by *your* dps time. And a fight the game split in two around a resurrection is one fight here. See [Damage](#what-the-numbers-are-based-on).
+- **An amber `Game 12.2, data built for 12.1` in the status bar**: the game was updated after the app's bundled data was built. Sets, items and skill icons the update added read as `Set#<id>`, a dash or text until a later release; the hover lists them. See [The status bar](#the-status-bar).
 - **A set shows as `Set#123`**: the set is newer than the bundled set table, so it has no name or link until the table is refreshed in a later release.
 - **An ability shows as text instead of an icon**: the icon is not in the bundled set; the name still links to ESO-Hub.
 - **A weapon's Type is a dash**: the weapon is from a set newer than the bundled weapon table.
