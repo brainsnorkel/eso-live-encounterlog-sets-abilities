@@ -379,13 +379,13 @@ class TagTests(unittest.TestCase):
 class GhTests(unittest.TestCase):
     """The script's gh calls, with gh replaced by GH_ECHO."""
 
-    def _gh(self, *args):
+    def _gh(self, *args, script=GH_ECHO):
         from unittest.mock import patch
         run = subprocess.run
 
         def fake(argv, **kwargs):
             self.assertEqual(argv[0], 'gh')
-            return run([sys.executable, '-c', GH_ECHO, *argv[1:]], **kwargs)
+            return run([sys.executable, '-c', script, *argv[1:]], **kwargs)
         with patch.object(release.subprocess, 'run', side_effect=fake):
             return json.loads(release.gh(*args))
 
@@ -397,6 +397,11 @@ class GhTests(unittest.TestCase):
     def test_other_calls_name_it_with_the_flag(self):
         self.assertEqual(self._gh('release', 'view', 'v0.3.0'),
                          ['ⓘ', 'release', 'view', 'v0.3.0', '--repo', release.REPO])
+
+    def test_a_failure_that_is_not_utf8_is_still_a_refusal(self):
+        fails = "import sys; sys.stderr.buffer.write(b'no \\xff such tag'); sys.exit(1)"
+        with self.assertRaisesRegex(release.ReleaseError, 'gh release view failed: no .* such tag'):
+            self._gh('release', 'view', 'v9.9.9', script=fails)
 
 
 class ChangelogCheckTests(unittest.TestCase):

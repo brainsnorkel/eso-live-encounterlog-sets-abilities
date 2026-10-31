@@ -235,7 +235,8 @@ def set_version(text: str, version: str) -> str:
 # ---- git ----
 
 def git(root: Path, *args, check: bool = True) -> str:
-    done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+    done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", check=False)
     if check and done.returncode != 0:
         raise ReleaseError(f"git {' '.join(args[:2])} failed: {done.stderr.strip()}")
     return done.stdout.strip()
@@ -397,10 +398,11 @@ def make_tag(version: str, push: bool = False, dry_run: bool = False, ref: str =
 def gh(*args) -> str:
     """The GitHub CLI on this repository, whatever folder the script is
     run from. ``gh api`` has no --repo flag (its path names the repository),
-    and gh writes UTF-8 whatever the Windows code page."""
+    and gh writes UTF-8 whatever the Windows code page (a byte that is not
+    UTF-8 still reaches the error)."""
     repo = [] if args[0] == "api" else ["--repo", REPO]
     done = subprocess.run(["gh", *args, *repo], capture_output=True, text=True,
-                          encoding="utf-8", check=False)
+                          encoding="utf-8", errors="replace", check=False)
     if done.returncode != 0:
         raise ReleaseError(f"gh {' '.join(args[:2])} failed: {done.stderr.strip()}")
     return done.stdout
@@ -490,5 +492,6 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     # Piped or redirected on Windows, print uses the code page, which has no ⓘ
-    sys.stdout.reconfigure(encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     sys.exit(main())

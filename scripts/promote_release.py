@@ -245,7 +245,7 @@ def gh(*args) -> str:
     # gh writes UTF-8; read as the Windows code page, a ⓘ in a beta's notes
     # would reach the Stable notes as mojibake
     done = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8",
-                          check=False)
+                          errors="replace", check=False)
     if done.returncode != 0:
         raise PromotionError(f"gh {' '.join(args[:2])} failed: {done.stderr.strip()}")
     return done.stdout
@@ -442,5 +442,6 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     # Piped or redirected on Windows, print uses the code page, which has no ⓘ
-    sys.stdout.reconfigure(encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     sys.exit(main())
