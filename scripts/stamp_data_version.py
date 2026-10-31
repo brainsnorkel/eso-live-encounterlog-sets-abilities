@@ -62,7 +62,8 @@ def table_date(path: Path) -> str:
     LibSets workbook the date it was last saved; '' when there is none."""
     try:
         if path.suffix.lower() == ".xlsm":
-            core = zipfile.ZipFile(path).read("docProps/core.xml").decode("utf-8")
+            with zipfile.ZipFile(path) as workbook:
+                core = workbook.read("docProps/core.xml").decode("utf-8")
             match = re.search(r"<dcterms:modified[^>]*>([^<]+)<", core)
             return match.group(1)[:10] if match else ""
         data = json.loads(path.read_text(encoding="utf-8"))

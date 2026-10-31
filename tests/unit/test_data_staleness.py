@@ -135,6 +135,15 @@ class TestTracker(unittest.TestCase):
         tracker.note_player([_item('LEGS', '400', '1', cp='F')], [])
         self.assertEqual(tracker.check().unknown_armor, ('400',))
 
+    def test_a_plain_item_is_looked_up_once_worn_at_champion_level(self):
+        """The log's item id is the same at every level: one first seen
+        plain and low-level is still judged when worn at champion level."""
+        tracker = _tracker()
+        tracker.reset('eso.live.12.1')
+        self.assertFalse(tracker.note_player([_item('HAND', '500', '0', cp='F')], []))
+        self.assertTrue(tracker.note_player([_item('HAND', '500', '0', cp='T')], []))
+        self.assertEqual(tracker.check().unknown_armor, ('500',))
+
     def test_a_new_session_starts_again(self):
         tracker = _tracker()
         tracker.reset('eso.live.12.1')

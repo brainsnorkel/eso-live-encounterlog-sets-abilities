@@ -216,11 +216,13 @@ class DataCheckTracker:
             armor = slot in ARMOR_SLOTS
             if not (armor or slot in WEAPON_SLOTS) or item_id in self._checked_items:
                 continue
-            self._checked_items.add(item_id)
             # Plain low-level items (a new character's starting clothes) are
-            # in no table; only champion-level and set items count
+            # in no table; only champion-level and set items count. An item
+            # id is the same at every level, so a plain one is not marked
+            # checked: worn later at champion level, it is looked up then
             if str(item[2]) != "T" and not has_set:
                 continue
+            self._checked_items.add(item_id)
             if armor and not self._armor_weight_of(item_id):
                 self._unknown_armor[item_id] = None
                 found = True
