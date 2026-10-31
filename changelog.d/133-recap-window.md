@@ -1,0 +1,2 @@
+### Changed
+- **Death recaps keep 3 seconds by default, and Settings goes from 1 to 10** (#133): 3 seconds covers the fall from half health in most deaths with a shorter table, and 1 second shows only the killing blow and the hits just before it. A new install starts at 3; a window already saved in your settings, usually 5, is kept, so change it in Settings → Death recaps if you want the shorter one

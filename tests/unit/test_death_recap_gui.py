@@ -423,6 +423,19 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         entry.death_recaps[1]['window_ms'] = 10000   # @passerby, nothing logged
         self.assertIn('in the 10 seconds before this death', self._html(entry, unit_id='77'))
 
+    def test_a_one_second_window_says_second(self):
+        # The shortest window, from Settings at 1 (issue #133)
+        entry = _entry_with_kinds()
+        for recap in entry.death_recaps:
+            recap['window_ms'] = 1000
+        html = self._html(entry)
+        self.assertIn('in the 1 second before each death', html)
+        self.assertIn('damage in the last 1 second', html)
+        self.assertNotIn('1 seconds', html)
+        entry = _entry_with_deaths()
+        entry.death_recaps[1]['window_ms'] = 1000   # @passerby, nothing logged
+        self.assertIn('in the 1 second before this death', self._html(entry, unit_id='77'))
+
     def test_sides_link_to_their_stars_with_hover_text(self):
         from damage_kinds import stars_for
         from gui.death_render import kind_tooltips

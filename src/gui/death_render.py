@@ -20,7 +20,7 @@ use: the hover tells, the click opens the page. Below the bars: the damage
 types behind the sides, the amounts outside them (Oblivion, fall, drowning,
 untyped), what got through while blocking, what shields absorbed, hits
 avoided, the healing received against the overheal, and the killing
-blow's overkill. The same block draws a death's five seconds and the whole
+blow's overkill. The same block draws a death's last seconds and the whole
 fight, so the two read alike.
 
 The order (issue #95). The event table is what the window is opened for, so
@@ -30,7 +30,7 @@ closes the window; the first version opened with the fight block and put
 each death's bars above its table, a screen of figures before the hits.
 Damage over time is written DoT and healing over time HoT, the game's words
 and the ones the Result column already used. The window's length is a
-setting (5 to 10 seconds); each recap carries the one it was built with,
+setting (1 to 10 seconds); each recap carries the one it was built with,
 and window_seconds reads it, five for a recap from before the setting.
 """
 
@@ -47,7 +47,7 @@ from damage_kinds import (
     summary_of_taken,
     type_label,
 )
-from death_recap import RECAP_WINDOW_MS
+from death_recap import LEGACY_WINDOW_MS
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 
@@ -163,7 +163,13 @@ def _clock(ms) -> str:
 def window_seconds(recap: dict) -> int:
     """The seconds the recap's window covered: what the recorder wrote on
     it, or the fixed five of a recap from before the setting (issue #95)."""
-    return int(recap.get("window_ms") or RECAP_WINDOW_MS) // 1000
+    return int(recap.get("window_ms") or LEGACY_WINDOW_MS) // 1000
+
+
+def window_text(recap: dict) -> str:
+    """'3 seconds', or '1 second' for the shortest window (issue #133)."""
+    seconds = window_seconds(recap)
+    return f"{seconds} second" if seconds == 1 else f"{seconds} seconds"
 
 
 def _killed_by(recap: dict, names=NO_MASK) -> str:
@@ -461,7 +467,7 @@ def _death_kinds_html(recap: dict, rows: List[dict], theme: dict, e, base_pt: fl
         return f"<p style='margin:0 0 4px 0;color:{muted}'>{NOT_RECORDED}</p>"
     summary = summary_of_rows(rows, recap.get("overheal"))
     return kinds_block_html(summary, "taken", theme, e, base_pt,
-                            f"in the last {window_seconds(recap)} seconds")
+                            f"in the last {window_text(recap)}")
 
 
 # ------------------------------------------------------------- the table --
@@ -555,7 +561,7 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
     rows = recap.get("events") or []
     if not rows:
         parts.append(f"<p style='margin:0;color:{muted}'>No damage or healing was logged "
-                     f"in the {window_seconds(recap)} seconds before this death.</p>")
+                     f"in the {window_text(recap)} before this death.</p>")
         return "".join(parts)
 
     head = (f"style='color:{muted};border-bottom-style:solid;"
@@ -635,7 +641,7 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
         parts.append(f"<p style='color:{muted}'>No deaths recorded for this player.</p>")
         return "".join(parts)
     parts.append(f"<p style='margin:8px 0 2px 0;color:{muted}'>Damage and healing in the "
-                 f"{window_seconds(deaths[0])} seconds before each death, oldest first. "
+                 f"{window_text(deaths[0])} before each death, oldest first. "
                  f"Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
         parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt))
