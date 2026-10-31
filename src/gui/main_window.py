@@ -773,9 +773,9 @@ class MainWindow(QMainWindow):
         self._show_placeholder(
             f"Waiting for Encounter.log…<br><br>"
             f"Expected at:<br><code>{where}</code><br><br>"
-            f"Enable encounter logging in ESO (/encounterlog) or install the "
-            f"Easy Stalking addon. Monitoring starts automatically when the "
-            f"file appears.")
+            f"Enable encounter logging in ESO (/encounterlog), or install the "
+            f"Always Logging or the Easy Stalking addon (one, not both). "
+            f"Monitoring starts automatically when the file appears.")
 
     @Slot()
     def _on_monitoring_restarting(self):
