@@ -209,6 +209,50 @@ class TestBarRendering(FightViewTestCase):
         entry.players[0]['skill_lines'] = ["Dawn's Wrath", 'Bone Tyrant']
         self.assertIn('Dawn/Bone', render_html(entry, detailed=False))
 
+    def test_a_lone_mastery_is_followed_by_a_question_mark(self):
+        """Issue #149: one Class Mastery shown means a second is likely."""
+        from gui.fight_render import mastery_tooltips, render_html, render_plain_text
+        entry = _entry_with_bars()
+        p = entry.players[0]
+        p.update(class_name='Nightblade', masteries=['An Eye for Exploitation'])
+        cue = (', <a href="esolog:mastery/1" style="text-decoration:none;color:')
+        for detailed in (True, False):
+            html = render_html(entry, detailed=detailed, icons=self._cache(), links=_links)
+            self.assertIn('An Eye for Exploitation' + cue, html)
+            self.assertIn('>?</a></span>', html)
+        # The hover: the class's other four, a damage dealer's order
+        tip = mastery_tooltips(entry)['esolog:mastery/1']
+        self.assertIn('<b>Second Class Mastery not seen</b>', tip)
+        self.assertIn('Likeliest for a Nightblade DPS:', tip)
+        self.assertLess(tip.index('Above and Beyond'), tip.index('Share the Spoils'))
+        self.assertNotIn('An Eye for Exploitation', tip)
+        self.assertIn('Click for the full build', tip)
+        self.assertIn('      An Eye for Exploitation, ? · second not seen, most likely Above and Beyond, '
+                      "Cutthroat's Focus, Share the Spoils or Nocturnal Inspiration",
+                      render_plain_text(entry))
+        # A healer's order; Bastion of Light marked
+        p.update(class_name='Templar', role='H', masteries=['Devout Guardian'],
+                 skill_lines=["Aedric Spear", "Dawn's Wrath", 'Restoring Light'],
+                 class_lines=["Aedric Spear", "Dawn's Wrath", 'Restoring Light'])
+        tip = mastery_tooltips(entry)['esolog:mastery/1']
+        self.assertIn('Likeliest for a Templar healer:', tip)
+        self.assertIn('&nbsp;&nbsp;Bright Harbinger<br>', tip)
+        self.assertIn('Bastion of Light (never shows in the log)<br>', tip)
+        arcanist = ['Herald of the Tome', 'Soldier of Apocrypha', 'Curative Runeforms']
+        other = _entry_with_bars()
+        other.players[0].update(class_name='Arcanist', role='D', masteries=['Unbound Potential'],
+                                skill_lines=arcanist, class_lines=arcanist)
+        self.assertIn('Likeliest for an Arcanist DPS:', mastery_tooltips(other)['esolog:mastery/1'])
+        # No mark: two shown, none, a borrowed line, an unknown class, a companion
+        for fields in ({'masteries': ['Devout Guardian', 'Bright Harbinger']}, {'masteries': []},
+                       {'skill_lines': ["Aedric Spear", "Dawn's Wrath", 'Herald of the Tome']},
+                       {'class_lines': []}, {'companion': True}):
+            other = _entry_with_bars()
+            other.players[0].update(dict(p, **fields))
+            self.assertNotIn('esolog:mastery/', render_html(other, detailed=False), fields)
+            self.assertEqual(mastery_tooltips(other), {}, fields)
+            self.assertNotIn('second not seen', render_plain_text(other), fields)
+
     def test_without_icon_cache_bars_stay_text(self):
         from gui.fight_render import render_html, render_plain_text
         entry = _entry_with_bars()
@@ -305,6 +349,23 @@ class TestFightViewWidget(FightViewTestCase):
         self.assertEqual(view.current_tooltip, '')
         view.highlighted.emit(QUrl('esolog:ability/unknown'))
         self.assertEqual(view.current_tooltip, '')
+
+    def test_the_lone_mastery_mark_opens_the_build_and_underlines(self):
+        from PySide6.QtCore import QUrl
+        from gui.fight_render import mastery_tooltips, render_html
+        from gui.fight_view import FightView
+        entry = _entry_with_bars()
+        entry.players[0].update(class_name='Nightblade', masteries=['An Eye for Exploitation'])
+        view = FightView(icons=self._cache())
+        requested = []
+        view.build_requested.connect(requested.append)
+        view.set_tooltips(mastery_tooltips(entry))
+        view.setHtml(render_html(entry, detailed=False))
+        view.highlighted.emit(QUrl('esolog:mastery/1'))
+        self.assertIn('Second Class Mastery not seen', view.current_tooltip)
+        self.assertEqual(view.hovered_build_link, 'esolog:mastery/1')
+        view.anchorClicked.emit(QUrl('esolog:mastery/1'))
+        self.assertEqual(requested, ['1'])
 
     def test_scribed_skill_anchors_differ_by_scripts(self):
         """Two players' Shocking Banners share a page but not their hover."""

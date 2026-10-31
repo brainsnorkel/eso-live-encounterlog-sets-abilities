@@ -653,10 +653,49 @@ class TestClassPassives(unittest.TestCase):
         self.assertEqual(data['mastery_effects_count'], 3)
         self.assertIn('UESP', data['attribution'])
         self.assertEqual(sum(1 for line in text.splitlines() if '"class":' in line), 6)
+        # One class per line of the order; the sample's one mastery is no
+        # mastery the log never names
+        self.assertEqual(data['mastery_order'], {'Nightblade': {
+            'D': ['An Eye for Exploitation'], 'H': ['An Eye for Exploitation'],
+            'T': ['An Eye for Exploitation']}})
+        self.assertEqual(data['masteries_never_logged'], [])
+
+    TEMPLAR = {str(263585 + i): {'class': 'Templar', 'line': 'Class Mastery', 'name': name, 'rank': 1}
+               for i, name in enumerate(['Bastion of Light', 'Devout Guardian', 'Bright Harbinger',
+                                         "Judgment's Brand", 'Steadfast Candescence'])}
+
+    def test_mastery_order_by_role_then_class_then_name_never_logged_last(self):
+        order = self.script.mastery_order(self.TEMPLAR)
+        self.assertEqual(list(order), ['Templar'])
+        self.assertEqual(set(order['Templar']), {'D', 'H', 'T'})
+        # Healers took Bright Harbinger 5, Devout Guardian 4, Judgment's
+        # Brand 1; Steadfast Candescence by its count over all roles; Bastion
+        # of Light, never logged, last
+        self.assertEqual(order['Templar']['H'], ['Bright Harbinger', 'Devout Guardian', "Judgment's Brand",
+                                                 'Steadfast Candescence', 'Bastion of Light'])
+        # Damage dealers: Bright Harbinger and Judgment's Brand tie at 12; the
+        # tie goes to the class's count over all roles (25 against 18)
+        self.assertEqual(order['Templar']['D'][:2], ['Bright Harbinger', "Judgment's Brand"])
+        for role in order['Templar'].values():
+            self.assertEqual(role[-1], 'Bastion of Light')
+        # A class the survey never counted: by name
+        other = {'1': {'class': 'Warden', 'line': 'Class Mastery', 'name': 'Zeta', 'rank': 1},
+                 '2': {'class': 'Warden', 'line': 'Class Mastery', 'name': 'Alpha', 'rank': 1}}
+        self.assertEqual(self.script.mastery_order(other)['Warden']['T'], ['Alpha', 'Zeta'])
+        self.assertEqual(self.script.mastery_order({}), {})
+
+    def test_the_survey_counts_name_real_masteries(self):
+        self.assertEqual(set(self.script.MASTERIES_TAKEN), set(self.script.CLASSES))
+        for roles in self.script.MASTERIES_TAKEN.values():
+            self.assertEqual(set(roles), set(self.script.ROLES))
+        self.assertEqual(self.script.unknown_taken(self.TEMPLAR)[:1], ['Arcanist: Abyssal Emergence'])
 
     def test_committed_table_matches_the_script(self):
         data = json.loads((REPO_ROOT / 'data' / 'skills' / 'class_passives.json')
                           .read_text(encoding='utf-8'))
+        self.assertEqual(data['mastery_order'], self.script.mastery_order(data['passives']))
+        self.assertEqual(data['masteries_never_logged'], ['Bastion of Light'])
+        self.assertEqual(self.script.unknown_taken(data['passives']), [])
         self.assertEqual(data['count'], len(data['passives']))
         self.assertEqual(data['mastery_effects_count'], len(data['mastery_effects']))
         self.assertGreaterEqual(len(data['mastery_effects']), self.script.MIN_MASTERY_EFFECTS)

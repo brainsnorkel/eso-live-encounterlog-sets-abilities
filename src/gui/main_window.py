@@ -34,7 +34,8 @@ from gui.engine_worker import EngineWorker
 from gui.fight_list import FightList
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
+    issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
+    render_html,
     render_plain_text, taken_tooltips,
 )
 from gui.fight_view import FightView, set_reduce_motion
@@ -311,6 +312,8 @@ class MainWindow(QMainWindow):
         # (gui.fight_list, issue #129)
         self.history_list = FightList()
         self.history_list.currentRowChanged.connect(self._show_fight)
+        # The (i)'s hover text hides names as the rest of the window does
+        self.history_list.hide_names = self._hide_names
         splitter.addWidget(self.history_list)
 
         right = QWidget()
@@ -1015,6 +1018,7 @@ class MainWindow(QMainWindow):
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
+        tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
         if self._detailed:
@@ -1227,6 +1231,7 @@ class MainWindow(QMainWindow):
         button shows it, so the next start holds no surprise) and the
         fight on screen and every open window are redrawn with it."""
         self._hide_names = bool(checked)
+        self.history_list.hide_names = self._hide_names
         self.config.set("privacy.hide_names", self._hide_names)
         self.config.save()
         self._refresh_names()

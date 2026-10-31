@@ -71,6 +71,15 @@ the healing they did to others when there was some: the heals that landed
 on another player (a companion's owner counts), not on themselves, and
 not the overheal, the figure the engine keeps for the role guess. The
 plain-text copy adds the casts per minute and the Ult mark.
+
+A pure-class player's Class Masteries follow the class after a colon. A
+character can take two, and when the row shows one a muted '?' takes the
+second's place ('NB: An Eye for Exploitation, ?'), since the log often
+shows a mastery late or never (eso_sets). Its hover says so and lists the
+class's other masteries, the likeliest first for the player's role
+(eso_sets.likely_masteries), marking one the log never names; a click
+opens the build window, whose mastery part and the plain-text copy say the
+same in words (issue #149).
 """
 
 import html
@@ -78,6 +87,7 @@ import zlib
 from typing import List, Optional, Tuple
 
 from ability_icons import slugify
+from eso_sets import likely_masteries, masteries_never_logged
 from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -116,6 +126,12 @@ PEN_CRIT_HREF = "esolog:pencrit/"
 # + the Misfortune's place on the line: a solo dungeon run's Misfortune
 # under the header, whose hover gives what it does (misfortunes.py)
 MISFORTUNE_HREF = "esolog:misfortune/"
+# + the player's unit id: the '?' after a lone Class Mastery, whose hover
+# gives the likely second; a click opens the build window (issue #149)
+MASTERY_HREF = "esolog:mastery/"
+SECOND_MASTERY_CUE = "?"
+SECOND_MASTERY_TITLE = "Second Class Mastery not seen"
+NEVER_LOGGED_NOTE = "never shows in the log"
 PEN_CRIT_TITLE = "Penetration and critical damage"
 # The circled i beside each finding in the popup and the build window, the
 # same as the fight list's mark (ISSUES_LIST_CUE); on the fight pane's rows
@@ -357,6 +373,113 @@ def issues_tooltips(entry) -> dict:
                 f"<b>{ISSUES_TITLE}</b><br>{titles}<br>"
                 f"<span style='font-size:85%'>Click for the rules behind them</span>")
     return tips
+
+
+def mastery_href(unit_id) -> str:
+    return f"{MASTERY_HREF}{unit_id}"
+
+
+def mastery_unit_from_href(href: str) -> Optional[str]:
+    """The player's unit id when *href* is the '?' after a lone mastery,
+    else None."""
+    if href and href.startswith(MASTERY_HREF):
+        return href[len(MASTERY_HREF):]
+    return None
+
+
+def second_mastery_likely(p) -> Optional[List[str]]:
+    """For a pure-class player whose row shows one Class Mastery, the
+    class's others, the likeliest second first for their role
+    (eso_sets.likely_masteries); None for any other row, which gets no cue:
+    two shown, none, a borrowed line, an unknown class or a companion."""
+    shown = [str(name) for name in (p.get("masteries") or []) if name]
+    if len(shown) != 1 or p.get("companion") or not p.get("class_lines"):
+        return None
+    if _borrowed_lines(p)[0]:
+        return None
+    return likely_masteries(str(p.get("class_name") or ""), str(p.get("role") or ""), shown)
+
+
+def _mastery_names(names) -> List[str]:
+    """Each mastery name, with a note on one the log never names."""
+    never = masteries_never_logged()
+    return [f"{name} ({NEVER_LOGGED_NOTE})" if name in never else name for name in names]
+
+
+def second_mastery_phrase(likely) -> str:
+    """'second not seen, most likely Bright Harbinger, Judgment's Brand or
+    Bastion of Light (never shows in the log)': the words of the build
+    window and the plain-text copy for second_mastery_likely's list."""
+    names = _mastery_names(likely or [])
+    if not names:
+        return "second not seen"
+    joined = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} or {names[-1]}"
+    return f"second not seen, most likely {joined}"
+
+
+def mastery_tooltips(entry) -> dict:
+    """Hover text per '?' after a lone Class Mastery: that a second is
+    likely, and the class's others, the likeliest first for the player's
+    role (second_mastery_likely)."""
+    e = html.escape
+    tips = {}
+    for p in entry.players:
+        unit_id = str(p.get("unit_id", ""))
+        likely = second_mastery_likely(p)
+        if not unit_id or likely is None:
+            continue
+        lines = [f"<b>{SECOND_MASTERY_TITLE}</b>",
+                 "A character can take two. Some never show in the log,",
+                 "and some show only once they have fired."]
+        if likely:
+            role = ROLE_NAMES.get(str(p.get("role") or ""), "DPS")
+            role = role if role == "DPS" else role.lower()
+            class_name = str(p.get("class_name") or "")
+            article = "an" if class_name[:1] in "AEIOU" else "a"
+            lines.append(e(f"Likeliest for {article} {class_name} {role}:"))
+            lines.extend(f"&nbsp;&nbsp;{e(name)}" for name in _mastery_names(likely))
+        lines.append("<span style='font-size:85%'>Click for the full build</span>")
+        tips[mastery_href(unit_id)] = "<br>".join(lines)
+    return tips
+
+
+def fight_issues_tooltip(entry, names=None) -> str:
+    """Hover text for the fight list's (i) (issue #147): each player of the
+    fight with a possible build issue, in the fight pane's row order, by
+    name and the class text their row shows ('NB +Herald'), with the
+    findings' titles under it; then where the rules are. '' for a fight
+    without one. *names*: the Hide names mask (gui.name_mask), whose text
+    form is all a tooltip can show."""
+    names = names or NO_MASK
+    e = html.escape
+    blocks = []
+    for p in entry.players:
+        findings = p.get("build_issues") or []
+        if not findings:
+            continue
+        label = e(names.text(_join(p.get("name", ""))))
+        build = " ".join(part for part in (_join(p.get("class_abbr", "")), _subclass_text(p))
+                         if part)
+        if build:
+            label += f" · {e(build)}"
+        titles = "".join(f"<br>&nbsp;&nbsp;• {e(str(f.get('title', '')))}" for f in findings)
+        blocks.append(f"<br><b>{label}</b>{titles}")
+    if not blocks:
+        return ""
+    return (f"<b>{ISSUES_TITLE}</b>{''.join(blocks)}<br>"
+            f"<span style='font-size:85%'>Select the fight and click a player's "
+            f"{ISSUES_CUE} for the rules behind them</span>")
+
+
+def issues_description(entry) -> str:
+    """'Possible build issues: 2 players' for a fight with flagged players,
+    '' for one without: what a screen reader hears for the fight list's
+    (i), which it would otherwise read as a letter. No names, so Hide names
+    has nothing in it to hide."""
+    count = sum(1 for p in entry.players if p.get("build_issues"))
+    if not count:
+        return ""
+    return f"{ISSUES_TITLE}: {count} player{'' if count == 1 else 's'}"
 
 
 def misfortunes_text(entry) -> str:
@@ -1130,12 +1253,17 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # Beside the class: the lines a build borrows from another class
         # ("NB +Herald"), or a pure-class build's Class Mastery passives
         # ("NB: An Eye for Exploitation, Above and Beyond"); nothing for a
-        # stock build without them
+        # stock build without them. One mastery alone is followed by a
+        # muted '?' whose hover gives the likely second (issue #149)
         beside = _subclass_text(p)
+        second = ""
         if not beside and _mastery_text(p):
             class_abbr += ":"
             beside = _mastery_text(p)
-        subclass_html = f" <span style='color:{muted}'>{e(beside)}</span>" if beside else ""
+            if unit_id and second_mastery_likely(p) is not None:
+                second = (f', <a href="{e(mastery_href(unit_id), quote=True)}" '
+                          f'style="text-decoration:none;color:{muted}">{SECOND_MASTERY_CUE}</a>')
+        subclass_html = f" <span style='color:{muted}'>{e(beside)}{second}</span>" if beside else ""
         note = presence_note(p)
         if note:
             subclass_html += f" <span style='color:{muted}'>· {e(note)}</span>"
@@ -1300,6 +1428,9 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
             lines.append(f"      {skill_lines}")
         masteries = _mastery_text(p)
         if masteries:
+            likely = second_mastery_likely(p)
+            if likely is not None:
+                masteries += f", {SECOND_MASTERY_CUE} · {second_mastery_phrase(likely)}"
             lines.append(f"      {masteries}")
         for bar, slots in ((p.get("front_bar"), p.get("front_bar_slots")),
                            (p.get("back_bar"), p.get("back_bar_slots"))):
