@@ -312,6 +312,8 @@ class MainWindow(QMainWindow):
         # (gui.fight_list, issue #129)
         self.history_list = FightList()
         self.history_list.currentRowChanged.connect(self._show_fight)
+        # The (i)'s hover text hides names as the rest of the window does
+        self.history_list.hide_names = self._hide_names
         splitter.addWidget(self.history_list)
 
         right = QWidget()
@@ -1229,6 +1231,7 @@ class MainWindow(QMainWindow):
         button shows it, so the next start holds no surprise) and the
         fight on screen and every open window are redrawn with it."""
         self._hide_names = bool(checked)
+        self.history_list.hide_names = self._hide_names
         self.config.set("privacy.hide_names", self._hide_names)
         self.config.save()
         self._refresh_names()
