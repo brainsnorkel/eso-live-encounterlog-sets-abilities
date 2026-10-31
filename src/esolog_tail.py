@@ -135,8 +135,8 @@ DAMAGE_RESULTS = frozenset(
 
 # Import our ESO analysis modules
 from damage_stats import FightDamage, dps as dps_over
-from eso_sets import (ESOSubclassAnalyzer, lines_from_passives, mastery_effect_table, mastery_of_effect,
-                      skill_lines_of)
+from eso_sets import (MAX_MASTERIES, ESOSubclassAnalyzer, lines_from_passives, mastery_effect_table,
+                      mastery_of_effect, skill_lines_of)
 
 # Set types that typically only have 1-2 piece bonuses (no 5pc bonus)
 NO_FIVE_PIECE_SET_TYPES = {
@@ -981,6 +981,9 @@ class ESOLogAnalyzer(ListenerMixin):
         
         # Session tracking for players going offline/online
         self.player_sessions: Dict[str, Dict] = {}  # handle+name -> {unit_id, name, equipped_abilities, gear_data, last_seen}
+        # Each player's rows of this BEGIN_LOG session's fights, [(entry,
+        # row)] by _mastery_key, to fill in a mastery found later
+        self._mastery_rows: Dict[object, List[Tuple[FightHistoryEntry, dict]]] = {}
         # The character each handle was last seen on in this zone, which
         # tells a member back on another character (presence.py, rule 4)
         self._zone_characters: dict[str, str] = {}
@@ -1893,6 +1896,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        # A mastery found from here on is not filled into the last
+        # session's fights: a character may have changed between sessions
+        self._mastery_rows.clear()
         # The game lists every script combination again in a new session,
         # and numbers its players anew
         self.scribing.reset()
@@ -2019,14 +2025,19 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def _note_mastery(self, source_unit_id: str, ability_id: str):
         """Note the Class Mastery a gained effect or a resource gain names on
-        its source, when that is a player of the mastery's class
-        (eso_sets.mastery_of_effect). Kept on the player and in their
-        session for the rest of the session, a mastery not changing
-        between fights. Any other id returns at once: resource gains are
-        among the commonest lines."""
+        its source, when that is a player of the mastery's class, or a pet
+        of one (eso_sets.mastery_of_effect; Cycle Unending is fired by the
+        Necromancer's pets). Kept on the player and in their session for
+        the rest of the session, a mastery not changing between fights, and
+        filled into their earlier fights of the session
+        (_backfill_mastery). Any other id returns at once: resource gains
+        are among the commonest lines."""
         if str(ability_id) not in mastery_effect_table():
             return
         holder = self.current_encounter.player_of(source_unit_id)
+        if holder is None:
+            owner = self.current_encounter.pet_ownership.get(source_unit_id)
+            holder = self.current_encounter.player_of(owner) if owner else None
         if holder is None:
             return
         holder_class = holder.get_class_name()
@@ -2035,6 +2046,48 @@ class ESOLogAnalyzer(ListenerMixin):
             holder.masteries_seen.append(mastery)
             self._update_player_session(holder.unit_id, holder.name, holder.handle,
                                         masteries=holder.masteries_seen)
+            self._backfill_mastery(holder, mastery)
+
+    @staticmethod
+    def _mastery_key(player: PlayerInfo):
+        """Who a fight row's masteries belong to over the session: the
+        handle+name key a named player's masteries are kept under
+        (_update_player_session), else the player's own record, which an
+        anonymous player keeps until the zone changes."""
+        handle = (player.handle or "").strip('"')
+        name = (player.name or "").strip('"')
+        return f"{handle}+{name}" if handle and name else player
+
+    def _index_mastery_rows(self, entry: FightHistoryEntry):
+        """Keep each player's row of a fight just delivered under who they
+        are (_mastery_key), for _backfill_mastery. A fight the game cut in
+        two comes again with new rows, which replace its old ones."""
+        enc = self.current_encounter
+        for row in entry.players:
+            player = None if row.get('companion') else enc.players.get(str(row.get('unit_id', '')))
+            if player is None:
+                continue
+            rows = self._mastery_rows.setdefault(self._mastery_key(player), [])
+            rows[:] = [(fight, old) for fight, old in rows if fight is not entry]
+            rows.append((entry, row))
+
+    def _backfill_mastery(self, holder: PlayerInfo, mastery: str):
+        """Fill a mastery just found into the holder's rows of the earlier
+        fights of this BEGIN_LOG session that show fewer than two, and
+        announce each of those fights again (eso_sets: a proc mastery is
+        known only once it fires, and a mastery does not change within a
+        session). A row that already shows two keeps them: a third would
+        be an id credited by mistake. The row gets a new list, as the
+        frontends may be reading the old one."""
+        changed = {}
+        for entry, row in self._mastery_rows.get(self._mastery_key(holder), ()):
+            shown = list(row.get('masteries') or [])
+            if mastery in shown or len(shown) >= MAX_MASTERIES:
+                continue
+            row['masteries'] = shown + [mastery]
+            changed[id(entry)] = entry
+        for entry in changed.values():
+            self._notify('on_fight_updated', entry)
 
     def _observe_resources(self, entry: ESOLogEntry):
         """A COMBAT_EVENT's source and target states for the players' pools
@@ -2658,6 +2711,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     self.fight_history.append(fight_entry)
                 self._last_fight_entry = fight_entry
                 self._last_fight_start = self.current_encounter.start_time
+                self._index_mastery_rows(fight_entry)
                 self._notify('on_fight_updated' if resumed is not None
                              else 'on_fight_completed', fight_entry)
 

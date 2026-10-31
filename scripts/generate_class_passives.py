@@ -56,6 +56,20 @@ the source of a hit the Templar's shield absorbed, which the engine does
 not read. No Templar who gained it showed two other masteries in the same
 session (the game allows two).
 
+A character takes two masteries, and the log often shows one: a proc
+mastery only once it has fired, Bastion of Light never. Where one shows,
+the app lists the class's others as the likely second, in the order
+players of that role take them ('mastery_order', by class and role: D, H
+or T). The order comes from MASTERIES_TAKEN, how many characters of each
+role were seen with each mastery among those that showed two, counted by
+scripts/survey_masteries.py over 103 split logs of September and October
+2026 (313 characters, each once, in the role of their longest log): by the
+role's count, then the class's count over all roles, then by name. A
+mastery the log never names (NEVER_LOGGED) cannot be counted and goes
+last; the app marks it. The counts are the groups of one player's logs,
+and a healer or tank cell of one or two characters says little; an order
+from them is still better than none (issue #149).
+
 Run after an ESO update that adds a class or a skill line (two requests to
 UESP, five seconds apart; UESP asks heavy users to go lightly, so do not
 loop it):
@@ -103,6 +117,61 @@ SIGNATURE_EFFECTS = {
     "263619": "Devout Guardian",       # Hold the Line, a 6 s shield, Templars only
     "263621": "Devout Guardian",       # Hold the Line, Ultimate when the shield breaks
 }
+ROLES = ("D", "H", "T")  # damage dealer, healer, tank: the fight entry's roles
+# Characters of each role seen with each mastery, among those whose two
+# masteries both showed (scripts/survey_masteries.py; see the module
+# docstring). A mastery missing from a role was not seen in it
+MASTERIES_TAKEN = {
+    "Dragonknight": {
+        "D": {"Wildfire Embers": 21, "Inexorable Descent": 17, "Lead from the Front": 5,
+              "Resolute Defense": 2, "Booming Voice": 1},
+        "H": {},
+        "T": {"Lead from the Front": 16, "Resolute Defense": 15, "Inexorable Descent": 10,
+              "Wildfire Embers": 6, "Booming Voice": 5},
+    },
+    "Sorcerer": {
+        "D": {"Font of Power": 26, "Static Reverberation": 19, "Calculated Defense": 9,
+              "Conservation of Energy": 4},
+        "H": {"Conservation of Energy": 1, "Sphere of Influence": 1},
+        "T": {"Calculated Defense": 13, "Conservation of Energy": 9, "Sphere of Influence": 3,
+              "Font of Power": 2, "Static Reverberation": 1},
+    },
+    "Nightblade": {
+        "D": {"Above and Beyond": 50, "An Eye for Exploitation": 49, "Cutthroat's Focus": 1},
+        "H": {"Nocturnal Inspiration": 1, "Share the Spoils": 1},
+        "T": {"Cutthroat's Focus": 3, "An Eye for Exploitation": 2, "Share the Spoils": 2,
+              "Above and Beyond": 1},
+    },
+    "Warden": {
+        "D": {"Wild Adaptation": 11, "Glacial Obstinance": 9, "Tundra's Maw": 4,
+              "Bountiful Harvest": 1, "Green-Keeper's Hide": 1},
+        "H": {"Bountiful Harvest": 19, "Tundra's Maw": 19},
+        "T": {"Tundra's Maw": 4, "Bountiful Harvest": 2, "Wild Adaptation": 2},
+    },
+    "Necromancer": {
+        "D": {"Cycle Unending": 16, "Nothing Wasted": 15, "Malevolent Promise": 1},
+        "H": {"Malevolent Promise": 1, "Veil's Forfeit": 1},
+        "T": {"Nothing Wasted": 7, "Cycle Unending": 5, "Pound of Flesh": 3, "Veil's Forfeit": 2,
+              "Malevolent Promise": 1},
+    },
+    "Templar": {
+        "D": {"Bright Harbinger": 12, "Judgment's Brand": 12},
+        "H": {"Bright Harbinger": 5, "Devout Guardian": 4, "Judgment's Brand": 1},
+        "T": {"Bright Harbinger": 8, "Judgment's Brand": 5, "Devout Guardian": 4,
+              "Steadfast Candescence": 1},
+    },
+    "Arcanist": {
+        "D": {"Unbound Potential": 62, "Abyssal Emergence": 35, "Fate Realigned": 27,
+              "Ink-Scribe's Verve": 2},
+        "H": {"Ink-Scribe's Verve": 12, "Erudite's Rigor": 8, "Fate Realigned": 2,
+              "Abyssal Emergence": 1, "Unbound Potential": 1},
+        "T": {"Fate Realigned": 2, "Unbound Potential": 2},
+    },
+}
+# Masteries nothing in the log names (Bastion of Light heals through Sacred
+# Ground and gives Ultimate, and no line of the survey logs carries it):
+# last in every order, marked by the app
+NEVER_LOGGED = ("Bastion of Light",)
 
 
 def fetch(url: str) -> str:
@@ -171,11 +240,36 @@ def per_class(passives: dict) -> Counter:
     return Counter(entry["class"] for entry in passives.values())
 
 
+def mastery_order(passives: dict) -> dict:
+    """{class: {role: [the class's masteries, the likeliest first]}} for
+    every class with masteries in *passives*: by the role's count in
+    MASTERIES_TAKEN, then the class's count over all roles, then by name; a
+    mastery in NEVER_LOGGED last."""
+    names = {}
+    for entry in passives.values():
+        if entry["line"] == MASTERY_LINE and entry["name"]:
+            names.setdefault(entry["class"], set()).add(entry["name"])
+    order = {}
+    for class_name in sorted(names, key=lambda c: (CLASSES.index(c) if c in CLASSES else len(CLASSES), c)):
+        taken = MASTERIES_TAKEN.get(class_name, {})
+        overall = Counter()
+        for counts in taken.values():
+            overall.update(counts)
+        order[class_name] = {}
+        for role in ROLES:
+            counts = taken.get(role, {})
+            order[class_name][role] = sorted(names[class_name], key=lambda name: (
+                name in NEVER_LOGGED, -counts.get(name, 0), -overall[name], name))
+    return order
+
+
 def render(passives: dict, effects: dict, generated: str) -> str:
     """The file's JSON, one entry per line so a refresh diffs by id."""
     def block(entries):
         return ",\n".join(f"  {json.dumps(ability_id)}: {json.dumps(entry)}"
                           for ability_id, entry in entries.items())
+    never = sorted({entry["name"] for entry in passives.values()
+                    if entry["line"] == MASTERY_LINE and entry["name"] in NEVER_LOGGED})
     return ("{\n"
             f' "generated": {json.dumps(generated)},\n'
             f' "source": {json.dumps([EXPORT_URL, MINED_URL])},\n'
@@ -187,7 +281,11 @@ def render(passives: dict, effects: dict, generated: str) -> str:
             f' "mastery_effects_count": {len(effects)},\n'
             ' "mastery_effects": {\n'
             f"{block(effects)}\n"
-            " }\n"
+            " },\n"
+            ' "mastery_order": {\n'
+            f"{block(mastery_order(passives))}\n"
+            " },\n"
+            f' "masteries_never_logged": {json.dumps(never)}\n'
             "}\n")
 
 
@@ -218,6 +316,22 @@ def write(path: Path, passives: dict, effects: dict) -> None:
     now_effects = set(effects)
     print(f"  mastery effects: {len(effects)} "
           f"(+{len(now_effects - before_effects)} -{len(before_effects - now_effects)} vs previous)")
+    unknown = unknown_taken(passives)
+    if unknown:
+        print(f"  MASTERIES_TAKEN names no mastery of its class: {', '.join(unknown)}")
+
+
+def unknown_taken(passives: dict) -> list:
+    """'Class: name' for each mastery MASTERIES_TAKEN or NEVER_LOGGED names
+    that *passives* does not hold for that class (a rename in a patch)."""
+    held = {(entry["class"], entry["name"]) for entry in passives.values()
+            if entry["line"] == MASTERY_LINE}
+    names = {name for _class, name in held}
+    missing = sorted({f"{class_name}: {name}" for class_name, roles in MASTERIES_TAKEN.items()
+                      for counts in roles.values() for name in counts
+                      if (class_name, name) not in held})
+    missing.extend(f"?: {name}" for name in NEVER_LOGGED if name not in names)
+    return missing
 
 
 def _load(source: Path, url: str) -> dict:

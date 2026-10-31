@@ -48,7 +48,8 @@ from damage_kinds import summary_of_taken
 from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
-    form_share_text, healing_text, issues_html, taken_href, ultimate_gap, ultimate_lines,
+    form_share_text, healing_text, issues_html, second_mastery_likely, second_mastery_phrase,
+    taken_href, ultimate_gap, ultimate_lines,
 )
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -271,7 +272,10 @@ def _mundus_food_html(p, theme, icons, e) -> str:
     """'Mundus [icon] The Thief    Food Artaeum Takeaway Broth    Mastery An
     Eye for Exploitation, Above and Beyond'. The food part is left out when
     the engine could not check for food at all, the mastery part when the
-    player has no Class Mastery passive (a subclassed build cannot)."""
+    player has no Class Mastery passive (a subclassed build cannot). One
+    mastery alone is followed, muted, by the likely second: 'Mastery
+    Nothing Wasted · second not seen, most likely Cycle Unending, ...'
+    (fight_render.second_mastery_likely, issue #149)."""
     muted = theme["muted"]
     stones = []
     for stone in p.get("mundus") or []:
@@ -292,8 +296,11 @@ def _mundus_food_html(p, theme, icons, e) -> str:
         parts.append(f"<span style='color:{muted}'>{label}</span>&nbsp; {value}")
     masteries = [str(name) for name in (p.get("masteries") or []) if name]
     if masteries:
+        likely = second_mastery_likely(p)
+        second = (f" <span style='color:{muted}'>· {e(second_mastery_phrase(likely))}</span>"
+                  if likely is not None else "")
         parts.append(f"<span style='color:{muted}'>Mastery</span>&nbsp; "
-                     f"{e(', '.join(masteries))}")
+                     f"{e(', '.join(masteries))}{second}")
     return (f"<p style='margin:8px 0 6px 0'>"
             f"{'&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.join(parts)}</p>")
 
