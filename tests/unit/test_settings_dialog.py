@@ -119,10 +119,13 @@ class TestSettingsDialogLifetime(unittest.TestCase):
     def test_the_death_recap_window_is_bounded_and_saved(self):
         from gui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.config)
-        # 5 to 10 seconds in steps of one, 5 by default (issue #95)
-        self.assertEqual((dialog.recap_window.minimum(), dialog.recap_window.maximum()), (5, 10))
+        # 1 to 10 seconds in steps of one, 3 by default (issues #95 and #133)
+        self.assertEqual((dialog.recap_window.minimum(), dialog.recap_window.maximum()), (1, 10))
         self.assertEqual(dialog.recap_window.singleStep(), 1)
-        self.assertEqual(dialog.recap_window.value(), 5)
+        self.assertEqual(dialog.recap_window.value(), 3)
+        self.assertEqual(dialog.recap_window.suffix(), " seconds")
+        dialog.recap_window.setValue(1)
+        self.assertEqual(dialog.recap_window.suffix(), " second")
         dialog.recap_window.setValue(8)
         dialog.apply_to_config()
         self.assertEqual(self.config.get("death_recap.window_s"), 8)

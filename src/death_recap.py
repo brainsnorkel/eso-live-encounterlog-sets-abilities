@@ -30,13 +30,27 @@ seconds after the death still reads as area. Pure overheals (a heal line
 whose hit value is zero) are kept in the window for the recap's overheal
 sum but never become rows.
 
-The window is a setting (issue #95): 5 seconds by default, up to 10, read
-from the config when the engine is built (app_startup), so a Settings save,
-which rebuilds the engine and replays the session, rebuilds the fights
-already listed with the new window. Each recap records the window it was
-built with ('window_ms'), so a frontend names the right number of seconds
-for a fight recorded under another setting, and a recap from before the key
-existed reads as the old fixed five.
+The window is a setting (issue #95): 1 to 10 seconds, read from the config
+when the engine is built (app_startup), so a Settings save, which rebuilds
+the engine and replays the session, rebuilds the fights already listed with
+the new window. Each recap records the window it was built with
+('window_ms'), so a frontend names the right number of seconds for a fight
+recorded under another setting, and a recap from before the key existed
+reads as the old fixed five (LEGACY_WINDOW_MS).
+
+The default is 3 (issue #133, 5 before). Replaying 24 split logs of
+October 2026 (1,550 player deaths, mostly veteran trials) with a 10 second
+window and measuring each narrower one against it: the drop from half
+health to the death fits in 3 seconds for 71% of deaths (77% at 5, 41% at
+1), in a table of 5 rows at the median (7 at 5). What 3 gives up is the
+biggest hit of the last 10 seconds in 9% of deaths (6% at 5) and the last
+heal in 13% (9% at 5). 1 second is a "what killed me" view: three rows at
+the median, and in 28% of deaths nothing the Killed by line does not
+already say. No window came out empty, since the killing blow is logged up
+to KILLING_BLOW_GRACE_MS after the death. Only new installs get 3: the
+main window saves the whole merged config on close, so everyone on 0.20.0
+or later has a stored 5 that cannot be told from a chosen one, and it is
+kept.
 """
 
 from collections import deque
@@ -45,9 +59,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 from damage_kinds import area_of
 
 # Chronology kept before each death: the default, and what Settings allows
-DEFAULT_WINDOW_S = 5
-MIN_WINDOW_S, MAX_WINDOW_S = 5, 10
+DEFAULT_WINDOW_S = 3
+MIN_WINDOW_S, MAX_WINDOW_S = 1, 10
 RECAP_WINDOW_MS = DEFAULT_WINDOW_S * 1000
+LEGACY_WINDOW_MS = 5000  # the fixed window of a recap from before the setting
 
 # Events on the dead player this soon after the death event belong to it: the
 # killing blow and anything arriving in the same instant. Later hits are on
