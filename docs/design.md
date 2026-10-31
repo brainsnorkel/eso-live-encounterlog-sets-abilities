@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2512](../src/esolog_tail.py#L2512)*
+*[src/esolog_tail.py:2564](../src/esolog_tail.py#L2564)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
+*[src/esolog_tail.py:82](../src/esolog_tail.py#L82)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1789](../src/esolog_tail.py#L1789)*
+*[src/esolog_tail.py:1837](../src/esolog_tail.py#L1837)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1804](../src/esolog_tail.py#L1804)*
+*[src/esolog_tail.py:1852](../src/esolog_tail.py#L1852)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,15 +57,108 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
+*[src/esolog_tail.py:76](../src/esolog_tail.py#L76)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
+
+## The fight's opener
+
+### src/fight_opener.py
+
+*[src/fight_opener.py:1](../src/fight_opener.py#L1)*
+
+Who opened the fight, and with what (engine side, no Qt). Issue #159.
+
+Design: the fight's opener is the first hit or taunt by a player, a
+player's pet or a companion on a hostile enemy, named by the ability or
+effect that damaged or taunted. Until 0.29 the fight pane put a `*` after
+the player who dealt the fight's first damage after BEGIN_COMBAT. A survey
+of 393 split logs (8,816 fights, January to October 2026) showed why that
+mark was often wrong, and what a line could say instead.
+
+BEGIN_COMBAT is the logging player's line, not the group's. The game writes
+it when the logging player's client enters combat, and a group member's hit
+usually lands a moment earlier: a player hit or taunt came before the line
+in 4,243 fights (48.1%), a median 14 ms early, and the opener itself landed
+before the line in 4,080 of 7,204 player-first fights. Such a hit fell on
+the previous, finalized encounter and was lost to the new one, except in a
+zone's first fight, so the star marked someone other than the opener in
+1,385 of 7,176 player-first fights (19.3%; 32.6% in trials). The recorder
+therefore reads a bounded memory of the moments before the line: the
+settled acts of the last OPENER_WINDOW_MS (10 s) after the previous
+END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move; the
+fight time and every figure stay BEGIN_COMBAT to END_COMBAT.
+
+A millisecond is judged whole. Acts are buffered until the log moves past
+their millisecond, since fan-out casts, shield-absorb pairs and taunt ties
+need all of it; within it, line order decides. BEGIN_COMBAT adopts the
+pending millisecond (1,294 openers sit in the line's own millisecond,
+written before it), and END_COMBAT settles it into the fight before the
+fight is built.
+
+A quarter of openers taunt (1,822 of 7,204; 43.3% in trials). The game
+writes a TAUNTED that shares its cast id with the taunting skill's cast and
+hits; it can trail the hit by a millisecond (173 of 5,382 hit openers had
+the same player's TAUNTED 1 to 5 ms later). So the opener is a taunt when
+the same unit's TAUNTED lands in its millisecond, or carries its cast id
+within TAUNT_TIE_MS; a TAUNTED before any counted hit opens by itself, and
+another player's never counts.
+
+Naming. A hit is named by its own ability. The pressed skill comes from the
+cast's BEGIN_CAST, kept by cast id, and is added only when its name
+differs: compared by id, 2,695 of 7,122 opening hits would print "Razor
+Caltrops, from Razor Caltrops" (a DoT tick carries another id than its cast
+under the same name), while 189 are real renames ("Concussion, from
+Elemental Susceptibility"). A DAMAGE_SHIELDED line names the absorbing
+shield, not the attack; the attack is the line after it with the same cast
+id, source, target and millisecond, carrying the rest of the damage or 0.
+An absorb is named by that partner, else by its cast's BEGIN_CAST, never by
+the shield. A hit counts only above 0, as in the dps rules.
+
+A monster acted first in 1,545 fights (17.5%, a lower bound). The log has
+no threat or aggro line, and the addon API has none either, so a fight
+started by walking into a monster's range cannot be told from a ranged mob
+opening on sight. What the log does show is that a monster acted before
+anyone hit or taunted, and whom it went for: a hostile's BEGIN_CAST names
+its target, and so does its COMBAT_EVENT. The line says exactly that and
+never "pulled". The monster's act is kept only when the opener comes
+OPENER_MONSTER_MARGIN_MS (100 ms) or more later: inside it sit same-moment
+races and Tideborn Taleria's Slaughterfish pulls (186 fights). When a
+player had already begun a cast at a living enemy before the monster acted
+(507 fights by a recount over the logs, 191 of them only before the line),
+"first" would be false, so the line names the cast instead.
+
+Noise is never the monster's opening. A naive rule would be wrong in 1,009
+fights (11.4%): a dead monster's lingering area or DoT still "hits" players
+after its DIED_XP (its health on the line is 0, 859 fights first); a hazard
+is a unit named as its ability (Scorching Barrier, 119); a scripted cast
+reaches three or more players in one millisecond (Nahviintaas' Look At, 23);
+a DOT_TICK is an effect applied earlier (8). A few scripted mechanics pass
+every filter and are listed by monster id (the Arcane Knot of Lucent
+Citadel, whose Temporal Splinters opened 40 fights while the first player
+hit came a median 13 s later; the second Tideborn Taleria unit that throws
+the Slaughterfish Attack) or by ability id (Look At, Music Musicer). A unit
+that ever had a player owner is not a monster: a released pet turns
+HOSTILE with owner 0.
+
+The memory's edge. A candidate whose enemy died or left before the line is
+dropped (a hit's or cast's target, a monster act's source): it belonged to
+the last pack. An opener within EDGE_AFTER_START_MS of the line that started
+the memory, or in the window's oldest second, may not be the first act at
+all, so the line drops "first" and the time there: "@tank was already
+fighting Yokeda Kai (Goading Throw) when the fight began".
+
+Times. The line's first act gets ", 2.0 s into the fight" or ", 4.4 s
+before the fight's start" only from TIME_SHOWN_MS away from the line, so a
+median lead of 14 ms reads as no time at all and nothing prints "1.0 s";
+an arena's first seconds are its spawn, so an arena line never says "into
+the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ## Starting mid-session
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4201](../src/esolog_tail.py#L4201)*
+*[src/esolog_tail.py:4361](../src/esolog_tail.py#L4361)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +201,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
+*[src/esolog_tail.py:353](../src/esolog_tail.py#L353)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -612,10 +705,27 @@ October 2026):
   in the level field and a health pool only.
 - The logging player's own companion is added with reaction COMPANION and
   ownerUnitId set to the logging player. Another member's is added as
-  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner (sometimes
-  renaming the unit "<handle>'s Companion"), which track_pet_ownership
-  reads for every pet. A companion is known by its reaction or its monster
-  id, and its name is taken from its UNIT_ADDED, never from the rename.
+  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner, which
+  track_pet_ownership reads for every pet. A companion is known by its
+  reaction or its monster id.
+- Another member's companion is nearly always added under the name
+  "<handle>'s Companion" (141 of 150 such UNIT_ADDED lines in the October
+  2026 splits; the logging player's own is always added under its own
+  name). That handle can be one the log keeps from the owner: a player
+  added with neither name nor handle (the engine's ``anon``) is named only
+  by their companion in 217 file and handle pairs over 117 split logs,
+  199 handles. Replayed, 65 companion rows read "@handle's Companion"
+  straight under an ``anon`` row, and the name reached the buff timeline,
+  the penetration casters and the death recaps.
+- So the log's name for a companion is never used. Every companion, the
+  logging player's own included, is "<owner>'s Companion" (shown_name;
+  Chris, 2026-10-29): the owner's handle, or ``anon`` for an owner the log
+  gave no handle, however many anonymous players there are, and for a
+  companion whose owner is not known yet. The name follows the owner: it
+  is set when the owner is (CombatEncounter.name_companions), and again
+  when an anonymous owner is named on joining the group (presence.py,
+  rule 6). The Hide names mask hides the owner part as it hides the
+  owner's own name (gui.name_mask).
 - A companion gets a new unit id every time it is summoned again (after a
   death, a zone change, a dismissal): four unit ids for one Isobel in a
   solo Moon Hunter Keep run of 2026-10-26, where she died five times, so
@@ -1298,7 +1408,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:691](../src/gui/build_render.py#L691)*
+*[src/gui/build_render.py:688](../src/gui/build_render.py#L688)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1320,7 +1430,7 @@ an absence would draw the eye to nothing.
 
 ### _heading_html
 
-*[src/gui/build_render.py:524](../src/gui/build_render.py#L524)*
+*[src/gui/build_render.py:521](../src/gui/build_render.py#L521)*
 
 A section heading with its rule, as a one-cell table head: Qt rich
 text draws borders on table cells and never on a <p>, so the Damage
@@ -1750,7 +1860,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:878](../src/esolog_tail.py#L878)*
+*[src/esolog_tail.py:903](../src/esolog_tail.py#L903)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1791,13 +1901,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:90](../src/esolog_tail.py#L90)*
+*[src/esolog_tail.py:91](../src/esolog_tail.py#L91)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
+*[src/esolog_tail.py:403](../src/esolog_tail.py#L403)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1881,7 +1991,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:107](../src/esolog_tail.py#L107)*
+*[src/esolog_tail.py:108](../src/esolog_tail.py#L108)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1889,7 +1999,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:125](../src/esolog_tail.py#L125)*
+*[src/esolog_tail.py:126](../src/esolog_tail.py#L126)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2036,7 +2146,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
+*[src/esolog_tail.py:623](../src/esolog_tail.py#L623)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2059,7 +2169,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:744](../src/esolog_tail.py#L744)*
+*[src/esolog_tail.py:769](../src/esolog_tail.py#L769)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2085,7 +2195,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3403](../src/esolog_tail.py#L3403)*
+*[src/esolog_tail.py:3563](../src/esolog_tail.py#L3563)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3128,6 +3238,11 @@ and enemy names fall through, as no enemy, pet, set or ability name
 starts with ``@``. An entry with no local player at all hides every name,
 the safe direction.
 
+A companion is named after its owner, "<owner>'s Companion" (companions.py).
+The owner part is hidden or kept as the owner's own name would be, and the
+"'s Companion" after it always shows, so the logging player's companion
+stays readable and another player's reads "@▒▒▒▒'s Companion".
+
 How a hidden name looks: the maintainer asked for a blurred or pixelated
 name, the look of a screenshot with the names smudged out. The pages
 drawn as rich text (the fight pane and the three windows) get a pixelated
@@ -3211,7 +3326,9 @@ The (i) of possible build issues is drawn here too (issue #140). It was the
 font's ⓘ in the link colour after the class text, where it drifted right
 with the text's length, thin and among muted words, and was easy to miss;
 the first-damage * after the name was the mark people saw. It now sits on
-the name, after the *, bold with a faint halo of its own colour. Qt rich
+the name, right after it (where the * was until issue #159 moved who
+opened the fight to a line under the table), bold with a faint halo of its
+own colour. Qt rich
 text has no text-shadow, filter or opacity, so the glow cannot come from
 the page: the glyph is a ring about the size of the font's ⓘ (11.5 px of
 11 at 9 pt), half again as heavy, over a radial gradient that is clear
