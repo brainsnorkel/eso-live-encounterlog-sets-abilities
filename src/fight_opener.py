@@ -93,6 +93,8 @@ from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from companions import NAME_SUFFIX
+
 OPENER_WINDOW_MS = 10000  # the memory before the line, like ENGAGED_ENEMY_MS
 OPENER_MONSTER_MARGIN_MS = 100  # a monster's act counts as first this far ahead
 TAUNT_TIE_MS = 5  # a TAUNTED this soon after its cast's hit makes the opener a taunt
@@ -651,7 +653,7 @@ def _actor_parts(fields: dict, rows: dict) -> list:
     if via == "pet":
         return [owner, *_pet_parts(fields.get("pet"))]
     if via == "companion":
-        return [owner, "'s Companion"]
+        return [owner, NAME_SUFFIX]
     return [owner]
 
 
@@ -660,8 +662,8 @@ def _pet_parts(pet) -> list:
     since a unit the engine does not know as a companion can carry a handle
     ("@handle's Companion"); such a unit reads as its owner's Companion."""
     pet = str(pet or "") or "pet"
-    if pet.endswith("'s Companion"):
-        return ["'s Companion"]
+    if pet.endswith(NAME_SUFFIX):
+        return [NAME_SUFFIX]
     return ["'s ", PlayerName(pet)]
 
 
@@ -672,7 +674,7 @@ def _target_parts(monster: dict, rows: dict) -> list:
     if kind == "pet":
         return [owner, *_pet_parts(monster.get("target_pet"))]
     if kind == "companion":
-        return [owner, "'s Companion"]
+        return [owner, NAME_SUFFIX]
     return [owner]
 
 

@@ -1299,6 +1299,9 @@ class ESOLogAnalyzer(ListenerMixin):
                         if added_player is not None:
                             added_player.joined_at = entry.timestamp
                             added_player.switched_character = switched
+                            # A companion kept for this unit id is named
+                            # after the player who has it now
+                            enc.name_companions(unit_id)
                     if clean_handle and long_unit_id and long_unit_id != "0":
                         self._zone_characters[clean_handle] = long_unit_id
 
@@ -1433,9 +1436,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 enemy = self.current_encounter.enemies[unit_id]
                 enemy.is_hostile = True
                 
-                # Update the enemy name to the new name from UNIT_CHANGED
+                # Update the enemy name to the new name from UNIT_CHANGED;
+                # never a companion's, whose log name can carry an anonymous
+                # owner's handle (companions.shown_name)
                 clean_name = name.strip('"') if name else ""
-                enemy.name = clean_name
+                if not enemy.is_companion:
+                    enemy.name = clean_name
                 
                 # Update highest health hostile monster now that this enemy is hostile
                 self.current_encounter.update_highest_health_hostile(enemy)

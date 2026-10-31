@@ -139,6 +139,19 @@ class TestWhoIsHidden(unittest.TestCase):
         self.assertIsNotNone(IMG.fullmatch(hidden[1:-len("&#x27;s Companion")]), hidden)
         self.assertEqual(mask.html("@me's Companion", "#202124", 9.0), "@me&#x27;s Companion")
 
+    def test_a_character_called_someones_companion_is_hidden_whole(self):
+        """A character name may end in "'s Companion" (the game allows the
+        apostrophe and the space): it is a player's name, hidden whole."""
+        from fight_history import FightHistoryEntry
+        from gui.name_mask import NameMask
+        entry = FightHistoryEntry()
+        entry.players = [_player("1", "@me", "My Char", True),
+                         _player("2", "@bob", "Bob's Companion", False)]
+        mask = NameMask.for_entry(entry, True)
+        self.assertTrue(mask.hides("Bob's Companion"))
+        self.assertEqual(mask.text("Bob's Companion"), BLOCK * len("Bob's Companion"))
+        self.assertIsNotNone(IMG.fullmatch(mask.html("Bob's Companion", "#202124", 9.0)))
+
     def test_a_player_without_a_row_is_known_from_the_roster(self):
         """A player whose build never reached the log has no row, but the
         entry's roster names them, so their character name is hidden in

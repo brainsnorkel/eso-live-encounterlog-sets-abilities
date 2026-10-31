@@ -218,6 +218,27 @@ class TestCompanionRow(unittest.TestCase):
         at = rows.index(('3', '@later'))
         self.assertEqual(rows[at + 1], ('c3-106616', "@later's Companion"))
 
+    def test_a_companion_turned_hostile_keeps_its_name(self):
+        # A unit turning hostile takes the UNIT_CHANGED's name; a companion
+        # does not, since its log name can carry an anonymous owner's handle
+        analyzer = _run([
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,3,"","",0,50,122,0,PLAYER_ALLY,T',
+            _companion_added(3000, 24, 3, reaction="FRIENDLY", name="@quietowner's Companion"),
+            _unit_changed(3500, 24, "@quietowner's Companion", 3, reaction="HOSTILE"),
+        ])
+        self.assertEqual(analyzer.current_encounter.enemies['24'].name, "anon's Companion")
+
+    def test_a_player_added_on_the_unit_id_names_its_companions(self):
+        # A unit id handed to another player: the companion kept for it is
+        # named after the player who has the id now
+        analyzer = _run([
+            _companion_added(3000, 24, 2, reaction="FRIENDLY"),
+            '4000,UNIT_ADDED,2,PLAYER,F,2,0,F,6,1,"New Char","@newcomer",1003,50,2547,0,PLAYER_ALLY,T',
+        ])
+        enc = analyzer.current_encounter
+        self.assertEqual(enc.companions['c2-106616'].name, "@newcomer's Companion")
+        self.assertEqual(enc.enemies['24'].name, "@newcomer's Companion")
+
     def test_a_companion_is_named_after_its_owner(self):
         self.assertEqual(companions.shown_name("@templar"), "@templar's Companion")
         for no_handle in ("", None, '""', "0"):

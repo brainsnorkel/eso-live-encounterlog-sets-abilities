@@ -233,10 +233,19 @@ class NameMask:
         companion, and the mask is on."""
         if not self.active:
             return False
-        name, _ = _owner(str(name or ""))
+        name = str(name or "")
+        if name in self._hidden:
+            return True
+        name, _ = _owner(name)
         if not name or name in self._keep:
             return False
         return name.startswith("@") or name in self._hidden
+
+    def _split(self, name: str) -> tuple[str, str]:
+        """(the part hidden, the part kept) of a name the mask hides: a
+        companion's owner and its "'s Companion", unless the whole name is
+        another player's (a character can be called "Bob's Companion")."""
+        return (name, "") if name in self._hidden else _owner(name)
 
     def text(self, name) -> str:
         """*name* as plain text: itself, or @ and a block per character
@@ -244,7 +253,7 @@ class NameMask:
         name = str(name or "")
         if not self.hides(name):
             return name
-        name, suffix = _owner(name)
+        name, suffix = self._split(name)
         return ("@" if name.startswith("@") else "") + BLOCK * len(_body(name)) + suffix
 
     def html(self, name, color: str, pt: float, bold: bool = False) -> str:
@@ -254,7 +263,7 @@ class NameMask:
         name = str(name or "")
         if not self.hides(name):
             return html.escape(name)
-        name, suffix = _owner(name)
+        name, suffix = self._split(name)
         at = "@" if name.startswith("@") else ""
         return at + image_html(stand_in(name), color, pt, bold) + html.escape(suffix)
 
