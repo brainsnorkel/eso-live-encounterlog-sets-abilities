@@ -671,6 +671,23 @@ class CombatEncounter:
         if unit.level:
             record.level = unit.level
         self.companion_units[unit_id] = key
+        self.name_companions(owner_unit_id)
+
+    def name_companions(self, owner_unit_id: str) -> None:
+        """Name every companion of the player *owner_unit_id* after them,
+        "<handle>'s Companion" or "anon's Companion" (companions.shown_name):
+        when the owner is known, and again when an anonymous owner is
+        named."""
+        owner = self.players.get(owner_unit_id)
+        name = companions.shown_name(owner.handle if owner is not None else None)
+        for record in self.companions.values():
+            if record.owner_unit_id != owner_unit_id:
+                continue
+            record.name = name
+            for unit_id in record.unit_ids:
+                unit = self.enemies.get(unit_id)
+                if unit is not None and unit.is_companion and unit.monster_id == record.monster_id:
+                    unit.name = name
 
     def companion_key(self, unit_id: str) -> str | None:
         """The row key of the companion *unit_id* while it has an owner."""
@@ -1282,6 +1299,9 @@ class ESOLogAnalyzer(ListenerMixin):
                         if added_player is not None:
                             added_player.joined_at = entry.timestamp
                             added_player.switched_character = switched
+                            # A companion kept for this unit id is named
+                            # after the player who has it now
+                            enc.name_companions(unit_id)
                     if clean_handle and long_unit_id and long_unit_id != "0":
                         self._zone_characters[clean_handle] = long_unit_id
 
@@ -1346,6 +1366,10 @@ class ESOLogAnalyzer(ListenerMixin):
                     if enemy.is_companion:
                         enemy.level = companions.level_of(
                             entry.fields[11] if len(entry.fields) > 11 else "")
+                        # Never the log's name, which may carry a handle the
+                        # log keeps from an anonymous owner: anon's until
+                        # its owner is known (name_companions)
+                        enemy.name = companions.shown_name(None)
 
                     self.current_encounter.enemies[unit_id] = enemy
                     # A departed player's unit id handed to this unit: the
@@ -1387,6 +1411,8 @@ class ESOLogAnalyzer(ListenerMixin):
                         player.name = clean_name
                     self._update_player_session(unit_id, player.name, player.handle,
                                                 class_id=player.class_id)
+                    # Their companion is named after them from now on
+                    self.current_encounter.name_companions(player.unit_id)
                 # A champion point earned mid-session (fields[7])
                 cp = entry.fields[7]
                 if cp.isdigit() and int(cp) > 0 and int(cp) != player.champion_points:
@@ -1410,9 +1436,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 enemy = self.current_encounter.enemies[unit_id]
                 enemy.is_hostile = True
                 
-                # Update the enemy name to the new name from UNIT_CHANGED
+                # Update the enemy name to the new name from UNIT_CHANGED;
+                # never a companion's, whose log name can carry an anonymous
+                # owner's handle (companions.shown_name)
                 clean_name = name.strip('"') if name else ""
-                enemy.name = clean_name
+                if not enemy.is_companion:
+                    enemy.name = clean_name
                 
                 # Update highest health hostile monster now that this enemy is hostile
                 self.current_encounter.update_highest_health_hostile(enemy)

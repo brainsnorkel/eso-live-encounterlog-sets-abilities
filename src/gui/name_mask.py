@@ -32,6 +32,11 @@ and enemy names fall through, as no enemy, pet, set or ability name
 starts with ``@``. An entry with no local player at all hides every name,
 the safe direction.
 
+A companion is named after its owner, "<owner>'s Companion" (companions.py).
+The owner part is hidden or kept as the owner's own name would be, and the
+"'s Companion" after it always shows, so the logging player's companion
+stays readable and another player's reads "@▒▒▒▒'s Companion".
+
 How a hidden name looks: the maintainer asked for a blurred or pixelated
 name, the look of a screenshot with the names smudged out. The pages
 drawn as rich text (the fight pane and the three windows) get a pixelated
@@ -72,8 +77,9 @@ from math import ceil
 from PySide6.QtCore import QRectF, Qt, QUrl, QUrlQuery
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter
 
+from companions import ANON, NAME_SUFFIX
+
 MASK_SCHEME = "mask"
-ANON = "anon"  # the engine's name for a player with neither handle nor name: no identity
 BLOCK = "▒"  # medium shade: one per hidden character where text is all there is
 # The pixel block is this share of the line height: 4 px at 9 pt. Finer
 # and a letter shape shows through; coarser and the word becomes a bar
@@ -92,6 +98,14 @@ _images: dict = {}
 def _body(name: str) -> str:
     """The characters a hidden name stands for: the handle without its @."""
     return name.removeprefix("@")
+
+
+def _owner(name: str) -> tuple[str, str]:
+    """(owner, "'s Companion") for a companion's name, (name, "") for any
+    other: only the owner part of a companion's name can be hidden."""
+    if name.endswith(NAME_SUFFIX) and len(name) > len(NAME_SUFFIX):
+        return name[:-len(NAME_SUFFIX)], NAME_SUFFIX
+    return name, ""
 
 
 def stand_in(name: str) -> str:
@@ -215,29 +229,43 @@ class NameMask:
         return cls(True, keep, hidden - keep)
 
     def hides(self, name) -> bool:
-        """Whether *name* is another player's and the mask is on."""
+        """Whether *name* is another player's, or names another player's
+        companion, and the mask is on."""
         if not self.active:
             return False
         name = str(name or "")
+        if name in self._hidden:
+            return True
+        name, _ = _owner(name)
         if not name or name in self._keep:
             return False
         return name.startswith("@") or name in self._hidden
 
+    def _split(self, name: str) -> tuple[str, str]:
+        """(the part hidden, the part kept) of a name the mask hides: a
+        companion's owner and its "'s Companion", unless the whole name is
+        another player's (a character can be called "Bob's Companion")."""
+        return (name, "") if name in self._hidden else _owner(name)
+
     def text(self, name) -> str:
-        """*name* as plain text: itself, or @ and a block per character."""
+        """*name* as plain text: itself, or @ and a block per character
+        (a companion's: its owner's part only)."""
         name = str(name or "")
         if not self.hides(name):
             return name
-        return ("@" if name.startswith("@") else "") + BLOCK * len(_body(name))
+        name, suffix = self._split(name)
+        return ("@" if name.startswith("@") else "") + BLOCK * len(_body(name)) + suffix
 
     def html(self, name, color: str, pt: float, bold: bool = False) -> str:
         """*name* for a rich-text page: escaped, or @ and the pixelated
-        stand-in in *color* at *pt* points (image_html)."""
+        stand-in in *color* at *pt* points (image_html; a companion's: its
+        owner's part only)."""
         name = str(name or "")
         if not self.hides(name):
             return html.escape(name)
+        name, suffix = self._split(name)
         at = "@" if name.startswith("@") else ""
-        return at + image_html(stand_in(name), color, pt, bold)
+        return at + image_html(stand_in(name), color, pt, bold) + html.escape(suffix)
 
 
 NO_MASK = NameMask()  # the identity: what every renderer uses when given none

@@ -10,6 +10,7 @@ the owner; a re-summoned companion has a new unit id; Isobel's Baneslayer
 writes two BEGIN_CAST lines under one castTrackId.
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,7 @@ from app_config import DEFAULTS, AppConfig
 from app_startup import build_analyzer
 from engine_events import RecordingListener
 from esolog_tail import COMBAT_RESUME_MS, ESOLogAnalyzer, FightHistory
+from fight_history import FightHistoryEntry
 from gui.build_render import build_title, render_build_html
 from gui.damage_render import render_damage_html
 from gui.fight_render import (
@@ -30,6 +32,7 @@ from gui.fight_render import (
     render_plain_text,
     ultimate_gap,
 )
+from gui.name_mask import NameMask
 
 EPOCH = 1759600000000
 BOSS_HEALTH = 1000000
@@ -110,6 +113,7 @@ FIGHT_START = [
 FIGHT_END = ['30000,END_COMBAT']
 # Player 1 hits for 300k, their Isobel (unit 23) for 100k
 OWN = _companion_added(3000, 23, 1)
+OWN_NAME_HTML = "@brainsnorkel&#x27;s Companion"  # her name, escaped in a page
 PLAYER_HIT = _hit(11000, _player(1), 300000, 700000)
 COMPANION_HIT = _hit(12000, _companion(23), 100000, 600000, ability=BEAM)
 
@@ -139,7 +143,7 @@ class TestCompanionRow(unittest.TestCase):
         row = fight.players[1]
         self.assertTrue(row['companion'])
         self.assertEqual((row['name'], row['role'], row['level'], row['owner_unit_id']),
-                         ('Isobel Veloise', 'C', 20, '1'))
+                         ("@brainsnorkel's Companion", 'C', 20, '1'))
         self.assertAlmostEqual(row['dmg_pct'], 25.0)
         self.assertEqual(fight.group_dps, 400000.0)  # every hit counted once
 
@@ -161,8 +165,84 @@ class TestCompanionRow(unittest.TestCase):
         ] + FIGHT_START + [PLAYER_HIT, _hit(12000, _companion(24), 50000, 650000)]
             + FIGHT_END).fight_history.fights[0]
         self.assertEqual([p['unit_id'] for p in fight.players], ['1', '2', 'c2-106616'])
-        # The name is the one UNIT_ADDED gave, not the rename
-        self.assertEqual(fight.players[2]['name'], 'Isobel Veloise')
+        # Named after the owner the UNIT_CHANGED gave
+        self.assertEqual(fight.players[2]['name'], "@templar's Companion")
+
+    def test_the_logs_name_for_a_companion_is_never_used(self):
+        fight = _run([
+            _companion_added(3000, 24, 2, reaction="FRIENDLY", name="@someone's Companion"),
+        ] + FIGHT_START + [PLAYER_HIT, _hit(12000, _companion(24), 50000, 650000)]
+            + FIGHT_END).fight_history.fights[0]
+        self.assertEqual(fight.players[2]['name'], "@templar's Companion")
+
+    def test_an_anonymous_owners_handle_never_reaches_the_fight(self):
+        # The log gives each owner neither name nor handle, and names the
+        # handle only in the companion's name (a Direfrost Keep log of
+        # 2026-07-19 has this shape); two anonymous owners, two anon's
+        fight = _run([
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,3,"","",0,50,122,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,6,3,"","",0,50,122,0,PLAYER_ALLY,T',
+            _companion_added(3000, 24, 3, reaction="FRIENDLY", name="@quietowner's Companion"),
+            _companion_added(3000, 25, 4, reaction="FRIENDLY", name="@shyowner's Companion",
+                             monster="103089"),
+            '10000,BEGIN_COMBAT',
+            *[f'10001,PLAYER_INFO,{unit},[45549],[1],[],[12345],[12345]' for unit in (1, 2, 3, 4)],
+            PLAYER_HIT,
+            _hit(12000, _companion(24), 50000, 650000),
+            _hit(12500, _companion(25), 50000, 600000),
+            _heal(13000, _companion(24), 5000, _player(1)),
+        ] + FIGHT_END).fight_history.fights[0]
+        rows = [(p['unit_id'], p['name']) for p in fight.players]
+        for owner, companion in (('3', 'c3-106616'), ('4', 'c4-103089')):
+            at = rows.index((owner, 'anon'))
+            self.assertEqual(rows[at + 1], (companion, "anon's Companion"))
+        for slot in FightHistoryEntry.__slots__:
+            text = json.dumps(getattr(fight, slot, None), default=str)
+            self.assertNotIn('quietowner', text, slot)
+            self.assertNotIn('shyowner', text, slot)
+        for page in (render_html(fight, detailed=True), render_plain_text(fight)):
+            self.assertNotIn('quietowner', page)
+            self.assertNotIn('shyowner', page)
+
+    def test_an_anonymous_owner_named_later_names_their_companion(self):
+        fight = _run([
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,3,"","",0,50,122,0,PLAYER_ALLY,F',
+            _companion_added(3000, 24, 3, reaction="FRIENDLY", name="@later's Companion"),
+            '4000,UNIT_CHANGED,3,6,3,"Later Char","@later",3003,50,122,0,PLAYER_ALLY,T',
+            '10000,BEGIN_COMBAT',
+            *[f'10001,PLAYER_INFO,{unit},[45549],[1],[],[12345],[12345]' for unit in (1, 2, 3)],
+            PLAYER_HIT,
+            _hit(12000, _companion(24), 50000, 650000),
+        ] + FIGHT_END).fight_history.fights[0]
+        rows = [(p['unit_id'], p['name']) for p in fight.players]
+        at = rows.index(('3', '@later'))
+        self.assertEqual(rows[at + 1], ('c3-106616', "@later's Companion"))
+
+    def test_a_companion_turned_hostile_keeps_its_name(self):
+        # A unit turning hostile takes the UNIT_CHANGED's name; a companion
+        # does not, since its log name can carry an anonymous owner's handle
+        analyzer = _run([
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,3,"","",0,50,122,0,PLAYER_ALLY,T',
+            _companion_added(3000, 24, 3, reaction="FRIENDLY", name="@quietowner's Companion"),
+            _unit_changed(3500, 24, "@quietowner's Companion", 3, reaction="HOSTILE"),
+        ])
+        self.assertEqual(analyzer.current_encounter.enemies['24'].name, "anon's Companion")
+
+    def test_a_player_added_on_the_unit_id_names_its_companions(self):
+        # A unit id handed to another player: the companion kept for it is
+        # named after the player who has the id now
+        analyzer = _run([
+            _companion_added(3000, 24, 2, reaction="FRIENDLY"),
+            '4000,UNIT_ADDED,2,PLAYER,F,2,0,F,6,1,"New Char","@newcomer",1003,50,2547,0,PLAYER_ALLY,T',
+        ])
+        enc = analyzer.current_encounter
+        self.assertEqual(enc.companions['c2-106616'].name, "@newcomer's Companion")
+        self.assertEqual(enc.enemies['24'].name, "@newcomer's Companion")
+
+    def test_a_companion_is_named_after_its_owner(self):
+        self.assertEqual(companions.shown_name("@templar"), "@templar's Companion")
+        for no_handle in ("", None, '""', "0"):
+            self.assertEqual(companions.shown_name(no_handle), "anon's Companion")
 
     def test_a_companion_without_an_owner_gets_no_row(self):
         fight = _run([_companion_added(3000, 24, 0, reaction="FRIENDLY")] + FIGHT_START
@@ -242,26 +322,43 @@ class TestCompanionViews(unittest.TestCase):
     def test_the_pane_hangs_the_row_under_its_owner(self):
         html = render_html(self.fight, detailed=True)
         self.assertIn(COMPANION_INDENT, html)
-        self.assertIn('Isobel Veloise', html)
+        self.assertIn(OWN_NAME_HTML, html)
         self.assertIn('lvl 20', html)
         self.assertIn(build_href('c1-106616'), html)
         self.assertIn(damage_href('c1-106616'), html)
-        self.assertLess(html.index('@brainsnorkel'), html.index('Isobel Veloise'))
+        self.assertLess(html.index('@brainsnorkel'), html.index(OWN_NAME_HTML))
         # A health pool only, and its casts per minute: one cast in 20 s
         self.assertIn('H 33.0k · CPM 3</td>', html)
         self.assertIn('☠</span>', html)  # its death, muted, no recap
 
     def test_the_copy_indents_the_companion(self):
         text = render_plain_text(self.fight)
-        self.assertIn(f"{COMPANION_INDENT}[C] Isobel Veloise", text)
+        self.assertIn(f"{COMPANION_INDENT}[C] @brainsnorkel's Companion", text)
 
     def test_the_build_window_shows_the_companion_and_its_owner(self):
         html = render_build_html(self.fight, 'c1-106616')
-        self.assertIn('Isobel Veloise', html)
+        self.assertIn(OWN_NAME_HTML, html)
         self.assertIn('level 20', html)
-        self.assertIn('@brainsnorkel', html)
+        self.assertNotIn(' · of ', html)  # its name says whose it is
         self.assertIn('Beam of Reproach', html)
-        self.assertEqual(build_title(self.fight, 'c1-106616'), 'Companion – Isobel Veloise')
+        self.assertEqual(build_title(self.fight, 'c1-106616'), "@brainsnorkel's Companion")
+
+    def test_hide_names_hides_another_owner_and_keeps_the_logging_players(self):
+        fight = _run([
+            OWN, _companion_added(3000, 24, 2, reaction="FRIENDLY", monster="103089"),
+        ] + FIGHT_START + [PLAYER_HIT, COMPANION_HIT, _hit(12500, _companion(24), 50000, 550000)]
+            + FIGHT_END).fight_history.fights[0]
+        names = NameMask.for_entry(fight, True)
+        html = render_html(fight, detailed=True, names=names)
+        self.assertIn(OWN_NAME_HTML, html)
+        self.assertNotIn('templar', html)
+        self.assertIn('&#x27;s Companion', html.split(OWN_NAME_HTML)[1])
+        text = render_plain_text(fight, names=names)
+        self.assertIn(f"{COMPANION_INDENT}[C] @brainsnorkel's Companion", text)
+        self.assertIn(f"{COMPANION_INDENT}[C] @{'▒' * 7}'s Companion", text)
+        page = render_build_html(fight, 'c2-103089', names=names)
+        self.assertNotIn('templar', page)
+        self.assertEqual(build_title(fight, 'c2-103089', names=names), f"@{'▒' * 7}'s Companion")
 
     def test_the_damage_window_reads_the_companion_row(self):
         html = render_damage_html(self.fight, 'c1-106616')
@@ -373,7 +470,7 @@ class TestCompanionCastViews(unittest.TestCase):
         del row['casts'], row['ultimates']
         for slot in row['front_bar_slots']:
             del slot['casts']
-        isobel_row = render_html(fight, detailed=True).split('Isobel Veloise')[1].split('</tr>')[0]
+        isobel_row = render_html(fight, detailed=True).split(OWN_NAME_HTML)[1].split('</tr>')[0]
         self.assertTrue(isobel_row.endswith('H 33.0k</td>'))  # health only, as before
         self.assertNotIn('Ult ×', render_plain_text(fight))
         page = render_build_html(fight, 'c1-106616', icons=_AllIcons())
