@@ -163,11 +163,74 @@ rule, player-fights / distinct characters in that survey:
   Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
   Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
   once named the complete sets worn instead, which read as noise.
+- **A second copy of a group buff set that gave the group next to nothing** (issue
+  #172; 16 wearer-sessions in the 378 unique split logs of January to
+  October 2026, nearly every one at 0.0). The issue proposed each wearer's
+  loss: the group's uptime of the set's buff less the same without that
+  wearer's spans. The log does not support the reading the issue gave it.
+  The game writes one instance of a set's buff per receiver, credited to
+  one wearer at a time: in five fights with two full wearers of Pearlescent
+  Ward, Lucent Echoes, Spell Power Cure, Master Architect or Powerful
+  Assault, no second wearer's GAINED arrived while the first wearer's
+  instance was on that receiver (0 of 6,259 lines; over the corpus, 3,797
+  of 3.78 million for the three whole-group sets, 0.1%, at handovers). Two
+  wearers split the group between them (two Wards, six players each, in a
+  Lucent Citadel fight), so what a wearer is credited with is not what the
+  group would lose without them. Nor does one wearer of a whole-group set
+  reach everyone: with one wearer, living players had Pearlescent Ward a
+  median 89.6% of their living time in groups of 9 to 12 (698 fights),
+  Lucent Echoes 88.7% (737), Xoryn's Masterpiece 87.3% (341), and within
+  the same sessions a second Ward added 9 points (two sessions), a second
+  Echoes a median 6 (four), when the group spread. What the crediting does
+  prove is an upper bound: a receiver's buff is one wearer's at a time, so a
+  wearer credited with almost none of the other players' time added almost
+  nothing. The rule reads each full wearer's credited share of the other
+  players' time (for Lucent Echoes the players not wearing it, since its
+  wearers never benefit) and flags a wearer whose share stayed under
+  SECOND_SOURCE_SHARE (2%) in every fight of a minute or more of the
+  session that another full wearer was in, provided another wearer's copy
+  reached the group in at least one of them: two Master Architects in a
+  fight with no ultimate cast both read 0.0, and neither is a second copy
+  beside a working one. The lesser wearer's share in a
+  doubled fight is a median 16 points for Echoes, 23 for Ward, 20 for Spell
+  Power Cure, 10 for Master Architect, 6 for Powerful Assault and 5 for
+  Saxhleel Champion, and the wearers the rule finds sat at 0.0 in nearly
+  every fight (an Echoes and Powerful Assault wearer in 17 Dreadsail Reef
+  fights, a Ward wearer in four Cloudrest fights), 1.3 at the most; at 5
+  the rule would find 24, the eight more with copies that did reach a few
+  players now and then. The sets judged are those
+  whose value is the buff they give others (GROUP_BUFF_SETS); a set whose
+  buff is its wearer's own (Kinras's Wrath, Huntsman's Warmask) or a
+  debuff on enemies is never judged, though data/sets/set_buffs.json lists
+  it, since a second copy of a damage set stacks. The buff's spans are kept
+  per wearer and receiver (GroupBuffCredit), not taken from the uptime
+  rules, which the reader can edit away.
+- **A second Enlivening Overflow or From the Brink slotted** (issue #172).
+  A player who slots either Champion Point star lists it in the PLAYER_INFO
+  long-term effects (156008, 156017), and its procs name the holder as
+  source: Enlivening Overflow writes 156012, the 6 s buff on the healed
+  player, and 156011, a hidden effect of 12.0 s (231,505 of 250,241 lasted
+  11 to 13 s, the rest ended with a death); From the Brink 156020, the
+  shield (its value in the target's shield field), and 156019, hidden, 30.0
+  s (2,707 of 4,573). The hidden effect is the per-target cooldown, and every
+  holder shares it: of 282,366 Enlivening Overflow procs, 2 landed on a
+  player while another holder's stood on them (105 while the same
+  holder's did); of 4,572 From the Brink procs, none. Holders take turns.
+  With one holder the 6 s buff covered a median 32% of a 12-player group's
+  time (578 boss fights), with two 36% (295): a second adds about four
+  points against a ceiling of 50%. So the rule counts each holder's procs
+  over the session's fights of a minute or more that had two or more
+  holders: an Enlivening Overflow holder whose share of the holders' procs
+  stayed under STAR_PROC_SHARE (15%) is flagged (6 holder-sessions of the
+  74 with two holders), and a From the Brink holder who never procced
+  while another did (9 of 48; the star needs a heal on a player under 25%
+  health, which a damage dealer who slots it rarely gives). The procs are
+  counted per fight (CombatEncounter.note_star_proc).
 
 The lists a later rules text could lift out (the maintainer's separate
-issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
-ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables, the
-weapon lines table. The checks themselves are code.
+issue) are module data: GROUP_SETS, GROUP_BUFF_SETS, PROC_SETS, SLAYER_SETS,
+STARS, ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables,
+the weapon lines table. The checks themselves are code.
 """
 
 import json
@@ -175,6 +238,7 @@ from functools import lru_cache
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
 from ability_icons import bundle_root
+from damage_kinds import ESOHUB_CP
 from effect_rules import group_size_class
 from player_build import (
     ARMOR_SLOTS,
@@ -310,6 +374,78 @@ PROC_SETS = {
 }
 PROC_EFFECT_IDS = frozenset().union(*(proc.effect_ids for proc in PROC_SETS.values()))
 
+
+class GroupBuffSet(NamedTuple):
+    name: str
+    set_ids: frozenset  # the set's ids, perfected and not, counted together
+    effect_ids: frozenset  # the buff its wearers give other players
+    pieces: int = 5  # worn pieces that make the bonus
+    wearers_excluded: bool = False  # the buff never counts for the set's own wearers
+
+
+# The group buff sets judged for a second copy (issue #172; see the module
+# notes): sets whose value is the buff they give others. The effect ids are
+# the named Major and Minor buffs of data/sets/set_buffs.json, and for the
+# sets whose buff is named after the set, the default uptime rules' ids
+# (Powerful Assault, Pearlescent Ward, Lucent Echoes) and the logs' own
+# (Xoryn's Masterpiece 220010 and 220011; Roaring Opportunist's 93109 beside
+# its 135923, as PROC_SETS has it)
+GROUP_BUFF_SETS = (
+    GroupBuffSet("Spell Power Cure", frozenset({"185"}), frozenset({"66902"})),
+    GroupBuffSet("Vestment of Olorime", frozenset({"391", "395"}), frozenset({"109994"})),
+    GroupBuffSet("War Machine", frozenset({"331"}), frozenset({"93442"})),
+    GroupBuffSet("Master Architect", frozenset({"332"}), frozenset({"93120"})),
+    GroupBuffSet("Roaring Opportunist", frozenset({"496", "497"}), _SLAYER_EFFECTS),
+    GroupBuffSet("Saxhleel Champion", frozenset({"585", "589"}), frozenset({"154830"})),
+    GroupBuffSet("Claw of Yolnahkriin", frozenset({"446", "451"}), frozenset({"121878"})),
+    GroupBuffSet("Powerful Assault", frozenset({"180"}), frozenset({"61771"})),
+    GroupBuffSet("Pearlescent Ward", frozenset({"648", "651"}), frozenset({"172621"})),
+    GroupBuffSet("Lucent Echoes", frozenset({"768", "771"}), frozenset({"220015"}),
+                 wearers_excluded=True),
+    GroupBuffSet("Xoryn's Masterpiece", frozenset({"769", "770"}),
+                 frozenset({"220010", "220011"})),
+    GroupBuffSet("Transformative Hope", frozenset({"704", "705"}),
+                 frozenset({"194148", "194149"})),
+    GroupBuffSet("Magma Incarnate", frozenset({"609"}),
+                 frozenset({"159310", "159341", "159352", "159356",    # Minor Courage
+                            "159311", "159340", "159350", "159358"}),  # Minor Resolve
+                 pieces=2),
+    GroupBuffSet("Mender's Ward", frozenset({"416", "428"}), frozenset({"113653"}), pieces=2),
+    GroupBuffSet("Ozezan the Inferno", frozenset({"687"}), frozenset({"188505"}), pieces=2),
+    GroupBuffSet("The Blind", frozenset({"738"}), frozenset({"214863"}), pieces=2),
+)
+GROUP_BUFF_EFFECT_IDS = frozenset().union(*(s.effect_ids for s in GROUP_BUFF_SETS))
+# A copy credited with less of the other players' time than this added
+# almost nothing: the group had the buff from another wearer
+SECOND_SOURCE_SHARE = 0.02
+
+
+class Star(NamedTuple):
+    name: str
+    slotted_id: str  # in the PLAYER_INFO long-term effects of a player who slots it
+    proc_id: str  # the effect a proc puts on the player it helps, the holder its source
+    cooldown_s: int  # per player, shared by every holder
+    does: str  # what a proc does, for the finding
+    url: str  # its ESO-Hub page
+    # A holder is flagged under this share of the holders' procs over the
+    # session; 0 means only a holder whose star never procced
+    min_share: float = 0.0
+
+
+# An Enlivening Overflow holder with less of the holders' procs than this
+# rarely got the chance: the others' procs had the players on cooldown
+STAR_PROC_SHARE = 0.15
+# The Champion Point stars judged for a second holder (issue #172)
+STARS = (
+    Star("Enlivening Overflow", "156008", "156012", 12,
+         "gives Health, Magicka and Stamina Recovery to a player its holder overheals",
+         ESOHUB_CP + "enlivening-overflow", min_share=STAR_PROC_SHARE),
+    Star("From the Brink", "156017", "156020", 30,
+         "shields a player its holder heals under 25% Health",
+         ESOHUB_CP + "from-the-brink"),
+)
+STAR_PROC_IDS = {star.proc_id: star.name for star in STARS}
+
 # The rule behind each finding, as the finding states it
 NIRNHONED_DETAIL = (
     "Nirnhoned raises the damage of the weapon it is on, and the Dual Wield Expert passive "
@@ -362,6 +498,22 @@ SLAYER_TITLE = "No Minor Slayer in a veteran trial group"
 SLAYER_DETAIL = (
     "No trial set at three pieces and no Oakensoul Ring, so no Minor Slayer: 5% more damage "
     "to dungeon, trial and arena monsters.")
+SECOND_SET_TITLE = "Second {set} gave the others {amount} ({fights})"
+SECOND_SET_DETAIL = (
+    "Another player wears {set} complete too. A player has the set's buff from one wearer "
+    "at a time, and in {fights} of a minute or more with both, the log credited this "
+    "player's copy with {share} of the other players' time{excluded}, so it added next to "
+    "nothing beside the other. Another set would add more.")
+SECOND_SET_EXCLUDED = " (the buff never counts for the set's own wearers)"
+SECOND_STAR_TITLE = "Second {star}: {share} of its procs ({fights})"
+SECOND_STAR_NEVER_TITLE = "Second {star}: no proc in {fights}"
+SECOND_STAR_DETAIL = (
+    "{star} {does}, once every {cooldown} seconds per player, and that cooldown is shared "
+    "by everyone who slots the star: once any holder's has procced on a player, no holder's "
+    "can for {cooldown} seconds. Another player slots it too, and in {fights} of a minute "
+    "or more with both, {result}. Another star would add more.")
+SECOND_STAR_SHARE = "this player's procs were {share} of the holders'"
+SECOND_STAR_NEVER = "this player's never procced while the other holder's did"
 
 
 def _clock(ms: int) -> str:
@@ -373,10 +525,26 @@ def _clock(ms: int) -> str:
     return f"{total // 60}m" if total % 60 == 0 else f"{total // 60}m{total % 60:02d}"
 
 
-def _finding(rule: str, title: str, detail: str, set_name: str = "", skill: str = "") -> dict:
+def _finding(rule: str, title: str, detail: str, set_name: str = "", skill: str = "",
+             star: Optional["Star"] = None) -> dict:
     """One finding: the rule's id, what was found, the rule behind it, and
-    the set or skill it is about (for a link), '' when none."""
-    return {"rule": rule, "title": title, "detail": detail, "set": set_name, "skill": skill}
+    the set or skill it is about (for a link), '' when none. A finding
+    about a Champion Point star adds 'star' and 'star_url', its ESO-Hub
+    page, since the bundled link maps hold no stars."""
+    finding = {"rule": rule, "title": title, "detail": detail, "set": set_name, "skill": skill}
+    if star is not None:
+        finding.update(star=star.name, star_url=star.url)
+    return finding
+
+
+def _fights_text(count: int) -> str:
+    return f"{count} fight" if count == 1 else f"{count} fights"
+
+
+def _share_text(share: float) -> str:
+    """'0.4%', '12%': one decimal under ten percent, where the rules' figures sit."""
+    pct = 100 * max(0.0, share)
+    return f"{pct:.1f}%" if pct < 10 else f"{pct:.0f}%"
 
 
 def _an(label: str) -> str:
@@ -545,6 +713,160 @@ def fired_proc_sets(worn: Iterable[str], sourced_effect_ids: Iterable[str]) -> S
             if set_id in PROC_SETS and PROC_SETS[set_id].effect_ids & sourced}
 
 
+def group_buff_sets_worn(gear: dict[str, list[str]]) -> list[GroupBuffSet]:
+    """The GROUP_BUFF_SETS this build wears complete: its pieces of the
+    set, perfected and not counted together, at the bonus's count on
+    either bar (player_build.piece_counts; a two-hander counts two)."""
+    counts = piece_counts(gear or {})
+    worn = []
+    for group_set in GROUP_BUFF_SETS:
+        front = sum(counts[s][0] for s in group_set.set_ids if s in counts)
+        back = sum(counts[s][1] or 0 for s in group_set.set_ids if s in counts)
+        if max(front, back) >= group_set.pieces:
+            worn.append(group_set)
+    return worn
+
+
+def stars_slotted(long_term_effects: Iterable[str]) -> list[Star]:
+    """The STARS a player slots, read from their PLAYER_INFO long-term effects."""
+    ids = {str(i) for i in long_term_effects or ()}
+    return [star for star in STARS if star.slotted_id in ids]
+
+
+def group_buff_shares(wearers: dict[str, list[tuple[str, str]]],
+                      credited: dict[tuple[str, str, str], int],
+                      players: Iterable[str], duration_ms: int
+                      ) -> dict[str, dict[str, tuple[int, int]]]:
+    """For each set with two or more full wearers in a fight (*wearers*:
+    set name -> [(player id, player key)]), each wearer's (ms of the other
+    players' time the log credited to their copy of the buff, those
+    players' whole time): *credited* is GroupBuffCredit.credited's map,
+    *players* the fight's player ids. The other players are every player
+    but the wearer, and for a set whose buff never counts for its wearers
+    (Lucent Echoes) every player who does not wear it."""
+    players = [str(p) for p in players]
+    by_name = {group_set.name: group_set for group_set in GROUP_BUFF_SETS}
+    shares: dict[str, dict[str, tuple[int, int]]] = {}
+    for name, worn_by in wearers.items():
+        group_set = by_name.get(name)
+        if group_set is None or len(worn_by) < 2:
+            continue
+        wearing = {str(player_id) for player_id, _key in worn_by}
+        per: dict[str, tuple[int, int]] = {}
+        for player_id, key in worn_by:
+            player_id = str(player_id)
+            others = {p for p in players if p != player_id
+                      and not (group_set.wearers_excluded and p in wearing)}
+            got = sum(ms for (effect, source, target), ms in credited.items()
+                      if effect in group_set.effect_ids and source == player_id
+                      and target in others)
+            per[key] = (got, len(others) * max(0, int(duration_ms)))
+        shares[name] = per
+    return shares
+
+
+class GroupBuffCredit:
+    """Whose copy of a group buff set's buff each player had, over time
+    (issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
+    target) unit, in raw log milliseconds.
+
+    The game writes one instance of such a buff per receiver, credited to
+    one wearer at a time (see the module notes), so a span is that wearer's
+    credit for that player. GAINED or UPDATED opens a span when none is
+    open (a refresh after a missed GAINED), FADED closes it, and a span
+    that resumes within MERGE_GAP_MS of its last close is the same span
+    (Pearlescent Ward is written as a FADED and a GAINED every second). A
+    zone change ends the open spans (zone_changed: unit ids are handed out
+    afresh), so does a unit's removal for its own (forget_unit), BEGIN_LOG
+    drops everything (reset), and spans that ended before a published fight
+    are pruned (prune_before), as the uptime rules' are.
+    """
+
+    MERGE_GAP_MS = 500
+
+    def __init__(self):
+        # (effect id, source unit, target unit) -> start ms of the open span
+        self._open: dict[tuple[str, str, str], int] = {}
+        # the same key -> [[start, end], ...] closed, oldest first
+        self._closed: dict[tuple[str, str, str], list[list[int]]] = {}
+
+    def reset(self) -> None:
+        self._open.clear()
+        self._closed.clear()
+
+    def record(self, effect_type: str, ability_id: str, source_id: str, target_id: str,
+               timestamp_ms: int) -> None:
+        ability_id = str(ability_id)
+        if ability_id not in GROUP_BUFF_EFFECT_IDS:
+            return
+        key = (ability_id, str(source_id), str(target_id))
+        if effect_type in ("GAINED", "UPDATED"):
+            self._open.setdefault(key, int(timestamp_ms))
+        elif effect_type == "FADED":
+            start = self._open.pop(key, None)
+            if start is not None:
+                self._close(key, start, int(timestamp_ms))
+
+    def _close(self, key: tuple[str, str, str], start: int, end: int) -> None:
+        if end <= start:
+            return
+        spans = self._closed.setdefault(key, [])
+        if spans and 0 <= start - spans[-1][1] <= self.MERGE_GAP_MS:
+            spans[-1][1] = max(spans[-1][1], end)
+        else:
+            spans.append([start, end])
+
+    def zone_changed(self, timestamp_ms: int) -> None:
+        for key, start in list(self._open.items()):
+            self._close(key, start, int(timestamp_ms))
+        self._open.clear()
+
+    def forget_unit(self, unit_id: str, timestamp_ms: int) -> None:
+        """The unit was removed (UNIT_REMOVED): its spans, as wearer or as
+        receiver, end here. The game writes no FADED for a unit that has
+        gone, so a span would otherwise run on, and a unit id handed to
+        someone new would inherit it (a group member who left before a
+        Lucent Citadel pull kept a second Echoes wearer's span open
+        through the whole fight)."""
+        unit_id = str(unit_id)
+        for key in [key for key in self._open if unit_id in (key[1], key[2])]:
+            self._close(key, self._open.pop(key), int(timestamp_ms))
+
+    def credited(self, start_ms: int, end_ms: int,
+                 player_of: Callable[[str], str | None]) -> dict[tuple[str, str, str], int]:
+        """(effect id, source player, target player) -> the ms of the window
+        [start_ms, end_ms] that the source's copy of the effect was on the
+        target. *player_of* turns a unit id into its player's id, None for a
+        unit that is no player of the fight (a pet, a companion, an enemy)."""
+        out: dict[tuple[str, str, str], int] = {}
+        if end_ms <= start_ms:
+            return out
+        keys = set(self._closed) | set(self._open)
+        for key in keys:
+            source, target = player_of(key[1]), player_of(key[2])
+            if source is None or target is None:
+                continue
+            spans = list(self._closed.get(key, ()))
+            if key in self._open:
+                spans.append([self._open[key], end_ms])
+            ms = 0
+            for start, end in spans:
+                ms += max(0, min(end, end_ms) - max(start, start_ms))
+            if ms:
+                merged = (key[0], str(source), str(target))
+                out[merged] = out.get(merged, 0) + ms
+        return out
+
+    def prune_before(self, timestamp_ms: int) -> None:
+        """Free closed spans that ended before *timestamp_ms*."""
+        for key in list(self._closed):
+            kept = [span for span in self._closed[key] if span[1] > timestamp_ms]
+            if kept:
+                self._closed[key] = kept
+            else:
+                del self._closed[key]
+
+
 def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[dict]],
                         back_slots: Optional[List[dict]], role: str, taunted: bool = False,
                         set_name_of: Optional[Callable[[str], Optional[str]]] = None,
@@ -709,19 +1031,133 @@ def food_findings(food: Optional[dict], state: Optional[dict], fight_start_ms: i
 
 class BuildIssueTracker:
     """The rules judged over a logging session rather than a fight: the
-    proc sets that never fire, and who has taunted (the heavy-armor rule's
-    guard). Keyed by the engine's per-session player key; a fight is keyed
-    by its start, so a fight the game cut in two and republished replaces
-    its own record instead of counting twice. reset() at BEGIN_LOG."""
+    proc sets that never fire, a second copy of a group buff set or a
+    second holder of a Champion Point star that added next to nothing
+    (issue #172), and who has taunted (the heavy-armor rule's guard). Keyed
+    by the engine's per-session player key; a fight is keyed by its start,
+    so a fight the game cut in two and republished replaces its own record
+    instead of counting twice. reset() at BEGIN_LOG."""
 
     def __init__(self):
         # (player key, set id) -> {fight start ms: (long enough, fired)}
         self._fights: Dict[Tuple[str, str], Dict[int, Tuple[bool, bool]]] = {}
-        self._taunters: Set[str] = set()
+        self._taunters: set[str] = set()
+        # Fights with two or more full wearers of a group buff set: set name
+        # -> {fight start ms: (long enough, {player key: (credited ms,
+        # the other players' ms)})}
+        self._group_buffs: dict[str, dict[int, tuple[bool, dict[str, tuple[int, int]]]]] = {}
+        # Fights with two or more holders of a star: star name -> {fight
+        # start ms: (long enough, {player key: procs})}
+        self._stars: dict[str, dict[int, tuple[bool, dict[str, int]]]] = {}
 
     def reset(self) -> None:
         self._fights.clear()
         self._taunters.clear()
+        self._group_buffs.clear()
+        self._stars.clear()
+
+    def note_second_sources(self, fight_start_ms: int, duration_s: float,
+                            group_buffs: dict[str, dict[str, tuple[int, int]]],
+                            stars: dict[str, dict[str, int]]) -> None:
+        """A fight ended: per group buff set with two or more full wearers,
+        each wearer's credited and possible ms of the other players' time
+        (group_buff_shares), and per star with two or more holders, each
+        holder's procs. A fight republished replaces its own records."""
+        start = int(fight_start_ms)
+        long = float(duration_s) >= LONG_FIGHT_S
+        for records in (*self._group_buffs.values(), *self._stars.values()):
+            records.pop(start, None)
+        for name, per in (group_buffs or {}).items():
+            if len(per) >= 2:
+                self._group_buffs.setdefault(name, {})[start] = (long, dict(per))
+        for name, per in (stars or {}).items():
+            if len(per) >= 2:
+                self._stars.setdefault(name, {})[start] = (long, dict(per))
+
+    def _quiet_copies(self, name: str) -> dict[str, tuple[int, int, int]]:
+        """The wearers of a group buff set whose copy stayed under
+        SECOND_SOURCE_SHARE of the other players' time in every fight of a
+        minute or more this session with another full wearer, while another
+        wearer's copy reached the group in at least one of those fights:
+        player key -> (those fights, credited ms, possible ms over them).
+        Two copies that both reached no one (no ultimate cast, say) are
+        not a second copy beside a working one, and neither is listed."""
+        per_player: dict[str, list[tuple[int, int]]] = {}
+        beside_working: set[str] = set()
+        for long, per in self._group_buffs.get(name, {}).values():
+            if not long:
+                continue
+            for key, (got, possible) in per.items():
+                if possible <= 0:
+                    continue
+                per_player.setdefault(key, []).append((got, possible))
+                if any(other != key and other_possible > 0
+                       and other_got >= SECOND_SOURCE_SHARE * other_possible
+                       for other, (other_got, other_possible) in per.items()):
+                    beside_working.add(key)
+        return {key: (len(fights), sum(g for g, _p in fights), sum(p for _g, p in fights))
+                for key, fights in per_player.items()
+                if key in beside_working
+                and all(got < SECOND_SOURCE_SHARE * possible for got, possible in fights)}
+
+    def second_source_findings(self, fight_start_ms: int, player_key: str) -> list[dict]:
+        """The second-copy findings on *player_key* in the fight that began
+        at *fight_start_ms*: a group buff set they wear whose copy added
+        next to nothing this session beside another wearer's that reached
+        the group (so the finding is always on the smaller contributor),
+        and a star they slot beside another holder whose procs were too
+        few, in GROUP_BUFF_SETS and STARS order. Only a fight of a minute or
+        more is judged, as the session's record is read."""
+        start = int(fight_start_ms)
+        out: list[dict] = []
+        for group_set in GROUP_BUFF_SETS:
+            this = self._group_buffs.get(group_set.name, {}).get(start)
+            if not this or not this[0] or player_key not in this[1]:
+                continue
+            quiet = self._quiet_copies(group_set.name)
+            if player_key not in quiet:
+                continue
+            fights, got, possible = quiet[player_key]
+            share = got / possible if possible else 0.0
+            amount = "nothing" if share < 0.0005 else f"{_share_text(share)} of their time"
+            out.append(_finding(
+                "second-group-set",
+                SECOND_SET_TITLE.format(set=group_set.name, amount=amount,
+                                        fights=_fights_text(fights)),
+                SECOND_SET_DETAIL.format(
+                    set=group_set.name, fights=_fights_text(fights), share=_share_text(share),
+                    excluded=SECOND_SET_EXCLUDED if group_set.wearers_excluded else ""),
+                set_name=group_set.name))
+        for star in STARS:
+            records = self._stars.get(star.name, {})
+            this = records.get(start)
+            if not this or not this[0] or player_key not in this[1]:
+                continue
+            fights = mine = total = 0
+            for long, per in records.values():
+                if long and player_key in per:
+                    fights += 1
+                    mine += per[player_key]
+                    total += sum(per.values())
+            if total <= 0:
+                continue
+            share = mine / total
+            if mine > 0 and share >= star.min_share:
+                continue
+            if mine == 0:
+                title = SECOND_STAR_NEVER_TITLE.format(star=star.name, fights=_fights_text(fights))
+                result = SECOND_STAR_NEVER
+            else:
+                title = SECOND_STAR_TITLE.format(star=star.name, share=_share_text(share),
+                                                 fights=_fights_text(fights))
+                result = SECOND_STAR_SHARE.format(share=_share_text(share))
+            out.append(_finding(
+                "second-star", title,
+                SECOND_STAR_DETAIL.format(star=star.name, does=star.does,
+                                          cooldown=star.cooldown_s,
+                                          fights=_fights_text(fights), result=result),
+                star=star))
+        return out
 
     def note_taunt(self, player_key: str) -> None:
         self._taunters.add(player_key)

@@ -101,6 +101,7 @@ TOPICS = [
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
         "src/build_issues.py:BuildIssueTracker",
+        "src/build_issues.py:GroupBuffCredit",
         "scripts/generate_weapon_skill_lines.py",
     ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
