@@ -138,18 +138,38 @@ class TestSkillLinesFromPassives(unittest.TestCase):
         self.assertEqual(mastery_of_effect('263306', 'Dragonknight', table), 'Lead from the Front')
         self.assertEqual(mastery_of_effect('263306', 'Nightblade', table), '')
         self.assertEqual(mastery_of_effect('263306', None, table), 'Lead from the Front')
-        # The bundled one: 60 effects, 5 signature effects, the 35 passives,
+        # The bundled one: 60 effects, 7 signature effects, the 35 passives,
         # no monster ability
         bundled = mastery_effect_table()
-        self.assertEqual(len(bundled), 100)
+        self.assertEqual(len(bundled), 102)
         self.assertEqual(bundled['263411'], ('Unbound Potential', 'Arcanist'))       # proc effect
         self.assertEqual(bundled['263604'], ('An Eye for Exploitation', 'Nightblade'))  # the passive
         self.assertEqual(bundled['268274'], ('Calculated Defense', 'Sorcerer'))      # group effect
         self.assertEqual(bundled['263825'], ("Tundra's Maw", 'Warden'))             # Major Brittle
         self.assertEqual(bundled['268257'], ('Bountiful Harvest', 'Warden'))        # Major Heroism
+        self.assertEqual(bundled['263619'], ('Devout Guardian', 'Templar'))         # Hold the Line
+        self.assertEqual(bundled['263877'], ('Conservation of Energy', 'Sorcerer'))  # a Magicka gain
         self.assertNotIn('107994', bundled)                                         # Pound of Flesh, a monster's
         self.assertEqual(mastery_of_effect('263369'), 'Abyssal Emergence')
         self.assertEqual(mastery_of_effect('263306', 'Warden'), '')
+
+    def test_likely_second_mastery_in_the_roles_order(self):
+        from eso_sets import MAX_MASTERIES, likely_masteries, masteries_never_logged
+        table = {'Templar': {'D': ['A', 'B', 'C'], 'H': ['C', 'B', 'A']}}
+        self.assertEqual(likely_masteries('Templar', 'H', ['B'], table), ['C', 'A'])
+        self.assertEqual(likely_masteries('Templar', 'D', ['B'], table), ['A', 'C'])
+        # A role the table lacks reads as a damage dealer's; a class it
+        # lacks has nothing to offer
+        self.assertEqual(likely_masteries('Templar', 'C', ['A'], table), ['B', 'C'])
+        self.assertEqual(likely_masteries('Warden', 'D', ['A'], table), [])
+        # The bundled order: a Templar healer showing Devout Guardian;
+        # Bastion of Light, which the log never names, last
+        self.assertEqual(likely_masteries('Templar', 'H', ['Devout Guardian']),
+                         ['Bright Harbinger', "Judgment's Brand", 'Steadfast Candescence',
+                          'Bastion of Light'])
+        self.assertEqual(likely_masteries('Necromancer', 'D', ['Nothing Wasted'])[0], 'Cycle Unending')
+        self.assertEqual(masteries_never_logged(), frozenset({'Bastion of Light'}))
+        self.assertEqual(MAX_MASTERIES, 2)
 
 
 if __name__ == '__main__':

@@ -1162,9 +1162,9 @@ _ZONE_EXPLAIN = {
     "solo_trash": "A solo dungeon's trash has 18,200 armour, like any instance's.",
 }
 _ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs each second "
-                "while the group was hitting the target, averaged over time; the click "
-                "summary and the build window's effective figures weigh each second by the "
-                "damage dealt instead.")
+                "while the group was hitting the target, and the label's second figure is "
+                "that armour left, averaged over time; the click summary and the build "
+                "window's effective figures weigh each second by the damage dealt instead.")
 _PACK_EXPLAIN = ("The paler stretches read each second on whatever the group hit hardest "
                  "then, the hover naming it.")
 
@@ -1173,7 +1173,7 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
     """The buff timeline's Armour row for a fight entry's group part
     (fight_fields' 'armour'): the estimate (the fight's target armour, or
     the Settings' cap override when it is a number), a label 'Armour 18,200
-    · 9,400 left' with the time-averaged remainder, the scope word
+    · 9,400' with the time-averaged remainder, the scope word
     ('boss' or 'mobs'), intervals shaped like a stacking rule's with
     'stacks' the armour left that second plus 'debuff_pen' and 'debuffs'
     for the hover, 'stacks_max' the estimate, 'game_cap' 25,000 when the
@@ -1278,8 +1278,9 @@ def armour_row(group: dict | None, options: dict | None = None) -> dict | None:
         reason = _ZONE_EXPLAIN.get(kind, _ZONE_EXPLAIN["overland"])
     row = {"name": ARMOUR_ROW, "estimate": estimate,
            # Short enough for the strip's label column: the hover and the
-           # click say the figure is an estimate and why
-           "label": f"{ARMOUR_ROW} {estimate:,} · {shown['average_left']:,} left",
+           # click say the first figure is an estimate and why, and the
+           # second the armour left on average (#137)
+           "label": f"{ARMOUR_ROW} {estimate:,} · {shown['average_left']:,}",
            "scope": "boss" if boss else "mobs", "intervals": intervals, "stacks_max": estimate,
            "game_cap": ENEMY_ARMOUR_CAP if estimate > ENEMY_ARMOUR_CAP else None,
            "average_left": shown["average_left"], "lowest_left": shown["lowest_left"],

@@ -2,6 +2,51 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.28.1] - 2026-10-31
+
+### Changed
+- **Always Logging, or Easy Stalking, to keep encounter logging on** (#156): the README, the user guide, the home page and the "Waiting for Encounter.log" message now offer two addons, one or the other but not both: [Always Logging](https://github.com/brainsnorkel/AlwaysLogging), which logs everywhere and is installed from GitHub (it is not on ESOUI or in Minion), and Easy Stalking, which logs only the content you choose. Both are thanked under About
+
+### Fixed
+- **A log path with `&` or `<` in it shows as written in "Waiting for Encounter.log"** (#156), instead of being read as markup
+
+## [0.28.0] - 2026-10-31
+
+### Added
+- For the maintainer (#134): `scripts/release.py` makes the release commit (the version, the changelog section gathered from `changelog.d/` fragments, the design notes rebuilt) and, once its pull request is merged, tags it, pushes the tag and checks the beta it publishes. Changes now add a fragment in `changelog.d/` instead of editing `CHANGELOG.md`, and a check on every pull request asks for one (or the `no-changelog` label). `docs/design.md` is rebuilt in the release commit only, and the release job refuses a tag whose design notes lag the code
+- **Hover a fight's `ⓘ` in the fight list to see who has a possible build issue** (#147): each flagged player, with the class text from their row and the title of each finding, without selecting the fight. The rest of the row shows nothing on hover, as before. Names follow **Hide names**, and a screen reader hears the mark as how many players have a finding.
+- **A `?` after a single Class Mastery** (#149): a character can take two, and the log often shows one late or never. `Templar: Devout Guardian, ?` on the fight pane; hover the `?` for the class's other masteries, the likeliest first for the player's role (counted over a month of trial logs, Bastion of Light last as the log never names it), or click it for the build. The build window's mastery line and the plain-text copy say the same in words
+
+### Changed
+- **The possible-build-issues `ⓘ` is easier to spot** (#140): on the fight pane it now sits right after the player's name, beside the `*` of the first damage, instead of after the class text, and it is drawn bold with a faint glow in the link colour. Rows keep their height. The fight list, the popup and the build window keep the plain `ⓘ`
+- **The build window's Damage dealt section moves above Resources** (#143): under the gear grid the window now reads Damage dealt, Penetration and Critical damage as one block about what the player did with the build, with Resources, the tallest section, last. Each cap section's *Effective* line, the figure that counts, sits in a framed row with a bar at its left edge, and the Damage dealt and Resources headings get the rule the other headings have
+
+### Fixed
+- The *damage taken and healing received* link in the build window, and the death recap's link to the same window, open the fight that window shows (#143). They opened the fight selected in the list, which moves on to each new pull while the app follows the live log
+- **Necromancers' Cycle Unending shows beside the class** (#149): its effect comes from the Necromancer's pets, which the app did not credit to them, so most Necromancers showed Nothing Wasted alone
+- **A mastery found later in a session fills in that session's earlier fights** (#149), so the fights of one session show the same masteries
+
+## [0.27.0] - 2026-10-31
+
+### Added
+- For the maintainer (#134): the release job refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's version, or is not on `main`; `scripts/promote_release.py` makes a beta Stable (or pulls a bad Stable release back to a draft) and lists the betas that could be; a weekly workflow opens an issue when a beta that qualifies has waited more than two weeks
+
+### Changed
+- **Releases go to Beta first** (#134): every release is now published as a beta, which the Beta channel offers at once. A beta becomes the Stable release, which the Stable channel and the home page's download buttons offer, once it has been used in real fights for a while with nothing found. The home page names a newer beta in a smaller line under the buttons. Settings → Updates no longer says that both channels get every release
+- The buff timeline's Armour row label drops the word "left": `Armour 18,200 · 6,456` (#137). Hovering the label says the second figure is the armour left, averaged over time
+
+### Fixed
+- **Four more Class Masteries show beside the class**: Conservation of Energy, Share the Spoils and Nocturnal Inspiration, which the log writes only as the Magicka, Stamina or Ultimate they give, and Devout Guardian, whose shield the log calls Hold the Line. Each was checked in 103 split logs of September and October 2026: every one of these lines came from a player of the mastery's own class. Bastion of Light is the one mastery the log never names
+
+## [0.26.0] - 2026-10-30
+
+### Added
+- **Update channels** (#134): Settings → Updates has a *Channel*, **Stable** (the default) or **Beta**. Beta offers every release as soon as it is published; Stable offers a release once it has been used in real fights for a while with nothing found. Until releases are published to Beta first, which the release workflow takes up next, both channels offer the same release. On Beta the window title ends `· beta`, and About names the channel. Moving from Beta to Stable never offers a lower version: you keep the one you have until a Stable release is newer
+- **Changes since your version** in the update's ⓘ popup: a link to every change between the version you run and the one on offer, however many releases lie between
+
+### Changed
+- The update check counts a release only when its tag is exactly `vX.Y.Z`, so a data release in the same list can never be read as an app version
+
 ## [0.25.0] - 2026-10-29
 
 ### Added

@@ -30,6 +30,15 @@ thread.
 start() clears the ETag so its first request is a full one: Settings saved
 with the check on also clears a skipped version, and a 304 would otherwise
 hide the release that was skipped and is wanted again.
+
+Each check reads the channel from the config (``update.channel``, issue
+#134). The two channels ask different endpoints, and the channel changes
+only through a Settings save, which calls start(): that clears the ETag, so
+no validator is ever sent to the other endpoint. start() also withdraws an
+offer the previous channel made at once, rather than when (or if) the
+first check on the new channel succeeds: someone who leaves Beta while
+offline or rate limited must not be left one click from the beta they
+opted out of.
 """
 
 import tempfile
@@ -73,6 +82,7 @@ class UpdatePoller(QObject):
         self._first.timeout.connect(self._tick)
         self._etag = None
         self._offered = None      # the version on offer, or None
+        self._offered_channel = None  # the channel that made the offer
         self._busy = False        # a check or download thread is running
         self._wait_until = 0.0    # no check before this time (rate limit)
         self._generation = 0      # bumped by start() and stop(); late results are dropped
@@ -99,8 +109,15 @@ class UpdatePoller(QObject):
         self._busy = False
         self._etag = None
         self._wait_until = 0.0
+        if (self._offered is not None
+                and self._offered_channel != self._channel()):
+            self._offered = None
+            self.update_gone.emit()
         self._timer.start(self.interval_ms())
         self._first.start(FIRST_CHECK_MS)
+
+    def _channel(self) -> str:
+        return update_check.normalize_channel(self.config.get("update.channel"))
 
     def stop(self) -> None:
         """End the schedule; a thread still running is ignored when it reports."""
@@ -128,24 +145,24 @@ class UpdatePoller(QObject):
             return
         self._busy = True
         args = (self._generation, self.current_version,
-                self.config.get("update.skip_version"), self._etag)
+                self.config.get("update.skip_version"), self._etag, self._channel())
         threading.Thread(target=self._run_check, args=args,
                          name="esolog-update-check", daemon=True).start()
 
-    def _run_check(self, generation, version, skip, etag):
+    def _run_check(self, generation, version, skip, etag, channel):
         # The worker thread: update_check only, plain data out
         try:
-            result = update_check.check_for_update(version, skip, etag)
+            result = update_check.check_for_update(version, skip, etag, channel=channel)
         except Exception as exc:  # a thread must never die noisily
             result = update_check.CheckResult(error=str(exc))
         try:
-            self._checked.emit((generation, result))
+            self._checked.emit((generation, channel, result))
         except RuntimeError:
             pass  # the poller is gone
 
     @Slot(object)
     def _on_checked(self, payload):
-        generation, result = payload
+        generation, channel, result = payload
         if generation != self._generation:
             return
         self._busy = False
@@ -162,6 +179,7 @@ class UpdatePoller(QObject):
         info = result.info
         if info is not None:
             self._offered = info.version
+            self._offered_channel = channel
             self._report(f"update check: {info.version} available")
             self.update_available.emit(info)
             return

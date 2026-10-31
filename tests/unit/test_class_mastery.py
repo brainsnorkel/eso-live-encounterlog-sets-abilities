@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Class Mastery passives on a fight's players: from the PLAYER_INFO list,
-or from a mastery's effect firing with the player as its source
-(eso_sets.mastery_of_effect), kept for the rest of the session."""
+or from a mastery's effect firing with the player (or their pet) as its
+source (eso_sets.mastery_of_effect), kept for the rest of the session and
+filled into the session's earlier fights."""
 
 import unittest
 
@@ -12,7 +13,10 @@ EPOCH = 1700000000000
 ABILITY = 12345
 UNBOUND_POTENTIAL = 263411        # the effect Unbound Potential fires (never in the list)
 AN_EYE_FOR_EXPLOITATION = 263604  # a mastery passive that is in the list
+ABOVE_AND_BEYOND = 263605         # another, so the Nightblade can list two
 HEMORRHAGE = 45060                # an Assassination passive, not a mastery
+CYCLE_UNENDING = 263532           # fired by a Necromancer's pets, on their owner
+CUTTHROATS_MOCKERY = 268259       # Cutthroat's Focus, a Nightblade's third here
 
 
 def _player(unit_id, health=20000):
@@ -126,6 +130,153 @@ class TestClassMastery(unittest.TestCase):
         self.assertEqual(_masteries(fights[0], 3), ['Lead from the Front'])
         self.assertEqual(_masteries(fights[0], 4), ["Tundra's Maw"])
         self.assertEqual(_masteries(fights[0], 2), [])
+        self.assertEqual(_masteries(fights[0], 1), [])
+
+    def test_resource_masteries_from_the_gain_their_holder_gives(self):
+        # Conservation of Energy fires no effect, only the Magicka gain to
+        # the Sorcerer (263877); Share the Spoils only the Ultimate the
+        # Nightblade (2) gives the group (263689): its holder is the source
+        def energize(ts, ability_id, source, target, power_type=1):
+            return (f'{ts},COMBAT_EVENT,POWER_ENERGIZE,GENERIC,{power_type},1500,0,900,{ability_id},'
+                    f'{_player(source)},{target}')
+        base = ['2000,UNIT_ADDED,3,PLAYER,F,3,0,F,2,4,"Sorc","@sorc",1003,50,3225,0,PLAYER_ALLY,T']
+        fight = _fight(10000, [
+            energize(12000, 263877, 3, '*'),
+            energize(12500, 263689, 2, _player(1), power_type=8),
+            # The same gain from a monster names no one
+            f'13000,COMBAT_EVENT,POWER_ENERGIZE,GENERIC,1,1500,0,900,263877,'
+            f'{_monster(70, 50000, 50000)},{_player(1)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+                      _hit(11000, 3, 5000, 70)]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Conservation of Energy'])
+        self.assertEqual(_masteries(fights[0], 2), ['Share the Spoils'])
+        self.assertEqual(_masteries(fights[0], 1), [])
+
+    def test_a_resource_gain_needs_the_masterys_class(self):
+        # A Warden sourcing Conservation of Energy's gain is not a Sorcerer;
+        # a Nightblade's Nocturnal Inspiration (263613) and a Templar's Hold
+        # the Line Ultimate (263621) name their own masteries
+        def energize(ts, ability_id, source):
+            return (f'{ts},COMBAT_EVENT,POWER_ENERGIZE,GENERIC,8,1,0,900,{ability_id},'
+                    f'{_player(source)},*')
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,4,"Templar","@templar",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,4,4,"Warden","@warden",1004,50,3225,0,PLAYER_ALLY,T',
+        ]
+        fight = _fight(10000, [
+            energize(12000, 263877, 4),
+            energize(12000, 263613, 2),
+            energize(12000, 263621, 3),
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 4), [])
+        self.assertEqual(_masteries(fights[0], 2), ['Nocturnal Inspiration'])
+        self.assertEqual(_masteries(fights[0], 3), ['Devout Guardian'])
+
+    def test_devout_guardian_from_its_hold_the_line_shield(self):
+        # 263619, Hold the Line: the shield a Templar gains on themselves.
+        # A Warden sourcing the id is not a Templar, and another player's
+        # hit the shield absorbed names no one
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,6,4,"Templar","@templar",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,4,4,"Warden","@warden",1004,50,3225,0,PLAYER_ALLY,T',
+        ]
+        fight = _fight(10000, [
+            _gained(12000, 263619, 3),
+            _gained(12000, 263619, 4),
+            f'12500,COMBAT_EVENT,DAMAGE_SHIELDED,GENERIC,0,900,0,901,263619,{_player(1)},{_player(3)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Devout Guardian'])
+        self.assertEqual(_masteries(fights[0], 4), [])
+        self.assertEqual(_masteries(fights[0], 1), [])
+
+    def test_a_pets_mastery_effect_is_its_owners(self):
+        # Cycle Unending's effect comes from the Necromancer's Blastbones
+        # (80) and lands on the Necromancer (3). A Sorcerer's pet (81)
+        # sourcing it is not a Necromancer's
+        base = [
+            '2000,UNIT_ADDED,3,PLAYER,F,3,0,F,5,4,"Necro","@necro",1003,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,2,4,"Sorc","@sorc",1004,50,3225,0,PLAYER_ALLY,T',
+            '2500,UNIT_ADDED,80,MONSTER,F,0,89292,F,0,0,"Blighted Blastbones","",0,50,160,3,NPC_ALLY,F',
+            '2500,UNIT_ADDED,81,MONSTER,F,0,0,F,0,0,"Twilight Matriarch","",0,50,160,4,NPC_ALLY,F',
+            f'2600,ABILITY_INFO,{CYCLE_UNENDING},"Cycle Unending","/esoui/art/icons/achievement_u23_dun2_flavorboss1a.dds",F,T',
+        ]
+        fight = _fight(10000, [
+            f'12000,EFFECT_CHANGED,GAINED,1,777,{CYCLE_UNENDING},{_monster(80, 9000, 9000)},{_player(3)}',
+            f'12000,EFFECT_CHANGED,GAINED,1,778,{CYCLE_UNENDING},{_monster(81, 9000, 9000)},{_player(4)}',
+        ], HEMORRHAGE)
+        fight[1:1] = [
+            f'10001,PLAYER_INFO,3,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            f'10001,PLAYER_INFO,4,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+            _hit(11000, 3, 5000, 70), _hit(11000, 4, 5000, 70),
+        ]
+        _analyzer, fights = _run(base + fight)
+        self.assertEqual(_masteries(fights[0], 3), ['Cycle Unending'])
+        self.assertEqual(_masteries(fights[0], 4), [])
+
+    def test_a_mastery_found_later_fills_the_earlier_fights(self):
+        # Unbound Potential fires in the second fight only: the first fight's
+        # row gets it too, and that fight is announced again
+        analyzer, fights = _run(_fight(10000, [], HEMORRHAGE)
+                                + _fight(40000, [_gained(42000, UNBOUND_POTENTIAL, 1)], HEMORRHAGE))
+        self.assertEqual(len(fights), 2)
+        self.assertEqual(_masteries(fights[0], 1), ['Unbound Potential'])
+        self.assertEqual(_masteries(fights[1], 1), ['Unbound Potential'])
+        self.assertEqual(_masteries(fights[0], 2), [])
+        updated = [event[1] for event in analyzer.listeners[0].of_kind('fight_updated')]
+        self.assertEqual(updated, [fights[0]])
+
+    def test_a_row_showing_two_is_not_given_a_third(self):
+        # The Nightblade lists two; a third (an id credited by mistake) in the
+        # second fight stays out of the first fight's row
+        base = [f'2600,ABILITY_INFO,{CUTTHROATS_MOCKERY},"Cutthroat\'s Mockery","/esoui/art/icons/x.dds",F,F']
+        two = f'{AN_EYE_FOR_EXPLOITATION},{ABOVE_AND_BEYOND}'
+        analyzer, fights = _run(base + _fight(10000, [], two)
+                                + _fight(40000, [_gained(42000, CUTTHROATS_MOCKERY, 2)], two))
+        self.assertEqual(_masteries(fights[0], 2), ['An Eye for Exploitation', 'Above and Beyond'])
+        self.assertEqual(len(_masteries(fights[1], 2)), 3)
+        self.assertEqual(analyzer.listeners[0].of_kind('fight_updated'), [])
+
+    def test_a_new_log_session_is_not_filled_back_into_the_last(self):
+        second_session = [
+            f'5,BEGIN_LOG,{EPOCH + 3600000},15,"NA Megaserver","en","eso.live.12.1"',
+            '1000,ZONE_CHANGED,1344,"Dreadsail Reef",VETERAN',
+            '2000,UNIT_ADDED,1,PLAYER,T,1,0,F,117,4,"Arcanist","@brainsnorkel",1001,50,3225,0,PLAYER_ALLY,T',
+            '2000,UNIT_ADDED,2,PLAYER,F,2,0,F,3,1,"Blade","@nightblade",1002,50,2547,0,PLAYER_ALLY,T',
+            '2500,UNIT_ADDED,70,MONSTER,F,0,50000,F,0,0,"Lesser Sea Adder","",0,50,160,0,HOSTILE,F',
+        ]
+        analyzer, fights = _run(_fight(10000, [], HEMORRHAGE) + second_session
+                                + _fight(10000, [_gained(12000, UNBOUND_POTENTIAL, 1)], HEMORRHAGE))
+        self.assertEqual(len(fights), 2)
+        self.assertEqual(_masteries(fights[0], 1), [])
+        self.assertEqual(_masteries(fights[1], 1), ['Unbound Potential'])
+        self.assertEqual(analyzer.listeners[0].of_kind('fight_updated'), [])
+
+    def test_an_anonymous_players_earlier_fight_is_filled_in_the_same_zone(self):
+        # No handle or name to key a session by: the player's own record
+        base = ['2000,UNIT_ADDED,5,PLAYER,F,5,0,F,117,4,"","",1005,50,3225,0,PLAYER_ALLY,T']
+
+        def fight(start, effects):
+            lines = _fight(start, effects, HEMORRHAGE)
+            lines[1:1] = [f'{start + 1},PLAYER_INFO,5,[{HEMORRHAGE}],[1],[],[{ABILITY}],[{ABILITY}]',
+                          _hit(start + 1000, 5, 5000, 70)]
+            return lines
+        _analyzer, fights = _run(base + fight(10000, [])
+                                 + fight(40000, [_gained(42000, UNBOUND_POTENTIAL, 5)]))
+        self.assertEqual(_masteries(fights[0], 5), ['Unbound Potential'])
         self.assertEqual(_masteries(fights[0], 1), [])
 
     def test_session_cache_carries_a_fired_mastery(self):

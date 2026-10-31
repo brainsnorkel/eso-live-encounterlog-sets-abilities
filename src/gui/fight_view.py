@@ -6,7 +6,8 @@ icon is hovered, and opens ESO-Hub links in the system browser.
 Links never navigate the document itself: every click is routed through
 anchorClicked, and only http(s) targets are opened externally. A click on a
 player's death-recap button is announced through death_recap_requested, a
-click on a player's name through build_requested, a click on their dps
+click on a player's name, or on the '?' after a lone Class Mastery,
+through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested, a click on a player's pen/crit token through
@@ -43,8 +44,9 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, build_unit_from_href,
-    damage_unit_from_href, issues_unit_from_href, pen_crit_unit_from_href, taken_unit_from_href,
+    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
+    damage_unit_from_href, issues_unit_from_href, mastery_unit_from_href, pen_crit_unit_from_href,
+    taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -233,7 +235,7 @@ class FightView(QTextBrowser):
         is the pointer on the anchor.
         """
         selections = []
-        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF)):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -381,6 +383,8 @@ class FightView(QTextBrowser):
             self._open_external(url)
             return
         unit_id = build_unit_from_href(url.toString())
+        if unit_id is None:
+            unit_id = mastery_unit_from_href(url.toString())
         if unit_id is not None:
             self.build_requested.emit(unit_id)
             return

@@ -1,9 +1,13 @@
 name: Pages
 
 # Publishes the home page (site/, built by scripts/build_site.py) with
-# GitHub Pages. The page's download buttons name the latest release, so it
-# is rebuilt after every release as well as after every change to its
-# sources. Settings > Pages must have "GitHub Actions" as the source.
+# GitHub Pages. The page's download buttons name the Stable release (the
+# latest) and a smaller line names the newest beta, so it is rebuilt after
+# every release (a beta), after every change to its sources, and when a
+# beta is made Stable or taken back: scripts/promote_release.py starts it
+# by hand (workflow_dispatch). A `release` event would not do: it runs on
+# the tag, and the github-pages environment deploys from main only.
+# Settings > Pages must have "GitHub Actions" as the source.
 on:
   push:
     branches: [ main ]

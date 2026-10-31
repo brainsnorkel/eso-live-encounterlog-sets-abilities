@@ -156,12 +156,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertNotIn('—', line)
         self.assertLess(line.index('gdps'), line.index('Coral Aerie'))
         self.assertLess(line.index('Coral Aerie'), line.index('2025'))
-        # First-damage dealer gets a star in both renderings
+        # Who opened the fight: a line under the table in both renderings
+        # (issue #159), no star; the first hit is exactly 1,000 ms in, so
+        # no time, and the line follows the pane's text size
         html_marked = render_html(entry, detailed=False)
-        # (the name itself is a link to the player's build window)
-        self.assertIn('@brainsnorkel</a> <b>*</b>', html_marked)
-        self.assertIn('first damage', html_marked)
-        self.assertIn('@brainsnorkel *', render_plain_text(entry))
+        self.assertNotIn('<b>*</b>', html_marked)
+        self.assertIn('>@brainsnorkel hit Test Boss first: Damage Ability</p>', html_marked)
+        self.assertNotIn('font-size:85%', html_marked)
+        plain = render_plain_text(entry)
+        self.assertNotIn('@brainsnorkel *', plain)
+        self.assertTrue(plain.endswith('\n@brainsnorkel hit Test Boss first: Damage Ability'))
         html_out = render_html(entry, detailed=True)
         self.assertIn('@brainsnorkel', html_out)
         self.assertIn('Tide-Born Wildstalker', html_out)
@@ -237,6 +241,18 @@ class TestMainWindowStates(GuiTestCase):
             self.assertEqual(win.freshness_label.text(), 'No log file')
             self.assertEqual(win.freshness_label.styleSheet(),
                              state_style('none', win._dark))
+        finally:
+            win.close()
+
+    def test_waiting_placeholder_escapes_the_path_and_names_both_addons(self):
+        win = self._window()
+        try:
+            win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
+            text = win._last_placeholder
+            self.assertIn(r'<code>C:\Users\R&amp;D &lt;x&gt;\Encounter.log</code>', text)
+            self.assertIn('Always Logging (from GitHub', text)
+            self.assertIn('Easy Stalking (ESOUI or Minion)', text)
+            self.assertIn('not both', text)
         finally:
             win.close()
 
@@ -475,6 +491,30 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_title_names_the_beta_channel(self):
+        from version import __version__
+        win = self._window()
+        try:
+            plain = f'ESO Log Tail v{__version__}'
+            # Checks are off in tests: no channel in the title, whatever it is
+            win.config.set('update.channel', 'beta')
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), plain)
+            # On (the poller is not started here): Beta is named, Stable is not
+            win.config.set('update.check_enabled', True)
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), f'{plain} · beta')
+            win._on_update_available(self._update_info())
+            self.assertEqual(win.windowTitle(), f'{plain} · beta · 9.9.9 available')
+            win._on_update_gone()
+            win.config.set('update.channel', 'stable')
+            win._apply_title()
+            self.assertEqual(win.windowTitle(), plain)
+        finally:
+            win.config.set('update.check_enabled', False)
+            win.config.set('update.channel', 'stable')
+            win.close()
+
     def test_update_click_downloads_then_installs(self):
         from unittest.mock import patch
         win = self._window()
@@ -600,8 +640,19 @@ class TestMainWindowStates(GuiTestCase):
             self.config.set('update.check_enabled', True)
             win._apply_update_settings()
             self.assertTrue(win.update_poller.is_running())
+            # A save that changed nothing about updates keeps the schedule
+            # and its ETag; a channel change restarts it without one
+            win.update_poller._etag = '"kept"'
+            win._apply_update_settings(win._update_settings_key())
+            self.assertEqual(win.update_poller._etag, '"kept"')
+            before = win._update_settings_key()
+            self.config.set('update.channel', 'beta')
+            win._apply_update_settings(before)
+            self.assertIsNone(win.update_poller._etag)
+            self.assertTrue(win.update_poller.is_running())
             win.update_poller.stop()  # before its first check reaches GitHub
         finally:
+            self.config.set('update.channel', 'stable')
             win.close()
 
     def test_update_info_button_follows_the_theme(self):

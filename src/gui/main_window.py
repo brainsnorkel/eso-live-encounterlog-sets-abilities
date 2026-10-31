@@ -4,6 +4,7 @@ settings, manual archive, and the freshness status bar.
 """
 
 import base64
+import html
 import sys
 import weakref
 from datetime import datetime
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QColor, QDesktopServices, QFont, QGuiApplication, QKeySequence, QPalette,
+    QAction, QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
@@ -34,7 +35,8 @@ from gui.engine_worker import EngineWorker
 from gui.fight_list import FightList
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, misfortunes_tooltips, muted_color, pen_crit_tooltips, render_html,
+    issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
+    render_html,
     render_plain_text, taken_tooltips,
 )
 from gui.fight_view import FightView, set_reduce_motion
@@ -50,7 +52,7 @@ from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
 import split_retention
-from update_check import format_release_date
+from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
 
 # Freshness state thresholds (log-freshness spec)
@@ -311,6 +313,8 @@ class MainWindow(QMainWindow):
         # (gui.fight_list, issue #129)
         self.history_list = FightList()
         self.history_list.currentRowChanged.connect(self._show_fight)
+        # The (i)'s hover text hides names as the rest of the window does
+        self.history_list.hide_names = self._hide_names
         splitter.addWidget(self.history_list)
 
         right = QWidget()
@@ -766,13 +770,15 @@ class MainWindow(QMainWindow):
     def _on_waiting_for_log(self, expected):
         self._last_status = None
         self._refresh_freshness_label()
-        where = expected or "known ESO log locations"
+        where = html.escape(expected or "known ESO log locations")
         self._show_placeholder(
             f"Waiting for Encounter.log…<br><br>"
             f"Expected at:<br><code>{where}</code><br><br>"
-            f"Enable encounter logging in ESO (/encounterlog) or install the "
-            f"Easy Stalking addon. Monitoring starts automatically when the "
-            f"file appears.")
+            f"Enable encounter logging in ESO (/encounterlog), or install an "
+            f"addon that turns it on for you, one or the other but not both: "
+            f"Always Logging (from GitHub, github.com/brainsnorkel/AlwaysLogging) "
+            f"or Easy Stalking (ESOUI or Minion). "
+            f"Monitoring starts automatically when the file appears.")
 
     @Slot()
     def _on_monitoring_restarting(self):
@@ -828,17 +834,42 @@ class MainWindow(QMainWindow):
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
 
-    def _apply_update_settings(self):
+    def _update_settings_key(self):
+        """What the update checks depend on: on or off, the channel, and the
+        skipped version (a save with checks on clears it)."""
+        return (bool(self.config.get("update.check_enabled", True)),
+                normalize_channel(self.config.get("update.channel")),
+                self.config.get("update.skip_version"))
+
+    def _apply_update_settings(self, before=None):
         """Settings saved: the check on starts a full check now and the
-        schedule; off stops both and withdraws the offer."""
+        schedule (on the channel saved, which the title names); off stops
+        both and withdraws the offer. *before* is _update_settings_key()
+        from before the save: when nothing about updates changed the
+        schedule runs on, keeping its ETag and any rate-limit wait (a
+        restart costs a full reply, about 80 KB on Beta, per save)."""
+        if before is not None and before == self._update_settings_key():
+            return
         if bool(self.config.get("update.check_enabled", True)):
             self.update_poller.start()
         else:
             self.update_poller.stop()
             self._on_update_gone()
+        self._apply_title()
+
+    def _update_channel(self):
+        """The channel checks run on, or None while checks are off."""
+        if not bool(self.config.get("update.check_enabled", True)):
+            return None
+        return normalize_channel(self.config.get("update.channel"))
 
     def _apply_title(self):
+        """The version, " · beta" on the Beta channel (the maintainer's
+        choice of 2026-10-29, issue #134, so a screenshot shows it), and
+        the release on offer."""
         title = f"ESO Log Tail v{__version__}"
+        if self._update_channel() == "beta":
+            title += " · beta"
         if self._update is not None:
             title += f" · {self._update.version} available"
         self.setWindowTitle(title)
@@ -990,6 +1021,7 @@ class MainWindow(QMainWindow):
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
+        tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
         if self._detailed:
@@ -1012,7 +1044,8 @@ class MainWindow(QMainWindow):
                                             script_links=esohub_script_url,
                                             text_color=text_color,
                                             pen_crit_options=pen_crit_options,
-                                            names=names))
+                                            names=names,
+                                            line_px=QFontMetrics(self.fight_view.font()).height()))
         self._apply_search()
 
     def _show_pen_crit(self, unit_id):
@@ -1027,8 +1060,10 @@ class MainWindow(QMainWindow):
             return
         if self._death_dialog is None:
             self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
-            # The fight block's link to the damage taken window (issue #98)
-            self._death_dialog.view.taken_requested.connect(self._show_taken)
+            # The fight block's link to the damage taken window (issue #98),
+            # for the fight the recap shows (issue #143)
+            self._death_dialog.view.taken_requested.connect(
+                lambda unit_id: self._show_taken(unit_id, self._death_dialog.entry))
         self._death_dialog.show_recap(entry, unit_id, self._dark,
                                       names=self._names_for(entry))
         self._death_dialog.show()
@@ -1043,8 +1078,10 @@ class MainWindow(QMainWindow):
             return
         if self._build_dialog is None:
             self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
-            # The Damage dealt heading's link to the damage taken window (issue #98)
-            self._build_dialog.view.taken_requested.connect(self._show_taken)
+            # The Damage dealt heading's link to the damage taken window
+            # (issue #98), for the fight the build window shows (issue #143)
+            self._build_dialog.view.taken_requested.connect(
+                lambda unit_id: self._show_taken(unit_id, self._build_dialog.entry))
         # The Settings' assumed Champion Point rows and cap, read at render
         # time so a change applies to the next build window without a restart
         self._build_dialog.show_build(entry, unit_id, self._dark,
@@ -1067,13 +1104,16 @@ class MainWindow(QMainWindow):
         self._damage_dialog.raise_()
         self._damage_dialog.activateWindow()
 
-    def _show_taken(self, unit_id):
+    def _show_taken(self, unit_id, entry=None):
         """A player's damage-taken shield was clicked in the fight on screen,
         or the link to it in their build or death recap window: the whole
         fight's damage taken and healing received (taken_render, issue #98).
-        The dialogs' fights are the same objects the list holds, so the
-        window shows the fight on screen like the others."""
-        entry = self.history_list.current_entry()
+        The shield opens the fight on screen; a window's link passes the
+        fight that window shows (*entry*), which stays the fight it was
+        opened for while the list moves on to each new pull as the app
+        follows the live log (issue #143)."""
+        if entry is None:
+            entry = self.history_list.current_entry()
         if entry is None:
             return
         if self._taken_dialog is None:
@@ -1194,6 +1234,7 @@ class MainWindow(QMainWindow):
         button shows it, so the next start holds no surprise) and the
         fight on screen and every open window are redrawn with it."""
         self._hide_names = bool(checked)
+        self.history_list.hide_names = self._hide_names
         self.config.set("privacy.hide_names", self._hide_names)
         self.config.save()
         self._refresh_names()
@@ -1263,14 +1304,22 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         """Version, project link, and credits (ESO-Hub links, ZeniMax icons)."""
         from gui.about import show_about
-        show_about(self, __version__)
+        channel = self._update_channel()
+        if channel is None:
+            updates = "Updates: not checked (turned off in Settings)"
+        else:
+            name, offers = {key: (name, offers)
+                            for key, name, offers in CHANNEL_CHOICES}[channel]
+            updates = f"Update channel: {name} ({offers})"
+        show_about(self, __version__, updates)
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)
+        updates_before = self._update_settings_key()
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
-            self._apply_update_settings()
+            self._apply_update_settings(updates_before)
             self._apply_privacy_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
             if self._graph_dialog is not None:

@@ -16,13 +16,17 @@ LIBFOODDRINKBUFF_URL = "https://www.esoui.com/downloads/info1902-LibFoodDrinkBuf
 COMBATMETRICS_URL = "https://www.esoui.com/downloads/info1360-CombatMetrics.html"
 COMBATMETRICS_SOURCE_URL = "https://github.com/Solinur/CombatMetrics"
 LIBCOMBAT_URL = "https://github.com/Solinur/LibCombat"
+EASYSTALKING_URL = "https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html"
+ALWAYSLOGGING_URL = "https://github.com/brainsnorkel/AlwaysLogging"
 
 
-def about_html(version: str) -> str:
+def about_html(version: str, updates: str = "") -> str:
+    """*updates* is the update channel line (issue #134), left out when empty."""
     return (
         f"<h3 style='margin-bottom:2px'>ESO Log Tail {version}</h3>"
         f"<p style='margin-top:0'>Live fight summaries from Elder Scrolls Online "
         f"encounter logs.<br><a href='{REPO_URL}'>{REPO_URL}</a></p>"
+        + (f"<p>{updates}</p>" if updates else "") +
         f"<p><b>Credits</b></p>"
         f"<ul>"
         f"<li><b>ESO-Hub.com</b>: skill and gear set links open pages on "
@@ -47,6 +51,10 @@ def about_html(version: str) -> str:
         f"item database of <a href='{UESP_URL}'>UESP</a>.</li>"
         f"<li><b>Icon extraction</b>: <a href='{EXTRACTOR_URL}'>EsoExtractData</a> "
         f"by UESP.</li>"
+        f"<li><b>Turning logging on</b>: the "
+        f"<a href='{EASYSTALKING_URL}'>Easy Stalking - Encounterlog</a> addon, and "
+        f"<a href='{ALWAYSLOGGING_URL}'>Always Logging</a>, a simpler take on it "
+        f"that logs everywhere.</li>"
         f"</ul>"
         f"<p style='color:gray'>The Elder Scrolls Online and its artwork are "
         f"&copy; ZeniMax Online Studios. ESO Log Tail is an unofficial fan tool, "
@@ -54,5 +62,5 @@ def about_html(version: str) -> str:
     )
 
 
-def show_about(parent, version: str) -> None:
-    QMessageBox.about(parent, "About ESO Log Tail", about_html(version))
+def show_about(parent, version: str, updates: str = "") -> None:
+    QMessageBox.about(parent, "About ESO Log Tail", about_html(version, updates))

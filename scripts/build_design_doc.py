@@ -36,6 +36,9 @@ TOPICS = [
         "src/esolog_tail.py:ESOLogAnalyzer._resume_last_fight",
         "src/esolog_tail.py#A death just after END_COMBAT",
     ]),
+    ("The fight's opener", [
+        "src/fight_opener.py",
+    ]),
     ("Starting mid-session", [
         "src/esolog_tail.py:LogFileMonitor._load_latest_session",
     ]),
@@ -81,6 +84,9 @@ TOPICS = [
         "scripts/generate_gear_data.py",
         "scripts/check_client_names.py",
     ]),
+    ("Set buffs: which set a Major or Minor buff came from", [
+        "scripts/generate_set_buffs.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
@@ -88,6 +94,9 @@ TOPICS = [
         "src/pen_crit.py",
         "scripts/generate_set_offense.py",
         "src/gui/build_render.py:_pen_crit_html",
+    ]),
+    ("Section headings: the one element Qt rich text draws a rule on", [
+        "src/gui/build_render.py:_heading_html",
     ]),
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
@@ -163,6 +172,13 @@ TOPICS = [
         "src/update_check.py",
         "src/gui/update_poller.py",
         "src/gui/update_popup.py",
+    ]),
+    ("Releases: every tag a beta, and a beta made Stable", [
+        "scripts/release.py",
+        "scripts/changelog_check.py",
+        "scripts/release_guard.py",
+        "scripts/promote_release.py",
+        "scripts/build_site.py",
     ]),
     ("Taunt marks that pulse in a text page", [
         "src/gui/icon_cache.py:ringed",
@@ -242,7 +258,8 @@ def extract(source):
     return qualname, path, node.lineno, text
 
 
-def render():
+def build() -> str:
+    """The document's text, from the code as it stands."""
     out = [
         "# Design notes",
         "",
@@ -269,10 +286,28 @@ def render():
                     out += ["```", stripped, "```", ""]
                 else:
                     out += [stripped, ""]
-    OUT.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def render():
+    OUT.write_text(build(), encoding="utf-8")
     return len(TOPICS)
 
 
+def is_current(path=OUT) -> bool:
+    """True when *path* holds what the code would build now. The release
+    commit rebuilds the document and the release job checks it (issue
+    #134): between releases it may lag the docstrings, at a tag it may not."""
+    return path.is_file() and path.read_text(encoding="utf-8") == build()
+
+
 if __name__ == "__main__":
-    n = render()
-    print(f"wrote {OUT.relative_to(ROOT)} from {n} topics")
+    if sys.argv[1:] == ["--check"]:
+        if not is_current():
+            sys.exit(f"{OUT.relative_to(ROOT)} is not what the code builds: the release "
+                     f"commit should have rebuilt it (python scripts/release.py, or "
+                     f"python scripts/build_design_doc.py)")
+        print(f"{OUT.relative_to(ROOT)} is current")
+    else:
+        n = render()
+        print(f"wrote {OUT.relative_to(ROOT)} from {n} topics")

@@ -16,9 +16,9 @@ time, so the pictures stay in step with the app:
     compact-view.png                Detail view off
     search.png                      a search in the fight
     build-window.png                one player's build window
-    build-resources.png             the same window scrolled to its Resources section
     build-damage-dealt.png          the same window scrolled to its Damage dealt section
     build-pen-crit.png              the same window scrolled to its penetration and crit sections
+    build-resources.png             the same window scrolled to its Resources section, the last
     build-issues.png                the (i) popup of a player's possible build issues
     update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
     update-notes.png                the ⓘ popup with that release's notes
@@ -112,6 +112,7 @@ def main():
     # session; the fight list is complete only then (a long fight can take
     # seconds to replay, during which the list looks finished)
     started = {"flag": False}
+    problems = []  # pictures that need another fight, reported at the end
 
     def pump(seconds, until_started=False):
         t0 = time.time()
@@ -181,19 +182,27 @@ def main():
         win._show_build(players[0]["unit_id"])
         pump(1.5)
         save(win._build_dialog, "build-window.png")
-        # Resources sits under the gear grid, then Damage dealt, then the
-        # Penetration and Critical damage sections
+        # Under the gear grid: Damage dealt, then the Penetration and
+        # Critical damage sections, then Resources last (issue #143); the
+        # Resources heading reaches the top of the view only when its
+        # section is taller than the view, as a trial player's is
         from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
-        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-resources.png")
         win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-damage-dealt.png")
         win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
         pump(0.5)
         save(win._build_dialog, "build-pen-crit.png")
-        win._build_dialog.view.verticalScrollBar().setValue(0)
+        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
+        pump(0.5)
+        save(win._build_dialog, "build-resources.png")
+        bar = win._build_dialog.view.verticalScrollBar()
+        top = _anchor_top(win._build_dialog.view.document(), RESOURCES_ANCHOR)
+        if top is not None and bar.value() < int(top) - 1:
+            problems.append("build-resources.png opens on the window's end, not on the Resources "
+                            "heading: this player's Resources section is shorter than the window. "
+                            "Pick a trial fight (--boss) for the guide's picture.")
+        bar.setValue(0)
         win._build_dialog.hide()
 
     # The (i) popup: the first player of the fight with a possible build issue
@@ -279,6 +288,9 @@ def main():
 
     # Settings, and the example-rules picker it opens
     dialog = SettingsDialog(win.config, win)
+    # The box only, not the config (no check runs): the guide shows the
+    # update channel as a user with checks on sees it
+    dialog.update_check.setChecked(True)
     dialog.show()
     # No window manager offscreen, and the dialog opens no taller than the
     # 800 px virtual screen with the rest scrolling (0.18.0); the guide
@@ -310,6 +322,25 @@ def main():
     win.close()
     pump(1)
     scratch.cleanup()
+    if problems:
+        # The pictures are saved; say which one needs another fight
+        sys.exit("\n".join(problems))
+
+
+def _anchor_top(doc, name):
+    """The top of the block that carries the named anchor, as
+    QTextEdit.scrollToAnchor reads it, or None."""
+    block = doc.begin()
+    while block.isValid():
+        if name in block.charFormat().anchorNames():
+            return doc.documentLayout().blockBoundingRect(block).top()
+        it = block.begin()
+        while not it.atEnd():
+            if name in it.fragment().charFormat().anchorNames():
+                return doc.documentLayout().blockBoundingRect(block).top()
+            it += 1
+        block = block.next()
+    return None
 
 
 if __name__ == "__main__":

@@ -48,8 +48,8 @@ player whose class is unknown shows every line found.
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
 colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
-the build window's mundus and food line too. Two sources name them,
-because the PLAYER_INFO list holds only the passives whose effect is always
+the build window's mundus and food line too. The PLAYER_INFO list names
+only some of them, because it holds only the passives whose effect is always
 on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
 Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
 in the log as an EFFECT_CHANGED the player is the source of, under one of
@@ -68,9 +68,56 @@ Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
 Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
 those as signature effects (scripts/generate_class_passives.py says how
 each was pinned down), and mastery_of_effect checks the source's class for
-them. The other five (Share the Spoils, Nocturnal Inspiration,
-Conservation of Energy, Bastion of Light, Devout Guardian) work through
-resources, ultimate or unnamed heals and shields and stay invisible.
+them.
+
+Three of the other five give resources and fire no effect at all, only the
+gain: a COMBAT_EVENT POWER_ENERGIZE whose source is the holder, under an id
+carrying the mastery's name (Conservation of Energy's Magicka and Stamina
+to the Sorcerer, Nocturnal Inspiration's Ultimate to the Nightblade, Share
+the Spoils' Magicka, Stamina and Ultimate to the Nightblade's group). The
+engine reads a mastery from those as well. In 103 split logs of September
+and October 2026, every POWER_ENERGIZE under a mastery id, about 244,000
+lines over twelve ids, came from a player of that mastery's class.
+Devout Guardian's shield is an effect called Hold the Line, kept as a
+signature effect. Bastion of Light alone stays invisible: it heals through
+Sacred Ground and gives Ultimate, and nothing in the logs names it.
+
+The game lets a character take two masteries ("selecting two passives",
+its own text). A third shown beside the class means an id fired for
+someone who does not hold its mastery. Font of Power's 263878 has: three
+or four gains late in a session from Sorcerers whose Calculated Defense
+and Conservation of Energy fire from the first minutes to the last; most
+sessions that show Font of Power show dozens to hundreds of gains.
+
+Cycle Unending's effect (263532) is the one a pet fires: its source is the
+Necromancer's Blighted Blastbones, Skeletal Archer or Grave Lord's
+Sacrifice, and it lands on their owner (220 of 239 gains in twelve logs).
+So the engine credits a mastery effect whose source is a player's pet to
+that player (the encounter's pet_ownership). Before, 84% of Necromancer
+rows showed one mastery, and no Necromancer damage dealer ever showed two;
+in a replay of the 103 split logs of September and October 2026 the
+change added Cycle Unending to 792 rows, all Necromancers, none of them
+gaining a third, and nothing else in any fight changed (issue #149).
+
+A character can take two masteries (MAX_MASTERIES), and a row often shows
+one. After that change, 1,581 of 13,818 pure-class rows (11%) in those
+logs did: 915 were fights before the second showed later in the same log,
+since a proc mastery is known only once it fires (Booming Voice was never
+on a session's first fight, Erudite's Rigor on 16% of them, Abyssal
+Emergence 39%, Bright Harbinger and Lead from the Front 43%); the rest
+came from 59 characters' logs in which it never showed, Templars the most
+(Bastion of Light is never logged). Two things follow. The engine fills a
+mastery it finds into the player's earlier fights of the same BEGIN_LOG
+session, on rows that show fewer than two, and announces each of those
+fights again: a mastery does not change within a session, which is why it
+is kept for the rest of it. That leaves 674 rows (5%) showing one, none of
+them before a second that shows later; Templars 23% of theirs, Sorcerers
+18%, every other class 6% or less. And where one still shows, the fight
+pane and build window say a second is likely, listing the class's others
+the likeliest first for the player's role (likely_masteries, from the
+file's mastery_order; the generator says how the order was counted); a
+mastery the log never names is listed last and marked
+(masteries_never_logged).
 """
 
 import json
@@ -435,8 +482,8 @@ def class_passive_table() -> Dict[str, dict]:
 @lru_cache(maxsize=1)
 def mastery_effect_table() -> Dict[str, Tuple[str, str]]:
     """{ability id: (mastery name, class)} for the effects the masteries fire
-    and the mastery passives themselves (both show as EFFECT_CHANGED from
-    the holder); {} when the file is absent or malformed."""
+    and the mastery passives themselves (EFFECT_CHANGED or POWER_ENERGIZE
+    lines from the holder); {} when the file is absent or malformed."""
     effects = _class_passive_file().get("mastery_effects")
     table = {str(ability_id): (str(entry.get("name") or ""), str(entry.get("class") or ""))
              for ability_id, entry in (effects or {}).items()
@@ -458,6 +505,41 @@ def mastery_of_effect(ability_id, class_name: Optional[str] = None,
     if class_name and owner and class_name != owner:
         return ""
     return name
+
+
+MAX_MASTERIES = 2  # the game's own limit: "selecting two passives"
+
+
+@lru_cache(maxsize=1)
+def mastery_order_table() -> Dict[str, Dict[str, List[str]]]:
+    """The file's mastery_order, {class: {role: [mastery names, the
+    likeliest first]}} for the roles 'D', 'H' and 'T'; {} when the file is
+    absent or malformed."""
+    order = _class_passive_file().get("mastery_order")
+    if not isinstance(order, dict):
+        return {}
+    return {str(class_name): {str(role): [str(name) for name in names]
+                              for role, names in roles.items() if isinstance(names, list)}
+            for class_name, roles in order.items() if isinstance(roles, dict)}
+
+
+@lru_cache(maxsize=1)
+def masteries_never_logged() -> frozenset:
+    """The masteries nothing in the log names (Bastion of Light)."""
+    names = _class_passive_file().get("masteries_never_logged")
+    return frozenset(str(name) for name in names) if isinstance(names, list) else frozenset()
+
+
+def likely_masteries(class_name: str, role: str, shown: Iterable[str],
+                     table: Optional[Dict[str, Dict[str, List[str]]]] = None) -> List[str]:
+    """The class's masteries not in *shown*, the likeliest second first for
+    a player in *role* ('D', 'H' or 'T', a damage dealer's order for any
+    other); [] for a class the table does not know."""
+    table = mastery_order_table() if table is None else table
+    roles = table.get(str(class_name or "")) or {}
+    order = roles.get(str(role or "")) or roles.get("D") or []
+    shown = set(shown or [])
+    return [name for name in order if name not in shown]
 
 
 def lines_from_passives(effect_ids: Iterable[str],

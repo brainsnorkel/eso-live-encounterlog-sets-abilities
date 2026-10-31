@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2430](../src/esolog_tail.py#L2430)*
+*[src/esolog_tail.py:2512](../src/esolog_tail.py#L2512)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1785](../src/esolog_tail.py#L1785)*
+*[src/esolog_tail.py:1789](../src/esolog_tail.py#L1789)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1800](../src/esolog_tail.py#L1800)*
+*[src/esolog_tail.py:1804](../src/esolog_tail.py#L1804)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4127](../src/esolog_tail.py#L4127)*
+*[src/esolog_tail.py:4201](../src/esolog_tail.py#L4201)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +108,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:351](../src/esolog_tail.py#L351)*
+*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -181,8 +181,8 @@ player whose class is unknown shows every line found.
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
 colon ("NB: An Eye for Exploitation, Above and Beyond"), and are named on
-the build window's mundus and food line too. Two sources name them,
-because the PLAYER_INFO list holds only the passives whose effect is always
+the build window's mundus and food line too. The PLAYER_INFO list names
+only some of them, because it holds only the passives whose effect is always
 on: a mastery that works by a proc (Unbound Potential, Abyssal Emergence,
 Wildfire Embers, Bright Harbinger...) is never in it. Such a mastery shows
 in the log as an EFFECT_CHANGED the player is the source of, under one of
@@ -201,9 +201,56 @@ Maw's Major Brittle and Bountiful Harvest's Major Heroism (Wardens), and
 Cutthroat's Focus's Cutthroat's Mockery (Nightblades). The table carries
 those as signature effects (scripts/generate_class_passives.py says how
 each was pinned down), and mastery_of_effect checks the source's class for
-them. The other five (Share the Spoils, Nocturnal Inspiration,
-Conservation of Energy, Bastion of Light, Devout Guardian) work through
-resources, ultimate or unnamed heals and shields and stay invisible.
+them.
+
+Three of the other five give resources and fire no effect at all, only the
+gain: a COMBAT_EVENT POWER_ENERGIZE whose source is the holder, under an id
+carrying the mastery's name (Conservation of Energy's Magicka and Stamina
+to the Sorcerer, Nocturnal Inspiration's Ultimate to the Nightblade, Share
+the Spoils' Magicka, Stamina and Ultimate to the Nightblade's group). The
+engine reads a mastery from those as well. In 103 split logs of September
+and October 2026, every POWER_ENERGIZE under a mastery id, about 244,000
+lines over twelve ids, came from a player of that mastery's class.
+Devout Guardian's shield is an effect called Hold the Line, kept as a
+signature effect. Bastion of Light alone stays invisible: it heals through
+Sacred Ground and gives Ultimate, and nothing in the logs names it.
+
+The game lets a character take two masteries ("selecting two passives",
+its own text). A third shown beside the class means an id fired for
+someone who does not hold its mastery. Font of Power's 263878 has: three
+or four gains late in a session from Sorcerers whose Calculated Defense
+and Conservation of Energy fire from the first minutes to the last; most
+sessions that show Font of Power show dozens to hundreds of gains.
+
+Cycle Unending's effect (263532) is the one a pet fires: its source is the
+Necromancer's Blighted Blastbones, Skeletal Archer or Grave Lord's
+Sacrifice, and it lands on their owner (220 of 239 gains in twelve logs).
+So the engine credits a mastery effect whose source is a player's pet to
+that player (the encounter's pet_ownership). Before, 84% of Necromancer
+rows showed one mastery, and no Necromancer damage dealer ever showed two;
+in a replay of the 103 split logs of September and October 2026 the
+change added Cycle Unending to 792 rows, all Necromancers, none of them
+gaining a third, and nothing else in any fight changed (issue #149).
+
+A character can take two masteries (MAX_MASTERIES), and a row often shows
+one. After that change, 1,581 of 13,818 pure-class rows (11%) in those
+logs did: 915 were fights before the second showed later in the same log,
+since a proc mastery is known only once it fires (Booming Voice was never
+on a session's first fight, Erudite's Rigor on 16% of them, Abyssal
+Emergence 39%, Bright Harbinger and Lead from the Front 43%); the rest
+came from 59 characters' logs in which it never showed, Templars the most
+(Bastion of Light is never logged). Two things follow. The engine fills a
+mastery it finds into the player's earlier fights of the same BEGIN_LOG
+session, on rows that show fewer than two, and announces each of those
+fights again: a mastery does not change within a session, which is why it
+is kept for the rest of it. That leaves 674 rows (5%) showing one, none of
+them before a second that shows later; Templars 23% of theirs, Sorcerers
+18%, every other class 6% or less. And where one still shows, the fight
+pane and build window say a second is likely, listing the class's others
+the likeliest first for the player's role (likely_masteries, from the
+file's mastery_order; the generator says how the order was counted); a
+mastery the log never names is listed last and marked
+(masteries_never_logged).
 
 ## Ability icons and ESO-Hub links
 
@@ -887,6 +934,66 @@ for how the extractor and the client are found), or reads an extracted
 en.lang.csv given with --lang-csv. Then rerun scripts/generate_gear_data.py,
 which reports the sets the snapshot added.
 
+## Set buffs: which set a Major or Minor buff came from
+
+### scripts/generate_set_buffs.py
+
+*[scripts/generate_set_buffs.py:1](../scripts/generate_set_buffs.py#L1)*
+
+Generate data/sets/set_buffs.json: the Major and Minor buffs a set's bonus
+grants, by the ability id the encounter log writes for them, so the uptime
+line can name the set behind a "Major Slayer" or a "Major Courage" (issue
+#79, decision 5).
+
+The log names a buff and never the set it came from, and the game's files
+hold no link between the two. UESP's mined skills were the first plan:
+findSetBonusSkills.php writes a set's name into minedSkills.setName by
+matching the bonus text against ability descriptions. Checked on 2026-10-31
+against 395 split logs, that column ties each set to the effect named after
+the set ("Pillager's Profit", 184 of 216 sets worn), which the uptime line
+already shows under the set's name, and misses the generic buffs: of 58
+Major or Minor buffs the logs tie to one set, one was in UESP's table
+(Roaring Opportunist got 135920, while its Major Slayer is 93109 and
+135923). A generic buff's description never matches a bonus's text.
+
+So this script reads split logs instead. Most sources write a Major or
+Minor buff under an id of their own: Roaring Opportunist's Major Slayer is
+135923, War Machine's 93442, Master Architect's 93120. Some ids are shared:
+the wearers of all three also write 93109 (in 96%, 91% and 91% of their
+sessions). Only an id that one set writes can name it. Per log session and player it
+takes the sets the player had active (``piece_counts``, a perfected set and
+its base counted together, as the game counts them) and every effect id the
+player was the source of (EFFECT_CHANGED). A buff id is tied to a set when
+all of these hold:
+
+1. Its name ("Major Courage") is in that set's bonus text
+   (data/sets/bonuses_en.json), on a bonus whose pieces the player wears.
+   This drops the buffs that only ride along with what is worn beside the
+   set: Jorvuld's Guidance wearers source Roaring Opportunist's Major Slayer
+   in 86% of sessions, because the two are worn together.
+2. At least WEARER_SHARE of the sessions wearing the set source it.
+3. At most OTHER_SHARE of the sessions wearing no set that names the buff
+   source it, so an id that something else writes too is not taken:
+   Mender's Ward wearers source Major Vitality 61713 in 95% of sessions, but
+   so do 3.8% of everyone else; the set's own 113653 is sourced by no one
+   else. Every link that reads right sat at 0.7% or below. Leaving out every
+   set that names the buff lets two sets share a buff name with their own
+   ids (Spell Power Cure's Major Courage 66902, Olorime's 109994).
+4. At least MIN_SESSIONS sessions wear the set.
+
+An id that passes for two sets names neither and is left out (printed, not
+written).
+
+It knows only sets someone in the logs wore MIN_SESSIONS times, and reads
+the bonus text of the bundled snapshot. Byte-identical copies of one split
+(issue #85) are read once. The output holds ids and the game's names only,
+nothing about the players.
+
+Run after a patch, or when the logs hold more sets, then review the printed
+table before committing the file:
+    python scripts/generate_set_buffs.py                    # the app's split folder
+    python scripts/generate_set_buffs.py --dir D:/esologs/splits
+
 ## Solo dungeons: the run's Misfortunes
 
 ### src/misfortunes.py
@@ -1191,14 +1298,39 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:658](../src/gui/build_render.py#L658)*
+*[src/gui/build_render.py:691](../src/gui/build_render.py#L691)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
 the boss (uptime, value, casters) and the buffs on the player, then the
 totals: own, with every debuff at full uptime, and effective (each
 second of the player's damage capped, as Combat Metrics caps each
-hit), against the cap.
+hit), against the cap. The effective line is the conclusion, so it
+sits in a framed row of its own with a 3 px bar at its left edge
+(issue #143): a box rather than an underline, because the app's one
+underline is the hover cue on a clickable name or figure; a table
+cell rather than a <p>, because Qt rich text draws borders on cells
+only; the frame is the build card's hairline, and the bar in the muted
+colour gives the cue the contrast a hairline lacks (about 6:1 against
+the page in either theme), so it is seen without colour vision. The
+muted 'no damage measured' line stays in the plain row: a frame round
+an absence would draw the eye to nothing.
+
+## Section headings: the one element Qt rich text draws a rule on
+
+### _heading_html
+
+*[src/gui/build_render.py:524](../src/gui/build_render.py#L524)*
+
+A section heading with its rule, as a one-cell table head: Qt rich
+text draws borders on table cells and never on a <p>, so the Damage
+dealt and Resources headings, <p> elements with a border-bottom until
+issue #143, had no rule while the gear grid and the Penetration and
+Critical damage heads (the same form inside their tables) had one; the
+damage taken window's section titles (taken_render) take this form too.
+*extra* follows the title (a link, a caption); the anchor, when there
+is one, goes first, where scrollToAnchor finds it: Qt hangs an empty
+named anchor on the next text it lays out, the heading cell.
 
 ## Possible build issues: what the log proves about a build
 
@@ -1618,7 +1750,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:877](../src/esolog_tail.py#L877)*
+*[src/esolog_tail.py:878](../src/esolog_tail.py#L878)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1632,7 +1764,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:122](../src/app_config.py#L122)*
+*[src/app_config.py:123](../src/app_config.py#L123)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1665,7 +1797,7 @@ The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and wr
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:401](../src/esolog_tail.py#L401)*
+*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1904,7 +2036,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:617](../src/esolog_tail.py#L617)*
+*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1927,7 +2059,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:743](../src/esolog_tail.py#L743)*
+*[src/esolog_tail.py:744](../src/esolog_tail.py#L744)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1953,7 +2085,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3329](../src/esolog_tail.py#L3329)*
+*[src/esolog_tail.py:3403](../src/esolog_tail.py#L3403)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2092,6 +2224,25 @@ The band is the list's base colour moved BAND_MIX of the way towards its
 text colour, so it follows the theme and keeps the text's contrast; it is
 worked out again, with the header's bold font, whenever the palette or the
 font changes (a theme switch, a new text size).
+
+The (i) on a fight row (issue #147): hovering it shows who in that fight
+has a possible build issue and what (fight_render.fight_issues_tooltip),
+so a session's flagged fights can be read without selecting each one and
+looking for the marks on the pane's rows. The row is plain text, so the
+mark has no anchor of its own: viewportEvent takes the ToolTip event and
+works out where the mark is drawn (issues_mark_rect), the way the style
+lays the row out: the style's text rectangle, the margin every style keeps
+inside it, then the width of the text before the mark. The text rectangle
+matters: Windows 11's style starts it 6 px in, leaving room for its
+selection bar, where Fusion and windowsvista start at the row's edge
+(measured 2026-10-31 on all three and offscreen, the mark's first painted
+column within a pixel of the computed one). The pointer gets MARK_SLACK
+pixels either side, and the tooltip closes once it leaves that band. The
+rest of a row shows no tooltip, as before. The text is built at hover
+time from the hovered row's own fight, usually not the one on screen,
+with the window's Hide names switch (hide_names), so it follows the switch
+without a rebuild. A screen reader hears the mark as the
+row's description (fight_render.issues_description), which names nobody.
 
 ## Death recaps
 
@@ -2499,7 +2650,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:778](../src/gui/main_window.py#L778)*
+*[src/gui/main_window.py:784](../src/gui/main_window.py#L784)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2509,7 +2660,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1288](../src/gui/main_window.py#L1288)*
+*[src/gui/main_window.py:1337](../src/gui/main_window.py#L1337)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2583,6 +2734,23 @@ The release body is GitHub's generated notes (one line per pull request
 and a compare link), shown in the ⓘ popup beside the Update button; the
 release date comes from ``published_at``.
 
+Two channels (issue #134, 2026-10-29). Stable reads ``/releases/latest``,
+which GitHub never points at a prerelease or a draft, so it follows a
+release made Stable, or taken back, exactly. Beta reads the newest ten
+releases (``/releases?per_page=10``, about 80 KB for a full reply, then
+304s like the latest endpoint) and offers the highest version among them,
+prerelease or not. Every release is published as a prerelease, a beta, and
+a promotion makes one a full release (scripts/promote_release.py), so Beta
+gets each release at once and Stable the ones made Stable; until the first
+beta (0.26.0 and before) every release was a full one. A demoted release
+is a draft again, which neither endpoint shows without a login. A release
+counts only when its tag is exactly
+``vX.Y.Z``: the list also carries data releases (``esobuild-assets-<update>-
+<date>``), and a search for three dotted numbers anywhere in a tag would
+read any such tag as a version. Neither channel offers a version lower
+than the one running, so someone who leaves Beta keeps the version they
+have until a Stable release passes it.
+
 ### src/gui/update_poller.py
 
 *[src/gui/update_poller.py:1](../src/gui/update_poller.py#L1)*
@@ -2619,6 +2787,15 @@ start() clears the ETag so its first request is a full one: Settings saved
 with the check on also clears a skipped version, and a 304 would otherwise
 hide the release that was skipped and is wanted again.
 
+Each check reads the channel from the config (``update.channel``, issue
+#134). The two channels ask different endpoints, and the channel changes
+only through a Settings save, which calls start(): that clears the ETag, so
+no validator is ever sent to the other endpoint. start() also withdraws an
+offer the previous channel made at once, rather than when (or if) the
+first check on the new channel succeeds: someone who leaves Beta while
+offline or rate limited must not be left one click from the beta they
+opted out of.
+
 ### src/gui/update_popup.py
 
 *[src/gui/update_popup.py:1](../src/gui/update_popup.py#L1)*
@@ -2633,6 +2810,258 @@ The notes are GitHub's generated release notes (one line per pull request
 with its link, and a compare link), rendered from markdown; the
 maintainer chose them on 2026-10-26 over the CHANGELOG entries, which run
 to a dozen lines each and are one click away through the Changelog link.
+The notes are the offered release's own, so someone several releases
+behind (a Stable user, issue #134, skips every beta in between) would see
+only the last step; the "Changes since" link compares the running version
+with the offered one on GitHub, however many releases lie between.
+
+## Releases: every tag a beta, and a beta made Stable
+
+### scripts/release.py
+
+*[scripts/release.py:1](../scripts/release.py#L1)*
+
+Make a release's commit, or tag a release once its pull request is merged.
+
+Design (issue #134, task 2.5; the maintainer's decisions 11 and 12 of
+2026-10-29): every session cut releases its own way, and almost every pull
+request edited the same lines of two shared files, the top of
+CHANGELOG.md and docs/design.md, so each merge put every other open pull
+request in conflict (24 merges of main into PR branches in five days).
+Three changes together end that:
+
+- A change adds its notes as a fragment, ``changelog.d/<issue>-<slug>.md``,
+  written under the same ``### Added`` / ``### Changed`` / ``### Fixed``
+  headings CHANGELOG.md uses. Two pull requests never edit the same file,
+  and the CI check (scripts/changelog_check.py) asks every pull request for
+  one.
+- ``docs/design.md`` is rebuilt in the release commit only. Between
+  releases the docstrings it is built from are the source; a tag whose
+  design notes lag the code is refused, here before the tag is made and in
+  the tag's workflow run before either build (build_design_doc --check).
+- This script makes the release commit's edits the same way every time:
+  the version in src/version.py, the fragments gathered under
+  ``## [X.Y.Z] - YYYY-MM-DD`` at the top of CHANGELOG.md (an
+  ``[Unreleased]`` section a branch from before fragments still carries at
+  the top is folded in, not lost), the fragments removed, the design notes
+  rebuilt, and one commit, ``chore: release X.Y.Z``. Sections come out in
+  Keep a Changelog's order and, within a section, in fragment file name
+  order, so the same fragments always give the same text. Everything that
+  can refuse (an unreadable fragment, one git does not track yet, a design
+  note that cannot be built) is checked before the first file is written,
+  so a refusal never leaves a release half made.
+
+The release commit goes inside the last pull request of the release, or one
+of its own, since main takes pull requests only. The script refuses to
+commit on main or over uncommitted changes, and the version must be higher
+than the current one. ``minor`` or ``patch`` picks the next number; the
+choice stays the releasing session's (a release with only Fixed entries is
+a patch).
+
+A fragment can reach the release branch after the release commit: the
+branch must be up to date with main to merge, and a merge of main brings in
+whatever merged meanwhile. Its change would ship in the build while its
+note waited for the next release. The Changelog check refuses a release
+pull request that still holds fragments, and ``--tag`` refuses such a merge
+commit; the remedy is to drop the release commit (``git revert``) and run
+the script again.
+
+Once the pull request is merged, ``--tag X.Y.Z`` finds the commit on
+origin/main that first carries the version (the merge commit, on main's
+first-parent line), runs the release job's tag checks on it
+(scripts/release_guard.py), checks its design notes and its changelog.d/,
+and makes the annotated tag. Pushing the tag publishes a beta to every
+install on the Beta channel, so it happens only with ``--push``, and
+``--dry-run`` runs every check and makes nothing. ``--watch`` then follows
+the tag's workflow run and checks what it published: a pre-release with
+all three files, and ``/releases/latest`` (Stable) not moved. Making a beta
+Stable stays scripts/promote_release.py's, on the maintainer's word.
+
+Needs git; ``--watch`` needs the GitHub CLI, logged in.
+
+```
+    python scripts/release.py minor|patch|X.Y.Z [--date YYYY-MM-DD] [--trailer TEXT] [--dry-run]
+    python scripts/release.py --tag X.Y.Z [--dry-run | --push [--watch]]
+```
+
+### scripts/changelog_check.py
+
+*[scripts/changelog_check.py:1](../scripts/changelog_check.py#L1)*
+
+Check a pull request's changelog fragment and its hands-off files.
+
+Design (issue #134, task 2.5): changes write their notes as fragments in
+changelog.d/ and the release commit (scripts/release.py) gathers them into
+CHANGELOG.md and rebuilds docs/design.md. A pull request that is not a
+release is refused when it:
+
+- adds no fragment of its own (a new ``changelog.d/<name>.md``, directly in
+  the folder, not the README), unless it carries the ``no-changelog``
+  label: its change would reach the release notes only if someone
+  remembered. Editing a fragment already there is not a note of its own,
+  and a file in a subfolder is one the release script never reads;
+- edits CHANGELOG.md: that edit is what put every open pull request in
+  conflict with the others;
+- edits docs/design.md: the same, for the design notes, which the release
+  commit rebuilds from the docstrings.
+
+The label waives the first rule only: the other two are the conflicts the
+whole change exists to end.
+
+A release is a pull request that changes ``__version__`` (read from the
+merge base and the head, so an unrelated edit of src/version.py is not
+one). It does all three by design and passes, unless changelog.d/ still
+holds fragments at its head: they came in with a merge of main after the
+release commit, their changes would ship in the release and their notes
+in the next one. Reverting the release commit and running the release
+script again gathers them.
+
+The fragment's text is not checked here: scripts/release.py refuses one it
+cannot read when the release is cut, and the unit tests run the same parser
+over every fragment on the branch.
+
+```
+    python3 scripts/changelog_check.py <base sha> <head sha> [--labels a,b]
+```
+
+### scripts/release_guard.py
+
+*[scripts/release_guard.py:1](../scripts/release_guard.py#L1)*
+
+Check a version tag before the release job publishes it, and name the
+tag its notes start from.
+
+Design (issue #134, 2026-10-29): the release job publishes whatever tag
+reaches it, and nothing checked the tag until now. Three refusals, each
+before anything is published:
+
+- the tag must be exactly ``vX.Y.Z``: the app's update check counts only
+  such tags, and data releases (``esobuild-assets-<update>-<date>``) are
+  created by hand, never by this job;
+- it must equal ``v`` + ``__version__`` in the tagged commit's
+  ``src/version.py`` (read from the commit, not the checkout): the assets
+  are named from that file, and the app compares its own version with the
+  tag, so a mismatch would offer an installer that reports the wrong
+  version (a tag pushed on the wrong commit, or a release commit missing);
+- its commit must be on ``main`` (``git merge-base --is-ancestor``): tags
+  are outside the branch ruleset, so a tag on an unmerged branch would
+  publish code no pull request merged.
+
+The previous ``v*`` tag (``git describe`` from the tagged commit's first
+parent, which for a merge commit is main as it was) goes to the job's
+output as ``previous``: GitHub's generated notes then cover the changes
+since the release before this one, whichever release GitHub would
+otherwise have picked as the base. Every release is now born a beta, and
+with a Stable release as the latest GitHub may compare against that.
+
+Standard library and git only; the job runs it on the runner's own Python.
+
+```
+    python3 scripts/release_guard.py <tag> <commit> [--main-ref origin/main]
+```
+
+### scripts/promote_release.py
+
+*[scripts/promote_release.py:1](../scripts/promote_release.py#L1)*
+
+Make a beta the Stable release, take a Stable release back, list the
+betas that could be promoted, or open a reminder when Stable falls behind.
+
+Design (issue #134, the maintainer's decisions of 2026-10-29): every tag is
+published as a GitHub pre-release, a beta. Promoting turns that same
+release into a full one and marks it latest, so Stable users run exactly
+the build beta users ran, and ``/releases/latest``, which the app's Stable
+channel and the home page read, moves to it. Nothing is rebuilt or
+retagged.
+
+A beta may be promoted when:
+
+- it is newer than the Stable release and carries all three files;
+- it was published at least 48 hours ago;
+- the maintainer used it live, in at least one session with fights; the
+  script cannot see that, so ``--used-live`` says so;
+- no issue labelled ``regression`` affects it. A regression issue names the
+  version that brought the fault in as the first ``X.Y.Z`` in its title
+  (never its body, where a pasted "Python 3.14.10" would read as a
+  version). While open it affects that version and every later one; once
+  closed, those published before it was closed, since the fix can only be
+  in a later release. So a fixed regression still marks the versions that
+  carried it, which is the rule "no later beta fixes a fault in it". A
+  regression whose title names no version affects every release until its
+  title does: a rule that cannot be read must stop a promotion, not let it
+  through. An issue that turns out not to be a regression loses the label.
+
+``--force "<reason>"`` overrides the last three rules and writes the reason
+into the release notes (a crash fix that cannot wait two days); the first
+is never overridden.
+
+The release notes are rewritten as the changes since the previous Stable
+release: every pull request line of the releases in between, oldest first,
+without repeats, and the compare link. The app's update popup shows a
+Stable user these notes, and a Stable user skips every beta in between.
+
+``/releases/latest`` can lag a minute behind a change (seen on
+2026-10-28), so the check of it retries once. The script then starts the
+Pages workflow, which rebuilds the home page's buttons on main: a
+``release`` event would run on the tag, and the github-pages environment
+deploys from main only.
+
+``--demote`` pulls a bad Stable release: it becomes a draft again and the
+previous Stable release is marked latest. A draft is invisible to the app
+(both channels read without a login, which never sees drafts), to the home
+page and to ``--candidates``; left a pre-release it would still be the
+newest beta, offered on Beta and on the home page. Installs that already
+updated keep it. ``gh release edit <tag> --draft=false --prerelease``
+publishes it again as a beta.
+
+``--candidates`` lists the betas newer than Stable and what each still
+lacks: a session uses it to propose a promotion, never to make one.
+``--remind`` (the weekly workflow) opens an issue when the oldest beta that
+meets the time and regression rules was published more than 14 days ago,
+which is a beta that has waited two weeks for a decision, unless one is
+open already.
+
+Needs the GitHub CLI, logged in (``GH_TOKEN`` in a workflow).
+
+```
+    python scripts/promote_release.py vX.Y.Z --used-live [--dry-run]
+    python scripts/promote_release.py vX.Y.Z --force "crash fix" [--dry-run]
+    python scripts/promote_release.py --demote vX.Y.Z [--dry-run]
+    python scripts/promote_release.py --candidates
+    python scripts/promote_release.py --remind [--dry-run]
+```
+
+### scripts/build_site.py
+
+*[scripts/build_site.py:1](../scripts/build_site.py#L1)*
+
+Build the home page (site/) into _site/ for GitHub Pages.
+
+The page is a hand-written index.html whose download buttons need the
+current release: the release assets carry the version in their names
+(esolog-tail-windows-setup-0.13.3.exe), so no fixed link can point at the
+latest installer. This script reads the latest release from the GitHub API,
+fills the page's placeholders, and copies the page, its favicon and social
+card, and the screenshots it uses from docs/screencaps/ into _site/.
+.github/workflows/pages.yml runs it and publishes _site/.
+
+Placeholders in index.html are {{name}} for the names in release_values()
+plus {{site_url}} and {{beta_line}}. A placeholder left unfilled, a missing
+asset or an unreadable release fails the build: a page with holes must not
+be published.
+
+The buttons name the latest release, which is the Stable one: every release
+is published as a pre-release, a beta, and only a promotion makes one the
+latest (issue #134). {{beta_line}} is a smaller line under them naming the
+newest beta when one is newer than Stable (the maintainer's choice of
+2026-10-29), and nothing otherwise. It is a nicety: if the release list
+cannot be read, the page is built without it rather than not at all. It
+says to choose Beta in Settings, since the app starts on Stable whichever
+installer it came from. The beta is picked by the app's own
+``update_check.newest_release`` (src/, standard library only), so the page
+and the app's Beta channel cannot disagree on which release is the beta.
+
+Standard library only, so the Pages job installs nothing.
 
 ## Taunt marks that pulse in a text page
 
@@ -2649,7 +3078,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
+*[src/gui/fight_view.py:347](../src/gui/fight_view.py#L347)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2732,7 +3161,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:217](../src/gui/fight_view.py#L217)*
+*[src/gui/fight_view.py:219](../src/gui/fight_view.py#L219)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
@@ -2777,6 +3206,34 @@ it and shows the same tooltip. The glyph follows the pane's font size and
 is drawn at the view's device pixel ratio, so it stays crisp on a scaled
 display (Qt lays out an image that carries a device pixel ratio at its
 logical size). Names stay plain, with their hover cue.
+
+The (i) of possible build issues is drawn here too (issue #140). It was the
+font's ⓘ in the link colour after the class text, where it drifted right
+with the text's length, thin and among muted words, and was easy to miss;
+the first-damage * after the name was the mark people saw. It now sits on
+the name, after the *, bold with a faint halo of its own colour. Qt rich
+text has no text-shadow, filter or opacity, so the glow cannot come from
+the page: the glyph is a ring about the size of the font's ⓘ (11.5 px of
+11 at 9 pt), half again as heavy, over a radial gradient that is clear
+inside the ring, about two fifths opaque at its outer edge and nothing at
+the image's edge; the clear inside keeps the i at the link colour's full
+contrast (issue #77). The image is as tall as the text line, so the halo
+has 2 to 3 px around the ring, and aligned to the line's top: Qt centres
+a middle-aligned image on half the x-height above the baseline, which
+pushed a line-tall image 2 px under the line and made each marked row
+taller. The main window passes the fight view's line height into the page
+(render_html's line_px), so the image fits whatever font the system gives;
+without it the page estimates the line as 1.3 em, Segoe UI's. A death
+chip or a hidden name's stand-in on the same line adds only descent, so
+the line's top, and the ring with it, stays level with the name. At 100%
+scaling the ring's inside is 8 px tall, and a dot and stem placed freely
+ran together into a bar touching the ring, so the i is laid out in whole
+device pixels from the image's own width (issues_i_layout): a 2 px dot, a
+clear pixel, a 3 px stem, and a clear pixel above and below. No
+pulse: a still mark, so Reduce motion has nothing to stop. The fight
+list's ⓘ is list text, which cannot be bold or glow without a delegate,
+and the popup is a label that cannot serve these images; the build window
+shows the popup's list, so all three keep the font's ⓘ.
 
 The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
 (fight_render.glyph_html), which FightView.loadResource answers from here:

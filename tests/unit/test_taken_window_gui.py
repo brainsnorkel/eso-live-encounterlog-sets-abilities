@@ -436,6 +436,32 @@ class TestTakenWindow(TakenWindowTestCase):
         finally:
             win.close()
 
+    def test_the_windows_links_open_their_own_fight_once_the_list_has_moved_on(self):
+        # Following the live log, each completed fight becomes the current
+        # row; a build or recap window opened on the pull before keeps that
+        # pull, and so does its link (issue #143)
+        from PySide6.QtCore import QUrl
+        win = self._main_window()
+        try:
+            first, later = _entry(), _entry()
+            later.boss_name = 'Lokkestiiz'
+            win._on_fight_completed(first)
+            win.history_list.select_fight(0)
+            win._show_build('1')
+            win._show_death_recap('1')
+            win._on_fight_completed(later)
+            win.history_list.select_fight(1)
+            self.assertIs(win.history_list.current_entry(), later)
+            win._build_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertIs(win._taken_dialog.entry, first)
+            win._death_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertIs(win._taken_dialog.entry, first)
+            # The shield on the fight pane still opens the fight on screen
+            win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertIs(win._taken_dialog.entry, later)
+        finally:
+            win.close()
+
     def test_open_window_follows_a_theme_switch_and_the_hide_names_switch(self):
         from PySide6.QtCore import QUrl
         win = self._main_window()

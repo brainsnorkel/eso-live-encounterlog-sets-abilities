@@ -450,7 +450,7 @@ class TestZones(unittest.TestCase):
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (12252, 12252, 0))
         self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
                          ([3000, 16000], 3000, 20000, 12252))
-        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252")
         # Hits four seconds apart are bridged into one range
         entry, _players = pen_crit.fight_fields(
             tracker, 10000, 30000, units, {"70": {13: 100, 18: 100}}, {},
@@ -530,7 +530,7 @@ class TestPackReading(unittest.TestCase):
         self.assertEqual(pack["weighted_pen"], round(5948 * 1000 / 1500))
         row = pen_crit.armour_row(entry)
         self.assertFalse(row["pack_only"])
-        self.assertEqual(row["label"], "Armour 18,200 · 12,252 left")  # the boss's figure
+        self.assertEqual(row["label"], "Armour 18,200 · 12,252")  # the boss's figure
         self.assertEqual([(iv["start_ms"], iv["end_ms"], iv["stacks"], iv["target"], bool(iv.get("pack")))
                           for iv in row["intervals"]],
                          [(1000, 3000, 12252, "Prism", True), (3000, 4000, 18200, "Slasher", True),
@@ -562,7 +562,7 @@ class TestPackReading(unittest.TestCase):
         row = pen_crit.armour_row(entry)
         # The pack reading is the row: its average is the label's
         self.assertTrue(row["pack_only"])
-        self.assertEqual(row["label"], "Armour 18,200 · 13,739 left")
+        self.assertEqual(row["label"], "Armour 18,200 · 13,739")
         self.assertEqual((row["average_left"], row["window"], row["window_ms"], row["drawn_ms"]),
                          (13739, [[1000, 5000]], [1000, 5000], 4000))
         self.assertTrue(all(iv.get("pack") for iv in row["intervals"]))
@@ -635,9 +635,11 @@ class TestArmourRow(unittest.TestCase):
                          ("Major Breach, Minor Breach", 8922, "Balorgh"))
         # Averaged over time: (27,300 + 18,378 + 0) / 3
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (15226, 0, 33))
-        self.assertEqual(row["label"], "Armour 27,300 · 15,226 left")
+        self.assertEqual(row["label"], "Armour 27,300 · 15,226")
         self.assertIn("final boss 36,400", row["explain"])
         self.assertIn("averaged over time", row["explain"])
+        # The label's bare second figure is named in its hover (#137)
+        self.assertIn("the label's second figure is that armour left", row["explain"])
         # A series from before the window (issue #64) covers the whole fight
         self.assertEqual((row["window"], row["window_ms"], row["drawn_ms"], row["fight_ms"],
                           row["weighted_left"]),
@@ -653,7 +655,7 @@ class TestArmourRow(unittest.TestCase):
         self.assertEqual((row["average_left"], row["lowest_left"], row["no_debuff_pct"]), (9189, 0, 0))
         self.assertEqual((row["window_ms"], row["drawn_ms"], row["fight_ms"], row["weighted_left"]),
                          ([10000, 30000], 20000, 30000, 7300))
-        self.assertEqual(row["label"], "Armour 27,300 · 9,189 left")
+        self.assertEqual(row["label"], "Armour 27,300 · 9,189")
         # Two ranges with a blank between: a span is cut at the range's edge
         split = dict(self.GROUP, armour=dict(self.GROUP["armour"], window=[[0, 5000], [25000, 30000]]))
         row = pen_crit.armour_row(split)
@@ -841,6 +843,33 @@ class TestRender(unittest.TestCase):
     def test_cap_setting_overrides_the_zone(self):
         self.assertIn("cap 9,100", self._html({"cap": 9100}))
 
+    def test_the_effective_line_sits_in_a_framed_row(self):
+        # Issue #143: each section's conclusion in a cell of its own with a
+        # frame and a bar at the left; the working stays in the plain cell
+        import re
+        for dark in (False, True):
+            html = self._html(None, dark)
+            boxes = re.findall(r"<td colspan='3' style='border-style:solid;[^']*"
+                               r"border-left-width:3px;[^']*'>(.*?)</td>", html)
+            self.assertEqual(len(boxes), 2)
+            self.assertTrue(all(box.startswith("<b>Effective ") for box in boxes), boxes)
+            self.assertNotIn("Own ", "".join(boxes))
+            self.assertNotIn("background-color", "".join(
+                re.findall(r"<td colspan='3' style='(border-style:solid;[^']*)'>", html)))
+
+    def test_no_damage_measured_is_not_framed(self):
+        import copy
+
+        from gui.build_render import NO_DAMAGE_MEASURED, render_build_html
+        entry = copy.deepcopy(self.entry)
+        entry.pen_crit = dict(entry.pen_crit, debuffs=[])
+        for p in entry.players:
+            if p.get("pen_crit"):
+                p["pen_crit"] = dict(p["pen_crit"], pen_hist=[], crit_hist=[], buffs=[])
+        html = render_build_html(entry, "1")
+        self.assertIn(NO_DAMAGE_MEASURED, html)
+        self.assertNotIn("border-left-width:3px", html)
+
     def test_an_old_entry_without_the_fields_renders(self):
         import copy
         entry = copy.deepcopy(self.entry)
@@ -989,7 +1018,7 @@ class TestRowToken(unittest.TestCase):
                           'p:2187 cd:58%</a>', html)
             self.assertIn(pen_crit_href("2"), html)
         text = render_plain_text(self.entry, pen_crit_options=ROW_OPTIONS)
-        self.assertIn("@brainsnorkel * Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
+        self.assertIn("@brainsnorkel Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
         plain = render_plain_text(self.entry)
         self.assertIn("· p:1487 cd:50%", plain)  # nothing assumed: 1,487 and the base 50
 
