@@ -110,13 +110,6 @@ class TestCue(IssuesGuiTestCase):
         self.assertIn('glyph:issues?color=166ad8&amp;px=21',
                       render_html(entry, detailed=False, base_pt=12.0))
 
-    def test_the_cue_follows_the_first_damage_star(self):
-        from gui.fight_render import render_html
-        entry = _entry()
-        entry.first_damage_dealer = '2'
-        html = render_html(entry, detailed=False)
-        self.assertIn('>@dualwield</a> <b>*</b>&nbsp;<a href="esolog:issues/2"', html)
-
     def test_a_hidden_name_does_not_take_the_cue_in(self):
         from gui.fight_render import render_html
         from gui.name_mask import NameMask

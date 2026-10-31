@@ -156,12 +156,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertNotIn('—', line)
         self.assertLess(line.index('gdps'), line.index('Coral Aerie'))
         self.assertLess(line.index('Coral Aerie'), line.index('2025'))
-        # First-damage dealer gets a star in both renderings
+        # Who opened the fight: a line under the table in both renderings
+        # (issue #159), no star; the first hit is exactly 1,000 ms in, so
+        # no time, and the line follows the pane's text size
         html_marked = render_html(entry, detailed=False)
-        # (the name itself is a link to the player's build window)
-        self.assertIn('@brainsnorkel</a> <b>*</b>', html_marked)
-        self.assertIn('first damage', html_marked)
-        self.assertIn('@brainsnorkel *', render_plain_text(entry))
+        self.assertNotIn('<b>*</b>', html_marked)
+        self.assertIn('>@brainsnorkel hit Test Boss first: Damage Ability</p>', html_marked)
+        self.assertNotIn('font-size:85%', html_marked)
+        plain = render_plain_text(entry)
+        self.assertNotIn('@brainsnorkel *', plain)
+        self.assertTrue(plain.endswith('\n@brainsnorkel hit Test Boss first: Damage Ability'))
         html_out = render_html(entry, detailed=True)
         self.assertIn('@brainsnorkel', html_out)
         self.assertIn('Tide-Born Wildstalker', html_out)

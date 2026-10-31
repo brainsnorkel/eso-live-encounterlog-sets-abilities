@@ -216,10 +216,15 @@ class TestCompanionRow(unittest.TestCase):
         self.assertIn('c1-106616', [p['unit_id'] for p in first.players])
         self.assertNotIn('c1-106616', [p['unit_id'] for p in second.players])
 
-    def test_the_companion_opens_the_fight_with_a_star_on_its_row(self):
+    def test_the_companion_opens_the_fight_on_its_row(self):
         fight = _run([OWN] + FIGHT_START + [COMPANION_HIT, PLAYER_HIT] + FIGHT_END
                      ).fight_history.fights[0]
-        self.assertEqual(fight.first_damage_dealer, 'c1-106616')
+        opener = fight.opener
+        self.assertEqual((opener['unit_id'], opener['via'], opener['owner_id']),
+                         ('c1-106616', 'companion', '1'))
+        # Named from its owner, every companion alike (fight_opener)
+        self.assertIn("@brainsnorkel's Companion hit Tideborn Taleria first: Beam of Reproach",
+                      render_plain_text(fight))
 
     def test_rules_still_see_a_companion_as_a_pet(self):
         analyzer = _run([OWN] + FIGHT_START)
