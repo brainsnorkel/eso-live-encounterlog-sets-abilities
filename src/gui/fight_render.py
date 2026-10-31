@@ -34,7 +34,7 @@ A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
 A player whose build has a possible issue (see build_issues) gets a circled
-i right after their name, beside the first-damage *, drawn bold with a
+i right after their name, drawn bold with a
 faint halo in the link color (a glyph, see gui.glyphs; issue #140);
 hovering it lists the findings and clicking it opens a popup with each
 finding and the rule behind it (issues_html, which the build window shows
@@ -80,6 +80,15 @@ class's other masteries, the likeliest first for the player's role
 (eso_sets.likely_masteries), marking one the log never names; a click
 opens the build window, whose mastery part and the plain-text copy say the
 same in words (issue #149).
+
+Under the table, a muted line says who opened the fight and with what:
+'@tank taunted Reef Guardian first: Inner Rage' (fight_opener.opener_parts,
+issue #159; it replaced the '*' after the player who dealt the first
+damage). The line follows the pane's text size, as 'Also died' does,
+and comes before it.
+Every player's name in it goes through the Hide names mask, and a name
+that picks out no single row ('anon', or a hidden name) is followed by the
+row's role and class; the plain-text copy ends with the same lines.
 """
 
 import html
@@ -88,8 +97,9 @@ from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
+from fight_opener import PlayerName, opener_parts
 from gui.death_render import death_chip_html, deaths_by_unit
-from gui.name_mask import NO_MASK
+from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
 from scribing import scribed_label, slot_label
@@ -1207,8 +1217,6 @@ def render_html(entry, detailed: bool, dark: bool = False,
     # Not 100% wide: Qt rounds percentage columns up to a pixel past the
     # pane, which shows a horizontal scroll bar
     parts.append("<table cellpadding='3' cellspacing='0' width='99%'>")
-    first_dealer = str(entry.first_damage_dealer or "")
-    starred = False
     deaths = deaths_by_unit(entry)
     for p in entry.players:
         role = p.get("role") or "D"
@@ -1226,11 +1234,8 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if unit_id:
             name = (f'<a href="{e(build_href(unit_id), quote=True)}" '
                     f'style="text-decoration:none;color:{row_color}">{name}</a>')
-        if first_dealer and unit_id == first_dealer:
-            name = f"{name} <b>*</b>"
-            starred = True
         # The (i) of possible build issues (build_issues): only on a player
-        # with at least one. It sits on the name, after the first-damage *,
+        # with at least one. It sits right after the name,
         # where the eye lands, not after the class text, where it drifted
         # with the text's length among muted words; drawn bold with a faint
         # halo in the link colour, since Qt rich text has no text-shadow
@@ -1353,9 +1358,12 @@ def render_html(entry, detailed: bool, dark: bool = False,
                       f"</td></tr>")
             parts.append(detail)
     parts.append("</table>")
-    if starred:
-        parts.append(f"<p style='margin:2px 0;color:{muted};font-size:85%'>"
-                     f"* dealt the first damage of the fight</p>")
+    # Who opened the fight and with what (fight_opener, issue #159): muted
+    # like 'Also died', at the pane's text size (Qt ignores percentage
+    # sizes), with no links
+    opener = opener_html(opener_parts(entry), names, muted, base_pt)
+    if opener:
+        parts.append(f"<p style='margin:4px 0;color:{muted}'>{opener}</p>")
     # Deaths of players the table does not list (their build never reached
     # the log) still get their recap button
     listed = {str(p.get("unit_id", "")) for p in entry.players}
@@ -1366,6 +1374,47 @@ def render_html(entry, detailed: bool, dark: bool = False,
         parts.append(f"<p style='margin:4px 0;color:{muted}'>"
                      f"Also died: {' '.join(others)}</p>")
     return "".join(parts)
+
+
+def _opener_name_shows_row(part: PlayerName, names) -> bool:
+    """Whether a name in the opener line needs its row's role and class:
+    one that picks out no single row ('anon', or a name the mask hides)."""
+    return bool(part.role_class) and (part.name == ANON or names.hides(part.name))
+
+
+def opener_html(parts, names, color: str, base_pt: float) -> str:
+    """The opener line's parts (fight_opener.opener_parts) as rich text:
+    the lines joined by <br>, every player's name through the Hide names
+    mask in *color* at *base_pt* points."""
+    lines = []
+    for line in parts:
+        out = []
+        for part in line:
+            if isinstance(part, PlayerName):
+                out.append(names.html(part.name, color, base_pt))
+                if _opener_name_shows_row(part, names):
+                    out.append(f" ({html.escape(part.role_class)})")
+            else:
+                out.append(html.escape(str(part)))
+        lines.append("".join(out))
+    return "<br>".join(lines)
+
+
+def opener_text(parts, names) -> list[str]:
+    """The opener line's parts as plain-text lines, names masked as in
+    opener_html."""
+    lines = []
+    for line in parts:
+        out = []
+        for part in line:
+            if isinstance(part, PlayerName):
+                out.append(names.text(part.name))
+                if _opener_name_shows_row(part, names):
+                    out.append(f" ({part.role_class})")
+            else:
+                out.append(str(part))
+        lines.append("".join(out))
+    return lines
 
 
 def presence_note(p) -> str:
@@ -1407,19 +1456,16 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         lines.append(misfortunes)
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
-    first_dealer = str(entry.first_damage_dealer or "")
     boss_fight = _is_boss_fight(entry)
     for p in entry.players:
         role = p.get("role") or "D"
         dps = _dps_text(p, boss_fight)
-        star = (" *" if first_dealer
-                and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         cpm = cpm_text(p)
         ult = ultimate_text(p)
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
-        lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
+        lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
                      + (f" · {ult}" if ult else "") + (f" · {note}" if note else ""))
@@ -1448,4 +1494,6 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         sets = _sets_text(p.get("all_sets") or p.get("sets"))
         if sets:
             lines.append(f"      {sets}")
+    # Who opened the fight, as the pane's line under the table (issue #159)
+    lines.extend(opener_text(opener_parts(entry), names))
     return "\n".join(lines)

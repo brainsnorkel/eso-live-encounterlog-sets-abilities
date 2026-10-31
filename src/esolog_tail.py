@@ -38,6 +38,7 @@ from misfortunes import run_misfortunes
 from presence import present_share
 import casts
 import companions
+import fight_opener
 import pen_crit
 import resources
 import split_retention
@@ -488,9 +489,10 @@ class CombatEncounter:
         # The run's result when this fight completed a trial (trial_result)
         self.trial_result: Optional[Dict] = None
         
-        # Track first damage dealer
-        self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
-        self.first_damage_timestamp: Optional[int] = None  # Timestamp of first damage
+        # Who opened the fight, decided by the analyzer's
+        # fight_opener.OpenerRecorder from BEGIN_COMBAT on;
+        # None for a fight that had no BEGIN_COMBAT
+        self.opening: fight_opener.FightOpening | None = None
 
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
@@ -1011,6 +1013,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
         self._cast_abilities: Dict[str, str] = {}
+        # Who opened each fight, and with what: the line under the fight
+        # pane's table (fight_opener, issue #159)
+        self.opener = fight_opener.OpenerRecorder(DAMAGE_RESULTS)
 
         # Which units each cast struck, for the area rule of the kinds of
         # damage (damage_kinds): shared by the recap recorder, the damage
@@ -1698,6 +1703,9 @@ class ESOLogAnalyzer(ListenerMixin):
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
+            # The opener's memory starts again (the entry's timestamp is the
+            # zone id: the line's own time is its first field)
+            self.opener.reset(casts.line_time(entry.original_line))
 
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -1781,6 +1789,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        # The opener: the memory of the moments before the line becomes
+        # the fight's candidates (fight_opener)
+        self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -1814,6 +1825,8 @@ class ESOLogAnalyzer(ListenerMixin):
         # (see _handle_combat_event)
         enc.start_time = self._last_fight_start
         self._resumed_fight_entry = self._last_fight_entry
+        # The opener stands; what came between the two lines is dropped
+        self.opener.resume()
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -1842,6 +1855,10 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
+        # The opener's pending millisecond settles into the fight before it
+        # is built, and a new memory starts (fight_opener)
+        self.opener.end_combat(entry.timestamp)
+
         # The living enemies the group hit in the fight's last seconds: if
         # combat starts again at once, they tell whether it is the same fight
         self._engaged_at_end = frozenset(
@@ -1886,7 +1903,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
         if entry.timestamp > 0:
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
-        # Relative-ms offsets restart with each BEGIN_LOG session
+        # Relative-ms offsets restart with each BEGIN_LOG session (the
+        # entry's timestamp is the Unix time: the line's own is its first
+        # field)
+        self.opener.reset(casts.line_time(entry.original_line), new_session=True)
         self.buff_timeline_recorder.reset()
         self.effect_tracker.reset()
         self.pen_crit_tracker.reset()
@@ -1981,6 +2001,10 @@ class ESOLogAnalyzer(ListenerMixin):
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
+
+            # The opener (fight_opener): every cast names its cast id, which
+            # names the skill behind a hit or a taunt
+            self.opener.note_cast(entry.fields[2], ability_id)
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
@@ -2255,6 +2279,12 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ENEMY_HIT_RESULTS and len(entry.fields) > 17:
                 self._note_enemy_hit(entry)
 
+            # The opener (fight_opener): any line of the group's on a
+            # hostile, whatever its result or value, since a shield absorb's
+            # partner can carry 0
+            if self.opener.listening and len(entry.fields) > 17:
+                self._feed_opener_event(entry, combat_event_type)
+
             # Taunts: a TAUNTED result shares its cast tracking id with the
             # taunting skill's own cast and hits, which name the skill
             if (len(entry.fields) > 17
@@ -2342,24 +2372,6 @@ class ESOLogAnalyzer(ListenerMixin):
                                 # Check if source is a player or player's pet
                                 if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
                                     source_unit_id in self.current_encounter.pet_ownership):
-                                    
-                                    # Track first damage dealer
-                                    if self.current_encounter.first_damage_dealer is None:
-                                        # A companion's own row, else the
-                                        # owner if it's a pet
-                                        companion = self.current_encounter.companion_key(source_unit_id)
-                                        if companion is not None:
-                                            self.current_encounter.first_damage_dealer = companion
-                                        elif source_unit_id in self.current_encounter.pet_ownership:
-                                            owner_id = self.current_encounter.pet_ownership[source_unit_id]
-                                            owner_player = self.current_encounter.find_player_by_unit_id(owner_id)
-                                            if owner_player:
-                                                self.current_encounter.first_damage_dealer = owner_player.unit_id
-                                        else:
-                                            player = self.current_encounter.find_player_by_unit_id(source_unit_id)
-                                            if player:
-                                                self.current_encounter.first_damage_dealer = player.unit_id
-                                        self.current_encounter.first_damage_timestamp = entry.timestamp
                                     
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
@@ -2781,6 +2793,58 @@ class ESOLogAnalyzer(ListenerMixin):
                 del casts[key]
         casts[cast_id] = ability_id
 
+    def _opener_side(self, enc: CombatEncounter, unit_id: str) -> fight_opener.Side | None:
+        """A unit as the opener sees it: a player, a player's pet or a
+        companion (fight_opener.Side), else None."""
+        player = enc.player_of(unit_id)
+        if player is not None:
+            return fight_opener.Side(unit_id, 'player', player.unit_id, player.unit_id,
+                                     player.get_display_name())
+        companion = enc.companion_key(unit_id)
+        if companion is not None:
+            record = enc.companions.get(companion)
+            owner = enc.find_player_by_unit_id(record.owner_unit_id) if record else None
+            if owner is None:
+                return None
+            return fight_opener.Side(unit_id, 'companion', companion, owner.unit_id,
+                                     owner.get_display_name())
+        owner_id = enc.pet_ownership.get(unit_id)
+        if owner_id is None:
+            return None
+        owner = enc.find_player_by_unit_id(owner_id)
+        if owner is None:
+            return None
+        pet = enc.enemies.get(unit_id)
+        return fight_opener.Side(unit_id, 'pet', owner.unit_id, owner.unit_id,
+                                 owner.get_display_name(), pet.name if pet is not None else "")
+
+    def _feed_opener_event(self, entry: ESOLogEntry, result: str):
+        """A COMBAT_EVENT for the opener: a player-side unit's on a
+        hostile, of any result (fields: hitValue 3, castTrackId 5,
+        abilityId 6, source 7, target 17)."""
+        enc = self.current_encounter
+        fields = entry.fields
+        source_id, target_id = fields[7], fields[17]
+        if target_id == '*':
+            return
+        target = enc.enemies.get(target_id)
+        if target is not None and target.is_hostile:
+            actor = self._opener_side(enc, source_id)
+            if actor is not None:
+                try:
+                    hit_value = int(fields[3])
+                except ValueError:
+                    hit_value = 0
+                self.opener.note_player_event(entry.timestamp, result, hit_value, fields[5],
+                                              fields[6], actor, target_id, target.name, target)
+
+    def _opener_player_name(self, record_id: str, fallback: str) -> str:
+        """A player's display name for the opener line, as the fight ends:
+        an anonymous member may have been named since the act."""
+        enc = self.current_encounter
+        player = (enc.player_of(record_id) or enc.find_player_by_unit_id(record_id)) if enc else None
+        return player.get_display_name() if player is not None else fallback
+
     def _taunts_of(self, enc: CombatEncounter, unit_id: str) -> List[dict]:
         """The abilities a player taunted with in this fight, most used
         first: {'id', 'name', 'icon', 'count'} each. A taunt the log did not
@@ -2828,7 +2892,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight known (an area cast's hit on a second target may come late)
         self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
-        entry.first_damage_dealer = enc.first_damage_dealer
+        # Who opened the fight and with what, names resolved now
+        # (fight_opener)
+        entry.opener = fight_opener.opener_record(
+            enc.opening, lambda ability_id: (self.ability_cache.get(ability_id)
+                                             or self.log_parser.get_ability_name(ability_id)
+                                             or ""),
+            self._opener_player_name)
         # Every player unit, rows or not (a player with no PLAYER_INFO gets
         # no row below but still appears in the timeline, the recaps and
         # the casters): the roster the Hide names mask reads

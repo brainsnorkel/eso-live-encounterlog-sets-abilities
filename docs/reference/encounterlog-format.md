@@ -22,6 +22,8 @@ END_COMBAT
 
 The game also writes END_COMBAT and then BEGIN_COMBAT, with every group member's PLAYER_INFO again, in the middle of a fight. It happens most often as the logging player accepts a resurrection: 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after a `SOUL_GEM_RESURRECTION_ACCEPTED` on the logging player. The engine treats such a pair as one fight (`COMBAT_RESUME_MS` in `src/esolog_tail.py`).
 
+BEGIN_COMBAT and END_COMBAT follow the logging player's combat state, not the group's: a group member's hit often lands first. In 393 split logs of January to October 2026 (8,816 fights), a player's hit or taunt came before the BEGIN_COMBAT line in 4,243 fights (48.1%), a median 14 ms early, often in the line's own millisecond and written before it. See `src/fight_opener.py`.
+
 PLAYER_INFO, unitId, [longTermEffectAbilityId,...], [longTermEffectStackCounts,...], [`<equipmentInfo>`,...], [primaryAbilityId,...], [backupAbilityId,...]
 
 BEGIN_CAST, durationMS, channeled, castTrackId, abilityId, `<sourceUnitState>`, `<targetUnitState>`
@@ -75,3 +77,11 @@ Found while building the taunt uptime line and the marks on taunting abilities (
 - The game keeps one debuff on the taunted enemy, ability 38254 "Taunt", written as `EFFECT_CHANGED` GAINED, UPDATED (a fresh taunt while one is up) and FADED lines whose target unit state is the enemy's. Its spans are the taunt uptime.
 - The skill a player slots is not always the id that casts and hits. Destructive Clench (38984) with an ice staff is logged as Frost Clench (38989), a separate id with the same icon (`ability_destructionstaff_005_a`); 175 of the 1,361 taunts were of that kind. Inner Rage, Pierce Armor, Ransack, Inner Fire, Inner Beast, Leashing Soul, Goading Throw and Chains of Dominance are logged under their slotted ids.
 - `UNIT_ADDED` flags bosses with `isBoss` (the seventh field after the line type: `UNIT_ADDED,125,MONSTER,F,0,89037,T,...` is Nahviintaas). Enemies stay in the engine's unit list from fight to fight within a zone, so a boss is only measured in a fight that hit or taunted it.
+- A TAUNTED can trail its skill's first hit by a millisecond, carrying the hit's `castTrackId`: 173 of 5,382 opening hits had the same player's TAUNTED 1 to 5 ms later.
+
+## Naming a hit, as live logs record it
+
+Found while building the line under the fight pane that says who opened the fight (issue #159; 393 split logs, 8,816 fights):
+
+- A `DAMAGE_SHIELDED` line names the absorbing shield's ability, not the attack. The attack follows on the next line with the same `castTrackId`, source, target and time, carrying the rest of the damage or 0: in one Halls of Fabrication log 10,077 of 10,111 partners were on the next line, and 520 absorb lines had none.
+- `castTrackId` 0 occurs on real hits, Inspired Scholarship's procs among them, and names no cast.

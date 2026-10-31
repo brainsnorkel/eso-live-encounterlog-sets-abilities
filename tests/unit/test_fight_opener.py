@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""Who opened the fight, and with what (issue #159, fight_opener).
+
+The engine tests feed log lines through the analyzer, in the shape of the
+real ones the survey read: a group member's hit or taunt a few ms before
+the logging player's BEGIN_COMBAT, a TAUNTED sharing its cast id with the
+skill's hit, a shield absorb followed by its attack in the same
+millisecond, a hostile's BEGIN_CAST naming the player it goes for, a dead
+monster's leftover hits. The line tests build entries by hand.
+"""
+
+import unittest
+
+from esolog_tail import ESOLogAnalyzer, FightHistory
+from fight_history import FightHistoryEntry
+from fight_opener import (
+    ARENA_ZONES,
+    OPENER_WINDOW_MS,
+    TIME_SHOWN_MS,
+    PlayerName,
+    opener_parts,
+    seconds_text,
+    time_text,
+)
+
+EPOCH = 1759600000000
+BOSS_ID, MOB_ID = 1000001, 1000002
+LA, INNER_RAGE, TAUNT, GOADING = 100, 200, 38254, 210
+CONCUSSION, SUSCEPTIBILITY, SUNDERED = 300, 301, 302
+CALTROPS, CALTROPS_TICK = 400, 401
+SHOCK, WICKED_BONDS, BARRIER, SWIPE = 500, 501, 600, 700
+ABILITIES = {
+    LA: "Light Attack (Ice)", INNER_RAGE: "Inner Rage", TAUNT: "Taunt", GOADING: "Goading Throw",
+    CONCUSSION: "Concussion", SUSCEPTIBILITY: "Elemental Susceptibility", SUNDERED: "Sundered",
+    CALTROPS: "Razor Caltrops", CALTROPS_TICK: "Razor Caltrops", SHOCK: "Shock",
+    WICKED_BONDS: "Wicked Bonds", BARRIER: "Scorching Barrier", SWIPE: "Crushing Swipe",
+}
+
+
+def _units(ts):
+    """Three players (1 writes the log) and two hostiles: Reef Guardian, a
+    boss, and Sail Ripper."""
+    return [
+        f'{ts},UNIT_ADDED,1,PLAYER,T,1,0,F,3,4,"Coworker","@brainsnorkel",1001,50,3225,0,PLAYER_ALLY,T',
+        f'{ts},UNIT_ADDED,2,PLAYER,F,2,0,F,6,1,"Templar Friend","@templar",1002,50,2547,0,PLAYER_ALLY,T',
+        f'{ts},UNIT_ADDED,3,PLAYER,F,3,0,F,1,7,"Tank Friend","@tank",1003,50,1800,0,PLAYER_ALLY,T',
+        f'{ts},UNIT_ADDED,70,MONSTER,F,0,{BOSS_ID},T,0,0,"Reef Guardian","",0,50,160,0,HOSTILE,F',
+        f'{ts},UNIT_ADDED,71,MONSTER,F,0,{MOB_ID},F,0,0,"Sail Ripper","",0,50,160,0,HOSTILE,F',
+    ]
+
+
+BASE = [
+    f'5,BEGIN_LOG,{EPOCH},15,"NA Megaserver","en","eso.live.12.1"',
+    '1000,ZONE_CHANGED,1344,"Dreadsail Reef",VETERAN',
+    *_units(2000),
+    *[f'2600,ABILITY_INFO,{ability_id},"{name}","/esoui/art/icons/x.dds",F,F'
+      for ability_id, name in ABILITIES.items()],
+]
+
+
+def _p(unit_id, health=20000):
+    return f"{unit_id},{health}/20000,26657/26657,13021/13021,500/500,1000/1000,0,0.2,0.5,5.5"
+
+
+def _m(unit_id, health=1000000, max_health=1000000):
+    return f"{unit_id},{health}/{max_health},0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
+
+
+def _pet(unit_id):
+    return f"{unit_id},45478/45478,0/0,0/0,0/0,0/0,0,0.3,0.4,1.0"
+
+
+def _ev(ts, result, value, cast, ability, source, target="*"):
+    return f"{ts},COMBAT_EVENT,{result},PHYSICAL,1,{value},0,{cast},{ability},{source},{target}"
+
+
+def _hit(ts, player, cast=0, ability=LA, value=1000, target=70, result="DAMAGE"):
+    return _ev(ts, result, value, cast, ability, _p(player), _m(target))
+
+
+def _taunt(ts, player, cast, target=70):
+    return _ev(ts, "TAUNTED", 0, cast, TAUNT, _p(player), _m(target))
+
+
+def _cast(ts, cast, ability, source, target="*"):
+    return f"{ts},BEGIN_CAST,0,F,{cast},{ability},{source},{target}"
+
+
+def _player_cast(ts, player, cast, ability, target=70, target_health=1000000):
+    return _cast(ts, cast, ability, _p(player), _m(target, target_health))
+
+
+def _died(ts, monster):
+    return _ev(ts, "DIED_XP", 0, 0, 0, _p(1), _m(monster, 0))
+
+
+def _monster_added(ts, unit_id, name, monster_id=MOB_ID, owner=0, reaction="HOSTILE"):
+    return (f'{ts},UNIT_ADDED,{unit_id},MONSTER,F,0,{monster_id},F,0,0,"{name}","",'
+            f'0,50,160,{owner},{reaction},F')
+
+
+def _unit_changed(ts, unit_id, name, owner, reaction):
+    return f'{ts},UNIT_CHANGED,{unit_id},0,0,"{name}","",0,50,160,{owner},{reaction},F'
+
+
+def _fights(*lines):
+    analyzer = ESOLogAnalyzer()
+    analyzer.fight_history = FightHistory()
+    analyzer.track_buff_timeline = False
+    for line in BASE + list(lines):
+        entry = analyzer.log_parser.parse_line(line)
+        if entry is not None:
+            analyzer.process_log_entry(entry)
+    return analyzer.fight_history.fights
+
+
+def _fight(*lines):
+    return _fights(*lines)[-1]
+
+
+def _in_fight(*acts, pre=(), start=10000, end=20000):
+    """One fight: *pre* before its BEGIN_COMBAT, *acts* during it."""
+    return _fight(*pre, f"{start},BEGIN_COMBAT", *acts, f"{end},END_COMBAT")
+
+
+class TestTheMemoryBeforeTheLine(unittest.TestCase):
+    """BEGIN_COMBAT is the logging player's line: a group member's hit
+    often lands a moment before it."""
+
+    def test_a_hit_14_ms_before_the_line_opens_a_zones_first_fight(self):
+        opener = _in_fight(_hit(10100, 1, result="DOT_TICK"), pre=[_hit(9986, 2)]).opener
+        self.assertEqual((opener["name"], opener["kind"], opener["time_ms"]), ("@templar", "hit", -14))
+        self.assertEqual((opener["target"], opener["ability"]), ("Reef Guardian", "Light Attack (Ice)"))
+
+    def test_and_any_later_fight(self):
+        fights = _fights("3000,BEGIN_COMBAT", _hit(3500, 1), "4000,END_COMBAT",
+                         _hit(9986, 2), "10000,BEGIN_COMBAT", _hit(10100, 1), "20000,END_COMBAT")
+        self.assertEqual(len(fights), 2)
+        self.assertEqual((fights[1].opener["name"], fights[1].opener["time_ms"]), ("@templar", -14))
+
+    def test_the_memory_holds_ten_seconds(self):
+        dropped = _in_fight(_hit(15500, 3), pre=[_hit(4000, 2, target=71)], start=15000, end=25000)
+        self.assertEqual(dropped.opener["name"], "@tank")
+        kept = _in_fight(_hit(15500, 3), pre=[_hit(7000, 2, target=71)], start=15000, end=25000)
+        self.assertEqual((kept.opener["name"], kept.opener["time_ms"], kept.opener["edge"]),
+                         ("@templar", -8000, False))
+        self.assertEqual(OPENER_WINDOW_MS, 10000)
+
+    def test_nothing_before_the_last_end_combat_counts(self):
+        fights = _fights("3000,BEGIN_COMBAT", _hit(7900, 2), "8000,END_COMBAT",
+                         "10000,BEGIN_COMBAT", _hit(10500, 3), "20000,END_COMBAT")
+        self.assertEqual([f.opener["name"] for f in fights], ["@templar", "@tank"])
+
+    def test_a_zone_change_clears_the_memory(self):
+        fight = _fight(_hit(9000, 2), '9500,ZONE_CHANGED,1344,"Dreadsail Reef",VETERAN',
+                       *_units(9600), "10000,BEGIN_COMBAT", _hit(10500, 3), "20000,END_COMBAT")
+        self.assertEqual(fight.opener["name"], "@tank")
+
+    def test_end_combats_millisecond(self):
+        """Before the END_COMBAT line it is the fight's; after it, the next
+        fight's memory, at its edge (200 ms after the line that began it)."""
+        fights = _fights("10000,BEGIN_COMBAT", _hit(20000, 2), "20000,END_COMBAT", _hit(20000, 3),
+                         "25000,BEGIN_COMBAT", "30000,END_COMBAT")
+        self.assertEqual((fights[0].opener["name"], fights[0].opener["time_ms"]), ("@templar", 10000))
+        second = fights[1].opener
+        self.assertEqual((second["name"], second["time_ms"], second["edge"]), ("@tank", -5000, True))
+
+    def test_an_empty_fight_has_neither_record(self):
+        self.assertIsNone(_in_fight().opener)
+
+
+class TestTaunts(unittest.TestCase):
+    CAST = (_player_cast(9900, 3, 6001, INNER_RAGE),)
+
+    def test_a_hit_and_its_taunted_in_the_lines_millisecond_are_one_taunt(self):
+        for order in (
+                [_hit(10000, 3, 6001, INNER_RAGE), _taunt(10000, 3, 6001), "10000,BEGIN_COMBAT"],
+                [_hit(10000, 3, 6001, INNER_RAGE), "10000,BEGIN_COMBAT", _taunt(10000, 3, 6001)],
+                ["10000,BEGIN_COMBAT", _hit(10000, 3, 6001, INNER_RAGE), _taunt(10000, 3, 6001)]):
+            opener = _fight(*self.CAST, *order, "20000,END_COMBAT").opener
+            self.assertEqual((opener["kind"], opener["name"], opener["time_ms"], opener["ability"]),
+                             ("taunt", "@tank", 0, "Inner Rage"), order)
+
+    def test_a_taunted_a_millisecond_after_its_hit(self):
+        opener = _in_fight(_hit(10500, 3, 6001, INNER_RAGE), _taunt(10501, 3, 6001), _hit(11000, 1),
+                           pre=self.CAST).opener
+        self.assertEqual((opener["kind"], opener["target"]), ("taunt", "Reef Guardian"))
+
+    def test_not_six_ms_later_nor_another_players(self):
+        late = _in_fight(_hit(10500, 3, 6001, INNER_RAGE), _taunt(10506, 3, 6001), pre=self.CAST)
+        self.assertEqual(late.opener["kind"], "hit")
+        other = _in_fight(_hit(10500, 3, 6001, INNER_RAGE), _taunt(10500, 2, 6002), pre=self.CAST)
+        self.assertEqual((other.opener["kind"], other.opener["name"]), ("hit", "@tank"))
+
+    def test_a_taunt_whose_hit_did_no_damage_opens_by_itself(self):
+        opener = _in_fight(_hit(10500, 1), pre=[
+            _player_cast(9000, 3, 7001, GOADING), _hit(9500, 3, 7001, GOADING, value=0),
+            _taunt(9500, 3, 7001)]).opener
+        self.assertEqual((opener["kind"], opener["name"], opener["ability"], opener["time_ms"]),
+                         ("taunt", "@tank", "Goading Throw", -500))
+
+    def test_a_taunt_the_log_ties_to_no_cast_is_named_by_nothing(self):
+        opener = _in_fight(_taunt(10500, 3, 7101)).opener
+        self.assertEqual((opener["kind"], opener["ability"]), ("taunt", ""))
+
+    def test_a_taunt_on_a_unit_that_is_not_hostile_never_opens(self):
+        fight = _in_fight(_taunt(10200, 3, 7201, target=73), _hit(10500, 1),
+                          pre=[_monster_added(3000, 73, "Ghost", reaction="FRIENDLY")])
+        self.assertEqual(fight.opener["name"], "@brainsnorkel")
+
+
+class TestNaming(unittest.TestCase):
+
+    def test_cast_id_0_names_the_hit_alone(self):
+        opener = _in_fight(_hit(10500, 1, cast=0)).opener
+        self.assertEqual((opener["ability"], opener["skill"]), ("Light Attack (Ice)", ""))
+
+    def test_a_hit_under_another_skill_keeps_both(self):
+        opener = _in_fight(_player_cast(10400, 1, 8001, SUSCEPTIBILITY),
+                           _hit(10500, 1, 8001, CONCUSSION)).opener
+        self.assertEqual((opener["ability"], opener["skill"]),
+                         ("Concussion", "Elemental Susceptibility"))
+
+    def test_a_tick_under_its_casts_name_has_no_from(self):
+        """Another id than its cast's, the same name: compared by name."""
+        opener = _in_fight(_player_cast(10400, 2, 8101, CALTROPS),
+                           _hit(10900, 2, 8101, CALTROPS_TICK, result="DOT_TICK")).opener
+        self.assertEqual((opener["ability"], opener["skill"]), ("Razor Caltrops", ""))
+
+    def test_a_skill_known_only_from_a_hit_is_not_used(self):
+        fights = _fights("3000,BEGIN_COMBAT", _hit(3500, 1, 8201, CONCUSSION), "4000,END_COMBAT",
+                         "10000,BEGIN_COMBAT", _hit(10500, 1, 8201, SUNDERED), "20000,END_COMBAT")
+        self.assertEqual((fights[1].opener["ability"], fights[1].opener["skill"]), ("Sundered", ""))
+
+
+class TestShieldAbsorbs(unittest.TestCase):
+    """A DAMAGE_SHIELDED line names the enemy's shield; the attack follows
+    with the same cast id, source, target and millisecond."""
+
+    def test_named_by_its_attack_whatever_that_carries(self):
+        for rest in (0, 1200):
+            opener = _in_fight(
+                _player_cast(10400, 1, 9001, SUSCEPTIBILITY, target=71),
+                _ev(10500, "DAMAGE_SHIELDED", 3000, 9001, WICKED_BONDS, _p(1), _m(71)),
+                _ev(10500, "DAMAGE", rest, 9001, CONCUSSION, _p(1), _m(71))).opener
+            self.assertEqual((opener["ability"], opener["skill"], opener["target"]),
+                             ("Concussion", "Elemental Susceptibility", "Sail Ripper"), rest)
+
+    def test_unpaired_by_its_cast_or_nothing_never_by_the_shield(self):
+        opener = _in_fight(_player_cast(10400, 1, 9101, SUSCEPTIBILITY, target=71),
+                           _ev(10500, "DAMAGE_SHIELDED", 3000, 9101, WICKED_BONDS, _p(1), _m(71))).opener
+        self.assertEqual((opener["ability"], opener["skill"]), ("Elemental Susceptibility", ""))
+        bare = _in_fight(_ev(10500, "DAMAGE_SHIELDED", 3000, 9201, WICKED_BONDS, _p(1), _m(71)))
+        self.assertEqual(bare.opener["ability"], "")
+
+
+class TestWhoIsCredited(unittest.TestCase):
+
+    def test_a_pet_credits_its_owner_and_is_named(self):
+        opener = _in_fight(_ev(10500, "DAMAGE", 2000, 0, SWIPE, _pet(90), _m(70)), pre=[
+            _monster_added(3000, 90, "Wild Guardian", owner=2, reaction="NPC_ALLY")]).opener
+        self.assertEqual((opener["via"], opener["unit_id"], opener["owner_id"], opener["name"],
+                          opener["pet"], opener["ability"]),
+                         ("pet", "2", "2", "@templar", "Wild Guardian", "Crushing Swipe"))
+
+    def test_a_unit_nobody_owns_never_counts(self):
+        fight = _in_fight(_ev(10200, "DAMAGE", 2000, 0, SWIPE, _pet(91), _m(70)), _hit(10500, 1),
+                          pre=[_monster_added(3000, 91, "Stray", reaction="FRIENDLY")])
+        self.assertEqual(fight.opener["name"], "@brainsnorkel")
+
+    def test_a_friendly_unit_counts_once_it_turns_hostile(self):
+        fight = _in_fight(_hit(10200, 2, target=73), _unit_changed(10300, 73, "Ghost", 0, "HOSTILE"),
+                          _hit(10400, 3, target=73),
+                          pre=[_monster_added(3000, 73, "Ghost", reaction="FRIENDLY")])
+        self.assertEqual((fight.opener["name"], fight.opener["time_ms"]), ("@tank", 400))
+
+
+class TestTheMemorysEdge(unittest.TestCase):
+    """Where nobody can be called first: just after the line that began
+    the memory, or in the 10 s window's oldest second."""
+
+    def test_in_the_windows_oldest_second(self):
+        opener = _in_fight(_hit(20500, 1), pre=[_hit(10500, 3)], start=20000, end=30000).opener
+        self.assertEqual((opener["time_ms"], opener["edge"]), (-9500, True))
+
+    def test_not_four_seconds_before_the_line_and_six_after_end_combat(self):
+        fights = _fights("3000,BEGIN_COMBAT", _hit(3500, 1), "4000,END_COMBAT",
+                         _hit(10000, 3), "14000,BEGIN_COMBAT", "20000,END_COMBAT")
+        self.assertEqual((fights[1].opener["time_ms"], fights[1].opener["edge"]), (-4000, False))
+
+
+class TestDeadEnemies(unittest.TestCase):
+    """Rule 5: what was aimed at, or came from, an enemy that died before
+    the line belonged to the last pack."""
+
+    def test_a_hit_on_an_enemy_dead_before_the_line_is_dropped(self):
+        fight = _in_fight(_hit(10500, 3), pre=[_hit(9000, 2, target=71), _died(9500, 71)])
+        self.assertEqual(fight.opener["name"], "@tank")
+
+# -- the line --------------------------------------------------------------------
+
+def _row(unit_id, name, role="D", cls="NB", is_local=False, character=""):
+    return {"unit_id": unit_id, "name": name, "role": role, "class_abbr": cls,
+            "is_local": is_local, "character": character or name, "dps": 1000.0, "boss_dps": 0.0,
+            "dmg_pct": 30.0, "boss_pct": 0.0, "h": 20000, "m": 30000, "s": 15000, "sets": [],
+            "all_sets": [], "skill_lines": [], "class_lines": [], "front_bar": [], "back_bar": [],
+            "front_bar_slots": [], "back_bar_slots": []}
+
+
+ROWS = [_row("1", "@brainsnorkel", "D", "Arcanist", True, "Coworker"),
+        _row("2", "@templar", "H", "Templar", character="Templar Friend"),
+        _row("3", "@tank", "T", "DK", character="Tank Friend"),
+        _row("5", "anon", "T", "DK"), _row("6", "anon", "D", "NB")]
+
+
+def _entry(opener=None, zone="Dreadsail Reef", rows=ROWS):
+    entry = FightHistoryEntry()
+    entry.zone_name = zone
+    entry.boss_name = "Reef Guardian"
+    entry.timestamp = "2026-09-02 22:24:05"
+    entry.duration_s = 60.0
+    entry.players = rows
+    entry.player_names = [{"name": r["name"], "character": r["character"],
+                           "is_local": r["is_local"]} for r in rows]
+    entry.opener = opener
+    return entry
+
+
+def _opener(name="@tank", owner="3", kind="hit", ability="Light Attack (Ice)", skill="",
+            target="Sail Ripper", time_ms=0, edge=False, via="player", pet="", unit_id=None):
+    return {"kind": kind, "unit_id": unit_id or owner, "via": via, "owner_id": owner, "name": name,
+            "pet": pet, "ability": ability, "ability_id": "1", "skill": skill,
+            "skill_id": "2" if skill else "", "target": target, "target_id": "71",
+            "time_ms": time_ms, "edge": edge}
+
+
+def _lines(entry, names=None):
+    from gui.fight_render import opener_text
+    from gui.name_mask import NO_MASK
+    return opener_text(opener_parts(entry), names or NO_MASK)
+
+
+class TestTheLine(unittest.TestCase):
+    """One line per case of the issue's table."""
+
+    def test_a_player_hit_or_taunted_first(self):
+        self.assertEqual(_lines(_entry(_opener())), ["@tank hit Sail Ripper first: Light Attack (Ice)"])
+        self.assertEqual(_lines(_entry(_opener(kind="taunt", ability="Inner Rage", target="Reef Guardian"))),
+                         ["@tank taunted Reef Guardian first: Inner Rage"])
+
+    def test_the_skill_when_its_name_differs(self):
+        self.assertEqual(
+            _lines(_entry(_opener(ability="Concussion", skill="Elemental Susceptibility",
+                                  target="Bow Breaker"))),
+            ["@tank hit Bow Breaker first: Concussion, from Elemental Susceptibility"])
+
+    def test_a_pet_and_a_companion_are_named_from_their_owner(self):
+        pet = _opener(name="@templar", owner="2", via="pet", pet="Wild Guardian",
+                      ability="Crushing Swipe", target="Darkcaster Skirmisher")
+        self.assertEqual(_lines(_entry(pet)),
+                         ["@templar's Wild Guardian hit Darkcaster Skirmisher first: Crushing Swipe"])
+        companion = _opener(name="@brainsnorkel", owner="1", via="companion", unit_id="c1-106616",
+                            ability="Light Attack", target="Dreadhorn Scrapper")
+        self.assertEqual(_lines(_entry(companion)),
+                         ["@brainsnorkel's Companion hit Dreadhorn Scrapper first: Light Attack"])
+
+    def test_the_time_rule_starts_at_1050_ms_and_never_says_into_an_arena_fight(self):
+        self.assertEqual(TIME_SHOWN_MS, 1050)
+        self.assertEqual(_lines(_entry(_opener(time_ms=1049))),
+                         ["@tank hit Sail Ripper first: Light Attack (Ice)"])
+        self.assertEqual(_lines(_entry(_opener(time_ms=1050))),
+                         ["@tank hit Sail Ripper first: Light Attack (Ice), 1.1 s into the fight"])
+        self.assertEqual(_lines(_entry(_opener(time_ms=-1050))),
+                         ["@tank hit Sail Ripper first: Light Attack (Ice), 1.1 s before the fight's start"])
+        self.assertIn("Infinite Archive", ARENA_ZONES)
+        self.assertEqual(_lines(_entry(_opener(time_ms=2400), zone="Infinite Archive")),
+                         ["@tank hit Sail Ripper first: Light Attack (Ice)"])
+        self.assertEqual(_lines(_entry(_opener(time_ms=-2400), zone="Infinite Archive")),
+                         ["@tank hit Sail Ripper first: Light Attack (Ice), 2.4 s before the fight's start"])
+
+    def test_seconds_round_half_up(self):
+        self.assertEqual([seconds_text(ms) for ms in (1050, 1149, 1150, -2874, 5845)],
+                         ["1.1", "1.1", "1.2", "2.9", "5.8"])
+        self.assertEqual(time_text(0, False), "")
+
+    def test_at_the_memorys_edge_nobody_is_first(self):
+        edge = _entry(_opener(kind="taunt", ability="Goading Throw", target="Yokeda Kai",
+                              time_ms=-4377, edge=True))
+        self.assertEqual(_lines(edge), ["@tank was already fighting Yokeda Kai (Goading Throw) when the fight began"])
+
+    def test_a_name_that_picks_out_no_row_gets_its_role_and_class(self):
+        anon = _opener(name="anon", owner="5", kind="taunt", ability="Goading Throw", target="Reef Guardian")
+        self.assertEqual(_lines(_entry(anon)), ["anon (T, DK) taunted Reef Guardian first: Goading Throw"])
+        # A player without a row gets none
+        self.assertEqual(_lines(_entry(_opener(name="anon", owner="9"))),
+                         ["anon hit Sail Ripper first: Light Attack (Ice)"])
+
+    def test_an_entry_without_the_records_has_no_line(self):
+        self.assertEqual(opener_parts(_entry()), [])
+        self.assertEqual(opener_parts(object()), [])
+        parts = opener_parts(_entry(_opener()))
+        self.assertIsInstance(parts[0][0], PlayerName)
+
+
+class TestThePane(unittest.TestCase):
+
+    def test_under_the_table_before_also_died_muted_with_no_links(self):
+        from gui.fight_render import render_html, render_plain_text
+        entry = _entry(_opener(time_ms=11))
+        entry.death_recaps = [{"unit_id": "77", "name": "@passerby", "time_ms": 1000, "killer": "x",
+                               "ability": "y", "ability_id": "9", "icon": "", "max_health": 1, "events": []}]
+        entry.deaths = 1
+        for detailed in (False, True):
+            html = render_html(entry, detailed=detailed)
+            line = html.index("@tank hit Sail Ripper first: Light Attack (Ice)")
+            self.assertLess(html.index("</table>"), line)
+            self.assertLess(line, html.index("Also died"))
+            paragraph = html[html.rindex("<p", 0, line):html.index("</p>", line)]
+            self.assertNotIn("<a ", paragraph)
+            self.assertNotIn("font-size", paragraph)
+            self.assertNotIn("<b>*</b>", html)
+        text = render_plain_text(entry)
+        self.assertTrue(text.endswith("\n@tank hit Sail Ripper first: Light Attack (Ice)"))
+
+class TestHideNames(unittest.TestCase):
+    """Every player's name in the line goes through the mask; a hidden one
+    is followed by its row's role and class."""
+
+    def _mask(self, entry):
+        from gui.name_mask import NameMask
+        return NameMask.for_entry(entry, True)
+
+    def test_another_players_handle_is_hidden_and_the_logging_players_kept(self):
+        entry = _entry(_opener(name="@templar", owner="2", ability="Inner Rage", kind="taunt",
+                               target="Reef Guardian"))
+        self.assertEqual(_lines(entry, self._mask(entry)),
+                         ["@▒▒▒▒▒▒▒ (H, Templar) taunted Reef Guardian first: Inner Rage"])
+        own = _entry(_opener(name="@brainsnorkel", owner="1"))
+        self.assertEqual(_lines(own, self._mask(own)),
+                         ["@brainsnorkel hit Sail Ripper first: Light Attack (Ice)"])
+
+    def test_a_companion_is_named_from_its_hidden_owner(self):
+        entry = _entry(_opener(name="@templar", owner="2", via="companion", unit_id="c2-106616",
+                               target="Reef Guardian"))
+        lines = _lines(entry, self._mask(entry))
+        self.assertEqual(lines, ["@▒▒▒▒▒▒▒ (H, Templar)'s Companion hit Reef Guardian first: Light Attack (Ice)"])
+        self.assertEqual(_lines(entry)[0].count("@templar"), 1)
+        anon = _entry(_opener(name="anon", owner="5", via="companion", unit_id="c5-106616"))
+        self.assertEqual(_lines(anon, self._mask(anon)),
+                         ["anon (T, DK)'s Companion hit Sail Ripper first: Light Attack (Ice)"])
+
+    def test_a_hidden_player_without_a_handle_and_the_pane(self):
+        from gui.fight_render import render_html, render_plain_text
+        rows = ROWS + [_row("8", "Nameless One", "H", "Necro")]
+        entry = _entry(_opener(name="Nameless One", owner="8"), rows=rows)
+        mask = self._mask(entry)
+        self.assertEqual(_lines(entry, mask), ["▒" * len("Nameless One")
+                                               + " (H, Necro) hit Sail Ripper first: Light Attack (Ice)"])
+        html = render_html(entry, detailed=False, names=mask)
+        self.assertNotIn("Nameless One hit", html)
+        self.assertIn("(H, Necro) hit Sail Ripper first", html)
+        self.assertIn("mask:", html[html.index("(H, Necro) hit") - 300:html.index("(H, Necro) hit")])
+        self.assertNotIn("Nameless One", render_plain_text(entry, names=mask).splitlines()[-1])
+
+
+if __name__ == "__main__":
+    unittest.main()

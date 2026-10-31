@@ -162,6 +162,16 @@ class TestFightCutInTwo(unittest.TestCase):
         self.assertEqual([kind for kind, _entry in events], ['fight_completed', 'fight_updated'])
         self.assertIs(events[1][1], fight)
 
+    def test_the_opener_survives_the_cut(self):
+        """The first part's opener stands; the hit between the two lines
+        is mid-fight, not an opener (fight_opener, issue #159)."""
+        engine = Engine().feed(FIRST_PART)
+        self.assertEqual((engine.fights[0].opener['name'], engine.fights[0].opener['time_ms']),
+                         ('@templar', 1000))
+        engine.feed(SECOND_PART)
+        fight = engine.fights[0]
+        self.assertEqual((fight.opener['name'], fight.opener['time_ms']), ('@templar', 1000))
+
     def test_deaths_of_both_parts_are_counted_once_each(self):
         engine = Engine().feed(FIRST_PART + [
             _died(30050, 2),                      # between the two lines
