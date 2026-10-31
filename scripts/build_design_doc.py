@@ -36,6 +36,9 @@ TOPICS = [
         "src/esolog_tail.py:ESOLogAnalyzer._resume_last_fight",
         "src/esolog_tail.py#A death just after END_COMBAT",
     ]),
+    ("The fight's opener", [
+        "src/fight_opener.py",
+    ]),
     ("Starting mid-session", [
         "src/esolog_tail.py:LogFileMonitor._load_latest_session",
     ]),
