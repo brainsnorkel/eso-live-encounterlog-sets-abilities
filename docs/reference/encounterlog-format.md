@@ -89,3 +89,12 @@ Found while building the line under the fight pane that says who opened the figh
 - A hostile monster's `UNIT_ADDED` is written lazily: in 30 logs, 96.6% came in the same millisecond as the monster's first logged line, and all within a second.
 - `castTrackId` 0 occurs on real hits, Inspired Scholarship's procs among them, and names no cast.
 - `mapNormalisedX` and `mapNormalisedY` are normalised to the map the last `MAP_CHANGED` named, usually from 0 to 1 but not always; the heading is in radians.
+
+Found while building the fight's map (issue #148; 414 split logs):
+
+- The x and y of every unit, not just the logging player's, are fractions of the **logging player's** current map. When that player's map changes, every unit's coordinates jump to the new map's frame: in Sunspire on 2026-09-23 a trash pull ran from the Shrine of Jone Vestibule into the Temple Grounds, and at the `MAP_CHANGED` all 23 units seen on both sides moved by a median 0.63 of the map's width, some to a y of 1.19, past the map's edge.
+- Some maps share one frame: Kyne's Aegis's Lord Falgravn changes between his three floor maps (`KynesAegisBoss3Floor001` to `003`) up to five times in a fight, and across each change units moved a median of only 0.004 to 0.021.
+- Right after a zone's first `MAP_CHANGED`, while the zone loads, unit states can carry coordinates that are not fractions at all: `212.9151,-195.2606` in Lucent Citadel on 2026-10-11.
+- Sanity's Edge and Dreadsail Reef give every one of their sub-maps the zone's name, so a map is known by its `texturePath`. That path, lower-cased, is the map art in the client's `depot\eso.mnf`: `\art\maps\<path>_<n>.dds`, 256 px tiles numbered row by row from the top left (3×3 for most maps; 4×4 or 5×5 for some). The positions map straight onto the stitched tiles, with no offset or scale. The 282 paths in the split logs all have art there.
+- The Night Market (Update 49's event zone) and its areas, Opulent Ordeal among them, and the Elinhir Private Arena log their `ZONE_CHANGED` difficulty as `NONE`, like overland zones.
+- `HEALTH_REGEN`'s unit state carries a position too.

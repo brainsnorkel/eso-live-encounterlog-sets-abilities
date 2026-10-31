@@ -46,6 +46,14 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
 5. Commit `data/icons/abilities/` (PNGs + manifest.json) together with a CHANGELOG entry naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` (see `datas` in `esolog-tail.spec`).
 
+6. Refresh the fight map's art in the same sitting (issue #148; about 4 minutes, same extractor and client):
+
+   ```cmd
+   python scripts\extract_map_art.py --from-log "D:\esologs\splits"
+   ```
+
+   It re-extracts every map `data/maps/manifest.json` lists and adds the instanced maps (NORMAL or VETERAN zones, solo dungeons, the zones in the script's `GROUP_ZONES`) of any log or folder passed with `--from-log`, which is how new content gets its map. Read `manifest: N maps, M MB; vs previous: +added ~changed`: map art rarely changes, so a large `~changed` is worth a look. Commit `data/maps/` with the icons.
+
 **Notes**
 
 - Scribed (Grimoire) skills log a normal icon (`ability_grimoire_<weapon>.dds`) but append three extra quoted fields after the two flags (focus/signature/affix script names, e.g. `...,F,T,"Magic Damage","Assassin's Misery","Berserk"`). Parsers must read the icon from field 4, never from the end of the line.

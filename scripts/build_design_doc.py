@@ -39,6 +39,13 @@ TOPICS = [
     ("The fight's opener", [
         "src/fight_opener.py",
     ]),
+    ("The fight's map: where the group stood", [
+        "src/positions.py",
+        "src/map_art.py",
+        "scripts/extract_map_art.py",
+        "src/gui/fight_map.py",
+        "src/gui/fight_render.py#The map's place",
+    ]),
     ("Starting mid-session", [
         "src/esolog_tail.py:LogFileMonitor._load_latest_session",
     ]),
