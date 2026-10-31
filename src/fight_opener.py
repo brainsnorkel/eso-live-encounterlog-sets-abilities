@@ -123,10 +123,9 @@ SCRIPTED_ABILITIES = frozenset((
     "157215",  # Music Musicer (Archwizard Twelvane, Tho'at Replicanum, Xalvakka)
 ))
 # Zones whose enemies spawn in waves: the first seconds are the spawn. Known
-# by zone id, which every client language writes alike (the split logs
-# confirm Infinite Archive 1436, Blackrose Prison 1082 and Dragonstar Arena
-# 635; Maelstrom Arena 677 and Vateshran Hollows 1227 are in none of them),
-# and by the English name for an entry without one
+# by zone id, which every client language writes alike (all five checked in
+# the zone-name table of the game client; the split logs hold 1436, 1082 and
+# 635), and by the English name for an entry without one
 ARENA_ZONE_IDS = frozenset(("1436", "1082", "635", "677", "1227"))
 ARENA_ZONES = frozenset((
     "Infinite Archive", "Blackrose Prison", "Dragonstar Arena", "Maelstrom Arena",
