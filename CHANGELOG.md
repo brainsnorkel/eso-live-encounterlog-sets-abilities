@@ -2,22 +2,6 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
-## [0.28.0] - 2026-10-31
-
-### Added
-- For the maintainer (#134): `scripts/release.py` makes the release commit (the version, the changelog section gathered from `changelog.d/` fragments, the design notes rebuilt) and, once its pull request is merged, tags it, pushes the tag and checks the beta it publishes. Changes now add a fragment in `changelog.d/` instead of editing `CHANGELOG.md`, and a check on every pull request asks for one (or the `no-changelog` label). `docs/design.md` is rebuilt in the release commit only, and the release job refuses a tag whose design notes lag the code
-- **Hover a fight's `ⓘ` in the fight list to see who has a possible build issue** (#147): each flagged player, with the class text from their row and the title of each finding, without selecting the fight. The rest of the row shows nothing on hover, as before. Names follow **Hide names**, and a screen reader hears the mark as how many players have a finding.
-- **A `?` after a single Class Mastery** (#149): a character can take two, and the log often shows one late or never. `Templar: Devout Guardian, ?` on the fight pane; hover the `?` for the class's other masteries, the likeliest first for the player's role (counted over a month of trial logs, Bastion of Light last as the log never names it), or click it for the build. The build window's mastery line and the plain-text copy say the same in words
-
-### Changed
-- **The possible-build-issues `ⓘ` is easier to spot** (#140): on the fight pane it now sits right after the player's name, beside the `*` of the first damage, instead of after the class text, and it is drawn bold with a faint glow in the link colour. Rows keep their height. The fight list, the popup and the build window keep the plain `ⓘ`
-- **The build window's Damage dealt section moves above Resources** (#143): under the gear grid the window now reads Damage dealt, Penetration and Critical damage as one block about what the player did with the build, with Resources, the tallest section, last. Each cap section's *Effective* line, the figure that counts, sits in a framed row with a bar at its left edge, and the Damage dealt and Resources headings get the rule the other headings have
-
-### Fixed
-- The *damage taken and healing received* link in the build window, and the death recap's link to the same window, open the fight that window shows (#143). They opened the fight selected in the list, which moves on to each new pull while the app follows the live log
-- **Necromancers' Cycle Unending shows beside the class** (#149): its effect comes from the Necromancer's pets, which the app did not credit to them, so most Necromancers showed Nothing Wasted alone
-- **A mastery found later in a session fills in that session's earlier fights** (#149), so the fights of one session show the same masteries
-
 ## [0.27.0] - 2026-10-31
 
 ### Added

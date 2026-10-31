@@ -1,0 +1,2 @@
+### Added
+- For the maintainer (#134): `scripts/release.py` makes the release commit (the version, the changelog section gathered from `changelog.d/` fragments, the design notes rebuilt) and, once its pull request is merged, tags it, pushes the tag and checks the beta it publishes. Changes now add a fragment in `changelog.d/` instead of editing `CHANGELOG.md`, and a check on every pull request asks for one (or the `no-changelog` label). `docs/design.md` is rebuilt in the release commit only, and the release job refuses a tag whose design notes lag the code
