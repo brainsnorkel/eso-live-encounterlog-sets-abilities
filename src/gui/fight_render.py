@@ -90,6 +90,17 @@ follows the pane's text size, as 'Also died' does, and comes before it.
 Every player's name in it goes through the Hide names mask, and a name
 that picks out no single row ('anon', or a hidden name) is followed by the
 row's role and class; the plain-text copy ends with the same lines.
+
+Right of the header, a small map of where the group stood (issue #148):
+the game's map art cropped to the fight, with the heat of the group's
+positions over it (gui.fight_map), MAP_LINES text lines tall so it follows
+the text size. A fight that crossed maps has a thumbnail per map, side by
+side in the order the group reached them, each smaller so the row stays
+about as wide as two (the maintainer's choice over one thumbnail with a
+'+1 map' note, 2026-11-01). A map the group spent under MAP_MIN_SECONDS on
+has none (the map window still has it). A click opens the map window at
+that map; the hover names the map and the time spent on it. The images'
+alt text says what they show, and the plain-text copy has no map.
 """
 
 import html
@@ -98,6 +109,7 @@ from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
+from map_art import art_path
 from fight_opener import PlayerName, opener_parts
 from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
@@ -140,6 +152,17 @@ MISFORTUNE_HREF = "esolog:misfortune/"
 # + the player's unit id: the '?' after a lone Class Mastery, whose hover
 # gives the likely second; a click opens the build window (issue #149)
 MASTERY_HREF = "esolog:mastery/"
+# + the map's place in the fight's positions: a header thumbnail of where
+# the group stood, which opens the map window at that map (issue #148).
+# The image is map:<place>?px=<edge>&k=<fight>, drawn by the fight view
+MAP_HREF = "esolog:map/"
+MAP_SCHEME = "map"
+MAP_LINES = 9  # a lone thumbnail's height, in the pane's text lines
+MAP_MIN_SECONDS = 3  # a map the group spent less time on has no thumbnail
+MAX_MAP_THUMBS = 4
+MAP_ROW_WIDTH = 1.6  # several thumbnails share about this many lone ones' width
+MAP_MIN_SHARE = 0.5  # ... each at least this share of a lone one's edge
+NO_ART_NOTE = "No map art for {path}: drawn on a plain grid"
 SECOND_MASTERY_CUE = "?"
 SECOND_MASTERY_TITLE = "Second Class Mastery not seen"
 NEVER_LOGGED_NOTE = "never shows in the log"
@@ -510,6 +533,93 @@ def misfortunes_tooltips(entry) -> dict:
     return {f"{MISFORTUNE_HREF}{i}": f"<b>{e(str(name))}</b><br>{e(str(text))}"
             for i, (name, text) in enumerate(getattr(entry, "misfortunes", None) or [])
             if text}
+
+
+def map_href(index) -> str:
+    return f"{MAP_HREF}{index}"
+
+
+def map_index_from_href(href: str) -> Optional[int]:
+    """The map's place in the fight's positions from a thumbnail's href,
+    None for any other href."""
+    if href.startswith(MAP_HREF) and href[len(MAP_HREF):].isdigit():
+        return int(href[len(MAP_HREF):])
+    return None
+
+
+def shown_maps(entry) -> List[Tuple[int, dict]]:
+    """(place, map) of each map with a header thumbnail: those the group
+    spent MAP_MIN_SECONDS or more on, at most MAX_MAP_THUMBS, in the order
+    reached; the one with the most time when none did."""
+    maps = list(getattr(entry, "positions", None) or [])
+    shown = [(i, m) for i, m in enumerate(maps)
+             if (m.get("seconds") or 0) >= MAP_MIN_SECONDS and m.get("xy")]
+    if not shown:
+        sampled = [(i, m) for i, m in enumerate(maps) if m.get("xy")]
+        shown = [max(sampled, key=lambda item: item[1].get("seconds") or 0)] if sampled else []
+    return shown[:MAX_MAP_THUMBS]
+
+
+def map_thumb_px(count: int, line_px: int = 0, base_pt: float = 9.0) -> int:
+    """Edge of each of *count* header thumbnails: MAP_LINES lines of the
+    pane's text for a lone one (*line_px*, else estimated from *base_pt*
+    as the build-issues glyph is), the row of several sharing about
+    MAP_ROW_WIDTH lone ones' width."""
+    line = issues_glyph_px(base_pt, line_px)
+    edge = line * MAP_LINES
+    if count > 1:
+        edge *= max(MAP_MIN_SHARE, MAP_ROW_WIDTH / count)
+    return max(24, int(round(edge)))
+
+
+def map_alt(record: dict, place: int = 0, count: int = 1) -> str:
+    """What a screen reader says for a map thumbnail."""
+    name = str(record.get("name") or "the fight's map")
+    if count > 1:
+        return (f"Map {place + 1} of {count}, {name}, where the group stood for "
+                f"{_fmt_duration(float(record.get('seconds') or 0))}")
+    return f"Map of {name}, where the group stood"
+
+
+# Design: The map's place
+# The header and the map are the two cells of a table of their own, above
+# the players' table, so the map pushes the rows down by the height it has
+# over the header's lines (about 110 px at 9 pt). Floating it right of the
+# header, so the rows rise beside it, does not work in Qt: a paragraph flows
+# round a floated image, but a table is laid out as if the float were not
+# there, and the image is painted over its last cells. A last column in the
+# players' table, one cell spanning every row, does work, but narrows every
+# row by the map's width: in the default 720 px pane the names and pools then
+# wrap onto another line or two in each row, some 290 px over a twelve-player
+# trial, where the header row costs 110 px once.
+def map_strip_html(entry, line_px: int = 0, base_pt: float = 9.0) -> str:
+    """The thumbnails, side by side: one linked image per shown map; ''
+    when the fight has no positions."""
+    shown = shown_maps(entry)
+    if not shown:
+        return ""
+    px = map_thumb_px(len(shown), line_px, base_pt)
+    key = id(entry.positions)
+    cells = "".join(
+        f'<td><a href="{map_href(i)}"><img src="{MAP_SCHEME}:{i}?px={px}&amp;k={key}" '
+        f'width="{px}" height="{px}" alt="{html.escape(map_alt(m, n, len(shown)))}"></a></td>'
+        for n, (i, m) in enumerate(shown))
+    return f"<table cellpadding='0' cellspacing='3'><tr>{cells}</tr></table>"
+
+
+def map_tooltips(entry) -> dict:
+    """Hover text per header thumbnail: the map's name, the time the group
+    spent on it, a note when the app has no art for it, and the click."""
+    e = html.escape
+    tips = {}
+    for i, m in shown_maps(entry):
+        lines = [f"<b>{e(str(m.get('name') or 'Map'))}</b>",
+                 f"Where the group stood: {_fmt_duration(float(m.get('seconds') or 0))} on this map"]
+        if art_path(m.get("path", "")) is None:
+            lines.append(e(NO_ART_NOTE.format(path=m.get("path", ""))))
+        lines.append("<span style='font-size:85%'>Click for a larger map</span>")
+        tips[map_href(i)] = "<br>".join(lines)
+    return tips
 
 
 def pen_crit_href(unit_id) -> str:
@@ -1197,7 +1307,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
             f"<tr><td><b>{e(result_text(result))}</b></td></tr></table>")
     # Not an <h3>: Qt would scale the nested stats by the heading's size
     # adjustment on top of their point size
-    parts += [
+    header = [
         f"<p style='margin:0'>"
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
@@ -1210,7 +1320,16 @@ def render_html(entry, detailed: bool, dark: bool = False,
             (f'<a href="{MISFORTUNE_HREF}{i}" style="text-decoration:none;color:{muted}">'
              f'{e(str(name))}</a>') if text else e(str(name))
             for i, (name, text) in enumerate(misfortunes)) or "none"
-        parts.append(f"<p style='margin:0;color:{muted}'>Misfortunes: {names_html}</p>")
+        header.append(f"<p style='margin:0;color:{muted}'>Misfortunes: {names_html}</p>")
+    # The map of where the group stood (issue #148), right of the header
+    # in a table of its own, so the rows below keep the pane's whole width
+    strip = map_strip_html(entry, line_px, base_pt)
+    if strip:
+        parts.append(f"<table cellpadding='0' cellspacing='0' width='99%'><tr>"
+                     f"<td valign='top'>{''.join(header)}</td>"
+                     f"<td valign='top' align='right'>{strip}</td></tr></table>")
+    else:
+        parts += header
     # No text uptime line: the timeline strip above the pane shows every
     # tracked rule, its label the rule's text (issue #25). The plain copy
     # keeps the line, since text is all a paste can carry

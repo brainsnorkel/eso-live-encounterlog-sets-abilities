@@ -40,6 +40,7 @@ import casts
 import companions
 import fight_opener
 import pen_crit
+import positions
 import resources
 import split_retention
 import trial_result
@@ -1041,6 +1042,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # (the cache's own get, not a lambda over self, which would tie the
         # analyzer in a reference cycle that only the cyclic GC frees)
         self.opener = fight_opener.OpenerRecorder(self.ability_cache.get, DAMAGE_RESULTS)
+        # Where the group stood, once a second of each fight, by map: the
+        # fight pane's map (positions.py, issue #148)
+        self.positions = positions.PositionRecorder()
 
         # Which units each cast struck, for the area rule of the kinds of
         # damage (damage_kinds): shared by the recap recorder, the damage
@@ -1187,6 +1191,10 @@ class ESOLogAnalyzer(ListenerMixin):
             self._handle_player_info(entry)
         elif entry.event_type == "ZONE_CHANGED":
             self._handle_zone_changed(entry)
+        elif entry.event_type == "MAP_CHANGED":
+            # Positions from here on are fractions of this map (positions.py)
+            if len(entry.fields) >= 3:
+                self.positions.map_changed(*entry.fields[:3])
         elif entry.event_type == "BEGIN_CAST":
             if self.current_encounter:
                 self._handle_begin_cast(entry)
@@ -1743,6 +1751,7 @@ class ESOLogAnalyzer(ListenerMixin):
             # The opener's memory starts again (the entry's timestamp is the
             # zone id: the line's own time is its first field)
             self.opener.reset(casts.line_time(entry.original_line))
+            self.positions.zone_changed()
 
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -1829,7 +1838,8 @@ class ESOLogAnalyzer(ListenerMixin):
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
         self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
-        
+        self.positions.begin_combat(entry.timestamp)
+
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
@@ -1864,6 +1874,34 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = self._last_fight_entry
         # The opener stands; what came between the two lines is dropped
         self.opener.resume()
+        self.positions.resume()
+
+    def _note_positions(self, timestamp: int, fields: List[str], source: int,
+                        target: Optional[int]):
+        """A line's unit states for the group's positions (positions.py):
+        the source's at fields[source], the target's at fields[target] when
+        the line has one ('*' is the source again). The samples due are
+        taken first, from the positions the earlier lines left."""
+        recorder = self.positions
+        if recorder.active and timestamp >= recorder.next_tick:
+            recorder.sample(timestamp, self._position_units())
+        count = len(fields)
+        if count > source + 8:
+            recorder.note(fields[source], fields[source + 1], fields[source + 7],
+                          fields[source + 8], timestamp)
+        if target is not None and count > target + 8 and fields[target] != '*':
+            recorder.note(fields[target], fields[target + 1], fields[target + 7],
+                          fields[target + 8], timestamp)
+
+    def _position_units(self) -> List[tuple]:
+        """The unit ids of each group member, for the position samples: the
+        logging player and everyone grouped with them, each with every unit
+        id they came back on (presence.py)."""
+        enc = self.current_encounter
+        if enc is None:
+            return []
+        return [(p.unit_id, p.latest_unit_id, *p.alias_ids)
+                for p in enc.players.values() if p.is_local or p.grouped]
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -1895,6 +1933,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # The opener's pending millisecond settles into the fight before it
         # is built, and a new memory starts (fight_opener)
         self.opener.end_combat(entry.timestamp)
+        self.positions.end_combat(entry.timestamp)
 
         # The living enemies the group hit in the fight's last seconds: if
         # combat starts again at once, they tell whether it is the same fight
@@ -1964,6 +2003,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.werewolf.reset()
         self.casts.reset()
         self.resources.reset()
+        self.positions.reset()
         self.build_issues.reset()
 
     def _handle_trial_init(self, entry: ESOLogEntry):
@@ -2038,6 +2078,9 @@ class ESOLogAnalyzer(ListenerMixin):
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
+            # Where the caster and target stand (positions.py); the entry's
+            # timestamp is 0, the cast's time is its line's
+            self._note_positions(casts.line_time(entry.original_line), entry.fields, 4, 14)
 
             # The opener (fight_opener): every cast names its cast id; a
             # player-side cast at a hostile, or a hostile's at a player-side
@@ -2271,6 +2314,9 @@ class ESOLogAnalyzer(ListenerMixin):
         if not self.current_encounter.in_combat:
             self.current_encounter.in_combat = True
             self.current_encounter.start_time = entry.timestamp
+
+        # Where the source and target stand (positions.py)
+        self._note_positions(entry.timestamp, entry.fields, 7, 17)
 
         # The players' pools in the source and target states, and a gain the
         # row logs (resources.py)
@@ -2583,6 +2629,8 @@ class ESOLogAnalyzer(ListenerMixin):
         # Where <targetUnitState> is replaced with * if the target unit is the same as the source unit (self-cast)
         # Note: entry.fields starts after line_number and event_type, so indices are shifted
         if len(entry.fields) >= 4:
+            # Where the source and target stand (positions.py)
+            self._note_positions(entry.timestamp, entry.fields, 4, 14)
             effect_type = entry.fields[0]  # changeType (GAINED/FADED/UPDATED)
             stack_count = entry.fields[1]  # stackCount
             cast_track_id = entry.fields[2]  # castTrackId
@@ -3211,10 +3259,13 @@ class ESOLogAnalyzer(ListenerMixin):
                 ordered.append(row)
                 ordered.extend(by_owner.get(row['unit_id'], []))
             entry.players = ordered
+        # Where the group stood, by map (positions.py)
+        entry.positions = self.positions.fight_maps(enc.start_time, enc.end_time)
         # Not before the end: this fight's casts are needed once more if it
         # turns out to carry on (see COMBAT_RESUME_MS)
         self.casts.prune_before(enc.start_time)
         self.resources.prune_before(enc.start_time)
+        self.positions.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -3508,10 +3559,9 @@ class ESOLogAnalyzer(ListenerMixin):
                     del self.unit_id_to_handle[old_unit_id]
 
     def _handle_health_regen(self, entry: ESOLogEntry):
-        """Handle HEALTH_REGEN events."""
-        # For now, just log that we're processing health regen events
-        # In the future, this could track health regeneration patterns
-        pass
+        """HEALTH_REGEN: effectiveRegen, <unitState>. Only the unit's
+        position is read (positions.py)."""
+        self._note_positions(entry.timestamp, entry.fields, 1, None)
 
     def _handle_endless_dungeon_begin(self, entry: ESOLogEntry):
         """Handle ENDLESS_DUNGEON_BEGIN events."""

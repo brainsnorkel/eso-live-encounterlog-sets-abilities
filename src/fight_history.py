@@ -14,7 +14,7 @@ class FightHistoryEntry:
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
-                 'zone_id', 'difficulty']
+                 'zone_id', 'difficulty', 'positions']
 
     def __init__(self):
         self.timestamp = ""
@@ -102,6 +102,13 @@ class FightHistoryEntry:
         # player carried them (misfortunes.py); [] for a run without any,
         # None outside a solo dungeon and on an entry built without them
         self.misfortunes = None
+        # Where the group stood, for the fight pane's map: one dict per map
+        # the fight touched, in the order the group first stood on it, with
+        # path (the texture path MAP_CHANGED names, lower case), map_id,
+        # name, xy (the samples, see positions.PositionRecorder.fight_maps),
+        # seconds and first_s; [] when no position was sampled, None on an
+        # entry built without them
+        self.positions = None
 
 
 class FightHistory:

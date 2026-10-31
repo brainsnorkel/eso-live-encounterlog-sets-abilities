@@ -1,0 +1,3856 @@
+{
+ "generated": "2026-10-31T21:01:54+00:00",
+ "source": {
+  "eso_mnf": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Zenimax Online\\The Elder Scrolls Online\\depot\\eso.mnf",
+  "bytes": 50347872,
+  "modified": "2026-10-20T18:12:24"
+ },
+ "webp_quality": 80,
+ "count": 255,
+ "maps": {
+  "alikr/eyeschamber_base": {
+   "names": [
+    "The Eye's Chamber"
+   ],
+   "ids": [
+    "658"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57328,
+   "tiles_sha1": "0f9987e2c56e78e850ba0f80f031537c6a94a983"
+  },
+  "alikr/guardiansorbit_base": {
+   "names": [
+    "The Guardian's Orbit"
+   ],
+   "ids": [
+    "659"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 46788,
+   "tiles_sha1": "aeb831cd2e5f2d546e8bd730a76308ab4b4bab6f"
+  },
+  "alikr/volenfell_base": {
+   "names": [
+    "Volenfell"
+   ],
+   "ids": [
+    "3"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 68446,
+   "tiles_sha1": "f716b8633e68eb15f549a23c67b06066477ae42c"
+  },
+  "alikr/volenfell_pledge_base": {
+   "names": [
+    "Volenfell"
+   ],
+   "ids": [
+    "732"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53040,
+   "tiles_sha1": "971be39c2bcf0044472049125f4264fa07d3a24e"
+  },
+  "apocrypha/ia2_firemap": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2566"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 178994,
+   "tiles_sha1": "59485345a4b6ee7c17668e77bbe7daa7b8046169"
+  },
+  "apocrypha/ia2_icemap": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2567"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 154030,
+   "tiles_sha1": "939f284b3126fdaa93b6ceec3faf82c42908cd17"
+  },
+  "apocrypha/u40_tomehold_boss1": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2418"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 89978,
+   "tiles_sha1": "d4d7121c0b32d109f72641398225d15bcb22c902"
+  },
+  "apocrypha/u40_tomehold_boss2": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2419"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 117488,
+   "tiles_sha1": "29cefac05cb0eadcd76a468b5299ca1437ef8ca2"
+  },
+  "apocrypha/u40_tomehold_bundle1": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2408"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 103464,
+   "tiles_sha1": "31f5a09abab6216fe1ec0fe0f2ac9ae19472064e"
+  },
+  "apocrypha/u40_tomehold_bundle2": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2410"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 72166,
+   "tiles_sha1": "0deb8582384360041cd58d05cac2d6b37fb46ee9"
+  },
+  "apocrypha/u40_tomehold_bundle2b": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2411"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63200,
+   "tiles_sha1": "7b40a61e3920e0fedf88956d77053c9a53da4459"
+  },
+  "apocrypha/u40_tomehold_bundle3": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2414"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 103868,
+   "tiles_sha1": "750ca03ce7eeaa7cc358fc1ec84591b07d4689ba"
+  },
+  "apocrypha/u40_tomehold_bundle4": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2415"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 112956,
+   "tiles_sha1": "47e5ee51e9be168c0072659e34bfb87956f58db3"
+  },
+  "apocrypha/u40_tomehold_bundle5": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2416"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 115134,
+   "tiles_sha1": "06d72cccf1d48ed35a12f55c5f6c29dc83d990d0"
+  },
+  "apocrypha/u40_tomehold_bundle6": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2417"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 56142,
+   "tiles_sha1": "6fd40b122433ef0b07d7acba506be9bdaebb57b8"
+  },
+  "apocrypha/u40_tomehold_secret1": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2420"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 42160,
+   "tiles_sha1": "5fcb2f97f3bb7f0f4050b70cca95a17f75e2cf48"
+  },
+  "apocrypha/u40_tomehold_secret2": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2421"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 91104,
+   "tiles_sha1": "7ca6c546db8805cfb13ea38587ad6457f69433e7"
+  },
+  "apocrypha/u40_tomehold_secret3": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2422"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 86580,
+   "tiles_sha1": "f66b4a09ba4011e5c15506d6742b66cf8d1d2c4c"
+  },
+  "apocrypha/u40_tomehold_secret4": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2423"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 70158,
+   "tiles_sha1": "261aea08716b17ddec3ddadfafbc2f1c96835dc4"
+  },
+  "apocrypha/u40_tomehold_secret5": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2424"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 85102,
+   "tiles_sha1": "8d27fed0762c6fd9be0d7eae3d287ceefd020470"
+  },
+  "apocrypha/u40_tomehold_starterarea": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2407"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 71464,
+   "tiles_sha1": "c163e11aa894b75638b8ab3fcce5c4e26710a632"
+  },
+  "apocrypha/u40_tomehold_theater1": {
+   "names": [
+    "Infinite Archive"
+   ],
+   "ids": [
+    "2425"
+   ],
+   "zones": [
+    "Infinite Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 75560,
+   "tiles_sha1": "ce5890aeb7cd9e403be6024c870f451b996257f1"
+  },
+  "auridon/thebanishedcells_base": {
+   "names": [
+    "The Banished Cells II"
+   ],
+   "ids": [
+    "1148"
+   ],
+   "zones": [
+    "The Banished Cells II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 42992,
+   "tiles_sha1": "d8f13fdf2916f22fe9934df5c9e0032cc37a0a0e"
+  },
+  "bangkorai/blackhearthavenarea1_base": {
+   "names": [
+    "Blackheart Haven"
+   ],
+   "ids": [
+    "347"
+   ],
+   "zones": [
+    "Blackheart Haven"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60560,
+   "tiles_sha1": "4c1ab55426e3d38e5eae41625e78e7ecf734b99b"
+  },
+  "bangkorai/blackhearthavenarea2_base": {
+   "names": [
+    "Blackheart Haven"
+   ],
+   "ids": [
+    "346"
+   ],
+   "zones": [
+    "Blackheart Haven"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 44814,
+   "tiles_sha1": "72da13e06f5b2b3043cc953a883c94cb33e94d5b"
+  },
+  "bangkorai/blackhearthavenarea3_base": {
+   "names": [
+    "Blackheart Haven"
+   ],
+   "ids": [
+    "345"
+   ],
+   "zones": [
+    "Blackheart Haven"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 44358,
+   "tiles_sha1": "33ed8234524cc4160e9abc3b63d7a149c353449b"
+  },
+  "bangkorai/blackhearthavenarea4_base": {
+   "names": [
+    "Blackheart Haven"
+   ],
+   "ids": [
+    "344"
+   ],
+   "zones": [
+    "Blackheart Haven"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51320,
+   "tiles_sha1": "5935d1a2e219bcb923c733d24ffdae80a7202402"
+  },
+  "bangkorai/secret_tunnel_base": {
+   "names": [
+    "Secret Tunnel"
+   ],
+   "ids": [
+    "790"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 58188,
+   "tiles_sha1": "e525fc3f760990735ebc7e504ec6a1e6dc8abb4b"
+  },
+  "bangkorai/the_guardians_skull_base": {
+   "names": [
+    "The Guardians Skull"
+   ],
+   "ids": [
+    "791"
+   ],
+   "zones": [
+    "Volenfell"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50328,
+   "tiles_sha1": "d09f00fc53a50e73fc924b5277131821c4940ab8"
+  },
+  "bangkorai/ui_map_fanglairext_base": {
+   "names": [
+    "Fang Lair"
+   ],
+   "ids": [
+    "1436"
+   ],
+   "zones": [
+    "Fang Lair"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 103064,
+   "tiles_sha1": "e39facb5f8a639134af3405b04cf680bf5d2d298"
+  },
+  "bangkorai/unhallowedgravemap001": {
+   "names": [
+    "The Accursed Canyon"
+   ],
+   "ids": [
+    "1765"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63202,
+   "tiles_sha1": "edb93c9388ece18de566abdb53147fec3f9f8930"
+  },
+  "bangkorai/unhallowedgravemap001b": {
+   "names": [
+    "Forsaken Ruins"
+   ],
+   "ids": [
+    "1795"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 56404,
+   "tiles_sha1": "c019db957072a91afe16cea090a0988b8e2713f3"
+  },
+  "bangkorai/unhallowedgravemap001c": {
+   "names": [
+    "Halls of Banishment"
+   ],
+   "ids": [
+    "1796"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59766,
+   "tiles_sha1": "521bdd40f97053576974cbe1149c284186082da1"
+  },
+  "bangkorai/unhallowedgravemap002": {
+   "names": [
+    "The Kiln"
+   ],
+   "ids": [
+    "1766"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 73614,
+   "tiles_sha1": "c3f33813e88bf3b5415148d0dfb0738dd10cc6a9"
+  },
+  "bangkorai/unhallowedgravemap003": {
+   "names": [
+    "Pit of Sorrows"
+   ],
+   "ids": [
+    "1767"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 71440,
+   "tiles_sha1": "0d0771f2e99342768413f782227729353cd43b1d"
+  },
+  "bangkorai/unhallowedgravemap004": {
+   "names": [
+    "Deathly Fissure"
+   ],
+   "ids": [
+    "1768"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 65066,
+   "tiles_sha1": "02134d8f48b0e6a553b960c8e7c0c8dba9fa1d43"
+  },
+  "bangkorai/unhallowedgravemap005": {
+   "names": [
+    "Voria's Sanctum"
+   ],
+   "ids": [
+    "1769"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 73658,
+   "tiles_sha1": "aab83a16a380e90944a7b8357c83585524e15b54"
+  },
+  "bangkorai/unhallowedgravesecret2map": {
+   "names": [
+    "Clifftop Laboratory"
+   ],
+   "ids": [
+    "1797"
+   ],
+   "zones": [
+    "Unhallowed Grave"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 83534,
+   "tiles_sha1": "06997891130c39ae890c0b937e52634166e0be28"
+  },
+  "blackwood/rg_map_inside_001": {
+   "names": [
+    "Xanmeer Corridors"
+   ],
+   "ids": [
+    "2012"
+   ],
+   "zones": [
+    "Rockgrove"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59948,
+   "tiles_sha1": "945d4cdd08ead5fc51e3460fc2edcb96e6f1b8a8"
+  },
+  "blackwood/tdc_map_boss3rooms_001": {
+   "names": [
+    "The Dread Cellar"
+   ],
+   "ids": [
+    "2029"
+   ],
+   "zones": [
+    "The Dread Cellar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 49458,
+   "tiles_sha1": "b3cc8e7602ff4a39e6c492326489bbb9e7f688ea"
+  },
+  "blackwood/tdc_map_inside_001": {
+   "names": [
+    "The Dread Cellar"
+   ],
+   "ids": [
+    "2024"
+   ],
+   "zones": [
+    "The Dread Cellar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59068,
+   "tiles_sha1": "aa669f1aa9f04d9bdbd66bd4c4866ce16ba7f1f7"
+  },
+  "blackwood/tdc_map_outside_001": {
+   "names": [
+    "The Dread Cellar"
+   ],
+   "ids": [
+    "2023"
+   ],
+   "zones": [
+    "The Dread Cellar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 81664,
+   "tiles_sha1": "ba4a517ad2f77306ca4642b8fc8046cb602c1ef8"
+  },
+  "blackwood/u30_rg_map_outside_001": {
+   "names": [
+    "Ancient City of Rockgrove"
+   ],
+   "ids": [
+    "2004"
+   ],
+   "zones": [
+    "Rockgrove"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 79384,
+   "tiles_sha1": "02fb7edb73a25dd003f0d83ef286a7a080710dc0"
+  },
+  "blackwood/u30_rg_map_outside_002": {
+   "names": [
+    "Tower of the Five Crimes"
+   ],
+   "ids": [
+    "2005"
+   ],
+   "zones": [
+    "Rockgrove"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 102124,
+   "tiles_sha1": "7761d7bd30105d1eefe4bd2e967b7e7e077cb41f"
+  },
+  "clockwork/ui_map_asylumsanctorum001_base": {
+   "names": [
+    "Asylum Atrium"
+   ],
+   "ids": [
+    "1391"
+   ],
+   "zones": [
+    "Asylum Sanctorium"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50584,
+   "tiles_sha1": "f5f91a5173f86b2bbcea8ef0b1efb48d2bc50175"
+  },
+  "clockwork/ui_map_asylumsanctorum002_base": {
+   "names": [
+    "Asylum Atrium Upper Level"
+   ],
+   "ids": [
+    "1392"
+   ],
+   "zones": [
+    "Asylum Sanctorium"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50380,
+   "tiles_sha1": "c6adda3be5990a935829fd13d12d154b2dc30171"
+  },
+  "coldharbor/vaultsofmadness1_base": {
+   "names": [
+    "Vaults of Madness"
+   ],
+   "ids": [
+    "454"
+   ],
+   "zones": [
+    "Vaults of Madness"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50214,
+   "tiles_sha1": "7aa03854cc85f538684c351a072f6fbff720b754"
+  },
+  "coldharbor/vaultsofmadness2_base": {
+   "names": [
+    "Vaults of Madness"
+   ],
+   "ids": [
+    "455"
+   ],
+   "zones": [
+    "Vaults of Madness"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50214,
+   "tiles_sha1": "7aa03854cc85f538684c351a072f6fbff720b754"
+  },
+  "craglorn/aetherianarchivebottom_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "646"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51160,
+   "tiles_sha1": "4be86f7e488f9d935328b10e3a0d108f344e6a5b"
+  },
+  "craglorn/aetherianarchiveend_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "640"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48192,
+   "tiles_sha1": "9725e5a254acd9f62284378766d788e6dc485824"
+  },
+  "craglorn/aetherianarchiveislanda_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "642"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57434,
+   "tiles_sha1": "809a5b2f7ddeefdc8a834ac83579c057c75f0968"
+  },
+  "craglorn/aetherianarchiveislandb_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "644"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50886,
+   "tiles_sha1": "d7f72c7280b881c7fc60c9b9eedc557b37ae6d88"
+  },
+  "craglorn/aetherianarchiveislandc_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "641"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 47214,
+   "tiles_sha1": "43d3b291137076ace9df29a4fe12bcf0adfa84c2"
+  },
+  "craglorn/aetherianarchivemiddle_base": {
+   "names": [
+    "Aetherian Archive"
+   ],
+   "ids": [
+    "645"
+   ],
+   "zones": [
+    "Aetherian Archive"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57032,
+   "tiles_sha1": "3db87331fdd4d8d1c1db90987be3be6b61c2c318"
+  },
+  "craglorn/dragonstararena01_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "683"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 65110,
+   "tiles_sha1": "39e7e0430f7fb9fe8ff65ffa1e9b48e3c1170ada"
+  },
+  "craglorn/dragonstararena02_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "684"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 82066,
+   "tiles_sha1": "ebcc387813e318eafcb9da403fc190420f11e852"
+  },
+  "craglorn/dragonstararena03_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "685"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 67430,
+   "tiles_sha1": "50ac5a7a9db24191d66ecc2ee49733e29c880b92"
+  },
+  "craglorn/dragonstararena04_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "686"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 65660,
+   "tiles_sha1": "5bbbb2a24d2af80a812b9fbc106504c943afe5bf"
+  },
+  "craglorn/dragonstararena05_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "687"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 70578,
+   "tiles_sha1": "f5ecf8e792c2a7a28783953e22bfdcb10e3fa460"
+  },
+  "craglorn/dragonstararena06_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "688"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 56340,
+   "tiles_sha1": "d1fb42bfc361701f9a8ccad11de961dbeabeb5af"
+  },
+  "craglorn/dragonstararena07_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "689"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64136,
+   "tiles_sha1": "ff6222b6dcac739d779037161177dcc43992d132"
+  },
+  "craglorn/dragonstararena08_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "690"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64490,
+   "tiles_sha1": "332dc73d38c60ffb0b5fe8887a4ffc0b82562909"
+  },
+  "craglorn/dragonstararena09_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "691"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 61084,
+   "tiles_sha1": "ac7f4a1ea3b5e0494ab749ed0d6564196515e130"
+  },
+  "craglorn/dragonstararena09crypt_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "681"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 67190,
+   "tiles_sha1": "5b29b776d58be440eb2d0b717b8831aac48445a9"
+  },
+  "craglorn/dragonstararena10_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "692"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64804,
+   "tiles_sha1": "b45ca50586f4287f279b1fdd8ee27a57a54022c8"
+  },
+  "craglorn/dragonstararenavault_base": {
+   "names": [
+    "Dragonstar Arena"
+   ],
+   "ids": [
+    "708"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 43736,
+   "tiles_sha1": "0916c74f445dddf7d15e641db852d81a881b1e16"
+  },
+  "craglorn/gladiatorsassembly_base": {
+   "names": [
+    "Gladiator's Assembly"
+   ],
+   "ids": [
+    "682"
+   ],
+   "zones": [
+    "Dragonstar Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 44098,
+   "tiles_sha1": "030164de72db6051117f6c10684015fd0531de47"
+  },
+  "craglorn/helracitadel_base": {
+   "names": [
+    "Hel Ra Citadel"
+   ],
+   "ids": [
+    "614"
+   ],
+   "zones": [
+    "Hel Ra Citadel"
+   ],
+   "grid": 5,
+   "px": 1280,
+   "bytes": 145682,
+   "tiles_sha1": "937d110fae188b558cf7d0564753fb62b88adbf9"
+  },
+  "craglorn/helracitadelentry_base": {
+   "names": [
+    "Hel Ra Citadel"
+   ],
+   "ids": [
+    "615"
+   ],
+   "zones": [
+    "Hel Ra Citadel"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48944,
+   "tiles_sha1": "0bac78722d73b549ed94fd8e3321d0d5534b1f1a"
+  },
+  "craglorn/helracitadelhallofwarrior_base": {
+   "names": [
+    "Hel Ra Hall of the Warrior"
+   ],
+   "ids": [
+    "616"
+   ],
+   "zones": [
+    "Hel Ra Citadel"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 42762,
+   "tiles_sha1": "6306fcbe85f597f1f48bb764b0e03096b1c55f07"
+  },
+  "craglorn/trl_so_map01_base": {
+   "names": [
+    "Sanctum Ophidia"
+   ],
+   "ids": [
+    "704"
+   ],
+   "zones": [
+    "Sanctum Ophidia"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50788,
+   "tiles_sha1": "f000b5741d8a5d9d07e4a598449b5de7e2d43f2b"
+  },
+  "craglorn/trl_so_map02_base": {
+   "names": [
+    "Sanctum Ophidia"
+   ],
+   "ids": [
+    "705"
+   ],
+   "zones": [
+    "Sanctum Ophidia"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50788,
+   "tiles_sha1": "f000b5741d8a5d9d07e4a598449b5de7e2d43f2b"
+  },
+  "craglorn/trl_so_map03_base": {
+   "names": [
+    "Sanctum Ophidia"
+   ],
+   "ids": [
+    "706"
+   ],
+   "zones": [
+    "Sanctum Ophidia"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 52314,
+   "tiles_sha1": "fae27a46ea3c9172990237e95e80bad5309ad885"
+  },
+  "craglorn/ui_map_bloodrootext1_base": {
+   "names": [
+    "Jerall Cleft"
+   ],
+   "ids": [
+    "1307"
+   ],
+   "zones": [
+    "Bloodroot Forge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 72994,
+   "tiles_sha1": "249c659c33d6da81e0ee86e9807ed7297388c839"
+  },
+  "craglorn/ui_map_bloodrootint1_base": {
+   "names": [
+    "Sanguinary Veins"
+   ],
+   "ids": [
+    "1308"
+   ],
+   "zones": [
+    "Bloodroot Forge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57272,
+   "tiles_sha1": "58b4ba55c3f1a4c5ff1e3d5daaab64eb444ad316"
+  },
+  "craglorn/ui_map_bloodrootint2_base": {
+   "names": [
+    "Bloodroot Forge"
+   ],
+   "ids": [
+    "1309"
+   ],
+   "zones": [
+    "Bloodroot Forge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 49482,
+   "tiles_sha1": "e8dde649d789867da81c3c6ab26e1e63a4437571"
+  },
+  "craglorn/ui_map_falkreathsdemise_b_base": {
+   "names": [
+    "Falkreath Hold"
+   ],
+   "ids": [
+    "1323"
+   ],
+   "zones": [
+    "Falkreath Hold"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 52572,
+   "tiles_sha1": "b76a505bd8f3e54e0225a635a92dc1b410e6647f"
+  },
+  "craglorn/ui_map_falkreathsdemise_base": {
+   "names": [
+    "Falkreath Hold"
+   ],
+   "ids": [
+    "1321"
+   ],
+   "zones": [
+    "Falkreath Hold"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 86672,
+   "tiles_sha1": "03f0f07316f3f7b3ec5cbe61c4a120e60737f2a2"
+  },
+  "craglorn/ui_map_falkreathsdemise_i_base": {
+   "names": [
+    "Falkreath Hold"
+   ],
+   "ids": [
+    "1322"
+   ],
+   "zones": [
+    "Falkreath Hold"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 47490,
+   "tiles_sha1": "fb9833096b5573840e4369f0c25b721f9b4d7c2b"
+  },
+  "cyrodiil/wgtbattlemage_base": {
+   "names": [
+    "Imperial Battlemage Quarters"
+   ],
+   "ids": [
+    "914"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 58940,
+   "tiles_sha1": "6318d72b07e7de183dd24a4ab6afcb6ca2fcad40"
+  },
+  "cyrodiil/wgtgreenemporerway_base": {
+   "names": [
+    "Green Emperor Way"
+   ],
+   "ids": [
+    "908"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60104,
+   "tiles_sha1": "745a058c8bc9b3d649e123dcd137a970d1139c06"
+  },
+  "cyrodiil/wgtimperialguardquarters_base": {
+   "names": [
+    "Imperial Guard Quarters"
+   ],
+   "ids": [
+    "910"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 62090,
+   "tiles_sha1": "b189a35d9ef83003ec05a5884262444a06544b16"
+  },
+  "cyrodiil/wgtimperialthroneroom_base": {
+   "names": [
+    "Imperial Throne Room"
+   ],
+   "ids": [
+    "909"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 55708,
+   "tiles_sha1": "f908b987109dd4f9746b96d4701d3401f2b9a862"
+  },
+  "cyrodiil/wgtlibraryhall_base": {
+   "names": [
+    "Lower Elder Scrolls Library"
+   ],
+   "ids": [
+    "911"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60404,
+   "tiles_sha1": "b0be953c0810f68286daa22203ee3e198cf13578"
+  },
+  "cyrodiil/wgtlibrarymain_base": {
+   "names": [
+    "Lower Elder Scrolls Library"
+   ],
+   "ids": [
+    "912"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 58770,
+   "tiles_sha1": "3547cb433b8a9be7ff161e2947ff3e54fbc12c50"
+  },
+  "cyrodiil/wgtpalacesewers_base": {
+   "names": [
+    "Palace Sewers"
+   ],
+   "ids": [
+    "907"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 47334,
+   "tiles_sha1": "7cc0cb8492110cee3ee84317d28f8ad48adc073d"
+  },
+  "cyrodiil/wgtpinnacle_base": {
+   "names": [
+    "White-Gold Tower Pinnacle"
+   ],
+   "ids": [
+    "917"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48780,
+   "tiles_sha1": "d7baf99c4dcb803ff381cec7d92ed0bf69d774c8"
+  },
+  "cyrodiil/wgtpinnacleboss_base": {
+   "names": [
+    "White-Gold Tower Pinnacle"
+   ],
+   "ids": [
+    "918"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 49536,
+   "tiles_sha1": "0bc28f82b9286cc472a7c80b9881ca736b1ef708"
+  },
+  "cyrodiil/wgtregentsquarters_base": {
+   "names": [
+    "Imperial Regent's Quarters"
+   ],
+   "ids": [
+    "916"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57362,
+   "tiles_sha1": "316cfe04629863a93aee7d7ff615947649ee6ff7"
+  },
+  "cyrodiil/wgtvoid1_base": {
+   "names": [
+    "Shattered Void"
+   ],
+   "ids": [
+    "913"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 49950,
+   "tiles_sha1": "4102102e0d67ae685d2e6d5ad12611e2e772b41b"
+  },
+  "cyrodiil/wgtvoid2_base": {
+   "names": [
+    "Shattered Void"
+   ],
+   "ids": [
+    "915"
+   ],
+   "zones": [
+    "White-Gold Tower"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 46178,
+   "tiles_sha1": "b952eaead2008bb650df4dc99fdbb07aa1aa1b7b"
+  },
+  "darkbrotherhood/bdvilla_boss3map": {
+   "names": [
+    "Black Drake Athenaeum"
+   ],
+   "ids": [
+    "1876"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66886,
+   "tiles_sha1": "82cb7aa7d22ce1fc333fb528128d86c328387ce2"
+  },
+  "darkbrotherhood/bdvilla_map2ext2": {
+   "names": [
+    "Flooded Gardens"
+   ],
+   "ids": [
+    "1874"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 105054,
+   "tiles_sha1": "bd7213773b6157335957d1fbee52f75e73773b65"
+  },
+  "darkbrotherhood/bdvilla_map3int1": {
+   "names": [
+    "Grand Archive"
+   ],
+   "ids": [
+    "1875"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63884,
+   "tiles_sha1": "0f80b684594abea8dbf3d211ee77c8d36cfd75bf"
+  },
+  "darkbrotherhood/bdvilla_mapsecret1": {
+   "names": [
+    "Luminous Grotto"
+   ],
+   "ids": [
+    "1877"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59112,
+   "tiles_sha1": "3840bc2dc2496b062fab9d711a6f8a352ceb104a"
+  },
+  "darkbrotherhood/bdvilla_mapsecret2": {
+   "names": [
+    "Glowing Cavern"
+   ],
+   "ids": [
+    "1879"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 55774,
+   "tiles_sha1": "5e81e2b7e320c14860950ed9cc2b49bd1e5d3de3"
+  },
+  "darkbrotherhood/bdvilla_mapsecret3": {
+   "names": [
+    "Glittering Den"
+   ],
+   "ids": [
+    "1880"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66238,
+   "tiles_sha1": "ed00ce64f2e594faea3b6741affedd3ff30a186e"
+  },
+  "darkbrotherhood/bdvillamap1ext1": {
+   "names": [
+    "Decaying Vineyards",
+    "Estate Grounds"
+   ],
+   "ids": [
+    "1873",
+    "1899"
+   ],
+   "zones": [
+    "Black Drake Villa"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 85598,
+   "tiles_sha1": "d49acec09d0516cf6dcaae5ea04f84ab46af1ba9"
+  },
+  "darkbrotherhood/ui_map_domdepthsofmal2_base": {
+   "names": [
+    "Ruins of Garlas Malatar"
+   ],
+   "ids": [
+    "1597"
+   ],
+   "zones": [
+    "Depths of Malatar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 70352,
+   "tiles_sha1": "7dd724fa48056581ed78efa62d588e863e428471"
+  },
+  "darkbrotherhood/ui_map_domdepthsofmal3_base": {
+   "names": [
+    "Halls of Garlas Malatar"
+   ],
+   "ids": [
+    "1598"
+   ],
+   "zones": [
+    "Depths of Malatar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 52960,
+   "tiles_sha1": "c7302a662bf24a7dc34d3776189134602814470e"
+  },
+  "darkbrotherhood/ui_map_domdepthsofmal4_base": {
+   "names": [
+    "Cove of the Guiding Light"
+   ],
+   "ids": [
+    "1599"
+   ],
+   "zones": [
+    "Depths of Malatar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 71670,
+   "tiles_sha1": "fb64e6aa90f428c2b85620f30f2618b4330ee379"
+  },
+  "darkbrotherhood/ui_map_domdepthsofmal5_base": {
+   "names": [
+    "Colored Rooms"
+   ],
+   "ids": [
+    "1600"
+   ],
+   "zones": [
+    "Depths of Malatar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 81564,
+   "tiles_sha1": "75892cbff0189717e2c1da6e41b3ac8334c6d55e"
+  },
+  "darkbrotherhood/ui_map_domdepthsofmal_base": {
+   "names": [
+    "Depths of Malatar"
+   ],
+   "ids": [
+    "1596"
+   ],
+   "zones": [
+    "Depths of Malatar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59710,
+   "tiles_sha1": "b5554d119a19ef0f478fb074ee86359520e8f1bc"
+  },
+  "deadlands/u42tri_lucentcitmap001": {
+   "names": [
+    "Lucent Citadel"
+   ],
+   "ids": [
+    "2552"
+   ],
+   "zones": [
+    "Lucent Citadel"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64696,
+   "tiles_sha1": "d4a0671944f849d886f301aa1f75bdb641109865"
+  },
+  "deshaan/cauldronmapboss5": {
+   "names": [
+    "The Cauldron"
+   ],
+   "ids": [
+    "2042"
+   ],
+   "zones": [
+    "The Cauldron"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 69184,
+   "tiles_sha1": "a6bf52f1cad3b2cf83f4d84beac13219274fa7e2"
+  },
+  "deshaan/darkshadecaverns_base": {
+   "names": [
+    "Darkshade Caverns I",
+    "Darkshade Caverns II"
+   ],
+   "ids": [
+    "1152",
+    "118"
+   ],
+   "zones": [
+    "Darkshade Caverns I",
+    "Darkshade Caverns II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 41926,
+   "tiles_sha1": "996927718b3df240f868a19d54fbf304f4c7a212"
+  },
+  "deshaan/darkshadecavernsheroic_base": {
+   "names": [
+    "Darkshade Caverns"
+   ],
+   "ids": [
+    "330"
+   ],
+   "zones": [
+    "Darkshade Caverns II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 44230,
+   "tiles_sha1": "c6ec05fb856be65a2a50e583f54ce7858d9d706d"
+  },
+  "dungeons/osscage_boss3map005": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2690"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 107024,
+   "tiles_sha1": "2d96dfc6233be9dac3c351ff8d4283840905a88d"
+  },
+  "dungeons/osscage_entranceroomsmap001": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2686"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 93386,
+   "tiles_sha1": "646d3f6e0bece00d2cc43ef62aee66727b97dd9b"
+  },
+  "dungeons/osscage_secret1map006": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2691"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 95152,
+   "tiles_sha1": "ba8adaf746765d064d3a0a33fe16c73efca10a58"
+  },
+  "dungeons/osscage_section1map002": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2687"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 97036,
+   "tiles_sha1": "f327b5f9a1db0258b948ffb3dcf334ac276fa411"
+  },
+  "dungeons/osscage_section2map003": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2688"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 100968,
+   "tiles_sha1": "e724ad92191098386bb27dc8f13ca730cc1ca6ab"
+  },
+  "dungeons/osscage_section3map004": {
+   "names": [
+    "Ossein Cage"
+   ],
+   "ids": [
+    "2689"
+   ],
+   "zones": [
+    "Ossein Cage"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 92656,
+   "tiles_sha1": "d7a07cb11b5dea5d92b76ff5027ec6f6e72a0e7e"
+  },
+  "dungeons/u47hajxulsection1map": {
+   "names": [
+    "Naj-Caldeesh"
+   ],
+   "ids": [
+    "2696"
+   ],
+   "zones": [
+    "Naj-Caldeesh"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 98224,
+   "tiles_sha1": "8bce82c7ef79a93f7b0921ef0cae11c493f45a8e"
+  },
+  "dungeons/u47hajxulsection2map": {
+   "names": [
+    "Naj-Caldeesh"
+   ],
+   "ids": [
+    "2697"
+   ],
+   "zones": [
+    "Naj-Caldeesh"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 96416,
+   "tiles_sha1": "f6223b63a667bfe56543cfd9a76480b8543b5eef"
+  },
+  "dungeons/u47hajxulsection3map": {
+   "names": [
+    "Naj-Caldeesh"
+   ],
+   "ids": [
+    "2698"
+   ],
+   "zones": [
+    "Naj-Caldeesh"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 114980,
+   "tiles_sha1": "2cabb9611dd424177bff6a6e7d59bda2b7ac6fd3"
+  },
+  "dungeons/u49_avz_hub_001": {
+   "names": [
+    "Starlit Plaza"
+   ],
+   "ids": [
+    "2771"
+   ],
+   "zones": [
+    "Night Market"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 164140,
+   "tiles_sha1": "a38791f4eee8fcb7b3d3f80d2776414a64c86144"
+  },
+  "dungeons/u49_avz_parch_001": {
+   "names": [
+    "The Parch"
+   ],
+   "ids": [
+    "2772"
+   ],
+   "zones": [
+    "Night Market"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 169160,
+   "tiles_sha1": "072d320f2ee41c73faed09d8af4a0efcc372216f"
+  },
+  "dungeons/u49_avz_parchboss01": {
+   "names": [
+    "Timeless Wallow"
+   ],
+   "ids": [
+    "2795"
+   ],
+   "zones": [
+    "Timeless Wallow"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 156164,
+   "tiles_sha1": "2dcd29fbd4c0f9b738cdb26cb1246e9bb157ec42"
+  },
+  "dungeons/u49_avz_skitter_001": {
+   "names": [
+    "Skittering Precinct"
+   ],
+   "ids": [
+    "2773"
+   ],
+   "zones": [
+    "Night Market"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 148640,
+   "tiles_sha1": "185052b45913fb8c51acd008e5276ce64da9926c"
+  },
+  "dungeons/u49_avz_sorrow_001": {
+   "names": [
+    "Sorrow's Friend"
+   ],
+   "ids": [
+    "2774"
+   ],
+   "zones": [
+    "Night Market"
+   ],
+   "grid": 5,
+   "px": 1280,
+   "bytes": 242318,
+   "tiles_sha1": "bb51f0f038ba50dc7ed3088d15aec1d789fa5517"
+  },
+  "dungeons/u49_avz_trialboss01": {
+   "names": [
+    "Opulent Ordeal"
+   ],
+   "ids": [
+    "2796"
+   ],
+   "zones": [
+    "Opulent Ordeal"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 157156,
+   "tiles_sha1": "2b7bf0ba76279883b58462f2da9aeed7e1abb5d1"
+  },
+  "dungeons/ui_maps_u49_avsf_ib_int": {
+   "names": [
+    "Mournful Catacomb"
+   ],
+   "ids": [
+    "2797"
+   ],
+   "zones": [
+    "Mournful Catacomb"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 36808,
+   "tiles_sha1": "0016f573141a5952aaa5d610eb39ca9388af0dd4"
+  },
+  "dungeons/ui_maps_u49_avsp_ib_int": {
+   "names": [
+    "Gossamer Crypt"
+   ],
+   "ids": [
+    "2798"
+   ],
+   "zones": [
+    "Gossamer Crypt"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45796,
+   "tiles_sha1": "16af08e41eaff4ab85d2320bcf9c3d8ec9942050"
+  },
+  "eastmarch/direfrostkeep_base": {
+   "names": [
+    "Direfrost Keep"
+   ],
+   "ids": [
+    "348"
+   ],
+   "zones": [
+    "Direfrost Keep"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 43356,
+   "tiles_sha1": "e31dc73524477a09f63ec5ae7d272f8e10eab989"
+  },
+  "eastmarch/direfrostkeepsummit_base": {
+   "names": [
+    "Direfrost Keep"
+   ],
+   "ids": [
+    "162"
+   ],
+   "zones": [
+    "Direfrost Keep"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51378,
+   "tiles_sha1": "09527386d5cb78c3aef1e00155de5b17d47337ed"
+  },
+  "elsweyr/dsr_v_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2181"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 95110,
+   "tiles_sha1": "c84bc8a082f3c52347db9310407bb7545520af02"
+  },
+  "elsweyr/sunspirehall001_base": {
+   "names": [
+    "Sunspire Temple Vestibule"
+   ],
+   "ids": [
+    "1650"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 46086,
+   "tiles_sha1": "d1cabf5b3708cb234d836640ceec472966ebe0b6"
+  },
+  "elsweyr/sunspirehall002_base": {
+   "names": [
+    "Chancel of Alkosh Vestibule"
+   ],
+   "ids": [
+    "1651"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51560,
+   "tiles_sha1": "ed75f0fbf90690175b0caa5c03d685a57121c827"
+  },
+  "elsweyr/sunspirehall003_base": {
+   "names": [
+    "Shrine of Jode Vestibule"
+   ],
+   "ids": [
+    "1652"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48318,
+   "tiles_sha1": "c3ea4d02f8cd4d8183ebea9f6c92e1058d97dc37"
+  },
+  "elsweyr/sunspirehall004_base": {
+   "names": [
+    "Shrine of Jone Vestibule"
+   ],
+   "ids": [
+    "1653"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 46478,
+   "tiles_sha1": "13cb28146d16ed0671a27178c76db559e42f674e"
+  },
+  "elsweyr/sunspireoverworld_base": {
+   "names": [
+    "Sunspire Temple Grounds"
+   ],
+   "ids": [
+    "1649"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 102808,
+   "tiles_sha1": "fd0b67145b7c08a4f13eed58a0ce0f96c67bfd7d"
+  },
+  "elsweyr/sunspireroom001_base": {
+   "names": [
+    "Shrine of Jone"
+   ],
+   "ids": [
+    "1655"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 79188,
+   "tiles_sha1": "ef64f632f8599cd02a5d1efc498767e6ee2bcc06"
+  },
+  "elsweyr/sunspireroom002_base": {
+   "names": [
+    "Shrine of Jode"
+   ],
+   "ids": [
+    "1657"
+   ],
+   "zones": [
+    "Sunspire"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 82750,
+   "tiles_sha1": "507e04f4e775e2e5d791514fc7142aaa3a8cf7e9"
+  },
+  "events/u51_navaladventure_01_01": {
+   "names": [
+    "Beneath the Abecean Sea"
+   ],
+   "ids": [
+    "2822"
+   ],
+   "zones": [
+    "Voyage on the Abecean Sea"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 75104,
+   "tiles_sha1": "db2b600cf535fa48d241f93e3a2d6d5d44045233"
+  },
+  "events/u51_navaladventure_01_02": {
+   "names": [
+    "Beneath the Abecean Sea"
+   ],
+   "ids": [
+    "2823"
+   ],
+   "zones": [
+    "Voyage on the Abecean Sea"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60724,
+   "tiles_sha1": "a425ae22ade50866ecacbd0d8833de69536911f9"
+  },
+  "events/u51_navaladventure_01_03": {
+   "names": [
+    "Beneath the Abecean Sea"
+   ],
+   "ids": [
+    "2824"
+   ],
+   "zones": [
+    "Voyage on the Abecean Sea"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 84288,
+   "tiles_sha1": "a7ac7b9473ee79849e94b709957a05bf1402e2a2"
+  },
+  "events/u51_navaladventure_01_04": {
+   "names": [
+    "Beneath the Abecean Sea"
+   ],
+   "ids": [
+    "2825"
+   ],
+   "zones": [
+    "Voyage on the Abecean Sea"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66206,
+   "tiles_sha1": "1707fdf198c390498195cd71981e030d83673a95"
+  },
+  "events/u51_navaladventure_ship_top": {
+   "names": [
+    "Riotous Redress Top Deck"
+   ],
+   "ids": [
+    "2887"
+   ],
+   "zones": [
+    "Voyage on the Abecean Sea"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57556,
+   "tiles_sha1": "b56af149db8b477bee9ae929e3a14256a9f22b42"
+  },
+  "glenumbra/rpb_map_ext001": {
+   "names": [
+    "Red Petal Bastion Exterior"
+   ],
+   "ids": [
+    "2044"
+   ],
+   "zones": [
+    "Red Petal Bastion"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 85812,
+   "tiles_sha1": "e88f0d6220d849c35e0ca7968d4386cf8ceb8f00"
+  },
+  "glenumbra/rpb_map_int001": {
+   "names": [
+    "Red Petal Bastion Vaults"
+   ],
+   "ids": [
+    "2045"
+   ],
+   "zones": [
+    "Red Petal Bastion"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 62170,
+   "tiles_sha1": "cb15c81953067f390c60f2e0bc1f4ffe142ff000"
+  },
+  "glenumbra/rpb_map_int002": {
+   "names": [
+    "Keep Ground Level"
+   ],
+   "ids": [
+    "2046"
+   ],
+   "zones": [
+    "Red Petal Bastion"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 54970,
+   "tiles_sha1": "5810adf2919ee3e30499df7bd5285f712fcf0fc7"
+  },
+  "glenumbra/rpb_map_int003": {
+   "names": [
+    "Keep Upper Level"
+   ],
+   "ids": [
+    "2097"
+   ],
+   "zones": [
+    "Red Petal Bastion"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 54838,
+   "tiles_sha1": "8f389a94a4ad0484887a169b3e03e30f23f4e125"
+  },
+  "glenumbra/rpb_map_secret001": {
+   "names": [
+    "Goriseli Moraburo"
+   ],
+   "ids": [
+    "2098"
+   ],
+   "zones": [
+    "Red Petal Bastion"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 81098,
+   "tiles_sha1": "9fa9012325b1b7a2d073b1d815dd68fc53822854"
+  },
+  "glenumbra/spindleclutch_base": {
+   "names": [
+    "Spindleclutch I"
+   ],
+   "ids": [
+    "174"
+   ],
+   "zones": [
+    "Spindleclutch I"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48386,
+   "tiles_sha1": "43a9c3984a84dceacee968adfda4da1caaa5fec5"
+  },
+  "grahtwood/eldenhollow_base": {
+   "names": [
+    "Elden Hollow I",
+    "Elden Hollow II"
+   ],
+   "ids": [
+    "1143",
+    "28"
+   ],
+   "zones": [
+    "Elden Hollow I",
+    "Elden Hollow II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48908,
+   "tiles_sha1": "b0b1c1c49aded86a15516ed789148abfbf0bb821"
+  },
+  "grahtwood/eldenhollowheroic1_base": {
+   "names": [
+    "Elden Hollow II"
+   ],
+   "ids": [
+    "1146"
+   ],
+   "zones": [
+    "Elden Hollow II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53152,
+   "tiles_sha1": "89919f882727acdc9f8ebfb5003cf303f3be8aa2"
+  },
+  "grahtwood/eldenhollowheroic2_base": {
+   "names": [
+    "Elden Hollow II"
+   ],
+   "ids": [
+    "1147"
+   ],
+   "zones": [
+    "Elden Hollow II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53152,
+   "tiles_sha1": "89919f882727acdc9f8ebfb5003cf303f3be8aa2"
+  },
+  "grahtwood/maarscave1_base": {
+   "names": [
+    "Ruins of Magrus's Ascent"
+   ],
+   "ids": [
+    "1720"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 98616,
+   "tiles_sha1": "87656730350ad56f9976a08d044326d4901a9268"
+  },
+  "grahtwood/maarsmap04_base": {
+   "names": [
+    "Ruins of Magrus's Ascent"
+   ],
+   "ids": [
+    "1722"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 75092,
+   "tiles_sha1": "383446080b7366094e56ec2a625487b913a4d30d"
+  },
+  "grahtwood/maarsmap05_base": {
+   "names": [
+    "Noon Ray's Path"
+   ],
+   "ids": [
+    "1723"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 99322,
+   "tiles_sha1": "b9d32dc70cfa0e0d0c394dc4f73393076292beeb"
+  },
+  "grahtwood/maarsmap06_base": {
+   "names": [
+    "Azureblight Summit"
+   ],
+   "ids": [
+    "1724"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 95742,
+   "tiles_sha1": "7590d2a90cdffdf07e9e2be83be608ff0b273da0"
+  },
+  "grahtwood/maarsoutsidemap001_base": {
+   "names": [
+    "Tenmar Mountain Valley"
+   ],
+   "ids": [
+    "1717"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 97658,
+   "tiles_sha1": "de7351e6d995d16575237fe712818c946303e333"
+  },
+  "grahtwood/maarsoutsidemap003_base": {
+   "names": [
+    "Path of the Rising Sun"
+   ],
+   "ids": [
+    "1718"
+   ],
+   "zones": [
+    "Lair of Maarselok"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 94588,
+   "tiles_sha1": "05992f1425efbb7550a1ed07685a03ec57c861ec"
+  },
+  "greenshade/cityofashboss_base": {
+   "names": [
+    "City of Ash I"
+   ],
+   "ids": [
+    "327"
+   ],
+   "zones": [
+    "City of Ash I"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53736,
+   "tiles_sha1": "3dd7b7084408c9dda30500a317a17c2be62e87a2"
+  },
+  "greenshade/cityofashmain_base": {
+   "names": [
+    "City of Ash I"
+   ],
+   "ids": [
+    "326"
+   ],
+   "zones": [
+    "City of Ash I"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53736,
+   "tiles_sha1": "3dd7b7084408c9dda30500a317a17c2be62e87a2"
+  },
+  "greenshade/marchodsacrifices_base": {
+   "names": [
+    "March of Sacrifices"
+   ],
+   "ids": [
+    "1519",
+    "2884"
+   ],
+   "zones": [
+    "March of Sacrifices"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 93418,
+   "tiles_sha1": "20ede19af4d040a5f943b5cdb51f0a193af9c139"
+  },
+  "greenshade/vetcirtyash01_base": {
+   "names": [
+    "City of Ash II"
+   ],
+   "ids": [
+    "699"
+   ],
+   "zones": [
+    "City of Ash II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60886,
+   "tiles_sha1": "6d00fe4840cb3607689252b78a3de67806675021"
+  },
+  "greenshade/vetcirtyash02_base": {
+   "names": [
+    "The Knives of Discord"
+   ],
+   "ids": [
+    "700"
+   ],
+   "zones": [
+    "City of Ash II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 69274,
+   "tiles_sha1": "6e3a910a7d407426fb843c658c2d541e7ae8b466"
+  },
+  "greenshade/vetcirtyash03_base": {
+   "names": [
+    "The Knives of Discord"
+   ],
+   "ids": [
+    "701"
+   ],
+   "zones": [
+    "City of Ash II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64764,
+   "tiles_sha1": "34b2c3a54d9e1b7635b3b1e269ab47a091846223"
+  },
+  "greenshade/vetcirtyash04_base": {
+   "names": [
+    "The Knives of Discord"
+   ],
+   "ids": [
+    "702"
+   ],
+   "zones": [
+    "City of Ash II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 69394,
+   "tiles_sha1": "e5a0b081942f66724e85551fd0a3f3bb5661b10e"
+  },
+  "housing/elinhirprivatearena_base": {
+   "names": [
+    "Elinhir Private Arena"
+   ],
+   "ids": [
+    "1622"
+   ],
+   "zones": [
+    "Elinhir Private Arena"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 87366,
+   "tiles_sha1": "5a29df5306973dc964b109ac54e79421280a0801"
+  },
+  "malabaltor/tempestisland_base": {
+   "names": [
+    "Tempest Island"
+   ],
+   "ids": [
+    "292"
+   ],
+   "zones": [
+    "Tempest Island"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64146,
+   "tiles_sha1": "9e2ba57252984ca0641dc62e8bd5bead5d905a4e"
+  },
+  "malabaltor/tempestislandncave_base": {
+   "names": [
+    "Temple of Storms"
+   ],
+   "ids": [
+    "598"
+   ],
+   "zones": [
+    "Tempest Island"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 44474,
+   "tiles_sha1": "593394984a8b3560d7fde34070946fef8dadc4f0"
+  },
+  "malabaltor/tempestislandsecave_base": {
+   "names": [
+    "Temple of Storms"
+   ],
+   "ids": [
+    "597"
+   ],
+   "zones": [
+    "Tempest Island"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 46650,
+   "tiles_sha1": "227d37a1a7ad464a080e42cf011babd97a638571"
+  },
+  "malabaltor/tempestislandswcave_base": {
+   "names": [
+    "Sea Cave"
+   ],
+   "ids": [
+    "596"
+   ],
+   "zones": [
+    "Tempest Island"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45202,
+   "tiles_sha1": "8f7dae11080a33576e453ca8bd5a8765dcae0599"
+  },
+  "murkmire/ui_map_blackroseprison01_base": {
+   "names": [
+    "Blackrose Prison"
+   ],
+   "ids": [
+    "1556"
+   ],
+   "zones": [
+    "Blackrose Prison"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48574,
+   "tiles_sha1": "8ac146526cca7a005e1ce9c5f3c50e6671fe6cd9"
+  },
+  "reapersmarch/maw_of_lorkaj_base": {
+   "names": [
+    "Maw of Lorkhaj"
+   ],
+   "ids": [
+    "997"
+   ],
+   "zones": [
+    "Maw of Lorkhaj"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 76042,
+   "tiles_sha1": "deada3908a57f5cd383618ce0c6ce05668deceb2"
+  },
+  "reapersmarch/mawlorkajhall_base": {
+   "names": [
+    "Temple Hall"
+   ],
+   "ids": [
+    "998"
+   ],
+   "zones": [
+    "Maw of Lorkhaj"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50314,
+   "tiles_sha1": "89535100f2617262c664ba9bf350ecb4d596cfdd"
+  },
+  "reapersmarch/mawlorkajsevenriddles_base": {
+   "names": [
+    "The High Lunarium"
+   ],
+   "ids": [
+    "1000"
+   ],
+   "zones": [
+    "Maw of Lorkhaj"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51430,
+   "tiles_sha1": "6480525a8da5e1cecd4cbd1fbf83d71cfd28f7da"
+  },
+  "reapersmarch/mawlorkajsuthaysanctuary_base": {
+   "names": [
+    "Suthay Sanctuary"
+   ],
+   "ids": [
+    "999"
+   ],
+   "zones": [
+    "Maw of Lorkhaj"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 42190,
+   "tiles_sha1": "678069086925b8a05b88fcc6b0055c2ad1d96d0d"
+  },
+  "reapersmarch/mhkmoonhunterkeep2_base": {
+   "names": [
+    "Moon Hunter Keep Gardens"
+   ],
+   "ids": [
+    "1524",
+    "2907"
+   ],
+   "zones": [
+    "Moon Hunter Keep"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 75594,
+   "tiles_sha1": "545c5b9699c07aa746a5cd8bc28901fe4a7de2fd"
+  },
+  "reapersmarch/mhkmoonhunterkeep3_base": {
+   "names": [
+    "Moon Hunter Keep"
+   ],
+   "ids": [
+    "1525",
+    "2908"
+   ],
+   "zones": [
+    "Moon Hunter Keep"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 54624,
+   "tiles_sha1": "7ef6a3c70147ef44d8ab603d824f462c06345175"
+  },
+  "reapersmarch/mhkmoonhunterkeep_base": {
+   "names": [
+    "Moon Hunter Keep"
+   ],
+   "ids": [
+    "1523",
+    "2906"
+   ],
+   "zones": [
+    "Moon Hunter Keep"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53622,
+   "tiles_sha1": "0d05c39e7826125cc2c5d2d56ac521c25ef0653a"
+  },
+  "reapersmarch/selenesweb_base": {
+   "names": [
+    "Selene's Web"
+   ],
+   "ids": [
+    "334"
+   ],
+   "zones": [
+    "Selene's Web"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51862,
+   "tiles_sha1": "4fa29fc8872b63da27d4a32c4b4821e2ed60344e"
+  },
+  "reapersmarch/seleneswebfinalbossarea_base": {
+   "names": [
+    "Selene's Web"
+   ],
+   "ids": [
+    "335"
+   ],
+   "zones": [
+    "Selene's Web"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51278,
+   "tiles_sha1": "574c2ee80bfb340298b7940dc74e37ce3baceaa6"
+  },
+  "rivenspire/cryptofhearts_base": {
+   "names": [
+    "Crypt of Hearts II"
+   ],
+   "ids": [
+    "1154"
+   ],
+   "zones": [
+    "Crypt of Hearts II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 48022,
+   "tiles_sha1": "15ae2a140092d786826913ff6d409a1c56bd37a3"
+  },
+  "rivenspire/cryptofheartsheroic_base": {
+   "names": [
+    "Crypt of Hearts II"
+   ],
+   "ids": [
+    "653"
+   ],
+   "zones": [
+    "Crypt of Hearts II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51724,
+   "tiles_sha1": "a60434d3518aeeb831ffd46cab2ac79cf5b899e2"
+  },
+  "rivenspire/cryptofheartsheroicboss": {
+   "names": [
+    "Crypt of Hearts II"
+   ],
+   "ids": [
+    "654"
+   ],
+   "zones": [
+    "Crypt of Hearts II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45010,
+   "tiles_sha1": "28d29c6e9390a3c3eb90fb8a9a29c10960708f41"
+  },
+  "rivenspire/lostshipyard_map001": {
+   "names": [
+    "Shipwright's Regret"
+   ],
+   "ids": [
+    "2120"
+   ],
+   "zones": [
+    "Shipwright's Regret"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 85672,
+   "tiles_sha1": "23458093e0fb034b916bafed3c8e2b7324f1c948"
+  },
+  "shadowfen/arxcorinium_base": {
+   "names": [
+    "Arx Corinium"
+   ],
+   "ids": [
+    "141"
+   ],
+   "zones": [
+    "Arx Corinium"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53562,
+   "tiles_sha1": "3c23583057fa5f85fdf1c77ad29cf648aa14bd87"
+  },
+  "shadowfen/ui_cradleofshadowsint_001_base": {
+   "names": [
+    "The Cradle of Shadows"
+   ],
+   "ids": [
+    "1133"
+   ],
+   "zones": [
+    "Cradle of Shadows"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 56550,
+   "tiles_sha1": "88bf2c0256e4384edd093dfe126931fae02d50c2"
+  },
+  "shadowfen/ui_cradleofshadowsint_002_base": {
+   "names": [
+    "The Spider Caves"
+   ],
+   "ids": [
+    "1134"
+   ],
+   "zones": [
+    "Cradle of Shadows"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 68828,
+   "tiles_sha1": "32dfd7fa2ae6461469debbcc86445645658dad30"
+  },
+  "shadowfen/ui_cradleofshadowsint_003_base": {
+   "names": [
+    "The Spinner's Sanctuary"
+   ],
+   "ids": [
+    "1135"
+   ],
+   "zones": [
+    "Cradle of Shadows"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 54758,
+   "tiles_sha1": "e0756e5cc231f2f1a73acb5be6f349244cdfab74"
+  },
+  "shadowfen/ui_cradleofshadowsint_004_base": {
+   "names": [
+    "Mephala's Descent"
+   ],
+   "ids": [
+    "1136"
+   ],
+   "zones": [
+    "Cradle of Shadows"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59786,
+   "tiles_sha1": "04ff1d1fda447e8cb50c2a7344888be6c33d52bb"
+  },
+  "shadowfen/ui_cradleofshadowsint_005_base": {
+   "names": [
+    "Velidreth's Lair"
+   ],
+   "ids": [
+    "1137"
+   ],
+   "zones": [
+    "Cradle of Shadows"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 61122,
+   "tiles_sha1": "a1224bd7353df304e0de6795d666f3b2495846a7"
+  },
+  "shadowfen/ui_map_mazzatunext_base": {
+   "names": [
+    "Ruins Of Mazzatun"
+   ],
+   "ids": [
+    "1127"
+   ],
+   "zones": [
+    "Ruins of Mazzatun"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 77506,
+   "tiles_sha1": "1db9c971322181ca358b499d825af004675ee117"
+  },
+  "shadowfen/ui_map_mazzatunint001_base": {
+   "names": [
+    "The Inner Ruins"
+   ],
+   "ids": [
+    "1128"
+   ],
+   "zones": [
+    "Ruins of Mazzatun"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50512,
+   "tiles_sha1": "0ac4228198f44b07dab8e0cf62b37a0601908591"
+  },
+  "shadowfen/ui_map_mazzatunint002_base": {
+   "names": [
+    "The Deep Maze"
+   ],
+   "ids": [
+    "1129"
+   ],
+   "zones": [
+    "Ruins of Mazzatun"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50858,
+   "tiles_sha1": "098fba627570fcd4e07d145a4a963ac768c66fc5"
+  },
+  "shadowfen/ui_map_mazzatunint003_base": {
+   "names": [
+    "The Ritual Chamber"
+   ],
+   "ids": [
+    "1130"
+   ],
+   "zones": [
+    "Ruins of Mazzatun"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 43062,
+   "tiles_sha1": "ff85b4fa1ca4beae3ad848d27af017a379e8b51d"
+  },
+  "skyrim/castlethorn_int_01": {
+   "names": [
+    "Great Entrance Hall"
+   ],
+   "ids": [
+    "1823"
+   ],
+   "zones": [
+    "Castle Thorn"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51734,
+   "tiles_sha1": "0299e5c48513111818825055dc2cdc54e9ca34d9"
+  },
+  "skyrim/castlethorn_int_02": {
+   "names": [
+    "Castle Keep"
+   ],
+   "ids": [
+    "1824"
+   ],
+   "zones": [
+    "Castle Thorn"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57496,
+   "tiles_sha1": "a6cab3b11eac5bbe01f9ac12bbd5d86dfbec96bf"
+  },
+  "skyrim/castlethorn_int_03": {
+   "names": [
+    "Grand Cathedral"
+   ],
+   "ids": [
+    "1825"
+   ],
+   "zones": [
+    "Castle Thorn"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64474,
+   "tiles_sha1": "062ba68d3afd92cedf61a93e55c78a9d6fa7468c"
+  },
+  "skyrim/castlethornmap_001": {
+   "names": [
+    "Castle Thorn Exterior"
+   ],
+   "ids": [
+    "1822"
+   ],
+   "zones": [
+    "Castle Thorn"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 96140,
+   "tiles_sha1": "8841e69eaed240488f0a319b8a9ebe9ae318bb5f"
+  },
+  "skyrim/kynesaegisboss3floor001": {
+   "names": [
+    "Ruins of Kyne's Aegis"
+   ],
+   "ids": [
+    "1806"
+   ],
+   "zones": [
+    "Kyne's Aegis"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 83796,
+   "tiles_sha1": "8b795d68e5018f8bb1c9265517f61e3bd5db6054"
+  },
+  "skyrim/kynesaegisboss3floor002": {
+   "names": [
+    "Kyne's Aegis's Hidden Barrow"
+   ],
+   "ids": [
+    "1807"
+   ],
+   "zones": [
+    "Kyne's Aegis"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 73670,
+   "tiles_sha1": "bc62ff61be159a4192057bf5afdbe6f7ad0f5241"
+  },
+  "skyrim/kynesaegisboss3floor003": {
+   "names": [
+    "Kyne's Aegis's Ritual Vault"
+   ],
+   "ids": [
+    "1808"
+   ],
+   "zones": [
+    "Kyne's Aegis"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 74040,
+   "tiles_sha1": "ddbde65e9665b69a04f01a91a2d5c9aa65e6e3d3"
+  },
+  "skyrim/kynesaegismap001": {
+   "names": [
+    "Kyne's Aegis"
+   ],
+   "ids": [
+    "1805"
+   ],
+   "zones": [
+    "Kyne's Aegis"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 96188,
+   "tiles_sha1": "23f7281b51cad9c21abe30180eb59510e3519c7b"
+  },
+  "stonefalls/balsunn_b1_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2258"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57292,
+   "tiles_sha1": "287b62e25741f096bb4d54218f216e782ba84a97"
+  },
+  "stonefalls/balsunn_b2_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2260"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 74242,
+   "tiles_sha1": "39246cef5fe0ca4cd9cd8ac1b33421f6732e3ed0"
+  },
+  "stonefalls/balsunn_b2trans_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2261"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 75388,
+   "tiles_sha1": "62e094a8865761aa0144782e6db7c953c72b5c0e"
+  },
+  "stonefalls/balsunn_b3_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2263"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 74598,
+   "tiles_sha1": "754f5f1c180cf0ba728379efe6eb7c01aa460512"
+  },
+  "stonefalls/balsunn_b3trans_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2264"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 68246,
+   "tiles_sha1": "e2ec79b9ed0e2f5e28669dfd99be44ee103a055c"
+  },
+  "stonefalls/balsunn_caves_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2259"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 74392,
+   "tiles_sha1": "2422f89b4087c315aa6703f1860be2b768e52d4b"
+  },
+  "stonefalls/balsunn_deidric_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2262"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53012,
+   "tiles_sha1": "b7188e5f86c042a93825a50b724131a09dd47b55"
+  },
+  "stonefalls/balsunn_futuretown01_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2257"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 90744,
+   "tiles_sha1": "4a5da195169c226983315fd1b500167d5bdde985"
+  },
+  "stonefalls/balsunn_pasttown01_map": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2256"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 86572,
+   "tiles_sha1": "68d382dabe568fa909988577e969890d5ecb322c"
+  },
+  "stonefalls/balsunn_presenttown01": {
+   "names": [
+    "Bal Sunnar"
+   ],
+   "ids": [
+    "2255"
+   ],
+   "zones": [
+    "Bal Sunnar"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 88066,
+   "tiles_sha1": "d3f38e347e1752b34bcebc0b37e6e1b9d6a5d8b5"
+  },
+  "stonefalls/fungalgrotto_base": {
+   "names": [
+    "Fungal Grotto I",
+    "Fungal Grotto II"
+   ],
+   "ids": [
+    "1150",
+    "77"
+   ],
+   "zones": [
+    "Fungal Grotto I",
+    "Fungal Grotto II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50476,
+   "tiles_sha1": "2c696a0cdf9cec77e4beeffb6593b682a7203c81"
+  },
+  "stonefalls/fungalgrottosecretroom_base": {
+   "names": [
+    "Fungal Grotto II"
+   ],
+   "ids": [
+    "1151"
+   ],
+   "zones": [
+    "Fungal Grotto II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51546,
+   "tiles_sha1": "2b80e734b229cf5ebf1039f9f9b2828b1a88a0bc"
+  },
+  "stormhaven/ui_map_scalecaller001_base": {
+   "names": [
+    "Frostspike Caverns"
+   ],
+   "ids": [
+    "1432"
+   ],
+   "zones": [
+    "Scalecaller Peak"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66180,
+   "tiles_sha1": "7d958eeb00db1d0171a8e3acfe221371d90f70a5"
+  },
+  "stormhaven/ui_map_scalecaller002_base": {
+   "names": [
+    "Scalecaller Rise"
+   ],
+   "ids": [
+    "1433"
+   ],
+   "zones": [
+    "Scalecaller Peak"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 70176,
+   "tiles_sha1": "01ecf8d3f8e49e0d76da01e9033ba91f4f8cec0a"
+  },
+  "stormhaven/ui_map_scalecaller003_base": {
+   "names": [
+    "Zaan's Temple"
+   ],
+   "ids": [
+    "1434"
+   ],
+   "zones": [
+    "Scalecaller Peak"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 60968,
+   "tiles_sha1": "d25f5f6f6499400dee87c17c26fa5680139fb094"
+  },
+  "stormhaven/ui_map_scalecaller004_base": {
+   "names": [
+    "Scalecaller Peak"
+   ],
+   "ids": [
+    "1435"
+   ],
+   "zones": [
+    "Scalecaller Peak"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63254,
+   "tiles_sha1": "81378c95e8f378ecced04770c6db10af02aab920"
+  },
+  "stormhaven/wayrestsewers_base": {
+   "names": [
+    "Wayrest Sewers I",
+    "Wayrest Sewers II"
+   ],
+   "ids": [
+    "1149",
+    "46"
+   ],
+   "zones": [
+    "Wayrest Sewers I",
+    "Wayrest Sewers II"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 50248,
+   "tiles_sha1": "ec03e250ce1acaccb0bfc54abc291007148c06f7"
+  },
+  "summerset/coralaerie_b1_001": {
+   "names": [
+    "Tide Hollow"
+   ],
+   "ids": [
+    "2185"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57042,
+   "tiles_sha1": "4dee786e8e19baf95cf5db62e8c4c38e63ddb4cd"
+  },
+  "summerset/coralaerie_b2_001": {
+   "names": [
+    "Crumbling Foyer"
+   ],
+   "ids": [
+    "2187"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53630,
+   "tiles_sha1": "389a473fcbcaba78aab472219f59422410725e86"
+  },
+  "summerset/coralaerie_beach_001": {
+   "names": [
+    "Brackish Cove"
+   ],
+   "ids": [
+    "2110"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 59406,
+   "tiles_sha1": "a66638c3269249351803f4b69ec850d220273968"
+  },
+  "summerset/coralaerie_mbwave_001": {
+   "names": [
+    "Aldmeri Ruins"
+   ],
+   "ids": [
+    "2186"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66624,
+   "tiles_sha1": "8a35038f6bb542691bb50f90ed629473e36a0a2e"
+  },
+  "summerset/coralaerieaerie_001": {
+   "names": [
+    "Gryphon Aerie"
+   ],
+   "ids": [
+    "2188"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 62056,
+   "tiles_sha1": "7c4bd0ab4429f6949bd900c1da332a30c94f07dc"
+  },
+  "summerset/coralaerieb3_001": {
+   "names": [
+    "Cove Lagoon"
+   ],
+   "ids": [
+    "2189"
+   ],
+   "zones": [
+    "Coral Aerie"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 57016,
+   "tiles_sha1": "02ea1e430d4ec9acb0538858b1a7ba7a434dd127"
+  },
+  "summerset/ui_map_cloudresttrial_base": {
+   "names": [
+    "Cloudrest"
+   ],
+   "ids": [
+    "1502"
+   ],
+   "zones": [
+    "Cloudrest"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 72470,
+   "tiles_sha1": "e7463b10fee67833bba6c7046dc13066fb44d486"
+  },
+  "systres/dsr_b2_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2183"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 69902,
+   "tiles_sha1": "40c760100f8e4db1e90a9ce2048372d652c3e250"
+  },
+  "systres/dsr_b2under_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2184"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 68296,
+   "tiles_sha1": "556b3ff78f8e68c9a3ffbceb32034832d75cf79e"
+  },
+  "systres/dsr_b3_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2182"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 67786,
+   "tiles_sha1": "0fceeb11ce94bfe98ff450788326a205f9ef9140"
+  },
+  "systres/dsr_beach_01": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2164"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 89376,
+   "tiles_sha1": "66ce4fe33c0b6832865529834dfa56c67c18ef12"
+  },
+  "systres/dsr_boss1_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2165"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 64264,
+   "tiles_sha1": "5bf4105b5b71baf5e49690c955cea6fad3e525b4"
+  },
+  "systres/dsr_doors_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2166"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63036,
+   "tiles_sha1": "cbf9b8b03a064dafb70bc640c50651c189e2af30"
+  },
+  "systres/dsr_e_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2179"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 105534,
+   "tiles_sha1": "f46dbfbf684610dcecdf633dd8798849d786ccc7"
+  },
+  "systres/dsr_w_map": {
+   "names": [
+    "Dreadsail Reef"
+   ],
+   "ids": [
+    "2180"
+   ],
+   "zones": [
+    "Dreadsail Reef"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66026,
+   "tiles_sha1": "3df03d75ddb3082958c23f86055e495b494091ca"
+  },
+  "telvanni/sanitysedgeboss1_map": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2332"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 66142,
+   "tiles_sha1": "bfb8463fc896bfcfe73abc84ee80f607a98b0b25"
+  },
+  "telvanni/sanitysedgeboss2_map": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2331"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 55556,
+   "tiles_sha1": "e77bb4beb6d716737bcbceca8a9352cd3cd2df69"
+  },
+  "telvanni/sanitysedgesection0_map": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2333"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 71068,
+   "tiles_sha1": "ab6780a07848875a3762cb0f461b5a9c5ffaeb7c"
+  },
+  "telvanni/sanitysedgesection3": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2330"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 121346,
+   "tiles_sha1": "e66c73d0ae3505a2bdeed19790b9a5bf29a428b4"
+  },
+  "telvanni/se_alinor": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2372"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 5,
+   "px": 1280,
+   "bytes": 178250,
+   "tiles_sha1": "5176a58bc0363ac4d2f29c202571a0c29ead0861"
+  },
+  "telvanni/se_orsinium": {
+   "names": [
+    "Sanity's Edge"
+   ],
+   "ids": [
+    "2373"
+   ],
+   "zones": [
+    "Sanity's Edge"
+   ],
+   "grid": 5,
+   "px": 1280,
+   "bytes": 285122,
+   "tiles_sha1": "ecba78d3750e2bd7faef496a8d0b219d8da863c7"
+  },
+  "therift/blessedcrucible1_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "397"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45136,
+   "tiles_sha1": "822a1144bc86a2d9eb250570963cc887189390d2"
+  },
+  "therift/blessedcrucible2_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "398"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45136,
+   "tiles_sha1": "822a1144bc86a2d9eb250570963cc887189390d2"
+  },
+  "therift/blessedcrucible3_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "399"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45136,
+   "tiles_sha1": "822a1144bc86a2d9eb250570963cc887189390d2"
+  },
+  "therift/blessedcrucible4_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "400"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45240,
+   "tiles_sha1": "3a68f9eabe10761a0b729692bda18d5b04104f53"
+  },
+  "therift/blessedcrucible5_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "401"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45240,
+   "tiles_sha1": "3a68f9eabe10761a0b729692bda18d5b04104f53"
+  },
+  "therift/blessedcrucible6_base": {
+   "names": [
+    "Blessed Crucible"
+   ],
+   "ids": [
+    "402"
+   ],
+   "zones": [
+    "Blessed Crucible"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 45240,
+   "tiles_sha1": "3a68f9eabe10761a0b729692bda18d5b04104f53"
+  },
+  "thievesguild/u45_lepseclusa_map01": {
+   "names": [
+    "Lep Seclusa"
+   ],
+   "ids": [
+    "2624"
+   ],
+   "zones": [
+    "Lep Seclusa"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 78906,
+   "tiles_sha1": "d6f2382f3b41eb2e53eb3f1d297ae89b049aa2f8"
+  },
+  "thievesguild/u45_lepseclusa_map02": {
+   "names": [
+    "Lep Seclusa"
+   ],
+   "ids": [
+    "2631"
+   ],
+   "zones": [
+    "Lep Seclusa"
+   ],
+   "grid": 4,
+   "px": 1024,
+   "bytes": 138208,
+   "tiles_sha1": "bacc80a3d4d40af032632896303fb04310ee66f0"
+  },
+  "vvardenfell/ui_map_hofabricboss3_base": {
+   "names": [
+    "Core Assembly"
+   ],
+   "ids": [
+    "1299"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 62724,
+   "tiles_sha1": "9d40fec786a4ba54bb18580a1ce17fd03751a209"
+  },
+  "vvardenfell/ui_map_hofabriccaves_base": {
+   "names": [
+    "Abanabi Cave",
+    "Tel Fyr"
+   ],
+   "ids": [
+    "1286"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 67832,
+   "tiles_sha1": "467e54a76195a6b2e13582d9df8eba50b423b6ed"
+  },
+  "vvardenfell/ui_map_hofabricext1_base": {
+   "names": [
+    "Reprocessing Yard"
+   ],
+   "ids": [
+    "1294"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 85730,
+   "tiles_sha1": "693bf18e5ca2febd04ba38512184ef397193e2f8"
+  },
+  "vvardenfell/ui_map_hofabrichall1_base": {
+   "names": [
+    "Reprocessing Yard"
+   ],
+   "ids": [
+    "1292"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 53114,
+   "tiles_sha1": "151791f13c38b72ba49f158ff8f5416e6e7923d5"
+  },
+  "vvardenfell/ui_map_hofabrichall2_base": {
+   "names": [
+    "Reprocessing Yard"
+   ],
+   "ids": [
+    "1298"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 51854,
+   "tiles_sha1": "d78d2d86c712197492d097fa880ad54a2065f62a"
+  },
+  "vvardenfell/ui_map_hofabricloop_base": {
+   "names": [
+    "Transport Circuit"
+   ],
+   "ids": [
+    "1291"
+   ],
+   "zones": [
+    "Halls of Fabrication"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 63246,
+   "tiles_sha1": "32425fc3049d49abab6ed66c390f35f65b0b0727"
+  },
+  "wrothgar/icereachpart1": {
+   "names": [
+    "Icereach Underkeep"
+   ],
+   "ids": [
+    "1736"
+   ],
+   "zones": [
+    "Icereach"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 56246,
+   "tiles_sha1": "5fcacb83ccdcc8b21ee1bf9382d581c97ba2a4ee"
+  },
+  "wrothgar/icereachpart2": {
+   "names": [
+    "Icereach Ramparts"
+   ],
+   "ids": [
+    "1737"
+   ],
+   "zones": [
+    "Icereach"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 95578,
+   "tiles_sha1": "4329f6c83a5ce8136a36e109578e04e678975979"
+  },
+  "wrothgar/u41_bv_sc1_map": {
+   "names": [
+    "Bedlam Veil"
+   ],
+   "ids": [
+    "2494"
+   ],
+   "zones": [
+    "Bedlam Veil"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 116688,
+   "tiles_sha1": "0619cba2364c248929bf2a5e728c8bf6a3631137"
+  },
+  "wrothgar/u41_bv_sc2_map": {
+   "names": [
+    "Bedlam Veil"
+   ],
+   "ids": [
+    "2496"
+   ],
+   "zones": [
+    "Bedlam Veil"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 72110,
+   "tiles_sha1": "9247d27667b850dc690916c93b4cc76481798c59"
+  },
+  "wrothgar/u41_bv_sc3_map": {
+   "names": [
+    "Bedlam Veil"
+   ],
+   "ids": [
+    "2495"
+   ],
+   "zones": [
+    "Bedlam Veil"
+   ],
+   "grid": 3,
+   "px": 768,
+   "bytes": 127872,
+   "tiles_sha1": "67754d9587d82e9e96118fa6920e2d794468ea7e"
+  }
+ }
+}

@@ -11,7 +11,8 @@ through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested, a click on a player's pen/crit token through
-pen_crit_requested.
+pen_crit_requested, a click on a header map thumbnail through
+map_requested.
 
 A player's name and dps figure look like plain text (the dps figures carry
 a small glyph that says they can be clicked, see gui.glyphs; the names do
@@ -19,7 +20,9 @@ not), so the pane shows they can be clicked while the pointer is over them:
 the text is underlined in the link color (see _show_hover_cue). The glyphs
 are images the page asks for by URL, served by loadResource like the icons,
 and so are the pixelated stand-ins the Hide names switch puts in place of
-other players' names (``mask:`` URLs, see gui.name_mask).
+other players' names (``mask:`` URLs, see gui.name_mask), and the header's
+maps of where the group stood (``map:`` URLs, drawn by gui.fight_map from
+the fight set_fight_maps was given).
 
 Design: a screen reader reads a QTextBrowser's text, where every image is
 U+FFFC; Qt keeps an image's alt attribute but never reads it out. So the
@@ -43,10 +46,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.death_render import unit_from_href
+from gui.fight_map import map_image
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
-    damage_unit_from_href, issues_unit_from_href, mastery_unit_from_href, pen_crit_unit_from_href,
-    taken_unit_from_href,
+    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MAP_SCHEME, MASTERY_HREF,
+    build_unit_from_href, damage_unit_from_href, issues_unit_from_href, map_index_from_href,
+    mastery_unit_from_href, pen_crit_unit_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -110,6 +114,7 @@ class FightView(QTextBrowser):
     issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
     taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
+    map_requested = Signal(int)  # the place, in the fight's positions, of the map clicked
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -123,6 +128,7 @@ class FightView(QTextBrowser):
         self._search_selections: List[QTextEdit.ExtraSelection] = []
         self._hover_selections: List[QTextEdit.ExtraSelection] = []
         self._link_hover_color: Optional[QColor] = None
+        self._fight_maps: List[dict] = []  # the shown fight's positions, for map: images
         # Taunt marks pulse: the ringed icons on the page are redrawn at the
         # next glow phase on a timer (see _pulse_step)
         self._ring_urls: Dict[str, QUrl] = {}
@@ -146,6 +152,11 @@ class FightView(QTextBrowser):
     def set_anchor_names(self, names: Dict[str, str]) -> None:
         """Plain ability name per anchor href, so searches can match icons."""
         self._anchor_names = dict(names or {})
+
+    def set_fight_maps(self, maps) -> None:
+        """The positions of the fight about to be shown (its entry's
+        positions), which the page's map: images are drawn from."""
+        self._fight_maps = list(maps or [])
 
     def set_link_hover_color(self, color) -> None:
         """Color of a hovered player name (the theme's link color); the
@@ -303,6 +314,15 @@ class FightView(QTextBrowser):
                 image = mask_image(*request, self.font(), self.devicePixelRatioF())
                 if image is not None:
                     return image
+        if resource_type == QTextDocument.ImageResource and name.scheme() == MAP_SCHEME:
+            # A header map of where the group stood (gui.fight_map)
+            try:
+                place = int(name.path())
+                px = int(QUrlQuery(name).queryItemValue("px") or 0)
+            except ValueError:
+                place, px = -1, 0
+            if 0 <= place < len(self._fight_maps) and px > 0:
+                return map_image(self._fight_maps[place], px, self.devicePixelRatioF())
         return super().loadResource(resource_type, name)
 
     def accessible_text(self) -> str:
@@ -394,6 +414,10 @@ class FightView(QTextBrowser):
             return
         if url.toString() == GRAPH_HREF:
             self.graph_requested.emit()
+            return
+        place = map_index_from_href(url.toString())
+        if place is not None:
+            self.map_requested.emit(place)
             return
         unit_id = issues_unit_from_href(url.toString())
         if unit_id is not None:

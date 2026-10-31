@@ -35,11 +35,12 @@ from gui.engine_worker import EngineWorker
 from gui.fight_list import FightList
 from gui.fight_render import (
     ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
-    issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
-    render_html,
+    issues_tooltips, link_color, map_tooltips, mastery_tooltips, misfortunes_tooltips, muted_color,
+    pen_crit_tooltips, render_html,
     render_plain_text, taken_tooltips,
 )
 from gui.fight_view import FightView, set_reduce_motion
+from gui.map_window import MapDialog
 from gui.name_mask import NameMask
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
@@ -151,6 +152,7 @@ class MainWindow(QMainWindow):
         self._damage_dialog = None  # created on the first click on a player's dps
         self._taken_dialog = None  # created on the first click on a player's shield
         self._graph_dialog = None  # created on the first DPS graph request
+        self._map_dialog = None  # created on the first click on a header map
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
         # The Hide names switch (issue #72, gui.name_mask): every player
@@ -356,6 +358,7 @@ class MainWindow(QMainWindow):
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
+        self.fight_view.map_requested.connect(self._show_map)
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -1024,6 +1027,7 @@ class MainWindow(QMainWindow):
         tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
+        tooltips.update(map_tooltips(entry))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,
@@ -1036,6 +1040,8 @@ class MainWindow(QMainWindow):
         # it keeps the pane's own text color
         self.fight_view.set_link_hover_color(link_color(self._dark))
         text_color = self.fight_view.palette().color(QPalette.Text).name()
+        # The header's maps are drawn from the fight's positions (issue #148)
+        self.fight_view.set_fight_maps(getattr(entry, 'positions', None))
         self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
                                             icons=self.fight_view.icons,
                                             links=esohub_ability_url,
@@ -1151,6 +1157,19 @@ class MainWindow(QMainWindow):
         self._graph_dialog.show()
         self._graph_dialog.raise_()
         self._graph_dialog.activateWindow()
+
+    def _show_map(self, place):
+        """A map in the fight pane's header was clicked: the map window, at
+        that map of the fight on screen (issue #148)."""
+        entry = self.history_list.current_entry()
+        if entry is None or not getattr(entry, 'positions', None):
+            return
+        if self._map_dialog is None:
+            self._map_dialog = MapDialog(self)
+        self._map_dialog.show_maps(entry, place)
+        self._map_dialog.show()
+        self._map_dialog.raise_()
+        self._map_dialog.activateWindow()
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text
