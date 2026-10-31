@@ -240,6 +240,18 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_waiting_placeholder_escapes_the_path_and_names_both_addons(self):
+        win = self._window()
+        try:
+            win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
+            text = win._last_placeholder
+            self.assertIn(r'<code>C:\Users\R&amp;D &lt;x&gt;\Encounter.log</code>', text)
+            self.assertIn('Always Logging (from GitHub', text)
+            self.assertIn('Easy Stalking (ESOUI or Minion)', text)
+            self.assertIn('not both', text)
+        finally:
+            win.close()
+
     def test_age_text_formats(self):
         from gui.main_window import _age_text
         self.assertEqual(_age_text(40), '40s')

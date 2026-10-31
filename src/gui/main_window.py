@@ -4,6 +4,7 @@ settings, manual archive, and the freshness status bar.
 """
 
 import base64
+import html
 import sys
 import weakref
 from datetime import datetime
@@ -769,12 +770,14 @@ class MainWindow(QMainWindow):
     def _on_waiting_for_log(self, expected):
         self._last_status = None
         self._refresh_freshness_label()
-        where = expected or "known ESO log locations"
+        where = html.escape(expected or "known ESO log locations")
         self._show_placeholder(
             f"Waiting for Encounter.log…<br><br>"
             f"Expected at:<br><code>{where}</code><br><br>"
-            f"Enable encounter logging in ESO (/encounterlog), or install the "
-            f"Always Logging or the Easy Stalking addon (one, not both). "
+            f"Enable encounter logging in ESO (/encounterlog), or install an "
+            f"addon that turns it on for you, one or the other but not both: "
+            f"Always Logging (from GitHub, github.com/brainsnorkel/AlwaysLogging) "
+            f"or Easy Stalking (ESOUI or Minion). "
             f"Monitoring starts automatically when the file appears.")
 
     @Slot()

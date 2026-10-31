@@ -16,6 +16,8 @@ LIBFOODDRINKBUFF_URL = "https://www.esoui.com/downloads/info1902-LibFoodDrinkBuf
 COMBATMETRICS_URL = "https://www.esoui.com/downloads/info1360-CombatMetrics.html"
 COMBATMETRICS_SOURCE_URL = "https://github.com/Solinur/CombatMetrics"
 LIBCOMBAT_URL = "https://github.com/Solinur/LibCombat"
+EASYSTALKING_URL = "https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html"
+ALWAYSLOGGING_URL = "https://github.com/brainsnorkel/AlwaysLogging"
 
 
 def about_html(version: str, updates: str = "") -> str:
@@ -49,6 +51,10 @@ def about_html(version: str, updates: str = "") -> str:
         f"item database of <a href='{UESP_URL}'>UESP</a>.</li>"
         f"<li><b>Icon extraction</b>: <a href='{EXTRACTOR_URL}'>EsoExtractData</a> "
         f"by UESP.</li>"
+        f"<li><b>Turning logging on</b>: the "
+        f"<a href='{EASYSTALKING_URL}'>Easy Stalking - Encounterlog</a> addon, and "
+        f"<a href='{ALWAYSLOGGING_URL}'>Always Logging</a>, a simpler take on it "
+        f"that logs everywhere.</li>"
         f"</ul>"
         f"<p style='color:gray'>The Elder Scrolls Online and its artwork are "
         f"&copy; ZeniMax Online Studios. ESO Log Tail is an unofficial fan tool, "
