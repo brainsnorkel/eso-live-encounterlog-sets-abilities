@@ -27,13 +27,45 @@ The band is the list's base colour moved BAND_MIX of the way towards its
 text colour, so it follows the theme and keeps the text's contrast; it is
 worked out again, with the header's bold font, whenever the palette or the
 font changes (a theme switch, a new text size).
+
+The (i) on a fight row (issue #147): hovering it shows who in that fight
+has a possible build issue and what (fight_render.fight_issues_tooltip),
+so a session's flagged fights can be read without selecting each one and
+looking for the marks on the pane's rows. The row is plain text, so the
+mark has no anchor of its own: viewportEvent takes the ToolTip event and
+works out where the mark is drawn (issues_mark_rect), the way the style
+lays the row out: the style's text rectangle, the margin every style keeps
+inside it, then the width of the text before the mark. The text rectangle
+matters: Windows 11's style starts it 6 px in, leaving room for its
+selection bar, where Fusion and windowsvista start at the row's edge
+(measured 2026-10-31 on all three and offscreen, the mark's first painted
+column within a pixel of the computed one). The pointer gets MARK_SLACK
+pixels either side, and the tooltip closes once it leaves that band. The
+rest of a row shows no tooltip, as before. The text is built at hover
+time from the hovered row's own fight, usually not the one on screen,
+with the window's Hide names switch (hide_names), so it follows the switch
+without a rebuild. A screen reader hears the mark as the
+row's description (fight_render.issues_description), which names nobody.
 """
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QRect, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPalette
-from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListWidget,
+    QListWidgetItem,
+    QStyle,
+    QStyleOptionViewItem,
+    QToolTip,
+)
 
-from gui.fight_render import summary_line
+from gui.fight_render import (
+    ISSUES_LIST_CUE,
+    fight_issues_tooltip,
+    issues_description,
+    summary_line,
+)
+from gui.name_mask import NameMask
 from trial_result import result_text
 
 # Item data: the fight's FightHistoryEntry (None on a header or result
@@ -47,6 +79,9 @@ HEADER, FIGHT, RESULT = "header", "fight", "result"
 # How far a band's background is from the list's base colour, towards its
 # text colour
 BAND_MIX = 0.07
+
+# Pixels either side of the (i) that still count as over it
+MARK_SLACK = 3
 
 _DIFFICULTY_NAMES = {"VETERAN": "Veteran", "NORMAL": "Normal"}
 
@@ -93,6 +128,11 @@ class FightList(QListWidget):
         self.setAccessibleName("Fights")
         self._last_entry = None  # the newest fight, for the next one's block
         self._block = -1
+        # The window's Hide names switch, for the (i)'s hover text. A flag,
+        # not the window's _names_for: a bound method kept here would tie
+        # the window and the list in a reference cycle
+        self.hide_names = False
+        self.current_tooltip = ""  # the hover text last shown, for tests
 
     # ---- building ----
 
@@ -131,6 +171,7 @@ class FightList(QListWidget):
         if row is None:
             return None
         self.item(row).setText(summary_line(entry, death_cue=True, issue_cue=True, zone=False))
+        self.item(row).setData(Qt.AccessibleDescriptionRole, issues_description(entry))
         result = getattr(entry, "trial_result", None)
         if result:
             below = self.item(row + 1)
@@ -146,7 +187,9 @@ class FightList(QListWidget):
         item.setData(ENTRY_ROLE, entry)
         item.setData(KIND_ROLE, kind)
         item.setData(BLOCK_ROLE, self._block if block is None else block)
-        if kind != FIGHT:
+        if kind == FIGHT:
+            item.setData(Qt.AccessibleDescriptionRole, issues_description(entry))
+        else:
             item.setFlags(Qt.NoItemFlags)
         self._style(item)
         if at is None:
@@ -219,6 +262,52 @@ class FightList(QListWidget):
                     return self.model().index(near, 0)
                 near += step
         return self.currentIndex()
+
+    # ---- the (i)'s hover text ----
+
+    def issues_mark_rect(self, row):
+        """Where *row*'s (i) is drawn, in viewport coordinates; None on a
+        row without one (see the module). A list narrower than its text
+        scrolls sideways rather than cutting rows short, and the item's
+        rectangle carries the scroll."""
+        item = self.item(row) if row is not None and row >= 0 else None
+        if item is None or item.data(KIND_ROLE) != FIGHT:
+            return None
+        text = item.text()
+        at = text.find(ISSUES_LIST_CUE)
+        if at < 0:
+            return None
+        option = QStyleOptionViewItem()
+        self.initViewItemOption(option)
+        option.rect = self.visualItemRect(item)
+        self.itemDelegate().initStyleOption(option, self.indexFromItem(item))
+        style = self.style()
+        text_rect = style.subElementRect(QStyle.SE_ItemViewItemText, option, self)
+        margin = style.pixelMetric(QStyle.PM_FocusFrameHMargin, None, self) + 1
+        left = text_rect.left() + margin + option.fontMetrics.horizontalAdvance(text[:at])
+        return QRect(left, option.rect.top(),
+                     option.fontMetrics.horizontalAdvance(ISSUES_LIST_CUE), option.rect.height())
+
+    def viewportEvent(self, event):
+        """The (i)'s hover text over a fight row's mark, nothing anywhere
+        else: the rows carry no tooltip of their own (see the module)."""
+        if event.type() != QEvent.ToolTip:
+            return super().viewportEvent(event)
+        pos = event.pos()
+        item = self.itemAt(pos)
+        row = self.row(item) if item is not None else -1
+        mark = self.issues_mark_rect(row)
+        band = mark.adjusted(-MARK_SLACK, 0, MARK_SLACK, 0) if mark is not None else None
+        text = ""
+        if band is not None and band.contains(pos):
+            entry = self.entry_at(row)
+            text = fight_issues_tooltip(entry, NameMask.for_entry(entry, self.hide_names))
+        self.current_tooltip = text
+        if text:
+            QToolTip.showText(event.globalPos(), text, self.viewport(), band)
+        else:
+            QToolTip.hideText()
+        return True
 
     # ---- look ----
 

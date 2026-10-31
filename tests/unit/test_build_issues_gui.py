@@ -432,5 +432,178 @@ class TestHistoryListCue(IssuesGuiTestCase):
             win.close()
 
 
+def _clean_entry():
+    entry = _entry()
+    for p in entry.players:
+        p['build_issues'] = []
+    return entry
+
+
+class TestFightListHoverText(unittest.TestCase):
+    """What the fight list's (i) says on hover (issue #147)."""
+
+    def test_each_flagged_player_with_class_text_and_finding_titles(self):
+        from gui.fight_render import ISSUES_CUE, ISSUES_TITLE, fight_issues_tooltip
+        text = fight_issues_tooltip(_entry())
+        self.assertTrue(text.startswith(f'<b>{ISSUES_TITLE}</b>'), text)
+        self.assertIn('<b>@dualwield · NB</b>', text)
+        for finding in FINDINGS:
+            self.assertIn(f"• {finding['title']}", text)
+        # Only the flagged player
+        self.assertNotIn('@brainsnorkel', text)
+        self.assertIn(f"click a player's {ISSUES_CUE} for the rules", text)
+
+    def test_players_in_the_panes_row_order_with_borrowed_lines(self):
+        from gui.fight_render import fight_issues_tooltip
+        entry = _entry()
+        first = entry.players[0]
+        first['build_issues'] = [{'title': 'Two <Poison> glyphs on the front bar'}]
+        first['skill_lines'] = ['Herald of the Tome']
+        text = fight_issues_tooltip(entry)
+        self.assertLess(text.index('@brainsnorkel'), text.index('@dualwield'))
+        self.assertIn('@brainsnorkel · Warden +Herald', text)
+        self.assertIn('Two &lt;Poison&gt; glyphs', text)
+
+    def test_hide_names_leaves_the_text_form_of_the_mask(self):
+        from gui.fight_render import fight_issues_tooltip
+        from gui.name_mask import BLOCK, NameMask
+        entry = _entry()
+        text = fight_issues_tooltip(entry, NameMask.for_entry(entry, True))
+        self.assertNotIn('dualwield', text)
+        self.assertIn(f"<b>@{BLOCK * len('dualwield')} · NB</b>", text)
+
+    def test_nothing_for_a_fight_without_findings(self):
+        from gui.fight_render import fight_issues_tooltip, issues_description
+        self.assertEqual(fight_issues_tooltip(_clean_entry()), '')
+        self.assertEqual(issues_description(_clean_entry()), '')
+
+    def test_the_description_counts_players_and_names_nobody(self):
+        from gui.fight_render import issues_description
+        entry = _entry()
+        self.assertEqual(issues_description(entry), 'Possible build issues: 1 player')
+        entry.players[0]['build_issues'] = list(FINDINGS)
+        self.assertEqual(issues_description(entry), 'Possible build issues: 2 players')
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestFightListHover(IssuesGuiTestCase):
+    """The fight list's (i) shows the hover text, and only there (#147)."""
+
+    def _list(self, width=520):
+        from gui.fight_list import FightList
+        lst = FightList()
+        lst.resize(width, 200)
+        lst.set_fights([_entry(), _clean_entry()])
+        lst.show()
+        _app.processEvents()
+        self.addCleanup(lst.deleteLater)
+        self.addCleanup(lst.close)
+        return lst
+
+    def _hover(self, lst, pos):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QHelpEvent
+        event = QHelpEvent(QEvent.ToolTip, pos, lst.viewport().mapToGlobal(pos))
+        QApplication.sendEvent(lst.viewport(), event)
+        return lst.current_tooltip
+
+    def _flagged_row(self, lst):
+        return lst.row(lst.fight_item(0))
+
+    def test_the_mark_is_found_where_the_list_paints_it(self):
+        # Paint the row with and without the mark: the first column that
+        # differs is where the mark's ink starts
+        from gui.fight_render import ISSUES_LIST_CUE
+        with_mark = self._list()
+        without = self._list()
+        row = self._flagged_row(with_mark)
+        text = with_mark.item(row).text()
+        without.item(row).setText(text[:text.index(ISSUES_LIST_CUE)])
+        _app.processEvents()
+        rect = with_mark.issues_mark_rect(row)
+        self.assertIsNotNone(rect)
+        a = with_mark.viewport().grab().toImage()
+        b = without.viewport().grab().toImage()
+        dpr = a.devicePixelRatio()
+        first = next(x for x in range(a.width())
+                     if any(a.pixel(x, y) != b.pixel(x, y)
+                            for y in range(int(rect.top() * dpr), int(rect.bottom() * dpr))))
+        self.assertGreaterEqual(first / dpr, rect.left() - 1)
+        self.assertLessEqual(first / dpr, rect.right() + 1)
+
+    def test_hovering_the_mark_shows_the_hovered_fights_players(self):
+        lst = self._list()
+        # The clean fight is the one on screen; the hover reads its own row
+        lst.select_fight(1)
+        rect = lst.issues_mark_rect(self._flagged_row(lst))
+        text = self._hover(lst, rect.center())
+        self.assertIn('@dualwield · NB', text)
+        self.assertIn(FINDINGS[0]['title'], text)
+
+    def test_the_slack_either_side_counts(self):
+        from PySide6.QtCore import QPoint
+
+        from gui.fight_list import MARK_SLACK
+        lst = self._list()
+        rect = lst.issues_mark_rect(self._flagged_row(lst))
+        y = rect.center().y()
+        self.assertTrue(self._hover(lst, QPoint(rect.left() - MARK_SLACK, y)))
+        self.assertTrue(self._hover(lst, QPoint(rect.right() + MARK_SLACK, y)))
+        self.assertEqual(self._hover(lst, QPoint(rect.right() + MARK_SLACK + 8, y)), '')
+
+    def test_no_text_elsewhere_on_the_row_or_on_a_clean_fight(self):
+        from PySide6.QtCore import QPoint
+        lst = self._list()
+        flagged = lst.visualItemRect(lst.fight_item(0))
+        self.assertEqual(self._hover(lst, QPoint(flagged.left() + 2, flagged.center().y())), '')
+        clean = lst.row(lst.fight_item(1))
+        self.assertIsNone(lst.issues_mark_rect(clean))
+        rect = lst.visualItemRect(lst.item(clean))
+        self.assertEqual(self._hover(lst, rect.center()), '')
+        # A header row neither
+        self.assertIsNone(lst.issues_mark_rect(0))
+
+    def test_hide_names_masks_the_hover_text(self):
+        lst = self._list()
+        lst.hide_names = True
+        text = self._hover(lst, lst.issues_mark_rect(self._flagged_row(lst)).center())
+        self.assertNotIn('dualwield', text)
+        self.assertIn('· NB', text)
+
+    def test_the_mark_follows_a_narrow_lists_sideways_scroll(self):
+        lst = self._list(width=60)
+        row = self._flagged_row(lst)
+        before = lst.issues_mark_rect(row)
+        bar = lst.horizontalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        bar.setValue(bar.maximum())
+        _app.processEvents()
+        self.assertEqual(lst.issues_mark_rect(row).left(), before.left() - bar.value())
+
+    def test_a_screen_reader_hears_the_mark_as_the_rows_description(self):
+        from PySide6.QtCore import Qt
+        lst = self._list()
+        self.assertEqual(lst.fight_item(0).data(Qt.AccessibleDescriptionRole),
+                         'Possible build issues: 1 player')
+        self.assertEqual(lst.fight_item(1).data(Qt.AccessibleDescriptionRole), '')
+        # A rewritten row is described anew
+        entry = lst.entry_at(self._flagged_row(lst))
+        for p in entry.players:
+            p['build_issues'] = []
+        lst.update_fight(entry)
+        self.assertEqual(lst.fight_item(0).data(Qt.AccessibleDescriptionRole), '')
+
+    def test_the_window_passes_its_hide_names_switch(self):
+        win = self._window(_entry())
+        try:
+            self.assertFalse(win.history_list.hide_names)
+            win.hide_names_action.setChecked(True)
+            self.assertTrue(win.history_list.hide_names)
+            win.hide_names_action.setChecked(False)
+            self.assertFalse(win.history_list.hide_names)
+        finally:
+            win.close()
+
+
 if __name__ == '__main__':
     unittest.main()
