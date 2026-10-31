@@ -359,6 +359,45 @@ def issues_tooltips(entry) -> dict:
     return tips
 
 
+def fight_issues_tooltip(entry, names=None) -> str:
+    """Hover text for the fight list's (i) (issue #147): each player of the
+    fight with a possible build issue, in the fight pane's row order, by
+    name and the class text their row shows ('NB +Herald'), with the
+    findings' titles under it; then where the rules are. '' for a fight
+    without one. *names*: the Hide names mask (gui.name_mask), whose text
+    form is all a tooltip can show."""
+    names = names or NO_MASK
+    e = html.escape
+    blocks = []
+    for p in entry.players:
+        findings = p.get("build_issues") or []
+        if not findings:
+            continue
+        label = e(names.text(_join(p.get("name", ""))))
+        build = " ".join(part for part in (_join(p.get("class_abbr", "")), _subclass_text(p))
+                         if part)
+        if build:
+            label += f" · {e(build)}"
+        titles = "".join(f"<br>&nbsp;&nbsp;• {e(str(f.get('title', '')))}" for f in findings)
+        blocks.append(f"<br><b>{label}</b>{titles}")
+    if not blocks:
+        return ""
+    return (f"<b>{ISSUES_TITLE}</b>{''.join(blocks)}<br>"
+            f"<span style='font-size:85%'>Select the fight and click a player's "
+            f"{ISSUES_CUE} for the rules behind them</span>")
+
+
+def issues_description(entry) -> str:
+    """'Possible build issues: 2 players' for a fight with flagged players,
+    '' for one without: what a screen reader hears for the fight list's
+    (i), which it would otherwise read as a letter. No names, so Hide names
+    has nothing in it to hide."""
+    count = sum(1 for p in entry.players if p.get("build_issues"))
+    if not count:
+        return ""
+    return f"{ISSUES_TITLE}: {count} player{'' if count == 1 else 's'}"
+
+
 def misfortunes_text(entry) -> str:
     """'Misfortunes: Warm Welcome · Revoke of Respite' for a solo dungeon
     run, 'Misfortunes: none' for one without any, '' anywhere else and on
