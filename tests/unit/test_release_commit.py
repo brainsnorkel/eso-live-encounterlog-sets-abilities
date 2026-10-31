@@ -6,8 +6,10 @@ repositories), the tag on the merged release, the pull request check
 (scripts/build_design_doc.py --check)."""
 
 import importlib.util
+import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +28,11 @@ def _load(script: str):
 release = _load('release.py')
 check = _load('changelog_check.py')
 design = _load('build_design_doc.py')
+
+# Stands in for gh: writes a ⓘ and the arguments it was given, as the UTF-8
+# gh writes whatever the code page
+GH_ECHO = ("import json, sys; sys.stdout.buffer.write("
+           "json.dumps(['\\u24d8', *sys.argv[1:]], ensure_ascii=False).encode('utf-8'))")
 
 CHANGELOG = """# Changelog
 
@@ -367,6 +374,29 @@ class TagTests(unittest.TestCase):
         self.assertTrue(any('not a pre-release' in p for p in problems))
         self.assertTrue(any('linux' in p for p in problems))
         self.assertTrue(any('Stable moved' in p for p in problems))
+
+
+class GhTests(unittest.TestCase):
+    """The script's gh calls, with gh replaced by GH_ECHO."""
+
+    def _gh(self, *args):
+        from unittest.mock import patch
+        run = subprocess.run
+
+        def fake(argv, **kwargs):
+            self.assertEqual(argv[0], 'gh')
+            return run([sys.executable, '-c', GH_ECHO, *argv[1:]], **kwargs)
+        with patch.object(release.subprocess, 'run', side_effect=fake):
+            return json.loads(release.gh(*args))
+
+    def test_an_api_call_names_the_repository_in_its_path(self):
+        # gh api refuses --repo: the Stable check after --watch failed on it
+        self.assertEqual(self._gh('api', 'repos/o/r/releases/latest'),
+                         ['ⓘ', 'api', 'repos/o/r/releases/latest'])
+
+    def test_other_calls_name_it_with_the_flag(self):
+        self.assertEqual(self._gh('release', 'view', 'v0.3.0'),
+                         ['ⓘ', 'release', 'view', 'v0.3.0', '--repo', release.REPO])
 
 
 class ChangelogCheckTests(unittest.TestCase):
