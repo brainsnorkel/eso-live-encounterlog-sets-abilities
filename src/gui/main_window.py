@@ -356,6 +356,14 @@ class MainWindow(QMainWindow):
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
+        self.fight_view.banner_requested.connect(self._show_banner)
+        # The trial score banner captured from the screen (gui.banner_burst,
+        # issue #167): the burst running, the runs already tried this
+        # session, and the log the engine monitors, whose folder holds the
+        # banners by default
+        self._banner_burst = None
+        self._banner_done = set()
+        self._log_path = None
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -636,6 +644,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._ticker.stop()
+        if self._banner_burst is not None:
+            self._banner_burst.cancel()  # its recognition thread ends with the window
+            self._banner_burst = None
         self.update_poller.stop()  # a thread still checking is ignored
         self._retention_first.stop()
         self._retention_daily.stop()
@@ -673,6 +684,7 @@ class MainWindow(QMainWindow):
         if self._restart_pending:
             return  # from the analyzer Settings is replacing
         self._fights.append(entry)
+        self._attach_banner(entry)
         if self._review_fights is None:
             row = self.history_list.add_fight(entry)
             if self._follow_live:
@@ -687,6 +699,7 @@ class MainWindow(QMainWindow):
         fight on screen."""
         if self._restart_pending:
             return
+        self._attach_banner(entry)
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             self._show_fight()
@@ -794,6 +807,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_monitoring_started(self, path):
+        self._log_path = path
         self.statusBar().showMessage(f"Monitoring {path}", 8000)
         if not self._fights:
             self._show_placeholder(
@@ -1312,6 +1326,89 @@ class MainWindow(QMainWindow):
                             for key, name, offers in CHANNEL_CHOICES}[channel]
             updates = f"Update channel: {name} ({offers})"
         show_about(self, __version__, updates)
+
+    # ---- the trial score banner (banner_capture, issue #167) ----
+
+    def _banner_folder(self):
+        """Where the banners go: the Settings folder, else Banners beside
+        the monitored log; None before the log is known."""
+        configured = self.config.get("banner.dir")
+        if configured:
+            return Path(configured)
+        if self._log_path:
+            return Path(self._log_path).parent / "Banners"
+        return None
+
+    def _attach_banner(self, entry):
+        """A fight carrying a run's result: find the banner already saved
+        for it (the history is rebuilt from the log at every start), or,
+        when the result is live and the capture is on, start the burst
+        that grabs it from the screen. One burst at a time, one try per
+        run, nothing during a review."""
+        from banner_capture import BannerTarget, existing_banner
+        if getattr(entry, "banner_path", None):
+            return
+        target = BannerTarget.from_entry(entry)
+        if target is None:
+            return
+        folder = self._banner_folder()
+        found = existing_banner(folder, target)
+        if found is not None:
+            entry.banner_path = found
+            return
+        if (sys.platform != "win32" or not self.config.get("banner.enabled", False)
+                or folder is None or self._review_fights is not None
+                or self._banner_burst is not None or target.key in self._banner_done
+                or not target.is_live()):
+            return
+        from gui.banner_burst import BannerBurst
+        self._banner_done.add(target.key)
+        burst = BannerBurst(target, folder, self)
+        burst.finished.connect(lambda path, message, entry=entry: self._on_banner_finished(entry, path, message))
+        self._banner_burst = burst
+        self.statusBar().showMessage("Capturing the score banner…", 4000)
+        burst.start()
+
+    def _on_banner_finished(self, entry, path, message):
+        self._banner_burst = None
+        self.statusBar().showMessage(message, 8000)
+        if path is None:
+            return
+        entry.banner_path = path
+        row = self.history_list.update_fight(entry)
+        if row is not None and row == self.history_list.currentRow():
+            self._show_fight()
+
+    @Slot(str)
+    def _show_banner(self, action):
+        """The result strip's banner links: open the PNG, save a copy
+        elsewhere, or put the image on the clipboard."""
+        import shutil
+        entry = self.history_list.current_entry()
+        path = getattr(entry, "banner_path", None) if entry is not None else None
+        if not path or not Path(path).is_file():
+            self.statusBar().showMessage("The score banner file is gone", 5000)
+            return
+        path = Path(path)
+        if action == "save":
+            target, _ = QFileDialog.getSaveFileName(
+                self, "Save the score banner as", str(Path.home() / path.name), "PNG image (*.png)")
+            if target:
+                try:
+                    shutil.copyfile(path, target)
+                    self.statusBar().showMessage(f"Saved {target}", 5000)
+                except OSError as exc:
+                    self.statusBar().showMessage(f"Could not save the banner: {exc}", 8000)
+        elif action == "copy":
+            from PySide6.QtGui import QImage
+            image = QImage(str(path))
+            if image.isNull():
+                self.statusBar().showMessage("The score banner could not be read", 5000)
+                return
+            QGuiApplication.clipboard().setImage(image)
+            self.statusBar().showMessage("Score banner copied", 4000)
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, self)
