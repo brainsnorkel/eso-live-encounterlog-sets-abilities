@@ -20,7 +20,7 @@ use: the hover tells, the click opens the page. Below the bars: the damage
 types behind the sides, the amounts outside them (Oblivion, fall, drowning,
 untyped), what got through while blocking, what shields absorbed, hits
 avoided, the healing received against the overheal, and the killing
-blow's overkill. The same block draws a death's five seconds and the whole
+blow's overkill. The same block draws a death's last seconds and the whole
 fight, so the two read alike.
 
 The order (issue #95). The event table is what the window is opened for, so

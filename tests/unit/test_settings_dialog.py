@@ -141,7 +141,7 @@ class TestSettingsDialogLifetime(unittest.TestCase):
         self.assertEqual(edited.recap_window.value(), 10)
         edited.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-        self.config.set("death_recap.window_s", 5)
+        self.config.set("death_recap.window_s", 3)
 
     def test_a_path_rows_browse_dialog_belongs_to_the_settings_window(self):
         from gui.settings_dialog import SettingsDialog
