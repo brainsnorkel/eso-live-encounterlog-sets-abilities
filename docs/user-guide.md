@@ -389,7 +389,7 @@ Open **Settings…** from the toolbar.
 - **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 - **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
 
-Saving restarts monitoring: the history clears and the current session is replayed with the new settings. Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
+Saving replays the session when the log path, the split files, the tracked effects, the companion accrual or the death recap window changed: the history clears and the session is read again with the new settings. Every other setting applies at once, at the next build window, at the next retention run or at the next start, and the fights listed stay. Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 
 ### Automatic updates
 

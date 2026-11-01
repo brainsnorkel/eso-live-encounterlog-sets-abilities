@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from app_startup import engine_settings
 from data_staleness import status_text, status_tooltip
 from fight_index import (
     FightIndex,
@@ -1632,6 +1633,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.config, self, history_status=self.history_status(),
                                 on_build_history=self.start_backfill)
         updates_before = self._update_settings_key()
+        engine_before = engine_settings(self.config)
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
@@ -1643,12 +1645,18 @@ class MainWindow(QMainWindow):
                     bool(self.config.get("display.colorblind_graph", False)))
             if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
                 self.set_text_size(self.config.get(text_size.CONFIG_KEY))
-            self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
-            # The history is cleared when the engine reaches the restart
-            # (see _on_monitoring_restarting); until then its fights are
-            # the old analyzer's and are dropped
-            self._restart_pending = True
-            self.request_restart.emit()
+            if engine_settings(self.config) != engine_before:
+                self.statusBar().showMessage("Settings saved — restarting monitoring", 5000)
+                # The history is cleared when the engine reaches the restart
+                # (see _on_monitoring_restarting); until then its fights are
+                # the old analyzer's and are dropped
+                self._restart_pending = True
+                self.request_restart.emit()
+            else:
+                # Nothing the engine reads changed (issue #187): no replay,
+                # the fights listed stay, and _restart_pending stays False
+                # (set, it would drop every fight until the next restart)
+                self.statusBar().showMessage("Settings saved", 5000)
             self._start_retention()  # new retention settings act now
         # Design: Qt objects are freed on the UI thread. Delete the closed
         # dialog here, on the UI thread, rather than leave
