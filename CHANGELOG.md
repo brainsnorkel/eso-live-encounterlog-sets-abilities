@@ -2,6 +2,20 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.33.0] - 2026-11-02
+
+### Changed
+- **Death recaps keep 3 seconds by default, and Settings goes from 1 to 10** (#133): 3 seconds covers the fall from half health in most deaths with a shorter table, and 1 second shows only the killing blow and the hits just before it. A new install starts at 3; a window already saved in your settings, usually 5, is kept, so change it in Settings → Death recaps if you want the shorter one
+- **Settings on six pages** (#187): General (the log, starting with Windows, updates), Fights (death recaps, companions, penetration and crit), Tracked effects (the rules editor, given the page's height), History (the fight history and the score banner), Display (text size, colours, motion, names) and Files and splits (split logs, archiving), in a tab bar above Save and Cancel. One column of thirteen groups was 2,139 px tall, of which a 1080p screen showed 43%. The dialog opens at the size of its tallest page, whole on a 1366×768 screen at 100% text size and on 1080p at 200%, and reopens on the page it was last closed on until the app is closed. Every group keeps its title, so the guide's "Settings → …" references still hold; the guide shows one picture per page.
+- **Saving with a tracked-effect rule that will not parse asks first** (#187): the dialog turns to the Tracked effects page, puts the cursor in the editor and says how many lines will be skipped, with Save and Go back. Before, the only sign was a status line under the editor, which on another page is out of sight.
+- **Settings: a Save replays the session only when a setting the engine reads changed** (#187): the log path, the split files, the tracked effects, the companion accrual or the death recap window. Every other setting applies at once, at the next build window, at the next retention run or at the next start, and the fights listed stay; the status bar says which happened.
+- **Settings fields at their own size** (#187): a spin box or a drop-down no longer stretches to the dialog's width; only the path fields and the text size slider do. Under the Windows 11 style at a large text size a spin box used to cut its unit off ("10 secon").
+- **Settings text** (#187): shorter help under the tracked effects and the penetration and crit assumptions, with the facts in the labels; the group titles lose their parentheses, and *Automatic log archiving* says it is checked when the app starts; the same "Saving a change here replays the session" under each of the six settings it applies to; the split retention preview in the normal text colour, and only while it has something to say; the rules editor and the examples list in Consolas where it is installed.
+
+### Fixed
+- **Settings' pages take no focus** (#187): Ctrl+Tab and a click on a tab land on the page's first control, where the old scrolling column was itself the first, invisible, tab stop.
+- **Settings for the keyboard and screen readers** (#187): Tab leaves the tracked-effects editor instead of inserting a tab character, so Examples… and Save can be reached from it; the zip and Recycle Bin weeks, the text size slider, the rules editor, the Force of Nature figure, the path fields and the Browse… buttons are announced by their own names rather than their group's; each help paragraph is read with its control; the Encounter.log delete warning starts with "Warning:" rather than relying on its colour.
+
 ## [0.32.0] - 2026-11-01
 
 ### Added
