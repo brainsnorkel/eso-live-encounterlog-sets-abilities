@@ -14,7 +14,7 @@ class FightHistoryEntry:
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
-                 'zone_id', 'difficulty', 'banner_path']
+                 'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path']
 
     def __init__(self):
         self.timestamp = ""
@@ -105,6 +105,18 @@ class FightHistoryEntry:
         # player carried them (misfortunes.py); [] for a run without any,
         # None outside a solo dungeon and on an entry built without them
         self.misfortunes = None
+        # Kill or wipe (pull_outcome.pull_record): boss, bosses, outcome
+        # ('kill', 'wipe', 'left' or 'unseen'), health_start and
+        # health_left (the boss's %, None when no line carried it),
+        # health ({boss: [start, left]}), boss_died, players, dead_at_end
+        # (record ids), local_dead_at_end, start_s and end_s (Unix
+        # seconds, None without the log's start), zone and continues (it
+        # carries on the last pull). None in a fight without a named boss
+        # the players damaged
+        self.pull = None
+        # Each player's time dead in the fight: unit id -> milliseconds,
+        # for a player who was down at some point (pull_outcome.TimeDead)
+        self.time_dead = {}
 
 
 class FightHistory:

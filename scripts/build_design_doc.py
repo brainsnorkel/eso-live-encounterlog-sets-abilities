@@ -139,6 +139,9 @@ TOPICS = [
         "src/trial_result.py",
         "src/gui/fight_list.py",
     ]),
+    ("Kill or wipe, time dead, and a boss's pulls in a row", [
+        "src/pull_outcome.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),
