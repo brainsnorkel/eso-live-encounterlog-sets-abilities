@@ -241,7 +241,7 @@ class SettingsDialog(QDialog):
         outer = QVBoxLayout(self)
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
-        self._pages: dict[str, tuple[QScrollArea, QWidget]] = {}
+        self._pages: dict[str, QScrollArea] = {}  # the page's body is the area's widget
         page = {name: self._page(name) for name in PAGES}
         general, fights, tracked, history, display, files = (page[name] for name in PAGES)
 
@@ -499,6 +499,8 @@ class SettingsDialog(QDialog):
         # whitespace), and Ctrl+Tab still moves on (issue #187)
         self.rules_edit.setTabChangesFocus(True)
         self.rules_edit.setPlainText(config.get("tracking.rules", DEFAULT_RULES) or "")
+        self._initial_rules = self.rules_edit.toPlainText()
+        self._rule_errors: list = []  # from the last _check_rules
         self.rules_edit.setMinimumHeight(120)
         tracked.addWidget(self.rules_edit, 1)
         rules_row = QHBoxLayout()
@@ -560,10 +562,10 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
-        for name, (_scroll, body) in self._pages.items():
+        for name, scroll in self._pages.items():
             if name != "Tracked effects":  # whose editor takes the height
-                body.layout().addStretch(1)
-            self._align_labels(body)
+                scroll.widget().layout().addStretch(1)
+            self._align_labels(scroll.widget())
         self._fit_to_screen(buttons)
         self.tabs.setCurrentIndex(
             PAGES.index(open_page) if open_page in PAGES else SettingsDialog._last_page)
@@ -584,12 +586,12 @@ class SettingsDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setWidget(body)
         self.tabs.addTab(scroll, name)
-        self._pages[name] = (scroll, body)
+        self._pages[name] = scroll
         return layout
 
     def page_of(self, widget: QWidget) -> str:
         """The name of the page *widget* sits on."""
-        for name, (scroll, _body) in self._pages.items():
+        for name, scroll in self._pages.items():
             if scroll.isAncestorOf(widget):
                 return name
         raise ValueError(f"{widget} is on no page")
@@ -597,6 +599,20 @@ class SettingsDialog(QDialog):
     def done(self, result: int) -> None:
         SettingsDialog._last_page = self.tabs.currentIndex()
         super().done(result)
+
+    def keyPressEvent(self, event) -> None:
+        """PageUp and PageDown scroll the page showing when the control
+        with the focus does not take them (a line edit, a check box): the
+        scroll areas take no focus, so this is the keyboard's way to a
+        capped page's help paragraphs, which sit between the controls and
+        are reached by no Tab (issue #187)."""
+        if event.key() in (Qt.Key_PageUp, Qt.Key_PageDown):
+            bar = self.tabs.currentWidget().verticalScrollBar()
+            step = bar.pageStep() if event.key() == Qt.Key_PageDown else -bar.pageStep()
+            bar.setValue(bar.value() + step)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _small_style(self, role: str) -> str:
         """The style of a helper line under a setting, a little smaller than
@@ -653,19 +669,22 @@ class SettingsDialog(QDialog):
         widget's chrome is its hint less its pages' hint. The minimum
         width follows the tab bar (393 px at 100%, 648 at 200%): at 560 px
         the 200% bar hid tabs behind scroll arrows."""
-        bodies = [body for _scroll, body in self._pages.values()]
+        bodies = [scroll.widget() for scroll in self._pages.values()]
         for body in bodies:
             body.adjustSize()
         widest = max(body.sizeHint().width() for body in bodies)
         tallest = max(body.sizeHint().height() for body in bodies)
-        scroll = next(iter(self._pages.values()))[0]
+        scroll = next(iter(self._pages.values()))
         bar = scroll.verticalScrollBar().sizeHint().width()
-        chrome = self.tabs.sizeHint() - max((s.sizeHint() for s, _b in self._pages.values()),
-                                            key=lambda size: size.height())
+        # The chrome on each axis: the widest page sets the tab widget's
+        # width hint and the tallest its height hint, not the same page
+        hints = [s.sizeHint() for s in self._pages.values()]
+        chrome_w = self.tabs.sizeHint().width() - max(hint.width() for hint in hints)
+        chrome_h = self.tabs.sizeHint().height() - max(hint.height() for hint in hints)
         margins = self.layout().contentsMargins()
         spacing = self.layout().spacing()
-        width = widest + bar + chrome.width() + margins.left() + margins.right()
-        height = (tallest + chrome.height() + margins.top() + margins.bottom()
+        width = widest + bar + chrome_w + margins.left() + margins.right()
+        height = (tallest + chrome_h + margins.top() + margins.bottom()
                   + spacing + buttons.sizeHint().height())
         self.setMinimumWidth(max(
             560, self.tabs.tabBar().sizeHint().width() + margins.left() + margins.right()))
@@ -729,48 +748,56 @@ class SettingsDialog(QDialog):
         return (not was_on or self.delete_weeks.value() < was_weeks
                 or self.retention_folder() != was_folder)
 
+    def _ask(self, title: str, question: str, go_label: str, go_role, back_label: str = "Cancel",
+             informative: str = "", details: str = "") -> bool:
+        """A warning with one button that goes ahead and one, the default,
+        that does not; *details* sits under Show Details, so a long list
+        never makes the box taller than the screen. True when the user
+        chose to go ahead."""
+        box = QMessageBox(QMessageBox.Warning, title, question, QMessageBox.NoButton, self)
+        if informative:
+            box.setInformativeText(informative)
+        if details:
+            box.setDetailedText(details)
+        go = box.addButton(go_label, go_role)
+        back = box.addButton(back_label, QMessageBox.RejectRole)
+        box.setDefaultButton(back)
+        try:
+            box.exec()
+            return box.clickedButton() is go
+        finally:
+            box.deleteLater()  # on the UI thread, as the main window does
+
     def confirm_delete(self, summary: split_retention.DeleteSummary) -> bool:
         """Ask before saving a change that deletes; the full list is under
         Show Details."""
         question, details, names = split_retention.describe_deletion(summary, TRASH_NAME)
-        box = QMessageBox(QMessageBox.Warning, "Move old split logs", question,
-                          QMessageBox.NoButton, self)
-        box.setInformativeText(details)
-        box.setDetailedText(names)
-        move = box.addButton(f"Move to the {TRASH_NAME}", QMessageBox.DestructiveRole)
-        box.addButton(QMessageBox.Cancel)
-        box.setDefaultButton(QMessageBox.Cancel)
-        try:
-            box.exec()
-            return box.clickedButton() is move
-        finally:
-            box.deleteLater()  # on the UI thread, as the main window does
+        return self._ask("Move old split logs", question, f"Move to the {TRASH_NAME}",
+                         QMessageBox.DestructiveRole, informative=details, details=names)
 
     def confirm_skipped_rules(self, errors) -> bool:
         """Save with rule lines that will not parse: the "skipped" status
         under the editor is the only sign, invisible from another page, so
         the dialog turns to Tracked effects, focuses the editor and asks
-        (issue #187), the way the retention deletion asks."""
+        (issue #187), the way the retention deletion asks. The lines are
+        under Show Details: a pasted chat log is dozens of them."""
         self.tabs.setCurrentIndex(PAGES.index("Tracked effects"))
         self.rules_edit.setFocus()
         count = len(errors)
-        box = QMessageBox(QMessageBox.Warning, "Tracked effects",
-                          f"{count} rule line{'s' if count != 1 else ''} will not parse and will "
-                          "be skipped. Save anyway?", QMessageBox.NoButton, self)
-        box.setInformativeText("\n".join(errors))
-        save = box.addButton("Save", QMessageBox.AcceptRole)
-        back = box.addButton("Go back", QMessageBox.RejectRole)
-        box.setDefaultButton(back)
-        try:
-            box.exec()
-            return box.clickedButton() is save
-        finally:
-            box.deleteLater()  # on the UI thread, as the main window does
+        return self._ask("Tracked effects",
+                         f"{count} rule line{'s' if count != 1 else ''} will not parse and will "
+                         "be skipped. Save anyway?", "Save", QMessageBox.AcceptRole,
+                         back_label="Go back", details="\n".join(errors))
 
     def accept(self) -> None:
-        _rules, errors = parse_rules(self.rules_edit.toPlainText())
-        if errors and not self.confirm_skipped_rules(errors):
-            return  # stay in Settings, on the rules
+        # Only rules edited this visit are asked about: a line an older
+        # version saved broken would otherwise pull every Save, from any
+        # page, to Tracked effects
+        page = self.tabs.currentIndex()
+        if self._rule_errors and self.rules_edit.toPlainText() != self._initial_rules:
+            if not self.confirm_skipped_rules(self._rule_errors):
+                return  # stay in Settings, on the rules
+            self.tabs.setCurrentIndex(page)  # the page memory keeps the page worked on
         if self._delete_needs_asking():
             doomed = self.retention_plan().delete
             if doomed and not self.confirm_delete(split_retention.summarize(doomed)):
@@ -831,6 +858,7 @@ class SettingsDialog(QDialog):
     def _check_rules(self) -> None:
         """Say how many rules the text holds, and which lines will not parse."""
         rules, errors = parse_rules(self.rules_edit.toPlainText())
+        self._rule_errors = errors  # what a Save asks about
         count = f"{len(rules)} rule{'s' if len(rules) != 1 else ''}"
         if errors:
             self.rules_status.setStyleSheet(self._small_style("warning"))

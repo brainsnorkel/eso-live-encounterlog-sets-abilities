@@ -12,6 +12,7 @@ No pixel heights here: fonts differ between the runners.
 """
 
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -128,7 +129,8 @@ class TestSettingsPages(unittest.TestCase):
         for index, name in enumerate(PAGES):
             dialog.tabs.setCurrentIndex(index)
             self.app.processEvents()
-            scroll, body = dialog._pages[name]
+            scroll = dialog._pages[name]
+            body = scroll.widget()
             viewport = scroll.viewport()
             # A capped width can show a horizontal bar, which takes height
             # from the viewport
@@ -145,15 +147,35 @@ class TestSettingsPages(unittest.TestCase):
             if name == "Tracked effects":
                 self.assertGreater(dialog.rules_edit.height(), viewport.height() // 2)
         # The height came from the tallest page: that page fills its viewport
-        tallest = max((body for _s, body in dialog._pages.values()),
+        tallest = max((s.widget() for s in dialog._pages.values()),
                       key=lambda b: b.sizeHint().height())
         if not capped_h and not capped_w:
-            scroll = dialog._pages[dialog.page_of(tallest)][0]
+            scroll = dialog._pages[dialog.page_of(tallest)]
             self.assertGreaterEqual(tallest.sizeHint().height(), scroll.viewport().height() - 4)
+
+    def test_page_up_and_down_scroll_the_page_showing(self):
+        """The areas take no focus, so the dialog scrolls the page for
+        PageUp and PageDown when the focused control does not take them."""
+        from PySide6.QtTest import QTest
+
+        from gui.settings_dialog import PAGES
+        dialog = self._dialog()
+        dialog.show()
+        dialog.resize(dialog.width(), 260)  # a capped page
+        dialog.tabs.setCurrentIndex(PAGES.index("Fights"))
+        dialog.assume_piercing.setFocus()
+        self.app.processEvents()
+        bar = dialog._pages["Fights"].verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        self.assertEqual(bar.value(), 0)
+        QTest.keyClick(dialog.assume_piercing, Qt.Key_PageDown)
+        self.assertGreater(bar.value(), 0)
+        QTest.keyClick(dialog.assume_piercing, Qt.Key_PageUp)
+        self.assertEqual(bar.value(), 0)
 
     def test_the_scroll_areas_take_no_focus_and_the_width_follows_the_tab_bar(self):
         dialog = self._dialog()
-        for name, (scroll, _body) in dialog._pages.items():
+        for name, scroll in dialog._pages.items():
             self.assertEqual(scroll.focusPolicy(), Qt.NoFocus, name)
         self.assertGreaterEqual(dialog.minimumWidth(), 560)
         self.assertGreaterEqual(dialog.minimumWidth(), dialog.tabs.tabBar().sizeHint().width())
@@ -192,7 +214,7 @@ class TestSettingsPages(unittest.TestCase):
              patch.object(autostart, "autostart_command", return_value=None), \
              patch.object(autostart, "is_enabled", return_value=False):
             dialog = self._dialog()
-            _scroll, body = dialog._pages["General"]
+            body = dialog._pages["General"].widget()
             shown = [g.title() for g in body.findChildren(QGroupBox) if not g.isHidden()]
             self.assertEqual(shown, ["Encounter log", "Updates"])
             self.assertGreater(body.sizeHint().height(), 0)
@@ -224,9 +246,15 @@ class TestSettingsPages(unittest.TestCase):
         self.assertEqual(len(asked), 1)
         self.assertEqual(len(asked[0]), 2)
         self.assertNotEqual(dialog.result(), QDialog.Accepted)  # Go back: still open
-        with patch.object(type(dialog), "confirm_skipped_rules", lambda self, errors: True):
+        # Save anyway, from the Display page: the page memory keeps Display,
+        # not the Tracked effects page the question turned to
+        dialog.tabs.setCurrentIndex(PAGES.index("Display"))
+        with patch.object(type(dialog), "confirm_skipped_rules",
+                          lambda self, errors: self.tabs.setCurrentIndex(
+                              PAGES.index("Tracked effects")) or True):
             dialog.accept()
         self.assertEqual(dialog.result(), QDialog.Accepted)
+        self.assertEqual(type(dialog)._last_page, PAGES.index("Display"))
         # The real question switches the page and focuses the editor before asking
         other = self._dialog()
         other.rules_edit.setPlainText("broken\n")
@@ -244,20 +272,40 @@ class TestSettingsPages(unittest.TestCase):
             dialog.accept()
         self.assertEqual(dialog.result(), QDialog.Accepted)
 
+    def test_a_broken_line_the_dialog_opened_with_is_not_asked_about(self):
+        """A rule line an older version saved broken: a Save from any page
+        with the rules untouched goes through unasked."""
+        self.config.set("tracking.rules", "Fine = 12345 on self\nnot a rule\n")
+        dialog = self._dialog()
+        self.assertEqual(len(dialog._rule_errors), 1)
+        dialog.reduce_motion.setChecked(True)
+        with patch.object(type(dialog), "confirm_skipped_rules",
+                          lambda self, errors: self.fail("asked about an old line")):
+            dialog.accept()
+        self.assertEqual(dialog.result(), QDialog.Accepted)
+        # Edited this visit, the same broken line is asked about
+        again = self._dialog()
+        again.rules_edit.setPlainText(again.rules_edit.toPlainText() + "Mine = 1 on self\n")
+        asked = []
+        with patch.object(type(again), "confirm_skipped_rules",
+                          lambda self, errors: asked.append(len(errors)) or True):
+            again.accept()
+        self.assertEqual(asked, [1])
+
     def test_the_capture_script_names_a_picture_per_page(self):
         from gui.settings_dialog import PAGES
         script = Path(__file__).resolve().parents[2] / "scripts" / "capture_screenshots.py"
         text = script.read_text(encoding="utf-8")
+        old_picture = re.compile(r"(?<![-\w])settings\.png")  # the one tall picture, as a name
         for name in PAGES:
             self.assertIn(f"settings-{name.lower().replace(' ', '-')}.png", text)
-        self.assertNotIn("settings.png", text)
-        self.assertNotIn("_scroll", text)
+        self.assertIsNone(old_picture.search(text))
         guide = script.parents[1] / "docs" / "user-guide.md"
         guide_text = guide.read_text(encoding="utf-8")
         for name in PAGES:
             self.assertIn(f"screencaps/settings-{name.lower().replace(' ', '-')}.png",
                           guide_text)
-        self.assertNotIn("screencaps/settings.png", guide_text)
+        self.assertIsNone(old_picture.search(guide_text))
 
 
 if __name__ == '__main__':
