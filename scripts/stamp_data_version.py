@@ -79,16 +79,19 @@ def tables(root: Path = ROOT) -> list:
 
 
 def begin_log_version(log: Path) -> str:
-    """The game version on the last BEGIN_LOG line of *log* ('' when none);
-    a split log holds one session, so its first line is the one."""
-    version = ""
+    """The game version on the last BEGIN_LOG line of *log* ('' when none).
+    The line is found by the engine's backward search (1 MB at a time from
+    the end), so the live Encounter.log of several GB is not read through."""
+    from esolog_tail import find_session_start_offset
+    size = log.stat().st_size
+    offset = find_session_start_offset(log, size, size)
+    if offset is None:
+        return ""
     with open(log, "rb") as handle:
-        for raw in handle:
-            if b",BEGIN_LOG," in raw[:40]:
-                fields = raw.decode("utf-8", "replace").strip().replace('"', "").split(",")
-                if len(fields) >= 7:
-                    version = fields[6].strip()
-    return version
+        handle.seek(offset)
+        line = handle.readline()
+    fields = line.decode("utf-8", "replace").strip().replace('"', "").split(",")
+    return fields[6].strip() if len(fields) >= 7 and fields[1] == "BEGIN_LOG" else ""
 
 
 def newest_split(folder: Path) -> Path | None:

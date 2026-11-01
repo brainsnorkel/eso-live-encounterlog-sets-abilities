@@ -67,7 +67,17 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from ability_icons import bundle_root, esohub_set_url, icons_dir
-from player_build import ARMOR_SLOTS, WEAPON_SLOTS, armor_weight, weapon_type
+
+# The build window's own rules for a set id and its name, so the counter and
+# the Set#<id> it explains cannot drift apart
+from player_build import (
+    ARMOR_SLOTS,
+    WEAPON_SLOTS,
+    _default_set_name,
+    _set_id,
+    armor_weight,
+    weapon_type,
+)
 
 # 'eso.live.12.1' and 'eso.pts.12.2.3': the branch, then the update's numbers
 _VERSION = re.compile(r"^\s*eso\.[a-z]+\.(\d+)\.(\d+)", re.IGNORECASE)
@@ -113,11 +123,6 @@ def bundled_icon_stems() -> frozenset:
         return frozenset(path.stem.lower() for path in icons_dir().glob("*.png"))
     except OSError:
         return frozenset()
-
-
-def _default_set_name(set_id: str) -> str | None:
-    from gear_set_database import gear_set_db
-    return gear_set_db.get_set_name_by_set_id(set_id)
 
 
 @dataclass(frozen=True)
@@ -202,8 +207,8 @@ class DataCheckTracker:
             if len(item) < 7:
                 continue
             slot, item_id = str(item[0]), str(item[1])
-            set_id = str(item[6])
-            has_set = set_id not in ("", "0", "nan")
+            set_id = _set_id(item)
+            has_set = bool(set_id)
             if has_set and set_id not in self._checked_sets:
                 self._checked_sets.add(set_id)
                 name = self._set_name_of(set_id)

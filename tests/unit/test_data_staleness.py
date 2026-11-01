@@ -10,6 +10,7 @@ import re
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 import data_staleness
@@ -215,6 +216,17 @@ def _replay(analyzer, lines):
             analyzer.process_log_entry(entry)
 
 
+def _fixture_icon_stems(lines) -> set:
+    """Every icon stem the log's ABILITY_INFO lines name."""
+    from ability_icons import icon_stem
+    stems = set()
+    for line in lines:
+        match = re.match(r'^\d+,ABILITY_INFO,\d+,"(?:[^"]|"")*","([^"]*)"', line)
+        if match and icon_stem(match.group(1)):
+            stems.add(icon_stem(match.group(1)))
+    return stems
+
+
 class TestEngine(unittest.TestCase):
 
     def _analyzer(self):
@@ -226,10 +238,18 @@ class TestEngine(unittest.TestCase):
 
     def test_a_session_begins_with_a_check_and_a_find_sends_another(self):
         """The fixture's BEGIN_LOG sends the first; its Radiant Glory names
-        an icon the bundle lacks (ability_templar_under_attack), which sends
-        the second, once, though every PLAYER_INFO of the player names it."""
+        an icon the tables here lack (ability_templar_under_attack), which
+        sends the second, once, though every PLAYER_INFO of the player names
+        it. The tables are the test's own, so a refresh of the bundle (a new
+        stamp, new icons) cannot change the outcome."""
+        lines = FIXTURE.read_text(encoding='utf-8').splitlines()
         analyzer, recorder = self._analyzer()
-        _replay(analyzer, FIXTURE.read_text(encoding='utf-8').splitlines())
+        analyzer.data_check = DataCheckTracker(
+            data_version='eso.live.12.1', data_built='2026-11-01',
+            set_name_of=lambda set_id: 'Known Set', armor_weight_of=lambda item: 'heavy',
+            weapon_type_of=lambda item: 'dagger', set_link_of=lambda name: 'https://eso-hub.com/x',
+            icon_stems=_fixture_icon_stems(lines) - {'ability_templar_under_attack'})
+        _replay(analyzer, lines)
         checks = [event[1] for event in recorder.of_kind('data_check')]
         self.assertEqual(len(checks), 2)
         self.assertEqual(checks[0].game_version, 'eso.live.11.1')
@@ -349,14 +369,20 @@ class TestStampScript(unittest.TestCase):
                 f.write('9,BEGIN_LOG,1755729999999,15,"NA Megaserver","en","eso.live.11.2"\n')
             self.assertEqual(stamp.begin_log_version(log), 'eso.live.11.2')
 
-    def test_the_spec_bundles_the_stamp(self):
+    def test_the_spec_bundles_the_stamp_or_stops(self):
+        """Unconditionally, and a build without it stops: an app shipped
+        without the stamp could never say the game is newer."""
         spec = (REPO_ROOT / 'esolog-tail.spec').read_text(encoding='utf-8')
-        self.assertTrue(re.search(r"'data/version\.json'", spec))
+        self.assertRegex(spec, r"(?m)^a\.datas \+= \[\('data/version\.json', 'data/version\.json', 'DATA'\)\]")
+        self.assertRegex(spec, r"(?m)^    raise SystemExit\('data/version\.json is missing")
 
 
 class TestCheckScript(unittest.TestCase):
 
-    def test_a_log_is_read_session_by_session(self):
+    def test_a_log_is_read_as_the_app_reads_it(self):
+        """The script's verdict on a log is the engine's own, whatever the
+        bundle holds: the same findings as the last check the engine sends
+        for the fixture, against the same bundled tables."""
         check = _load('check_data_staleness.py')
         sessions = check.scan(FIXTURE, None)
         self.assertEqual(len(sessions), 1)
@@ -364,13 +390,67 @@ class TestCheckScript(unittest.TestCase):
         self.assertEqual(session['version'], 'eso.live.11.1')
         self.assertTrue(session['sets'])
         self.assertTrue(session['bars'])
-        # The app's own rules: the fixture's Radiant Glory icon is not bundled
-        self.assertEqual(session['missing_icons'], [['25267', 'Radiant Glory']])
-        self.assertTrue(session['speaks'])
-        self.assertEqual(session['status'], 'Data built for game 12.1: 1 icon missing')
-        # Judged against an older bundle, the version speaks too
+        analyzer = ESOLogAnalyzer()
+        analyzer.fight_history = FightHistory()
+        recorder = RecordingListener()
+        analyzer.add_listener(recorder)
+        _replay(analyzer, FIXTURE.read_text(encoding='utf-8').splitlines())
+        engine = recorder.of_kind('data_check')[-1][1]
+        self.assertEqual(session['unknown_sets'], list(engine.unknown_sets))
+        self.assertEqual(session['unknown_armor'], list(engine.unknown_armor))
+        self.assertEqual(session['unknown_weapons'], list(engine.unknown_weapons))
+        self.assertEqual(session['missing_icons'], [list(x) for x in engine.missing_icons])
+        self.assertEqual(session['unlinked_sets'], list(engine.unlinked_sets))
+        self.assertEqual(session['speaks'], not engine.clear)
+        self.assertEqual(session['status'], status_text(engine))
+        # Judged against an older version, the version speaks too
         older = check.scan(FIXTURE, 'eso.live.11.0')[0]
         self.assertTrue(older['status'].startswith('Game 11.1, data built for 11.0'))
+
+    def test_a_rampage_is_judged_by_its_morph_as_the_engine_shows_it(self):
+        """A Rampage on the bar is drawn as the werewolf morph it stands in
+        for (ESOLogAnalyzer._bar_slots), so its own icon is not the one that
+        must be bundled, and the morph's is."""
+        check = _load('check_data_staleness.py')
+        session = check._Session('eso.live.12.1', 'eso.live.12.1')
+        names = {'267416': 'Rampage', '39076': 'Werewolf Berserker'}
+        icons = {'267416': 'rampage_icon_not_bundled', '39076': 'morph_icon'}
+        slots = check.bar_slots(session, '7', ['267416', '1234'], names, icons)
+        self.assertEqual(slots, [{'id': '39076', 'name': 'Werewolf Berserker', 'icon': 'morph_icon'}])
+        # The morph the player slotted wins over Rampage's default
+        session = check._Session('eso.live.12.1', 'eso.live.12.1')
+        slots = check.bar_slots(session, '7', ['267425', '39075'],
+                                {'39075': 'Pack Leader'}, {'39075': 'pack_icon'})
+        self.assertEqual(slots[0]['id'], '39075')
+
+    def test_the_largest_copy_is_read(self):
+        """Copies share a hash of their first 256 KB: the largest is kept,
+        so a truncated split never stands in for its complete copy."""
+        check = _load('check_data_staleness.py')
+        hashed = [(Path('a.log'), 'x', 100), (Path('b.log'), 'x', 900), (Path('c.log'), 'y', 50),
+                  (Path('d.log'), 'x', 900)]
+        logs, copies = check.pick_logs(hashed)
+        self.assertEqual(logs, [Path('d.log'), Path('c.log')])
+        self.assertEqual(copies, 2)
+        self.assertEqual(check.pick_logs(list(reversed(hashed)))[0], logs)  # order-free
+
+    def test_a_zipped_split_is_read_and_closed(self):
+        check = _load('check_data_staleness.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            zipped = Path(tmp) / 'split.log.zip'
+            with zipfile.ZipFile(zipped, 'w') as archive:
+                archive.write(FIXTURE, 'split.log')
+            self.assertEqual(check.head_hash(zipped), check.head_hash(FIXTURE))
+            self.assertEqual(len(check.scan(zipped, None)), 1)
+            zipped.unlink()  # nothing left open (Windows refuses to delete an open file)
+            empty = Path(tmp) / 'two.zip'
+            with zipfile.ZipFile(empty, 'w') as archive:
+                archive.writestr('a.log', 'x')
+                archive.writestr('b.log', 'y')
+            self.assertIsNone(check.head_hash(empty))
+            missing = check._hash(Path(tmp) / 'gone.log')
+            self.assertIsNone(missing[1])
+            self.assertTrue(missing[3])
 
     def test_an_id_gone_from_the_newest_version_is_flagged(self):
         check = _load('check_data_staleness.py')
