@@ -49,6 +49,7 @@ from damage_kinds import (
 )
 from death_recap import RECAP_WINDOW_MS
 from gui.name_mask import NO_MASK
+from pull_outcome import at_clock, dead_hover_text
 from gui.text_size import scaled_px
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
@@ -156,8 +157,7 @@ def _player_for(entry, unit_id) -> Optional[dict]:
 
 
 def _clock(ms) -> str:
-    seconds = max(0, int(ms)) // 1000
-    return f"{seconds // 60}:{seconds % 60:02d}"
+    return at_clock(ms)
 
 
 def window_seconds(recap: dict) -> int:
@@ -202,6 +202,10 @@ def death_tooltips(entry, names=None) -> Dict[str, str]:
         lines = [f"<b>{name}: {len(deaths)} {noun}</b>"]
         lines.extend(f"{_clock(d.get('time_ms', 0))} &nbsp;{e(_killed_by(d, names))}"
                      for d in deaths)
+        # How long they stayed down in the fight (pull_outcome, issue #169)
+        dead = dead_hover_text(entry, unit_id)
+        if dead:
+            lines.append(e(dead))
         lines.append("<span style='font-size:85%'>Click for the death recap</span>")
         tips[death_href(unit_id)] = "<br>".join(lines)
     return tips

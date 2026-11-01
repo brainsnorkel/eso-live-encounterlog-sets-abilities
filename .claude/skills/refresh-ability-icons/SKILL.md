@@ -44,7 +44,15 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
 4. Spot-check one added icon visually (open the PNG) and make sure `data/icons/abilities/manifest.json` records the new eso.mnf modification date.
 
-5. Commit `data/icons/abilities/` (PNGs + manifest.json) together with a CHANGELOG entry naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` (see `datas` in `esolog-tail.spec`).
+5. Stamp the bundle, so `data/version.json` carries the new manifest's date and the game version the icons came from (the unit tests fail until it does):
+
+   ```cmd
+   python scripts\stamp_data_version.py --log "%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
+   ```
+
+   `--log` reads the version from the log's last `BEGIN_LOG` line, so use a log written by the patched client; `--game-version eso.live.12.2` names it directly.
+
+6. Commit `data/icons/abilities/` (PNGs + manifest.json) and `data/version.json` together with a `changelog.d/` fragment naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` (see `datas` in `esolog-tail.spec`).
 
 **Notes**
 

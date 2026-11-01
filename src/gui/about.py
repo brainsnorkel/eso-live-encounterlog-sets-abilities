@@ -5,7 +5,11 @@ Kept as plain HTML so the same wording can be checked by tests and mirrored
 in the README's Credits section.
 """
 
+import html
+
 from PySide6.QtWidgets import QMessageBox
+
+from data_staleness import data_stamps, short_version
 
 REPO_URL = "https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities"
 ESOHUB_URL = "https://eso-hub.com"
@@ -20,13 +24,31 @@ EASYSTALKING_URL = "https://www.esoui.com/downloads/info2332-EasyStalking-Encoun
 ALWAYSLOGGING_URL = "https://github.com/brainsnorkel/AlwaysLogging"
 
 
-def about_html(version: str, updates: str = "") -> str:
-    """*updates* is the update channel line (issue #134), left out when empty."""
+def data_html(data) -> str:
+    """The bundled game data's version and each table's date (issue #173),
+    from data_staleness.data_stamps(): '' when the bundle carries none."""
+    game_version, built, tables = data or ("", "", [])
+    if not game_version and not tables:
+        return ""
+    head = "<b>Game data</b>"
+    if game_version:
+        head += f": built for game version {html.escape(short_version(game_version))}"
+        if built:
+            head += f" on {html.escape(built)}"
+    stamps = " · ".join(f"{html.escape(name)} {html.escape(date)}".strip()
+                        for name, date in tables)
+    return f"<p>{head}" + (f"<br><span style='color:gray'>{stamps}</span>" if stamps else "") + "</p>"
+
+
+def about_html(version: str, updates: str = "", data=None) -> str:
+    """*updates* is the update channel line (issue #134), left out when empty;
+    *data* the bundled data's stamps (data_staleness.data_stamps)."""
     return (
         f"<h3 style='margin-bottom:2px'>ESO Log Tail {version}</h3>"
         f"<p style='margin-top:0'>Live fight summaries from Elder Scrolls Online "
         f"encounter logs.<br><a href='{REPO_URL}'>{REPO_URL}</a></p>"
-        + (f"<p>{updates}</p>" if updates else "") +
+        + (f"<p>{updates}</p>" if updates else "")
+        + data_html(data) +
         f"<p><b>Credits</b></p>"
         f"<ul>"
         f"<li><b>ESO-Hub.com</b>: skill and gear set links open pages on "
@@ -63,4 +85,5 @@ def about_html(version: str, updates: str = "") -> str:
 
 
 def show_about(parent, version: str, updates: str = "") -> None:
-    QMessageBox.about(parent, "About ESO Log Tail", about_html(version, updates))
+    QMessageBox.about(parent, "About ESO Log Tail",
+                      about_html(version, updates, data_stamps()))

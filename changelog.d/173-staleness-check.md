@@ -1,0 +1,2 @@
+### Added
+- **The status bar says when the game data is behind the game** (#173): an amber line on the right, `Game 12.2, data built for 12.1: 3 unknown sets, 2 icons missing`, when the log was written by a newer game version than the app's bundled data, or names sets, armor or weapons, skill icons or set pages the data does not know. Hover it for the ids and names. It is not shown while the data is current, and About lists the game version the data was built for and the date of each table

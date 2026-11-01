@@ -600,7 +600,9 @@ class TestThePane(unittest.TestCase):
             self.assertNotIn("font-size", paragraph)
             self.assertNotIn("<b>*</b>", html)
         text = render_plain_text(entry)
-        self.assertTrue(text.endswith("\n@tank hit Sail Ripper first: Light Attack (Ice)"))
+        # The first-death line (issue #169) follows the opener's
+        self.assertTrue(text.endswith("\n@tank hit Sail Ripper first: Light Attack (Ice)"
+                                      "\nFirst death: @passerby to y (x) at 0:01 · 1 death"))
 
     def test_two_lines_are_one_paragraph(self):
         from gui.fight_render import render_html

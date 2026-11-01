@@ -228,6 +228,19 @@ class NameMask:
                 hidden |= names
         return cls(True, keep, hidden - keep)
 
+    @classmethod
+    def for_entries(cls, entries, hide: bool) -> "NameMask":
+        """The mask for several fights at once (a boss's pulls in a row):
+        every fight's local player kept, every other player hidden."""
+        if not hide:
+            return cls()
+        keep, hidden = set(), set()
+        for entry in entries:
+            mask = cls.for_entry(entry, True)
+            keep |= mask._keep
+            hidden |= mask._hidden
+        return cls(True, keep, hidden - keep)
+
     def hides(self, name) -> bool:
         """Whether *name* is another player's, or names another player's
         companion, and the mask is on."""

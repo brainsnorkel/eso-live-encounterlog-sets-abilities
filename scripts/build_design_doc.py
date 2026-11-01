@@ -87,6 +87,11 @@ TOPICS = [
     ("Set buffs: which set a Major or Minor buff came from", [
         "scripts/generate_set_buffs.py",
     ]),
+    ("Game data against the game's version: the staleness check", [
+        "src/data_staleness.py",
+        "scripts/stamp_data_version.py",
+        "scripts/check_data_staleness.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
@@ -139,6 +144,16 @@ TOPICS = [
     ("A trial's result, and the fight list in blocks by instance", [
         "src/trial_result.py",
         "src/gui/fight_list.py",
+    ]),
+    ("Kill or wipe, time dead, and a boss's pulls in a row", [
+        "src/pull_outcome.py",
+    ]),
+    ("The session recap: the fight list as text for Discord", [
+        "src/session_recap.py",
+        "src/fight_blocks.py",
+    ]),
+    ("Fight history across sessions: the index of boss fights", [
+        "src/fight_index.py",
     ]),
     ("Death recaps", [
         "src/death_recap.py",

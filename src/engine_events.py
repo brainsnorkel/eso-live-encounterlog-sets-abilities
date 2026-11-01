@@ -80,6 +80,11 @@ class AnalyzerListener:
         """A lasting problem from *source* ('split'), shown until it is
         cleared by the same source with message None."""
 
+    def on_data_check(self, check) -> None:  # check: data_staleness.DataCheck
+        """The logging session's game version against the bundled data's,
+        and what the log named that the data does not know (issue #173):
+        sent as a session begins and whenever something new is found."""
+
     def on_trial_result(self, result: dict) -> None:
         """END_TRIAL recorded a successful run: *result* as trial_result
         builds it, with 'ended_epoch' (the line's own time as Unix
@@ -141,6 +146,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_warning(self, source: str, message: str | None) -> None:
         self.events.append(("warning", source, message))
+
+    def on_data_check(self, check) -> None:
+        self.events.append(("data_check", check))
 
     def on_trial_result(self, result: dict) -> None:
         self.events.append(("trial_result", result))

@@ -1,0 +1,3 @@
+### Added
+- **What ended the pull** (#169): a line under the fight names the first death, what killed them and when, how many died, and on a wipe how long the pull went on after it. Hovering a boss's pulls in a row in the fight list adds the first death of each pull, the killers over every death with the share the boss dealt itself, and the three players who spent longest dead
+- **Time dead** (#169): the ☠ hover says how long the player spent dead, from each death until they were back up or the fight ended, and the row adds `dead 1:32` when it was a tenth of the fight or more; **Copy fight** adds it to the player's line. **Hide names** hides the names in all of these
