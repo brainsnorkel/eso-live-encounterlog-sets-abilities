@@ -1,2 +1,0 @@
-### Added
-- **Copy session** (#171): a toolbar button and Ctrl+Shift+C put the whole fight list on the clipboard as a short recap for Discord, one paragraph per instance: each boss's pulls with the kill or the best pull, and what ended them (first deaths, killers, who was longest dead), the trash as a count and a time, how many players had a possible build issue, and the trial's result. The status bar says how long the copy is, since a Discord message holds 2,000 characters. **Hide names** hides the names in it
