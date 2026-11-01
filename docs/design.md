@@ -2568,13 +2568,23 @@ on every completed run in a year of split logs (146 runs, 2026-01 to -10):
   multiple of 1,000, at most 36,000 (a deathless Maw of Lorkhaj) and at
   least 0 (87 runs with 36 deaths or more). The 35/36 Sunspire run of
   2026-10-21 wrote 35000 with one player death in the log.
-- The maximum is 36 in the 12-player trials, all of which were veteran
-  runs; an arena's is not (a Dragonstar Arena run with 7 deaths kept 14),
-  and a normal trial's was never seen. So the maximum is shown only for a
-  veteran run of a trial in TRIALS, and an arena's or an unknown run's
-  vitality as the points alone.
+- Only veteran runs write it, trials and arenas alike: all 267 BEGIN_TRIAL
+  and 245 END_TRIAL lines in the raw logs and splits (2026-11-01) are in a
+  VETERAN zone, normal Blackrose Prison splits carry no TRIAL_* line, and
+  UESP's Leaderboards page says scores are set in veteran mode only.
+- The maximum (VITALITY_MAX) is the game's starting pool, which UESP gives
+  as "typically 15, 24 or 36", and the runs fit 15 for a solo arena, 24
+  for a four-player one and 36 for a trial. Measured (issue #183):
+  Maelstrom Arena 15 (11 left after the 4 deaths of a solo run, which logs
+  every death), Vateshran Hollows 15 (14 left, 1 death), Dragonstar Arena
+  24 (a published run's banner reads 24/24; ours kept 14 with 7 of its
+  deaths logged). Blackrose Prison's 24 is from a veteran banner Chris
+  saw with the Unchained achievement, 24/24: every logged run used it
+  all. Sanctum Ophidia's 36 is the trial rule alone, no run being logged.
+  A run of an id not in the table shows the points alone.
 - success is T in every END_TRIAL: a run that fails or is abandoned writes
-  none, so there is never a failed result to show.
+  none, so there is never a failed result to show. An earlier veteran
+  Vateshran attempt (December 2025) has BEGIN_TRIAL and no END_TRIAL.
 - Vitality is the log's figure, never 36 less the deaths the engine counts.
   In 38 runs the log holds fewer player deaths than the game charged (3
   logged against 13 in an Aetherian Archive run, 8 against 23 in Hel Ra):
@@ -2589,7 +2599,13 @@ The line comes inside the final fight in 144 of the 146 runs (33 ms after
 the last hit of a Sunspire run) and so belongs to that fight. In the other
 two, both Blackrose Prison, it comes about 4 seconds after END_COMBAT, and
 the engine gives it to the fight it has just sent (ESOLogAnalyzer.
-_handle_end_trial), which frontends then redraw.
+_handle_end_trial), which frontends then redraw. Maelstrom Arena's comes
+2.9 s after END_COMBAT and takes the same path; Vateshran Hollows' and
+Dragonstar Arena's come inside the final fight.
+
+The timer is the game's, rounded to the nearest second, half up, as the
+banner shows it (ZO_FormatTimeMilliseconds): 1,351,407 ms is 22:31 and
+2,649,500 ms is 44:10.
 
 ### src/gui/fight_list.py
 
@@ -3309,7 +3325,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1652](../src/gui/main_window.py#L1652)*
+*[src/gui/main_window.py:1653](../src/gui/main_window.py#L1653)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -3933,33 +3949,63 @@ posted font changes before it returns.
 
 The trial completion banner, captured from the screen after END_TRIAL (issue #167).
 
-Design: The score banner. When a trial completes, the game shows "COMPLETED:
-SUNSPIRE (VETERAN)" with the final score, the time, the vitality bonus and the
-revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS in the game's
-centerscreenannouncehandlers.lua), after a wait of half a second to four
-seconds in the announcement queue behind the boss achievement. Keeping a
-picture of it is the traditional record of a run. The log writes END_TRIAL at
-the same moment (the engine's _handle_end_trial), so the app can take the
-picture itself, on Windows: for fifteen seconds after the result arrives it
-grabs the screen once a second, reads each grab with Windows' own text
-recognition, keeps the first one in which the run's score appears, crops it to
-the banner and saves that as a PNG. The score makes the capture *verified*: the
-digits of the log's finalScore must be read off the picture, so the file can
-only be this run's banner, whatever the client language. The game's own timer
-text (trial_result.duration_text) is the fallback for a score the recognition
-split badly. Nothing is kept when no grab verifies (the game in exclusive
-fullscreen, alt-tabbed away, no recognition language installed, the banner
-never shown); the app's diagnostic line says so.
+Design: The score banner. When a trial or a veteran arena completes, the game
+shows "COMPLETED: SUNSPIRE (VETERAN)" with the final score, the time, the
+vitality bonus and the revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS
+in the game's centerscreenannouncehandlers.lua; one handler,
+EVENT_RAID_TRIAL_COMPLETE, serves trials and arenas alike). Keeping a picture
+of it is the traditional record of a run. The log writes END_TRIAL at the same
+moment (the engine's _handle_end_trial), so the app can take the picture
+itself, on Windows: it grabs the screen once a second, reads each grab with
+Windows' own text recognition, and keeps a grab in which the run's score
+appears, cropped to the banner, as a PNG. The score makes the capture
+*verified*: the digits of the log's finalScore must be read off the picture,
+so the file can only be this run's banner, whatever the client language. The
+game's own timer text (trial_result.duration_text) is the fallback for a score
+the recognition split badly. Nothing is kept when no grab verifies (the game
+in exclusive fullscreen, alt-tabbed away, no recognition language installed,
+the banner never shown); the app's diagnostic line says so.
+
+When the banner comes (issue #183): it waits in the game's announcement queue
+behind higher priorities (champion points, experience, objectives, quest
+updates; 3.5 s each), so a trial's showed 0.5 to 4 s after END_TRIAL and
+Maelstrom Arena's about 25 s after it, at the end of an arena that queues
+several. The burst therefore runs until END_TRIAL's own time plus
+BURST_UNTIL_S, and for at least BURST_MIN_SECONDS when the line is read late
+(burst_seconds): Vateshran Hollows' line, read 1 s late, was given only 15 s
+and its banner came after; Maelstrom's, read 21.5 s late, was caught as it
+appeared.
+
+Keeping a whole banner: the banner is drawn in left to right over 1,700 ms
+(CenterScreenLargeTextWipe in centerscreenannounce.xml) and drawn out over
+2,000 ms at the end, so the first grab that verifies can hold part of it (the
+Maelstrom file of 2026-11-01 stops at "Vita"). After it, FOLLOW_UP_GRABS more
+are taken of the same monitor, a second apart, and the most complete one is
+kept (more_complete): the one that reads the vitality bonus's digits, then the
+one whose stats row reaches furthest right, a later one on a tie.
 
 Why text recognition rather than a fixed rectangle: the banner's position is
 in the game's UI units (230 from the top, centred, in centerscreenannounce.xml),
 which scale with the resolution and the UI scale setting, so the crop comes
-from the boxes the recognition returns for the title and the stats line,
-padded on the right for the vitality icon and the revives count, which it
-never reads. Only the top-centre of the screen (REGION_WIDTH_FRACTION by
-REGION_HEIGHT_FRACTION) is read and only the banner band is kept, so the group
-frames and the chat stay out of the picture and the Hide names switch needs no
-change.
+from the boxes the recognition returns for the title and the stats row. The
+banner is centred on the screen, so the crop is made symmetric about the
+screen's centre line: the left edge the words give fixes the right edge too,
+which keeps the vitality icon and the revives count the recognition never
+reads, and the undrawn part of a banner caught mid-wipe. (A game in a window
+off the screen's centre is the case this misjudges.) Only the top-centre of
+the screen (REGION_WIDTH_FRACTION by REGION_HEIGHT_FRACTION, centred, so its
+centre is the screen's) is read and only the banner band is kept, so the
+group frames and the chat stay out of the picture and the Hide names switch
+needs no change.
+
+What each burst saw goes into banner.log beside crash.log (burst_log_text,
+append_burst_log): the run, when END_TRIAL was written and read, the outcome
+line, and one line per grab with the monitor, frame, how many lines were read
+and whether the score or the time matched. Of the recognised text only the
+lines holding a digit are kept in full (the stats line, the timer); other
+announcements pass through the region, so the rest is only counted (Chris,
+2026-11-01). No pictures: an unverified grab is never kept. The newest
+BANNER_LOG_BURSTS bursts are kept.
 
 Why Windows PowerShell: Windows.Media.Ocr is a WinRT API that Windows
 PowerShell 5.1 (on every Windows 10 and 11) can call, so no package is needed;
@@ -4020,17 +4066,22 @@ main window, one at a time, started the moment the engine reports END_TRIAL
 END_COMBAT trails a successful END_TRIAL by up to six seconds on the real logs,
 and the banner is on screen for ten. All the work runs on the burst's thread:
 it opens a Desktop Duplication reader per monitor (desktop_duplication; a lost
-desktop, a mode or HDR switch, is reopened once), and once a second for
-fifteen seconds grabs every monitor, converts the frame (frame_to_image), cuts
-the top-centre region (banner_capture.region_rect), writes it as a PNG in a
-temporary folder, reads it with the Windows recognition (one PowerShell
-process for the whole burst) and verifies it against the run's score. The UI
-thread only takes part when no monitor can be duplicated (a remote session),
-grabbing through Qt's QScreen, which must be used from the UI thread, and
-handing the images to the thread. The first verified grab ends the burst: the
-band the recognition boxed is cut out of that PNG, padded, and saved under the
-run's name in the banner folder. Fifteen seconds with nothing verified end it
-with nothing kept, and the reasons the thread noted (no duplication, a lost
-monitor) go into the status-bar line. The thread holds frames, images, paths
-and text, never a widget, so nothing of Qt's widgets is touched off the UI
-thread (the rule of issue #18); the burst deletes itself after it reports.
+desktop, a mode or HDR switch, is reopened once), and once a second until
+END_TRIAL's own time plus 45 s (banner_capture.burst_seconds) grabs every
+monitor, converts the frame (frame_to_image), cuts the top-centre region
+(banner_capture.region_rect), writes it as a PNG in a temporary folder, reads
+it with the Windows recognition (one PowerShell process for the whole burst)
+and verifies it against the run's score. The UI thread only takes part when no
+monitor can be duplicated (a remote session), grabbing through Qt's QScreen,
+which must be used from the UI thread, and handing the images to the thread.
+The first verified grab is followed by banner_capture.FOLLOW_UP_GRABS more of
+the same monitor, a second apart, for a banner still drawing in; the most
+complete verified one (banner_capture.more_complete) is then cut out of its
+PNG, symmetric about the screen's centre line, and saved under the run's name
+in the banner folder. A burst that runs out with nothing verified ends with
+nothing kept, and the reasons the thread noted (no duplication, a lost
+monitor) go into the status-bar line. Every outcome, a cancelled burst's too,
+is written to banner.log with a line per grab (banner_capture.burst_log_text).
+The thread holds frames, images, paths and text, never a widget, so nothing of
+Qt's widgets is touched off the UI thread (the rule of issue #18); the burst
+deletes itself after it reports.
