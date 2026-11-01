@@ -1,33 +1,63 @@
 """
 The trial completion banner, captured from the screen after END_TRIAL (issue #167).
 
-Design: The score banner. When a trial completes, the game shows "COMPLETED:
-SUNSPIRE (VETERAN)" with the final score, the time, the vitality bonus and the
-revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS in the game's
-centerscreenannouncehandlers.lua), after a wait of half a second to four
-seconds in the announcement queue behind the boss achievement. Keeping a
-picture of it is the traditional record of a run. The log writes END_TRIAL at
-the same moment (the engine's _handle_end_trial), so the app can take the
-picture itself, on Windows: for fifteen seconds after the result arrives it
-grabs the screen once a second, reads each grab with Windows' own text
-recognition, keeps the first one in which the run's score appears, crops it to
-the banner and saves that as a PNG. The score makes the capture *verified*: the
-digits of the log's finalScore must be read off the picture, so the file can
-only be this run's banner, whatever the client language. The game's own timer
-text (trial_result.duration_text) is the fallback for a score the recognition
-split badly. Nothing is kept when no grab verifies (the game in exclusive
-fullscreen, alt-tabbed away, no recognition language installed, the banner
-never shown); the app's diagnostic line says so.
+Design: The score banner. When a trial or a veteran arena completes, the game
+shows "COMPLETED: SUNSPIRE (VETERAN)" with the final score, the time, the
+vitality bonus and the revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS
+in the game's centerscreenannouncehandlers.lua; one handler,
+EVENT_RAID_TRIAL_COMPLETE, serves trials and arenas alike). Keeping a picture
+of it is the traditional record of a run. The log writes END_TRIAL at the same
+moment (the engine's _handle_end_trial), so the app can take the picture
+itself, on Windows: it grabs the screen once a second, reads each grab with
+Windows' own text recognition, and keeps a grab in which the run's score
+appears, cropped to the banner, as a PNG. The score makes the capture
+*verified*: the digits of the log's finalScore must be read off the picture,
+so the file can only be this run's banner, whatever the client language. The
+game's own timer text (trial_result.duration_text) is the fallback for a score
+the recognition split badly. Nothing is kept when no grab verifies (the game
+in exclusive fullscreen, alt-tabbed away, no recognition language installed,
+the banner never shown); the app's diagnostic line says so.
+
+When the banner comes (issue #183): it waits in the game's announcement queue
+behind higher priorities (champion points, experience, objectives, quest
+updates; 3.5 s each), so a trial's showed 0.5 to 4 s after END_TRIAL and
+Maelstrom Arena's about 25 s after it, at the end of an arena that queues
+several. The burst therefore runs until END_TRIAL's own time plus
+BURST_UNTIL_S, and for at least BURST_MIN_SECONDS when the line is read late
+(burst_seconds): Vateshran Hollows' line, read 1 s late, was given only 15 s
+and its banner came after; Maelstrom's, read 21.5 s late, was caught as it
+appeared.
+
+Keeping a whole banner: the banner is drawn in left to right over 1,700 ms
+(CenterScreenLargeTextWipe in centerscreenannounce.xml) and drawn out over
+2,000 ms at the end, so the first grab that verifies can hold part of it (the
+Maelstrom file of 2026-11-01 stops at "Vita"). After it, FOLLOW_UP_GRABS more
+are taken of the same monitor, a second apart, and the most complete one is
+kept (more_complete): the one that reads the vitality bonus's digits, then the
+one whose stats row reaches furthest right, a later one on a tie.
 
 Why text recognition rather than a fixed rectangle: the banner's position is
 in the game's UI units (230 from the top, centred, in centerscreenannounce.xml),
 which scale with the resolution and the UI scale setting, so the crop comes
-from the boxes the recognition returns for the title and the stats line,
-padded on the right for the vitality icon and the revives count, which it
-never reads. Only the top-centre of the screen (REGION_WIDTH_FRACTION by
-REGION_HEIGHT_FRACTION) is read and only the banner band is kept, so the group
-frames and the chat stay out of the picture and the Hide names switch needs no
-change.
+from the boxes the recognition returns for the title and the stats row. The
+banner is centred on the screen, so the crop is made symmetric about the
+screen's centre line: the left edge the words give fixes the right edge too,
+which keeps the vitality icon and the revives count the recognition never
+reads, and the undrawn part of a banner caught mid-wipe. (A game in a window
+off the screen's centre is the case this misjudges.) Only the top-centre of
+the screen (REGION_WIDTH_FRACTION by REGION_HEIGHT_FRACTION, centred, so its
+centre is the screen's) is read and only the banner band is kept, so the
+group frames and the chat stay out of the picture and the Hide names switch
+needs no change.
+
+What each burst saw goes into banner.log beside crash.log (burst_log_text,
+append_burst_log): the run, when END_TRIAL was written and read, the outcome
+line, and one line per grab with the monitor, frame, how many lines were read
+and whether the score or the time matched. Of the recognised text only the
+lines holding a digit are kept in full (the stats line, the timer); other
+announcements pass through the region, so the rest is only counted (Chris,
+2026-11-01). No pictures: an unverified grab is never kept. The newest
+BANNER_LOG_BURSTS bursts are kept.
 
 Why Windows PowerShell: Windows.Media.Ocr is a WinRT API that Windows
 PowerShell 5.1 (on every Windows 10 and 11) can call, so no package is needed;
@@ -59,31 +89,43 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from trial_result import duration_text
+from trial_result import POINTS_PER_VITALITY, duration_text
 
 __all__ = [
+    "BANNER_LOG_BURSTS",
     "BURST_INTERVAL_MS",
-    "BURST_SECONDS",
+    "BURST_MIN_SECONDS",
+    "BURST_UNTIL_S",
+    "FOLLOW_UP_GRABS",
     "LIVE_WINDOW_S",
     "BannerTarget",
+    "GrabRecord",
     "OcrLine",
     "OcrSession",
+    "append_burst_log",
     "banner_file_name",
+    "burst_log_text",
+    "burst_seconds",
+    "completeness",
     "crop_rect",
     "display_sdr_white",
     "existing_banner",
     "long_path",
+    "more_complete",
     "ocr_available",
     "parse_ocr_output",
     "region_rect",
     "verify",
 ]
 
-# The burst: one grab a second for fifteen seconds (Chris, 2026-11-01). The
-# banner shows 0.5 to 4 s after END_TRIAL for 10 s; the log is polled every
-# second and its write lag is unmeasured, which the margin is for.
-BURST_SECONDS = 15
+# The burst: one grab a second (Chris, 2026-11-01) until END_TRIAL's own
+# time plus BURST_UNTIL_S (Chris, 2026-11-01: an arena's banner came about
+# 25 s after it and stays 10 s), and never less than BURST_MIN_SECONDS
+BURST_UNTIL_S = 45
+BURST_MIN_SECONDS = 15
 BURST_INTERVAL_MS = 1000
+# Grabs taken after the first verified one, for a banner still drawing in
+FOLLOW_UP_GRABS = 2
 # A result older than this when it reaches the GUI is a replayed one (the
 # session replayed at attach, a split opened for review): no capture.
 LIVE_WINDOW_S = 90
@@ -91,12 +133,12 @@ LIVE_WINDOW_S = 90
 # of the height. The banner sits 230 UI units from the top, centred.
 REGION_WIDTH_FRACTION = 0.60
 REGION_HEIGHT_FRACTION = 0.45
-# Padding round the recognised band, as shares of the band's width (left,
-# right: the vitality icon and revives count sit right of the last word
-# read) and of its height (above and below)
-PAD_LEFT = 0.04
-PAD_RIGHT = 0.12
+# Padding round the recognised band, as shares of the band's width (each
+# side) and of its height (above and below)
+PAD_SIDE = 0.04
 PAD_VERTICAL = 0.40
+# The bursts banner.log keeps
+BANNER_LOG_BURSTS = 50
 # A title line is taken into the band when its bottom lies within this many
 # stats-line heights above the stats line
 TITLE_REACH = 3.0
@@ -133,6 +175,7 @@ class BannerTarget:
     duration_ms: int
     ended_epoch: float
     trial_id: int = 0
+    vitality: int | None = None
 
     @classmethod
     def from_result(cls, result, fallback_epoch: float | None = None) -> BannerTarget | None:
@@ -152,6 +195,7 @@ class BannerTarget:
             duration_ms=int(result.get("duration_ms") or 0),
             ended_epoch=float(ended),
             trial_id=int(result.get("trial_id") or 0),
+            vitality=result.get("vitality"),
         )
 
     @classmethod
@@ -185,10 +229,24 @@ class BannerTarget:
     def time_text(self) -> str:
         return duration_text(self.duration_ms)
 
+    @property
+    def bonus_text(self) -> str | None:
+        """The vitality bonus as the banner writes it ('35000'), if known."""
+        if self.vitality is None:
+            return None
+        return str(int(self.vitality) * POINTS_PER_VITALITY)
+
     def is_live(self, now: float | None = None) -> bool:
         """Whether the result is fresh enough for the banner to be on screen."""
         now = time.time() if now is None else now
         return (now - self.ended_epoch) <= LIVE_WINDOW_S
+
+
+def burst_seconds(ended_epoch: float, now: float | None = None) -> float:
+    """How long a burst starting *now* runs: until END_TRIAL's own time
+    *ended_epoch* plus BURST_UNTIL_S, and at least BURST_MIN_SECONDS."""
+    now = time.time() if now is None else now
+    return max(float(BURST_MIN_SECONDS), ended_epoch + BURST_UNTIL_S - now)
 
 
 def _parse_timestamp(text: str) -> float | None:
@@ -250,9 +308,12 @@ def verify(lines: Sequence[OcrLine], target: BannerTarget) -> tuple[int, str] | 
     return None
 
 
-def crop_rect(lines: Sequence[OcrLine], stats_index: int, width: int, height: int) -> tuple[int, int, int, int]:
+def crop_rect(lines: Sequence[OcrLine], stats_index: int, width: int, height: int,
+              centre_x: int | None = None) -> tuple[int, int, int, int]:
     """The band to keep, in the image's pixels: the stats line and the title
-    line(s) within TITLE_REACH above it, padded, clamped to the image."""
+    line(s) within TITLE_REACH above it, padded, and made symmetric about
+    *centre_x*, the banner's centre line (by default the image's middle,
+    which region_rect makes the screen's), clamped to the image."""
     stats = lines[stats_index]
     x0, y0, x1, y1 = stats.x, stats.y, stats.right, stats.bottom
     reach = stats.h * TITLE_REACH
@@ -262,8 +323,9 @@ def crop_rect(lines: Sequence[OcrLine], stats_index: int, width: int, height: in
         x0, y0 = min(x0, line.x), min(y0, line.y)
         x1, y1 = max(x1, line.right), max(y1, line.bottom)
     band_w, band_h = x1 - x0, y1 - y0
-    x0 -= int(band_w * PAD_LEFT)
-    x1 += int(band_w * PAD_RIGHT)
+    centre = width // 2 if centre_x is None else int(centre_x)
+    half = max(centre - x0, x1 - centre) + int(band_w * PAD_SIDE)
+    x0, x1 = centre - half, centre + half
     y0 -= int(band_h * PAD_VERTICAL)
     y1 += int(band_h * PAD_VERTICAL)
     x0, y0 = max(0, x0), max(0, y0)
@@ -271,11 +333,117 @@ def crop_rect(lines: Sequence[OcrLine], stats_index: int, width: int, height: in
     return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
 
 
+def _stats_row(lines: Sequence[OcrLine], stats_index: int) -> list[OcrLine]:
+    """The lines on the stats line's row, itself included: those whose
+    vertical middle lies within its box (the recognition can split a row)."""
+    stats = lines[stats_index]
+    return [line for line in lines if stats.y <= line.y + line.h / 2 <= stats.bottom]
+
+
+def completeness(lines: Sequence[OcrLine], stats_index: int, target: BannerTarget) -> tuple[bool, int, int]:
+    """How much of the banner a verified grab holds: whether its stats row
+    reads the vitality bonus's digits (beside the score's own), how far right
+    the row reaches (the banner is drawn in and out from the left), and the
+    row's height, the slack more_complete allows."""
+    row = _stats_row(lines, stats_index)
+    tokens = [token for line in row for token in _number_tokens(line.text)]
+    score = str(target.score)
+    if score in tokens:
+        tokens.remove(score)
+    bonus = target.bonus_text
+    return (bonus is not None and bonus in tokens,
+            max(line.right for line in row),
+            lines[stats_index].h)
+
+
+def more_complete(new: tuple[bool, int, int], old: tuple[bool, int, int]) -> bool:
+    """Whether a later grab's completeness *new* is to be kept over *old*:
+    the one that reads the bonus wins, then the later one unless its row
+    ends clearly further left (by more than a row's height). A tie goes to
+    the later grab, past more of a banner drawing in."""
+    if new[0] != old[0]:
+        return new[0]
+    return new[1] >= old[1] - max(new[2], old[2])
+
+
 def region_rect(width: int, height: int) -> tuple[int, int, int, int]:
     """The part of a screen of *width* x *height* that is read."""
     w = int(width * REGION_WIDTH_FRACTION)
     h = int(height * REGION_HEIGHT_FRACTION)
     return (width - w) // 2, 0, w, h
+
+
+# ---- banner.log: what each burst saw ----
+
+@dataclass
+class GrabRecord:
+    """One read grab, for banner.log: when (seconds after END_TRIAL's own
+    time), from which monitor, the frame's format and size ('bgra8
+    3840x2160'), the lines read, and what verified it ('score', 'time' or
+    None)."""
+    at_s: float
+    source: str
+    frame: str
+    lines: list[OcrLine]
+    match: str | None = None
+
+
+def _clock(epoch: float, with_date: bool = False) -> str:
+    """Local time to the tenth of a second."""
+    when = _dt.datetime.fromtimestamp(epoch)  # noqa: DTZ006  local, like the file names
+    text = when.strftime("%Y-%m-%d %H:%M:%S" if with_date else "%H:%M:%S")
+    return f"{text}.{when.microsecond // 100000}"
+
+
+def burst_log_text(target: BannerTarget, acted_epoch: float, seconds: float, outcome: str,
+                   grabs: Sequence[GrabRecord], kept: int | None = None) -> str:
+    """One burst's block for banner.log: a '=== ' header naming the run,
+    when END_TRIAL was written and when the app acted on it, the outcome
+    line the status bar showed, then a line per grab with the recognised
+    lines that hold a digit under it, the rest only counted. *kept* is the
+    index in *grabs* of the grab saved."""
+    vet = " vet" if target.is_vet else ""
+    late = acted_epoch - target.ended_epoch
+    out = [(f"=== {_clock(target.ended_epoch, with_date=True)} {target.name}{vet}:"
+            f" score {target.score}, time {target.time_text}"),
+           (f"END_TRIAL written at {_clock(target.ended_epoch)}, acted on at {_clock(acted_epoch)}"
+            f" ({late:+.1f} s); grabs for {seconds:.0f} s, to {late + seconds:+.1f} s"),
+           outcome]
+    for i, grab in enumerate(grabs):
+        digits = [line.text for line in grab.lines if any(ch.isdigit() for ch in line.text)]
+        verdict = f"matched the {grab.match}" if grab.match else "no match"
+        if i == kept:
+            verdict += ", kept"
+        out.append(f"{grab.at_s:+.1f} s {grab.source} {grab.frame}: {len(grab.lines)} lines,"
+                   f" {len(digits)} with digits; {verdict}")
+        out.extend(f"    {text}" for text in digits)
+    return "\n".join(out) + "\n"
+
+
+def append_burst_log(path: Path, block: str, keep: int = BANNER_LOG_BURSTS) -> bool:
+    """Add one burst's *block* to the log at *path*, keeping the newest
+    *keep* bursts. False when the file cannot be written: the log never
+    stops a capture."""
+    path = Path(path)
+    try:
+        old = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    except OSError:
+        old = ""
+    blocks = [b for b in re.split(r"(?m)^(?==== )", old) if b.strip()]
+    blocks.append(block)
+    text = "".join(b if b.endswith("\n") else b + "\n" for b in blocks[-keep:])
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
 
 
 # ---- Windows text recognition through Windows PowerShell ----

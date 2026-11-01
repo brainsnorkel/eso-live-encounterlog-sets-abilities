@@ -343,16 +343,17 @@ class SettingsDialog(QDialog):
             banner_group = QGroupBox("Score banner (Windows)")
             banner_form = QFormLayout(banner_group)
             self.banner_enabled = QCheckBox(
-                "Capture the trial completion banner from the screen when a trial ends")
+                "Capture the trial completion banner from the screen when a trial or arena ends")
             self.banner_enabled.setChecked(bool(config.get("banner.enabled", False)))
             self.banner_dir = _PathRow(config.get("banner.dir") or "", directory=True)
             banner_form.addRow(self.banner_enabled)
             banner_form.addRow("Banner folder (blank = log folder\\Banners):", self.banner_dir)
             banner_help = QLabel(
-                "For 15 seconds after the log's END_TRIAL the screen is grabbed once a second. "
-                "The first grab on which Windows' text recognition reads the run's final score "
-                "is cropped to the banner and saved as a PNG; nothing is kept otherwise. The "
-                "game must be on screen, in borderless or windowed mode.")
+                "Until 45 seconds after the log's END_TRIAL (at least 15) the screen is grabbed "
+                "once a second. Of the grabs on which Windows' text recognition reads the run's "
+                "final score, the one with the whole banner drawn is cropped to it and saved as "
+                "a PNG; nothing is kept otherwise. The game must be on screen, in borderless or "
+                "windowed mode. What each grab read is noted in banner.log beside the settings.")
             banner_help.setWordWrap(True)
             banner_help.setStyleSheet(self._small_style("muted"))
             banner_form.addRow(banner_help)

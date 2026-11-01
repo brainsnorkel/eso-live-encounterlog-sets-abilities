@@ -8,20 +8,25 @@ main window, one at a time, started the moment the engine reports END_TRIAL
 END_COMBAT trails a successful END_TRIAL by up to six seconds on the real logs,
 and the banner is on screen for ten. All the work runs on the burst's thread:
 it opens a Desktop Duplication reader per monitor (desktop_duplication; a lost
-desktop, a mode or HDR switch, is reopened once), and once a second for
-fifteen seconds grabs every monitor, converts the frame (frame_to_image), cuts
-the top-centre region (banner_capture.region_rect), writes it as a PNG in a
-temporary folder, reads it with the Windows recognition (one PowerShell
-process for the whole burst) and verifies it against the run's score. The UI
-thread only takes part when no monitor can be duplicated (a remote session),
-grabbing through Qt's QScreen, which must be used from the UI thread, and
-handing the images to the thread. The first verified grab ends the burst: the
-band the recognition boxed is cut out of that PNG, padded, and saved under the
-run's name in the banner folder. Fifteen seconds with nothing verified end it
-with nothing kept, and the reasons the thread noted (no duplication, a lost
-monitor) go into the status-bar line. The thread holds frames, images, paths
-and text, never a widget, so nothing of Qt's widgets is touched off the UI
-thread (the rule of issue #18); the burst deletes itself after it reports.
+desktop, a mode or HDR switch, is reopened once), and once a second until
+END_TRIAL's own time plus 45 s (banner_capture.burst_seconds) grabs every
+monitor, converts the frame (frame_to_image), cuts the top-centre region
+(banner_capture.region_rect), writes it as a PNG in a temporary folder, reads
+it with the Windows recognition (one PowerShell process for the whole burst)
+and verifies it against the run's score. The UI thread only takes part when no
+monitor can be duplicated (a remote session), grabbing through Qt's QScreen,
+which must be used from the UI thread, and handing the images to the thread.
+The first verified grab is followed by banner_capture.FOLLOW_UP_GRABS more of
+the same monitor, a second apart, for a banner still drawing in; the most
+complete verified one (banner_capture.more_complete) is then cut out of its
+PNG, symmetric about the screen's centre line, and saved under the run's name
+in the banner folder. A burst that runs out with nothing verified ends with
+nothing kept, and the reasons the thread noted (no duplication, a lost
+monitor) go into the status-bar line. Every outcome, a cancelled burst's too,
+is written to banner.log with a line per grab (banner_capture.burst_log_text).
+The thread holds frames, images, paths and text, never a widget, so nothing of
+Qt's widgets is touched off the UI thread (the rule of issue #18); the burst
+deletes itself after it reports.
 """
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ import shutil
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
@@ -90,6 +96,7 @@ class _Source:
         self._dup: dd.DesktopDuplicator | None = None
         self.sdr_white = bc.SDR_REFERENCE_NITS
         self.dead = False
+        self.last_format = ""  # the last frame's, for banner.log
         self._open()
 
     def _open(self) -> None:
@@ -122,6 +129,7 @@ class _Source:
                 return None
         if frame is None:
             return None
+        self.last_format = frame.format_name
         return frame_to_image(frame, self.sdr_white)
 
     def close(self) -> None:
@@ -130,28 +138,45 @@ class _Source:
             self._dup = None
 
 
+@dataclass
+class _Candidate:
+    """A verified grab: how complete (banner_capture.completeness), its
+    region's PNG, the lines read, the stats line and how it verified, the
+    monitor it came from and its record in _Worker.records."""
+    rank: tuple[bool, int, int]
+    path: str
+    lines: list
+    index: int
+    how: str
+    source: str
+    record: int
+
+
 class _Worker(QThread):
     """The burst's thread: see the module."""
 
-    verified = Signal(str, object, int, str)  # path, lines, stats line index, how
+    verified = Signal(str, object, int, str)  # the grab kept: path, lines, stats line index, how
     rejected = Signal(str)                    # path: nothing of the run on it
     failed = Signal(str)                      # the recognition is unavailable or died
-    exhausted = Signal()                      # the fifteen seconds passed, nothing verified
+    exhausted = Signal()                      # the time ran out, nothing verified
     fallback_needed = Signal()                # no monitor duplicates: grab through Qt on the UI thread
 
-    def __init__(self, target: bc.BannerTarget, temp: Path, parent=None):
+    def __init__(self, target: bc.BannerTarget, temp: Path, seconds: float, parent=None):
         super().__init__(parent)
         self._target = target
         self._temp = temp
+        self._seconds = seconds
         self.notes: list[str] = []
+        self.records: list[bc.GrabRecord] = []  # every grab read, for banner.log
+        self.kept: int | None = None            # the record of the grab kept
         self.grabs = 0
-        self._images: queue.Queue[QImage] = queue.Queue()
+        self._images: queue.Queue[tuple[str, QImage]] = queue.Queue()
         self._stop = threading.Event()
         self._session: bc.OcrSession | None = None
 
-    def submit_image(self, image: QImage) -> None:
+    def submit_image(self, source: str, image: QImage) -> None:
         """A screen image grabbed on the UI thread (the Qt fallback)."""
-        self._images.put(image)
+        self._images.put((source, image))
 
     def stop(self) -> None:
         self._stop.set()
@@ -185,12 +210,19 @@ class _Worker(QThread):
             self.notes.append("grabbing through Qt")
             self.fallback_needed.emit()
             fallback_asked = True
-        deadline = time.monotonic() + bc.BURST_SECONDS
+        deadline = time.monotonic() + self._seconds
+        best: _Candidate | None = None
+        follow_ups = 0
         try:
             n = 0
             while not self._stop.is_set():
                 started = time.monotonic()
-                images = [image for image in (source.grab() for source in sources) if image is not None]
+                at_s = time.time() - self._target.ended_epoch
+                images = []
+                for source in sources:
+                    image = source.grab()
+                    if image is not None:
+                        images.append((source.name, f"{source.last_format} {image.width()}x{image.height()}", image))
                 sources = [source for source in sources if not source.dead]
                 if not sources and not fallback_asked:
                     self.notes.append("grabbing through Qt")
@@ -198,20 +230,38 @@ class _Worker(QThread):
                     fallback_asked = True
                 while True:
                     try:
-                        images.append(self._images.get_nowait())
+                        name, image = self._images.get_nowait()
                     except queue.Empty:
                         break
-                for i, image in enumerate(images):
-                    if self._stop.is_set() or self._read(n, i, image):
+                    images.append((name, f"qt {image.width()}x{image.height()}", image))
+                if best is not None:
+                    # The follow-ups: the monitor the banner is on
+                    images = [item for item in images if item[0] == best.source]
+                for i, (name, frame, image) in enumerate(images):
+                    if self._stop.is_set():
                         return
+                    over, found = self._read(n, i, at_s, name, frame, image)
+                    if over:
+                        return
+                    if found is not None and (best is None or bc.more_complete(found.rank, best.rank)):
+                        best = found
                 n += 1
                 self.grabs = n
-                if time.monotonic() >= deadline:
+                if best is not None:
+                    if follow_ups >= bc.FOLLOW_UP_GRABS:
+                        break
+                    follow_ups += 1
+                elif time.monotonic() >= deadline:
                     break
                 remaining = started + bc.BURST_INTERVAL_MS / 1000 - time.monotonic()
                 if remaining > 0 and self._stop.wait(remaining):
                     return
-            if not self._stop.is_set():
+            if self._stop.is_set():
+                return
+            if best is not None:
+                self.kept = best.record
+                self.verified.emit(best.path, best.lines, best.index, best.how)
+            else:
                 self.exhausted.emit()
         finally:
             for source in sources:
@@ -220,45 +270,51 @@ class _Worker(QThread):
                 self._session.close()
                 self._session = None
 
-    def _read(self, n: int, i: int, image: QImage) -> bool:
-        """The region of one grab written, read and verified; True when the
-        burst is over (verified, or the recognition died)."""
+    def _read(self, n: int, i: int, at_s: float, source: str, frame: str,
+              image: QImage) -> tuple[bool, _Candidate | None]:
+        """The region of one grab written, read, verified and recorded:
+        (whether the burst is over, the recognition having died; the grab
+        when it verified)."""
         region = image.copy(*bc.region_rect(image.width(), image.height()))
         path = self._temp / f"grab-{n:02d}-{i}.png"
         if not region.save(str(path), "PNG"):
-            return False
+            return False, None
         try:
             lines = self._session.read(str(path))
         except bc.OcrError as exc:
             if not self._stop.is_set():
                 self.failed.emit(str(exc))
             self._stop.set()
-            return True
+            return True, None
         found = bc.verify(lines, self._target)
-        if found is not None:
-            self.verified.emit(str(path), lines, found[0], found[1])
-            return True
-        self.rejected.emit(str(path))
-        return False
+        self.records.append(bc.GrabRecord(at_s, source, frame, lines, found[1] if found else None))
+        if found is None:
+            self.rejected.emit(str(path))
+            return False, None
+        return False, _Candidate(bc.completeness(lines, found[0], self._target), str(path), lines,
+                                 found[0], found[1], source, len(self.records) - 1)
 
 
 class BannerBurst(QObject):
     """See the module. finished carries the saved file (a Path) or None, and
     a line for the status bar. *entry* is the fight the banner belongs to,
     set by the window when the fight is delivered (it comes after the
-    result)."""
+    result). *log_path* is banner.log's, None for no log."""
 
     finished = Signal(object, str)
 
-    def __init__(self, target: bc.BannerTarget, folder: Path, parent=None):
+    def __init__(self, target: bc.BannerTarget, folder: Path, parent=None, log_path: Path | None = None):
         super().__init__(parent)
         self.target = target
         self.folder = Path(folder)
         self.entry = None
         self.rejected = 0
+        self._log_path = Path(log_path) if log_path is not None else None
+        self._logged = False
         self._temp: Path | None = None
         self._worker: _Worker | None = None
-        self._deadline = 0.0
+        self._acted = 0.0
+        self._seconds = float(bc.BURST_MIN_SECONDS)
         self._done = False
         self._timer = QTimer(self)  # the Qt fallback's grabs, on the UI thread
         self._timer.setInterval(bc.BURST_INTERVAL_MS)
@@ -270,8 +326,9 @@ class BannerBurst(QObject):
 
     def start(self) -> None:
         self._temp = Path(tempfile.mkdtemp(prefix="esolog-banner-"))
-        self._deadline = time.monotonic() + bc.BURST_SECONDS
-        worker = _Worker(self.target, self._temp, self)
+        self._acted = time.time()
+        self._seconds = bc.burst_seconds(self.target.ended_epoch, self._acted)
+        worker = _Worker(self.target, self._temp, self._seconds, self)
         worker.verified.connect(self._on_verified)
         worker.rejected.connect(self._on_rejected)
         worker.failed.connect(self._on_failed)
@@ -292,6 +349,7 @@ class BannerBurst(QObject):
             if not worker.wait(3000):
                 worker.kill()
                 worker.wait(10000)
+            self._write_log("Score banner: cancelled, the window closed")
             self._worker = None
         self._cleanup()
 
@@ -304,13 +362,15 @@ class BannerBurst(QObject):
 
     @Slot()
     def _qt_tick(self) -> None:
-        if self._done or self._worker is None or time.monotonic() >= self._deadline:
+        # Until the thread reports: it keeps the burst's time and its
+        # follow-up grabs
+        if self._done or self._worker is None:
             self._timer.stop()
             return
         for screen in QGuiApplication.screens():
             pixmap = screen.grabWindow(0)
             if not pixmap.isNull():
-                self._worker.submit_image(pixmap.toImage())
+                self._worker.submit_image(f"Qt {screen.name()}", pixmap.toImage())
 
     @Slot(str, object, int, str)
     def _on_verified(self, path: str, lines, index: int, how: str) -> None:
@@ -353,8 +413,21 @@ class BannerBurst(QObject):
         notes = self.notes
         if path is None and notes:
             message = f"{message} ({'; '.join(notes)})"
+        self._write_log(message, saved=path is not None)
         self.finished.emit(path, message)
         self._end_worker()
+
+    def _write_log(self, outcome: str, saved: bool = False) -> None:
+        """This burst's block in banner.log, once. The thread has stopped
+        adding records: it reports, or is stopped, after its last read."""
+        if self._log_path is None or self._logged:
+            return
+        self._logged = True
+        worker = self._worker
+        records = list(worker.records) if worker is not None else []
+        kept = worker.kept if worker is not None and saved else None
+        block = bc.burst_log_text(self.target, self._acted, self._seconds, outcome, records, kept)
+        bc.append_burst_log(self._log_path, block)
 
     def _end_worker(self) -> None:
         """Let the thread end, then drop the temporary grabs and this
