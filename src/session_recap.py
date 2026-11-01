@@ -32,8 +32,10 @@ from datetime import datetime, timedelta
 
 from fight_blocks import blocks, header_text
 from pull_outcome import (
+    ANON,
     KILL,
     clock,
+    dps_text,
     outcome_text,
     run_details,
     run_name,
@@ -44,11 +46,6 @@ from trial_result import result_text
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DISCORD_LIMIT = 2000  # characters in one Discord message
-
-
-def _dps(value) -> str:
-    value = float(value or 0)
-    return f"{value / 1000:.0f}k" if value >= 1000 else f"{value:.0f}"
 
 
 def _start(entry):
@@ -62,13 +59,34 @@ def _start(entry):
 
 def _span(fights) -> str:
     """'2026-10-31 20:05 to 22:40': the first fight's start to the last's
-    end; '' when the log gave no clock."""
-    start, last = _start(fights[0]), _start(fights[-1])
-    if start is None or last is None:
+    end, from the first and the last fights with a clock (one fought
+    before the log gave the time reads 'Unknown Time'); '' with none."""
+    timed = [(start, fight) for fight in fights if (start := _start(fight)) is not None]
+    if not timed:
         return ""
-    end = last + timedelta(seconds=float(fights[-1].duration_s or 0))
+    start, (last, last_fight) = timed[0][0], timed[-1]
+    end = last + timedelta(seconds=float(last_fight.duration_s or 0))
     end_text = end.strftime("%H:%M") if end.date() == start.date() else end.strftime("%Y-%m-%d %H:%M")
     return f"{start.strftime('%Y-%m-%d %H:%M')} to {end_text}"
+
+
+def _kill_part(pull_fights) -> str:
+    """'3:00, 441k boss dps' for a kill: the time over the pull's fights,
+    and the dps over the same, the boss damage of each fight (its boss dps
+    by its boss dps time) over their boss dps times; plain 'dps' when the
+    fights kept no boss figure (a boss the game does not flag)."""
+    duration = sum(float(f.duration_s or 0) for f in pull_fights)
+    boss_time = sum(float(getattr(f, "boss_dps_time_s", 0) or 0) for f in pull_fights)
+    if boss_time > 0 and any(f.group_boss_dps for f in pull_fights):
+        damage = sum(float(f.group_boss_dps or 0) * float(getattr(f, "boss_dps_time_s", 0) or 0)
+                     for f in pull_fights)
+        return f"{clock(duration)}, {dps_text(damage / boss_time)} boss dps"
+    times = sum(float(getattr(f, "dps_time_s", 0) or 0) for f in pull_fights)
+    if times > 0:
+        damage = sum(float(f.group_dps or 0) * float(getattr(f, "dps_time_s", 0) or 0)
+                     for f in pull_fights)
+        return f"{clock(duration)}, {dps_text(damage / times)} dps"
+    return f"{clock(duration)}, {dps_text(pull_fights[-1].group_dps)} dps"
 
 
 def _players(fights) -> int:
@@ -85,26 +103,35 @@ def _deaths(count: int) -> str:
 
 
 def _run_lines(run, names) -> list:
+    """A boss's pulls in a row: one line for a single pull, the run row's
+    summary with the deaths over every pull and then the kill's own time
+    and dps for several, with what ended them under it."""
     fights = [fight for pull in run for fight in pull]
     deaths = sum(int(getattr(f, "deaths", 0) or 0) for f in fights)
     final = run[-1][-1]
     killed = final.pull.get("outcome") == KILL
-    kill_part = ""
-    if killed:
-        duration = sum(float(f.duration_s or 0) for f in run[-1])
-        dps = final.group_boss_dps or final.group_dps
-        kill_part = f"{clock(duration)}, {_dps(dps)} boss dps"
     if len(run) == 1:
         if killed:
-            return [f"{run_name(run)}: kill in 1 pull, {kill_part}, {_deaths(deaths)}"]
+            return [f"{run_name(run)}: kill in 1 pull, {_kill_part(run[-1])}, {_deaths(deaths)}"]
         outcome = outcome_text(final.pull)
         return [f"{run_name(run)}: 1 pull, {outcome[:1].lower()}{outcome[1:]}, {_deaths(deaths)}"]
-    line = run_summary(run)
+    line = f"{run_summary(run)}, {_deaths(deaths)}"
     if killed:
-        line += f"; the kill {kill_part}"
-    lines = [f"{line}, {_deaths(deaths)}"]
-    lines += [f"  {detail}" for detail in run_details(run, names)]
-    return lines
+        line += f"; the kill {_kill_part(run[-1])}"
+    return [line] + [f"  {detail}" for detail in run_details(run, names)]
+
+
+def _flagged_players(fights) -> int:
+    """The players with a possible build issue in any fight: by name, and
+    a player the log gives no name by their unit id, so several of them
+    are not one."""
+    flagged = set()
+    for fight in fights:
+        for p in fight.players:
+            if p.get("build_issues"):
+                name = p.get("name")
+                flagged.add((ANON, str(p.get("unit_id", ""))) if name == ANON else name)
+    return len(flagged)
 
 
 def _block_lines(fights, names) -> list:
@@ -124,12 +151,11 @@ def _block_lines(fights, names) -> list:
         line = f"Trash: {len(trash)} fight{'s' if len(trash) != 1 else ''}, " \
                f"{clock(sum(float(f.duration_s or 0) for f in trash))}"
         lines.append(line + (f", {_deaths(deaths)}" if deaths else ""))
-    flagged = {p.get("name") for f in fights for p in f.players if p.get("build_issues")}
+    flagged = _flagged_players(fights)
     if flagged:
-        lines.append(f"ⓘ {len(flagged)} player{'s' if len(flagged) != 1 else ''} "
-                     f"with possible build issues")
-    result = next((f.trial_result for f in reversed(fights) if getattr(f, "trial_result", None)),
-                  None)
+        lines.append(f"ⓘ {flagged} player{'s' if flagged != 1 else ''} with possible build issues")
+    # A block ends at the fight that completed its run (fight_blocks)
+    result = getattr(fights[-1], "trial_result", None)
     if result:
         lines.append(result_text(result))
     return lines

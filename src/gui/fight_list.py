@@ -72,11 +72,7 @@ from PySide6.QtWidgets import (
     QToolTip,
 )
 
-from fight_blocks import (  # noqa: F401 (block_key: tests)
-    block_key,
-    header_text,
-    starts_block,
-)
+from fight_blocks import header_text, starts_block
 from gui.fight_render import (
     ISSUES_LIST_CUE,
     fight_issues_tooltip,

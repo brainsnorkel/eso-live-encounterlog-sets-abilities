@@ -35,6 +35,8 @@ def _fight(boss, start, duration, pull=None, recaps=(), time_dead=None, zone="Ky
     entry.duration_s = duration
     entry.group_dps = 500000.0
     entry.group_boss_dps = boss_dps
+    entry.dps_time_s = duration
+    entry.boss_dps_time_s = duration if boss_dps else 0.0
     entry.pull = pull
     entry.death_recaps = list(recaps)
     entry.deaths = len(entry.death_recaps)
@@ -72,20 +74,49 @@ class TestRecap(unittest.TestCase):
         ]
 
     def test_a_night(self):
-        text = sr.recap_text(self._night())
+        from trial_result import result_text
+        night = self._night()
+        text = sr.recap_text(night)
         self.assertEqual(text.splitlines(), [
             "Kyne's Aegis · Veteran · 2026-10-31 20:05 to 21:08 · 12 players",
-            "Yandir the Butcher: kill in 1 pull, 1:22, 662k boss dps, no deaths",
-            ("Lord Falgravn: 3 pulls, killed on pull 3, 50s between pulls; the kill 3:00, "
-             "441k boss dps, 2 deaths"),
+            "Yandir the Butcher: kill in 1 pull, 1:22, 662.0k boss dps, no deaths",
+            # The deaths are the run's, before the kill's own time and dps
+            ("Lord Falgravn: 3 pulls, killed on pull 3, 50s between pulls, 2 deaths; "
+             "the kill 3:00, 441.0k boss dps"),
             "  First deaths: Grievous Pulse 1, Claw 1",
             "  Killers: Grievous Pulse 1, Claw 1; 100% by Lord Falgravn",
             "  Most time dead: @other 1:30, @me 30s",
             "Trash: 1 fight, 30s",
             "ⓘ 1 player with possible build issues",
-            text.splitlines()[-1],
+            result_text(night[-1].trial_result),
         ])
-        self.assertIn("34", text.splitlines()[-1])
+
+    def test_a_kill_the_log_cut_in_two_is_one_pull_with_one_dps(self):
+        first = _fight("Lord Falgravn", "2026-10-31 21:00:00", 120.0,
+                       _pull("unseen", 40.0, "Lord Falgravn", 0.0, 120.0), boss_dps=400000.0)
+        second = _fight("Lord Falgravn", "2026-10-31 21:02:10", 60.0,
+                        _pull("kill", 0.0, "Lord Falgravn", 130.0, 190.0), boss_dps=700000.0)
+        second.pull["continues"] = True
+        text = sr.recap_text([first, second])
+        # 120 s at 400k and 60 s at 700k: 3:00 at 500k
+        self.assertIn("Lord Falgravn: kill in 1 pull, 3:00, 500.0k boss dps, no deaths", text)
+
+    def test_a_boss_with_no_boss_figure_says_dps(self):
+        text = sr.recap_text([_fight("Tho'at Replicanum", "2026-10-31 21:00:00", 90.0,
+                                     _pull("kill", 0.0, "Tho'at Replicanum", 0.0, 90.0))])
+        self.assertIn("kill in 1 pull, 1:30, 500.0k dps, no deaths", text)
+
+    def test_players_with_no_name_are_counted_apart(self):
+        fight = _fight("Lord Falgravn", "2026-10-31 21:00:00", 100.0)
+        fight.players = [{"name": "anon", "unit_id": str(i), "build_issues": [{"title": "x"}]}
+                         for i in (5, 6, 7)]
+        self.assertIn("ⓘ 3 players with possible build issues", sr.recap_text([fight]))
+
+    def test_the_span_skips_a_fight_with_no_clock(self):
+        night = self._night()
+        night[0].timestamp = "Unknown Time"
+        self.assertTrue(sr.recap_text(night).startswith(
+            "Kyne's Aegis · Veteran · 2026-10-31 20:10 to 21:08 · 12 players"))
 
     def test_hide_names(self):
         text = sr.recap_text(self._night(), _Mask())

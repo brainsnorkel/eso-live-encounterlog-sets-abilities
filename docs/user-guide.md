@@ -322,8 +322,8 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ```
 Kyne's Aegis · Veteran · 2026-10-31 20:05 to 22:40 · 12 players
-Yandir the Butcher: kill in 1 pull, 1:22, 662k boss dps, 1 death
-Lord Falgravn: 13 pulls, killed on pull 13, 9 wipes at 80 to 90%, 44s between pulls; the kill 3:00, 441k boss dps, 61 deaths
+Yandir the Butcher: kill in 1 pull, 1:22, 662.0k boss dps, 1 death
+Lord Falgravn: 13 pulls, killed on pull 13, 9 wipes at 80 to 90%, 44s between pulls, 61 deaths; the kill 3:00, 441.0k boss dps
   First deaths: Grievous Pulse 7, Blood Sunder (Lieutenant Njordal) 3, Instability 2
   Killers: Grievous Pulse 110, Blood Sunder (Lieutenant Njordal) 11, Claw 9; 79% by Lord Falgravn
   Most time dead: @dps 4:45, @healer 3:01, @tank 2:13
