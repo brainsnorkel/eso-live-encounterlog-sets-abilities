@@ -69,7 +69,8 @@ CHANNEL_HELP = ("An Update button appears at the right end of the toolbar when a
                 "to Stable never takes you back a version: you keep the one you have until a "
                 "Stable release is newer.")
 RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
-              "seconds before the death. Five is usually one mechanic; ten shows the lead-up. "
+              "seconds before the death. One shows the killing blow; three covers most deaths "
+              "from half health; ten shows the lead-up. "
               + REPLAYS)
 
 RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for review. Checked "
@@ -459,9 +460,11 @@ class SettingsDialog(QDialog):
         recap_form = _form(recap_group)
         self.recap_window = _SpinBox()
         self.recap_window.setRange(MIN_WINDOW_S, MAX_WINDOW_S)
-        self.recap_window.setSuffix(" seconds")
         self.recap_window.setValue(
             recap_window_s(config.get("death_recap.window_s", DEFAULT_WINDOW_S)))
+        # "1 second", not "1 seconds" (issue #133)
+        self._recap_suffix(self.recap_window.value())
+        self.recap_window.valueChanged.connect(self._recap_suffix)
         recap_form.addRow("Window before each death:", self.recap_window)
         recap_form.addRow(self._help(RECAP_HELP, self.recap_window))
         layout.addWidget(recap_group)
@@ -675,6 +678,9 @@ class SettingsDialog(QDialog):
         if started:
             self.build_history_button.setEnabled(False)
             self.build_history_button.setText("Building: see the status bar")
+
+    def _recap_suffix(self, value: int) -> None:
+        self.recap_window.setSuffix(" second" if value == 1 else " seconds")
 
     def _snap_text_size(self, value: int) -> None:
         """Keep the slider on a step (a drag can stop between two) and
