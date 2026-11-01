@@ -55,7 +55,7 @@ def _entry(boss, zone='Sunspire', zone_id='1121', difficulty='VETERAN', result=N
 class TestBlockRule(unittest.TestCase):
 
     def test_where_a_block_starts(self):
-        from gui.fight_list import starts_block
+        from fight_blocks import starts_block
         first = _entry('Lokkestiiz')
         self.assertTrue(starts_block(None, first))
         # A wipe and a walk back in: same zone and difficulty, no result
@@ -67,12 +67,12 @@ class TestBlockRule(unittest.TestCase):
 
     def test_the_zone_id_tells_zones_of_one_name_apart(self):
         # A solo dungeon has its group dungeon's name
-        from gui.fight_list import starts_block
+        from fight_blocks import starts_block
         self.assertTrue(starts_block(_entry('a', 'March of Sacrifices', '1055', 'NORMAL'),
                                      _entry('b', 'March of Sacrifices', '1592', 'NORMAL')))
 
     def test_header_text(self):
-        from gui.fight_list import header_text
+        from fight_blocks import header_text
         self.assertEqual(header_text(_entry('a')), 'Sunspire · Veteran')
         self.assertEqual(header_text(_entry('a', difficulty='NORMAL')), 'Sunspire · Normal')
         self.assertEqual(header_text(_entry('a', 'Craglorn', '888', 'NONE')), 'Craglorn')
@@ -232,6 +232,21 @@ class TestWindow(unittest.TestCase):
         self.assertIn('Vitality 35/36', QGuiApplication.clipboard().text())
         self.win.history_list.select_fight(0)
         self.assertNotIn('Vitality', self.win.fight_view.toPlainText())
+
+    def test_copy_session_copies_the_list_as_a_recap(self):
+        from PySide6.QtGui import QGuiApplication
+        self.win._copy_session()
+        self.assertEqual(self.win.statusBar().currentMessage(), "No fights to copy")
+        self.win._on_fight_completed(_entry('Lokkestiiz'))
+        self.win._on_fight_completed(_entry('Nahviintaas', result=RESULT))
+        self.win._copy_session()
+        text = QGuiApplication.clipboard().text()
+        self.assertTrue(text.startswith('Sunspire · Veteran · 2026-10-21 21:50 to 21:51'))
+        self.assertIn('Trash: 2 fights, 3:20', text)
+        self.assertIn('Vitality 35/36', text)
+        self.assertTrue(self.win.statusBar().currentMessage().startswith(
+            'Session recap copied to clipboard, '))
+        self.assertEqual(self.win.copy_session_action.shortcut().toString(), 'Ctrl+Shift+C')
 
     def test_a_late_result_redraws_the_fight_on_screen(self):
         final = _entry('Nahviintaas')

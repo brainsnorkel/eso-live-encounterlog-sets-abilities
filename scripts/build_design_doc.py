@@ -142,6 +142,10 @@ TOPICS = [
     ("Kill or wipe, time dead, and a boss's pulls in a row", [
         "src/pull_outcome.py",
     ]),
+    ("The session recap: the fight list as text for Discord", [
+        "src/session_recap.py",
+        "src/fight_blocks.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),
