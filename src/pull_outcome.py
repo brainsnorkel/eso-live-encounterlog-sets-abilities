@@ -61,8 +61,9 @@ the group went on to the next boss (the unit left was a helper or
 Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
 read as kills, and the next pull of the pair shows the group still at it.
 
-Time dead: a player's DIED or KILLING_BLOW opens a span; the next line
-that carries their state with health above 0 closes it, at least
+Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
+issue #184) opens a span; the next line that carries their state with
+health above 0 closes it, at least
 REVIVE_MIN_MS after the death, since the lines of the killing blow carry
 the corpse's 0. END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in

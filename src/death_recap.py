@@ -16,8 +16,9 @@ logs):
   the source unit 0 with an empty state, ability and cast track 0, the dying
   player in the target block at 0 health. Until #184 the engine did not
   count it, so the death had no recap, no time dead and the pull read as if
-  nobody died. The recap names no killer and gives TERRAIN_DEATH as what
-  killed. Every one of the 18 in the maintainer's logs (2025-10 to 2026-11)
+  nobody died. The recap names no killer, gives FALL_DEATH as what killed
+  and carries cause FALL_CAUSE. Only a player's counts: the logs hold none
+  on an enemy, and one there would read as the group's kill. Every one of the 18 in the maintainer's logs (2025-10 to 2026-11)
   was the writer's own: 17 falls on Sunspire's Temple Grounds, all outside a
   fight, and one into Rahdgarak's lava in Vateshran Hollows, 26 ms before
   END_COMBAT. A FALLING line came before only that last one, and FALLING
@@ -74,10 +75,13 @@ SHIELD_PAIR_MS = 100
 # killed by a player) and a fall's KILLED_BY_SUBZONE (see the module docstring)
 SUBZONE_DEATH = "KILLED_BY_SUBZONE"
 DEATH_RESULTS = frozenset({"DIED", "DIED_XP", "KILLING_BLOW", SUBZONE_DEATH})
-# What killed, for a fall: the recap's ability text, which has to read in
-# every sentence that names a killer ('Killed by …', 'First death: @x to …',
-# 'Killers: … 2')
-TERRAIN_DEATH = "the terrain (a fall or lava)"
+# What killed, for a fall: the recap's ability text. It has to read in every
+# sentence that names a killer ('Killed by …', 'First death: @x to …',
+# 'Killers: … 2'), with no brackets, which those sentences use for the
+# killer after the ability ('Slap (Sharpfang)')
+FALL_DEATH = "a fall or lava"
+# The recap's 'cause' for a fall, the field code tests rather than the text
+FALL_CAUSE = "fall"
 
 # actionResult -> kind of recap row
 _KINDS: Dict[str, str] = {
@@ -215,10 +219,10 @@ class DeathRecapRecorder:
         source_id = fields[_SOURCE] if len(fields) > _SOURCE else "0"
         self_inflicted = len(fields) <= _TARGET or fields[_TARGET] == "*"
         health_at = _SOURCE_HEALTH if self_inflicted else _TARGET_HEALTH
-        if fields and fields[0] == SUBZONE_DEATH:
-            # A fall names no killer and no ability (ids 0). With the ability
-            # id left empty, no hit in the window is taken for the killer
-            ability, icon, ability_id = TERRAIN_DEATH, "", ""
+        fall = bool(fields) and fields[0] == SUBZONE_DEATH
+        if fall:
+            # A fall names no killer and no ability (ids 0)
+            ability, icon = FALL_DEATH, ""
         else:
             ability, icon = self._resolve_ability(ability_id)
         recap = {
@@ -226,6 +230,9 @@ class DeathRecapRecorder:
             "ability": ability,
             "ability_id": ability_id,
             "icon": icon,
+            # Why the player died where the line says more than its killer:
+            # FALL_CAUSE for a fall, else empty
+            "cause": FALL_CAUSE if fall else "",
             "max_health": _health(fields[health_at])[1] if len(fields) > health_at else 0,
             "window_ms": self.window_ms,
             "overheal": 0,
@@ -242,9 +249,10 @@ class DeathRecapRecorder:
         rows = self._rows(events, died_ms)
         recap["overheal"] = sum(_int(event[3]) for event in events
                                 if event[1] in HEAL_RESULTS)
-        if not recap["killer"]:
+        if not recap["killer"] and recap.get("cause") != FALL_CAUSE:
             # A death event with no source unit (seen when the blow also ends
-            # the fight): the hit by the same ability names the killer
+            # the fight): the hit by the same ability names the killer. Not
+            # for a fall, which has no killer whatever hit the player before
             for row in reversed(rows):
                 if row["kind"] == "damage" and row["ability_id"] == recap["ability_id"]:
                     recap["killer"] = row["source"]

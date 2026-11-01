@@ -263,12 +263,13 @@ def _fall(ts, target):
 class TestFallDeaths(unittest.TestCase):
     """A fall is one KILLED_BY_SUBZONE line, with no DIED (issue #184)."""
 
-    def test_a_fall_in_a_fight_is_a_death_killed_by_the_terrain(self):
-        from death_recap import TERRAIN_DEATH
+    def test_a_fall_in_a_fight_is_a_death_to_a_fall_or_lava(self):
+        from death_recap import FALL_CAUSE, FALL_DEATH
         from pull_outcome import first_death_text
         analyzer, _ = _run([
             '10000,BEGIN_COMBAT',
-            _event(16000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            # A hit of ability 0, as the fall's own id: still not the killer
+            _event(16000, 'DAMAGE', 3000, BOSS, _player(1, 17000), ability=0),
             _fall(17000, _player(1, 0)),
             '17026,END_COMBAT',
         ])
@@ -278,14 +279,23 @@ class TestFallDeaths(unittest.TestCase):
         recap = fight.death_recaps[0]
         self.assertEqual((recap['name'], recap['time_ms'], recap['max_health']),
                          ('@brainsnorkel', 7000, 20000))
-        self.assertEqual((recap['killer'], recap['ability'], recap['icon']),
-                         ('', TERRAIN_DEATH, ''))
+        self.assertEqual((recap['killer'], recap['ability'], recap['ability_id'],
+                          recap['icon'], recap['cause']),
+                         ('', FALL_DEATH, '0', '', FALL_CAUSE))
         # The boss's hit stays in the window and is not taken for the killer
         self.assertEqual([(r['source'], r['amount']) for r in recap['events']],
                          [('Test Boss', 3000)])
         self.assertIn('1', fight.time_dead)
         self.assertEqual(first_death_text(fight),
-                         f'First death: @brainsnorkel to {TERRAIN_DEATH} at 0:07 · 1 death')
+                         f'First death: @brainsnorkel to {FALL_DEATH} at 0:07 · 1 death')
+
+    def test_any_other_death_has_no_cause(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DIED', 0, BOSS, _player(1, 0)),
+            '70000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].death_recaps[0]['cause'], '')
 
     def test_a_fall_just_after_end_combat_joins_the_fight(self):
         analyzer, _ = _run([
@@ -307,7 +317,22 @@ class TestFallDeaths(unittest.TestCase):
         self.assertEqual((first.deaths, first.death_recaps), (0, []))
         self.assertEqual((second.deaths, second.death_recaps), (0, []))
 
-    def test_an_enemy_falling_dies_as_with_died(self):
+    def test_a_fall_before_the_pull_then_seen_alive_leaves_no_time_dead(self):
+        """The 17 falls outside a fight in the logs: the player's own lines
+        (a regeneration tick) show them up again before the next pull."""
+        analyzer, _ = _run([
+            _fall(5000, _player(1, 0)),
+            _event(15000, 'POWER_ENERGIZE', 200, _player(1, 20000)),
+            '30000,BEGIN_COMBAT',
+            _event(35000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            '60000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.death_recaps), (0, []))
+        self.assertEqual(fight.time_dead, {})
+
+    def test_an_enemys_fall_is_not_its_death(self):
+        """None is in the logs, and one would read as the group's kill."""
         analyzer, _ = _run([
             '10000,BEGIN_COMBAT',
             _fall(15000, BOSS),
@@ -315,7 +340,7 @@ class TestFallDeaths(unittest.TestCase):
         ])
         fight = analyzer.fight_history.fights[0]
         self.assertEqual((fight.deaths, fight.death_recaps), (0, []))
-        self.assertEqual(analyzer.current_encounter.enemies['70'].died_at, 15000)
+        self.assertIsNone(analyzer.current_encounter.enemies['70'].died_at)
 
 
 class TestRecorder(unittest.TestCase):
