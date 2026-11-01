@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.30.0] - 2026-11-01
+
+### Added
+- **The trial score banner, captured from the screen** (#167, Windows only, off by default): with *Capture the trial completion banner* on in Settings, the fifteen seconds after a trial's END_TRIAL are grabbed once a second, the first grab on which Windows' own text recognition reads the run's final score is cropped to the banner and saved as a PNG (`Sunspire Veteran 253117 2026-11-01 2131.png` in `<log folder>\Banners`, or a folder of your choice), and the fight's result row and pane link to it, with *save as* and *copy*. Nothing is kept when the score is not seen on screen. An HDR desktop is read through Desktop Duplication and converted to sRGB by the display's SDR white level, so the picture is not washed-out.
+
 ## [0.29.0] - 2026-11-01
 
 ### Changed
