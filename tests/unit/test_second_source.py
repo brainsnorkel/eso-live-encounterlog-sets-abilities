@@ -12,6 +12,7 @@ from build_session import fights
 from ability_icons import bundle_root
 from build_issues import (
     GROUP_BUFF_EFFECT_IDS,
+    GROUP_BUFF_SET_OF_EFFECT,
     GROUP_BUFF_SETS,
     LONG_FIGHT_S,
     SECOND_SOURCE_SHARE,
@@ -115,6 +116,21 @@ class TestGroupBuffCredit(unittest.TestCase):
         credit.reset()
         self.assertEqual(credit.credited(0, 9000, _identity), {})
 
+    def test_a_sets_two_buffs_at_once_count_once(self):
+        # Magma Incarnate gives Minor Courage and Minor Resolve together
+        credit = GroupBuffCredit()
+        credit.record('GAINED', '159310', 'a', 'x', 1000)
+        credit.record('GAINED', '159311', 'a', 'x', 1000)
+        credit.record('FADED', '159310', 'a', 'x', 11000)
+        credit.record('FADED', '159311', 'a', 'x', 11000)
+        credit.record('GAINED', '159311', 'a', 'x', 15000)  # Resolve alone, 2 s more
+        credit.record('FADED', '159311', 'a', 'x', 17000)
+        self.assertEqual(credit.credited(0, 20000, _identity, group_of=GROUP_BUFF_SET_OF_EFFECT.get),
+                         {('Magma Incarnate', 'a', 'x'): 12000})
+        # By id, each is its own
+        self.assertEqual(credit.credited(0, 20000, _identity),
+                         {('159310', 'a', 'x'): 10000, ('159311', 'a', 'x'): 12000})
+
 
 class TestWornAndSlotted(unittest.TestCase):
 
@@ -136,26 +152,33 @@ class TestWornAndSlotted(unittest.TestCase):
         self.assertEqual(stars_slotted(None), [])
 
 
-CREDITED = {(ECHOES, 'a', 'c'): 1000, (ECHOES, 'a', 'b'): 2000,
-            (WARD, 'a', 'b'): 2000, (WARD, 'a', 'c'): 1000}
+CREDITED = {('Lucent Echoes', 'a', 'c'): 1000, ('Lucent Echoes', 'a', 'b'): 2000,
+            ('Pearlescent Ward', 'a', 'b'): 2000, ('Pearlescent Ward', 'a', 'c'): 1000}
+GROUP = {'a': 2000, 'b': 2000, 'c': 2000, 'd': 2000}
 
 
 class TestShares(unittest.TestCase):
 
     def test_lucent_echoes_leaves_its_wearers_out(self):
-        shares = group_buff_shares({'Lucent Echoes': [('a', 'pa'), ('b', 'pb')]},
-                                   CREDITED, ['a', 'b', 'c', 'd'], 2000)
+        shares = group_buff_shares({'Lucent Echoes': [('a', 'pa'), ('b', 'pb')]}, CREDITED, GROUP)
         # The others are c and d: b wears it, and a wearer never benefits
         self.assertEqual(shares, {'Lucent Echoes': {'pa': (1000, 4000), 'pb': (0, 4000)}})
 
     def test_pearlescent_ward_counts_the_other_wearer(self):
         shares = group_buff_shares({'Pearlescent Ward': [('a', 'pa'), ('b', 'pb')]},
-                                   CREDITED, ['a', 'b', 'c', 'd'], 2000)
+                                   CREDITED, GROUP)
         self.assertEqual(shares, {'Pearlescent Ward': {'pa': (3000, 6000), 'pb': (0, 6000)}})
+
+    def test_the_others_time_is_the_groups_presence(self):
+        # c joined half way; a player of the zone outside the group is not
+        # in the group's presence at all, so never counts
+        shares = group_buff_shares({'Pearlescent Ward': [('a', 'pa'), ('b', 'pb')]},
+                                   CREDITED, {'a': 2000, 'b': 2000, 'c': 1000, 'd': 2000})
+        self.assertEqual(shares, {'Pearlescent Ward': {'pa': (3000, 5000), 'pb': (0, 5000)}})
 
     def test_a_set_with_one_wearer_is_not_measured(self):
         self.assertEqual(group_buff_shares({'Pearlescent Ward': [('a', 'pa')]},
-                                           CREDITED, ['a', 'b'], 2000), {})
+                                           CREDITED, {'a': 2000, 'b': 2000}), {})
 
 
 class TestGroupSetRule(unittest.TestCase):
@@ -229,6 +252,20 @@ class TestGroupSetRule(unittest.TestCase):
         detail = tracker.second_source_findings(1000, 'p2')[0]['detail']
         self.assertIn("never counts for the set's own wearers", detail)
 
+    def test_a_unit_id_key_is_retired_at_a_zone_change(self):
+        # 'unit:7' names one player until the zone changes; another player
+        # on unit 7 afterwards must not inherit the first one's fights
+        tracker = BuildIssueTracker()
+        tracker.note_second_sources(1000, 90.0, {'Spell Power Cure': {
+            'p1': (90000, 270000), 'unit:7': (0, 270000)}}, {})
+        self.assertEqual(len(tracker.second_source_findings(1000, 'unit:7')), 1)
+        tracker.retire_players('unit:')
+        tracker.note_second_sources(200000, 90.0, {'Spell Power Cure': {
+            'p1': (90000, 270000), 'unit:7': (60000, 270000)}}, {})
+        self.assertEqual(tracker.second_source_findings(200000, 'unit:7'), [])
+        # The first fight still counts for the other wearer's record
+        self.assertEqual(len(tracker._group_buffs['Spell Power Cure'][1000][1]), 2)
+
 
 class TestStarRule(unittest.TestCase):
 
@@ -243,8 +280,24 @@ class TestStarRule(unittest.TestCase):
         self.assertEqual(found[0]['star_url'],
                          'https://eso-hub.com/en/champion-points/star/enlivening-overflow')
         self.assertIn('once every 12 seconds per player', found[0]['detail'])
-        self.assertIn("this player's procs were 10% of the holders'", found[0]['detail'])
+        self.assertIn("this player's procs were 10% of the holders', where an even share was 50%",
+                      found[0]['detail'])
         self.assertEqual(tracker.second_source_findings(1000, 'p1'), [])
+
+    def test_the_bar_follows_the_holder_count(self):
+        # Seven holders sharing evenly: 1/7 each is no finding for anyone
+        tracker = BuildIssueTracker()
+        even = {f'p{n}': 10 for n in range(7)}
+        tracker.note_second_sources(1000, 90.0, {}, {'Enlivening Overflow': even})
+        self.assertEqual([k for k in even if tracker.second_source_findings(1000, k)], [])
+        # Three holders: an even share is a third, so 9% is under 30% of it
+        tracker.note_second_sources(200000, 90.0, {}, {'Enlivening Overflow': {
+            'q1': 50, 'q2': 41, 'q3': 9}})
+        found = tracker.second_source_findings(200000, 'q3')
+        self.assertEqual([f['title'] for f in found],
+                         ['Second Enlivening Overflow: 9.0% of its procs (1 fight)'])
+        self.assertIn('where an even share was 33%', found[0]['detail'])
+        self.assertEqual(tracker.second_source_findings(200000, 'q2'), [])
 
     def test_from_the_brink_only_when_it_never_procced(self):
         tracker = BuildIssueTracker()
@@ -389,6 +442,27 @@ class TestEngine(unittest.TestCase):
              ('second-star', 'Second Enlivening Overflow: 10% of its procs (1 fight)')],
             [('second-group-set', 'Second Pearlescent Ward gave the others nothing (2 fights)'),
              ('second-star', 'Second Enlivening Overflow: 10% of its procs (2 fights)')]])
+
+    def test_star_procs_before_the_pull_are_not_the_fights(self):
+        # The zone's first encounter is made before the pull and reused at
+        # BEGIN_COMBAT: twenty procs of @ward2's while the group buffs up
+        # would put it at 21 of 30 if they counted
+        before = [_effect(5000 + 10 * n, 'GAINED', '156012', 2, 3) for n in range(20)]
+        entries = fights(_session(before, _fight(10000, 100000)))
+        self.assertIn(('second-star', 'Second Enlivening Overflow: 10% of its procs (1 fight)'),
+                      self._found(entries[0])['@ward2'])
+
+    def test_players_of_the_zone_outside_the_group_are_no_receivers(self):
+        # @ward2's Ward is on @healer for 9 s of the 90 s fight: 3.3% of the
+        # three other members' time, a copy that reached the group. Twenty
+        # players of the zone who are not in the group (a city, Cyrodiil)
+        # must not dilute it to 0.4%
+        strangers = [f'2000,UNIT_ADDED,{100 + n},PLAYER,F,{100 + n},0,F,1,4,"Passer {n}",'
+                     f'"@passer{n}",{2000 + n},50,500,0,PLAYER_ALLY,F' for n in range(20)]
+        fight = _fight(10000, 100000)
+        fight[-1:-1] = [_effect(20000, 'GAINED', WARD, 2, 3), _effect(29000, 'FADED', WARD, 2, 3)]
+        entries = fights(_session(strangers, fight))
+        self.assertNotIn('second-group-set', [rule for rule, _title in self._found(entries[0])['@ward2']])
 
 
 class TestPopupLink(unittest.TestCase):

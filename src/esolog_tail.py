@@ -29,7 +29,8 @@ from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    GROUP_BUFF_EFFECT_IDS, STAR_PROC_IDS, BuildIssueTracker, GroupBuffCredit, PROC_EFFECT_IDS,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GroupBuffCredit, PROC_EFFECT_IDS,
     fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
     structural_findings, worn_proc_sets,
 )
@@ -1756,6 +1757,9 @@ class ESOLogAnalyzer(ListenerMixin):
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
+            # The same for the build-issue records on a second copy, which
+            # last the session (build_issues)
+            self.build_issues.retire_players("unit:")
             # The opener's memory starts again (the entry's timestamp is the
             # zone id: the line's own time is its first field)
             self.opener.reset(casts.line_time(entry.original_line))
@@ -1838,6 +1842,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Players who left are off the new fight's list; one who came back
         # on a new unit id is keyed by it from here (presence.py)
         self.current_encounter.start_fight_roster()
+        # The zone's first encounter is reused here and has counted every
+        # star proc since the zone began: a fight counts its own (a fight
+        # the game cut in two returned above and keeps its count)
+        self.current_encounter.star_procs.clear()
 
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
@@ -3337,9 +3345,19 @@ class ESOLogAnalyzer(ListenerMixin):
             def player_id(unit_id):
                 player = enc.player_of(unit_id)
                 return player.unit_id if player is not None else None
-            credited = self.group_buff_credit.credited(enc.start_time, enc.end_time, player_id)
-            group_buffs = group_buff_shares(wearers, credited, list(enc.players),
-                                            enc.end_time - enc.start_time)
+            credited = self.group_buff_credit.credited(
+                enc.start_time, enc.end_time, player_id, group_of=GROUP_BUFF_SET_OF_EFFECT.get)
+            # The receivers are the group, not every player the zone added
+            # (a city, Cyrodiil, a world boss), each for the part of the
+            # fight they were there (presence.py)
+            present = {}
+            for player in enc.players.values():
+                if not (player.grouped or player.is_local):
+                    continue
+                joined = max(enc.start_time, player.joined_at or enc.start_time)
+                left = enc.end_time if player.left_at is None else min(enc.end_time, player.left_at)
+                present[player.unit_id] = max(0, left - joined)
+            group_buffs = group_buff_shares(wearers, credited, present)
         stars = {name: {key: enc.star_procs.get(name, {}).get(unit_id, 0)
                         for unit_id, key in held_by}
                  for name, held_by in holders.items() if len(held_by) >= 2}
