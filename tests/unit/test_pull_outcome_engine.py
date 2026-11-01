@@ -17,9 +17,16 @@ def _boss(health):
     return f"{health}/{BOSS_MAX},0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
 
 
-def _hit(ts, player, boss_health, hit=1000):
+def _hit(ts, player, boss_health, hit=1000, boss=70):
     return (f"{ts},COMBAT_EVENT,DAMAGE,PHYSICAL,0,{hit},0,{ts},12437,"
-            f"{player},{_PLAYER},70,{_boss(boss_health)}")
+            f"{player},{_PLAYER},{boss},{_boss(boss_health)}")
+
+
+_MORE_PLAYERS = [
+    '2000,UNIT_ADDED,4,PLAYER,F,4,0,F,5,1,"Necro Friend","@necro",1708524619155578002,50,900,0,PLAYER_ALLY,T',
+    '2000,UNIT_ADDED,5,PLAYER,F,5,0,F,3,1,"Blade Friend","@blade",1708524619155578003,50,900,0,PLAYER_ALLY,T',
+]
+_VROL = '2600,UNIT_ADDED,71,MONSTER,F,0,105700,T,0,0,"Captain Vrol","",0,50,160,0,HOSTILE,F'
 
 
 def _died(ts, player, boss_health=BOSS_MAX // 2):
@@ -118,6 +125,59 @@ class TestPullFromTheEngine(unittest.TestCase):
         pull = fights[0].pull
         self.assertEqual(pull["outcome"], "wipe")
         self.assertEqual(pull["dead_at_end"], ["2", "3"])
+
+    def test_a_late_death_survives_a_fight_the_game_cut_in_two(self):
+        fights = self._run([
+            '10000,BEGIN_COMBAT', _hit(11000, 1, BOSS_MAX // 2), _died(12000, 2),
+            '20000,END_COMBAT', _died(20300, 3), '20800,BEGIN_COMBAT',
+            _hit(21000, 1, BOSS_MAX // 3), '25000,END_COMBAT'])
+        self.assertEqual(len(fights), 1)
+        self.assertEqual(fights[0].pull["outcome"], "wipe")
+        self.assertEqual(fights[0].pull["dead_at_end"], ["2", "3"])
+
+    def test_the_dead_stay_dead_across_a_cut_pull(self):
+        """Five players: the writer and one more die, the fight ends for
+        the log; the writer is revived and fights on while the other stays
+        down, and two more die: three of five dead at the real end."""
+        fights = self._run(_MORE_PLAYERS + [
+            '10000,BEGIN_COMBAT', _hit(11000, 1, int(BOSS_MAX * 0.60)),
+            _died(12000, 1, int(BOSS_MAX * 0.60)), _died(13000, 2, int(BOSS_MAX * 0.60)),
+            '20000,END_COMBAT', _healed(25000, 1),
+            '30000,BEGIN_COMBAT', _hit(31000, 1, int(BOSS_MAX * 0.59)),
+            _died(40000, 3, int(BOSS_MAX * 0.45)), _died(41000, 4, int(BOSS_MAX * 0.45)),
+            '50000,END_COMBAT'])
+        self.assertEqual(fights[0].pull["outcome"], "unseen")
+        self.assertTrue(fights[0].pull["cut"])
+        second = fights[1].pull
+        self.assertTrue(second["continues"])
+        self.assertEqual(second["dead_at_end"], ["2", "3", "4"])
+        self.assertEqual(second["outcome"], "wipe")
+        self.assertEqual(fights[1].time_dead["2"], 20000)
+
+    def test_a_late_end_trial_makes_the_last_fight_a_kill(self):
+        fights = self._run([
+            '10000,BEGIN_COMBAT', _hit(11000, 1, int(BOSS_MAX * 0.03)),
+            _died(12000, 1, int(BOSS_MAX * 0.03)), '20000,END_COMBAT',
+            '24000,END_TRIAL,13,1351407,T,253117,35000'])
+        self.assertEqual(fights[0].pull["outcome"], "kill")
+        self.assertIsNotNone(fights[0].trial_result)
+
+    def test_a_death_before_the_pull_counts_from_the_pull(self):
+        fights = self._run([
+            _died(5000, 2), '10000,BEGIN_COMBAT', _hit(11000, 1, BOSS_MAX // 2),
+            '70000,END_COMBAT'])
+        self.assertEqual(fights[0].time_dead["2"], 60000)
+
+    def test_group_went_on_after_lost_sight(self):
+        fights = self._run([
+            _VROL,
+            '10000,BEGIN_COMBAT', _hit(11000, 1, int(BOSS_MAX * 0.30)),
+            _died(12000, 1, int(BOSS_MAX * 0.30)), '20000,END_COMBAT', _healed(60000, 1),
+            '200000,BEGIN_COMBAT', _hit(201000, 1, BOSS_MAX // 2, boss=71),
+            '260000,END_COMBAT'])
+        self.assertEqual(fights[0].pull["outcome"], "unseen")
+        self.assertTrue(fights[0].pull["went_on"])
+        self.assertEqual(fights[1].pull["boss"], "Captain Vrol")
 
 
 if __name__ == "__main__":

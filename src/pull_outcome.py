@@ -43,10 +43,16 @@ shades, and a few seconds-long scripted starts.
 - **Lost sight** (UNSEEN): neither, and the logging player was dead when
   the fight ended. BEGIN_COMBAT and END_COMBAT follow that player's own
   combat state, so their death ends the log's fight (a median 9 s later)
-  whatever the group does next. The list adds "group went on" when a
-  later pull in the instance is of another boss and this one never
-  returns, which is the log's only trace of a kill it did not see.
+  whatever the group does next. "group went on" is added when a later
+  pull in the instance is of another boss and this one never returns,
+  which is the log's only trace of a kill it did not see. It is said of
+  Lost sight only: a wipe or a reset followed by the next boss is a group
+  that gave up on that boss, not one that killed it out of sight.
 - **Left**: none of these; the group reset or walked away.
+- **A late verdict**: a death logged just after END_COMBAT
+  (LATE_DEATH_GRACE_MS) and an END_TRIAL logged after the fight was sent
+  (an arena's, about 4 s later) change the sent pull, and the engine sends
+  the fight again.
 
 A first version also called a pull a wipe when another boss unit with 10%
 of the damage was left standing with half the group dead (twin bosses):
@@ -60,10 +66,12 @@ that carries their state with health above 0 closes it, at least
 REVIVE_MIN_MS after the death, since the lines of the killing blow carry
 the corpse's 0. END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
-two (COMBAT_RESUME_MS) reopens them. Deaths the log never saw (the
-others' after the logging player released) are missing from the counts,
-so time dead, read from each player's own states, is the fairer measure
-of who spent the fight on the floor.
+two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+at the earliest: a player who fell before the pull is dead from it, not
+from the fall. Deaths the log never saw (the others' after the logging
+player released) are missing from the counts, so time dead, read from
+each player's own states, is the fairer measure of who spent the fight
+on the floor.
 
 A pull the log cut in two: when the logging player dies the fight ends
 for the log, and when they are revived a new one begins on a boss still
@@ -72,7 +80,11 @@ pull's end, on a boss that pull shared, with that boss's health under
 CONTINUE_MAX_PCT and within CONTINUE_DRIFT_PCT of where the last pull left
 it, ``continues`` that pull: the fights stay two entries with their own
 figures (the dps stays Combat Metrics' per fight), and the pull count
-takes them as one. The earlier fight reads "Cut" in the list.
+takes them as one. The earlier fight reads "Cut". The players still dead
+when the earlier fight ended stay dead into the later one until a line
+shows them up (TimeDead.carried), so a wipe that spans the cut is still
+a wipe; a fight that does not continue the last pull ignores them, since
+after a wipe the dead release and run back unseen.
 
 Pulls in a row: the pulls of one block (gui.fight_list: one instance)
 that share a boss, with fights without a boss between them, form a run
@@ -108,6 +120,9 @@ WALL_MIN_WIPES = 4
 WALL_BAND_PCT = 10
 # Lines in the run's hover lists
 TOP = 3
+# A second boss names the run with the first when it was the top unit in
+# this share of the run's pulls
+RUN_NAME_SHARE = 0.25
 
 WORDS = {KILL: "Kill", WIPE: "Wipe", LEFT: "Left", UNSEEN: "Lost sight"}
 ANON = "anon"  # the engine's name for a player the log gives no name
@@ -143,72 +158,139 @@ def has_health(field) -> bool:
 
 class BossHealth:
     """The bosses' health in one fight: per unit the first and the last
-    (current, max) a line carried."""
+    'current/max' field a line carried, kept as written and read once
+    when the pull is built (most of a boss fight's lines carry the boss,
+    so the per-line work is two dict writes)."""
 
     __slots__ = ("first", "last")
 
     def __init__(self):
-        self.first: dict[str, tuple[int, int]] = {}
-        self.last: dict[str, tuple[int, int]] = {}
+        self.first: dict[str, str] = {}
+        self.last: dict[str, str] = {}
 
-    def note(self, unit_id: str, field) -> None:
-        health = health_of(field)
-        if health is None:
-            return
-        self.first.setdefault(unit_id, health)
-        self.last[unit_id] = health
+    def note(self, unit_id: str, field: str) -> None:
+        if unit_id not in self.first:
+            self.first[unit_id] = field
+        self.last[unit_id] = field
+
+    def first_of(self, unit_id: str) -> tuple[int, int] | None:
+        return health_of(self.first[unit_id]) if unit_id in self.first else None
+
+    def last_of(self, unit_id: str) -> tuple[int, int] | None:
+        return health_of(self.last[unit_id]) if unit_id in self.last else None
 
 
 class TimeDead:
     """Each player's time dead in one fight (see the module), keyed by the
-    player's record id."""
+    player's record id. A span is counted from the fight's start at the
+    earliest: a player who fell before the pull is dead from its start.
 
-    __slots__ = ("_ended", "_paused", "at_end", "ms", "since")
+    Players still dead when the last fight ended are carried into this
+    one (carry): they stay down until a line shows them with health. Their
+    time and their being dead at the end count only when this fight turns
+    out to carry on the last pull (pull_outcome.continues); after a wipe
+    the dead release and run back, and the log seldom shows them before
+    the next pull."""
+
+    __slots__ = ("_ended", "_paused", "_paused_carried", "at_end", "carried", "carried_at_end",
+                 "carried_ms", "ms", "since", "start")
 
     def __init__(self):
+        self.start = 0  # the fight's start, set at BEGIN_COMBAT
         self.since: dict[str, tuple[int, int]] = {}  # key -> (span start, death)
         self.ms: dict[str, int] = {}
         self.at_end: frozenset | None = None  # dead when the fight ended
+        self.carried: dict[str, int] = {}  # key -> when the carried span began
+        self.carried_ms: dict[str, int] = {}
+        self.carried_at_end: frozenset = frozenset()
         self._ended = 0
         self._paused: dict[str, tuple[int, int]] = {}
+        self._paused_carried: dict[str, int] = {}
+
+    def begin(self, start_ms: int, carried=()) -> None:
+        """BEGIN_COMBAT: the fight's start, and the players still dead
+        when the last fight ended. The encounter a zone change made is
+        used for the zone's first fight, so a death before the pull is
+        already here: its span starts at the fight's start, and time dead
+        before the pull is dropped."""
+        self.start = start_ms
+        self.since = {key: (max(start, start_ms), death)
+                      for key, (start, death) in self.since.items()}
+        self.ms.clear()
+        self.carried_ms.clear()
+        for key in carried:
+            if key not in self.since:
+                self.carried.setdefault(key, start_ms)
 
     def died(self, key: str, timestamp_ms: int) -> None:
+        self.carried.pop(key, None)
         if key not in self.since:
-            self.since[key] = (timestamp_ms, timestamp_ms)
+            self.since[key] = (max(timestamp_ms, self.start), timestamp_ms)
 
     def alive(self, key: str, timestamp_ms: int) -> None:
+        began = self.carried.pop(key, None)
+        if began is not None:
+            self.carried_ms[key] = self.carried_ms.get(key, 0) + max(0, timestamp_ms - began)
         span = self.since.get(key)
         if span is None or timestamp_ms - span[1] < REVIVE_MIN_MS:
             return
         del self.since[key]
         self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - span[0])
 
+    def watching(self) -> bool:
+        """Whether any player is down (a line with their health matters)."""
+        return bool(self.since or self.carried)
+
+    def watches(self, key: str) -> bool:
+        return key in self.since or key in self.carried
+
     def end(self, timestamp_ms: int) -> None:
         """END_COMBAT: close every span; those were dead at the end."""
         self.at_end = frozenset(self.since)
         for key, (start, _death) in self.since.items():
             self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - start)
+        self.carried_at_end = frozenset(self.carried)
+        for key, began in self.carried.items():
+            self.carried_ms[key] = self.carried_ms.get(key, 0) + max(0, timestamp_ms - began)
         self._ended = timestamp_ms
         self._paused = dict(self.since)
+        self._paused_carried = dict(self.carried)
         self.since.clear()
+        self.carried.clear()
+
+    def late_death(self, key: str, timestamp_ms: int) -> None:
+        """A death logged just after END_COMBAT (LATE_DEATH_GRACE_MS): dead
+        at the end, and still dead should the fight carry on."""
+        self.at_end = (self.at_end or frozenset()) | {key}
+        self._paused.setdefault(key, (timestamp_ms, timestamp_ms))
 
     def resume(self) -> None:
         """The fight carries on (COMBAT_RESUME_MS): reopen, from the end,
         the spans the end closed."""
         for key, (_start, death) in self._paused.items():
             self.since[key] = (self._ended, death)
+        for key, began in self._paused_carried.items():
+            self.carried_ms[key] = self.carried_ms.get(key, 0) - max(0, self._ended - began)
+            self.carried[key] = began
         self._paused = {}
+        self._paused_carried = {}
         self.at_end = None
+        self.carried_at_end = frozenset()
 
     def dead_at_end(self) -> frozenset:
         return self.at_end if self.at_end is not None else frozenset(self.since)
 
-    def totals(self, end_ms: int) -> dict[str, int]:
+    def totals(self, end_ms: int, carried: bool = False) -> dict[str, int]:
         """Milliseconds dead per player, spans still open counted to
-        *end_ms*."""
+        *end_ms*; with *carried*, the carried players' time too."""
         out = dict(self.ms)
         for key, (start, _death) in self.since.items():
             out[key] = out.get(key, 0) + max(0, end_ms - start)
+        if carried:
+            for key, ms in self.carried_ms.items():
+                out[key] = out.get(key, 0) + ms
+            for key, began in self.carried.items():
+                out[key] = out.get(key, 0) + max(0, end_ms - began)
         return {key: ms for key, ms in out.items() if ms > 0}
 
 
@@ -245,12 +327,12 @@ def pull_record(bosses, health: BossHealth, trial_done: bool, players: int,
             continue
         if name not in by_name:
             pull_bosses.append(name)
-            by_name[name] = [pct(health.first.get(unit_id)), pct(health.last.get(unit_id))]
-    last = health.last.get(main_id)
+            by_name[name] = [pct(health.first_of(unit_id)), pct(health.last_of(unit_id))]
+    last = health.last_of(main_id)
     record = {
         "boss": main_name,
         "bosses": pull_bosses,
-        "health_start": pct(health.first.get(main_id)),
+        "health_start": pct(health.first_of(main_id)),
         "health_left": pct(last),
         "health": by_name,
         "boss_died": bool(main_died or trial_done or (last is not None and last[0] == 0)),
@@ -261,6 +343,11 @@ def pull_record(bosses, health: BossHealth, trial_done: bool, players: int,
         "end_s": end_s,
         "zone": zone,
         "continues": False,
+        # Set from the fights after it (mark_context): the next fight
+        # carries this one on; a Lost sight pull whose boss never came back
+        # while another was pulled
+        "cut": False,
+        "went_on": False,
     }
     record["outcome"] = verdict(record)
     return record
@@ -299,6 +386,45 @@ def note_late_death(pull: dict | None, key: str, local: bool) -> None:
     pull["outcome"] = verdict(pull)
 
 
+def note_trial_end(pull: dict | None) -> None:
+    """The run's END_TRIAL, logged after the fight that completed it was
+    sent (an arena's, about 4 s later): that fight's boss died."""
+    if not pull:
+        return
+    pull["boss_died"] = True
+    pull["outcome"] = verdict(pull)
+
+
+def carry_dead(pull: dict | None, keys) -> None:
+    """The players carried into a fight that turned out to continue the
+    last pull, still down when it ended (TimeDead.carried_at_end)."""
+    if not pull or not keys:
+        return
+    pull["dead_at_end"] = sorted(set(pull["dead_at_end"]) | {str(key) for key in keys})
+    pull["outcome"] = verdict(pull)
+
+
+def mark_context(entries) -> list:
+    """Set each pull's 'cut' and 'went_on' from the fights after it in
+    one instance (*entries*, in order; see the module): cut for a fight
+    the next fight of its pull carries on, went_on for the last fight of a
+    Lost sight pull when a later pull is of another boss and none of this
+    one. Returns the entries whose flags changed."""
+    changed = []
+    all_pulls = pulls(entries)
+    for index, pull in enumerate(all_pulls):
+        later = [_pull_of(p[0]) for p in all_pulls[index + 1:]]
+        for position, fight in enumerate(pull):
+            record = _pull_of(fight)
+            cut = position < len(pull) - 1
+            went_on = (not cut and record.get("outcome") == UNSEEN and bool(later)
+                       and not any(_shares_boss(record, other) for other in later))
+            if bool(record.get("cut")) != cut or bool(record.get("went_on")) != went_on:
+                changed.append(fight)
+            record["cut"], record["went_on"] = cut, went_on
+    return changed
+
+
 # --------------------------------------------------------------- text --
 
 def health_text(value) -> str:
@@ -313,23 +439,30 @@ def health_text(value) -> str:
 
 
 def clock(seconds) -> str:
-    """'48 s', '1:12'."""
+    """A span: '48s', '1:12' (rounded), as the fight list writes a fight's
+    duration (fight_render's _fmt_duration is this)."""
     whole = max(0, round(float(seconds or 0)))
-    return f"{whole} s" if whole < 60 else f"{whole // 60}:{whole % 60:02d}"
+    return f"{whole}s" if whole < 60 else f"{whole // 60}:{whole % 60:02d}"
+
+
+def mmss(seconds) -> str:
+    """A time into a fight: '1:38' (whole seconds, cut down), as the death
+    recap writes it (fight_render's _clock_s and death_render's _clock are
+    this)."""
+    whole = max(0, int(seconds or 0))
+    return f"{whole // 60}:{whole % 60:02d}"
 
 
 def at_clock(ms) -> str:
-    """'1:42': milliseconds into the fight, as the death recap writes them."""
-    seconds = max(0, int(ms or 0)) // 1000
-    return f"{seconds // 60}:{seconds % 60:02d}"
+    """mmss from milliseconds into the fight: '1:42'."""
+    return mmss(max(0, int(ms or 0)) // 1000)
 
 
-def outcome_text(pull: dict | None, title: str = "", cut: bool = False,
-                 went_on: bool = False) -> str:
+def outcome_text(pull: dict | None, title: str = "") -> str:
     """'Kill', 'Wipe 62%', 'Left 84%', 'Lost sight 31%, group went on',
-    'Cut 63%' for a fight the next one carries on; '' without a pull.
-    The boss is named when it is not the row's *title* (another unit took
-    more damage than it)."""
+    'Cut 63%' for a fight the next one carries on (the pull's 'cut' and
+    'went_on', mark_context); '' without a pull. The boss is named when it
+    is not the row's *title* (another unit took more damage than it)."""
     if not pull:
         return ""
     outcome = pull.get("outcome")
@@ -337,6 +470,7 @@ def outcome_text(pull: dict | None, title: str = "", cut: bool = False,
         word = WORDS[KILL]
         boss = pull.get("boss") or ""
         return f"{word} ({boss})" if title and boss and boss != title else word
+    cut = bool(pull.get("cut"))
     word = CUT_WORD if cut else WORDS.get(outcome, "")
     health = health_text(pull.get("health_left"))
     boss = pull.get("boss") or ""
@@ -344,7 +478,7 @@ def outcome_text(pull: dict | None, title: str = "", cut: bool = False,
         text = f"{word}, {boss} {health}".rstrip()
     else:
         text = f"{word} {health}".rstrip()
-    if went_on and not cut:
+    if pull.get("went_on") and not cut:
         text += f", {WENT_ON}"
     return text
 
@@ -387,39 +521,27 @@ def runs(entries) -> list:
     return out
 
 
-def row_contexts(entries) -> dict:
-    """id(entry) -> (cut, went_on) for the fight rows of one block: cut
-    for a fight the next fight of its pull carries on; went_on for the
-    last fight of a pull that is no kill when a later pull of the block
-    is of another boss and none of this one."""
-    out = {}
-    all_pulls = pulls(entries)
-    for index, pull in enumerate(all_pulls):
-        for fight in pull[:-1]:
-            out[id(fight)] = (True, False)
-        last = pull[-1]
-        record = _pull_of(last)
-        later = [_pull_of(p[0]) for p in all_pulls[index + 1:]]
-        went_on = (record.get("outcome") != KILL and bool(later)
-                   and not any(_shares_boss(record, other) for other in later))
-        out[id(last)] = (False, went_on)
-    return out
-
-
 def run_name(run) -> str:
-    """The run's boss: its pulls' top boss, the two most frequent joined
-    when the top unit alternates ('Lylanar and Turlassil')."""
+    """The run's boss: its pulls' top boss, and the second most frequent
+    joined to it ('Lylanar and Turlassil') only when it was the top in
+    RUN_NAME_SHARE of the pulls or more: an add on top once in a long
+    run does not name it."""
     counts = Counter(_pull_of(pull[-1]).get("boss") for pull in run)
-    names = [name for name, _n in counts.most_common(2) if name]
-    return " and ".join(names) if names else "Boss"
+    common = [(name, n) for name, n in counts.most_common(2) if name]
+    if not common:
+        return "Boss"
+    names = [common[0][0]]
+    if len(common) > 1 and common[1][1] >= RUN_NAME_SHARE * len(run):
+        names.append(common[1][0])
+    return " and ".join(names)
 
 
 def _fight_entries(run) -> list:
     return [fight for pull in run for fight in pull]
 
 
-def run_summary(run, went_on: bool = False) -> str:
-    """'Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48 s
+def run_summary(run) -> str:
+    """'Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48s
     between pulls'; 'Captain Vrol: 2 pulls, killed on pull 2, ...'."""
     count = len(run)
     parts = [f"{count} pull{'s' if count != 1 else ''}"]
@@ -431,7 +553,7 @@ def run_summary(run, went_on: bool = False) -> str:
         healths = [p.get("health_left") for p in finals if p.get("health_left") is not None]
         if healths:
             parts.append(f"best {health_text(min(healths))}")
-        if last.get("outcome") == UNSEEN and went_on:
+        if last.get("outcome") == UNSEEN and last.get("went_on"):
             parts.append(f"lost sight on pull {count}, {WENT_ON}")
     wipes = [p.get("health_left") for p in finals
              if p.get("outcome") == WIPE and p.get("health_left") is not None]

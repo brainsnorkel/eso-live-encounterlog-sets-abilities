@@ -1799,6 +1799,15 @@ class ESOLogAnalyzer(ListenerMixin):
             self._publish_fight(self.current_zone)
             # Don't reset to None - we'll reuse the encounter and preserve players
         
+        # The players still dead as the last fight ended, should this one
+        # carry that pull on (pull_outcome.TimeDead.carried)
+        carried = ()
+        if (self.current_encounter and self.current_encounter.finalized
+                and self.current_encounter.end_time
+                and entry.timestamp - self.current_encounter.end_time
+                <= pull_outcome.CONTINUE_GAP_S * 1000):
+            carried = self.current_encounter.time_dead.dead_at_end()
+
         # Create a new encounter if we don't have one or if the previous one was finalized
         if not self.current_encounter or self.current_encounter.finalized:
             # Create new encounter but preserve players and enemies from previous encounter in same zone
@@ -1836,6 +1845,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        self.current_encounter.time_dead.begin(entry.timestamp, carried)
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
         self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
@@ -2028,6 +2038,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 # COMBAT_RESUME_MS), its entry is built again from it
                 enc.trial_result = result
                 self._last_fight_entry.trial_result = result
+                # The run was won in that fight: its boss died (pull_outcome)
+                pull_outcome.note_trial_end(self._last_fight_entry.pull)
                 self._notify('on_fight_updated', self._last_fight_entry)
         elif enc.in_combat:
             enc.trial_result = result
@@ -2188,10 +2200,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # A dead player whose state shows health again was revived
         # (pull_outcome's time dead)
         dead = enc.time_dead
-        if dead.since:
-            if source is not None and source.unit_id in dead.since and pull_outcome.has_health(fields[8]):
+        if dead.watching():
+            if source is not None and dead.watches(source.unit_id) and pull_outcome.has_health(fields[8]):
                 dead.alive(source.unit_id, entry.timestamp)
-            if (target is not None and target is not source and target.unit_id in dead.since
+            if (target is not None and target is not source and dead.watches(target.unit_id)
                     and len(fields) > 18 and pull_outcome.has_health(fields[18])):
                 dead.alive(target.unit_id, entry.timestamp)
         # The same player twice is observed once, with the gain
@@ -2590,8 +2602,10 @@ class ESOLogAnalyzer(ListenerMixin):
         if late_entry is not None:
             late_entry.deaths += 1
             late_entry.death_recaps = late_entry.death_recaps + [recap]
-            # Dead as the fight ended, which can turn its verdict
+            # Dead as the fight ended, which can turn its verdict; and still
+            # dead should the fight carry on (pull_outcome)
             pull_outcome.note_late_death(late_entry.pull, player.unit_id, bool(player.is_local))
+            self.current_encounter.time_dead.late_death(player.unit_id, entry.timestamp)
             self._notify('on_fight_updated', late_entry)
         elif not self.current_encounter.finalized:
             self.current_encounter.time_dead.died(player.unit_id, entry.timestamp)
@@ -2815,8 +2829,33 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._last_fight_entry = fight_entry
                 self._last_fight_start = self.current_encounter.start_time
                 self._index_mastery_rows(fight_entry)
+                # 'Cut' and 'group went on' on the instance's earlier pulls,
+                # which only this fight can tell (pull_outcome)
+                changed = pull_outcome.mark_context(self._instance_fights())
                 self._notify('on_fight_updated' if resumed is not None
                              else 'on_fight_completed', fight_entry)
+                for earlier in changed:
+                    if earlier is not fight_entry:
+                        self._notify('on_fight_updated', earlier)
+
+    def _instance_fights(self) -> List[FightHistoryEntry]:
+        """The fights of the instance the newest fight is in, in order: back
+        from it while the zone and difficulty stay, stopping after a fight
+        that completed a run (the fight list's blocks, gui.fight_list)."""
+        fights = self.fight_history.fights
+        if not fights:
+            return []
+        newest = fights[-1]
+        key = (newest.zone_id or newest.zone_name, newest.difficulty)
+        block = []
+        for entry in reversed(fights):
+            if (entry.zone_id or entry.zone_name, entry.difficulty) != key:
+                break
+            if block and entry.trial_result:
+                break
+            block.append(entry)
+        block.reverse()
+        return block
 
     def _unit_kind(self, unit_id: str) -> Optional[str]:
         """What the encounter knows a unit to be, for effect_rules scopes:
@@ -3299,9 +3338,16 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.trial_result = enc.trial_result
 
         # Kill or wipe, the boss's health as it ended, and each player's
-        # time dead (pull_outcome, issues #168 and #169)
-        entry.time_dead = enc.time_dead.totals(enc.end_time)
+        # time dead (pull_outcome, issues #168 and #169). Players carried
+        # down from the last fight count only when this one carries its
+        # pull on
         entry.pull = self._pull_record(enc, entry)
+        carries = bool(entry.pull and entry.pull["continues"])
+        if carries:
+            present = {p.unit_id for p in enc.players.values()}
+            pull_outcome.carry_dead(entry.pull, [key for key in enc.time_dead.carried_at_end
+                                                 if key in present])
+        entry.time_dead = enc.time_dead.totals(enc.end_time, carried=carries)
 
         return entry
 

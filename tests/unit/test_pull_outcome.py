@@ -156,6 +156,40 @@ class TestTimeDead(unittest.TestCase):
         dead.alive("2", 70_000)
         self.assertEqual(dead.totals(90_000), {"2": 20_000})
 
+    def test_a_death_before_the_pull_counts_from_the_pull(self):
+        dead = po.TimeDead()
+        dead.died("1", 5_000)  # fell before the pull
+        dead.begin(10_000)
+        dead.end(130_000)
+        self.assertEqual(dead.totals(130_000), {"1": 120_000})
+
+    def test_a_late_death_stays_dead_should_the_fight_carry_on(self):
+        dead = po.TimeDead()
+        dead.end(60_000)
+        dead.late_death("3", 60_400)
+        self.assertEqual(dead.dead_at_end(), frozenset({"3"}))
+        dead.resume()
+        dead.end(80_000)
+        self.assertEqual(dead.dead_at_end(), frozenset({"3"}))
+
+    def test_the_dead_carried_from_the_last_fight(self):
+        dead = po.TimeDead()
+        dead.begin(100_000, carried={"4", "5"})
+        self.assertTrue(dead.watches("4"))
+        dead.alive("4", 103_000)  # back up: no 1 s wait, the death was long ago
+        dead.end(160_000)
+        self.assertEqual(dead.carried_at_end, frozenset({"5"}))
+        self.assertEqual(dead.totals(160_000), {})
+        self.assertEqual(dead.totals(160_000, carried=True), {"4": 3_000, "5": 60_000})
+
+    def test_a_carried_player_who_dies_again_is_dead_from_then(self):
+        dead = po.TimeDead()
+        dead.begin(100_000, carried={"4"})
+        dead.died("4", 110_000)
+        self.assertNotIn("4", dead.carried)
+        dead.end(120_000)
+        self.assertEqual(dead.dead_at_end(), frozenset({"4"}))
+
 
 class TestTexts(unittest.TestCase):
 
@@ -169,18 +203,26 @@ class TestTexts(unittest.TestCase):
         self.assertEqual(po.outcome_text(_pull(po.KILL)), "Kill")
         self.assertEqual(po.outcome_text(_pull(po.WIPE, 62.4)), "Wipe 62%")
         self.assertEqual(po.outcome_text(_pull(po.LEFT, 84.0)), "Left 84%")
-        self.assertEqual(po.outcome_text(_pull(po.UNSEEN, 31.0), went_on=True),
+        self.assertEqual(po.outcome_text(_pull(po.UNSEEN, 31.0, went_on=True)),
                          "Lost sight 31%, group went on")
-        self.assertEqual(po.outcome_text(_pull(po.UNSEEN, 63.0), cut=True), "Cut 63%")
+        self.assertEqual(po.outcome_text(_pull(po.UNSEEN, 63.0, cut=True)), "Cut 63%")
         self.assertEqual(po.outcome_text(None), "")
         # Another unit took the most damage: the row is named after it
         self.assertEqual(po.outcome_text(_pull(po.WIPE, 62.4), title="Lieutenant Njordal"),
                          "Wipe, Lord Falgravn 62%")
 
     def test_clocks(self):
-        self.assertEqual(po.clock(48.2), "48 s")
+        # One format with the fight's duration in the list
+        self.assertEqual(po.clock(48.2), "48s")
         self.assertEqual(po.clock(72), "1:12")
+        self.assertEqual(po.mmss(98.9), "1:38")
         self.assertEqual(po.at_clock(102_500), "1:42")
+
+    def test_a_late_end_trial_is_a_kill(self):
+        pull = _pull(dead_at_end=list("abcdef"))
+        self.assertEqual(pull["outcome"], po.WIPE)
+        po.note_trial_end(pull)
+        self.assertEqual(pull["outcome"], po.KILL)
 
 
 class TestRuns(unittest.TestCase):
@@ -198,29 +240,48 @@ class TestRuns(unittest.TestCase):
         both = ["Lylanar", "Turlassil"]
         a = _Entry(_pull(po.WIPE, 40.0, boss="Lylanar", bosses=both))
         b = _Entry(_pull(po.WIPE, 30.0, boss="Turlassil", bosses=both[::-1]))
-        self.assertEqual(len(po.runs([a, b])), 1)
-        self.assertEqual(po.run_name(po.runs([a, b])[0]), "Lylanar and Turlassil")
+        c = _Entry(_pull(po.WIPE, 35.0, boss="Turlassil", bosses=both[::-1]))
+        self.assertEqual(len(po.runs([a, b, c])), 1)
+        self.assertEqual(po.run_name(po.runs([a, b, c])[0]), "Turlassil and Lylanar")
 
-    def test_row_contexts(self):
+    def test_an_add_on_top_once_does_not_name_the_run(self):
+        both = ["Lord Falgravn", "Lieutenant Njordal"]
+        fights = [_Entry(_pull(po.WIPE, 80.0, bosses=both)) for _ in range(11)]
+        fights.insert(3, _Entry(_pull(po.WIPE, 85.0, boss="Lieutenant Njordal", bosses=both[::-1])))
+        self.assertEqual(po.run_name(po.runs(fights)[0]), "Lord Falgravn")
+
+    def test_mark_context(self):
         a = _Entry(_pull(po.UNSEEN, 63.0))
         b = _Entry(_pull(po.UNSEEN, 30.0, continues=True))
         c = _Entry(_pull(po.WIPE, 90.0, boss="Captain Vrol"))
-        contexts = po.row_contexts([a, b, c])
-        self.assertEqual(contexts[id(a)], (True, False))
+        self.assertEqual(po.mark_context([a, b, c]), [a, b])
+        self.assertEqual((a.pull["cut"], a.pull["went_on"]), (True, False))
         # Falgravn never came back and another boss was pulled after
-        self.assertEqual(contexts[id(b)], (False, True))
-        self.assertEqual(contexts[id(c)], (False, False))
+        self.assertEqual((b.pull["cut"], b.pull["went_on"]), (False, True))
+        self.assertEqual((c.pull["cut"], c.pull["went_on"]), (False, False))
+        self.assertEqual(po.mark_context([a, b, c]), [])  # nothing changed
+        # The boss came back: the group did not go on after all
+        d = _Entry(_pull(po.WIPE, 70.0))
+        self.assertEqual(po.mark_context([a, b, c, d]), [b])
+        self.assertFalse(b.pull["went_on"])
+
+    def test_went_on_is_said_of_lost_sight_only(self):
+        wipe = _Entry(_pull(po.WIPE, 62.0))
+        left = _Entry(_pull(po.LEFT, 84.0, boss="Captain Vrol"))
+        po.mark_context([wipe, left, _Entry(_pull(po.KILL, 0.0, boss="Yandir the Butcher"))])
+        self.assertFalse(wipe.pull["went_on"])
+        self.assertFalse(left.pull["went_on"])
 
     def test_summary(self):
         pulls = [_Entry(_pull(po.WIPE, h, start_s=i * 100.0, end_s=i * 100.0 + 52.0))
                  for i, h in enumerate((84.0, 83.0, 86.0, 81.0, 62.0))]
         run = po.runs(pulls)[0]
         self.assertEqual(po.run_summary(run),
-                         "Lord Falgravn: 5 pulls, best 62%, 4 wipes at 80 to 90%, 48 s between pulls")
+                         "Lord Falgravn: 5 pulls, best 62%, 4 wipes at 80 to 90%, 48s between pulls")
         pulls.append(_Entry(_pull(po.KILL, 0.0, start_s=548.0, end_s=700.0)))
         self.assertEqual(po.run_summary(po.runs(pulls)[0]),
                          "Lord Falgravn: 6 pulls, killed on pull 6, 4 wipes at 80 to 90%, "
-                         "48 s between pulls")
+                         "48s between pulls")
 
     def test_details(self):
         first = _Entry(_pull(po.WIPE, 80.0), [
@@ -243,7 +304,7 @@ class TestRuns(unittest.TestCase):
             time_dead={"5": 90_000, "6": 40_000})
         fight.players = [{"unit_id": "5", "role": "T", "class_abbr": "DK"}]
         lines = po.run_details([[fight]], _Mask())
-        self.assertEqual(lines[-1], "Most time dead: anon (T, DK) 1:30, anon 40 s")
+        self.assertEqual(lines[-1], "Most time dead: anon (T, DK) 1:30, anon 40s")
 
 
 class TestFightTexts(unittest.TestCase):

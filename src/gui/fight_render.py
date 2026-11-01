@@ -103,7 +103,14 @@ from gui.death_render import death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
-from pull_outcome import dead_row_text, first_death_parts, first_death_text, outcome_text
+from pull_outcome import (
+    clock,
+    dead_row_text,
+    first_death_parts,
+    first_death_text,
+    mmss,
+    outcome_text,
+)
 from scribing import scribed_label, slot_label
 from trial_result import result_text
 
@@ -664,10 +671,8 @@ def _fmt_dps(dps: float) -> str:
 
 
 def _fmt_duration(seconds: float) -> str:
-    total = int(round(seconds))
-    if total >= 60:
-        return f"{total // 60}:{total % 60:02d}"
-    return f"{total}s"
+    """'48s', '3:12': one formatter with the pull's spans (pull_outcome)."""
+    return clock(seconds)
 
 
 def _fmt_resource(value) -> str:
@@ -720,8 +725,7 @@ def ultimate_text(p) -> str:
 
 def _clock_s(seconds) -> str:
     """'1:38': seconds into the fight, as the death recap writes them."""
-    whole = max(0, int(seconds or 0))
-    return f"{whole // 60}:{whole % 60:02d}"
+    return mmss(seconds)
 
 
 def ultimate_lines(p) -> list[str]:
@@ -810,7 +814,7 @@ def _mastery_text(p) -> str:
 
 
 def summary_line(entry, death_cue: bool = False, issue_cue: bool = False,
-                 zone: bool = True, cut: bool = False, went_on: bool = False) -> str:
+                 zone: bool = True) -> str:
     """Fight line: boss · outcome · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
@@ -819,13 +823,12 @@ def summary_line(entry, death_cue: bool = False, issue_cue: bool = False,
     history list asks for both; the clipboard copy, which is read without
     the app's legend, does not. zone=False leaves the zone out, for the
     history list, whose block header names it (gui.fight_list). The
-    outcome is the pull's verdict ('Kill', 'Wipe 62%'; pull_outcome), with
-    cut and went_on from the fights after it, which only the list knows.
+    outcome is the pull's verdict ('Kill', 'Wipe 62%'; pull_outcome).
     """
     parts = []
     if entry.boss_name:
         parts.append(entry.boss_name)
-    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name, cut, went_on)
+    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name)
     if outcome:
         parts.append(outcome)
     parts.append(_fmt_duration(entry.duration_s))

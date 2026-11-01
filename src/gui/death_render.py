@@ -49,7 +49,7 @@ from damage_kinds import (
 )
 from death_recap import RECAP_WINDOW_MS
 from gui.name_mask import NO_MASK
-from pull_outcome import dead_hover_text
+from pull_outcome import at_clock, dead_hover_text
 from gui.text_size import scaled_px
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
@@ -157,8 +157,7 @@ def _player_for(entry, unit_id) -> Optional[dict]:
 
 
 def _clock(ms) -> str:
-    seconds = max(0, int(ms)) // 1000
-    return f"{seconds // 60}:{seconds % 60:02d}"
+    return at_clock(ms)
 
 
 def window_seconds(recap: dict) -> int:

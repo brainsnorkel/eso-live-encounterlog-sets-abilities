@@ -26,12 +26,12 @@ def _ensure_app():
 
 
 def _pull(outcome, health_left, boss="Lord Falgravn", start_s=0.0, end_s=100.0,
-          continues=False):
+          continues=False, cut=False, went_on=False):
     return {"boss": boss, "bosses": [boss], "outcome": outcome, "health_left": health_left,
             "health_start": 100.0, "health": {boss: [100.0, health_left]},
             "boss_died": outcome == "kill", "players": 12, "dead_at_end": [],
             "local_dead_at_end": outcome == "unseen", "start_s": start_s, "end_s": end_s,
-            "zone": "1196|VETERAN", "continues": continues}
+            "zone": "1196|VETERAN", "continues": continues, "cut": cut, "went_on": went_on}
 
 
 def _entry(boss, pull=None, recaps=(), time_dead=None, duration_s=100.0):
@@ -91,14 +91,14 @@ class TestFightListRuns(unittest.TestCase):
         texts = self._texts()
         self.assertTrue(texts[1].startswith("Yandir the Butcher · Kill · "))
         self.assertTrue(texts[3].startswith("Lord Falgravn · Wipe 62% · "))
-        self.assertEqual(texts[4], "Lord Falgravn: 2 pulls, best 62%, 48 s between pulls")
+        self.assertEqual(texts[4], "Lord Falgravn: 2 pulls, best 62%, 48s between pulls")
         self.assertEqual(self.view.item(4).data(KIND_ROLE), RUN)
         # The run row moves down under the next pull, and says the kill
         row = self.view.add_fight(_entry("Lord Falgravn", _pull("kill", 0.0, start_s=420.0,
                                                                 end_s=600.0)))
         texts = self._texts()
         self.assertEqual(row, 4)
-        self.assertEqual(texts[5], "Lord Falgravn: 3 pulls, killed on pull 3, 48 s between pulls")
+        self.assertEqual(texts[5], "Lord Falgravn: 3 pulls, killed on pull 3, 48s between pulls")
         self.assertEqual(sum(1 for t in texts if "pulls" in t), 1)
 
     def test_a_run_row_is_inert(self):
@@ -111,8 +111,10 @@ class TestFightListRuns(unittest.TestCase):
         self.assertEqual(self.view.current_fight_index(), 1)
 
     def test_cut_and_group_went_on(self):
-        self.view.add_fight(_entry("Lord Falgravn", _pull("unseen", 63.0)))
-        self.view.add_fight(_entry("Lord Falgravn", _pull("unseen", 31.0, continues=True)))
+        # The flags the engine sets from the fights after (pull_outcome.mark_context)
+        self.view.add_fight(_entry("Lord Falgravn", _pull("unseen", 63.0, cut=True)))
+        self.view.add_fight(_entry("Lord Falgravn", _pull("unseen", 31.0, continues=True,
+                                                          went_on=True)))
         self.view.add_fight(_entry("Captain Vrol", _pull("wipe", 90.0, "Captain Vrol")))
         texts = self._texts()
         self.assertIn("· Cut 63% ·", texts[1])
@@ -143,10 +145,10 @@ class TestFightListRuns(unittest.TestCase):
         run = self.view.item(3).data(RUN_ROLE)
         text = run_tooltip(run)
         self.assertIn("First deaths: Grievous Pulse 1, Claw 1", text)
-        self.assertIn("Most time dead: @other 1:30, @me 30 s", text)
+        self.assertIn("Most time dead: @other 1:30, @me 30s", text)
         hidden = run_tooltip(run, hide_names=True)
         self.assertNotIn("@other", hidden)
-        self.assertIn("@me 30 s", hidden)
+        self.assertIn("@me 30s", hidden)
 
     def test_a_rebuild_gives_the_same_rows(self):
         entries = [_entry("Lord Falgravn", _pull("wipe", h)) for h in (84.0, 62.0)]
@@ -193,6 +195,12 @@ class TestPaneAndCopy(unittest.TestCase):
         self.assertNotIn("@other", page)
         self.assertIn("First death: @<img", page)
         self.assertIn("First death: @▒▒▒▒▒ to Grievous Pulse", render_plain_text(entry, names=names))
+
+    def test_the_pane_and_the_copy_say_cut_as_the_list_does(self):
+        from gui.fight_render import render_html, render_plain_text
+        entry = _entry("Lord Falgravn", _pull("unseen", 63.0, cut=True))
+        self.assertIn("Cut 63% · ", render_html(entry, detailed=False))
+        self.assertTrue(render_plain_text(entry).startswith("Lord Falgravn · Cut 63% · "))
 
     def test_the_death_hover(self):
         from gui.death_render import death_tooltips
