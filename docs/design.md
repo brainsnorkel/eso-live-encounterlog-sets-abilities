@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2678](../src/esolog_tail.py#L2678)*
+*[src/esolog_tail.py:2845](../src/esolog_tail.py#L2845)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:87](../src/esolog_tail.py#L87)*
+*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1893](../src/esolog_tail.py#L1893)*
+*[src/esolog_tail.py:1924](../src/esolog_tail.py#L1924)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1908](../src/esolog_tail.py#L1908)*
+*[src/esolog_tail.py:1939](../src/esolog_tail.py#L1939)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,9 +57,56 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
+*[src/esolog_tail.py:82](../src/esolog_tail.py#L82)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
+
+## Fight boundaries: combat with no enemy
+
+### ESOLogAnalyzer._note_enemy_met
+
+*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
+
+A combat event of *result* and *hit_value*, or a cast
+(fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
+'current/max' health on the line: the fight it falls in met an
+enemy when it passed between the group (a player, a player's pet or
+companion) and an enemy (a hostile unit, never a companion or a
+released pet, see _opener_enemy). The group's line on an enemy
+counts whatever its result or value, but on a dead one only the kill
+(a hit above 0, or DIED_XP); an enemy's line on the group counts as
+the opener counts a monster's act (ENEMY_ACT_RESULTS): not from a
+dead enemy, and not a mechanic (fight_opener.is_mechanic).
+
+Design: Combat with no enemy in it. The game enters combat for more
+than enemies: for the group's weapon enchants, area damage and heavy
+attacks on a neutral unit (Vateshran Hollows' Brimstone Orbs, broken
+to cross the lava, or a Tomeshell in the Infinite Archive), for the
+hits of a neutral trap (the Aetherian Archive's Shock and Frost
+Traps), a unit the log never added (Cradle of Shadows' Pull of
+Darkness), a hazard (the Infinite Archive's Molten Destruction), the
+Arcane Knot's Temporal Splinters or a dead boss's poison, or for
+nothing the log shows (two half-minute spells in Sunspire with no
+combat event at all). Each ends with END_COMBAT and was listed as a
+fight with nothing in it. Over the 395 split logs of January to
+November 2026 that hold fights (9,023 of them), 58 in 29 logs met no
+enemy from 10 s before BEGIN_COMBAT (since the last fight ended, as
+the opener reads it, see fight_opener) to END_COMBAT: none had a hit
+on an enemy or a player's death, 13 took damage, 15 lasted under a
+second. Such combat is held back at END_COMBAT and never listed,
+unless a player died in it or dies just after it ends (see
+LATE_DEATH_GRACE_MS): a death to a trap keeps its fight and recap.
+A trial's END_TRIAL in or after one goes to the last fight listed
+(_trial_won_before_held): in one Lucent Citadel run it came 9 s
+after Xoryn died, in an Arcane Knot combat, and now sits on Xoryn's
+fight. Replayed with this rule, that was the only change to the
+entries of the fights still listed. The 10 s before the line count
+because the group's first hits often land before it: a survey of
+combat events found 30 fights that met an enemy only there, none
+with damage of its own (the hits went to the fight before, issue
+#162). A cast counts as the opener's does: five of the survey's
+empty fights stay listed for a monster's cast at a player or a
+player's at a boss, acts the opener names.
 
 ## The fight's opener
 
@@ -158,7 +205,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4599](../src/esolog_tail.py#L4599)*
+*[src/esolog_tail.py:4766](../src/esolog_tail.py#L4766)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -201,7 +248,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:358](../src/esolog_tail.py#L358)*
+*[src/esolog_tail.py:364](../src/esolog_tail.py#L364)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -2102,7 +2149,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:922](../src/esolog_tail.py#L922)*
+*[src/esolog_tail.py:932](../src/esolog_tail.py#L932)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2143,13 +2190,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:96](../src/esolog_tail.py#L96)*
+*[src/esolog_tail.py:97](../src/esolog_tail.py#L97)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:408](../src/esolog_tail.py#L408)*
+*[src/esolog_tail.py:414](../src/esolog_tail.py#L414)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2233,7 +2280,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:113](../src/esolog_tail.py#L113)*
+*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2241,7 +2288,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:131](../src/esolog_tail.py#L131)*
+*[src/esolog_tail.py:137](../src/esolog_tail.py#L137)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2388,7 +2435,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:636](../src/esolog_tail.py#L636)*
+*[src/esolog_tail.py:646](../src/esolog_tail.py#L646)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2411,7 +2458,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:782](../src/esolog_tail.py#L782)*
+*[src/esolog_tail.py:792](../src/esolog_tail.py#L792)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2437,7 +2484,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3801](../src/esolog_tail.py#L3801)*
+*[src/esolog_tail.py:3968](../src/esolog_tail.py#L3968)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2677,8 +2724,9 @@ the group went on to the next boss (the unit left was a helper or
 Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
 read as kills, and the next pull of the pair shows the group still at it.
 
-Time dead: a player's DIED or KILLING_BLOW opens a span; the next line
-that carries their state with health above 0 closes it, at least
+Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
+issue #184) opens a span; the next line that carries their state with
+health above 0 closes it, at least
 REVIVE_MIN_MS after the death, since the lines of the killing blow carry
 the corpse's 0. END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
@@ -2850,6 +2898,19 @@ logs):
 
 - The dying unit's event is DIED, or KILLING_BLOW when the killer is a player
   (friendly fire, PvP). Its source and ability name the killer.
+- A fall into lava, off a ledge or out of the map is one KILLED_BY_SUBZONE
+  line and nothing else (issue #184): no DIED within ten seconds either side,
+  the source unit 0 with an empty state, ability and cast track 0, the dying
+  player in the target block at 0 health. Until #184 the engine did not
+  count it, so the death had no recap, no time dead and the pull read as if
+  nobody died. The recap names no killer, gives FALL_DEATH as what killed
+  and carries cause FALL_CAUSE. Only a player's counts: the logs hold none
+  on an enemy, and one there would read as the group's kill. Every one of the 18 in the maintainer's logs (2025-10 to 2026-11)
+  was the writer's own: 17 falls on Sunspire's Temple Grounds, all outside a
+  fight, and one into Rahdgarak's lava in Vateshran Hollows, 26 ms before
+  END_COMBAT. A FALLING line came before only that last one, and FALLING
+  lines carry whatever ability the player had (Bash, a fire or shock id),
+  so they make no recap row.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
