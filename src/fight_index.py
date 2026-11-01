@@ -35,12 +35,12 @@ parsed for it: the line is the entry's own figures. Builds are not kept.
   maintainer's folder 20 such logs in 10 sessions. The live log's newest
   session is left out: the splitter may still be writing its split (the
   temp name lasts only until the zone is known), and the window indexes
-  that session itself as it replays and follows it. Each log done is noted in
-  ``fights-backfill.json`` beside the index, by its own name (which a zip
-  of it keeps) and with its copy mark, once its lines are written, so a
-  cancelled backfill carries on where it stopped. The
-  maintainer's 378 unique split logs (35 GB) replay at the engine's 10
-  MB/s on one thread.
+  that session itself as it replays and follows it. Each log done is
+  noted in ``fights-backfill.json`` beside the index, by its own name
+  (which a zip of it keeps) and with its copy mark, once its lines are
+  written, so a cancelled backfill carries on where it stopped. A first
+  build of the maintainer's split folder (398 logs, 36.8 GB) took 44
+  minutes on one thread, 13.8 MB/s, and wrote 2,414 lines, 3.0 MB.
 
 Comparisons (the issue's measurements: 179 bosses killed, 23 in 10 or
 more sessions; Lord Falgravn's kills 265k to 953k; a standing Sunspire
