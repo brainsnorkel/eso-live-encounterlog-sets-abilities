@@ -445,6 +445,17 @@ def clock(seconds) -> str:
     return f"{whole}s" if whole < 60 else f"{whole // 60}:{whole % 60:02d}"
 
 
+def dps_text(dps) -> str:
+    """A dps figure: '1.50M', '61.8k', '950' (fight_render's _fmt_dps is
+    this, so the pane, Copy fight and the session recap agree)."""
+    dps = float(dps or 0)
+    if dps >= 1_000_000:
+        return f"{dps / 1_000_000:.2f}M"
+    if dps >= 1_000:
+        return f"{dps / 1_000:.1f}k"
+    return f"{dps:.0f}"
+
+
 def mmss(seconds) -> str:
     """A time into a fight: '1:38' (whole seconds, cut down), as the death
     recap writes it (fight_render's _clock_s and death_render's _clock are

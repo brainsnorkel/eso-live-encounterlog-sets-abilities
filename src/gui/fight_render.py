@@ -106,6 +106,7 @@ from pen_crit import cap_shares
 from pull_outcome import (
     clock,
     dead_row_text,
+    dps_text,
     first_death_parts,
     first_death_text,
     mmss,
@@ -681,11 +682,9 @@ def _join(value, sep=", ") -> str:
 
 
 def _fmt_dps(dps: float) -> str:
-    if dps >= 1_000_000:
-        return f"{dps / 1_000_000:.2f}M"
-    if dps >= 1_000:
-        return f"{dps / 1_000:.1f}k"
-    return f"{dps:.0f}"
+    """'1.50M', '61.8k', '950': one formatter with the session recap
+    (pull_outcome.dps_text)."""
+    return dps_text(dps)
 
 
 def _fmt_duration(seconds: float) -> str:

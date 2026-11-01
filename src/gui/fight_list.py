@@ -72,6 +72,7 @@ from PySide6.QtWidgets import (
     QToolTip,
 )
 
+from fight_blocks import header_text, starts_block
 from fight_index import fmt_dps, run_best_kill
 from gui.fight_render import (
     ISSUES_LIST_CUE,
@@ -99,35 +100,6 @@ BAND_MIX = 0.07
 
 # Pixels either side of the (i) that still count as over it
 MARK_SLACK = 3
-
-_DIFFICULTY_NAMES = {"VETERAN": "Veteran", "NORMAL": "Normal"}
-
-
-def _difficulty(entry) -> str:
-    difficulty = str(getattr(entry, "difficulty", "") or "").upper()
-    if not difficulty and getattr(entry, "is_vet", False):
-        difficulty = "VETERAN"
-    return difficulty
-
-
-def block_key(entry) -> tuple:
-    """What fights of one block share: the zone and its difficulty."""
-    zone = str(getattr(entry, "zone_id", "") or "") or str(entry.zone_name or "")
-    return zone, _difficulty(entry)
-
-
-def starts_block(previous, entry) -> bool:
-    """Whether *entry* opens a block after *previous* (None: the first)."""
-    return (previous is None or block_key(previous) != block_key(entry)
-            or bool(getattr(previous, "trial_result", None)))
-
-
-def header_text(entry) -> str:
-    """'Sunspire · Veteran'; the name alone for a zone without one."""
-    zone = entry.zone_name or "Unknown"
-    difficulty = _DIFFICULTY_NAMES.get(_difficulty(entry))
-    return f"{zone} · {difficulty}" if difficulty else zone
-
 
 def run_text(run, index=None) -> str:
     """A run row's line: the run's summary, and the best earlier kill of

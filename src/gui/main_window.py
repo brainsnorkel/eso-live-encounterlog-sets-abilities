@@ -62,6 +62,7 @@ from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
+from session_recap import DISCORD_LIMIT, recap_text
 import split_retention
 from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
@@ -253,6 +254,15 @@ class MainWindow(QMainWindow):
         copy_action.setShortcut(QKeySequence.Copy)
         copy_action.triggered.connect(self._copy_current)
         toolbar.addAction(copy_action)
+
+        # The whole list as a recap for Discord (session_recap, issue #171)
+        self.copy_session_action = QAction("Copy session", self)
+        self.copy_session_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self.copy_session_action.setToolTip(
+            "Copy every fight in the list as a short recap: each boss's pulls, the kills, "
+            "what ended the pulls (Ctrl+Shift+C)")
+        self.copy_session_action.triggered.connect(self._copy_session)
+        toolbar.addAction(self.copy_session_action)
 
         self.graph_action = QAction("DPS graph", self)
         self.graph_action.triggered.connect(self._show_graph)
@@ -1436,6 +1446,21 @@ class MainWindow(QMainWindow):
                 entry, pen_crit_options=self.config.get("pen_crit") or {},
                 names=self._names_for(entry)))
             self.statusBar().showMessage("Fight summary copied to clipboard", 3000)
+
+    def _copy_session(self):
+        """Copy session: every fight of the list, live or under review, as
+        a recap (session_recap), names through the Hide names switch; the
+        status bar says how long it is against a Discord message."""
+        fights = self._current_fights()
+        if not fights:
+            self.statusBar().showMessage("No fights to copy", 3000)
+            return
+        text = recap_text(fights, NameMask.for_entries(fights, self._hide_names))
+        QGuiApplication.clipboard().setText(text)
+        note = f"Session recap copied to clipboard, {len(text):,} characters"
+        if len(text) > DISCORD_LIMIT:
+            note += f": a Discord message takes {DISCORD_LIMIT:,}, so paste it in parts"
+        self.statusBar().showMessage(note, 6000)
 
     # ---- actions ----
 

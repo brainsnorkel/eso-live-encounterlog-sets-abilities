@@ -141,6 +141,7 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 | Ctrl+D | Detail view on or off |
 | Ctrl+F | Put the cursor in the search field; Enter jumps to the next match, Esc clears |
 | Ctrl+C | Copy fight |
+| Ctrl+Shift+C | Copy session: the whole list as a recap |
 | Ctrl+H | [Hide names](#hiding-other-players-names) on or off, from any of the app's windows |
 | Ctrl+= (or Ctrl++), Ctrl+- | [Text size](#settings) a step bigger or smaller, from any of the app's windows; saved |
 | Ctrl+0 | Text size back to 100% |
@@ -316,6 +317,22 @@ A compact strip above each fight shows every tracked effect across the fight's l
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
 **Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares, effective penetration and critical damage (`— 61.8k / 63.0k (12.4% / 12.1%) · p:18141 cd:119%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`, and last the line saying who opened the fight. With [Hide names](#hiding-other-players-names) on, the copy carries `@▒▒▒▒▒▒` in place of every name but yours.
+
+**Copy session** (Ctrl+Shift+C) puts the whole list on the clipboard as a short recap of the night, for the raid lead's post: every fight in the list, live or under review, one paragraph per instance as the list groups them.
+
+```
+Kyne's Aegis · Veteran · 2026-10-31 20:05 to 22:40 · 12 players
+Yandir the Butcher: kill in 1 pull, 1:22, 662.0k boss dps, 1 death
+Lord Falgravn: 13 pulls, killed on pull 13, 9 wipes at 80 to 90%, 44s between pulls, 61 deaths; the kill 3:00, 441.0k boss dps
+  First deaths: Grievous Pulse 7, Blood Sunder (Lieutenant Njordal) 3, Instability 2
+  Killers: Grievous Pulse 110, Blood Sunder (Lieutenant Njordal) 11, Claw 9; 79% by Lord Falgravn
+  Most time dead: @dps 4:45, @healer 3:01, @tank 2:13
+Trash: 14 fights, 9:30, 3 deaths
+ⓘ 3 players with possible build issues
+✓ Kyne's Aegis vet · Vitality 30/36 · 153,117 · 1:12:40
+```
+
+Each boss's [pulls in a row](#fight-history) take one line, with what ended them under it when there were two or more; the trash is a count and a time; build issues are a count, never names. The text is plain lines, which Discord keeps and wraps on a phone. A Discord message holds 2,000 characters: the status bar says how long the copy is, and a long night is pasted in parts. **Hide names** hides the names in it as in Copy fight.
 
 **About** shows the version, the project link and the credits.
 
