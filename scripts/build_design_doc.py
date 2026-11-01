@@ -201,6 +201,11 @@ TOPICS = [
     ("The text size", [
         "src/gui/text_size.py",
     ]),
+    ("The trial score banner", [
+        "src/banner_capture.py",
+        "src/desktop_duplication.py",
+        "src/gui/banner_burst.py",
+    ]),
 ]
 
 
