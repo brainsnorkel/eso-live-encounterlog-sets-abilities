@@ -38,6 +38,27 @@ def resolve_log_path(config: AppConfig) -> Optional[Path]:
     return _find_eso_log_file()
 
 
+def engine_settings(config: AppConfig) -> tuple:
+    """The settings the engine reads when it is built (build_analyzer) or
+    attached (run_startup_sequence, engine_worker._attach_monitor), as it
+    reads them. The main window takes this before and after Settings
+    writes the config and replays the session only when it changed; every
+    other setting applies at once, at the next build window, at the next
+    retention run or at the next start (issue #187). The values are read
+    with the engine's own defaults, so a config never saved (every key
+    unset) compares equal to the same settings saved once: a blank path
+    and an absent one are both None, absent rules are the default text, an
+    absent window is the default. The rules compare as text, so a comment
+    edited in the box replays too, which is what someone who edited the
+    box expects."""
+    return (config.get("log_path") or None,
+            bool(config.get("split.enabled", False)),
+            config.get("split.dir") or None,
+            config.get("tracking.rules", DEFAULT_RULES) or "",
+            bool(config.get("companions.accrue_to_owner", False)),
+            recap_window_s(config.get("death_recap.window_s")))
+
+
 def build_analyzer(config: AppConfig,
                    listeners: List[AnalyzerListener]) -> ESOLogAnalyzer:
     analyzer = ESOLogAnalyzer()

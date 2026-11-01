@@ -9,6 +9,11 @@ new analyzer's fights were listed under them (seen 2026-10-09: a session
 listed twice, the first copy without timelines). The history is now
 cleared when the engine says the restart has begun, and fights sent
 before that are dropped.
+
+Since issue #187 a save restarts the engine only when a setting it reads
+changed (app_startup.engine_settings), so the saves here change one; a
+save that changes nothing the engine reads keeps the list and drops
+nothing.
 """
 
 import os
@@ -57,7 +62,7 @@ class TestSaveDuringAReplay(unittest.TestCase):
         self.win.close()
         self.tmp.cleanup()
 
-    def _press_save(self):
+    def _press_save(self, engine_setting=True):
         def accept():
             dialog = next((w for w in self.app.topLevelWidgets()
                            if isinstance(w, QDialog) and w.isVisible()
@@ -65,6 +70,12 @@ class TestSaveDuringAReplay(unittest.TestCase):
             if dialog is None:
                 QTimer.singleShot(10, accept)
             else:
+                if engine_setting:
+                    # one the engine reads: the save restarts it
+                    dialog.companion_accrual.setChecked(
+                        not dialog.companion_accrual.isChecked())
+                else:
+                    dialog.reduce_motion.setChecked(not dialog.reduce_motion.isChecked())
                 dialog.accept()
         QTimer.singleShot(0, accept)
         self.win._open_settings()
@@ -95,6 +106,17 @@ class TestSaveDuringAReplay(unittest.TestCase):
         # The new analyzer's replay fills it
         win._on_fight_completed(_fight("Alkosh's Roar", "2026-08-30 13:58:42"))
         self.assertEqual(self._listed(), ["Alkosh's Roar"])
+
+    def test_a_save_that_changes_nothing_the_engine_reads_keeps_the_list(self):
+        win = self.win
+        win._on_fight_completed(_fight("Alkosh's Roar", "2026-08-30 13:58:42"))
+        self._press_save(engine_setting=False)
+        self.assertFalse(win._restart_pending)
+        self.assertEqual(win.statusBar().currentMessage(), "Settings saved")
+        self.assertTrue(win.config.get("display.reduce_motion"))
+        # No restart is coming: the next fight is listed, nothing is dropped
+        win._on_fight_completed(_fight("Alkosh's Fate", "2026-08-30 13:59:03"))
+        self.assertEqual(self._listed(), ["Alkosh's Roar", "Alkosh's Fate"])
 
     def test_a_review_keeps_its_list_across_the_restart(self):
         win = self.win
