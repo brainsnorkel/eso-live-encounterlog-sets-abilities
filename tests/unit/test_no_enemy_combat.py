@@ -191,6 +191,34 @@ class TestNotListed(unittest.TestCase):
         self.assertEqual(_fights('10000,BEGIN_COMBAT', _cast(11000, _player(1), _boss(0)),
                                  '16000,END_COMBAT'), [])
 
+    def test_swinging_at_a_corpse(self):
+        self.assertEqual(_fights('10000,BEGIN_COMBAT',
+                                 _event(11000, 'TARGET_DEAD', 0, _player(1), _boss(0)),
+                                 _event(11500, 'DOT_TICK', 0, _player(1), _boss(0)),
+                                 '16000,END_COMBAT'), [])
+
+    def test_a_hazard_hitting_a_shielded_player(self):
+        """A shield absorb names the shield; the line after it names the
+        attack, the hazard's own ability."""
+        self.assertEqual(_fights('10000,BEGIN_COMBAT',
+                                 _event(11500, 'DAMAGE_SHIELDED', 3000, METEOR, _player(1),
+                                        ability=99999),
+                                 _event(11500, 'DAMAGE', 0, METEOR, _player(1), ability=219233),
+                                 '16000,END_COMBAT'), [])
+
+    def test_an_enemys_line_that_is_no_act(self):
+        """The opener's monster acts are damage, misses and crowd control;
+        any other line is no meeting."""
+        self.assertEqual(_fights('10000,BEGIN_COMBAT',
+                                 _event(11000, 'POWER_DRAIN', 300, _boss(), _player(1)),
+                                 '16000,END_COMBAT'), [])
+
+    def test_the_zones_first_combat_keeps_the_ten_seconds(self):
+        """The zone's first encounter is reused from the zone's start, so it
+        saw a hit 57 s before its line: too long ago to meet."""
+        self.assertEqual(_fights(_event(3000, 'DAMAGE', 0, _player(2), _boss()),
+                                 *_orb_combat(60000)), [])
+
 
 class TestListed(unittest.TestCase):
 
@@ -221,6 +249,13 @@ class TestListed(unittest.TestCase):
                          '16000,END_COMBAT')
         self.assertEqual(len(fights), 1)
         self.assertEqual(fights[0].group_dps, 5000)
+
+    def test_the_killing_blow_on_an_enemy(self):
+        """The hit that kills reads 0 health on its line and still counts."""
+        fights = _fights('10000,BEGIN_COMBAT',
+                         _event(11000, 'DAMAGE', 1000, _player(1), _boss(0)),
+                         '16000,END_COMBAT')
+        self.assertEqual(len(fights), 1)
 
     def test_an_enemy_casting_at_the_group(self):
         fights = _fights('10000,BEGIN_COMBAT', _cast(11000, _boss(), _player(2)),
@@ -271,6 +306,32 @@ class TestListed(unittest.TestCase):
         # Nothing of it is carried into the next fight
         engine.feed(_real_fight(30000, 40000))
         self.assertEqual([f.deaths for f in engine.fights], [1, 0])
+
+
+END_TRIAL = 'END_TRIAL,12,600000,T,100000,30000'
+
+
+class TestTrialResult(unittest.TestCase):
+    """END_TRIAL in or after a held combat: the run was won in the last
+    fight listed."""
+
+    def test_in_a_held_combat(self):
+        engine = Engine().feed([*_real_fight(4000, 9000), '11000,BEGIN_COMBAT',
+                                f'17000,{END_TRIAL}', '18000,END_COMBAT'])
+        self.assertEqual(len(engine.fights), 1)
+        self.assertEqual(engine.fights[0].trial_result['score'], 100000)
+        self.assertEqual(engine.events(), ['fight_completed', 'fight_updated'])
+
+    def test_just_after_a_held_combat(self):
+        engine = Engine().feed([*_real_fight(4000, 9000), '11000,BEGIN_COMBAT',
+                                '12000,END_COMBAT', f'13000,{END_TRIAL}'])
+        self.assertEqual(len(engine.fights), 1)
+        self.assertEqual(engine.fights[0].trial_result['score'], 100000)
+
+    def test_with_no_fight_listed_the_held_combat_carries_it(self):
+        engine = Engine().feed(['11000,BEGIN_COMBAT', f'17000,{END_TRIAL}', '18000,END_COMBAT'])
+        self.assertEqual(len(engine.fights), 1)
+        self.assertEqual(engine.fights[0].trial_result['score'], 100000)
 
 
 if __name__ == '__main__':
