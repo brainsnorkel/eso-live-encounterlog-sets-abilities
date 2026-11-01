@@ -30,8 +30,10 @@ from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, food_findings, structural_findings,
-    worn_proc_sets,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GroupBuffCredit, PROC_EFFECT_IDS,
+    fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
+    structural_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_mythic_set, is_two_handed, race_name
@@ -511,6 +513,9 @@ class CombatEncounter:
         # Proc-set effects by the unit that sourced them this fight, for the
         # build-issue rule on a set that never fires (build_issues)
         self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
+        # Champion Point star procs this fight: star name -> {holder's
+        # record id: procs}, for the rule on a second holder (build_issues)
+        self.star_procs: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         # Each player's food and drink effects through the fight, for the
         # build-issue rules on a meal (build_issues.food_findings): unit id
         # -> {'up': the food ids on them, 'seen': every food id on them at
@@ -876,6 +881,12 @@ class CombatEncounter:
         """A proc set's effect was sourced by a unit this fight (build_issues)."""
         self.proc_effects[source_unit_id].add(ability_id)
 
+    def note_star_proc(self, star: str, source_unit_id: str):
+        """A Champion Point star of *source_unit_id*'s procced on a player
+        this fight: one GAINED of its effect per player it helped
+        (build_issues.STARS)."""
+        self.star_procs[star][source_unit_id] += 1
+
     def _food_record(self, unit_id: str) -> dict:
         return self.food.setdefault(
             unit_id, {"up": set(), "seen": set(), "empty_since": None, "ate": None})
@@ -1038,8 +1049,12 @@ class ESOLogAnalyzer(ListenerMixin):
         # the target has a trial boss's 18,200 resistance (pen_crit)
         self._dummy_seen = False
         # The build-issue rules judged over the session: the proc sets that
-        # never fire, and who has taunted (build_issues)
+        # never fire, second copies of a group buff set or a star, and who
+        # has taunted (build_issues)
         self.build_issues = BuildIssueTracker()
+        # Whose copy of a group buff set's buff each player had, for the
+        # rule on a second copy (build_issues.GroupBuffCredit)
+        self.group_buff_credit = GroupBuffCredit()
         # What the log names that the bundled game data does not know, and
         # the session's game version against the data's (data_staleness,
         # issue #173): sent to the listeners as it changes
@@ -1191,6 +1206,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._enemy_last_hit.pop(entry.fields[0], None)
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
+                self.group_buff_credit.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     # A player who left: off the list from the next fight
                     # (presence.py)
@@ -1756,12 +1772,16 @@ class ESOLogAnalyzer(ListenerMixin):
             # effects on hostiles and pets end here
             self.effect_tracker.zone_changed(entry.timestamp)
             self.pen_crit_tracker.zone_changed(entry.timestamp)
+            self.group_buff_credit.zone_changed(entry.timestamp)
             self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
+            # The same for the build-issue records on a second copy, which
+            # last the session (build_issues)
+            self.build_issues.retire_players("unit:")
             # The opener's memory starts again (the entry's timestamp is the
             # zone id: the line's own time is its first field)
             self.opener.reset(casts.line_time(entry.original_line))
@@ -1853,6 +1873,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Players who left are off the new fight's list; one who came back
         # on a new unit id is keyed by it from here (presence.py)
         self.current_encounter.start_fight_roster()
+        # The zone's first encounter is reused here and has counted every
+        # star proc since the zone began: a fight counts its own (a fight
+        # the game cut in two returned above and keeps its count)
+        self.current_encounter.star_procs.clear()
 
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
@@ -2007,6 +2031,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self.casts.reset()
         self.resources.reset()
         self.build_issues.reset()
+        self.group_buff_credit.reset()
         # The game version that wrote this session, the line's last field
         # ("eso.live.12.1"), against the bundled data's (data_staleness)
         self.data_check.reset(entry.fields[4] if len(entry.fields) > 4 else "")
@@ -2744,6 +2769,17 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.current_encounter.note_proc(
                     self.current_encounter.record_id(source_unit_id), ability_id)
 
+            # A group buff set's buff, credited to one wearer per player at
+            # a time, and a Champion Point star's proc: the build-issue
+            # rules on a second copy (build_issues, issue #172)
+            if ability_id in GROUP_BUFF_EFFECT_IDS and extracted is not None:
+                self.group_buff_credit.record(effect_type, ability_id, source_unit_id,
+                                              target_unit_id, entry.timestamp)
+            if (effect_type == "GAINED" and ability_id in STAR_PROC_IDS
+                    and extracted is not None and self.current_encounter):
+                self.current_encounter.note_star_proc(
+                    STAR_PROC_IDS[ability_id], self.current_encounter.record_id(source_unit_id))
+
             # A food or drink effect coming or going on a player: the
             # build-issue rules on a meal (build_issues.food_findings)
             if (effect_type in ("GAINED", "FADED") and ability_id in food_ids()
@@ -3306,6 +3342,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # A second copy of a group buff set, or a second holder of a
+        # Champion Point star, that added next to nothing this session
+        # (build_issues, issue #172): judged across the fight's players, so
+        # once every row is built
+        self._second_source_findings(entry, enc, duration, players_with_damage)
+
         # Each companion that was out during the fight, on a row of its own
         # straight under its owner's (companions.py); one whose owner has
         # no row is left out, like a player whose build never reached the log
@@ -3334,6 +3376,7 @@ class ESOLogAnalyzer(ListenerMixin):
             # Not before the end: this fight's spans are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.effect_tracker.prune_before(enc.start_time)
+        self.group_buff_credit.prune_before(enc.start_time)
 
         # Penetration and critical damage (pen_crit): each player's own
         # sources from their build, and the fight's debuffs and buffs
@@ -3405,6 +3448,58 @@ class ESOLogAnalyzer(ListenerMixin):
                                                   or unit.removed_at >= enc.start_time):
                 return True
         return False
+
+    def _second_source_findings(self, entry, enc: 'CombatEncounter', duration: float,
+                                players_with_damage) -> None:
+        """The rules on a second copy (build_issues, issue #172): the
+        fight's full wearers of each group buff set, with each one's
+        credited share of the other players' time, and the holders of each
+        Champion Point star, with their procs, are noted for the session;
+        then each wearer's or holder's findings join their row. A row
+        without a build (no_build) is neither counted nor judged."""
+        rows = {row.get('unit_id'): row for row in entry.players}
+        wearers: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        holders: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        judged = []
+        for player, _damage in players_with_damage:
+            row = rows.get(player.unit_id)
+            if row is None or row.get('no_build'):
+                continue
+            key = self._scribing_player_key(player.unit_id)
+            worn = group_buff_sets_worn(player.gear)
+            slotted = stars_slotted(player.long_term_effects)
+            for group_set in worn:
+                wearers[group_set.name].append((player.unit_id, key))
+            for star in slotted:
+                holders[star.name].append((player.unit_id, key))
+            if worn or slotted:
+                judged.append((row, key))
+        group_buffs = {}
+        if any(len(worn_by) >= 2 for worn_by in wearers.values()):
+            def player_id(unit_id):
+                player = enc.player_of(unit_id)
+                return player.unit_id if player is not None else None
+            credited = self.group_buff_credit.credited(
+                enc.start_time, enc.end_time, player_id, group_of=GROUP_BUFF_SET_OF_EFFECT.get)
+            # The receivers are the group, not every player the zone added
+            # (a city, Cyrodiil, a world boss), each for the part of the
+            # fight they were there (presence.py)
+            present = {}
+            for player in enc.players.values():
+                if not (player.grouped or player.is_local):
+                    continue
+                joined = max(enc.start_time, player.joined_at or enc.start_time)
+                left = enc.end_time if player.left_at is None else min(enc.end_time, player.left_at)
+                present[player.unit_id] = max(0, left - joined)
+            group_buffs = group_buff_shares(wearers, credited, present)
+        stars = {name: {key: enc.star_procs.get(name, {}).get(unit_id, 0)
+                        for unit_id, key in held_by}
+                 for name, held_by in holders.items() if len(held_by) >= 2}
+        self.build_issues.note_second_sources(enc.start_time, duration, group_buffs, stars)
+        for row, key in judged:
+            findings = self.build_issues.second_source_findings(enc.start_time, key)
+            if findings:
+                row['build_issues'] = list(row.get('build_issues') or []) + findings
 
     def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon,
                         duration: float) -> dict[str, list[dict]]:

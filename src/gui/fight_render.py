@@ -592,7 +592,8 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
                 base_pt: float = 9.0) -> str:
     """A player's possible build issues as HTML: the heading, then each
     finding's title in bold over the rule behind it, with an ESO-Hub link
-    for the set or skill it names when the maps know the page. '' for a
+    for the set or skill it names when the maps know the page, and for a
+    Champion Point star the page the finding carries ('star_url'). '' for a
     player without findings. Shown in the (i) popup and the build window."""
     findings = (p or {}).get("build_issues") or []
     if not findings:
@@ -608,6 +609,10 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
             if url:
                 extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
                               f'{e(name)} on ESO-Hub</a>')
+        star, star_url = str(finding.get("star") or ""), str(finding.get("star_url") or "")
+        if star and star_url:
+            extras.append(f'<a href="{e(star_url, quote=True)}" style="color:{theme["link"]}">'
+                          f'{e(star)} on ESO-Hub</a>')
         extra = (f"<br><span style='font-size:{base_pt * 0.85:.2f}pt'>"
                  f"{' · '.join(extras)}</span>" if extras else "")
         rows.append(
