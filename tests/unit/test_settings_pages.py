@@ -50,7 +50,8 @@ GROUP_PAGES = {
     "Penetration and critical damage": "Fights",
     "Fight history": "History", "Score banner": "History",
     "Display": "Display", "Privacy": "Display",
-    "Per-encounter split files": "Files", "Automatic log archiving": "Files",
+    "Per-encounter split files": "Files and splits",
+    "Automatic log archiving": "Files and splits",
 }
 
 # A value for every key the dialog writes, none of them the default
@@ -97,7 +98,7 @@ class TestSettingsPages(unittest.TestCase):
         from gui.settings_dialog import PAGES
         dialog = self._dialog()
         self.assertEqual(PAGES, ("General", "Fights", "Tracked effects", "History", "Display",
-                                 "Files"))
+                                 "Files and splits"))
         self.assertEqual([dialog.tabs.tabText(i) for i in range(dialog.tabs.count())],
                          list(PAGES))
         found = {group.title(): dialog.page_of(group)
@@ -132,16 +133,17 @@ class TestSettingsPages(unittest.TestCase):
             scroll = dialog._pages[name]
             body = scroll.widget()
             viewport = scroll.viewport()
-            # A capped width can show a horizontal bar, which takes height
-            # from the viewport
+            # A capped width squeezes the body narrower than its hint: its
+            # wrapped help grows taller, or a horizontal bar takes height
+            # from the viewport, so bars are asserted only uncapped
             hbar = scroll.horizontalScrollBar()
             taken = hbar.height() if hbar.isVisible() else 0
             if not capped_h:
                 self.assertLessEqual(body.sizeHint().height(), viewport.height() + taken, name)
-                if not taken:
-                    self.assertFalse(scroll.verticalScrollBar().isVisible(), name)
             if not capped_w:
                 self.assertLessEqual(body.sizeHint().width(), viewport.width(), name)
+            if not capped_h and not capped_w:
+                self.assertFalse(scroll.verticalScrollBar().isVisible(), name)
                 self.assertFalse(scroll.horizontalScrollBar().isVisible(), name)
             # The editor takes the Tracked effects page's height
             if name == "Tracked effects":
@@ -230,8 +232,8 @@ class TestSettingsPages(unittest.TestCase):
         self.assertEqual(second.tabs.currentIndex(), PAGES.index("History"))
         second.accept()
         # A caller can name the page; an unknown name falls back to the memory
-        self.assertEqual(self._dialog(open_page="Files").tabs.currentIndex(),
-                         PAGES.index("Files"))
+        self.assertEqual(self._dialog(open_page="Files and splits").tabs.currentIndex(),
+                         PAGES.index("Files and splits"))
         self.assertEqual(self._dialog(open_page="Nowhere").tabs.currentIndex(),
                          PAGES.index("History"))
 

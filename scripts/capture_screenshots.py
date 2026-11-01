@@ -30,7 +30,7 @@ time, so the pictures stay in step with the app:
     settings-tracked-effects.png
     settings-history.png
     settings-display.png
-    settings-files.png
+    settings-files-and-splits.png
     examples-dialog.png             the example tracking rules picker
     review-mode.png                 a log opened for review
 
@@ -300,6 +300,9 @@ def main():
     # The box only, not the config (no check runs): the guide shows the
     # update channel as a user with checks on sees it
     dialog.update_check.setChecked(True)
+    # The box only, again: the scratch config keeps archiving off with a
+    # threshold at the spin box's maximum, which is not what a user sees
+    dialog.threshold.setValue(1024)
     dialog.show()
     pump(1)
     # One picture per page, the dialog at its natural size (its tallest

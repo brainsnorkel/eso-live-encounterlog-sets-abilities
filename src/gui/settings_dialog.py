@@ -50,9 +50,9 @@ REPLAYS = "Saving a change here replays the session."
 # the page it sits on is new. When a change takes effect: General, the
 # log path replays and the rest apply at once; Fights, recaps and
 # companions replay, pen/crit at the next build window; Tracked effects
-# replays; History and Display at once; Files, the split files replay,
-# retention at its next run, archiving at the next start.
-PAGES = ("General", "Fights", "Tracked effects", "History", "Display", "Files")
+# replays; History and Display at once; Files and splits, the split files
+# replay, retention at its next run, archiving at the next start.
+PAGES = ("General", "Fights", "Tracked effects", "History", "Display", "Files and splits")
 
 RULES_HELP = ("Name = ability ids on self | group | pets | boss | enemies, then stacks, each or "
               "dots; add expected solo | small | large | all. Every row of the timeline strip "
@@ -91,6 +91,14 @@ RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for re
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
               "1024 MB (1 GB) ≈ five veteran trials.")
+# What the threshold is measured against and what an archive does
+# (log_archiver): the label says "surpasses", so the help says since when
+ARCHIVE_HELP = ("Checked when the app starts, against what the log has grown since the last "
+                "archive. An archive streams the whole Encounter.log into "
+                "Encounter-YYMMDDHHMMSS.zip in the archive folder, stamped from the log's newest "
+                "entry and verified before it is kept; the log itself is left as it is unless the "
+                "box below is ticked. A log the game has open is skipped until the next start, and "
+                "Archive now on the toolbar does the same at any moment. " + SIZE_GUIDE)
 
 # "Warning:" in the text, so the warning is not its orange alone (#77, #187)
 DELETE_WARNING = ("Warning: deletes Encounter.log after the archive is created and "
@@ -327,9 +335,8 @@ class SettingsDialog(QDialog):
         self.threshold.setRange(1, 1024 * 100)
         self.threshold.setSuffix(" MB")
         self.threshold.setValue(int(config.get("archive.size_threshold_mb", 1024) or 1024))
-        archive_form.addRow("Archive when the log grows by:", self.threshold)
-        archive_form.addRow(self._help("Checked when the app starts. " + SIZE_GUIDE,
-                                       self.threshold))
+        archive_form.addRow("Archive when the log surpasses:", self.threshold)
+        archive_form.addRow(self._help(ARCHIVE_HELP, self.threshold))
         self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True,
                                     name="Archive folder", blank="log folder")
         archive_form.addRow("Archive folder (blank = log folder):", self.archive_dir)
