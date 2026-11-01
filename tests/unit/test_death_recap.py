@@ -254,6 +254,70 @@ class TestDeathLoggedAfterEndCombat(unittest.TestCase):
         self.assertEqual(listener.of_kind('fight_updated'), [])
 
 
+def _fall(ts, target):
+    """A fall into lava or off the map, as the log writes it (issue #184):
+    no source, ability or cast, the dying unit as the target."""
+    return f"{ts},COMBAT_EVENT,KILLED_BY_SUBZONE,GENERIC,0,0,0,0,0,{NO_UNIT},{target}"
+
+
+class TestFallDeaths(unittest.TestCase):
+    """A fall is one KILLED_BY_SUBZONE line, with no DIED (issue #184)."""
+
+    def test_a_fall_in_a_fight_is_a_death_killed_by_the_terrain(self):
+        from death_recap import TERRAIN_DEATH
+        from pull_outcome import first_death_text
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            _fall(17000, _player(1, 0)),
+            '17026,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        self.assertEqual(analyzer.zone_deaths, 1)
+        recap = fight.death_recaps[0]
+        self.assertEqual((recap['name'], recap['time_ms'], recap['max_health']),
+                         ('@brainsnorkel', 7000, 20000))
+        self.assertEqual((recap['killer'], recap['ability'], recap['icon']),
+                         ('', TERRAIN_DEATH, ''))
+        # The boss's hit stays in the window and is not taken for the killer
+        self.assertEqual([(r['source'], r['amount']) for r in recap['events']],
+                         [('Test Boss', 3000)])
+        self.assertIn('1', fight.time_dead)
+        self.assertEqual(first_death_text(fight),
+                         f'First death: @brainsnorkel to {TERRAIN_DEATH} at 0:07 · 1 death')
+
+    def test_a_fall_just_after_end_combat_joins_the_fight(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            '20000,END_COMBAT',
+            _fall(20026, _player(1, 0)),
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_a_fall_outside_a_fight_belongs_to_no_fight(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            '20000,END_COMBAT',
+            _fall(50000, _player(1, 0)),
+            '100000,BEGIN_COMBAT',
+            '130000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        self.assertEqual((first.deaths, first.death_recaps), (0, []))
+        self.assertEqual((second.deaths, second.death_recaps), (0, []))
+
+    def test_an_enemy_falling_dies_as_with_died(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _fall(15000, BOSS),
+            '70000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.death_recaps), (0, []))
+        self.assertEqual(analyzer.current_encounter.enemies['70'].died_at, 15000)
+
+
 class TestRecorder(unittest.TestCase):
     """DeathRecapRecorder on its own: the window and the killing-blow grace."""
 
