@@ -117,6 +117,9 @@ class TestStartupGroupPlatform(unittest.TestCase):
                               return_value=None), \
                  patch.object(autostart, 'is_enabled', return_value=False):
                 dialog = SettingsDialog(config)
+                # A control on a page that is not current is hidden with
+                # its page: ask on General, the Startup group's page
+                dialog.tabs.setCurrentIndex(0)
                 visible = dialog.autostart.isVisibleTo(dialog)
                 dialog.deleteLater()
         return visible

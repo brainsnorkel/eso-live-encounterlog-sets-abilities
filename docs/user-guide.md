@@ -274,6 +274,8 @@ Heals that were pure overheal are left out of the table and counted in the overh
 
 Every row of the buff timeline is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these:
 
+![Settings, the Tracked effects page: the rules, one per line, with the count under the box and Examples…](screencaps/settings-tracked-effects.png)
+
 ```
 Major Courage    = 109966 on group expected large
 Major Force      = 61747 on group expected large
@@ -371,23 +373,50 @@ The pictures in this guide are taken with the switch on.
 
 ## Settings
 
-Open **Settings…** from the toolbar.
+Open **Settings…** from the toolbar. The settings are on six pages; the dialog opens on **General** and, until the app is closed, on the page you last left it on. Every page shows whole on a 1366×768 screen at 100% text size; a page taller than the screen scrolls on its own.
 
-![The Settings dialog](screencaps/settings.png)
+**General**: where the log is, starting with Windows, and updates.
+
+![Settings, the General page](screencaps/settings-general.png)
 
 - **Encounter log**: a specific `Encounter.log`, or blank to auto-detect.
-- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share. *Zip split logs older than N weeks* and *Move split logs to the Recycle Bin when older than M weeks* (both off by default) keep the folder in check: see [Old split logs](#old-split-logs). One file per logging session: a session the app meets again (starting mid-session, saving Settings, a restart or a crash) is continued in the file it already has, never written again under a `-1`; a file cut short gets its missing end, a complete one is left as it is. Only one running copy of the app writes into a folder: a second one finds the first's lock file there (`.esolog-tail-split.lock`) and says so in the status bar instead of splitting. Copies that an older version left behind (`-1`, `-2`, … files identical to their neighbour) can be moved to the Recycle Bin with `python scripts/dedupe_splits.py --recycle` from a source checkout.
-- **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 - **Startup**: *Start ESO Log Tail when I sign in to Windows*, a per-user login entry that needs no admin rights and is removed on uninstall. Not offered on Linux.
 - **Updates**: check GitHub for a newer release at startup and every 15 minutes, and show an **Update** button in the toolbar when one exists; the *Channel* is **Stable** (the default) or **Beta**. See [below](#automatic-updates).
+
+**Fights**: what the fight pane and the windows read into each fight.
+
+![Settings, the Fights page](screencaps/settings-fights.png)
+
+- **Death recaps**: how many seconds before each death the recap keeps, 1 to 10 (3 for a new install; a setting saved by an older version, usually 5, is kept). Saving replays the session, so the fights already listed are rebuilt with the new window. See [Death recaps](#death-recaps).
+- **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
+- **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
+
+**Tracked effects**: the rules behind the timeline strip.
+
+![Settings, the Tracked effects page](screencaps/settings-tracked-effects.png)
+
+- **Tracked effects**: the rules behind the timeline strip, one per line, with the count and any line that will not parse under the box and **Examples…** to add from. The page is the editor: it takes the dialog's height. Saving with a line that will not parse asks before skipping it. See [Tracked effects](#tracked-effects).
+
+**History**: the fight history across sessions, and the score banner.
+
+![Settings, the History page](screencaps/settings-history.png)
+
+- **Fight history**: how many boss fights the history holds and where, and **Build from split logs**, which reads the split folder into it in the background; Save or Cancel leaves it running. See [Your fight history](#your-fight-history).
+- **Score banner** (Windows only, off by default): capture the game's trial completion banner from the screen when a trial or a veteran arena ends, and the folder it is saved in (blank uses a `Banners` folder beside the log). See [The score banner](#the-score-banner).
+
+**Display**: text size, colours, motion and names.
+
+![Settings, the Display page](screencaps/settings-display.png)
+
 - **Display**: *Text size*, 80% to 200% of the system's text in steps of 10, for the whole app: the fight list, the pages, every window, Settings and the timeline strip, whose rows and labels grow with it. Ability icons grow above 100% and never shrink below it. Ctrl+=, Ctrl+- and Ctrl+0 change it without opening Settings. It applies as soon as Settings is saved; no replay is needed for it. *Colour-blind colours and line styles in the DPS graph* (off by default) swaps the graph's colours for a set measured to stay apart for colour-blind readers, and gives each line a stroke of its own as well; see [DPS over time](#dps-over-time). *Reduce motion* keeps the ring on a taunt skill's icon still instead of pulsing.
 - **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
-- **Score banner** (Windows only, off by default): capture the game's trial completion banner from the screen when a trial or a veteran arena ends, and the folder it is saved in (blank uses a `Banners` folder beside the log). See [The score banner](#the-score-banner).
-- **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
-- **Fight history**: how many boss fights the history holds and where, and **Build from split logs**, which reads the split folder into it in the background; Save or Cancel leaves it running. See [Your fight history](#your-fight-history).
-- **Death recaps**: how many seconds before each death the recap keeps, 1 to 10 (3 for a new install; a setting saved by an older version, usually 5, is kept). Saving replays the session, so the fights already listed are rebuilt with the new window. See [Death recaps](#death-recaps).
-- **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
-- **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).
+
+**Files**: the split logs and the archive.
+
+![Settings, the Files page](screencaps/settings-files.png)
+
+- **Per-encounter split files**: write each encounter to its own `YYMMDDHHMMSS-{Zone-Name}{-vet}.log` in a folder of your choice (blank uses the log's folder). They are handy for review, and small enough to share. *Zip split logs older than N weeks* and *Move split logs to the Recycle Bin when older than M weeks* (both off by default) keep the folder in check: see [Old split logs](#old-split-logs). One file per logging session: a session the app meets again (starting mid-session, saving Settings, a restart or a crash) is continued in the file it already has, never written again under a `-1`; a file cut short gets its missing end, a complete one is left as it is. Only one running copy of the app writes into a folder: a second one finds the first's lock file there (`.esolog-tail-split.lock`) and says so in the status bar instead of splitting. Copies that an older version left behind (`-1`, `-2`, … files identical to their neighbour) can be moved to the Recycle Bin with `python scripts/dedupe_splits.py --recycle` from a source checkout.
+- **Automatic log archiving**: the growth threshold that triggers an archive at startup, the archive folder, and whether to delete the original after a verified archive. See [below](#automatic-log-archiving).
 
 Saving replays the session when the log path, the split files, the tracked effects, the companion accrual or the death recap window changed: the history clears and the session is read again with the new settings. Every other setting applies at once, at the next build window, at the next retention run or at the next start, and the fights listed stay. Settings live in a per-user file, `%LOCALAPPDATA%\esolog-tail\config.json` (`~/.config/esolog-tail/config.json` on Linux), and survive upgrades and uninstalls.
 

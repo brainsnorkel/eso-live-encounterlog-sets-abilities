@@ -25,7 +25,12 @@ time, so the pictures stay in step with the app:
     damage-window.png               one player's damage by ability and target
     dps-graph.png                   the dps over time graph
     death-recap.png                 one player's death recap
-    settings.png                    the Settings dialog
+    settings-general.png            the Settings dialog, one picture per page
+    settings-fights.png
+    settings-tracked-effects.png
+    settings-history.png
+    settings-display.png
+    settings-files.png
     examples-dialog.png             the example tracking rules picker
     review-mode.png                 a log opened for review
 
@@ -286,19 +291,24 @@ def main():
     else:
         print("  (no death in this log: death-recap.png not written)")
 
-    # Settings, and the example-rules picker it opens
-    dialog = SettingsDialog(win.config, win)
+    # Settings, and the example-rules picker it opens. The History page
+    # shows the fight history's line without its folder (a path names the
+    # machine's user, which the pictures keep out) and its button enabled
+    status = win.history_status().replace(str(win.fight_index.path), win.fight_index.path.name)
+    dialog = SettingsDialog(win.config, win, history_status=status,
+                            on_build_history=win.start_backfill)
     # The box only, not the config (no check runs): the guide shows the
     # update channel as a user with checks on sees it
     dialog.update_check.setChecked(True)
     dialog.show()
-    # No window manager offscreen, and the dialog opens no taller than the
-    # 800 px virtual screen with the rest scrolling (0.18.0); the guide
-    # wants every group, so the window takes the scrolled content's own
-    # height plus the buttons and margins
-    dialog.resize(720 * max(100, args.text_size) // 100, dialog._scroll.widget().sizeHint().height() + 72)
     pump(1)
-    save(dialog, "settings.png")
+    # One picture per page, the dialog at its natural size (its tallest
+    # page's, 579 px at 100%, under the 800 px virtual screen's cap)
+    from gui.settings_dialog import PAGES
+    for index, name in enumerate(PAGES):
+        dialog.tabs.setCurrentIndex(index)
+        pump(0.3)
+        save(dialog, f"settings-{name.lower().replace(' ', '-')}.png")
     from effect_rules import parse_rules
     from gui.examples_dialog import ExamplesDialog
     present = [rule.name for rule in parse_rules(dialog.rules_edit.toPlainText())[0]]

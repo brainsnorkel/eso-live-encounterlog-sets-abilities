@@ -12,7 +12,8 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
-    QScrollArea, QSlider, QSpinBox, QStyle, QStyleOptionSpinBox, QVBoxLayout, QWidget,
+    QScrollArea, QSlider, QSpinBox, QStyle, QStyleOptionSpinBox, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 import split_retention
@@ -43,6 +44,15 @@ CAP_CHOICES = (("auto", BY_ZONE),
 # (app_startup.engine_settings) end their help with this sentence: a Save
 # replays the session only when one of them changed (issue #187)
 REPLAYS = "Saving a change here replays the session."
+
+# The dialog's pages, in tab order (issue #187). Each group keeps its
+# title, so the guide's "Settings → Encounter log" still reads true; only
+# the page it sits on is new. When a change takes effect: General, the
+# log path replays and the rest apply at once; Fights, recaps and
+# companions replay, pen/crit at the next build window; Tracked effects
+# replays; History and Display at once; Files, the split files replay,
+# retention at its next run, archiving at the next start.
+PAGES = ("General", "Fights", "Tracked effects", "History", "Display", "Files")
 
 RULES_HELP = ("Name = ability ids on self | group | pets | boss | enemies, then stacks, each or "
               "dots; add expected solo | small | large | all. Every row of the timeline strip "
@@ -205,28 +215,35 @@ class SettingsDialog(QDialog):
     *history_status*: what the fight history holds and where;
     *on_build_history*: starts reading the split logs into it (the
     window's start_backfill), on the review thread, whatever the dialog
-    then saves or cancels (fight_index, issue #170)."""
+    then saves or cancels (fight_index, issue #170). *open_page* names
+    the page to open on (one of PAGES); otherwise the dialog opens on
+    General the first time and, until the app is closed, on the page it
+    was last closed on (issue #187)."""
+
+    # The page the dialog was last closed on this run: an index, never a
+    # widget, so nothing of a freed dialog is kept
+    _last_page = 0
 
     def __init__(self, config: AppConfig, parent=None, history_status: str = "",
-                 on_build_history=None):
+                 on_build_history=None, open_page: str | None = None):
         super().__init__(parent)
         self.config = config
         self._on_build_history = on_build_history
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(560)
-        # The groups scroll above fixed Save and Cancel buttons: the dialog
-        # is taller than a 1080p screen, and without room Qt squeezed the
-        # wrapped help labels until their lines overlapped
+        # Six pages in a tab bar above fixed Save and Cancel buttons (issue
+        # #187): one column of thirteen groups was 2,139 px tall at 100%,
+        # of which a 1080p screen showed 43%, with the groups a raider comes
+        # back to at the bottom. Every page is its own scroll area, so a
+        # screen that cannot fit the tallest page scrolls that page alone.
+        # All pages are built here, whichever shows: the split preview, the
+        # delete question and the history build read the log path and the
+        # split folder across pages
         outer = QVBoxLayout(self)
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.NoFrame)
-        # Sideways only when a large text size makes a line wider than the screen
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._scroll.setWidget(content)
-        outer.addWidget(self._scroll, 1)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+        self._pages: dict[str, tuple[QScrollArea, QWidget]] = {}
+        page = {name: self._page(name) for name in PAGES}
+        general, fights, tracked, history, display, files = (page[name] for name in PAGES)
 
         # Log file
         log_group = QGroupBox("Encounter log")
@@ -235,7 +252,7 @@ class SettingsDialog(QDialog):
                                 blank="auto-detect")
         log_form.addRow("Log file (blank = auto-detect):", self.log_row)
         log_form.addRow(self._help(REPLAYS, self.log_row.edit))
-        layout.addWidget(log_group)
+        general.addWidget(log_group)
 
         # Split files
         split_group = QGroupBox("Per-encounter split files")
@@ -289,7 +306,7 @@ class SettingsDialog(QDialog):
         self.retention_preview.setStyleSheet(self._small_style("plain"))
         split_form.addRow(self.retention_preview)
         split_form.addRow(self._help(RETENTION_HELP, self.zip_enabled))
-        layout.addWidget(split_group)
+        files.addWidget(split_group)
         self._splits = []
         self._initial_delete = (self.delete_enabled.isChecked(), self.delete_weeks.value(),
                                 self.retention_folder())
@@ -320,7 +337,7 @@ class SettingsDialog(QDialog):
         self.delete_original.setChecked(bool(config.get("archive.delete_original", False)))
         archive_form.addRow(self.delete_original)
         archive_form.addRow(self._help(DELETE_WARNING, self.delete_original, role="warning"))
-        layout.addWidget(archive_group)
+        files.addWidget(archive_group)
 
         # Startup
         import autostart
@@ -335,7 +352,7 @@ class SettingsDialog(QDialog):
             self.autostart.setToolTip(
                 "Available when running the installed app")
         startup_form.addRow(self.autostart)
-        layout.addWidget(startup_group)
+        general.addWidget(startup_group)
         # The login entry is a Windows Run key; nothing to offer elsewhere
         startup_group.setVisible(sys.platform == "win32")
 
@@ -359,7 +376,7 @@ class SettingsDialog(QDialog):
         self.update_check.toggled.connect(self.update_channel.setEnabled)
         update_form.addRow("Channel:", self.update_channel)
         update_form.addRow(self._help(CHANNEL_HELP, self.update_check, self.update_channel))
-        layout.addWidget(update_group)
+        general.addWidget(update_group)
 
         # Display: the app-wide text size (issue #77, gui.text_size), applied
         # when Settings is saved
@@ -391,7 +408,7 @@ class SettingsDialog(QDialog):
             "Reduce motion: the ring on a taunt skill's icon stays still instead of pulsing")
         self.reduce_motion.setChecked(bool(config.get("display.reduce_motion", False)))
         display_form.addRow(self.reduce_motion)
-        layout.addWidget(display_group)
+        display.addWidget(display_group)
 
         # Privacy: the Hide names switch (issue #72, gui.name_mask), the
         # same state as the toolbar button and Ctrl+H
@@ -402,7 +419,25 @@ class SettingsDialog(QDialog):
         self.hide_names.setChecked(bool(config.get("privacy.hide_names", False)))
         privacy_form.addRow(self.hide_names)
         privacy_form.addRow(self._help(PRIVACY_HELP, self.hide_names))
-        layout.addWidget(privacy_group)
+        display.addWidget(privacy_group)
+
+        # The fight history across sessions (issue #170, fight_index): what
+        # it holds, and the backfill from the split logs
+        history_group = QGroupBox("Fight history")
+        history_box = QVBoxLayout(history_group)
+        self.history_status = QLabel(history_status or "")
+        self.history_status.setWordWrap(True)
+        self.history_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        history_box.addWidget(self.history_status)
+        history_row = QHBoxLayout()
+        self.build_history_button = QPushButton("Build from split logs")
+        self.build_history_button.setEnabled(on_build_history is not None)
+        self.build_history_button.clicked.connect(self._build_history)
+        history_row.addWidget(self.build_history_button)
+        history_row.addStretch(1)
+        history_box.addLayout(history_row)
+        history_box.addWidget(self._help(HISTORY_HELP, self.build_history_button))
+        history.addWidget(history_group)
 
         # The trial score banner captured from the screen (banner_capture,
         # issue #167): Windows only, so the group is not made elsewhere
@@ -423,36 +458,7 @@ class SettingsDialog(QDialog):
                 "a PNG; nothing is kept otherwise. The game must be on screen, in borderless or "
                 "windowed mode. What each grab read is noted in banner.log beside the settings.",
                 self.banner_enabled))
-            layout.addWidget(banner_group)
-
-        # Companions (issue #74, companions.py): each has its own row under
-        # its owner; this adds its figures to the owner's as well
-        companion_group = QGroupBox("Companions")
-        companion_form = _form(companion_group)
-        self.companion_accrual = QCheckBox(
-            "Count a companion's damage and healing as its owner's too")
-        self.companion_accrual.setChecked(bool(config.get("companions.accrue_to_owner", False)))
-        companion_form.addRow(self.companion_accrual)
-        companion_form.addRow(self._help(COMPANION_HELP, self.companion_accrual))
-        layout.addWidget(companion_group)
-
-        # The fight history across sessions (issue #170, fight_index): what
-        # it holds, and the backfill from the split logs
-        history_group = QGroupBox("Fight history")
-        history_box = QVBoxLayout(history_group)
-        self.history_status = QLabel(history_status or "")
-        self.history_status.setWordWrap(True)
-        self.history_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        history_box.addWidget(self.history_status)
-        history_row = QHBoxLayout()
-        self.build_history_button = QPushButton("Build from split logs")
-        self.build_history_button.setEnabled(on_build_history is not None)
-        self.build_history_button.clicked.connect(self._build_history)
-        history_row.addWidget(self.build_history_button)
-        history_row.addStretch(1)
-        history_box.addLayout(history_row)
-        history_box.addWidget(self._help(HISTORY_HELP, self.build_history_button))
-        layout.addWidget(history_group)
+            history.addWidget(banner_group)
 
         # Death recaps (issue #95, death_recap): the seconds kept before
         # each death; the engine reads it when a save rebuilds it
@@ -467,12 +473,22 @@ class SettingsDialog(QDialog):
         self.recap_window.valueChanged.connect(self._recap_suffix)
         recap_form.addRow("Window before each death:", self.recap_window)
         recap_form.addRow(self._help(RECAP_HELP, self.recap_window))
-        layout.addWidget(recap_group)
+        fights.addWidget(recap_group)
+
+        # Companions (issue #74, companions.py): each has its own row under
+        # its owner; this adds its figures to the owner's as well
+        companion_group = QGroupBox("Companions")
+        companion_form = _form(companion_group)
+        self.companion_accrual = QCheckBox(
+            "Count a companion's damage and healing as its owner's too")
+        self.companion_accrual.setChecked(bool(config.get("companions.accrue_to_owner", False)))
+        companion_form.addRow(self.companion_accrual)
+        companion_form.addRow(self._help(COMPANION_HELP, self.companion_accrual))
+        fights.addWidget(companion_group)
 
         # Tracked effects: the rule text, with its parse result underneath;
-        # the timeline strip above each fight draws them
-        tracking_group = QGroupBox("Tracked effects")
-        tracking_layout = QVBoxLayout(tracking_group)
+        # the timeline strip above each fight draws them. The page is the
+        # group (no box), and the editor takes the page's whole height
         self.rules_edit = QPlainTextEdit()
         self.rules_edit.setAccessibleName("Tracked effect rules")
         self.rules_edit.setFont(text_size.fixed_font())
@@ -484,7 +500,7 @@ class SettingsDialog(QDialog):
         self.rules_edit.setTabChangesFocus(True)
         self.rules_edit.setPlainText(config.get("tracking.rules", DEFAULT_RULES) or "")
         self.rules_edit.setMinimumHeight(120)
-        tracking_layout.addWidget(self.rules_edit)
+        tracked.addWidget(self.rules_edit, 1)
         rules_row = QHBoxLayout()
         self.rules_status = QLabel("")
         self.rules_status.setWordWrap(True)
@@ -494,11 +510,10 @@ class SettingsDialog(QDialog):
             "Pick example rules to add to the box, or copy them to share")
         self.examples_button.clicked.connect(self._pick_examples)
         rules_row.addWidget(self.examples_button)
-        tracking_layout.addLayout(rules_row)
-        tracking_layout.addWidget(self._help(RULES_HELP, self.rules_edit))
+        tracked.addLayout(rules_row)
+        tracked.addWidget(self._help(RULES_HELP, self.rules_edit))
         self.rules_edit.textChanged.connect(self._check_rules)
         self._check_rules()
-        layout.addWidget(tracking_group)
 
         # Penetration and critical damage: the Champion Point rows the build
         # window assumes, and the cap (pen_crit); read at render time, so no
@@ -539,13 +554,49 @@ class SettingsDialog(QDialog):
         self.pen_cap.setCurrentIndex(index)
         pen_form.addRow("Penetration cap:", self.pen_cap)
         pen_form.addRow(self._help(PEN_CRIT_HELP, self.pen_cap))  # under its controls, as elsewhere
-        layout.addWidget(pen_group)
+        fights.addWidget(pen_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
-        self._fit_to_screen(content)
+        for name, (_scroll, body) in self._pages.items():
+            if name != "Tracked effects":  # whose editor takes the height
+                body.layout().addStretch(1)
+            self._align_labels(body)
+        self._fit_to_screen(buttons)
+        self.tabs.setCurrentIndex(
+            PAGES.index(open_page) if open_page in PAGES else SettingsDialog._last_page)
+
+    def _page(self, name: str) -> QVBoxLayout:
+        """A page of the tab bar: a scroll area around a body whose layout
+        the groups go into. The area takes no focus, so Ctrl+Tab and a
+        click on a tab land on the page's first control rather than on an
+        invisible pane (the default StrongFocus landed on the pane, and
+        the old single area was the first wasted tab stop)."""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFocusPolicy(Qt.NoFocus)
+        # Sideways only when a large text size makes a line wider than the screen
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(body)
+        self.tabs.addTab(scroll, name)
+        self._pages[name] = (scroll, body)
+        return layout
+
+    def page_of(self, widget: QWidget) -> str:
+        """The name of the page *widget* sits on."""
+        for name, (scroll, _body) in self._pages.items():
+            if scroll.isAncestorOf(widget):
+                return name
+        raise ValueError(f"{widget} is on no page")
+
+    def done(self, result: int) -> None:
+        SettingsDialog._last_page = self.tabs.currentIndex()
+        super().done(result)
 
     def _small_style(self, role: str) -> str:
         """The style of a helper line under a setting, a little smaller than
@@ -576,13 +627,49 @@ class SettingsDialog(QDialog):
             control.setAccessibleDescription(f"{said} {text}" if said else text)
         return label
 
-    def _fit_to_screen(self, content: QWidget) -> None:
-        """Open tall enough to show every group where the screen allows,
-        and no taller than nine tenths of it; the rest scrolls."""
-        content.adjustSize()
-        width = max(self.minimumWidth(), content.sizeHint().width()
-                    + self._scroll.verticalScrollBar().sizeHint().width() + 24)
-        height = content.sizeHint().height() + 72  # the buttons and margins
+    @staticmethod
+    def _align_labels(body: QWidget) -> None:
+        """One field column per page: the labels of every form on the page
+        share the widest label's width, so the fields start at one x
+        (they started at 205 px in one group and 222 in the next)."""
+        labels = [form.itemAt(row, QFormLayout.LabelRole).widget()
+                  for form in body.findChildren(QFormLayout)
+                  for row in range(form.rowCount())
+                  if form.itemAt(row, QFormLayout.LabelRole) is not None]
+        labels = [label for label in labels if isinstance(label, QLabel)]
+        if len(labels) > 1:
+            widest = max(label.sizeHint().width() for label in labels)
+            for label in labels:
+                label.setMinimumWidth(widest)
+
+    def _fit_to_screen(self, buttons: QDialogButtonBox) -> None:
+        """Open at the natural size of the tallest and widest page plus the
+        tab bar, frame, margins and buttons, all measured at run time, and
+        no taller or wider than nine tenths of the screen; a capped page
+        scrolls on its own. The vertical scrollbar's width is reserved
+        whether or not a bar shows, so a bar appearing on a capped page
+        never re-wraps a label. A scroll area's own sizeHint is not its
+        content's, so the page bodies are measured directly; the tab
+        widget's chrome is its hint less its pages' hint. The minimum
+        width follows the tab bar (393 px at 100%, 648 at 200%): at 560 px
+        the 200% bar hid tabs behind scroll arrows."""
+        bodies = [body for _scroll, body in self._pages.values()]
+        for body in bodies:
+            body.adjustSize()
+        widest = max(body.sizeHint().width() for body in bodies)
+        tallest = max(body.sizeHint().height() for body in bodies)
+        scroll = next(iter(self._pages.values()))[0]
+        bar = scroll.verticalScrollBar().sizeHint().width()
+        chrome = self.tabs.sizeHint() - max((s.sizeHint() for s, _b in self._pages.values()),
+                                            key=lambda size: size.height())
+        margins = self.layout().contentsMargins()
+        spacing = self.layout().spacing()
+        width = widest + bar + chrome.width() + margins.left() + margins.right()
+        height = (tallest + chrome.height() + margins.top() + margins.bottom()
+                  + spacing + buttons.sizeHint().height())
+        self.setMinimumWidth(max(
+            560, self.tabs.tabBar().sizeHint().width() + margins.left() + margins.right()))
+        width = max(width, self.minimumWidth())
         screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is not None:
             height = min(height, int(screen.availableGeometry().height() * 0.9))
@@ -659,7 +746,31 @@ class SettingsDialog(QDialog):
         finally:
             box.deleteLater()  # on the UI thread, as the main window does
 
+    def confirm_skipped_rules(self, errors) -> bool:
+        """Save with rule lines that will not parse: the "skipped" status
+        under the editor is the only sign, invisible from another page, so
+        the dialog turns to Tracked effects, focuses the editor and asks
+        (issue #187), the way the retention deletion asks."""
+        self.tabs.setCurrentIndex(PAGES.index("Tracked effects"))
+        self.rules_edit.setFocus()
+        count = len(errors)
+        box = QMessageBox(QMessageBox.Warning, "Tracked effects",
+                          f"{count} rule line{'s' if count != 1 else ''} will not parse and will "
+                          "be skipped. Save anyway?", QMessageBox.NoButton, self)
+        box.setInformativeText("\n".join(errors))
+        save = box.addButton("Save", QMessageBox.AcceptRole)
+        back = box.addButton("Go back", QMessageBox.RejectRole)
+        box.setDefaultButton(back)
+        try:
+            box.exec()
+            return box.clickedButton() is save
+        finally:
+            box.deleteLater()  # on the UI thread, as the main window does
+
     def accept(self) -> None:
+        _rules, errors = parse_rules(self.rules_edit.toPlainText())
+        if errors and not self.confirm_skipped_rules(errors):
+            return  # stay in Settings, on the rules
         if self._delete_needs_asking():
             doomed = self.retention_plan().delete
             if doomed and not self.confirm_delete(split_retention.summarize(doomed)):

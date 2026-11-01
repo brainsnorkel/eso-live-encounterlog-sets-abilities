@@ -58,6 +58,13 @@ class TestSettingsFields(unittest.TestCase):
         self.addCleanup(dialog.deleteLater)
         return dialog
 
+    def _turn_to(self, dialog, widget):
+        """The page *widget* is on: a control on another page is hidden
+        with it and has no geometry (issue #187, the pages)."""
+        from gui.settings_dialog import PAGES
+        dialog.tabs.setCurrentIndex(PAGES.index(dialog.page_of(widget)))
+        self.app.processEvents()
+
     def test_only_a_field_that_asks_to_grow_takes_the_rows_width(self):
         dialog = self._dialog()
         forms = dialog.findChildren(QFormLayout)
@@ -70,9 +77,12 @@ class TestSettingsFields(unittest.TestCase):
         # A spin box and a drop-down at their hints; the path field and the
         # text size slider grow with the dialog
         for spin in (dialog.zip_weeks, dialog.threshold, dialog.recap_window):
+            self._turn_to(dialog, spin)
             self.assertEqual(spin.width(), spin.sizeHint().width())
+        self._turn_to(dialog, dialog.update_channel)
         self.assertEqual(dialog.update_channel.width(), dialog.update_channel.sizeHint().width())
         self.assertGreater(dialog.log_row.edit.width(), 600)
+        self._turn_to(dialog, dialog.text_size)
         self.assertGreater(dialog.text_size.width(), 400)
 
     def test_a_spin_box_at_its_hint_shows_its_widest_text_at_any_size(self):
@@ -88,6 +98,7 @@ class TestSettingsFields(unittest.TestCase):
             style_object.setParent(dialog)  # freed with it
             for points in (9, 18):
                 for spin in dialog.findChildren(QAbstractSpinBox):
+                    self._turn_to(dialog, spin)
                     spin.setStyle(style_object)
                     spin.setFont(QFont(self.app.font().family(), points))
                     spin.resize(spin.sizeHint())
@@ -169,6 +180,7 @@ class TestSettingsFields(unittest.TestCase):
 
     def test_the_retention_preview_shows_only_with_something_to_say(self):
         dialog = self._dialog()
+        self._turn_to(dialog, dialog.retention_preview)
         self.assertEqual(dialog.retention_preview.text(), "")
         self.assertFalse(dialog.retention_preview.isVisibleTo(dialog))
         dialog.zip_enabled.setChecked(True)
