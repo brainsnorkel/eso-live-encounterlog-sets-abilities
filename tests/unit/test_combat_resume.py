@@ -315,6 +315,7 @@ class TestSeparateFightsStaySeparate(unittest.TestCase):
                          _event(15000, 'DAMAGE', 3000, _boss(BOSS_HEALTH), _player(1, 17000)),
                          '20000,END_COMBAT',
                          '20100,BEGIN_COMBAT',
+                         _event(25000, 'DAMAGE', 3000, _boss(BOSS_HEALTH), _player(1, 14000)),
                          '30000,END_COMBAT')
         self.assertEqual(len(fights), 2)
 

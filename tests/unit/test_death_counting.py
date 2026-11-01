@@ -29,6 +29,11 @@ def _died_xp(ts, killer_id, dying_id):
             f"{killer_id},{_PLAYER_STATE},{dying_id},{_DEAD_BOSS_STATE}")
 
 
+def _hit_player(ts, monster_id, player_id):
+    return (f"{ts},COMBAT_EVENT,DAMAGE,PHYSICAL,1,500,0,985000,12437,"
+            f"{monster_id},{_BOSS_STATE},{player_id},{_PLAYER_STATE}")
+
+
 def _killing_blow(ts, killer_id, dying_id):
     return (f"{ts},COMBAT_EVENT,KILLING_BLOW,OBLIVION,0,0,0,5389015,59767,"
             f"{killer_id},{_PLAYER_STATE},{dying_id},{_DEAD_PLAYER_STATE}")
@@ -82,6 +87,7 @@ class TestDeathCounting(unittest.TestCase):
     def test_pet_or_npc_death_not_counted(self):
         analyzer = self._run([
             '10000,BEGIN_COMBAT',
+            _hit_player(12000, 70, 1),
             _died(15000, 70, _BOSS_STATE, 55, _DEAD_PLAYER_STATE),  # unit 55: not a player
             '70000,END_COMBAT',
         ])
