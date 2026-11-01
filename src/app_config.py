@@ -74,6 +74,13 @@ DEFAULTS = {
     "privacy": {
         "hide_names": False,
     },
+    # The trial completion banner grabbed from the screen after END_TRIAL
+    # (banner_capture, issue #167), Windows only: off until switched on
+    # (Chris, 2026-11-01); the folder, None -> <log folder>\Banners
+    "banner": {
+        "enabled": False,
+        "dir": None,
+    },
     # A companion has its own row under its owner (companions.py); this
     # also counts its damage and healing as the owner's (off: Combat
     # Metrics never does)

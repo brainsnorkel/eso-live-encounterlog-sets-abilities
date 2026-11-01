@@ -14,7 +14,7 @@ class FightHistoryEntry:
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
-                 'zone_id', 'difficulty', 'pull', 'time_dead', 'game_version']
+                 'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version']
 
     def __init__(self):
         self.timestamp = ""
@@ -76,6 +76,9 @@ class FightHistoryEntry:
         # trial_id, name, is_vet, duration_ms, score, vitality, vitality_max
         # (see trial_result.from_end_trial); None for any other fight
         self.trial_result = None
+        # The run's score banner saved from the screen (banner_capture,
+        # issue #167): a Path, set by the GUI when captured or found
+        self.banner_path = None
         self.boss_name = ""
         # EXPERIMENTAL: {'duration_ms', 'effects': {name: [interval, ...]}}
         # or None when the buff-timeline experiment is off (the default)

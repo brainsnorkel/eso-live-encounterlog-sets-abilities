@@ -337,6 +337,27 @@ class SettingsDialog(QDialog):
         privacy_form.addRow(privacy_help)
         layout.addWidget(privacy_group)
 
+        # The trial score banner captured from the screen (banner_capture,
+        # issue #167): Windows only, so the group is not made elsewhere
+        if sys.platform == "win32":
+            banner_group = QGroupBox("Score banner (Windows)")
+            banner_form = QFormLayout(banner_group)
+            self.banner_enabled = QCheckBox(
+                "Capture the trial completion banner from the screen when a trial ends")
+            self.banner_enabled.setChecked(bool(config.get("banner.enabled", False)))
+            self.banner_dir = _PathRow(config.get("banner.dir") or "", directory=True)
+            banner_form.addRow(self.banner_enabled)
+            banner_form.addRow("Banner folder (blank = log folder\\Banners):", self.banner_dir)
+            banner_help = QLabel(
+                "For 15 seconds after the log's END_TRIAL the screen is grabbed once a second. "
+                "The first grab on which Windows' text recognition reads the run's final score "
+                "is cropped to the banner and saved as a PNG; nothing is kept otherwise. The "
+                "game must be on screen, in borderless or windowed mode.")
+            banner_help.setWordWrap(True)
+            banner_help.setStyleSheet(self._small_style("muted"))
+            banner_form.addRow(banner_help)
+            layout.addWidget(banner_group)
+
         # Companions (issue #74, companions.py): each has its own row under
         # its owner; this adds its figures to the owner's as well
         companion_group = QGroupBox("Companions")
@@ -632,6 +653,9 @@ class SettingsDialog(QDialog):
         self.config.set("update.check_enabled", self.update_check.isChecked())
         self.config.set("update.channel", self.update_channel.currentData())
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
+        if hasattr(self, "banner_enabled"):  # the Windows-only group
+            self.config.set("banner.enabled", self.banner_enabled.isChecked())
+            self.config.set("banner.dir", self.banner_dir.value())
         self.config.set(text_size.CONFIG_KEY, self.text_size.value())
         self.config.set("display.colorblind_graph", self.colorblind_graph.isChecked())
         self.config.set("display.reduce_motion", self.reduce_motion.isChecked())
