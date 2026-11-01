@@ -96,7 +96,9 @@ class ReviewRunner:
                 "indexed", folder,
                 label=(f"Fight history: {result['fights']} fights from {result['logs']} "
                        f"split log{'s' if result['logs'] != 1 else ''}"
-                       + (f", {result['skipped']} copies skipped" if result["skipped"] else "")),
+                       + (f", {result['skipped']} copies skipped" if result["skipped"] else "")
+                       + (f", {result['failed']} that would not read (tried again next "
+                          f"build)" if result["failed"] else "")),
                 done=result["fights"], total=result["left"]))
         return self._start(folder, "", work, notify)
 

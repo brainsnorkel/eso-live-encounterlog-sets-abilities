@@ -79,8 +79,8 @@ class TestPaneAndList(unittest.TestCase):
         page = render_html(entry, detailed=False, history=line)
         # Every earlier kill had this roster on this version: the set is
         # said once, named
-        self.assertIn("Your Lord Falgravn kills, all with 8+ of this roster on 12.1: median 460k "
-                      "over 3, best 480k. This pull: 512k", page)
+        self.assertIn("Your Lord Falgravn kills, all with 8+ of this roster on 12.1: median 460.0k "
+                      "over 3, best 480.0k. This pull: 512.0k", page)
         self.assertLess(page.index("Deaths"), page.index("Your Lord Falgravn kills"))
         self.assertNotIn("Your Lord Falgravn", render_html(entry, detailed=False))
 
@@ -105,7 +105,7 @@ class TestPaneAndList(unittest.TestCase):
         runs = [view.item(r).text() for r in range(view.count())
                 if view.item(r).data(KIND_ROLE) == RUN]
         self.assertEqual(len(runs), 1)
-        self.assertTrue(runs[0].endswith(", best kill with this roster 480k"))
+        self.assertTrue(runs[0].endswith(", best kill with this roster 480.0k"))
         view.deleteLater()
 
 
@@ -143,22 +143,25 @@ class TestWindow(unittest.TestCase):
         self.win._on_fight_updated(self.win._fights[-1])
         self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 2)
         # The newest fight on screen is read against the one before it
-        self.assertIn("Your earlier Lord Falgravn kill: 400k. This pull: 480k",
+        self.assertIn("Your earlier Lord Falgravn kill: 400.0k. This pull: 480.0k",
                       self.win.fight_view.toHtml())
 
     def test_settings_offers_the_build_from_split_logs(self):
         from gui.settings_dialog import SettingsDialog
         started = []
         dialog = SettingsDialog(self.win.config, self.win, history_status=self.win.history_status(),
-                                on_build_history=lambda: started.append(True) or True)
+                                on_build_history=lambda folder: (started.append(folder) or True, "Building"))
         self.assertIn("No boss fights yet", dialog.history_status.text())
         dialog.build_history_button.click()
-        self.assertEqual(started, [True])
+        self.assertEqual(len(started), 1)
+        self.assertEqual(dialog.history_status.text(), "Building")
         self.assertFalse(dialog.build_history_button.isEnabled())
         dialog.deleteLater()
 
     def test_no_split_folder_no_build(self):
-        self.assertFalse(self.win.start_backfill())  # the folder does not exist
+        started, message = self.win.start_backfill()  # the folder does not exist
+        self.assertFalse(started)
+        self.assertIn("no split folder", message)
 
 
 if __name__ == "__main__":

@@ -538,8 +538,9 @@ def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
     to read}. A log that fails (a zip member that will not decompress, a
     file moved away mid-read, an engine error) is counted and passed over,
     not noted done, so the next build tries it again and the rest are
-    read. A log is noted done only once its lines are on disk. Raises
-    review_load.ReviewCancelled on *cancel*."""
+    read. A log, or a copy passed over, is noted done only once the lines
+    it stands for are on disk. Raises review_load.ReviewCancelled on
+    *cancel*."""
     import review_load
     from log_open import log_size
     done, copies = index.backfill_notes()
@@ -553,47 +554,55 @@ def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
             sizes.append(0)
     total = sum(sizes) or 1
     result = {"logs": 0, "skipped": 0, "failed": 0, "fights": 0, "left": len(todo)}
-    unwritten: list[tuple[str, str | None]] = []  # read, lines not on disk yet
-    offset = 0
-    for number, ((path, member), size) in enumerate(zip(todo, sizes), start=1):
-        # Between logs too: a replay checks only every megabyte or so
-        if cancel is not None and cancel.is_set():
-            raise review_load.ReviewCancelled()
-        name = source_name(path, member)
-        mark = _copy_hash(path, member, size)
-        if mark is not None and mark in copies:
-            result["skipped"] += 1
-            index.mark_done(name)
-            offset += size
-            result["left"] -= 1
-            continue
-        label = f"Fight history: log {number} of {len(todo)}, {path.name}"
+    # Read or passed over, the lines they stand for not on disk yet
+    unwritten: list[tuple[str, str | None]] = []
 
-        def step(_label, done_bytes, _total, base=offset, label=label):
-            if progress:
-                progress(label, min(base + done_bytes, total), total)
-
-        try:
-            analyzer = make_analyzer()
-            _shown, fights = review_load.replay_log(analyzer, path, member, -1, step, cancel)
-        except review_load.ReviewCancelled:
-            raise
-        except Exception:  # one bad log must not stop the rest
-            result["failed"] += 1
-            result["left"] -= 1
-            offset += size
-            continue
-        for entry in fights:
-            if index.add(fight_line(entry, app_version), flush=False):
-                result["fights"] += 1
-        if mark is not None:
-            copies.add(mark)
-        unwritten.append((name, mark))
+    def note_written():
         if index.flush():
             for done_name, done_mark in unwritten:
                 index.mark_done(done_name, done_mark)
             unwritten.clear()
-        result["logs"] += 1
-        result["left"] -= 1
-        offset += size
+
+    offset = 0
+    try:
+        for number, ((path, member), size) in enumerate(zip(todo, sizes), start=1):
+            # Between logs too: a replay checks only every megabyte or so
+            if cancel is not None and cancel.is_set():
+                raise review_load.ReviewCancelled()
+            name = source_name(path, member)
+            mark = _copy_hash(path, member, size)
+            if mark is not None and mark in copies:
+                result["skipped"] += 1
+                unwritten.append((name, None))  # noted with the log it copies
+                offset += size
+                result["left"] -= 1
+                continue
+            label = f"Fight history: log {number} of {len(todo)}, {path.name}"
+
+            def step(_label, done_bytes, _total, base=offset, label=label):
+                if progress:
+                    progress(label, min(base + done_bytes, total), total)
+
+            try:
+                analyzer = make_analyzer()
+                _shown, fights = review_load.replay_log(analyzer, path, member, -1, step, cancel)
+            except review_load.ReviewCancelled:
+                raise
+            except Exception:  # one bad log must not stop the rest
+                result["failed"] += 1
+                result["left"] -= 1
+                offset += size
+                continue
+            for entry in fights:
+                if index.add(fight_line(entry, app_version), flush=False):
+                    result["fights"] += 1
+            if mark is not None:
+                copies.add(mark)
+            unwritten.append((name, mark))
+            note_written()
+            result["logs"] += 1
+            result["left"] -= 1
+            offset += size
+    finally:
+        note_written()  # a cancel keeps what was read and written
     return result

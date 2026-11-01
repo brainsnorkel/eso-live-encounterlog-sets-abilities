@@ -133,15 +133,15 @@ class TestComparison(unittest.TestCase):
                   _entry(200.0, roster=strangers, boss_dps=500_000))
         found = fi.comparison(self.index, _entry(300.0, boss_dps=512_000))
         self.assertEqual(fi.comparison_text(found),
-                         "Your Lord Falgravn kills: median 450k over 2, best 500k. This pull: 512k")
+                         "Your Lord Falgravn kills: median 450.0k over 2, best 500.0k. This pull: 512.0k")
 
     def test_this_roster_on_this_version(self):
         strangers = [f"@s{i}" for i in range(12)]
         self._add(_entry(100.0, roster=strangers, boss_dps=300_000),
                   *[_entry(200.0 + i, boss_dps=470_000 + i) for i in range(3)])
         text = fi.comparison_text(fi.comparison(self.index, _entry(300.0, boss_dps=512_000)))
-        self.assertIn("; with 8+ of this roster on 12.1: median 470k over 3", text)
-        self.assertTrue(text.startswith("Your Lord Falgravn kills: median 470k over 4, best 470k"))
+        self.assertIn("; with 8+ of this roster on 12.1: median 470.0k over 3", text)
+        self.assertTrue(text.startswith("Your Lord Falgravn kills: median 470.0k over 4, best 470.0k"))
 
     def test_this_roster_on_any_version_when_the_version_leaves_too_few(self):
         strangers = [f"@s{i}" for i in range(12)]
@@ -166,7 +166,7 @@ class TestComparison(unittest.TestCase):
         entry = _entry(300.0, boss_dps=0)
         entry.group_dps = 540_000.0
         self.assertEqual(fi.comparison_text(fi.comparison(self.index, entry)),
-                         "Your earlier Lord Falgravn kill: 441k. This pull: 540k")
+                         "Your earlier Lord Falgravn kill: 441.0k. This pull: 540.0k")
 
 
 class TestPlayer(unittest.TestCase):
@@ -186,7 +186,7 @@ class TestPlayer(unittest.TestCase):
         self.assertEqual(len(values), 3)
         self.assertGreater(values[0], values[1])
         self.assertEqual(fi.player_history_text(entry, "@p2", values),
-                         "@p2 on Lord Falgravn: 40k, 35k, 30k in their last three kills with you")
+                         "@p2 on Lord Falgravn: 40.0k, 35.0k, 30.0k in their last three kills with you")
         self.assertTrue(fi.player_history_text(entry, "@p0", fi.player_history(
             self.index, entry, "@p0"), _Mask()).endswith("in your last three kills"))
         self.assertTrue(fi.player_history_text(entry, "@p2", values, _Mask()).startswith("@▒▒ on "))
@@ -256,7 +256,7 @@ class TestBackfill(unittest.TestCase):
         steps = []
         result = fi.backfill(self.splits, self.index, self._analyzer, "0.29.0",
                              progress=lambda label, done, total: steps.append((label, done, total)))
-        self.assertEqual(result, {"logs": 2, "skipped": 1, "fights": 2, "left": 0})
+        self.assertEqual(result, {"logs": 2, "skipped": 1, "failed": 0, "fights": 2, "left": 0})
         self.assertEqual(len(self.index), 2)
         line = next(iter(self.index.lines.values()))
         self.assertEqual((line["boss"], line["outcome"], line["game"]),
@@ -264,7 +264,7 @@ class TestBackfill(unittest.TestCase):
         self.assertTrue(steps and steps[0][0].startswith("Fight history: log 1 of 3"))
         # Done is noted: the next build reads nothing
         again = fi.backfill(self.splits, fi.FightIndex(self.index.path), self._analyzer)
-        self.assertEqual(again, {"logs": 0, "skipped": 0, "fights": 0, "left": 0})
+        self.assertEqual(again, {"logs": 0, "skipped": 0, "failed": 0, "fights": 0, "left": 0})
 
     def test_only_the_splitters_files(self):
         self.assertTrue(fi.is_split_name("260113192924-Kyne's-Aegis-vet-14.log"))
@@ -282,6 +282,82 @@ class TestBackfill(unittest.TestCase):
             fi.backfill(self.splits, self.index, self._analyzer, cancel=cancel)
         result = fi.backfill(self.splits, self.index, self._analyzer)
         self.assertEqual(result["logs"], 2)
+
+    def test_a_log_that_will_not_read_does_not_stop_the_rest(self):
+        (self.splits / "260102200000-Kyne's-Aegis-vet-1.log").unlink()
+        calls = []
+
+        def make():
+            calls.append(1)
+            if len(calls) == 1:  # the newest, read first
+                raise RuntimeError("an engine error on one odd log")
+            return self._analyzer()
+
+        result = fi.backfill(self.splits, self.index, make)
+        self.assertEqual((result["failed"], result["logs"], result["fights"]), (1, 1, 1))
+        self.assertEqual(self.index.done_names(), {"260101200000-Kyne's-Aegis-vet.log"})
+        # The failed log is tried again by the next build
+        again = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((again["failed"], again["logs"], again["fights"]), (0, 1, 1))
+
+    def test_a_log_is_noted_done_only_once_its_lines_are_on_disk(self):
+        self.index.path.mkdir()  # held: nothing can be written
+        result = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((result["logs"], result["skipped"]), (2, 1))
+        # Neither the logs read nor the copy passed over
+        self.assertEqual(self.index.done_names(), set())
+        self.assertEqual(self.index.pending(), 2)
+        self.index.path.rmdir()
+        again = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((again["logs"], again["skipped"]), (2, 1))
+        self.assertEqual((len(self.index.done_names()), self.index.pending()), (3, 0))
+        self.assertEqual(fi.FightIndex(self.index.path).load(), 2)  # on disk now
+
+    def test_a_log_zipped_after_it_was_read_is_not_read_again(self):
+        import zipfile
+        fi.backfill(self.splits, self.index, self._analyzer)
+        name = "260101200000-Kyne's-Aegis-vet.log"
+        log = self.splits / name
+        with zipfile.ZipFile(self.splits / (name + ".zip"), "w") as zf:
+            zf.write(log, name)
+        log.unlink()
+        result = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual(result["logs"], 0)
+
+    def test_copies_are_known_across_builds_and_a_cut_short_one_is_read(self):
+        fi.backfill(self.splits, self.index, self._analyzer)
+        full = (self.splits / "260102200000-Kyne's-Aegis-vet.log").read_text(encoding="utf-8")
+        (self.splits / "260102200000-Kyne's-Aegis-vet-2.log").write_text(full, encoding="utf-8")
+        (self.splits / "260102200000-Kyne's-Aegis-vet-3.log").write_text(full[:-20],
+                                                                          encoding="utf-8")
+        result = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((result["skipped"], result["logs"]), (1, 1))
+
+    def test_the_splitters_temp_file_is_never_read(self):
+        self.assertFalse(fi.is_split_name("261101203000-temp.log"))
+
+
+class TestLinesCompared(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.index = fi.FightIndex(Path(self.tmp.name) / fi.INDEX_NAME)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_new_app_version_alone_writes_nothing(self):
+        line = fi.fight_line(_entry(100.0), "0.29.0")
+        self.assertTrue(self.index.add(line))
+        self.assertFalse(self.index.add(fi.fight_line(_entry(100.0), "0.30.0")))
+
+    def test_a_kill_that_carried_on_a_cut_pull_is_not_compared(self):
+        tail = _entry(100.0, boss_dps=2_000_000)
+        tail.pull["continues"] = True  # only the pull's last part, a short burst
+        self.index.add(fi.fight_line(tail))
+        self.index.add(fi.fight_line(_entry(200.0, boss_dps=450_000)))
+        found = fi.comparison(self.index, _entry(300.0))
+        self.assertEqual(found["all"], [450_000.0])
 
 
 if __name__ == "__main__":

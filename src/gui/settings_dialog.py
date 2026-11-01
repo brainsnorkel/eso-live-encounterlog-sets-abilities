@@ -585,9 +585,15 @@ class SettingsDialog(QDialog):
         super().accept()
 
     def _build_history(self) -> None:
-        """Start the backfill; the dialog stays open, and its Save or
-        Cancel leaves the backfill running."""
-        if self._on_build_history is not None and self._on_build_history():
+        """Start the backfill on the split folder these fields name (saved
+        or not); the dialog stays open, its Save or Cancel leaves the
+        backfill running, and a refusal is said here, not behind the
+        dialog."""
+        if self._on_build_history is None:
+            return
+        started, message = self._on_build_history(self.retention_folder())
+        self.history_status.setText(message)
+        if started:
             self.build_history_button.setEnabled(False)
             self.build_history_button.setText("Building: see the status bar")
 

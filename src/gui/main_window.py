@@ -28,6 +28,7 @@ from fight_index import (
     FightIndex,
     comparison,
     comparison_text,
+    earlier_kills,
     fight_line,
     index_path,
     player_history,
@@ -182,7 +183,9 @@ class MainWindow(QMainWindow):
         self._build_retention()
         self._build_review()
         self._build_worker()  # last: the engine thread starts here
-        self._offer_backfill()
+        # The once-only hint about building the fight history, shown after
+        # 'Monitoring …' (_on_monitoring_started), which would replace it
+        self._backfill_hint_due = True
 
         # Follow live theme switches (e.g. Windows auto dark mode after
         # sunset): rendered HTML embeds theme colors, so it must re-render.
@@ -643,22 +646,26 @@ class MainWindow(QMainWindow):
                 if count else "No boss fights yet")
         return f"{held}, in {self.fight_index.path}"
 
-    def start_backfill(self) -> bool:
+    def start_backfill(self, folder=None) -> tuple[bool, str]:
         """Read the split logs into the fight history on the review thread
         (gui.review_runner.ReviewRunner.backfill); the status bar shows the
-        progress and its Cancel button stops it. Whether it started."""
-        folder = self._split_folder()
+        progress and its Cancel button stops it. *folder*: the split folder
+        to read (Settings passes the one in its fields, saved or not), else
+        the saved one. (whether it started, what to tell the reader)."""
+        folder = Path(folder) if folder else self._split_folder()
         if folder is None or not folder.is_dir():
-            self.statusBar().showMessage("Fight history: no split folder is set in Settings", 10000)
-            return False
+            return False, "There is no split folder to read: set one under Per-encounter split files."
         if self._review.running:
-            self.statusBar().showMessage("A review is still loading: cancel it first", 8000)
-            return False
+            return False, "A review is still loading: cancel it first, then build again."
         self._backfilling = True
         self._set_review_busy(True)
         self._on_parse_progress("Fight history: looking through the split logs", 0, 0)
-        return self._review.backfill(self.config, str(folder), self.fight_index,
-                                     self._review_notify())
+        if not self._review.backfill(self.config, str(folder), self.fight_index,
+                                     self._review_notify()):
+            self._backfilling = False
+            self._set_review_busy(False)
+            return False, "A review is still loading: cancel it first, then build again."
+        return True, f"Building from {folder}: see the status bar."
 
     def _offer_backfill(self):
         """Once, while the fight history is empty and the split folder holds
@@ -755,6 +762,8 @@ class MainWindow(QMainWindow):
         except (RuntimeError, TypeError):
             pass
         self._save_window_layout()
+        # Lines a held file kept queued get one more try (fight_index)
+        self.fight_index.flush()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
         # block as long as it takes rather than proceed with it running.
@@ -922,6 +931,10 @@ class MainWindow(QMainWindow):
             self._show_placeholder(
                 "Monitoring for encounters… fight summaries appear here "
                 "as combat ends.")
+        # After 'Monitoring …', which would replace it (fight_index)
+        if self._backfill_hint_due:
+            self._backfill_hint_due = False
+            self._offer_backfill()
 
     @Slot(str, list)
     def _on_review_loaded(self, path, fights):
@@ -1142,13 +1155,14 @@ class MainWindow(QMainWindow):
         tooltips = death_tooltips(entry, names)
         # Each named player's last kills of the boss, and the pull against
         # the earlier kills (fight_index, issue #170)
+        kills = earlier_kills(self.fight_index, entry)  # once for the whole page
         histories = {}
         for p in entry.players:
             handle = str(p.get("name") or "")
             if handle.startswith("@") and not p.get("companion"):
                 histories[str(p.get("unit_id", ""))] = player_history_text(
-                    entry, handle, player_history(self.fight_index, entry, handle), names)
-        history = comparison_text(comparison(self.fight_index, entry))
+                    entry, handle, player_history(self.fight_index, entry, handle, kills), names)
+        history = comparison_text(comparison(self.fight_index, entry, kills))
         tooltips.update(build_tooltips(entry, names, histories))
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
