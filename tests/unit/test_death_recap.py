@@ -10,12 +10,15 @@ absorbed, and the last player's death written after END_COMBAT.
 import unittest
 
 from death_recap import (  # noqa: E402
-    KILLING_BLOW_GRACE_MS, RECAP_WINDOW_MS, DeathRecapRecorder,
+    KILLING_BLOW_GRACE_MS, DeathRecapRecorder,
 )
 from engine_events import RecordingListener  # noqa: E402
 from esolog_tail import LATE_DEATH_GRACE_MS, ESOLogAnalyzer, FightHistory  # noqa: E402
 
 EPOCH = 1755729685851
+# The window these fixtures were written for (the default of issue #95; it
+# is 3 seconds since #133, which test_death_recap_window covers)
+FIVE_S_MS = 5000
 
 BOSS = "70,287485/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
 NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
@@ -48,6 +51,7 @@ BASE = [
 def _run(lines):
     analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
+    analyzer.death_recap_recorder.window_ms = FIVE_S_MS
     listener = RecordingListener()
     analyzer.add_listener(listener)
     for line in BASE + lines:
@@ -355,7 +359,7 @@ class TestRecorder(unittest.TestCase):
     def setUp(self):
         self.recorder = DeathRecapRecorder(
             lambda unit_id: {'70': 'Boss'}.get(unit_id, ''),
-            lambda ability_id: (f'Ability {ability_id}', ''))
+            lambda ability_id: (f'Ability {ability_id}', ''), window_ms=FIVE_S_MS)
 
     @staticmethod
     def _fields(result, hit, health, overflow=0, cast=900):
@@ -369,7 +373,7 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual([r['offset_ms'] for r in recap['events']],
                          [-4500, -3500, -2500, -1500, -500])
         self.assertEqual(recap['events'][0]['offset_ms'], 7000 - 11500)
-        self.assertGreaterEqual(recap['events'][0]['offset_ms'], -RECAP_WINDOW_MS)
+        self.assertGreaterEqual(recap['events'][0]['offset_ms'], -FIVE_S_MS)
 
     def test_hits_after_the_grace_are_on_the_corpse(self):
         recap = self.recorder.note_death('1', 20000, self._fields('DIED', 0, 0))

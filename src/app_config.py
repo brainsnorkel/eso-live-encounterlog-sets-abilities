@@ -88,9 +88,10 @@ DEFAULTS = {
         "accrue_to_owner": False,
     },
     # The death recap window: seconds of damage and healing kept before
-    # each death (death_recap, issue #95), 5 to 10
+    # each death (death_recap, issues #95 and #133), 1 to 10; 3 for a new
+    # install, while a stored 5 from an older version is kept
     "death_recap": {
-        "window_s": 5,
+        "window_s": 3,
     },
     # The app-wide text size, a percentage of the system font (gui.text_size,
     # issue #77): 80 to 200, set in Settings or with Ctrl+=, Ctrl+- and Ctrl+0
