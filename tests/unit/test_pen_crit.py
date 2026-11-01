@@ -1018,7 +1018,7 @@ class TestRowToken(unittest.TestCase):
                           'p:2187 cd:58%</a>', html)
             self.assertIn(pen_crit_href("2"), html)
         text = render_plain_text(self.entry, pen_crit_options=ROW_OPTIONS)
-        self.assertIn("@brainsnorkel * Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
+        self.assertIn("@brainsnorkel Warden — 90.0k (50.0%) · p:2187 cd:58%", text)
         plain = render_plain_text(self.entry)
         self.assertIn("· p:1487 cd:50%", plain)  # nothing assumed: 1,487 and the base 50
 

@@ -21,12 +21,15 @@ a = Analysis(
     hiddenimports=[
         'app_config',
         'app_startup',
+        'banner_capture',
+        'desktop_duplication',
         'engine_events',
         'esolog_tail',
         'fight_history',
         'gear_set_data',
         'gear_set_database',
         'gui',
+        'gui.banner_burst',
         'gui.engine_worker',
         'gui.fight_render',
         'gui.main_window',
@@ -69,6 +72,13 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# The bundled data's game version and each table's date
+# (scripts/stamp_data_version.py), for the staleness check and About. A
+# build without it would ship a check that can never say the game is newer,
+# so its absence stops the build
+if not os.path.exists('data/version.json'):
+    raise SystemExit('data/version.json is missing: run scripts/stamp_data_version.py')
+a.datas += [('data/version.json', 'data/version.json', 'DATA')]
 pyz = PYZ(a.pure)
 
 exe = EXE(

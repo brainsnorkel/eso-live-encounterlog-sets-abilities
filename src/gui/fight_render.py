@@ -34,7 +34,7 @@ A player who died in the fight gets a death-recap button beside their name
 (see death_render); the fight view opens the recap window when it is clicked.
 
 A player whose build has a possible issue (see build_issues) gets a circled
-i right after their name, beside the first-damage *, drawn bold with a
+i right after their name, drawn bold with a
 faint halo in the link color (a glyph, see gui.glyphs; issue #140);
 hovering it lists the findings and clicking it opens a popup with each
 finding and the rule behind it (issues_html, which the build window shows
@@ -80,6 +80,16 @@ class's other masteries, the likeliest first for the player's role
 (eso_sets.likely_masteries), marking one the log never names; a click
 opens the build window, whose mastery part and the plain-text copy say the
 same in words (issue #149).
+
+Under the table, a muted line says who opened the fight and with what:
+'@tank taunted Reef Guardian first: Inner Rage' (fight_opener.opener_parts,
+issue #159; it replaced the '*' after the player who dealt the first
+damage). When a monster acted before anyone hit or taunted an enemy, a
+first line says whom it went for and a second who hit first. The line
+follows the pane's text size, as 'Also died' does, and comes before it.
+Every player's name in it goes through the Hide names mask, and a name
+that picks out no single row ('anon', or a hidden name) is followed by the
+row's role and class; the plain-text copy ends with the same lines.
 """
 
 import html
@@ -88,10 +98,20 @@ from typing import List, Optional, Tuple
 
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
+from fight_opener import PlayerName, opener_parts
 from gui.death_render import death_chip_html, deaths_by_unit
-from gui.name_mask import NO_MASK
+from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
+from pull_outcome import (
+    clock,
+    dead_row_text,
+    dps_text,
+    first_death_parts,
+    first_death_text,
+    mmss,
+    outcome_text,
+)
 from scribing import scribed_label, slot_label
 from trial_result import result_text
 
@@ -118,6 +138,7 @@ SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
+BANNER_HREF = "esolog:banner/"  # + open, save or copy: the run's score banner (issue #167)
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
 # + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
 # penetration and critical damage over the fight (pen_crit); a click opens
@@ -129,6 +150,18 @@ MISFORTUNE_HREF = "esolog:misfortune/"
 # + the player's unit id: the '?' after a lone Class Mastery, whose hover
 # gives the likely second; a click opens the build window (issue #149)
 MASTERY_HREF = "esolog:mastery/"
+
+
+def _banner_links(entry, theme) -> str:
+    """The result strip's links to the run's saved score banner (issue
+    #167): open it, save it elsewhere, copy it; nothing when none was
+    captured."""
+    if not getattr(entry, "banner_path", None):
+        return ""
+    link = theme["link"]
+    return (f" &nbsp;·&nbsp; <a href='{BANNER_HREF}open' style='color:{link}'>Score banner</a>"
+            f" <a href='{BANNER_HREF}save' style='color:{link};text-decoration:none'>(save as…)</a>"
+            f" <a href='{BANNER_HREF}copy' style='color:{link};text-decoration:none'>(copy)</a>")
 SECOND_MASTERY_CUE = "?"
 SECOND_MASTERY_TITLE = "Second Class Mastery not seen"
 NEVER_LOGGED_NOTE = "never shows in the log"
@@ -223,13 +256,16 @@ def build_unit_from_href(href: str) -> Optional[str]:
     return None
 
 
-def build_tooltips(entry, names=None) -> dict:
+def build_tooltips(entry, names=None, histories=None) -> dict:
     """Hover text per player-name link: the handle, the character name
     under it when the log gave both (issue #71), a companion's ultimates
-    with their times and anyone's healing to others (issue #130), and that
-    a click opens the build window. *names*: the Hide names mask
-    (gui.name_mask), which hides another player's handle and character
-    name alike."""
+    with their times and anyone's healing to others (issue #130), the
+    player's boss dps in their last kills of the boss from the fight
+    history (*histories*: unit id -> fight_index.player_history_text,
+    names already masked; issue #170), and that a click opens the build
+    window. *names*: the Hide names mask (gui.name_mask), which hides
+    another player's handle and character name alike."""
+    histories = histories or {}
     names = names or NO_MASK
     e = html.escape
     tips = {}
@@ -247,6 +283,8 @@ def build_tooltips(entry, names=None) -> dict:
         healing = healing_text(p, fight_s)
         if healing:
             lines.append(e(healing))
+        if histories.get(unit_id):
+            lines.append(e(histories[unit_id]))
         if p.get("companion"):
             lines.append("<span style='font-size:85%'>Companion. Click for the skills it "
                          "was seen casting, with this fight's casts</span>")
@@ -554,7 +592,8 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
                 base_pt: float = 9.0) -> str:
     """A player's possible build issues as HTML: the heading, then each
     finding's title in bold over the rule behind it, with an ESO-Hub link
-    for the set or skill it names when the maps know the page. '' for a
+    for the set or skill it names when the maps know the page, and for a
+    Champion Point star the page the finding carries ('star_url'). '' for a
     player without findings. Shown in the (i) popup and the build window."""
     findings = (p or {}).get("build_issues") or []
     if not findings:
@@ -570,6 +609,10 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
             if url:
                 extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
                               f'{e(name)} on ESO-Hub</a>')
+        star, star_url = str(finding.get("star") or ""), str(finding.get("star_url") or "")
+        if star and star_url:
+            extras.append(f'<a href="{e(star_url, quote=True)}" style="color:{theme["link"]}">'
+                          f'{e(star)} on ESO-Hub</a>')
         extra = (f"<br><span style='font-size:{base_pt * 0.85:.2f}pt'>"
                  f"{' · '.join(extras)}</span>" if extras else "")
         rows.append(
@@ -644,18 +687,14 @@ def _join(value, sep=", ") -> str:
 
 
 def _fmt_dps(dps: float) -> str:
-    if dps >= 1_000_000:
-        return f"{dps / 1_000_000:.2f}M"
-    if dps >= 1_000:
-        return f"{dps / 1_000:.1f}k"
-    return f"{dps:.0f}"
+    """'1.50M', '61.8k', '950': one formatter with the session recap
+    (pull_outcome.dps_text)."""
+    return dps_text(dps)
 
 
 def _fmt_duration(seconds: float) -> str:
-    total = int(round(seconds))
-    if total >= 60:
-        return f"{total // 60}:{total % 60:02d}"
-    return f"{total}s"
+    """'48s', '3:12': one formatter with the pull's spans (pull_outcome)."""
+    return clock(seconds)
 
 
 def _fmt_resource(value) -> str:
@@ -708,8 +747,7 @@ def ultimate_text(p) -> str:
 
 def _clock_s(seconds) -> str:
     """'1:38': seconds into the fight, as the death recap writes them."""
-    whole = max(0, int(seconds or 0))
-    return f"{whole // 60}:{whole % 60:02d}"
+    return mmss(seconds)
 
 
 def ultimate_lines(p) -> list[str]:
@@ -799,18 +837,22 @@ def _mastery_text(p) -> str:
 
 def summary_line(entry, death_cue: bool = False, issue_cue: bool = False,
                  zone: bool = True) -> str:
-    """Fight line: boss · duration · gdps · zone · timestamp.
+    """Fight line: boss · outcome · duration · gdps · zone · timestamp.
 
     death_cue: mark a fight in which a player died with DEATH_CUE after the
     boss or mob name; issue_cue: mark a fight in which a player's build has
     a possible issue (build_issues) with ISSUES_LIST_CUE after that. The
     history list asks for both; the clipboard copy, which is read without
     the app's legend, does not. zone=False leaves the zone out, for the
-    history list, whose block header names it (gui.fight_list).
+    history list, whose block header names it (gui.fight_list). The
+    outcome is the pull's verdict ('Kill', 'Wipe 62%'; pull_outcome).
     """
     parts = []
     if entry.boss_name:
         parts.append(entry.boss_name)
+    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name)
+    if outcome:
+        parts.append(outcome)
     parts.append(_fmt_duration(entry.duration_s))
     parts.append(f"{_fmt_dps(entry.group_dps)} gdps")
     if zone:
@@ -1111,8 +1153,12 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
                 text_color: Optional[str] = None, pen_crit_options=None,
-                names=None, line_px: int = 0) -> str:
+                names=None, line_px: int = 0, history: str = "") -> str:
     """Render one fight as HTML for a QTextBrowser.
+
+    history: the line that sets the pull against the earlier kills of its
+    boss from the fight history (fight_index.comparison_text, issue #170),
+    muted under the header; '' for none.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
     keeps the bars as text. links / set_links / script_links: callables
@@ -1168,7 +1214,11 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 f'{gdps} gdps&nbsp;{glyph_html(GRAPH_GLYPH, theme["link"], px)}</a>')
     else:
         gdps = f"{gdps} gdps"
-    stats = (f"{duration}"
+    # The pull's verdict first, as in the fight list ('Wipe 62%';
+    # pull_outcome)
+    outcome = outcome_text(getattr(entry, "pull", None), entry.boss_name)
+    stats = ((f"{e(outcome)} · " if outcome else "")
+             + f"{duration}"
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
@@ -1183,7 +1233,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
             f"style='border-style:solid;border-width:1px;"
             f"border-color:{theme['frame_border']};border-collapse:collapse;"
             f"background-color:{theme['frame_bg']};margin-bottom:6px'>"
-            f"<tr><td><b>{e(result_text(result))}</b></td></tr></table>")
+            f"<tr><td><b>{e(result_text(result))}</b>{_banner_links(entry, theme)}</td></tr></table>")
     # Not an <h3>: Qt would scale the nested stats by the heading's size
     # adjustment on top of their point size
     parts += [
@@ -1191,6 +1241,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
     ]
+    # The pull against the earlier kills of its boss (fight_index)
+    if history:
+        parts.append(f"<p style='margin:0;color:{muted}'>{e(history)}</p>")
     # A solo dungeon run's Misfortunes, muted like the stats; each name with
     # a text carries an anchor for its hover, in the look of plain text
     misfortunes = getattr(entry, "misfortunes", None)
@@ -1207,8 +1260,6 @@ def render_html(entry, detailed: bool, dark: bool = False,
     # Not 100% wide: Qt rounds percentage columns up to a pixel past the
     # pane, which shows a horizontal scroll bar
     parts.append("<table cellpadding='3' cellspacing='0' width='99%'>")
-    first_dealer = str(entry.first_damage_dealer or "")
-    starred = False
     deaths = deaths_by_unit(entry)
     for p in entry.players:
         role = p.get("role") or "D"
@@ -1226,11 +1277,8 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if unit_id:
             name = (f'<a href="{e(build_href(unit_id), quote=True)}" '
                     f'style="text-decoration:none;color:{row_color}">{name}</a>')
-        if first_dealer and unit_id == first_dealer:
-            name = f"{name} <b>*</b>"
-            starred = True
         # The (i) of possible build issues (build_issues): only on a player
-        # with at least one. It sits on the name, after the first-damage *,
+        # with at least one. It sits right after the name,
         # where the eye lands, not after the class text, where it drifted
         # with the text's length among muted words; drawn bold with a faint
         # halo in the link colour, since Qt rich text has no text-shadow
@@ -1238,9 +1286,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
         # name's stand-in never takes it in
         if unit_id and p.get("build_issues"):
             name = f"{name}&nbsp;{issues_cue_html(unit_id, theme['link'], base_pt, line_px)}"
-        # Death-recap button for a player who died in this fight
+        # Death-recap button for a player who died in this fight, and their
+        # time dead when it was a tenth of the fight or more (pull_outcome)
         recap_html = (f"&nbsp;&nbsp;{death_chip_html(unit_id, deaths[unit_id], dark)}"
                       if unit_id in deaths else "")
+        dead_text = dead_row_text(entry, unit_id) if unit_id in deaths else ""
+        if dead_text:
+            recap_html += f"&nbsp;<span style='color:{muted}'>{e(dead_text)}</span>"
         # A companion's row (companions.py) hangs under its owner's, and its
         # deaths are a muted mark: the log keeps no recap of them
         if p.get("companion"):
@@ -1353,9 +1405,19 @@ def render_html(entry, detailed: bool, dark: bool = False,
                       f"</td></tr>")
             parts.append(detail)
     parts.append("</table>")
-    if starred:
-        parts.append(f"<p style='margin:2px 0;color:{muted};font-size:85%'>"
-                     f"* dealt the first damage of the fight</p>")
+    # Who opened the fight and with what (fight_opener, issue #159): muted
+    # like 'Also died', at the pane's text size (Qt ignores percentage
+    # sizes), with no links
+    opener = opener_html(opener_parts(entry), names, muted, base_pt)
+    if opener:
+        parts.append(f"<p style='margin:4px 0;color:{muted}'>{opener}</p>")
+    # Who died first and to what, how many died, and how long a wipe went
+    # on after it (pull_outcome, issue #169); names through the mask, as
+    # in the opener's line
+    first_death = "".join(names.html(part[1], muted, base_pt) if isinstance(part, tuple)
+                          else e(part) for part in first_death_parts(entry))
+    if first_death:
+        parts.append(f"<p style='margin:4px 0;color:{muted}'>{first_death}</p>")
     # Deaths of players the table does not list (their build never reached
     # the log) still get their recap button
     listed = {str(p.get("unit_id", "")) for p in entry.players}
@@ -1366,6 +1428,47 @@ def render_html(entry, detailed: bool, dark: bool = False,
         parts.append(f"<p style='margin:4px 0;color:{muted}'>"
                      f"Also died: {' '.join(others)}</p>")
     return "".join(parts)
+
+
+def _opener_name_shows_row(part: PlayerName, names) -> bool:
+    """Whether a name in the opener line needs its row's role and class:
+    one that picks out no single row ('anon', or a name the mask hides)."""
+    return bool(part.role_class) and (part.name == ANON or names.hides(part.name))
+
+
+def opener_html(parts, names, color: str, base_pt: float) -> str:
+    """The opener line's parts (fight_opener.opener_parts) as rich text:
+    the lines joined by <br>, every player's name through the Hide names
+    mask in *color* at *base_pt* points."""
+    lines = []
+    for line in parts:
+        out = []
+        for part in line:
+            if isinstance(part, PlayerName):
+                out.append(names.html(part.name, color, base_pt))
+                if _opener_name_shows_row(part, names):
+                    out.append(f" ({html.escape(part.role_class)})")
+            else:
+                out.append(html.escape(str(part)))
+        lines.append("".join(out))
+    return "<br>".join(lines)
+
+
+def opener_text(parts, names) -> list[str]:
+    """The opener line's parts as plain-text lines, names masked as in
+    opener_html."""
+    lines = []
+    for line in parts:
+        out = []
+        for part in line:
+            if isinstance(part, PlayerName):
+                out.append(names.text(part.name))
+                if _opener_name_shows_row(part, names):
+                    out.append(f" ({part.role_class})")
+            else:
+                out.append(str(part))
+        lines.append("".join(out))
+    return lines
 
 
 def presence_note(p) -> str:
@@ -1407,22 +1510,21 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         lines.append(misfortunes)
     if entry.buff_summary:
         lines.append(_join(entry.buff_summary))
-    first_dealer = str(entry.first_damage_dealer or "")
     boss_fight = _is_boss_fight(entry)
     for p in entry.players:
         role = p.get("role") or "D"
         dps = _dps_text(p, boss_fight)
-        star = (" *" if first_dealer
-                and str(p.get("unit_id", "")) == first_dealer else "")
         caps = pen_crit_text(pen_crit_shares(entry, p, pen_crit_options))
         cpm = cpm_text(p)
         ult = ultimate_text(p)
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
-        lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))}{star} "
+        dead = "" if p.get("companion") else dead_row_text(entry, p.get("unit_id", ""))
+        lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
-                     + (f" · {ult}" if ult else "") + (f" · {note}" if note else ""))
+                     + (f" · {ult}" if ult else "") + (f" · {dead}" if dead else "")
+                     + (f" · {note}" if note else ""))
         skill_lines = _subclass_text(p, short=False)
         if skill_lines:
             lines.append(f"      {skill_lines}")
@@ -1448,4 +1550,10 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         sets = _sets_text(p.get("all_sets") or p.get("sets"))
         if sets:
             lines.append(f"      {sets}")
+    # Who opened the fight, as the pane's line under the table (issue #159)
+    lines.extend(opener_text(opener_parts(entry), names))
+    # And who died first, as the pane's next line (issue #169)
+    first_death = first_death_text(entry, names)
+    if first_death:
+        lines.append(first_death)
     return "\n".join(lines)

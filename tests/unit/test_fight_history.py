@@ -110,3 +110,11 @@ def test_live_mode_stays_live_through_many_appends():
     assert h.is_live
     assert h.current().zone_name == "Zone199"
     assert h.total == 200
+
+
+def test_the_opener_records_start_empty():
+    """Who opened the fight replaced the first-damage dealer (issue #159);
+    a resumed fight copies every slot, so both must be set from the start."""
+    e = FightHistoryEntry()
+    assert e.opener is None and e.monster_first is None
+    assert 'first_damage_dealer' not in FightHistoryEntry.__slots__

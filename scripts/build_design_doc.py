@@ -36,6 +36,12 @@ TOPICS = [
         "src/esolog_tail.py:ESOLogAnalyzer._resume_last_fight",
         "src/esolog_tail.py#A death just after END_COMBAT",
     ]),
+    ("Fight boundaries: combat with no enemy", [
+        "src/esolog_tail.py:ESOLogAnalyzer._note_enemy_met",
+    ]),
+    ("The fight's opener", [
+        "src/fight_opener.py",
+    ]),
     ("Starting mid-session", [
         "src/esolog_tail.py:LogFileMonitor._load_latest_session",
     ]),
@@ -84,6 +90,11 @@ TOPICS = [
     ("Set buffs: which set a Major or Minor buff came from", [
         "scripts/generate_set_buffs.py",
     ]),
+    ("Game data against the game's version: the staleness check", [
+        "src/data_staleness.py",
+        "scripts/stamp_data_version.py",
+        "scripts/check_data_staleness.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
@@ -98,6 +109,7 @@ TOPICS = [
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
         "src/build_issues.py:BuildIssueTracker",
+        "src/build_issues.py:GroupBuffCredit",
         "scripts/generate_weapon_skill_lines.py",
     ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
@@ -135,6 +147,16 @@ TOPICS = [
     ("A trial's result, and the fight list in blocks by instance", [
         "src/trial_result.py",
         "src/gui/fight_list.py",
+    ]),
+    ("Kill or wipe, time dead, and a boss's pulls in a row", [
+        "src/pull_outcome.py",
+    ]),
+    ("The session recap: the fight list as text for Discord", [
+        "src/session_recap.py",
+        "src/fight_blocks.py",
+    ]),
+    ("Fight history across sessions: the index of boss fights", [
+        "src/fight_index.py",
     ]),
     ("Death recaps", [
         "src/death_recap.py",
@@ -190,6 +212,11 @@ TOPICS = [
     ]),
     ("The text size", [
         "src/gui/text_size.py",
+    ]),
+    ("The trial score banner", [
+        "src/banner_capture.py",
+        "src/desktop_duplication.py",
+        "src/gui/banner_burst.py",
     ]),
 ]
 

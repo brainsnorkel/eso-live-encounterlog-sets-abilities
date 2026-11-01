@@ -2,6 +2,72 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.32.0] - 2026-11-01
+
+### Added
+- **`banner.log`** (#183): each capture writes what it saw beside the settings file: when the run ended and was read, the outcome, and a line per grab with the lines of text that hold a digit. It keeps the last 50 captures and holds no pictures.
+
+### Changed
+- **Arena results show their vitality maximum** (#183): `Vitality 11/15` in Maelstrom Arena and Vateshran Hollows and `14/24` in Dragonstar Arena and Blackrose Prison, where the row used to show the points alone. Maelstrom Arena, Vateshran Hollows and Sanctum Ophidia are named when the zone is unknown.
+- **The trial timer rounds to the second as the game's banner does** (#183): a run of 44:09.5 reads `44:10`, as the banner shows it, in the result row, the strip, the session recap and the copied text.
+- **The score banner capture waits long enough for an arena's banner and keeps it whole** (#183): it grabs until 45 seconds after the run ended (at least 15 seconds), since an arena's banner can come 25 seconds late. Once the score is read it takes two more grabs and keeps the one with the most of the banner drawn. The crop is centred on the screen, so the revives count is no longer cut off.
+
+## [0.31.1] - 2026-11-01
+
+### Fixed
+- **A fall into lava or off a ledge counts as a death** (#184): the log writes it as `KILLED_BY_SUBZONE` with no killer, and the app missed it, so the fight showed no death, no recap and no time dead, and a solo pull that ended in a fall read as left rather than a wipe. The recap now says the player was killed by *a fall or lava*. Pulls already in the fight history keep their old reading until it is rebuilt from the split logs (Settings → Fight history)
+- **Combat with no enemy in it is no longer listed as a fight**: breaking a Brimstone Orb in Vateshran Hollows to cross the lava, running past a neutral trap or a falling hazard, or simply being held in combat added fights with no damage in them to the list. A fight now needs a hit, cast or attack between the group and an enemy in it or in the ten seconds before it began, or a player's death in it or as it ended.
+
+## [0.31.0] - 2026-11-01
+
+### Added
+- **Kill or wipe on every boss fight** (#168): the fight list and the fight's header say how each pull ended, `Kill`, `Wipe 62%` with the boss's health left, `Left 84%` for a reset, or `Lost sight 31%` when your own death ended the fight for the log, with `group went on` once a later pull is of another boss. A kill is read from the boss's death, its health or the trial's end, never from how many players died, so a messy kill stays a kill and an ending the log did not see is never called a wipe. A pull the game cut in two when you were revived reads `Cut` and counts once. **Copy fight** adds the word to its first line
+- **A boss's pulls in a row** (#168): under two or more pulls of one boss, a line sums them up, `Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48s between pulls`, or `killed on pull 13`; twin bosses such as Lylanar and Turlassil count as one
+- **What ended the pull** (#169): a line under the fight names the first death, what killed them and when, how many died, and on a wipe how long the pull went on after it. Hovering a boss's pulls in a row in the fight list adds the first death of each pull, the killers over every death with the share the boss dealt itself, and the three players who spent longest dead
+- **Time dead** (#169): the ☠ hover says how long the player spent dead, from each death until they were back up or the fight ended, and the row adds `dead 1:32` when it was a tenth of the fight or more; **Copy fight** adds it to the player's line. **Hide names** hides the names in all of these
+- **Your fight history** (#170): every boss fight is kept across sessions, kill or not, in `fights.jsonl` beside the settings, so a pull reads against your group's earlier kills of the boss: `Your Lord Falgravn kills: median 441.2k over 28, best 953.4k; with 8+ of this roster on 12.1: median 470.6k over 10. This pull: 512.3k` under the fight's header. A player's name hover adds their boss DPS in their last three kills of the boss, and a boss's pulls in a row end with the best earlier kill with this roster. **Settings → Fight history → Build from split logs** reads your split logs into it in the background, and carries on where it stopped after a Cancel. **Hide names** hides the handles in all of it
+- **Copy session** (#171): a toolbar button and Ctrl+Shift+C put the whole fight list on the clipboard as a short recap for Discord, one paragraph per instance: each boss's pulls with the kill or the best pull, and what ended them (first deaths, killers, who was longest dead), the trash as a count and a time, how many players had a possible build issue, and the trial's result. The status bar says how long the copy is, since a Discord message holds 2,000 characters. **Hide names** hides the names in it
+- **A second copy of a group buff set, or of a Champion Point star, that added next to nothing** (#172): two new possible build issues. One flags a player whose copy of a group buff set (Spell Power Cure, Pearlescent Ward, Lucent Echoes, Master Architect, Powerful Assault and the like) the log credited with less than 2% of the other players' time in every fight of a minute or more of the session that another wearer was in, while the other copy did reach the group: a player has such a buff from one wearer at a time. The other flags a second Enlivening Overflow whose procs were under 30% of an even share of the holders' (15% with two holders), or a second From the Brink that never procced while the other did: both stars' cooldown per player is shared by everyone who slots them. The user guide's new *Group effects and a second source* says which group effects a second source can add to and which it cannot, with the numbers behind it
+- **The status bar says when the game data is behind the game** (#173): an amber line on the right, `Game 12.2, data built for 12.1: 3 unknown sets, 2 icons missing`, when the log was written by a newer game version than the app's bundled data, or names sets, armor or weapons, skill icons or set pages the data does not know. Hover it for the ids and names. It is not shown while the data is current, and About lists the game version the data was built for and the date of each table
+
+## [0.30.0] - 2026-11-01
+
+### Added
+- **The trial score banner, captured from the screen** (#167, Windows only, off by default): with *Capture the trial completion banner* on in Settings, the fifteen seconds after a trial's END_TRIAL are grabbed once a second, the first grab on which Windows' own text recognition reads the run's final score is cropped to the banner and saved as a PNG (`Sunspire Veteran 253117 2026-11-01 2131.png` in `<log folder>\Banners`, or a folder of your choice), and the fight's result row and pane link to it, with *save as* and *copy*. Nothing is kept when the score is not seen on screen. An HDR desktop is read through Desktop Duplication and converted to sRGB by the display's SDR white level, so the picture is not washed-out.
+
+## [0.29.0] - 2026-11-01
+
+### Changed
+- **A companion is named after its owner** everywhere in the app (#145): `@handle's Companion`, or `anon's Companion` for an owner the log gives no handle (every anonymous player's companion alike), your own companion included, instead of the name the log gave it. An anonymous player named on joining the group names their companion from then on. With **Hide names** on, only the owner's part is hidden, so your companion stays readable and another player's reads `@▒▒▒▒'s Companion`. The companion window's title is its name, and its `of <owner>` is gone
+- **Who opened the fight, in a line under the table** (#159): the `*` after a player's name is gone. The line names who hit or taunted an enemy first, with which skill or effect and on which enemy, and counts the hits that land a moment before your own combat starts. When a monster went for someone before anyone hit or taunted an enemy, the line says so and still names who hit first. **Hide names** hides the handles in it, and **Copy fight** adds it
+
+### Fixed
+- **A companion gave away an anonymous player's handle** (#145): the game writes another member's companion into the log as `@handle's Companion`, also for a player it lists with neither name nor handle (`anon` in the app), so the companion's row read `↳ @handle's Companion` straight under an `anon` row, and the handle showed in the timeline strip, the penetration casters and death recaps too. In the split logs of January to October 2026, 199 handles reached the log only this way, over 117 logs; Hide names already masked them. The companion window's title also skipped Hide names
+
+## [0.28.1] - 2026-10-31
+
+### Changed
+- **Always Logging, or Easy Stalking, to keep encounter logging on** (#156): the README, the user guide, the home page and the "Waiting for Encounter.log" message now offer two addons, one or the other but not both: [Always Logging](https://github.com/brainsnorkel/AlwaysLogging), which logs everywhere and is installed from GitHub (it is not on ESOUI or in Minion), and Easy Stalking, which logs only the content you choose. Both are thanked under About
+
+### Fixed
+- **A log path with `&` or `<` in it shows as written in "Waiting for Encounter.log"** (#156), instead of being read as markup
+
+## [0.28.0] - 2026-10-31
+
+### Added
+- For the maintainer (#134): `scripts/release.py` makes the release commit (the version, the changelog section gathered from `changelog.d/` fragments, the design notes rebuilt) and, once its pull request is merged, tags it, pushes the tag and checks the beta it publishes. Changes now add a fragment in `changelog.d/` instead of editing `CHANGELOG.md`, and a check on every pull request asks for one (or the `no-changelog` label). `docs/design.md` is rebuilt in the release commit only, and the release job refuses a tag whose design notes lag the code
+- **Hover a fight's `ⓘ` in the fight list to see who has a possible build issue** (#147): each flagged player, with the class text from their row and the title of each finding, without selecting the fight. The rest of the row shows nothing on hover, as before. Names follow **Hide names**, and a screen reader hears the mark as how many players have a finding.
+- **A `?` after a single Class Mastery** (#149): a character can take two, and the log often shows one late or never. `Templar: Devout Guardian, ?` on the fight pane; hover the `?` for the class's other masteries, the likeliest first for the player's role (counted over a month of trial logs, Bastion of Light last as the log never names it), or click it for the build. The build window's mastery line and the plain-text copy say the same in words
+
+### Changed
+- **The possible-build-issues `ⓘ` is easier to spot** (#140): on the fight pane it now sits right after the player's name, beside the `*` of the first damage, instead of after the class text, and it is drawn bold with a faint glow in the link colour. Rows keep their height. The fight list, the popup and the build window keep the plain `ⓘ`
+- **The build window's Damage dealt section moves above Resources** (#143): under the gear grid the window now reads Damage dealt, Penetration and Critical damage as one block about what the player did with the build, with Resources, the tallest section, last. Each cap section's *Effective* line, the figure that counts, sits in a framed row with a bar at its left edge, and the Damage dealt and Resources headings get the rule the other headings have
+
+### Fixed
+- The *damage taken and healing received* link in the build window, and the death recap's link to the same window, open the fight that window shows (#143). They opened the fight selected in the list, which moves on to each new pull while the app follows the live log
+- **Necromancers' Cycle Unending shows beside the class** (#149): its effect comes from the Necromancer's pets, which the app did not credit to them, so most Necromancers showed Nothing Wasted alone
+- **A mastery found later in a session fills in that session's earlier fights** (#149), so the fights of one session show the same masteries
+
 ## [0.27.0] - 2026-10-31
 
 ### Added

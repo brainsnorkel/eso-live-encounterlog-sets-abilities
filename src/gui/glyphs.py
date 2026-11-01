@@ -26,7 +26,9 @@ The (i) of possible build issues is drawn here too (issue #140). It was the
 font's ⓘ in the link colour after the class text, where it drifted right
 with the text's length, thin and among muted words, and was easy to miss;
 the first-damage * after the name was the mark people saw. It now sits on
-the name, after the *, bold with a faint halo of its own colour. Qt rich
+the name, right after it (where the * was until issue #159 moved who
+opened the fight to a line under the table), bold with a faint halo of its
+own colour. Qt rich
 text has no text-shadow, filter or opacity, so the glow cannot come from
 the page: the glyph is a ring about the size of the font's ⓘ (11.5 px of
 11 at 9 pt), half again as heavy, over a radial gradient that is clear

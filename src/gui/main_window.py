@@ -4,6 +4,7 @@ settings, manual archive, and the freshness status bar.
 """
 
 import base64
+import html
 import sys
 import weakref
 from datetime import datetime
@@ -20,8 +21,20 @@ from PySide6.QtWidgets import (
     QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
+import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from data_staleness import status_text, status_tooltip
+from fight_index import (
+    FightIndex,
+    comparison,
+    comparison_text,
+    earlier_kills,
+    fight_line,
+    index_path,
+    player_history,
+    player_history_text,
+)
 from gui import text_size
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
@@ -50,6 +63,7 @@ from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
 from recycle_bin import TRASH_NAME
 import review_load
+from session_recap import DISCORD_LIMIT, recap_text
 import split_retention
 from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
@@ -160,12 +174,20 @@ class MainWindow(QMainWindow):
         # The text size, before any widget is made, so all of them start at it
         text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
         set_reduce_motion(bool(config.get("display.reduce_motion", False)))
+        # The fight history across sessions (fight_index, issue #170): read
+        # once here, beside the config, and written as fights come
+        self.fight_index = FightIndex(index_path(config.path))
+        self.fight_index.load()
 
         self._build_ui()
+        self.history_list.history_index = self.fight_index
         self._build_update_poller()
         self._build_retention()
         self._build_review()
         self._build_worker()  # last: the engine thread starts here
+        # The once-only hint about building the fight history, shown after
+        # 'Monitoring …' (_on_monitoring_started), which would replace it
+        self._backfill_hint_due = True
 
         # Follow live theme switches (e.g. Windows auto dark mode after
         # sunset): rendered HTML embeds theme colors, so it must re-render.
@@ -195,6 +217,7 @@ class MainWindow(QMainWindow):
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
         self._refresh_warning_label()
+        self._refresh_data_label()
         self._style_update_buttons()
         self.timeline_strip.update()
         if self._death_dialog is not None:
@@ -233,6 +256,15 @@ class MainWindow(QMainWindow):
         copy_action.setShortcut(QKeySequence.Copy)
         copy_action.triggered.connect(self._copy_current)
         toolbar.addAction(copy_action)
+
+        # The whole list as a recap for Discord (session_recap, issue #171)
+        self.copy_session_action = QAction("Copy session", self)
+        self.copy_session_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self.copy_session_action.setToolTip(
+            "Copy every fight in the list as a short recap: each boss's pulls, the kills, "
+            "what ended the pulls (Ctrl+Shift+C)")
+        self.copy_session_action.triggered.connect(self._copy_session)
+        toolbar.addAction(self.copy_session_action)
 
         self.graph_action = QAction("DPS graph", self)
         self.graph_action.triggered.connect(self._show_graph)
@@ -355,6 +387,16 @@ class MainWindow(QMainWindow):
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
+        self.fight_view.banner_requested.connect(self._show_banner)
+        # The trial score banner captured from the screen (gui.banner_burst,
+        # issue #167): the burst running, the runs already tried this
+        # session, the files captured this session by run (the fight that
+        # carries a result arrives after the burst started), and the log
+        # the engine monitors, whose folder holds the banners by default
+        self._banner_burst = None
+        self._banner_done = set()
+        self._banner_files = {}
+        self._log_path = None
         right_layout.addWidget(self.fight_view, 1)
 
         focus_search = QAction("Find in fight", self)
@@ -380,6 +422,13 @@ class MainWindow(QMainWindow):
         # failing to read poll after poll. Permanent, so a status message
         # never hides it; it goes when its source says the problem cleared
         self._warnings = {}
+        # The game version against the bundled data's, and what the log
+        # named that the data does not know (issue #173): a label of its
+        # own, beside the warnings, shown only when there is something to say
+        self._data_check = None
+        self.data_label = QLabel("")
+        self.data_label.setVisible(False)
+        self.statusBar().addPermanentWidget(self.data_label)
         self.warning_label = QLabel("")
         self.warning_label.setVisible(False)
         self.statusBar().addPermanentWidget(self.warning_label)
@@ -435,10 +484,12 @@ class MainWindow(QMainWindow):
         self.worker.archive_event.connect(self._on_archive_event)
         self.worker.diagnostic.connect(self._on_diagnostic)
         self.worker.warning.connect(self._on_warning)
+        self.worker.data_check.connect(self._on_data_check)
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
         self.worker.parse_progress.connect(self._on_parse_progress)
+        self.worker.trial_result.connect(self._on_trial_result)
 
         requests = ((self.request_archive, self.worker.archive_now),
                     (self.request_restart, self.worker.restart_monitoring))
@@ -525,6 +576,7 @@ class MainWindow(QMainWindow):
         that lives here; the thread holds it weakly, so it is never the one
         to free it (see gui/engine_worker.py on freeing Qt objects)."""
         self._review = ReviewRunner()
+        self._backfilling = False  # the review thread is reading the split logs
         self._review_bridge = _ReviewBridge(self)
         self._review_bridge.event.connect(self._on_review_event)
         self.review_cancel_button.clicked.connect(self._review.cancel)
@@ -574,12 +626,90 @@ class MainWindow(QMainWindow):
             self._ask_review_range(event)
         elif event.kind == "loaded":
             self._on_review_loaded(event.shown, event.fights)
+        elif event.kind == "indexed":
+            # The fight history grew: the run rows and the pane read it
+            self.statusBar().showMessage(event.label, 15000)
+            self.history_list.refresh_all_runs()
+            if self.history_list.current_entry() is not None:
+                self._show_fight()
+        elif event.kind == "cancelled" and self._backfilling:
+            self.statusBar().showMessage(
+                "Fight history paused: Build from split logs in Settings carries on "
+                "where it stopped", 15000)
+            self.history_list.refresh_all_runs()
         elif event.kind == "cancelled":
             self.statusBar().showMessage(f"Review of {Path(event.path).name} cancelled", 8000)
         elif event.kind == "failed":
             self.statusBar().clearMessage()
+            what = "build the fight history from" if self._backfilling else "review"
             QMessageBox.warning(self, "Review",
-                                f"Could not review {event.path}:\n{event.reason}")
+                                f"Could not {what} {event.path}:\n{event.reason}")
+        self._backfilling = False
+
+    # ---- the fight history's backfill (fight_index, issue #170) ----
+
+    def _split_folder(self):
+        """The split folder: the one set, else the log's own (the
+        splitter's rule, as split retention reads it)."""
+        try:
+            return split_retention.split_folder(
+                self.config.get("split.dir") or "",
+                split_retention.resolve_log(self.config.get("log_path") or ""))
+        except OSError:
+            return None
+
+    def history_status(self) -> str:
+        """Settings' line on the fight history: what it holds and where."""
+        count = len(self.fight_index)
+        held = (f"{count} boss fight{'s' if count != 1 else ''} on "
+                f"{self.fight_index.sessions()} day{'s' if self.fight_index.sessions() != 1 else ''}"
+                if count else "No boss fights yet")
+        return f"{held}, in {self.fight_index.path}"
+
+    def start_backfill(self, folder=None) -> tuple[bool, str]:
+        """Read the split logs into the fight history on the review thread
+        (gui.review_runner.ReviewRunner.backfill); the status bar shows the
+        progress and its Cancel button stops it. *folder*: the split folder
+        to read (Settings passes the one in its fields, saved or not), else
+        the saved one. (whether it started, what to tell the reader)."""
+        folder = Path(folder) if folder else self._split_folder()
+        if folder is None or not folder.is_dir():
+            return False, "There is no split folder to read: set one under Per-encounter split files."
+        if self._review.running:
+            return False, "A review is still loading: cancel it first, then build again."
+        self._backfilling = True
+        self._set_review_busy(True)
+        self._on_parse_progress("Fight history: looking through the split logs", 0, 0)
+        if not self._review.backfill(self.config, str(folder), self.fight_index,
+                                     self._review_notify()):
+            self._backfilling = False
+            self._set_review_busy(False)
+            return False, "A review is still loading: cancel it first, then build again."
+        return True, f"Building from {folder}: see the status bar."
+
+    def _offer_backfill(self):
+        """Once, while the fight history is empty and the split folder holds
+        logs: a line in the status bar saying where to build it (no
+        pop-up). Settings notes that it was offered."""
+        if len(self.fight_index) or self.config.get("history.backfill_offered", False):
+            return
+        folder = self._split_folder()
+        if folder is None:
+            return
+        try:
+            logs = sum(1 for path in folder.iterdir() if fight_index.is_split_name(path.name))
+        except OSError:
+            return
+        if not logs:
+            return
+        self.statusBar().showMessage(
+            f"Your fight history is empty: Settings, Fight history, Build from split logs "
+            f"reads your {logs} split log{'s' if logs != 1 else ''}", 60000)
+        self.config.set("history.backfill_offered", True)
+        try:
+            self.config.save()
+        except OSError:
+            pass
 
     def _ask_review_range(self, event):
         """The whole log, or its most recent sessions holding at least
@@ -635,6 +765,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._ticker.stop()
+        if self._banner_burst is not None:
+            self._banner_burst.cancel()  # its recognition thread ends with the window
+            self._banner_burst = None
         self.update_poller.stop()  # a thread still checking is ignored
         self._retention_first.stop()
         self._retention_daily.stop()
@@ -649,6 +782,8 @@ class MainWindow(QMainWindow):
         except (RuntimeError, TypeError):
             pass
         self._save_window_layout()
+        # Lines a held file kept queued get one more try (fight_index)
+        self.fight_index.flush()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
         # block as long as it takes rather than proceed with it running.
@@ -667,11 +802,19 @@ class MainWindow(QMainWindow):
 
     # ---- engine events (UI thread) ----
 
+    def _index_fight(self, entry):
+        """A live boss fight into the fight history (fight_index): its line
+        is appended when it differs from the one held under its key, so a
+        restart's replay of the session adds nothing."""
+        self.fight_index.add(fight_line(entry, __version__))
+
     @Slot(object)
     def _on_fight_completed(self, entry):
         if self._restart_pending:
             return  # from the analyzer Settings is replacing
+        self._index_fight(entry)
         self._fights.append(entry)
+        self._attach_banner(entry)
         if self._review_fights is None:
             row = self.history_list.add_fight(entry)
             if self._follow_live:
@@ -686,6 +829,8 @@ class MainWindow(QMainWindow):
         fight on screen."""
         if self._restart_pending:
             return
+        self._attach_banner(entry)
+        self._index_fight(entry)
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             self._show_fight()
@@ -765,17 +910,37 @@ class MainWindow(QMainWindow):
         self.warning_label.setStyleSheet(state_style("none", self._dark))
         self.warning_label.setVisible(bool(text))
 
+    @Slot(object)
+    def _on_data_check(self, check):
+        """The live session's game data check (data_staleness, issue #173)."""
+        self._data_check = check
+        self._refresh_data_label()
+
+    def _refresh_data_label(self):
+        """One line, amber like a stale log, with the ids and names in its
+        hover; hidden when the data is current."""
+        text = status_text(self._data_check)
+        tooltip = status_tooltip(self._data_check)
+        self.data_label.setText(text)
+        self.data_label.setToolTip(tooltip)
+        self.data_label.setAccessibleName(text)
+        self.data_label.setAccessibleDescription(tooltip)
+        self.data_label.setStyleSheet(state_style("stale", self._dark))
+        self.data_label.setVisible(bool(text))
+
     @Slot(str)
     def _on_waiting_for_log(self, expected):
         self._last_status = None
         self._refresh_freshness_label()
-        where = expected or "known ESO log locations"
+        where = html.escape(expected or "known ESO log locations")
         self._show_placeholder(
             f"Waiting for Encounter.log…<br><br>"
             f"Expected at:<br><code>{where}</code><br><br>"
-            f"Enable encounter logging in ESO (/encounterlog) or install the "
-            f"Easy Stalking addon. Monitoring starts automatically when the "
-            f"file appears.")
+            f"Enable encounter logging in ESO (/encounterlog), or install an "
+            f"addon that turns it on for you, one or the other but not both: "
+            f"Always Logging (from GitHub, github.com/brainsnorkel/AlwaysLogging) "
+            f"or Easy Stalking (ESOUI or Minion). "
+            f"Monitoring starts automatically when the file appears.")
 
     @Slot()
     def _on_monitoring_restarting(self):
@@ -788,14 +953,28 @@ class MainWindow(QMainWindow):
         self._fights.clear()
         if self._review_fights is None:
             self.history_list.clear()
+        # The new analyzer checks its session's data afresh
+        self._on_data_check(None)
 
     @Slot(str)
     def _on_monitoring_started(self, path):
+        self._log_path = path
+        # The fights replayed at attach came before the log was known: the
+        # banners saved beside it are found now (banner_capture, #167)
+        for entry in self._fights:
+            if getattr(entry, "trial_result", None) and not getattr(entry, "banner_path", None):
+                self._attach_banner(entry)
+                if getattr(entry, "banner_path", None):
+                    self.history_list.update_fight(entry)
         self.statusBar().showMessage(f"Monitoring {path}", 8000)
         if not self._fights:
             self._show_placeholder(
                 "Monitoring for encounters… fight summaries appear here "
                 "as combat ends.")
+        # After 'Monitoring …', which would replace it (fight_index)
+        if self._backfill_hint_due:
+            self._backfill_hint_due = False
+            self._offer_backfill()
 
     @Slot(str, list)
     def _on_review_loaded(self, path, fights):
@@ -1014,7 +1193,17 @@ class MainWindow(QMainWindow):
         # same per-slot data. Death-recap buttons and the build link on each
         # player's name show in both views
         tooltips = death_tooltips(entry, names)
-        tooltips.update(build_tooltips(entry, names))
+        # Each named player's last kills of the boss, and the pull against
+        # the earlier kills (fight_index, issue #170)
+        kills = earlier_kills(self.fight_index, entry)  # once for the whole page
+        histories = {}
+        for p in entry.players:
+            handle = str(p.get("name") or "")
+            if handle.startswith("@") and not p.get("companion"):
+                histories[str(p.get("unit_id", ""))] = player_history_text(
+                    entry, handle, player_history(self.fight_index, entry, handle, kills), names)
+        history = comparison_text(comparison(self.fight_index, entry, kills))
+        tooltips.update(build_tooltips(entry, names, histories))
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
@@ -1042,7 +1231,8 @@ class MainWindow(QMainWindow):
                                             text_color=text_color,
                                             pen_crit_options=pen_crit_options,
                                             names=names,
-                                            line_px=QFontMetrics(self.fight_view.font()).height()))
+                                            line_px=QFontMetrics(self.fight_view.font()).height(),
+                                            history=history))
         self._apply_search()
 
     def _show_pen_crit(self, unit_id):
@@ -1287,6 +1477,21 @@ class MainWindow(QMainWindow):
                 names=self._names_for(entry)))
             self.statusBar().showMessage("Fight summary copied to clipboard", 3000)
 
+    def _copy_session(self):
+        """Copy session: every fight of the list, live or under review, as
+        a recap (session_recap), names through the Hide names switch; the
+        status bar says how long it is against a Discord message."""
+        fights = self._current_fights()
+        if not fights:
+            self.statusBar().showMessage("No fights to copy", 3000)
+            return
+        text = recap_text(fights, NameMask.for_entries(fights, self._hide_names))
+        QGuiApplication.clipboard().setText(text)
+        note = f"Session recap copied to clipboard, {len(text):,} characters"
+        if len(text) > DISCORD_LIMIT:
+            note += f": a Discord message takes {DISCORD_LIMIT:,}, so paste it in parts"
+        self.statusBar().showMessage(note, 6000)
+
     # ---- actions ----
 
     def _confirm_archive(self):
@@ -1310,8 +1515,122 @@ class MainWindow(QMainWindow):
             updates = f"Update channel: {name} ({offers})"
         show_about(self, __version__, updates)
 
+    # ---- the trial score banner (banner_capture, issue #167) ----
+
+    def _banner_folder(self):
+        """Where the banners go: the Settings folder, else Banners beside
+        the monitored log. The log is the one the engine reported, or the
+        one the config resolves to: the session replayed at attach delivers
+        its fights before monitoring_started is sent, and their banners
+        must be found then."""
+        configured = self.config.get("banner.dir")
+        if configured:
+            return Path(configured)
+        log = self._log_path
+        if not log:
+            from app_startup import resolve_log_path
+            log = resolve_log_path(self.config)
+        return Path(log).parent / "Banners" if log else None
+
+    @Slot(object)
+    def _on_trial_result(self, result):
+        """END_TRIAL, as the engine reads it: start the burst now, with
+        the fight to attach the banner to still to come (END_COMBAT trails
+        the line by up to 6 s and the banner is up for ten). Only for a
+        live result, with the capture on, one burst at a time, one try per
+        run, never during a review."""
+        from banner_capture import BannerTarget, existing_banner
+        if self._restart_pending or self._review_fights is not None:
+            return
+        target = BannerTarget.from_result(result)
+        if target is None or target.key in self._banner_done:
+            return
+        folder = self._banner_folder()
+        if existing_banner(folder, target) is not None:
+            return  # found when the fight arrives
+        if (sys.platform != "win32" or not self.config.get("banner.enabled", False)
+                or folder is None or self._banner_burst is not None or not target.is_live()):
+            return
+        from gui.banner_burst import BannerBurst
+        self._banner_done.add(target.key)
+        # What the burst saw goes to banner.log, beside the settings and crash.log
+        burst = BannerBurst(target, folder, self, log_path=Path(self.config.path).parent / "banner.log")
+        burst.finished.connect(self._on_banner_finished)
+        self._banner_burst = burst
+        self.statusBar().showMessage("Capturing the score banner…", 4000)
+        burst.start()
+
+    def _attach_banner(self, entry):
+        """A fight carrying a run's result: give it the banner captured
+        this session, or the one already saved for the run (the history is
+        rebuilt from the log at every start), or hand it to the burst still
+        running for it, which attaches it when it reports."""
+        from banner_capture import BannerTarget, existing_banner
+        if getattr(entry, "banner_path", None):
+            return
+        target = BannerTarget.from_entry(entry)
+        if target is None:
+            return
+        path = self._banner_files.get(target.key)
+        if path is None:
+            path = existing_banner(self._banner_folder(), target)
+        if path is not None:
+            entry.banner_path = path
+            return
+        burst = self._banner_burst
+        if burst is not None and burst.target.key == target.key:
+            burst.entry = entry
+
+    @Slot(object, str)
+    def _on_banner_finished(self, path, message):
+        burst = self._banner_burst
+        self._banner_burst = None
+        self.statusBar().showMessage(message, 8000)
+        if path is None or burst is None:
+            return
+        self._banner_files[burst.target.key] = path
+        entry = burst.entry
+        if entry is None:
+            return  # the fight is still to come: _attach_banner finds the file
+        entry.banner_path = path
+        row = self.history_list.update_fight(entry)
+        if row is not None and row == self.history_list.currentRow():
+            self._show_fight()
+
+    @Slot(str)
+    def _show_banner(self, action):
+        """The result strip's banner links: open the PNG, save a copy
+        elsewhere, or put the image on the clipboard."""
+        import shutil
+        entry = self.history_list.current_entry()
+        path = getattr(entry, "banner_path", None) if entry is not None else None
+        if not path or not Path(path).is_file():
+            self.statusBar().showMessage("The score banner file is gone", 5000)
+            return
+        path = Path(path)
+        if action == "save":
+            target, _ = QFileDialog.getSaveFileName(
+                self, "Save the score banner as", str(Path.home() / path.name), "PNG image (*.png)")
+            if target:
+                try:
+                    shutil.copyfile(path, target)
+                    self.statusBar().showMessage(f"Saved {target}", 5000)
+                except OSError as exc:
+                    self.statusBar().showMessage(f"Could not save the banner: {exc}", 8000)
+        elif action == "copy":
+            from PySide6.QtGui import QImage
+            image = QImage(str(path))
+            if image.isNull():
+                self.statusBar().showMessage("The score banner could not be read", 5000)
+                return
+            QGuiApplication.clipboard().setImage(image)
+            self.statusBar().showMessage("Score banner copied", 4000)
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
     def _open_settings(self):
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, self, history_status=self.history_status(),
+                                on_build_history=self.start_backfill)
         updates_before = self._update_settings_key()
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()

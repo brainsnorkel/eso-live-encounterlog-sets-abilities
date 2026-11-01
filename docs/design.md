@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2459](../src/esolog_tail.py#L2459)*
+*[src/esolog_tail.py:2845](../src/esolog_tail.py#L2845)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:81](../src/esolog_tail.py#L81)*
+*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1786](../src/esolog_tail.py#L1786)*
+*[src/esolog_tail.py:1924](../src/esolog_tail.py#L1924)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1801](../src/esolog_tail.py#L1801)*
+*[src/esolog_tail.py:1939](../src/esolog_tail.py#L1939)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,15 +57,155 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:75](../src/esolog_tail.py#L75)*
+*[src/esolog_tail.py:82](../src/esolog_tail.py#L82)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
+
+## Fight boundaries: combat with no enemy
+
+### ESOLogAnalyzer._note_enemy_met
+
+*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
+
+A combat event of *result* and *hit_value*, or a cast
+(fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
+'current/max' health on the line: the fight it falls in met an
+enemy when it passed between the group (a player, a player's pet or
+companion) and an enemy (a hostile unit, never a companion or a
+released pet, see _opener_enemy). The group's line on an enemy
+counts whatever its result or value, but on a dead one only the kill
+(a hit above 0, or DIED_XP); an enemy's line on the group counts as
+the opener counts a monster's act (ENEMY_ACT_RESULTS): not from a
+dead enemy, and not a mechanic (fight_opener.is_mechanic).
+
+Design: Combat with no enemy in it. The game enters combat for more
+than enemies: for the group's weapon enchants, area damage and heavy
+attacks on a neutral unit (Vateshran Hollows' Brimstone Orbs, broken
+to cross the lava, or a Tomeshell in the Infinite Archive), for the
+hits of a neutral trap (the Aetherian Archive's Shock and Frost
+Traps), a unit the log never added (Cradle of Shadows' Pull of
+Darkness), a hazard (the Infinite Archive's Molten Destruction), the
+Arcane Knot's Temporal Splinters or a dead boss's poison, or for
+nothing the log shows (two half-minute spells in Sunspire with no
+combat event at all). Each ends with END_COMBAT and was listed as a
+fight with nothing in it. Over the 395 split logs of January to
+November 2026 that hold fights (9,023 of them), 58 in 29 logs met no
+enemy from 10 s before BEGIN_COMBAT (since the last fight ended, as
+the opener reads it, see fight_opener) to END_COMBAT: none had a hit
+on an enemy or a player's death, 13 took damage, 15 lasted under a
+second. Such combat is held back at END_COMBAT and never listed,
+unless a player died in it or dies just after it ends (see
+LATE_DEATH_GRACE_MS): a death to a trap keeps its fight and recap.
+A trial's END_TRIAL in or after one goes to the last fight listed
+(_trial_won_before_held): in one Lucent Citadel run it came 9 s
+after Xoryn died, in an Arcane Knot combat, and now sits on Xoryn's
+fight. Replayed with this rule, that was the only change to the
+entries of the fights still listed. The 10 s before the line count
+because the group's first hits often land before it: a survey of
+combat events found 30 fights that met an enemy only there, none
+with damage of its own (the hits went to the fight before, issue
+#162). A cast counts as the opener's does: five of the survey's
+empty fights stay listed for a monster's cast at a player or a
+player's at a boss, acts the opener names.
+
+## The fight's opener
+
+### src/fight_opener.py
+
+*[src/fight_opener.py:1](../src/fight_opener.py#L1)*
+
+Who opened the fight, and with what (engine side, no Qt). Issue #159.
+
+Design: the fight's opener is the first hit or taunt by a player, a
+player's pet or a companion on a hostile enemy, named by the ability or
+effect that damaged or taunted. Until 0.29 the fight pane put a `*` after
+the player who dealt the fight's first damage after BEGIN_COMBAT. A survey
+of 393 split logs (8,816 fights, January to October 2026) showed why that
+mark was often wrong, and what a line could say instead.
+
+BEGIN_COMBAT is the logging player's line, not the group's. The game writes
+it when the logging player's client enters combat, and a group member's hit
+usually lands a moment earlier: a player hit or taunt came before the line
+in 4,243 fights (48.1%), a median 14 ms early, and the opener itself landed
+before the line in 4,080 of 7,204 player-first fights. Such a hit fell on
+the previous, finalized encounter and was lost to the new one, except in a
+zone's first fight, so the star marked someone other than the opener in
+1,385 of 7,176 player-first fights (19.3%; 32.6% in trials). The recorder
+therefore reads a bounded memory of the moments before the line: the
+settled acts of the last OPENER_WINDOW_MS (10 s) after the previous
+END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move; the
+fight time and every figure stay BEGIN_COMBAT to END_COMBAT.
+
+A millisecond is judged whole. Acts are buffered until the log moves past
+their millisecond, since fan-out casts, shield-absorb pairs and taunt ties
+need all of it; within it, line order decides. BEGIN_COMBAT adopts the
+pending millisecond (1,294 openers sit in the line's own millisecond,
+written before it), and END_COMBAT settles it into the fight before the
+fight is built.
+
+A quarter of openers taunt (1,822 of 7,204; 43.3% in trials). The game
+writes a TAUNTED that shares its cast id with the taunting skill's cast and
+hits; it can trail the hit by a millisecond (173 of 5,382 hit openers had
+the same player's TAUNTED 1 to 5 ms later). So the opener is a taunt when
+the same unit's TAUNTED lands in its millisecond, or carries its cast id
+within TAUNT_TIE_MS; a TAUNTED before any counted hit opens by itself, and
+another player's never counts.
+
+Naming. A hit is named by its own ability. The pressed skill comes from the
+cast's BEGIN_CAST, kept by cast id, and is added only when its name
+differs: compared by id, 2,695 of 7,122 opening hits would print "Razor
+Caltrops, from Razor Caltrops" (a DoT tick carries another id than its cast
+under the same name), while 189 are real renames ("Concussion, from
+Elemental Susceptibility"). A DAMAGE_SHIELDED line names the absorbing
+shield, not the attack; the attack is the line after it with the same cast
+id, source, target and millisecond, carrying the rest of the damage or 0.
+An absorb is named by that partner, else by its cast's BEGIN_CAST, never by
+the shield. A hit counts only above 0, as in the dps rules.
+
+A monster acted first in 1,545 fights (17.5%, a lower bound). The log has
+no threat or aggro line, and the addon API has none either, so a fight
+started by walking into a monster's range cannot be told from a ranged mob
+opening on sight. What the log does show is that a monster acted before
+anyone hit or taunted, and whom it went for: a hostile's BEGIN_CAST names
+its target, and so does its COMBAT_EVENT. The line says exactly that and
+never "pulled". The monster's act is kept only when the opener comes
+OPENER_MONSTER_MARGIN_MS (100 ms) or more later: inside it sit same-moment
+races and Tideborn Taleria's Slaughterfish pulls (186 fights). When a
+player had already begun a cast at a living enemy before the monster acted
+(507 fights by a recount over the logs, 191 of them only before the line),
+"first" would be false, so the line names the cast instead.
+
+Noise is never the monster's opening. A naive rule would be wrong in 1,009
+fights (11.4%): a dead monster's lingering area or DoT still "hits" players
+after its DIED_XP (its health on the line is 0, 859 fights first); a hazard
+is a unit named as its ability (Scorching Barrier, 119); a scripted cast
+reaches three or more players in one millisecond (Nahviintaas' Look At, 23);
+a DOT_TICK is an effect applied earlier (8). A few scripted mechanics pass
+every filter and are listed by monster id (the Arcane Knot of Lucent
+Citadel, whose Temporal Splinters opened 40 fights while the first player
+hit came a median 13 s later; the second Tideborn Taleria unit that throws
+the Slaughterfish Attack) or by ability id (Look At, Music Musicer). A unit
+that ever had a player owner is not a monster: a released pet turns
+HOSTILE with owner 0.
+
+The memory's edge. A candidate whose enemy died or left before the line is
+dropped (a hit's or cast's target, a monster act's source): it belonged to
+the last pack. An opener within EDGE_AFTER_START_MS of the line that started
+the memory, or in the window's oldest second, may not be the first act at
+all, so the line drops "first" and the time there: "@tank was already
+fighting Yokeda Kai (Goading Throw) when the fight began".
+
+Times. The line's first act gets ", 2.0 s into the fight" or ", 4.4 s
+before the fight's start" only from TIME_SHOWN_MS away from the line, so a
+median lead of 14 ms reads as no time at all and nothing prints "1.0 s";
+an arena's first seconds are its spawn, so an arena line never says "into
+the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ## Starting mid-session
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4147](../src/esolog_tail.py#L4147)*
+*[src/esolog_tail.py:4766](../src/esolog_tail.py#L4766)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -108,7 +248,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:352](../src/esolog_tail.py#L352)*
+*[src/esolog_tail.py:364](../src/esolog_tail.py#L364)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -221,6 +361,36 @@ someone who does not hold its mastery. Font of Power's 263878 has: three
 or four gains late in a session from Sorcerers whose Calculated Defense
 and Conservation of Energy fire from the first minutes to the last; most
 sessions that show Font of Power show dozens to hundreds of gains.
+
+Cycle Unending's effect (263532) is the one a pet fires: its source is the
+Necromancer's Blighted Blastbones, Skeletal Archer or Grave Lord's
+Sacrifice, and it lands on their owner (220 of 239 gains in twelve logs).
+So the engine credits a mastery effect whose source is a player's pet to
+that player (the encounter's pet_ownership). Before, 84% of Necromancer
+rows showed one mastery, and no Necromancer damage dealer ever showed two;
+in a replay of the 103 split logs of September and October 2026 the
+change added Cycle Unending to 792 rows, all Necromancers, none of them
+gaining a third, and nothing else in any fight changed (issue #149).
+
+A character can take two masteries (MAX_MASTERIES), and a row often shows
+one. After that change, 1,581 of 13,818 pure-class rows (11%) in those
+logs did: 915 were fights before the second showed later in the same log,
+since a proc mastery is known only once it fires (Booming Voice was never
+on a session's first fight, Erudite's Rigor on 16% of them, Abyssal
+Emergence 39%, Bright Harbinger and Lead from the Front 43%); the rest
+came from 59 characters' logs in which it never showed, Templars the most
+(Bastion of Light is never logged). Two things follow. The engine fills a
+mastery it finds into the player's earlier fights of the same BEGIN_LOG
+session, on rows that show fewer than two, and announces each of those
+fights again: a mastery does not change within a session, which is why it
+is kept for the rest of it. That leaves 674 rows (5%) showing one, none of
+them before a second that shows later; Templars 23% of theirs, Sorcerers
+18%, every other class 6% or less. And where one still shows, the fight
+pane and build window say a second is likely, listing the class's others
+the likeliest first for the player's role (likely_masteries, from the
+file's mastery_order; the generator says how the order was counted); a
+mastery the log never names is listed last and marked
+(masteries_never_logged).
 
 ## Ability icons and ESO-Hub links
 
@@ -582,10 +752,27 @@ October 2026):
   in the level field and a health pool only.
 - The logging player's own companion is added with reaction COMPANION and
   ownerUnitId set to the logging player. Another member's is added as
-  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner (sometimes
-  renaming the unit "<handle>'s Companion"), which track_pet_ownership
-  reads for every pet. A companion is known by its reaction or its monster
-  id, and its name is taken from its UNIT_ADDED, never from the rename.
+  FRIENDLY with owner 0; a later UNIT_CHANGED names the owner, which
+  track_pet_ownership reads for every pet. A companion is known by its
+  reaction or its monster id.
+- Another member's companion is nearly always added under the name
+  "<handle>'s Companion" (141 of 150 such UNIT_ADDED lines in the October
+  2026 splits; the logging player's own is always added under its own
+  name). That handle can be one the log keeps from the owner: a player
+  added with neither name nor handle (the engine's ``anon``) is named only
+  by their companion in 217 file and handle pairs over 117 split logs,
+  199 handles. Replayed, 65 companion rows read "@handle's Companion"
+  straight under an ``anon`` row, and the name reached the buff timeline,
+  the penetration casters and the death recaps.
+- So the log's name for a companion is never used. Every companion, the
+  logging player's own included, is "<owner>'s Companion" (shown_name;
+  Chris, 2026-10-29): the owner's handle, or ``anon`` for an owner the log
+  gave no handle, however many anonymous players there are, and for a
+  companion whose owner is not known yet. The name follows the owner: it
+  is set when the owner is (CombatEncounter.name_companions), and again
+  when an anonymous owner is named on joining the group (presence.py,
+  rule 6). The Hide names mask hides the owner part as it hides the
+  owner's own name (gui.name_mask).
 - A companion gets a new unit id every time it is summoned again (after a
   death, a zone change, a dismissal): four unit ids for one Isobel in a
   solo Moon Hunter Keep run of 2026-10-26, where she died five times, so
@@ -904,6 +1091,203 @@ for how the extractor and the client are found), or reads an extracted
 en.lang.csv given with --lang-csv. Then rerun scripts/generate_gear_data.py,
 which reports the sets the snapshot added.
 
+## Set buffs: which set a Major or Minor buff came from
+
+### scripts/generate_set_buffs.py
+
+*[scripts/generate_set_buffs.py:1](../scripts/generate_set_buffs.py#L1)*
+
+Generate data/sets/set_buffs.json: the Major and Minor buffs a set's bonus
+grants, by the ability id the encounter log writes for them, so the uptime
+line can name the set behind a "Major Slayer" or a "Major Courage" (issue
+#79, decision 5).
+
+The log names a buff and never the set it came from, and the game's files
+hold no link between the two. UESP's mined skills were the first plan:
+findSetBonusSkills.php writes a set's name into minedSkills.setName by
+matching the bonus text against ability descriptions. Checked on 2026-10-31
+against 395 split logs, that column ties each set to the effect named after
+the set ("Pillager's Profit", 184 of 216 sets worn), which the uptime line
+already shows under the set's name, and misses the generic buffs: of 58
+Major or Minor buffs the logs tie to one set, one was in UESP's table
+(Roaring Opportunist got 135920, while its Major Slayer is 93109 and
+135923). A generic buff's description never matches a bonus's text.
+
+So this script reads split logs instead. Most sources write a Major or
+Minor buff under an id of their own: Roaring Opportunist's Major Slayer is
+135923, War Machine's 93442, Master Architect's 93120. Some ids are shared:
+the wearers of all three also write 93109 (in 96%, 91% and 91% of their
+sessions). Only an id that one set writes can name it. Per log session and player it
+takes the sets the player had active (``piece_counts``, a perfected set and
+its base counted together, as the game counts them) and every effect id the
+player was the source of (EFFECT_CHANGED). A buff id is tied to a set when
+all of these hold:
+
+1. Its name ("Major Courage") is in that set's bonus text
+   (data/sets/bonuses_en.json), on a bonus whose pieces the player wears.
+   This drops the buffs that only ride along with what is worn beside the
+   set: Jorvuld's Guidance wearers source Roaring Opportunist's Major Slayer
+   in 86% of sessions, because the two are worn together.
+2. At least WEARER_SHARE of the sessions wearing the set source it.
+3. At most OTHER_SHARE of the sessions wearing no set that names the buff
+   source it, so an id that something else writes too is not taken:
+   Mender's Ward wearers source Major Vitality 61713 in 95% of sessions, but
+   so do 3.8% of everyone else; the set's own 113653 is sourced by no one
+   else. Every link that reads right sat at 0.7% or below. Leaving out every
+   set that names the buff lets two sets share a buff name with their own
+   ids (Spell Power Cure's Major Courage 66902, Olorime's 109994).
+4. At least MIN_SESSIONS sessions wear the set.
+
+An id that passes for two sets names neither and is left out (printed, not
+written).
+
+It knows only sets someone in the logs wore MIN_SESSIONS times, and reads
+the bonus text of the bundled snapshot. Byte-identical copies of one split
+(issue #85) are read once. The output holds ids and the game's names only,
+nothing about the players.
+
+Run after a patch, or when the logs hold more sets, then review the printed
+table before committing the file:
+    python scripts/generate_set_buffs.py                    # the app's split folder
+    python scripts/generate_set_buffs.py --dir D:/esologs/splits
+
+## Game data against the game's version: the staleness check
+
+### src/data_staleness.py
+
+*[src/data_staleness.py:1](../src/data_staleness.py#L1)*
+
+The bundled game data against the game the log was written by (engine
+side, no Qt). Issue #173.
+
+Design: the app ships tables built from the game and from sites that follow
+it: set names (the client's language file and the LibSets workbook), set
+bonus texts and set buffs, the ESO-Hub link maps, the ability icons, armor
+weights, weapon types, poison names, food, class passives and masteries,
+weapon skill lines and skill target kinds. After a game update some of it
+lags, and until now the app showed the symptoms one at a time, each in its
+own place: ``Set#<id>`` for a set the tables do not name, a dash in the
+build window's Type column for an item they do not know, a skill's name as
+text where its icon would be, a set name with no ESO-Hub link. Nothing said
+that the data was behind, so the maintainer learned it from a user.
+
+Two facts make the check cheap. Every logging session's first line names
+the game version, ``BEGIN_LOG, time, 15, "NA Megaserver", "en",
+"eso.live.12.1"``; and ``data/version.json`` names the version the bundle
+was built against, written by ``scripts/stamp_data_version.py`` after a
+refresh, with each table's own date. Only the two numbers after the branch
+count (12.1): the client's build number never reaches the log, and a PTS
+log (another branch) compares by the same numbers. A log written by a newer
+version than the bundle's says the data is behind before any symptom shows.
+
+The symptoms are counted where the log first names them, a player's
+PLAYER_INFO line: the gear's set ids and item ids, and the abilities on the
+two bars with the icons their ABILITY_INFO lines named. Counted, per logging
+session (a new BEGIN_LOG starts again):
+
+- a set id the bundled set data does not name;
+- an armor or weapon item id the bundled weight or type table does not
+  know, for an item at champion level or of a set. A new character's
+  starting clothes, the Soul-Shriven Shirt (item 35029) and Sandals (35036),
+  are in neither UESP table and were the only unknown items in a year of
+  split logs (two logs, 2026-08 and -10): plain low-level items are left out
+  so they never read as stale data;
+- an ability on a bar whose icon the bundle lacks (icons are looked up by
+  the stem of the path the log names);
+- a set name with no ESO-Hub page in the link map.
+
+Measured over the 378 distinct split logs of January to October 2026
+(four game versions, 11.2 to 12.1), every counter was zero with the data of
+1 November 2026, so the status line stays empty in normal play.
+
+Two symptoms are not counted. Food, because no test from the log is
+reliable: the 47 listed foods seen use 24 icons of their own
+(``crafting_meat_001``, ``plate_of_sugarskulls``,
+``disastrously_bloody_mara``), and the family test the food script uses as
+a hint (icons starting crafting_, store_, event_ or plate_) flagged a quest
+disguise, Q3854 Goblin Disguise, as a food on one of the 2,188 PLAYER_INFO
+lines with no listed food, while a new food with an icon like the Bloody
+Mara's would pass it unseen. The maintainer's script reports that hint
+instead (``scripts/check_data_staleness.py``). And monsters' icons: the bundle
+carries the player skills' icons and the ``death_recap_`` family, so 24 of
+the 617 killing abilities logged on 12.1 read as text in a death recap by
+design, not because the data is old.
+
+The engine sends a check when a session begins and whenever a PLAYER_INFO
+line names something new, so a session costs one message when nothing is
+found. The check is an immutable value the GUI can keep.
+
+### scripts/stamp_data_version.py
+
+*[scripts/stamp_data_version.py:1](../scripts/stamp_data_version.py#L1)*
+
+Write data/version.json: the game version the bundled data was built
+against, the date, and each bundled table's own date (issue #173).
+
+The app compares the version with the one every logging session's BEGIN_LOG
+line names, and shows a status line when the log is newer
+(src/data_staleness.py); the About dialog lists the dates. Run it as the
+last step of a data refresh, once the tables are committed or ready to be:
+
+```
+    python scripts/stamp_data_version.py --game-version eso.live.12.1
+    python scripts/stamp_data_version.py --log "<a log written by the game now>"
+    python scripts/stamp_data_version.py            (the newest split log)
+```
+
+Without --game-version the version is read from a log's BEGIN_LOG line:
+--log names the file (its last session counts), and with neither the newest
+split log in the app's split folder (the setting, or --dir) is read. The
+date of each table is its own "generated" stamp; the LibSets workbook,
+which has none, gives the date it was last saved. --check exits 1 when a
+table's date no longer matches data/version.json, so a refreshed table
+whose stamp was forgotten is caught (the unit tests run it).
+
+### scripts/check_data_staleness.py
+
+*[scripts/check_data_staleness.py:1](../scripts/check_data_staleness.py#L1)*
+
+Check the bundled game data against a folder of encounter logs, game
+version by game version (issue #173). Run it after a game update, before
+the data refresh, to see what the update broke; it changes nothing.
+
+```
+    python scripts/check_data_staleness.py                (the app's split folder)
+    python scripts/check_data_staleness.py --dir D:/esologs/splits --workers 12
+    python scripts/check_data_staleness.py --data-version eso.live.12.0   (what if)
+```
+
+Two reports, by the game version each logging session's BEGIN_LOG names:
+
+1. **Coverage**: the set ids, armor and weapon item ids, abilities on
+   players' bars, killing abilities and set names the logs name, and how
+   many of them the bundle does not know (the app's own rules, from
+   src/data_staleness.py: a plain low-level item such as a new character's
+   Soul-Shriven clothes is left out, and its count shown apart). It also
+   says in how many sessions the app's status line would have spoken, with
+   the bundle's version or the one --data-version names, and lists the
+   food hint: effects with a food-style icon (the prefixes
+   scripts/generate_food_buffs.py uses) on a player with no listed food. The
+   app does not count food, since that test is only a hint; monsters'
+   icons are listed here for the same reason (the bundle carries the player
+   skills' and the death_recap_ icons only).
+2. **Fires**: every ability id the app depends on (the default tracked
+   effects, the penetration and critical damage rules, the build-issue
+   rules' ids and sets, class passives and mastery effects, werewolf,
+   companion and Fatecarver ids, the cast kinds' ids) and the companions'
+   and boss-flag adds' monster ids, with the sessions of each version it
+   appeared in (an effect, a hit, a cast, a PLAYER_INFO line, a unit). An id
+   that appeared on the previous version and in none of the newest
+   version's sessions is flagged: the game may have renumbered it. A flag on
+   an id the previous version saw in few sessions is weak; the share says so.
+
+Logs are told apart by a hash of their first 256 KB, so the copies the old
+splitter wrote count once: every file is hashed first and only the largest
+copy of each is read, so a truncated split never stands in for its complete
+copy. Zipped splits (``*.log.zip``) are read too. The bars are judged with
+the slots the engine builds (a Rampage shown as its morph), so the coverage
+is the app's own.
+
 ## Solo dungeons: the run's Misfortunes
 
 ### src/misfortunes.py
@@ -1208,14 +1592,39 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:658](../src/gui/build_render.py#L658)*
+*[src/gui/build_render.py:688](../src/gui/build_render.py#L688)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
 the boss (uptime, value, casters) and the buffs on the player, then the
 totals: own, with every debuff at full uptime, and effective (each
 second of the player's damage capped, as Combat Metrics caps each
-hit), against the cap.
+hit), against the cap. The effective line is the conclusion, so it
+sits in a framed row of its own with a 3 px bar at its left edge
+(issue #143): a box rather than an underline, because the app's one
+underline is the hover cue on a clickable name or figure; a table
+cell rather than a <p>, because Qt rich text draws borders on cells
+only; the frame is the build card's hairline, and the bar in the muted
+colour gives the cue the contrast a hairline lacks (about 6:1 against
+the page in either theme), so it is seen without colour vision. The
+muted 'no damage measured' line stays in the plain row: a frame round
+an absence would draw the eye to nothing.
+
+## Section headings: the one element Qt rich text draws a rule on
+
+### _heading_html
+
+*[src/gui/build_render.py:521](../src/gui/build_render.py#L521)*
+
+A section heading with its rule, as a one-cell table head: Qt rich
+text draws borders on table cells and never on a <p>, so the Damage
+dealt and Resources headings, <p> elements with a border-bottom until
+issue #143, had no rule while the gear grid and the Penetration and
+Critical damage heads (the same form inside their tables) had one; the
+damage taken window's section titles (taken_render) take this form too.
+*extra* follows the title (a link, a caption); the anchor, when there
+is one, goes first, where scrollToAnchor finds it: Qt hangs an empty
+named anchor on the next text it lays out, the heading cell.
 
 ## Possible build issues: what the log proves about a build
 
@@ -1387,21 +1796,126 @@ rule, player-fights / distinct characters in that survey:
   Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
   Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
   once named the complete sets worn instead, which read as noise.
+- **A second copy of a group buff set that gave the group next to nothing**
+  (issue #172; 21 copies, by player and set, in 17 of the 378 unique split
+  logs of 12 January to 1 November 2026, on 80 fights; a count of 379 seen
+  once took in a split the app was still writing). The issue proposed each wearer's
+  loss: the group's uptime of the set's buff less the same without that
+  wearer's spans. The log does not support the reading the issue gave it.
+  The game writes one instance of a set's buff per receiver, credited to
+  one wearer at a time: in five fights with two full wearers of Pearlescent
+  Ward, Lucent Echoes, Spell Power Cure, Master Architect or Powerful
+  Assault, no second wearer's GAINED arrived while the first wearer's
+  instance was on that receiver (0 of 6,259 lines; over the corpus, 3,797
+  of 3.78 million for the three whole-group sets, 0.1%, at handovers). Two
+  wearers split the group between them (two Wards, six players each, in a
+  Lucent Citadel fight), so what a wearer is credited with is not what the
+  group would lose without them. Nor does one wearer of a whole-group set
+  reach everyone: with one wearer, living players had Pearlescent Ward a
+  median 89.6% of their living time in groups of 9 to 12 (698 fights),
+  Lucent Echoes 88.7% (737), Xoryn's Masterpiece 87.3% (341), and within
+  the same sessions a second Ward added 9 points (two sessions), a second
+  Echoes a median 6 (four), when the group spread. What the crediting does
+  prove is an upper bound: a receiver's buff is one wearer's at a time, so a
+  wearer credited with almost none of the other players' time added almost
+  nothing. The rule reads each full wearer's credited share of the other
+  group members' time, each for the part of the fight they were there (for
+  Lucent Echoes the members not wearing it, since its wearers never
+  benefit); a player of the zone outside the group is no receiver, or a
+  city or Cyrodiil would dilute the share to nothing. A set's buff ids are
+  joined per receiver first, so two of its buffs on a player at once
+  (Magma Incarnate's Minor Courage and Minor Resolve) count the time once.
+  It flags a wearer whose share stayed under
+  SECOND_SOURCE_SHARE (2%) in every fight of a minute or more of the
+  session that another full wearer was in, provided another wearer's copy
+  reached the group in at least one of them: two Master Architects in a
+  fight with no ultimate cast both read 0.0, and neither is a second copy
+  beside a working one. In those logs' fights of a minute or more with two
+  or more full wearers, the lesser copy's share is a median 22% for Spell
+  Power Cure, 21% for Lucent Echoes, 28% for Pearlescent Ward, 11% for
+  Master Architect, 8% for Saxhleel Champion and 6% for Powerful Assault,
+  Roaring Opportunist and Ozezan the Inferno. The rule finds Saxhleel
+  Champion and Powerful Assault five times each, Spell Power Cure and Lucent
+  Echoes three, Ozezan the Inferno twice, Master Architect, Roaring
+  Opportunist and Xoryn's Masterpiece once, and Pearlescent Ward never; one
+  is an Echoes and Powerful Assault wearer whose copies reached no one in
+  17 Dreadsail Reef fights. A survey that read each player's last
+  PLAYER_INFO line found more, among them members who had left or changed
+  sets (a Ward "wearer" in four Cloudrest fights who no longer wore it); the
+  engine judges each fight's own build. The sets judged are those
+  whose value is the buff they give others (GROUP_BUFF_SETS); a set whose
+  buff is its wearer's own (Kinras's Wrath, Huntsman's Warmask) or a
+  debuff on enemies is never judged, though data/sets/set_buffs.json lists
+  it, since a second copy of a damage set stacks. The buff's spans are kept
+  per wearer and receiver (GroupBuffCredit), not taken from the uptime
+  rules, which the reader can edit away.
+- **A second Enlivening Overflow or From the Brink slotted** (issue #172).
+  A player who slots either Champion Point star lists it in the PLAYER_INFO
+  long-term effects (156008, 156017), and its procs name the holder as
+  source: Enlivening Overflow writes 156012, the 6 s buff on the healed
+  player, and 156011, a hidden effect of 12.0 s (231,505 of 250,241 lasted
+  11 to 13 s, the rest ended with a death); From the Brink 156020, the
+  shield (its value in the target's shield field), and 156019, hidden, 30.0
+  s (2,707 of 4,573). The hidden effect is the per-target cooldown, and every
+  holder shares it: of 282,366 Enlivening Overflow procs, 2 landed on a
+  player while another holder's stood on them (105 while the same
+  holder's did); of 4,572 From the Brink procs, none. Holders take turns.
+  With one holder the 6 s buff covered a median 32% of a 12-player group's
+  time (578 boss fights), with two 36% (295): a second adds about four
+  points against a ceiling of 50%. So the rule counts each holder's procs
+  over the session's fights of a minute or more that had two or more
+  holders: an Enlivening Overflow holder whose procs stayed under
+  STAR_EVEN_SHARE (30%) of an even share of them (15% of the procs with
+  two holders, 10% with three; seven holders sharing evenly are never
+  flagged, where a fixed 15% would flag all of them) is flagged, and a From
+  the Brink holder who never procced while another did (the star needs a
+  heal on a player under 25% health, which a damage dealer who slots it
+  rarely gives). Either is judged only once the other holders have procced
+  STAR_MIN_OTHER_PROCS (5) times in the fights counted: of the 10 From the
+  Brink holders still at no proc when their session ended, five sat beside
+  a holder with one or two procs, which two equal holders leave half the
+  time. The procs are counted per fight (CombatEncounter.note_star_proc)
+  from the fight's BEGIN_COMBAT: the zone's first encounter is made before
+  the pull and reused, and the procs while the group buffed up are not
+  the fight's. A player key that names a unit only until the zone changes
+  ('unit:<id>') is retired then (BuildIssueTracker.retire_players), so a
+  new player on that unit id inherits none of these records.
 
 The lists a later rules text could lift out (the maintainer's separate
-issue) are module data: GROUP_SETS, PROC_SETS, SLAYER_SETS,
-ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables, the
-weapon lines table. The checks themselves are code.
+issue) are module data: GROUP_SETS, GROUP_BUFF_SETS, PROC_SETS, SLAYER_SETS,
+STARS, ELEMENTAL_DRAIN_IDS, OAKENSOUL_SET_ID, the taunt and pull tables,
+the weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:710](../src/build_issues.py#L710)*
+*[src/build_issues.py:1094](../src/build_issues.py#L1094)*
 
 The rules judged over a logging session rather than a fight: the
-proc sets that never fire, and who has taunted (the heavy-armor rule's
-guard). Keyed by the engine's per-session player key; a fight is keyed
-by its start, so a fight the game cut in two and republished replaces
-its own record instead of counting twice. reset() at BEGIN_LOG.
+proc sets that never fire, a second copy of a group buff set or a
+second holder of a Champion Point star that added next to nothing
+(issue #172), and who has taunted (the heavy-armor rule's guard). Keyed
+by the engine's per-session player key; a fight is keyed by its start,
+so a fight the game cut in two and republished replaces its own record
+instead of counting twice. reset() at BEGIN_LOG.
+
+### GroupBuffCredit
+
+*[src/build_issues.py:820](../src/build_issues.py#L820)*
+
+Whose copy of a group buff set's buff each player had, over time
+(issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
+target) unit, in raw log milliseconds.
+
+The game writes one instance of such a buff per receiver, credited to
+one wearer at a time (see the module notes), so a span is that wearer's
+credit for that player. GAINED or UPDATED opens a span when none is
+open (a refresh after a missed GAINED), FADED closes it, and a span
+that resumes within MERGE_GAP_MS of its last close is the same span
+(Pearlescent Ward is written as a FADED and a GAINED every second). A
+zone change ends the open spans (zone_changed: unit ids are handed out
+afresh), so does a unit's removal for its own (forget_unit), BEGIN_LOG
+drops everything (reset), and spans that ended before a published fight
+are pruned (prune_before), as the uptime rules' are.
 
 ### scripts/generate_weapon_skill_lines.py
 
@@ -1635,7 +2149,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:878](../src/esolog_tail.py#L878)*
+*[src/esolog_tail.py:932](../src/esolog_tail.py#L932)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -1649,7 +2163,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:123](../src/app_config.py#L123)*
+*[src/app_config.py:133](../src/app_config.py#L133)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -1676,13 +2190,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:90](../src/esolog_tail.py#L90)*
+*[src/esolog_tail.py:97](../src/esolog_tail.py#L97)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:402](../src/esolog_tail.py#L402)*
+*[src/esolog_tail.py:414](../src/esolog_tail.py#L414)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -1766,7 +2280,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:107](../src/esolog_tail.py#L107)*
+*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -1774,7 +2288,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:125](../src/esolog_tail.py#L125)*
+*[src/esolog_tail.py:137](../src/esolog_tail.py#L137)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -1921,7 +2435,7 @@ panel shows four or fewer.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:618](../src/esolog_tail.py#L618)*
+*[src/esolog_tail.py:646](../src/esolog_tail.py#L646)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -1944,7 +2458,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:744](../src/esolog_tail.py#L744)*
+*[src/esolog_tail.py:792](../src/esolog_tail.py#L792)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -1970,7 +2484,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3349](../src/esolog_tail.py#L3349)*
+*[src/esolog_tail.py:3968](../src/esolog_tail.py#L3968)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2054,13 +2568,23 @@ on every completed run in a year of split logs (146 runs, 2026-01 to -10):
   multiple of 1,000, at most 36,000 (a deathless Maw of Lorkhaj) and at
   least 0 (87 runs with 36 deaths or more). The 35/36 Sunspire run of
   2026-10-21 wrote 35000 with one player death in the log.
-- The maximum is 36 in the 12-player trials, all of which were veteran
-  runs; an arena's is not (a Dragonstar Arena run with 7 deaths kept 14),
-  and a normal trial's was never seen. So the maximum is shown only for a
-  veteran run of a trial in TRIALS, and an arena's or an unknown run's
-  vitality as the points alone.
+- Only veteran runs write it, trials and arenas alike: all 267 BEGIN_TRIAL
+  and 245 END_TRIAL lines in the raw logs and splits (2026-11-01) are in a
+  VETERAN zone, normal Blackrose Prison splits carry no TRIAL_* line, and
+  UESP's Leaderboards page says scores are set in veteran mode only.
+- The maximum (VITALITY_MAX) is the game's starting pool, which UESP gives
+  as "typically 15, 24 or 36", and the runs fit 15 for a solo arena, 24
+  for a four-player one and 36 for a trial. Measured (issue #183):
+  Maelstrom Arena 15 (11 left after the 4 deaths of a solo run, which logs
+  every death), Vateshran Hollows 15 (14 left, 1 death), Dragonstar Arena
+  24 (a published run's banner reads 24/24; ours kept 14 with 7 of its
+  deaths logged). Blackrose Prison's 24 is from a veteran banner Chris
+  saw with the Unchained achievement, 24/24: every logged run used it
+  all. Sanctum Ophidia's 36 is the trial rule alone, no run being logged.
+  A run of an id not in the table shows the points alone.
 - success is T in every END_TRIAL: a run that fails or is abandoned writes
-  none, so there is never a failed result to show.
+  none, so there is never a failed result to show. An earlier veteran
+  Vateshran attempt (December 2025) has BEGIN_TRIAL and no END_TRIAL.
 - Vitality is the log's figure, never 36 less the deaths the engine counts.
   In 38 runs the log holds fewer player deaths than the game charged (3
   logged against 13 in an Aetherian Archive run, 8 against 23 in Hel Ra):
@@ -2075,7 +2599,13 @@ The line comes inside the final fight in 144 of the 146 runs (33 ms after
 the last hit of a Sunspire run) and so belongs to that fight. In the other
 two, both Blackrose Prison, it comes about 4 seconds after END_COMBAT, and
 the engine gives it to the fight it has just sent (ESOLogAnalyzer.
-_handle_end_trial), which frontends then redraw.
+_handle_end_trial), which frontends then redraw. Maelstrom Arena's comes
+2.9 s after END_COMBAT and takes the same path; Vateshran Hollows' and
+Dragonstar Arena's come inside the final fight.
+
+The timer is the game's, rounded to the nearest second, half up, as the
+banner shows it (ZO_FormatTimeMilliseconds): 1,351,407 ms is 22:31 and
+2,649,500 ms is 44:10.
 
 ### src/gui/fight_list.py
 
@@ -2110,6 +2640,262 @@ text colour, so it follows the theme and keeps the text's contrast; it is
 worked out again, with the header's bold font, whenever the palette or the
 font changes (a theme switch, a new text size).
 
+The (i) on a fight row (issue #147): hovering it shows who in that fight
+has a possible build issue and what (fight_render.fight_issues_tooltip),
+so a session's flagged fights can be read without selecting each one and
+looking for the marks on the pane's rows. The row is plain text, so the
+mark has no anchor of its own: viewportEvent takes the ToolTip event and
+works out where the mark is drawn (issues_mark_rect), the way the style
+lays the row out: the style's text rectangle, the margin every style keeps
+inside it, then the width of the text before the mark. The text rectangle
+matters: Windows 11's style starts it 6 px in, leaving room for its
+selection bar, where Fusion and windowsvista start at the row's edge
+(measured 2026-10-31 on all three and offscreen, the mark's first painted
+column within a pixel of the computed one). The pointer gets MARK_SLACK
+pixels either side, and the tooltip closes once it leaves that band. The
+rest of a row shows no tooltip, as before. The text is built at hover
+time from the hovered row's own fight, usually not the one on screen,
+with the window's Hide names switch (hide_names), so it follows the switch
+without a rebuild. A screen reader hears the mark as the
+row's description (fight_render.issues_description), which names nobody.
+
+Kill or wipe (issues #168 and #169, pull_outcome): a boss fight's row
+carries its verdict after the boss ('Wipe 62%'), including what only the
+fights after it can tell ('Cut', 'group went on'), which the engine puts
+on the pull and sends the fight again for, so the row, the pane and the
+copy always agree. A boss's pulls in a row get an inert run row under the
+last of them ('Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to
+90%'), above the run's result row when it ended a trial; hovering it
+adds the first death of each pull, the killers and the players longest
+dead, names through the Hide names switch. Each new or updated fight
+redoes its block's run rows (_refresh_runs) from the block's own rows,
+so a run row moves down as the run grows and a refresh never walks the
+whole list.
+
+## Kill or wipe, time dead, and a boss's pulls in a row
+
+### src/pull_outcome.py
+
+*[src/pull_outcome.py:1](../src/pull_outcome.py#L1)*
+
+Pull outcome: whether a boss fight was a kill or a wipe, the boss's health
+when it ended, each player's time dead, and a boss's pulls in a row
+(issues #168 and #169; engine side and plain text, no Qt).
+
+Design: the log writes no verdict, so a fight's ending is read from what
+the log shows of the boss and the group. The log shows what happened
+around the player writing it, and an ending that player did not see must
+never be called a wipe: ESO Logs sometimes calls a kill a wipe (the
+maintainer's warning, 2026-11-01), and so did the first versions of these
+rules. Each rule below was checked against what the group did next, the
+same boss again or the next boss, on the split logs of January to October
+2026 (378 sessions once byte-identical copies are dropped). Replayed
+through the engine they hold 2,362 fights with a pull: 1,548 kills, 708
+wipes, 40 lost sight and 66 left. Of the non-kills, 736 were followed by
+another pull of the same boss; 18 were never pulled again while another
+boss came after, and none of those reads as a missed kill: Infinite
+Archive runs that ended, a Turlassil wipe with all twelve dead, Cloudrest's
+shades, and a few seconds-long scripted starts.
+
+- **The boss** is the named unit the game flags as a boss (less the units
+  boss_units demotes) that took the most of the players' damage. Unnamed
+  boss-flagged units, a mechanic's helpers, took more in 143 fights and
+  never decide. The pull's bosses are that unit and every other named
+  boss unit with BOSS_SHARE or more of the boss damage, so encounters whose
+  top unit alternates from pull to pull (Lylanar and Turlassil, Positrox
+  and Negatrix, Reactor and Reducer) stay one encounter: grouped by the
+  top unit alone, 50 wipes looked like a group moving on to another boss,
+  grouped by shared bosses 25, every one of them a real wipe (arena and
+  Infinite Archive runs that ended, gauntlet resets, nights that gave up).
+- **Kill**: the boss's death line (DIED, or DIED_XP, which in 13 fights
+  carried the only 0 health a health-only rule would have missed), a line
+  showing it at 0 health, the run's END_TRIAL inside the fight, or its
+  health under LOW_HEALTH_KILL_PCT at its last line with fewer than half
+  the group dead when the fight ended. That last test caught 5 fights
+  whose death line never reached the log (Tremorscale at 0.2%, Eliam
+  Merick at 0.1%): none was pulled again, and 4 were followed by the next
+  boss. A kill with half the group dead is still a kill: 174 fights.
+- **Wipe**: not a kill, and at least half the fight's players were dead
+  when it ended, not revived before END_COMBAT. "Half the group died at
+  some point" is the wrong test: in a long fight with resurrections every
+  player can die once while the group goes on to kill the boss.
+- **Lost sight** (UNSEEN): neither, and the logging player was dead when
+  the fight ended. BEGIN_COMBAT and END_COMBAT follow that player's own
+  combat state, so their death ends the log's fight (a median 9 s later)
+  whatever the group does next. "group went on" is added when a later
+  pull in the instance is of another boss and this one never returns,
+  which is the log's only trace of a kill it did not see. It is said of
+  Lost sight only: a wipe or a reset followed by the next boss is a group
+  that gave up on that boss, not one that killed it out of sight.
+- **Left**: none of these; the group reset or walked away.
+- **A late verdict**: a death logged just after END_COMBAT
+  (LATE_DEATH_GRACE_MS) and an END_TRIAL logged after the fight was sent
+  (an arena's, about 4 s later) change the sent pull, and the engine sends
+  the fight again.
+
+A first version also called a pull a wipe when another boss unit with 10%
+of the damage was left standing with half the group dead (twin bosses):
+of the 20 fights that turned into wipes, 15 were never pulled again and
+the group went on to the next boss (the unit left was a helper or
+Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
+read as kills, and the next pull of the pair shows the group still at it.
+
+Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
+issue #184) opens a span; the next line that carries their state with
+health above 0 closes it, at least
+REVIVE_MIN_MS after the death, since the lines of the killing blow carry
+the corpse's 0. END_COMBAT closes any span still open, and those still
+open are the players dead when the fight ended. A fight the game cut in
+two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+at the earliest: a player who fell before the pull is dead from it, not
+from the fall. Deaths the log never saw (the others' after the logging
+player released) are missing from the counts, so time dead, read from
+each player's own states, is the fairer measure of who spent the fight
+on the floor.
+
+A pull the log cut in two: when the logging player dies the fight ends
+for the log, and when they are revived a new one begins on a boss still
+part way down. A fight that begins within CONTINUE_GAP_S of the last
+pull's end, on a boss that pull shared, with that boss's health under
+CONTINUE_MAX_PCT and within CONTINUE_DRIFT_PCT of where the last pull left
+it, ``continues`` that pull: the fights stay two entries with their own
+figures (the dps stays Combat Metrics' per fight), and the pull count
+takes them as one. The earlier fight reads "Cut". The players still dead
+when the earlier fight ended stay dead into the later one until a line
+shows them up (TimeDead.carried), so a wipe that spans the cut is still
+a wipe; a fight that does not continue the last pull ignores them, since
+after a wipe the dead release and run back unseen.
+
+Pulls in a row: the pulls of one block (gui.fight_list: one instance)
+that share a boss, with fights without a boss between them, form a run
+until a kill. A run of two or more pulls gets a summary row: the pulls,
+the kill or the best pull, the wipes that keep ending in one band of
+WALL_BAND_PCT (WALL_MIN_WIPES or more, half of them in the band), and the
+median time between pulls; its hover adds the first death of each pull,
+the killers over the run and the players who spent longest dead.
+
+## The session recap: the fight list as text for Discord
+
+### src/session_recap.py
+
+*[src/session_recap.py:1](../src/session_recap.py#L1)*
+
+The session recap (issue #171): the fight list as plain text for Discord,
+for the raid lead who posts the night, not one fight.
+
+Design: the recap is the list's own two groupings written out. Each
+instance block (fight_blocks) gets a heading with its zone, the time it
+spans and the group's size; under it, one line per boss's pulls in a row
+(pull_outcome.runs), in the order they were fought; then the trash, as a
+count and a time; then how many players had a possible build issue; then
+the run's result when the block completed a trial. A boss killed on the
+first pull is one line with the kill's time and boss dps. Two pulls or
+more are the run row's summary, the kill's time and dps after it, then
+its hover's lines (first deaths, killers, longest dead) indented under
+it: what ended the pulls is the part of a progression night nobody wants
+to retype.
+
+The copy is plain lines: Discord keeps the breaks and wraps them on a
+phone, where a code block would run off the side. A message is 2,000
+characters at most; a long night is pasted in parts, and the status bar
+says how long the copy is. Every player name goes through the Hide names
+mask, the only names being the run's longest dead; build issues are a
+count, never names, since a recap posted to a channel is the wrong place
+to call players out.
+
+The sums in the data the lines come from (2026-11-01, 378 split
+sessions): a median session had 18 fights, 4 boss fights over 3 bosses
+and 15 minutes in combat (p90 44 fights), so a typical recap is under 15
+lines.
+
+### src/fight_blocks.py
+
+*[src/fight_blocks.py:1](../src/fight_blocks.py#L1)*
+
+The fights of one instance, as the fight list groups them (issue #129),
+in one place with no Qt: gui.fight_list draws them as blocks, the engine
+reads the newest one for the pulls' 'Cut' and 'group went on'
+(pull_outcome.mark_context), and the session recap writes one per block
+(session_recap). gui.fight_list's docstring has the design.
+
+A new block starts at a fight in another zone or at another difficulty
+than the fight before, or at the first fight after a completed run, even
+in the same zone. The zone is told by its id (a solo dungeon shares its
+name with the group dungeon) and by its name only when the entry has none.
+
+## Fight history across sessions: the index of boss fights
+
+### src/fight_index.py
+
+*[src/fight_index.py:1](../src/fight_index.py#L1)*
+
+Fight history across sessions (issue #170, no Qt): every boss fight's
+figures in a JSON Lines file beside the config, read back so a pull is set
+against the group's own earlier kills of the boss, and a player against
+their own.
+
+Design: the fight history (fight_history.FightHistory) lives for a
+session, and the split logs the app writes are never read again, so a kill
+had nothing to be read against. The index keeps one line per boss fight
+(a fight with a pull, pull_outcome), kill or not, written by the GUI when
+the engine sends the fight and again when it sends it updated. Nothing is
+parsed for it: the line is the entry's own figures. Builds are not kept.
+
+- **Where**: ``fights.jsonl`` beside the config (the AppConfig folder,
+  ``%LOCALAPPDATA%\esolog-tail`` on Windows, ``~/.config/esolog-tail`` on
+  Linux), never in the split folder, so split retention never deletes it.
+  Plain JSON Lines, one object per line, handles in clear as in the logs.
+- **Key**: the fight's start in Unix seconds (pull['start_s'], the
+  session's BEGIN_LOG time plus the fight's own offset), so the live
+  fight, its replay at the next start and a backfill of its split file all
+  write the same key. A line is only appended when it differs from the one
+  already held under its key, and readers take the last line per key: an
+  update appends, a restart's replay of the session appends nothing.
+- **A bad line**: a line that does not parse (a crash halfway through a
+  write, a hand edit) is skipped and counted; the rest of the file reads.
+  A file another program holds open (a sync client) keeps its lines
+  queued and retries at the next write, never raising.
+- **Backfill**: the split folder's logs (and the logs in its zips), newest
+  first, through the engine itself (review_load.replay_log), on the
+  review thread with its cancel and progress, so every figure is the
+  app's own. Byte-identical copies, zipped or not, are skipped by a hash
+  of their first 256 KB and their size. A session's re-splits that the
+  old splitter cut short (issue #85) are read too, shortest first, so
+  where two hold one fight the longest log's line is the one kept: in the
+  maintainer's folder 20 such logs in 10 sessions. The live log's newest
+  session is left out: the splitter may still be writing its split (the
+  temp name lasts only until the zone is known), and the window indexes
+  that session itself as it replays and follows it. Each log done is
+  noted in ``fights-backfill.json`` beside the index, by its own name
+  (which a zip of it keeps) and with its copy mark, once its lines are
+  written, so a cancelled backfill carries on where it stopped. A first
+  build of the maintainer's split folder (398 logs, 36.8 GB) took 44
+  minutes on one thread, 13.8 MB/s, and wrote 2,414 lines, 3.0 MB.
+
+Comparisons (the issue's measurements: 179 bosses killed, 23 in 10 or
+more sessions; Lord Falgravn's kills 265k to 953k; a standing Sunspire
+group shares 10 handles between sessions while Kyne's Aegis and Lucent
+Citadel pugs share one, and 8 or more named players in three fights in
+four):
+
+- **The pull** in the fight pane: the group's boss dps (all damage in a
+  fight with no boss figure) against the earlier kills of the same boss
+  at the same difficulty in the same zone, always, and against a narrower
+  set when one holds enough: kills with ROSTER_MIN or more of tonight's
+  named players on the same game version when SET_MIN or more remain, else
+  those kills on any version when SET_MIN or more remain. The line names
+  the set it used. Only kills before this fight count, so a fight read
+  later is set against its own past.
+- **A player** in their name's hover: their boss dps in their last
+  PLAYER_LAST kills of the boss in the index, with you (the logging
+  player) or as you.
+- **A boss's pulls in a row** (gui.fight_list's run row): the best earlier
+  kill of the boss with ROSTER_MIN or more of the run's named players.
+
+Anonymous players (no handle in the log) are kept without one and never
+matched. The game version is the session's own (BEGIN_LOG), so a patch
+narrows the set by itself.
+
 ## Death recaps
 
 ### src/death_recap.py
@@ -2128,6 +2914,19 @@ logs):
 
 - The dying unit's event is DIED, or KILLING_BLOW when the killer is a player
   (friendly fire, PvP). Its source and ability name the killer.
+- A fall into lava, off a ledge or out of the map is one KILLED_BY_SUBZONE
+  line and nothing else (issue #184): no DIED within ten seconds either side,
+  the source unit 0 with an empty state, ability and cast track 0, the dying
+  player in the target block at 0 health. Until #184 the engine did not
+  count it, so the death had no recap, no time dead and the pull read as if
+  nobody died. The recap names no killer, gives FALL_DEATH as what killed
+  and carries cause FALL_CAUSE. Only a player's counts: the logs hold none
+  on an enemy, and one there would read as the group's kill. Every one of the 18 in the maintainer's logs (2025-10 to 2026-11)
+  was the writer's own: 17 falls on Sunspire's Temple Grounds, all outside a
+  fight, and one into Rahdgarak's lava in Vateshran Hollows, 26 ms before
+  END_COMBAT. A FALLING line came before only that last one, and FALLING
+  lines carry whatever ability the player had (Bash, a fire or shock id),
+  so they make no recap row.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
@@ -2516,7 +3315,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:778](../src/gui/main_window.py#L778)*
+*[src/gui/main_window.py:946](../src/gui/main_window.py#L946)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2526,7 +3325,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1321](../src/gui/main_window.py#L1321)*
+*[src/gui/main_window.py:1653](../src/gui/main_window.py#L1653)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -2683,6 +3482,113 @@ with the offered one on GitHub, however many releases lie between.
 
 ## Releases: every tag a beta, and a beta made Stable
 
+### scripts/release.py
+
+*[scripts/release.py:1](../scripts/release.py#L1)*
+
+Make a release's commit, or tag a release once its pull request is merged.
+
+Design (issue #134, task 2.5; the maintainer's decisions 11 and 12 of
+2026-10-29): every session cut releases its own way, and almost every pull
+request edited the same lines of two shared files, the top of
+CHANGELOG.md and docs/design.md, so each merge put every other open pull
+request in conflict (24 merges of main into PR branches in five days).
+Three changes together end that:
+
+- A change adds its notes as a fragment, ``changelog.d/<issue>-<slug>.md``,
+  written under the same ``### Added`` / ``### Changed`` / ``### Fixed``
+  headings CHANGELOG.md uses. Two pull requests never edit the same file,
+  and the CI check (scripts/changelog_check.py) asks every pull request for
+  one.
+- ``docs/design.md`` is rebuilt in the release commit only. Between
+  releases the docstrings it is built from are the source; a tag whose
+  design notes lag the code is refused, here before the tag is made and in
+  the tag's workflow run before either build (build_design_doc --check).
+- This script makes the release commit's edits the same way every time:
+  the version in src/version.py, the fragments gathered under
+  ``## [X.Y.Z] - YYYY-MM-DD`` at the top of CHANGELOG.md (an
+  ``[Unreleased]`` section a branch from before fragments still carries at
+  the top is folded in, not lost), the fragments removed, the design notes
+  rebuilt, and one commit, ``chore: release X.Y.Z``. Sections come out in
+  Keep a Changelog's order and, within a section, in fragment file name
+  order, so the same fragments always give the same text. Everything that
+  can refuse (an unreadable fragment, one git does not track yet, a design
+  note that cannot be built) is checked before the first file is written,
+  so a refusal never leaves a release half made.
+
+The release commit goes inside the last pull request of the release, or one
+of its own, since main takes pull requests only. The script refuses to
+commit on main or over uncommitted changes, and the version must be higher
+than the current one. ``minor`` or ``patch`` picks the next number; the
+choice stays the releasing session's (a release with only Fixed entries is
+a patch).
+
+A fragment can reach the release branch after the release commit: the
+branch must be up to date with main to merge, and a merge of main brings in
+whatever merged meanwhile. Its change would ship in the build while its
+note waited for the next release. The Changelog check refuses a release
+pull request that still holds fragments, and ``--tag`` refuses such a merge
+commit; the remedy is to drop the release commit (``git revert``) and run
+the script again.
+
+Once the pull request is merged, ``--tag X.Y.Z`` finds the commit on
+origin/main that first carries the version (the merge commit, on main's
+first-parent line), runs the release job's tag checks on it
+(scripts/release_guard.py), checks its design notes and its changelog.d/,
+and makes the annotated tag. Pushing the tag publishes a beta to every
+install on the Beta channel, so it happens only with ``--push``, and
+``--dry-run`` runs every check and makes nothing. ``--watch`` then follows
+the tag's workflow run and checks what it published: a pre-release with
+all three files, and ``/releases/latest`` (Stable) not moved. Making a beta
+Stable stays scripts/promote_release.py's, on the maintainer's word.
+
+Needs git; ``--watch`` needs the GitHub CLI, logged in.
+
+```
+    python scripts/release.py minor|patch|X.Y.Z [--date YYYY-MM-DD] [--trailer TEXT] [--dry-run]
+    python scripts/release.py --tag X.Y.Z [--dry-run | --push [--watch]]
+```
+
+### scripts/changelog_check.py
+
+*[scripts/changelog_check.py:1](../scripts/changelog_check.py#L1)*
+
+Check a pull request's changelog fragment and its hands-off files.
+
+Design (issue #134, task 2.5): changes write their notes as fragments in
+changelog.d/ and the release commit (scripts/release.py) gathers them into
+CHANGELOG.md and rebuilds docs/design.md. A pull request that is not a
+release is refused when it:
+
+- adds no fragment of its own (a new ``changelog.d/<name>.md``, directly in
+  the folder, not the README), unless it carries the ``no-changelog``
+  label: its change would reach the release notes only if someone
+  remembered. Editing a fragment already there is not a note of its own,
+  and a file in a subfolder is one the release script never reads;
+- edits CHANGELOG.md: that edit is what put every open pull request in
+  conflict with the others;
+- edits docs/design.md: the same, for the design notes, which the release
+  commit rebuilds from the docstrings.
+
+The label waives the first rule only: the other two are the conflicts the
+whole change exists to end.
+
+A release is a pull request that changes ``__version__`` (read from the
+merge base and the head, so an unrelated edit of src/version.py is not
+one). It does all three by design and passes, unless changelog.d/ still
+holds fragments at its head: they came in with a merge of main after the
+release commit, their changes would ship in the release and their notes
+in the next one. Reverting the release commit and running the release
+script again gathers them.
+
+The fragment's text is not checked here: scripts/release.py refuses one it
+cannot read when the release is cut, and the unit tests run the same parser
+over every fragment on the branch.
+
+```
+    python3 scripts/changelog_check.py <base sha> <head sha> [--labels a,b]
+```
+
 ### scripts/release_guard.py
 
 *[scripts/release_guard.py:1](../scripts/release_guard.py#L1)*
@@ -2837,7 +3743,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
+*[src/gui/fight_view.py:348](../src/gui/fight_view.py#L348)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -2887,6 +3793,11 @@ and enemy names fall through, as no enemy, pet, set or ability name
 starts with ``@``. An entry with no local player at all hides every name,
 the safe direction.
 
+A companion is named after its owner, "<owner>'s Companion" (companions.py).
+The owner part is hidden or kept as the owner's own name would be, and the
+"'s Companion" after it always shows, so the logging player's companion
+stays readable and another player's reads "@▒▒▒▒'s Companion".
+
 How a hidden name looks: the maintainer asked for a blurred or pixelated
 name, the look of a screenshot with the names smudged out. The pages
 drawn as rich text (the fight pane and the three windows) get a pixelated
@@ -2920,7 +3831,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:217](../src/gui/fight_view.py#L217)*
+*[src/gui/fight_view.py:220](../src/gui/fight_view.py#L220)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
@@ -2966,6 +3877,36 @@ is drawn at the view's device pixel ratio, so it stays crisp on a scaled
 display (Qt lays out an image that carries a device pixel ratio at its
 logical size). Names stay plain, with their hover cue.
 
+The (i) of possible build issues is drawn here too (issue #140). It was the
+font's ⓘ in the link colour after the class text, where it drifted right
+with the text's length, thin and among muted words, and was easy to miss;
+the first-damage * after the name was the mark people saw. It now sits on
+the name, right after it (where the * was until issue #159 moved who
+opened the fight to a line under the table), bold with a faint halo of its
+own colour. Qt rich
+text has no text-shadow, filter or opacity, so the glow cannot come from
+the page: the glyph is a ring about the size of the font's ⓘ (11.5 px of
+11 at 9 pt), half again as heavy, over a radial gradient that is clear
+inside the ring, about two fifths opaque at its outer edge and nothing at
+the image's edge; the clear inside keeps the i at the link colour's full
+contrast (issue #77). The image is as tall as the text line, so the halo
+has 2 to 3 px around the ring, and aligned to the line's top: Qt centres
+a middle-aligned image on half the x-height above the baseline, which
+pushed a line-tall image 2 px under the line and made each marked row
+taller. The main window passes the fight view's line height into the page
+(render_html's line_px), so the image fits whatever font the system gives;
+without it the page estimates the line as 1.3 em, Segoe UI's. A death
+chip or a hidden name's stand-in on the same line adds only descent, so
+the line's top, and the ring with it, stays level with the name. At 100%
+scaling the ring's inside is 8 px tall, and a dot and stem placed freely
+ran together into a bar touching the ring, so the i is laid out in whole
+device pixels from the image's own width (issues_i_layout): a 2 px dot, a
+clear pixel, a 3 px stem, and a clear pixel above and below. No
+pulse: a still mark, so Reduce motion has nothing to stop. The fight
+list's ⓘ is list text, which cannot be bold or glow without a delegate,
+and the popup is a label that cannot serve these images; the build window
+shows the popup's list, so all three keep the font's ⓘ.
+
 The page asks for a glyph by URL, ``glyph:<kind>?color=rrggbb&px=<n>``
 (fight_render.glyph_html), which FightView.loadResource answers from here:
 one image per kind, colour, size and ratio, kept for the session.
@@ -2999,3 +3940,148 @@ it, so straight after it every view still reports the old font, and a page
 rendered then from its view's font comes out at the old size (the
 Settings path did just that: Save, redraw, old size). apply() delivers the
 posted font changes before it returns.
+
+## The trial score banner
+
+### src/banner_capture.py
+
+*[src/banner_capture.py:1](../src/banner_capture.py#L1)*
+
+The trial completion banner, captured from the screen after END_TRIAL (issue #167).
+
+Design: The score banner. When a trial or a veteran arena completes, the game
+shows "COMPLETED: SUNSPIRE (VETERAN)" with the final score, the time, the
+vitality bonus and the revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS
+in the game's centerscreenannouncehandlers.lua; one handler,
+EVENT_RAID_TRIAL_COMPLETE, serves trials and arenas alike). Keeping a picture
+of it is the traditional record of a run. The log writes END_TRIAL at the same
+moment (the engine's _handle_end_trial), so the app can take the picture
+itself, on Windows: it grabs the screen once a second, reads each grab with
+Windows' own text recognition, and keeps a grab in which the run's score
+appears, cropped to the banner, as a PNG. The score makes the capture
+*verified*: the digits of the log's finalScore must be read off the picture,
+so the file can only be this run's banner, whatever the client language. The
+game's own timer text (trial_result.duration_text) is the fallback for a score
+the recognition split badly. Nothing is kept when no grab verifies (the game
+in exclusive fullscreen, alt-tabbed away, no recognition language installed,
+the banner never shown); the app's diagnostic line says so.
+
+When the banner comes (issue #183): it waits in the game's announcement queue
+behind higher priorities (champion points, experience, objectives, quest
+updates; 3.5 s each), so a trial's showed 0.5 to 4 s after END_TRIAL and
+Maelstrom Arena's about 25 s after it, at the end of an arena that queues
+several. The burst therefore runs until END_TRIAL's own time plus
+BURST_UNTIL_S, and for at least BURST_MIN_SECONDS when the line is read late
+(burst_seconds): Vateshran Hollows' line, read 1 s late, was given only 15 s
+and its banner came after; Maelstrom's, read 21.5 s late, was caught as it
+appeared.
+
+Keeping a whole banner: the banner is drawn in left to right over 1,700 ms
+(CenterScreenLargeTextWipe in centerscreenannounce.xml) and drawn out over
+2,000 ms at the end, so the first grab that verifies can hold part of it (the
+Maelstrom file of 2026-11-01 stops at "Vita"). After it, FOLLOW_UP_GRABS more
+are taken of the same monitor, a second apart, and the most complete one is
+kept (more_complete): the one that reads the vitality bonus's digits, then the
+one whose stats row reaches furthest right, a later one on a tie.
+
+Why text recognition rather than a fixed rectangle: the banner's position is
+in the game's UI units (230 from the top, centred, in centerscreenannounce.xml),
+which scale with the resolution and the UI scale setting, so the crop comes
+from the boxes the recognition returns for the title and the stats row. The
+banner is centred on the screen, so the crop is made symmetric about the
+screen's centre line: the left edge the words give fixes the right edge too,
+which keeps the vitality icon and the revives count the recognition never
+reads, and the undrawn part of a banner caught mid-wipe. (A game in a window
+off the screen's centre is the case this misjudges.) Only the top-centre of
+the screen (REGION_WIDTH_FRACTION by REGION_HEIGHT_FRACTION, centred, so its
+centre is the screen's) is read and only the banner band is kept, so the
+group frames and the chat stay out of the picture and the Hide names switch
+needs no change.
+
+What each burst saw goes into banner.log beside crash.log (burst_log_text,
+append_burst_log): the run, when END_TRIAL was written and read, the outcome
+line, and one line per grab with the monitor, frame, how many lines were read
+and whether the score or the time matched. Of the recognised text only the
+lines holding a digit are kept in full (the stats line, the timer); other
+announcements pass through the region, so the rest is only counted (Chris,
+2026-11-01). No pictures: an unverified grab is never kept. The newest
+BANNER_LOG_BURSTS bursts are kept.
+
+Why Windows PowerShell: Windows.Media.Ocr is a WinRT API that Windows
+PowerShell 5.1 (on every Windows 10 and 11) can call, so no package is needed;
+pwsh 7 cannot, lacking the WinRT projection. One process serves a whole
+burst, fed file paths on its standard input, which saves the 1.3 s start per
+grab. The paths must be long paths: the WinRT StorageFile refuses 8.3 short
+names. The engine is the user's profile language, or the first installed
+recognition language; none at all is the unverified case.
+
+Why Desktop Duplication (desktop_duplication) rather than Qt's screen grab:
+on an HDR desktop every 8-bit grab comes out washed-out, the desktop being
+composed in linear scRGB. Duplication hands the FP16 desktop over as it is,
+and gui.banner_burst.frame_to_image turns it into sRGB: divide by the display's SDR white level
+(DisplayConfig's DISPLAYCONFIG_SDR_WHITE_LEVEL, in units of 80 nits), so the
+brightness Windows shows SDR white at lands on white, then Qt's colour-space
+conversion from linear to sRGB. Qt's grab (QScreen.grabWindow) is the fallback
+when duplication is refused, as it is in a remote session.
+
+### src/desktop_duplication.py
+
+*[src/desktop_duplication.py:1](../src/desktop_duplication.py#L1)*
+
+One frame of a monitor through DXGI Desktop Duplication, in the desktop's own pixel
+format: BGRA8 on an SDR desktop, RGBA16F (linear scRGB) when Windows HDR is on.
+
+Design: Desktop Duplication through ctypes. The trial completion banner (issue #167)
+must be captured on an HDR desktop, where every 8-bit grab (GDI, Qt's
+QScreen.grabWindow, Windows Graphics Capture with an 8-bit format) comes out
+washed-out: Windows composes an HDR desktop in linear scRGB floating point and the
+8-bit paths clip it without the transfer curve. Desktop Duplication hands the
+composed desktop over as it is, R16G16B16A16_FLOAT when HDR is on, so the
+conversion to sRGB can be done properly (gui.banner_burst.frame_to_image). The
+packages that wrap the API either need numpy and OpenCV (windows-capture, about
+150 MB in the frozen app) or still need a Direct3D device made by hand (pywinrt), so
+the API is driven directly through ctypes: a Direct3D 11 device per adapter, its
+outputs enumerated through DXGI, IDXGIOutput5::DuplicateOutput1 asked for FP16 or
+BGRA8 frames, each frame copied to a staging texture and mapped for reading. The
+vtable positions below are the declaration order of d3d11.h and dxgi1_5.h; a wrong
+one crashes the process, so run_self_test() exercises every call on a real desktop.
+
+The first AcquireNextFrame after DuplicateOutput often returns an empty texture
+(LastPresentTime 0: no desktop image presented since the duplication began), so
+grab() keeps acquiring until a presented frame comes or the deadline passes.
+Desktop Duplication is refused inside some remote sessions and on an output that
+belongs to another adapter than the device, which is why every adapter gets its
+own device.
+
+### src/gui/banner_burst.py
+
+*[src/gui/banner_burst.py:1](../src/gui/banner_burst.py#L1)*
+
+The burst that captures the trial completion banner (issue #167): the GUI
+side of banner_capture.
+
+Design: The capture burst. A BannerBurst lives on the UI thread, owned by the
+main window, one at a time, started the moment the engine reports END_TRIAL
+(on_trial_result), before the fight that carries the result is finalized:
+END_COMBAT trails a successful END_TRIAL by up to six seconds on the real logs,
+and the banner is on screen for ten. All the work runs on the burst's thread:
+it opens a Desktop Duplication reader per monitor (desktop_duplication; a lost
+desktop, a mode or HDR switch, is reopened once), and once a second until
+END_TRIAL's own time plus 45 s (banner_capture.burst_seconds) grabs every
+monitor, converts the frame (frame_to_image), cuts the top-centre region
+(banner_capture.region_rect), writes it as a PNG in a temporary folder, reads
+it with the Windows recognition (one PowerShell process for the whole burst)
+and verifies it against the run's score. The UI thread only takes part when no
+monitor can be duplicated (a remote session), grabbing through Qt's QScreen,
+which must be used from the UI thread, and handing the images to the thread.
+The first verified grab is followed by banner_capture.FOLLOW_UP_GRABS more of
+the same monitor, a second apart, for a banner still drawing in; the most
+complete verified one (banner_capture.more_complete) is then cut out of its
+PNG, symmetric about the screen's centre line, and saved under the run's name
+in the banner folder. A burst that runs out with nothing verified ends with
+nothing kept, and the reasons the thread noted (no duplication, a lost
+monitor) go into the status-bar line. Every outcome, a cancelled burst's too,
+is written to banner.log with a line per grab (banner_capture.burst_log_text).
+The thread holds frames, images, paths and text, never a widget, so nothing of
+Qt's widgets is touched off the UI thread (the rule of issue #18); the burst
+deletes itself after it reports.

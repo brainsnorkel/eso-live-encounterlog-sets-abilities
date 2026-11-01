@@ -156,12 +156,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertNotIn('—', line)
         self.assertLess(line.index('gdps'), line.index('Coral Aerie'))
         self.assertLess(line.index('Coral Aerie'), line.index('2025'))
-        # First-damage dealer gets a star in both renderings
+        # Who opened the fight: a line under the table in both renderings
+        # (issue #159), no star; the first hit is exactly 1,000 ms in, so
+        # no time, and the line follows the pane's text size
         html_marked = render_html(entry, detailed=False)
-        # (the name itself is a link to the player's build window)
-        self.assertIn('@brainsnorkel</a> <b>*</b>', html_marked)
-        self.assertIn('first damage', html_marked)
-        self.assertIn('@brainsnorkel *', render_plain_text(entry))
+        self.assertNotIn('<b>*</b>', html_marked)
+        self.assertIn('>@brainsnorkel hit Test Boss first: Damage Ability</p>', html_marked)
+        self.assertNotIn('font-size:85%', html_marked)
+        plain = render_plain_text(entry)
+        self.assertNotIn('@brainsnorkel *', plain)
+        self.assertTrue(plain.endswith('\n@brainsnorkel hit Test Boss first: Damage Ability'))
         html_out = render_html(entry, detailed=True)
         self.assertIn('@brainsnorkel', html_out)
         self.assertIn('Tide-Born Wildstalker', html_out)
@@ -237,6 +241,18 @@ class TestMainWindowStates(GuiTestCase):
             self.assertEqual(win.freshness_label.text(), 'No log file')
             self.assertEqual(win.freshness_label.styleSheet(),
                              state_style('none', win._dark))
+        finally:
+            win.close()
+
+    def test_waiting_placeholder_escapes_the_path_and_names_both_addons(self):
+        win = self._window()
+        try:
+            win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
+            text = win._last_placeholder
+            self.assertIn(r'<code>C:\Users\R&amp;D &lt;x&gt;\Encounter.log</code>', text)
+            self.assertIn('Always Logging (from GitHub', text)
+            self.assertIn('Easy Stalking (ESOUI or Minion)', text)
+            self.assertIn('not both', text)
         finally:
             win.close()
 

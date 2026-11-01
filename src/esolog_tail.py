@@ -25,12 +25,16 @@ from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStat
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
-from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
+from data_staleness import DataCheckTracker
+from death_recap import (DEATH_RESULTS, SUBZONE_DEATH, DeathRecapRecorder, HEAL_RESULTS,
+                         RECAP_RESULTS)
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    BuildIssueTracker, PROC_EFFECT_IDS, fired_proc_sets, food_findings, structural_findings,
-    worn_proc_sets,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GroupBuffCredit, PROC_EFFECT_IDS,
+    fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
+    structural_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import build_fields, food_ids, has_restoration_staff, is_mythic_set, is_two_handed, race_name
@@ -38,7 +42,10 @@ from misfortunes import run_misfortunes
 from presence import present_share
 import casts
 import companions
+import fight_blocks
+import fight_opener
 import pen_crit
+import pull_outcome
 import resources
 import split_retention
 import trial_result
@@ -122,6 +129,11 @@ ENEMY_HIT_RESULTS = frozenset(
 DAMAGE_RESULTS = frozenset(
     ('DAMAGE', 'CRITICAL_DAMAGE', 'DOT_TICK', 'DOT_TICK_CRITICAL',
      'BLOCKED_DAMAGE', 'DAMAGE_SHIELDED'))
+# An enemy's results on the group that meet it (see _note_enemy_met): the
+# opener's monster acts, less a shield absorb, which names the shield (the
+# partner line after it names the attack), and a DoT tick, applied earlier
+ENEMY_ACT_RESULTS = ((DAMAGE_RESULTS | fight_opener.MONSTER_EXTRA_RESULTS | {fight_opener.CAST})
+                     - {fight_opener.SHIELDED} - fight_opener.DOT_RESULTS)
 # Design: Dps time. Every dps figure divides by the span of the hits it
 # sums, first hit to last, floored at one second, and not by the fight time
 # (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition
@@ -433,6 +445,9 @@ class EnemyInfo:
         # A player's companion (companions.is_companion) and its level
         self.is_companion: bool = False
         self.level: int = 0
+        # It has had a player owner: a pet released at its end turns HOSTILE
+        # with owner 0, and is never a monster (fight_opener)
+        self.was_owned: bool = False
 
 class CombatEncounter:
     """Represents a single combat encounter."""
@@ -488,9 +503,19 @@ class CombatEncounter:
         # The run's result when this fight completed a trial (trial_result)
         self.trial_result: Optional[Dict] = None
         
-        # Track first damage dealer
-        self.first_damage_dealer: Optional[str] = None  # Player unit ID who dealt first damage
-        self.first_damage_timestamp: Optional[int] = None  # Timestamp of first damage
+        # Who opened the fight and the monster's act before it, decided by
+        # the analyzer's fight_opener.OpenerRecorder from BEGIN_COMBAT on;
+        # None for a fight that had no BEGIN_COMBAT
+        self.opening: fight_opener.FightOpening | None = None
+        # Whether a line passed between the group and an enemy in the fight
+        # or in the moments before it: combat without one is not listed
+        # (ESOLogAnalyzer._note_enemy_met)
+        self.met_enemy = False
+
+        # The bosses' health on the fight's lines and each player's time
+        # dead, for the pull's verdict (pull_outcome, issues #168, #169)
+        self.boss_health = pull_outcome.BossHealth()
+        self.time_dead = pull_outcome.TimeDead()
 
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
@@ -498,6 +523,9 @@ class CombatEncounter:
         # Proc-set effects by the unit that sourced them this fight, for the
         # build-issue rule on a set that never fires (build_issues)
         self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
+        # Champion Point star procs this fight: star name -> {holder's
+        # record id: procs}, for the rule on a second holder (build_issues)
+        self.star_procs: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         # Each player's food and drink effects through the fight, for the
         # build-issue rules on a meal (build_issues.food_findings): unit id
         # -> {'up': the food ids on them, 'seen': every food id on them at
@@ -641,6 +669,9 @@ class CombatEncounter:
             # id keeps (presence.py, rule 7)
             self.pet_ownership[pet_unit_id] = owner.unit_id
             self._link_companion(pet_unit_id, owner.unit_id)
+            unit = self.enemies.get(pet_unit_id)
+            if unit is not None:
+                unit.was_owned = True
         else:
             self.pet_ownership.pop(pet_unit_id, None)
             self.companion_units.pop(pet_unit_id, None)
@@ -663,6 +694,23 @@ class CombatEncounter:
         if unit.level:
             record.level = unit.level
         self.companion_units[unit_id] = key
+        self.name_companions(owner_unit_id)
+
+    def name_companions(self, owner_unit_id: str) -> None:
+        """Name every companion of the player *owner_unit_id* after them,
+        "<handle>'s Companion" or "anon's Companion" (companions.shown_name):
+        when the owner is known, and again when an anonymous owner is
+        named."""
+        owner = self.players.get(owner_unit_id)
+        name = companions.shown_name(owner.handle if owner is not None else None)
+        for record in self.companions.values():
+            if record.owner_unit_id != owner_unit_id:
+                continue
+            record.name = name
+            for unit_id in record.unit_ids:
+                unit = self.enemies.get(unit_id)
+                if unit is not None and unit.is_companion and unit.monster_id == record.monster_id:
+                    unit.name = name
 
     def companion_key(self, unit_id: str) -> str | None:
         """The row key of the companion *unit_id* while it has an owner."""
@@ -843,6 +891,12 @@ class CombatEncounter:
         """A proc set's effect was sourced by a unit this fight (build_issues)."""
         self.proc_effects[source_unit_id].add(ability_id)
 
+    def note_star_proc(self, star: str, source_unit_id: str):
+        """A Champion Point star of *source_unit_id*'s procced on a player
+        this fight: one GAINED of its effect per player it helped
+        (build_issues.STARS)."""
+        self.star_procs[star][source_unit_id] += 1
+
     def _food_record(self, unit_id: str) -> dict:
         return self.food.setdefault(
             unit_id, {"up": set(), "seen": set(), "empty_since": None, "ate": None})
@@ -1005,12 +1059,25 @@ class ESOLogAnalyzer(ListenerMixin):
         # the target has a trial boss's 18,200 resistance (pen_crit)
         self._dummy_seen = False
         # The build-issue rules judged over the session: the proc sets that
-        # never fire, and who has taunted (build_issues)
+        # never fire, second copies of a group buff set or a star, and who
+        # has taunted (build_issues)
         self.build_issues = BuildIssueTracker()
+        # Whose copy of a group buff set's buff each player had, for the
+        # rule on a second copy (build_issues.GroupBuffCredit)
+        self.group_buff_credit = GroupBuffCredit()
+        # What the log names that the bundled game data does not know, and
+        # the session's game version against the data's (data_staleness,
+        # issue #173): sent to the listeners as it changes
+        self.data_check = DataCheckTracker()
 
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
         self._cast_abilities: Dict[str, str] = {}
+        # Who opened each fight, and with what: the line under the fight
+        # pane's table (fight_opener, issue #159)
+        # (the cache's own get, not a lambda over self, which would tie the
+        # analyzer in a reference cycle that only the cyclic GC frees)
+        self.opener = fight_opener.OpenerRecorder(self.ability_cache.get, DAMAGE_RESULTS)
 
         # Which units each cast struck, for the area rule of the kinds of
         # damage (damage_kinds): shared by the recap recorder, the damage
@@ -1031,6 +1098,22 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry: Optional[FightHistoryEntry] = None
         self._enemy_last_hit: Dict[str, int] = {}
         self._engaged_at_end: FrozenSet[str] = frozenset()
+        # When a line last passed between the group and an enemy, and the
+        # combat that ended without one, with its start: not listed unless
+        # a player dies as it ends (see _note_enemy_met)
+        self._enemy_met_at: int | None = None
+        self._held_fight: tuple[CombatEncounter, int] | None = None
+        # The last fight listed in the zone, which a new fight does not
+        # clear: a trial ending in a held combat was won in it
+        # (_trial_won_before_held)
+        self._listed_fight_entry: FightHistoryEntry | None = None
+        # The last fight's pull, which the next fight may carry on, and the
+        # one before it, for a fight the game cut in two (pull_outcome)
+        self._last_pull: Optional[dict] = None
+        self._prior_pull: Optional[dict] = None
+        # The game version on the session's BEGIN_LOG line, for each
+        # fight's entry (fight_index)
+        self.game_version: str = ""
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1142,6 +1225,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._enemy_last_hit.pop(entry.fields[0], None)
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
+                self.group_buff_credit.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     # A player who left: off the list from the next fight
                     # (presence.py)
@@ -1269,6 +1353,9 @@ class ESOLogAnalyzer(ListenerMixin):
                         if added_player is not None:
                             added_player.joined_at = entry.timestamp
                             added_player.switched_character = switched
+                            # A companion kept for this unit id is named
+                            # after the player who has it now
+                            enc.name_companions(unit_id)
                     if clean_handle and long_unit_id and long_unit_id != "0":
                         self._zone_characters[clean_handle] = long_unit_id
 
@@ -1333,6 +1420,10 @@ class ESOLogAnalyzer(ListenerMixin):
                     if enemy.is_companion:
                         enemy.level = companions.level_of(
                             entry.fields[11] if len(entry.fields) > 11 else "")
+                        # Never the log's name, which may carry a handle the
+                        # log keeps from an anonymous owner: anon's until
+                        # its owner is known (name_companions)
+                        enemy.name = companions.shown_name(None)
 
                     self.current_encounter.enemies[unit_id] = enemy
                     # A departed player's unit id handed to this unit: the
@@ -1374,6 +1465,8 @@ class ESOLogAnalyzer(ListenerMixin):
                         player.name = clean_name
                     self._update_player_session(unit_id, player.name, player.handle,
                                                 class_id=player.class_id)
+                    # Their companion is named after them from now on
+                    self.current_encounter.name_companions(player.unit_id)
                 # A champion point earned mid-session (fields[7])
                 cp = entry.fields[7]
                 if cp.isdigit() and int(cp) > 0 and int(cp) != player.champion_points:
@@ -1397,9 +1490,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 enemy = self.current_encounter.enemies[unit_id]
                 enemy.is_hostile = True
                 
-                # Update the enemy name to the new name from UNIT_CHANGED
+                # Update the enemy name to the new name from UNIT_CHANGED;
+                # never a companion's, whose log name can carry an anonymous
+                # owner's handle (companions.shown_name)
                 clean_name = name.strip('"') if name else ""
-                enemy.name = clean_name
+                if not enemy.is_companion:
+                    enemy.name = clean_name
                 
                 # Update highest health hostile monster now that this enemy is hostile
                 self.current_encounter.update_highest_health_hostile(enemy)
@@ -1574,6 +1670,9 @@ class ESOLogAnalyzer(ListenerMixin):
             logged_back = self._bar_slots(player_info.additional_data, scribed, player_key)
             front_bar_slots = [] if werewolf.is_werewolf_bar(player_info.champion_points) else logged_front
             back_bar_slots = [] if werewolf.is_werewolf_bar(player_info.additional_data) else logged_back
+            # Sets, items and icons the bundled data does not know (issue #173)
+            if self.data_check.note_player(player_info.gear_data, logged_front + logged_back):
+                self._notify('on_data_check', self.data_check.check())
             # Ability names per bar, and all equipped names. The equipped
             # names keep every slot the log wrote, dropped bar included: a
             # player with none is one the log has not described, and is
@@ -1688,16 +1787,26 @@ class ESOLogAnalyzer(ListenerMixin):
             self.fight_death_recaps = []
             self._last_fight_entry = None
             self._resumed_fight_entry = None
+            self._enemy_met_at = None
+            self._held_fight = None
+            self._listed_fight_entry = None
             # Unit ids are handed out afresh in each zone: the tracked
             # effects on hostiles and pets end here
             self.effect_tracker.zone_changed(entry.timestamp)
             self.pen_crit_tracker.zone_changed(entry.timestamp)
+            self.group_buff_credit.zone_changed(entry.timestamp)
             self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
+            # The same for the build-issue records on a second copy, which
+            # last the session (build_issues)
+            self.build_issues.retire_players("unit:")
+            # The opener's memory starts again (the entry's timestamp is the
+            # zone id: the line's own time is its first field)
+            self.opener.reset(casts.line_time(entry.original_line))
 
             # Reset all tracking - create new encounter for this zone
             self.current_encounter = CombatEncounter()
@@ -1734,6 +1843,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        # A combat that met no enemy is gone for good (see _note_enemy_met)
+        self._held_fight = None
 
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -1744,6 +1855,15 @@ class ESOLogAnalyzer(ListenerMixin):
             self._publish_fight(self.current_zone)
             # Don't reset to None - we'll reuse the encounter and preserve players
         
+        # The players still dead as the last fight ended, should this one
+        # carry that pull on (pull_outcome.TimeDead.carried)
+        carried = ()
+        if (self.current_encounter and self.current_encounter.finalized
+                and self.current_encounter.end_time
+                and entry.timestamp - self.current_encounter.end_time
+                <= pull_outcome.CONTINUE_GAP_S * 1000):
+            carried = self.current_encounter.time_dead.dead_at_end()
+
         # Create a new encounter if we don't have one or if the previous one was finalized
         if not self.current_encounter or self.current_encounter.finalized:
             # Create new encounter but preserve players and enemies from previous encounter in same zone
@@ -1777,10 +1897,25 @@ class ESOLogAnalyzer(ListenerMixin):
         # Players who left are off the new fight's list; one who came back
         # on a new unit id is keyed by it from here (presence.py)
         self.current_encounter.start_fight_roster()
+        # The zone's first encounter is reused here and has counted every
+        # star proc since the zone began: a fight counts its own (a fight
+        # the game cut in two returned above and keeps its count)
+        self.current_encounter.star_procs.clear()
+        # Whether the group and an enemy met in the moments before the line,
+        # since the last fight ended: decided here for the zone's first
+        # encounter too, which is reused and saw every meeting since the
+        # zone began (see _note_enemy_met)
+        self.current_encounter.met_enemy = (
+            self._enemy_met_at is not None
+            and entry.timestamp - self._enemy_met_at <= ENGAGED_ENEMY_MS)
 
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        self.current_encounter.time_dead.begin(entry.timestamp, carried)
+        # The opener: the memory of the moments before the line becomes
+        # the fight's candidates (fight_opener)
+        self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
         
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -1814,6 +1949,12 @@ class ESOLogAnalyzer(ListenerMixin):
         # (see _handle_combat_event)
         enc.start_time = self._last_fight_start
         self._resumed_fight_entry = self._last_fight_entry
+        # The opener stands; what came between the two lines is dropped
+        self.opener.resume()
+        # The dead stay dead, and the pull is judged again against the one
+        # before it (pull_outcome)
+        enc.time_dead.resume()
+        self._last_pull = self._prior_pull
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -1834,6 +1975,103 @@ class ESOLogAnalyzer(ListenerMixin):
         else:
             self._enemy_last_hit[target_unit_id] = entry.timestamp
 
+    def _note_enemy_met(self, timestamp_ms: int, result: str, hit_value: int,
+                        ability_id: str, source_id: str, source_health: str,
+                        target_id: str, target_health: str):
+        """A combat event of *result* and *hit_value*, or a cast
+        (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
+        'current/max' health on the line: the fight it falls in met an
+        enemy when it passed between the group (a player, a player's pet or
+        companion) and an enemy (a hostile unit, never a companion or a
+        released pet, see _opener_enemy). The group's line on an enemy
+        counts whatever its result or value, but on a dead one only the kill
+        (a hit above 0, or DIED_XP); an enemy's line on the group counts as
+        the opener counts a monster's act (ENEMY_ACT_RESULTS): not from a
+        dead enemy, and not a mechanic (fight_opener.is_mechanic).
+
+        Design: Combat with no enemy in it. The game enters combat for more
+        than enemies: for the group's weapon enchants, area damage and heavy
+        attacks on a neutral unit (Vateshran Hollows' Brimstone Orbs, broken
+        to cross the lava, or a Tomeshell in the Infinite Archive), for the
+        hits of a neutral trap (the Aetherian Archive's Shock and Frost
+        Traps), a unit the log never added (Cradle of Shadows' Pull of
+        Darkness), a hazard (the Infinite Archive's Molten Destruction), the
+        Arcane Knot's Temporal Splinters or a dead boss's poison, or for
+        nothing the log shows (two half-minute spells in Sunspire with no
+        combat event at all). Each ends with END_COMBAT and was listed as a
+        fight with nothing in it. Over the 395 split logs of January to
+        November 2026 that hold fights (9,023 of them), 58 in 29 logs met no
+        enemy from 10 s before BEGIN_COMBAT (since the last fight ended, as
+        the opener reads it, see fight_opener) to END_COMBAT: none had a hit
+        on an enemy or a player's death, 13 took damage, 15 lasted under a
+        second. Such combat is held back at END_COMBAT and never listed,
+        unless a player died in it or dies just after it ends (see
+        LATE_DEATH_GRACE_MS): a death to a trap keeps its fight and recap.
+        A trial's END_TRIAL in or after one goes to the last fight listed
+        (_trial_won_before_held): in one Lucent Citadel run it came 9 s
+        after Xoryn died, in an Arcane Knot combat, and now sits on Xoryn's
+        fight. Replayed with this rule, that was the only change to the
+        entries of the fights still listed. The 10 s before the line count
+        because the group's first hits often land before it: a survey of
+        combat events found 30 fights that met an enemy only there, none
+        with damage of its own (the hits went to the fight before, issue
+        #162). A cast counts as the opener's does: five of the survey's
+        empty fights stay listed for a monster's cast at a player or a
+        player's at a boss, acts the opener names."""
+        if target_id == '*':
+            return
+        enc = self.current_encounter
+        if self._opener_enemy(enc, target_id) is not None:
+            met = (self._opener_side(enc, source_id) is not None
+                   and (not self._zero_health(target_health) or result == 'DIED_XP'
+                        or (result in DAMAGE_RESULTS and hit_value > 0)))
+        else:
+            enemy = self._opener_enemy(enc, source_id)
+            met = (enemy is not None and result in ENEMY_ACT_RESULTS
+                   and self._opener_side(enc, target_id) is not None
+                   and not self._zero_health(source_health)
+                   and not fight_opener.is_mechanic(enemy.monster_id, ability_id, enemy.name,
+                                                    self.ability_cache.get(ability_id)))
+        if met:
+            self._enemy_met_at = timestamp_ms
+            if not enc.finalized:
+                enc.met_enemy = True
+
+    def _publish_held_fight(self, timestamp_ms: int):
+        """A player's death at *timestamp_ms*, just after a combat that met
+        no enemy ended (see LATE_DEATH_GRACE_MS), makes it a fight after
+        all: it is listed as it ended, and the death is then its late one
+        (see _note_enemy_met)."""
+        enc = self.current_encounter
+        if self._held_fight is None or self._held_fight[0] is not enc:
+            return
+        if 0 <= timestamp_ms - enc.combat_ended_at <= LATE_DEATH_GRACE_MS:
+            self._list_held_fight()
+
+    def _list_held_fight(self):
+        """List the combat held back for want of an enemy, as it ended."""
+        enc = self.current_encounter
+        # A combat event since END_COMBAT moved the start (see
+        # _handle_combat_event)
+        enc.start_time = self._held_fight[1]
+        self._held_fight = None
+        self._publish_fight(self.current_zone)
+
+    def _trial_won_before_held(self, result: dict):
+        """A trial's END_TRIAL in a combat held back for want of an enemy,
+        or just after one (after an arena's last boss, or as a dead boss's
+        poison still ticks): the run was won in the last fight listed,
+        which takes the result, as the fight carrying END_TRIAL would. With
+        no fight listed in the zone, the held combat is listed with it."""
+        entry = self._listed_fight_entry
+        if entry is None:
+            self.current_encounter.trial_result = result
+            self._list_held_fight()
+            return
+        entry.trial_result = result
+        pull_outcome.note_trial_end(entry.pull)
+        self._notify('on_fight_updated', entry)
+
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
@@ -1842,6 +2080,13 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_COMBAT at {entry.timestamp}, encounter exists: {self.current_encounter is not None}, players: {len(self.current_encounter.players) if self.current_encounter else 0}{Style.RESET_ALL}")
         
+        # The opener's pending millisecond settles into the fight before it
+        # is built, and a new memory starts (fight_opener)
+        self.opener.end_combat(entry.timestamp)
+        # A meeting from here on is the next fight's, as for the opener
+        # (see _note_enemy_met)
+        self._enemy_met_at = None
+
         # The living enemies the group hit in the fight's last seconds: if
         # combat starts again at once, they tell whether it is the same fight
         self._engaged_at_end = frozenset(
@@ -1853,9 +2098,18 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.end_time = entry.timestamp
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
+            # Who was still dead as the fight ended (pull_outcome)
+            self.current_encounter.time_dead.end(entry.timestamp)
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
-            self._publish_fight(self.current_zone)
+            if self.current_encounter.met_enemy or self.fight_deaths:
+                self._publish_fight(self.current_zone)
+            else:
+                # Combat with no enemy in it: held back, listed only should
+                # a player die as it ends (see _note_enemy_met)
+                self._held_fight = (self.current_encounter, self.current_encounter.start_time)
+                if self.current_encounter.trial_result is not None:
+                    self._trial_won_before_held(self.current_encounter.trial_result)
 
     # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -1886,7 +2140,14 @@ class ESOLogAnalyzer(ListenerMixin):
         # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
         if entry.timestamp > 0:
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
-        # Relative-ms offsets restart with each BEGIN_LOG session
+        # The game version that wrote this session, the line's last field
+        # ("eso.live.12.1"), on each of its fights for the fight history
+        # (fight_index, issue #170)
+        self.game_version = entry.fields[4] if len(entry.fields) > 4 else ""
+        # Relative-ms offsets restart with each BEGIN_LOG session (the
+        # entry's timestamp is the Unix time: the line's own is its first
+        # field)
+        self.opener.reset(casts.line_time(entry.original_line), new_session=True)
         self.buff_timeline_recorder.reset()
         self.effect_tracker.reset()
         self.pen_crit_tracker.reset()
@@ -1896,6 +2157,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        self._enemy_met_at = None
+        self._held_fight = None
+        self._listed_fight_entry = None
         # A mastery found from here on is not filled into the last
         # session's fights: a character may have changed between sessions
         self._mastery_rows.clear()
@@ -1908,6 +2172,11 @@ class ESOLogAnalyzer(ListenerMixin):
         self.casts.reset()
         self.resources.reset()
         self.build_issues.reset()
+        self.group_buff_credit.reset()
+        # The game version that wrote this session, the line's last field
+        # ("eso.live.12.1"), against the bundled data's (data_staleness)
+        self.data_check.reset(entry.fields[4] if len(entry.fields) > 4 else "")
+        self._notify('on_data_check', self.data_check.check())
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """TRIAL_INIT: the state of the instance's trial on entering it.
@@ -1943,8 +2212,17 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - "
                      f"{trial_result.result_text(result) if result else entry.fields}{Style.RESET_ALL}")
+        if result is None:
+            return
+        # The line's own moment, for the frontends that act on the result
+        # before the fight carrying it is delivered (the score banner,
+        # issue #167): END_COMBAT trails a successful END_TRIAL by up to
+        # 6 s on the real logs (median 0 s, p90 5.9 s over 148 runs), and
+        # the banner is on screen for ten seconds from this line
+        result['ended_epoch'] = self.get_absolute_timestamp(entry.timestamp)
+        self._notify('on_trial_result', result)
         enc = self.current_encounter
-        if result is None or enc is None:
+        if enc is None:
             return
         # Finalized, not in_combat, tells a fight already sent: any combat
         # event after END_COMBAT sets in_combat again (Blackrose Prison's
@@ -1955,7 +2233,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 # COMBAT_RESUME_MS), its entry is built again from it
                 enc.trial_result = result
                 self._last_fight_entry.trial_result = result
+                # The run was won in that fight: its boss died (pull_outcome)
+                pull_outcome.note_trial_end(self._last_fight_entry.pull)
                 self._notify('on_fight_updated', self._last_fight_entry)
+            elif self._held_fight is not None and self._held_fight[0] is enc:
+                self._trial_won_before_held(result)
         elif enc.in_combat:
             enc.trial_result = result
 
@@ -1981,6 +2263,20 @@ class ESOLogAnalyzer(ListenerMixin):
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
+
+            # The opener (fight_opener): every cast names its cast id; a
+            # player-side cast at a hostile, or a hostile's at a player-side
+            # unit, is weighed
+            self.opener.note_cast(entry.fields[2], ability_id)
+            if self.opener.listening and len(entry.fields) > 15:
+                self._feed_opener_cast(entry, ability_id, caster_unit_id)
+            # A cast between the group and an enemy is a meeting too
+            # (see _note_enemy_met); the parser stamps BEGIN_CAST with 0
+            if len(entry.fields) > 15 and (self.current_encounter.finalized
+                                           or not self.current_encounter.met_enemy):
+                fields = entry.fields
+                self._note_enemy_met(casts.line_time(entry.original_line), fight_opener.CAST, 0,
+                                     ability_id, caster_unit_id, fields[5], fields[14], fields[15])
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
@@ -2105,6 +2401,15 @@ class ESOLogAnalyzer(ListenerMixin):
         if source is not None and fields[6] in resources.CHANNEL_TICKS:
             self.resources.note_cast(source.unit_id, entry.timestamp, fields[5],
                                      resources.CHANNEL_TICKS[fields[6]], counted=False)
+        # A dead player whose state shows health again was revived
+        # (pull_outcome's time dead)
+        dead = enc.time_dead
+        if dead.watching():
+            if source is not None and dead.watches(source.unit_id) and pull_outcome.has_health(fields[8]):
+                dead.alive(source.unit_id, entry.timestamp)
+            if (target is not None and target is not source and dead.watches(target.unit_id)
+                    and len(fields) > 18 and pull_outcome.has_health(fields[18])):
+                dead.alive(target.unit_id, entry.timestamp)
         # The same player twice is observed once, with the gain
         same = target is source
         if source is not None:
@@ -2118,6 +2423,19 @@ class ESOLogAnalyzer(ListenerMixin):
             self.resources.observe(
                 target.unit_id, entry.timestamp, fields[19], fields[20], fields[21],
                 energize + (giver,) if energize is not None else None)
+
+    def _note_boss_health(self, entry: ESOLogEntry):
+        """A boss's health on a COMBAT_EVENT line: [17] the target's id
+        ("*" when it is the source) and [18] its health, [7] the source's
+        id and [8] its health (pull_outcome.BossHealth)."""
+        enc = self.current_encounter
+        fields = entry.fields
+        enemy = enc.enemies.get(fields[17])
+        if enemy is not None and enemy.is_boss:
+            enc.boss_health.note(fields[17], fields[18])
+        enemy = enc.enemies.get(fields[7])
+        if enemy is not None and enemy.is_boss:
+            enc.boss_health.note(fields[7], fields[8])
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -2212,6 +2530,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # row logs (resources.py)
         if len(entry.fields) > 17:
             self._observe_resources(entry)
+        # The bosses' health in the source and target states, for the
+        # pull's verdict (pull_outcome)
+        if len(entry.fields) > 18:
+            self._note_boss_health(entry)
 
         # A mastery that gives resources is logged only as the gain, the
         # source its holder (Conservation of Energy, Share the Spoils)
@@ -2255,6 +2577,21 @@ class ESOLogAnalyzer(ListenerMixin):
             if combat_event_type in ENEMY_HIT_RESULTS and len(entry.fields) > 17:
                 self._note_enemy_hit(entry)
 
+            # The opener (fight_opener): any line between the group and a
+            # hostile, whatever its result or value, since a shield absorb's
+            # partner can carry 0
+            if self.opener.listening and len(entry.fields) > 17:
+                self._feed_opener_event(entry, combat_event_type)
+
+            # Whether the group and an enemy met, looked for until they have
+            # in a fight, and always between fights (see _note_enemy_met)
+            if len(entry.fields) > 18 and (self.current_encounter.finalized
+                                           or not self.current_encounter.met_enemy):
+                fields = entry.fields
+                self._note_enemy_met(entry.timestamp, combat_event_type,
+                                     int(fields[3]) if fields[3].isdigit() else 0, fields[6],
+                                     fields[7], fields[8], fields[17], fields[18])
+
             # Taunts: a TAUNTED result shares its cast tracking id with the
             # taunting skill's own cast and hits, which name the skill
             if (len(entry.fields) > 17
@@ -2277,8 +2614,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # Player deaths arrive as DIED, or as KILLING_BLOW when the killer
             # is another player (friendly fire, PvP): the log then writes no
             # DIED for that death. DIED_XP is an enemy death that grants XP
-            # (its dying unit is the monster, never a player).
-            if combat_event_type in ('DIED', 'DIED_XP', 'KILLING_BLOW'):
+            # (its dying unit is the monster, never a player). A player's fall
+            # into lava or off the map is KILLED_BY_SUBZONE alone, the dying
+            # unit in the target block (issue #184, see death_recap). The logs
+            # hold none on an enemy, so an enemy's is not taken for its death:
+            # a boss dropped through the floor is no kill of the group's.
+            if combat_event_type in DEATH_RESULTS:
                 # Dying unit is the target unit-state block (fields[17]);
                 # a '*' target means self-inflicted: dying unit is the
                 # source (fields[7]).
@@ -2295,8 +2636,9 @@ class ESOLogAnalyzer(ListenerMixin):
                     self._record_player_death(dying_player, dying_unit_id, entry)
 
                 # If it's a hostile enemy death, mark it as damaged by players
-                elif (combat_event_type != 'KILLING_BLOW' and self.current_encounter and
-                      dying_unit_id in self.current_encounter.enemies):
+                elif (combat_event_type not in ('KILLING_BLOW', SUBZONE_DEATH)
+                      and self.current_encounter
+                      and dying_unit_id in self.current_encounter.enemies):
                     self._enemy_last_hit.pop(dying_unit_id, None)
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     if enemy.died_at is None:
@@ -2342,24 +2684,6 @@ class ESOLogAnalyzer(ListenerMixin):
                                 # Check if source is a player or player's pet
                                 if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
                                     source_unit_id in self.current_encounter.pet_ownership):
-                                    
-                                    # Track first damage dealer
-                                    if self.current_encounter.first_damage_dealer is None:
-                                        # A companion's own row, else the
-                                        # owner if it's a pet
-                                        companion = self.current_encounter.companion_key(source_unit_id)
-                                        if companion is not None:
-                                            self.current_encounter.first_damage_dealer = companion
-                                        elif source_unit_id in self.current_encounter.pet_ownership:
-                                            owner_id = self.current_encounter.pet_ownership[source_unit_id]
-                                            owner_player = self.current_encounter.find_player_by_unit_id(owner_id)
-                                            if owner_player:
-                                                self.current_encounter.first_damage_dealer = owner_player.unit_id
-                                        else:
-                                            player = self.current_encounter.find_player_by_unit_id(source_unit_id)
-                                            if player:
-                                                self.current_encounter.first_damage_dealer = player.unit_id
-                                        self.current_encounter.first_damage_timestamp = entry.timestamp
                                     
                                     if target_unit_id not in self.current_encounter.enemy_damage:
                                         self.current_encounter.enemy_damage[target_unit_id] = 0
@@ -2480,6 +2804,9 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, entry: ESOLogEntry):
         """Count a player's death and capture its recap (see death_recap.py)."""
+        # First the combat that met no enemy, should it have just ended:
+        # the death makes it a fight (see _note_enemy_met)
+        self._publish_held_fight(entry.timestamp)
         self.zone_deaths += 1
         self.fight_deaths += 1
 
@@ -2496,7 +2823,13 @@ class ESOLogAnalyzer(ListenerMixin):
         if late_entry is not None:
             late_entry.deaths += 1
             late_entry.death_recaps = late_entry.death_recaps + [recap]
+            # Dead as the fight ended, which can turn its verdict; and still
+            # dead should the fight carry on (pull_outcome)
+            pull_outcome.note_late_death(late_entry.pull, player.unit_id, bool(player.is_local))
+            self.current_encounter.time_dead.late_death(player.unit_id, entry.timestamp)
             self._notify('on_fight_updated', late_entry)
+        elif not self.current_encounter.finalized:
+            self.current_encounter.time_dead.died(player.unit_id, entry.timestamp)
 
     def _late_death_fight_entry(self, timestamp_ms: int) -> Optional[FightHistoryEntry]:
         """The fight entry just emitted, when a death at *timestamp_ms* still
@@ -2602,6 +2935,17 @@ class ESOLogAnalyzer(ListenerMixin):
                     and extracted is not None and self.current_encounter):
                 self.current_encounter.note_proc(
                     self.current_encounter.record_id(source_unit_id), ability_id)
+
+            # A group buff set's buff, credited to one wearer per player at
+            # a time, and a Champion Point star's proc: the build-issue
+            # rules on a second copy (build_issues, issue #172)
+            if ability_id in GROUP_BUFF_EFFECT_IDS and extracted is not None:
+                self.group_buff_credit.record(effect_type, ability_id, source_unit_id,
+                                              target_unit_id, entry.timestamp)
+            if (effect_type == "GAINED" and ability_id in STAR_PROC_IDS
+                    and extracted is not None and self.current_encounter):
+                self.current_encounter.note_star_proc(
+                    STAR_PROC_IDS[ability_id], self.current_encounter.record_id(source_unit_id))
 
             # A food or drink effect coming or going on a player: the
             # build-issue rules on a meal (build_issues.food_findings)
@@ -2709,11 +3053,27 @@ class ESOLogAnalyzer(ListenerMixin):
                     fight_entry = resumed
                 else:
                     self.fight_history.append(fight_entry)
-                self._last_fight_entry = fight_entry
+                    # The pull before this fight's, should the game turn out
+                    # to have cut this fight in two (pull_outcome)
+                    self._prior_pull = self._last_pull
+                if fight_entry.pull is not None:
+                    self._last_pull = fight_entry.pull
+                self._last_fight_entry = self._listed_fight_entry = fight_entry
                 self._last_fight_start = self.current_encounter.start_time
                 self._index_mastery_rows(fight_entry)
+                # 'Cut' and 'group went on' on the instance's earlier pulls,
+                # which only this fight can tell (pull_outcome)
+                changed = pull_outcome.mark_context(self._instance_fights())
                 self._notify('on_fight_updated' if resumed is not None
                              else 'on_fight_completed', fight_entry)
+                for earlier in changed:
+                    if earlier is not fight_entry:
+                        self._notify('on_fight_updated', earlier)
+
+    def _instance_fights(self) -> List[FightHistoryEntry]:
+        """The fights of the instance the newest fight is in, in order: the
+        fight list's newest block (fight_blocks)."""
+        return fight_blocks.last_block(self.fight_history.fights)
 
     def _unit_kind(self, unit_id: str) -> Optional[str]:
         """What the encounter knows a unit to be, for effect_rules scopes:
@@ -2781,6 +3141,108 @@ class ESOLogAnalyzer(ListenerMixin):
                 del casts[key]
         casts[cast_id] = ability_id
 
+    def _opener_side(self, enc: CombatEncounter, unit_id: str) -> fight_opener.Side | None:
+        """A unit as the opener sees it: a player, a player's pet or a
+        companion (fight_opener.Side), else None."""
+        player = enc.player_of(unit_id)
+        if player is not None:
+            return fight_opener.Side(unit_id, 'player', player.unit_id, player.unit_id,
+                                     player.get_display_name())
+        # A pet's or companion's owner is kept by its record id
+        # (track_pet_ownership), so the lookup is direct
+        companion = enc.companion_key(unit_id)
+        if companion is not None:
+            record = enc.companions.get(companion)
+            owner = enc.players.get(record.owner_unit_id) if record else None
+            if owner is None:
+                return None
+            return fight_opener.Side(unit_id, 'companion', companion, owner.unit_id,
+                                     owner.get_display_name())
+        owner_id = enc.pet_ownership.get(unit_id)
+        owner = enc.players.get(owner_id) if owner_id is not None else None
+        if owner is None:
+            return None
+        pet = enc.enemies.get(unit_id)
+        return fight_opener.Side(unit_id, 'pet', owner.unit_id, owner.unit_id,
+                                 owner.get_display_name(), pet.name if pet is not None else "")
+
+    def _opener_enemy(self, enc: CombatEncounter, unit_id: str) -> EnemyInfo | None:
+        """A hostile unit that counts as an enemy, hit or acting: never a
+        companion, and never a unit that had a player owner (a pet released
+        at its end turns HOSTILE with owner 0)."""
+        enemy = enc.enemies.get(unit_id)
+        if enemy is None or not enemy.is_hostile or enemy.is_companion or enemy.was_owned:
+            return None
+        return enemy
+
+    @staticmethod
+    def _zero_health(health: str) -> bool:
+        """A unit state's 'current/max' health reads 0 of more than 0."""
+        current, _, maximum = health.partition("/")
+        return current == "0" and maximum not in ("", "0")
+
+    def _feed_opener_cast(self, entry: ESOLogEntry, ability_id: str, caster_unit_id: str):
+        """A BEGIN_CAST for the opener: a player-side cast at a hostile, or
+        a hostile's cast at a player-side unit (fields: castTrackId 2,
+        caster 4 and its health 5, target 14 and its health 15)."""
+        enc = self.current_encounter
+        target_id = entry.fields[14]
+        if target_id == '*':
+            return
+        cast_time = casts.line_time(entry.original_line)
+        target = self._opener_enemy(enc, target_id)
+        if target is not None:
+            caster = self._opener_side(enc, caster_unit_id)
+            if caster is not None:
+                self.opener.note_player_cast(cast_time, entry.fields[2], ability_id, caster,
+                                             target_id, target.name, target,
+                                             target_dead=self._zero_health(entry.fields[15]))
+            return
+        monster = self._opener_enemy(enc, caster_unit_id)
+        if monster is not None:
+            side = self._opener_side(enc, target_id)
+            if side is not None:
+                self.opener.note_monster_event(
+                    cast_time, fight_opener.CAST, entry.fields[2], ability_id, caster_unit_id,
+                    monster.name, monster.monster_id, monster, side,
+                    source_dead=self._zero_health(entry.fields[5]))
+
+    def _feed_opener_event(self, entry: ESOLogEntry, result: str):
+        """A COMBAT_EVENT for the opener: a player-side unit's on a hostile,
+        or a hostile's on a player-side unit, of any result (fields:
+        hitValue 3, castTrackId 5, abilityId 6, source 7 and its health 8,
+        target 17)."""
+        enc = self.current_encounter
+        fields = entry.fields
+        source_id, target_id = fields[7], fields[17]
+        if target_id == '*':
+            return
+        target = self._opener_enemy(enc, target_id)
+        if target is not None:
+            actor = self._opener_side(enc, source_id)
+            if actor is not None:
+                try:
+                    hit_value = int(fields[3])
+                except ValueError:
+                    hit_value = 0
+                self.opener.note_player_event(entry.timestamp, result, hit_value, fields[5],
+                                              fields[6], actor, target_id, target.name, target)
+            return
+        monster = self._opener_enemy(enc, source_id)
+        if monster is not None:
+            side = self._opener_side(enc, target_id)
+            if side is not None:
+                self.opener.note_monster_event(
+                    entry.timestamp, result, fields[5], fields[6], source_id, monster.name,
+                    monster.monster_id, monster, side, source_dead=self._zero_health(fields[8]))
+
+    def _opener_player_name(self, record_id: str, fallback: str) -> str:
+        """A player's display name for the opener line, as the fight ends:
+        an anonymous member may have been named since the act."""
+        enc = self.current_encounter
+        player = (enc.player_of(record_id) or enc.find_player_by_unit_id(record_id)) if enc else None
+        return player.get_display_name() if player is not None else fallback
+
     def _taunts_of(self, enc: CombatEncounter, unit_id: str) -> List[dict]:
         """The abilities a player taunted with in this fight, most used
         first: {'id', 'name', 'icon', 'count'} each. A taunt the log did not
@@ -2828,7 +3290,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight known (an area cast's hit on a second target may come late)
         self.death_recap_recorder.refresh_fight()
         entry.death_recaps = list(self.fight_death_recaps)
-        entry.first_damage_dealer = enc.first_damage_dealer
+        # Who opened the fight and with what, and the monster's act before
+        # it, names resolved now (fight_opener)
+        entry.opener, entry.monster_first = fight_opener.opener_records(
+            enc.opening, lambda ability_id: (self.ability_cache.get(ability_id)
+                                             or self.log_parser.get_ability_name(ability_id)
+                                             or ""),
+            self._opener_player_name)
         # Every player unit, rows or not (a player with no PLAYER_INFO gets
         # no row below but still appears in the timeline, the recaps and
         # the casters): the roster the Hide names mask reads
@@ -3041,6 +3509,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # A second copy of a group buff set, or a second holder of a
+        # Champion Point star, that added next to nothing this session
+        # (build_issues, issue #172): judged across the fight's players, so
+        # once every row is built
+        self._second_source_findings(entry, enc, duration, players_with_damage)
+
         # Each companion that was out during the fight, on a row of its own
         # straight under its owner's (companions.py); one whose owner has
         # no row is left out, like a player whose build never reached the log
@@ -3069,6 +3543,7 @@ class ESOLogAnalyzer(ListenerMixin):
             # Not before the end: this fight's spans are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.effect_tracker.prune_before(enc.start_time)
+        self.group_buff_credit.prune_before(enc.start_time)
 
         # Penetration and critical damage (pen_crit): each player's own
         # sources from their build, and the fight's debuffs and buffs
@@ -3086,8 +3561,46 @@ class ESOLogAnalyzer(ListenerMixin):
                 lambda ability_id: self.ability_cache.get(ability_id, ""))]
 
         entry.trial_result = enc.trial_result
+        entry.game_version = self.game_version
+
+        # Kill or wipe, the boss's health as it ended, and each player's
+        # time dead (pull_outcome, issues #168 and #169). Players carried
+        # down from the last fight count only when this one carries its
+        # pull on
+        entry.pull = self._pull_record(enc, entry)
+        carries = bool(entry.pull and entry.pull["continues"])
+        if carries:
+            present = {p.unit_id for p in enc.players.values()}
+            pull_outcome.carry_dead(entry.pull, [key for key in enc.time_dead.carried_at_end
+                                                 if key in present])
+        entry.time_dead = enc.time_dead.totals(enc.end_time, carried=carries)
 
         return entry
+
+    def _pull_record(self, enc: 'CombatEncounter', entry: FightHistoryEntry) -> Optional[dict]:
+        """The fight's pull (pull_outcome.pull_record): its boss units with
+        the players' damage on them, the group still present as it ended,
+        who was dead then, and whether it carries on the last pull."""
+        bosses = [(unit_id, enemy.name, enc.enemy_damage.get(unit_id, 0),
+                   enemy.died_at is not None and enemy.died_at >= enc.start_time)
+                  for unit_id, enemy in enc.enemies.items()
+                  if enemy.is_boss and enc.enemy_damage.get(unit_id, 0) > 0]
+        present = [p for p in enc.players.values()
+                   if (p.grouped or p.is_local)
+                   and (p.left_at is None or p.left_at > enc.end_time)]
+        at_end = enc.time_dead.dead_at_end()
+        present_ids = {p.unit_id for p in present}
+        local = next((p for p in present if p.is_local), None)
+        pull = pull_outcome.pull_record(
+            bosses, enc.boss_health, enc.trial_result is not None,
+            players=len(present), dead_at_end=[key for key in at_end if key in present_ids],
+            local_dead_at_end=local is not None and local.unit_id in at_end,
+            start_s=self.get_absolute_timestamp(enc.start_time),
+            end_s=self.get_absolute_timestamp(enc.end_time),
+            zone=f"{self.current_zone_id}|{entry.difficulty}")
+        if pull is not None:
+            pull["continues"] = pull_outcome.continues(self._last_pull, pull)
+        return pull
 
 
     def _companion_out(self, enc: 'CombatEncounter', record: companions.CompanionRecord) -> bool:
@@ -3102,6 +3615,58 @@ class ESOLogAnalyzer(ListenerMixin):
                                                   or unit.removed_at >= enc.start_time):
                 return True
         return False
+
+    def _second_source_findings(self, entry, enc: 'CombatEncounter', duration: float,
+                                players_with_damage) -> None:
+        """The rules on a second copy (build_issues, issue #172): the
+        fight's full wearers of each group buff set, with each one's
+        credited share of the other players' time, and the holders of each
+        Champion Point star, with their procs, are noted for the session;
+        then each wearer's or holder's findings join their row. A row
+        without a build (no_build) is neither counted nor judged."""
+        rows = {row.get('unit_id'): row for row in entry.players}
+        wearers: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        holders: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        judged = []
+        for player, _damage in players_with_damage:
+            row = rows.get(player.unit_id)
+            if row is None or row.get('no_build'):
+                continue
+            key = self._scribing_player_key(player.unit_id)
+            worn = group_buff_sets_worn(player.gear)
+            slotted = stars_slotted(player.long_term_effects)
+            for group_set in worn:
+                wearers[group_set.name].append((player.unit_id, key))
+            for star in slotted:
+                holders[star.name].append((player.unit_id, key))
+            if worn or slotted:
+                judged.append((row, key))
+        group_buffs = {}
+        if any(len(worn_by) >= 2 for worn_by in wearers.values()):
+            def player_id(unit_id):
+                player = enc.player_of(unit_id)
+                return player.unit_id if player is not None else None
+            credited = self.group_buff_credit.credited(
+                enc.start_time, enc.end_time, player_id, group_of=GROUP_BUFF_SET_OF_EFFECT.get)
+            # The receivers are the group, not every player the zone added
+            # (a city, Cyrodiil, a world boss), each for the part of the
+            # fight they were there (presence.py)
+            present = {}
+            for player in enc.players.values():
+                if not (player.grouped or player.is_local):
+                    continue
+                joined = max(enc.start_time, player.joined_at or enc.start_time)
+                left = enc.end_time if player.left_at is None else min(enc.end_time, player.left_at)
+                present[player.unit_id] = max(0, left - joined)
+            group_buffs = group_buff_shares(wearers, credited, present)
+        stars = {name: {key: enc.star_procs.get(name, {}).get(unit_id, 0)
+                        for unit_id, key in held_by}
+                 for name, held_by in holders.items() if len(held_by) >= 2}
+        self.build_issues.note_second_sources(enc.start_time, duration, group_buffs, stars)
+        for row, key in judged:
+            findings = self.build_issues.second_source_findings(enc.start_time, key)
+            if findings:
+                row['build_issues'] = list(row.get('build_issues') or []) + findings
 
     def _companion_rows(self, enc: 'CombatEncounter', ability_name, ability_icon,
                         duration: float) -> dict[str, list[dict]]:

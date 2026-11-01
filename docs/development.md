@@ -105,6 +105,12 @@ On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs 
 
 ## Refreshing game data after an ESO patch
 
+First see what the update broke. `scripts/check_data_staleness.py` reads a folder of logs (the app's split folder by default, `--dir` for another; about three minutes for 11 GB with `--workers 12`) and reports, game version by game version, the set ids, armor and weapon ids, bar icons and ESO-Hub set links the logs name and the bundle does not know, the sessions in which the app's status line would speak, and every id the app depends on (tracked effects, the build-issue rules, class passives and masteries, werewolf, companion, Fatecarver and cast ids) that appeared on the previous game version and in no session of the newest: a candidate for an id the game renumbered. Food is only hinted at there (effects with a food-style icon on a player with no listed food), as in `generate_food_buffs.py --check-log`. It changes nothing.
+
+```cmd
+python scripts\check_data_staleness.py --workers 12
+```
+
 The app bundles nine data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
 
 ```cmd
@@ -166,6 +172,14 @@ python scripts\generate_set_buffs.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.
+
+Last, stamp the bundle with the game version it now matches. `data/version.json` holds that version, the date and each table's own date; the app compares the version with the one every logging session's `BEGIN_LOG` line names and shows an amber line in the status bar when the log is newer, and About lists the dates. The unit tests run `--check`, so a refreshed table whose stamp was forgotten fails them.
+
+```cmd
+:: The version as the client's log writes it, or --log <a log written today>
+:: to read it from that log's BEGIN_LOG line
+python scripts\stamp_data_version.py --game-version eso.live.12.2
+```
 
 After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encounter.log>` lists food-style effects in a recent log that the bundled table does not know yet, so a new food is noticed before it reads as "no food" in the build window.
 
