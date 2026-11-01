@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2564](../src/esolog_tail.py#L2564)*
+*[src/esolog_tail.py:2573](../src/esolog_tail.py#L2573)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -158,7 +158,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4361](../src/esolog_tail.py#L4361)*
+*[src/esolog_tail.py:4370](../src/esolog_tail.py#L4370)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -1874,7 +1874,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:123](../src/app_config.py#L123)*
+*[src/app_config.py:130](../src/app_config.py#L130)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -2195,7 +2195,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3563](../src/esolog_tail.py#L3563)*
+*[src/esolog_tail.py:3572](../src/esolog_tail.py#L3572)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2760,7 +2760,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:784](../src/gui/main_window.py#L784)*
+*[src/gui/main_window.py:800](../src/gui/main_window.py#L800)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -2770,7 +2770,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1337](../src/gui/main_window.py#L1337)*
+*[src/gui/main_window.py:1473](../src/gui/main_window.py#L1473)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -3188,7 +3188,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:347](../src/gui/fight_view.py#L347)*
+*[src/gui/fight_view.py:348](../src/gui/fight_view.py#L348)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -3276,7 +3276,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:219](../src/gui/fight_view.py#L219)*
+*[src/gui/fight_view.py:220](../src/gui/fight_view.py#L220)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
@@ -3385,3 +3385,113 @@ it, so straight after it every view still reports the old font, and a page
 rendered then from its view's font comes out at the old size (the
 Settings path did just that: Save, redraw, old size). apply() delivers the
 posted font changes before it returns.
+
+## The trial score banner
+
+### src/banner_capture.py
+
+*[src/banner_capture.py:1](../src/banner_capture.py#L1)*
+
+The trial completion banner, captured from the screen after END_TRIAL (issue #167).
+
+Design: The score banner. When a trial completes, the game shows "COMPLETED:
+SUNSPIRE (VETERAN)" with the final score, the time, the vitality bonus and the
+revives used, for ten seconds (TRIAL_COMPLETE_LIFESPAN_MS in the game's
+centerscreenannouncehandlers.lua), after a wait of half a second to four
+seconds in the announcement queue behind the boss achievement. Keeping a
+picture of it is the traditional record of a run. The log writes END_TRIAL at
+the same moment (the engine's _handle_end_trial), so the app can take the
+picture itself, on Windows: for fifteen seconds after the result arrives it
+grabs the screen once a second, reads each grab with Windows' own text
+recognition, keeps the first one in which the run's score appears, crops it to
+the banner and saves that as a PNG. The score makes the capture *verified*: the
+digits of the log's finalScore must be read off the picture, so the file can
+only be this run's banner, whatever the client language. The game's own timer
+text (trial_result.duration_text) is the fallback for a score the recognition
+split badly. Nothing is kept when no grab verifies (the game in exclusive
+fullscreen, alt-tabbed away, no recognition language installed, the banner
+never shown); the app's diagnostic line says so.
+
+Why text recognition rather than a fixed rectangle: the banner's position is
+in the game's UI units (230 from the top, centred, in centerscreenannounce.xml),
+which scale with the resolution and the UI scale setting, so the crop comes
+from the boxes the recognition returns for the title and the stats line,
+padded on the right for the vitality icon and the revives count, which it
+never reads. Only the top-centre of the screen (REGION_WIDTH_FRACTION by
+REGION_HEIGHT_FRACTION) is read and only the banner band is kept, so the group
+frames and the chat stay out of the picture and the Hide names switch needs no
+change.
+
+Why Windows PowerShell: Windows.Media.Ocr is a WinRT API that Windows
+PowerShell 5.1 (on every Windows 10 and 11) can call, so no package is needed;
+pwsh 7 cannot, lacking the WinRT projection. One process serves a whole
+burst, fed file paths on its standard input, which saves the 1.3 s start per
+grab. The paths must be long paths: the WinRT StorageFile refuses 8.3 short
+names. The engine is the user's profile language, or the first installed
+recognition language; none at all is the unverified case.
+
+Why Desktop Duplication (desktop_duplication) rather than Qt's screen grab:
+on an HDR desktop every 8-bit grab comes out washed-out, the desktop being
+composed in linear scRGB. Duplication hands the FP16 desktop over as it is,
+and gui.banner_burst.frame_to_image turns it into sRGB: divide by the display's SDR white level
+(DisplayConfig's DISPLAYCONFIG_SDR_WHITE_LEVEL, in units of 80 nits), so the
+brightness Windows shows SDR white at lands on white, then Qt's colour-space
+conversion from linear to sRGB. Qt's grab (QScreen.grabWindow) is the fallback
+when duplication is refused, as it is in a remote session.
+
+### src/desktop_duplication.py
+
+*[src/desktop_duplication.py:1](../src/desktop_duplication.py#L1)*
+
+One frame of a monitor through DXGI Desktop Duplication, in the desktop's own pixel
+format: BGRA8 on an SDR desktop, RGBA16F (linear scRGB) when Windows HDR is on.
+
+Design: Desktop Duplication through ctypes. The trial completion banner (issue #167)
+must be captured on an HDR desktop, where every 8-bit grab (GDI, Qt's
+QScreen.grabWindow, Windows Graphics Capture with an 8-bit format) comes out
+washed-out: Windows composes an HDR desktop in linear scRGB floating point and the
+8-bit paths clip it without the transfer curve. Desktop Duplication hands the
+composed desktop over as it is, R16G16B16A16_FLOAT when HDR is on, so the
+conversion to sRGB can be done properly (gui.banner_burst.frame_to_image). The
+packages that wrap the API either need numpy and OpenCV (windows-capture, about
+150 MB in the frozen app) or still need a Direct3D device made by hand (pywinrt), so
+the API is driven directly through ctypes: a Direct3D 11 device per adapter, its
+outputs enumerated through DXGI, IDXGIOutput5::DuplicateOutput1 asked for FP16 or
+BGRA8 frames, each frame copied to a staging texture and mapped for reading. The
+vtable positions below are the declaration order of d3d11.h and dxgi1_5.h; a wrong
+one crashes the process, so run_self_test() exercises every call on a real desktop.
+
+The first AcquireNextFrame after DuplicateOutput often returns an empty texture
+(LastPresentTime 0: no desktop image presented since the duplication began), so
+grab() keeps acquiring until a presented frame comes or the deadline passes.
+Desktop Duplication is refused inside some remote sessions and on an output that
+belongs to another adapter than the device, which is why every adapter gets its
+own device.
+
+### src/gui/banner_burst.py
+
+*[src/gui/banner_burst.py:1](../src/gui/banner_burst.py#L1)*
+
+The burst that captures the trial completion banner (issue #167): the GUI
+side of banner_capture.
+
+Design: The capture burst. A BannerBurst lives on the UI thread, owned by the
+main window, one at a time, started the moment the engine reports END_TRIAL
+(on_trial_result), before the fight that carries the result is finalized:
+END_COMBAT trails a successful END_TRIAL by up to six seconds on the real logs,
+and the banner is on screen for ten. All the work runs on the burst's thread:
+it opens a Desktop Duplication reader per monitor (desktop_duplication; a lost
+desktop, a mode or HDR switch, is reopened once), and once a second for
+fifteen seconds grabs every monitor, converts the frame (frame_to_image), cuts
+the top-centre region (banner_capture.region_rect), writes it as a PNG in a
+temporary folder, reads it with the Windows recognition (one PowerShell
+process for the whole burst) and verifies it against the run's score. The UI
+thread only takes part when no monitor can be duplicated (a remote session),
+grabbing through Qt's QScreen, which must be used from the UI thread, and
+handing the images to the thread. The first verified grab ends the burst: the
+band the recognition boxed is cut out of that PNG, padded, and saved under the
+run's name in the banner folder. Fifteen seconds with nothing verified end it
+with nothing kept, and the reasons the thread noted (no duplication, a lost
+monitor) go into the status-bar line. The thread holds frames, images, paths
+and text, never a widget, so nothing of Qt's widgets is touched off the UI
+thread (the rule of issue #18); the burst deletes itself after it reports.
