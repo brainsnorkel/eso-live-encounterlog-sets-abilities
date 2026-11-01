@@ -1553,7 +1553,8 @@ class MainWindow(QMainWindow):
             return
         from gui.banner_burst import BannerBurst
         self._banner_done.add(target.key)
-        burst = BannerBurst(target, folder, self)
+        # What the burst saw goes to banner.log, beside the settings and crash.log
+        burst = BannerBurst(target, folder, self, log_path=Path(self.config.path).parent / "banner.log")
         burst.finished.connect(self._on_banner_finished)
         self._banner_burst = burst
         self.statusBar().showMessage("Capturing the score banner…", 4000)

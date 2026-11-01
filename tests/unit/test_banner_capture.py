@@ -3,13 +3,17 @@
 the run's score, the crop from the recognition's boxes, the file's name and
 its lookup, the desktop frame conversion (an HDR frame scaled by the SDR
 white level), the Windows recognition on the Sunspire fixture where it is
-available, and the Settings group on Windows only."""
+available, and the Settings group on Windows only. For arenas (issue #183):
+the burst's length from END_TRIAL's own time, the symmetric crop, the most
+complete grab kept, banner.log, and a dry run of the burst's thread."""
 
 import datetime
 import os
 import struct
 import sys
 import tempfile
+import time
+import typing
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -64,11 +68,75 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(bc.verify(lines, _target()), (1, "score"))
 
 
+    def test_the_timer_fallback_reads_the_rounded_timer(self):
+        # Maelstrom Arena's banner showed 44:10 for 2,649,500 ms (issue #183)
+        target = _target(score=557196, duration_ms=2649500)
+        self.assertEqual(bc.verify([OcrLine("Final Score 55719 Total Time 44:10 Vita", 0, 0, 1, 1)], target),
+                         (0, "time"))
+        self.assertIsNone(bc.verify([OcrLine("Final Score 55719 Total Time 44:09 Vita", 0, 0, 1, 1)], target))
+
+
+# Maelstrom Arena's banner in a 3840x2160 screen's region (2304 wide, centre
+# 1152), as a grab mid-wipe reads it and as the whole banner does
+M_TITLE_PART = OcrLine("COMPLETED: MAELSTROM A", 830, 74, 470, 70)
+M_STATS_PART = OcrLine("Final Score 557196 Total Time 44:10 Vita", 760, 202, 640, 54)
+M_TITLE = OcrLine("COMPLETED: MAELSTROM ARENA (VETERAN)", 830, 74, 644, 70)
+# the revives count, never read, runs on to 1544, the mirror of 760
+M_STATS = OcrLine("Final Score 557196 Total Time 44:10 Vitality Bonus 11000", 760, 202, 690, 54)
+
+
+def _maelstrom(**overrides):
+    values = {"name": "Maelstrom Arena", "score": 557196, "duration_ms": 2649500, "trial_id": 6, "vitality": 11}
+    values.update(overrides)
+    return _target(**values)
+
+
+class BurstTimingTests(unittest.TestCase):
+    """The burst runs until END_TRIAL's own time plus 45 s, and at least
+    15 s (issue #183)."""
+
+    def test_until_end_trial_plus_45_seconds(self):
+        ended = 1_762_000_000.0
+        self.assertEqual(bc.burst_seconds(ended, now=ended), 45)
+        self.assertEqual(bc.burst_seconds(ended, now=ended + 1), 44)       # Vateshran's line, read 1 s late
+        self.assertEqual(bc.burst_seconds(ended, now=ended + 21.5), 23.5)  # Maelstrom's, 21.5 s late
+
+    def test_at_least_fifteen_seconds(self):
+        ended = 1_762_000_000.0
+        self.assertEqual(bc.burst_seconds(ended, now=ended + 40), 15)
+        self.assertEqual(bc.burst_seconds(ended, now=ended + 80), 15)
+
+
 class CropTests(unittest.TestCase):
     def test_band_takes_the_title_and_pads(self):
-        # union (74,37)-(743,128): 669 wide, 91 tall; 4% left, 12% right,
-        # 40% above and below, clamped to the fixture's 874x136
-        self.assertEqual(bc.crop_rect([TITLE, STATS], 1, 874, 136), (48, 1, 775, 135))
+        # union (74,37)-(743,128): 669 wide, 91 tall; 4% each side, made
+        # symmetric about the middle (437), 40% above and below, clamped to
+        # the fixture's 874x136
+        self.assertEqual(bc.crop_rect([TITLE, STATS], 1, 874, 136), (48, 1, 778, 135))
+
+    def test_a_half_drawn_banner_is_cut_to_the_whole_ones_width(self):
+        # The left edge fixes the right: centred on the screen's centre
+        # line, the crop of a grab mid-wipe reaches past where the whole
+        # banner's words and its revives count end
+        x, _y, w, _h = bc.crop_rect([M_TITLE_PART, M_STATS_PART], 1, 2304, 972)
+        self.assertEqual(x + w / 2, 1152)
+        self.assertLess(x, M_STATS_PART.x)
+        self.assertGreaterEqual(x + w, max(M_TITLE.right, M_STATS.right, 2 * 1152 - M_STATS.x))
+        # the old crop, 12% past the last word read, ended mid-banner
+        self.assertLess(M_STATS_PART.right + int(0.12 * 640), 2 * 1152 - M_STATS.x)
+
+    def test_the_words_reaching_past_the_mirror_widen_both_sides(self):
+        # Words further right of the centre than the left edge is left of
+        # it: the crop still holds them, and stays centred
+        line = OcrLine("Final Score 557196 Total Time 44:10", 1000, 200, 600, 50)
+        x, _y, w, _h = bc.crop_rect([line], 0, 2304, 972)
+        self.assertEqual(x + w / 2, 1152)
+        self.assertGreaterEqual(x + w, line.right)
+        self.assertLess(x, line.x)
+
+    def test_an_explicit_centre(self):
+        x, _y, w, _h = bc.crop_rect([TITLE, STATS], 1, 874, 136, centre_x=460)
+        self.assertEqual(x + w / 2, 460)
 
     def test_a_far_line_above_is_left_out(self):
         far = OcrLine("Chat line", 100, 2, 300, 10)   # 89 px above, more than 3 x 27
@@ -84,6 +152,88 @@ class CropTests(unittest.TestCase):
     def test_region_is_the_top_centre(self):
         self.assertEqual(bc.region_rect(3840, 2160), (768, 0, 2304, 972))
         self.assertEqual(bc.region_rect(1920, 1080), (384, 0, 1152, 486))
+
+
+class CompletenessTests(unittest.TestCase):
+    """Which verified grab is kept: the one reading the vitality bonus, then
+    the one whose stats row reaches furthest right, a later one on a tie."""
+
+    def test_the_whole_banner_reads_the_bonus(self):
+        self.assertEqual(bc.completeness([M_TITLE, M_STATS], 1, _maelstrom()), (True, M_STATS.right, 54))
+        self.assertEqual(bc.completeness([M_TITLE_PART, M_STATS_PART], 1, _maelstrom()),
+                         (False, M_STATS_PART.right, 54))
+
+    def test_a_row_the_recognition_split_counts_whole(self):
+        left = OcrLine("Final Score 557196 Total Time 44:10", 760, 202, 450, 54)
+        right = OcrLine("Vitality Bonus 11000", 1240, 204, 210, 50)
+        self.assertEqual(bc.completeness([M_TITLE, left, right], 1, _maelstrom()), (True, 1450, 54))
+
+    def test_the_score_itself_is_not_the_bonus(self):
+        line = OcrLine("Final Score 11000 Total Time 44:10", 760, 202, 450, 54)
+        self.assertFalse(bc.completeness([line], 0, _maelstrom(score=11000, vitality=11))[0])
+        line = OcrLine("Final Score 11000 Total Time 44:10 Vitality Bonus 11000", 760, 202, 690, 54)
+        self.assertTrue(bc.completeness([line], 0, _maelstrom(score=11000, vitality=11))[0])
+        # no vitality known: never read
+        self.assertFalse(bc.completeness([M_STATS], 0, _maelstrom(vitality=None))[0])
+
+    def test_more_complete(self):
+        self.assertTrue(bc.more_complete((True, 900, 50), (False, 1400, 50)))
+        self.assertFalse(bc.more_complete((False, 1400, 50), (True, 900, 50)))
+        self.assertTrue(bc.more_complete((False, 1400, 50), (False, 1000, 50)))
+        # a tie, or a pixel's jitter, goes to the later grab
+        self.assertTrue(bc.more_complete((True, 1449, 54), (True, 1450, 54)))
+        # a later grab clearly shorter (drawing out) does not
+        self.assertFalse(bc.more_complete((True, 1300, 54), (True, 1450, 54)))
+
+    def test_the_target_knows_the_bonus(self):
+        self.assertEqual(_maelstrom().bonus_text, "11000")
+        self.assertIsNone(_target().bonus_text)
+        self.assertEqual(BannerTarget.from_result(dict(RESULT)).bonus_text, "35000")
+
+
+class BannerLogTests(unittest.TestCase):
+    """banner.log: what each burst saw, the newest bursts kept (issue #183)."""
+
+    def _block(self, outcome="Score banner saved: x.png", kept=1):
+        target = _maelstrom(ended_epoch=datetime.datetime(2026, 11, 1, 14, 47, 58, 500000).timestamp())  # noqa: DTZ001  local time
+        grabs = [
+            bc.GrabRecord(21.6, r"\\.\DISPLAY2", "bgra8 3840x2160", [OcrLine("Quest Updated", 0, 0, 1, 1)]),
+            bc.GrabRecord(22.6, r"\\.\DISPLAY2", "bgra8 3840x2160", [M_TITLE_PART, M_STATS_PART], "score"),
+        ]
+        return bc.burst_log_text(target, target.ended_epoch + 21.5, 23.5, outcome, grabs, kept)
+
+    def test_a_bursts_block(self):
+        lines = self._block().splitlines()
+        self.assertEqual(lines[0], "=== 2026-11-01 14:47:58.5 Maelstrom Arena vet: score 557196, time 44:10")
+        self.assertEqual(lines[1], "END_TRIAL written at 14:47:58.5, acted on at 14:48:20.0 (+21.5 s);"
+                                   " grabs for 24 s, to +45.0 s")
+        self.assertEqual(lines[2], "Score banner saved: x.png")
+        self.assertEqual(lines[3], r"+21.6 s \\.\DISPLAY2 bgra8 3840x2160: 1 lines, 0 with digits; no match")
+        self.assertEqual(lines[4], r"+22.6 s \\.\DISPLAY2 bgra8 3840x2160: 2 lines, 1 with digits;"
+                                   " matched the score, kept")
+        # only the lines holding a digit are kept in full
+        self.assertEqual(lines[5:], ["    Final Score 557196 Total Time 44:10 Vita"])
+        self.assertNotIn("Quest Updated", self._block())
+        self.assertNotIn("kept", self._block(kept=None))
+
+    def test_the_newest_bursts_are_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "banner.log"
+            for i in range(5):
+                self.assertTrue(bc.append_burst_log(path, self._block(outcome=f"outcome {i}"), keep=3))
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("=== "), 3)
+            self.assertNotIn("outcome 1", text)
+            self.assertIn("outcome 2", text)
+            self.assertTrue(text.rstrip().endswith("Vita"))
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["banner.log"])
+
+    def test_an_unwritable_log_is_no_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            blocker = Path(tmp) / "config"
+            blocker.write_text("a file where the folder should be", encoding="utf-8")
+            self.assertFalse(bc.append_burst_log(blocker / "banner.log", self._block()))
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["config"])
 
 
 class NamingTests(unittest.TestCase):
@@ -368,6 +518,169 @@ class BannerInTheGuiTests(unittest.TestCase):
             self.assertEqual(seen, ["copy", "open"])
         finally:
             view.deleteLater()
+
+
+class _FakeSource:
+    """A monitor for the dry run: a blank 400x200 frame each grab, whose
+    top-centre region is 240x90 (centre 120)."""
+
+    def __init__(self, info, notes):
+        self.name = info.device_name
+        self.dead = False
+        self.last_format = "bgra8"
+
+    def grab(self):
+        from PySide6.QtGui import QImage
+        image = QImage(400, 200, QImage.Format.Format_RGB32)
+        image.fill(0)
+        return image
+
+    def close(self):
+        pass
+
+
+class _FakeSession:
+    """The recognition for the dry run: what grab n 'reads' comes from
+    SCRIPT, by the grab's file name (grab-NN-i.png)."""
+
+    SCRIPT: typing.ClassVar[dict] = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def read(self, path):
+        return list(self.SCRIPT.get(int(Path(path).name.split("-")[1]), []))
+
+    def kill(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class _NoRecognition:
+    def __init__(self, *args, **kwargs):
+        raise bc.OcrError("Windows has no text recognition language installed")
+
+
+# The Maelstrom banner in the fake region: drawing in, whole, drawing out
+DRAWING_IN = [OcrLine("COMPLETED: MAELSTROM A", 50, 20, 50, 12),
+              OcrLine("Final Score 557196 Total Time 44:10 Vita", 30, 40, 90, 10)]
+WHOLE = [OcrLine("COMPLETED: MAELSTROM ARENA (VETERAN)", 50, 20, 140, 12),
+         OcrLine("Final Score 557196 Total Time 44:10 Vitality Bonus 11000", 30, 40, 150, 10)]
+DRAWING_OUT = [OcrLine("Final Score 557196 Total Time", 30, 40, 70, 10)]
+
+
+class BurstDryRunTests(unittest.TestCase):
+    """The burst's own thread, with a fake monitor and a fake recognition:
+    the banner appearing late, the follow-up grabs, the grab kept, the crop
+    saved and banner.log written, on each outcome."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        import desktop_duplication as dd
+        from gui import banner_burst
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.log = self.dir / "config" / "banner.log"
+        self.folder = self.dir / "Banners"
+        output = dd.OutputInfo(0, 0, r"\\.\DISPLAY9", 0, 0, 400, 200)
+        for patcher in (patch.object(banner_burst, "_Source", _FakeSource),
+                        patch.object(dd, "list_outputs", lambda: [output]),
+                        patch.object(bc, "OcrSession", _FakeSession),
+                        patch.object(bc, "BURST_INTERVAL_MS", 5)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.burst = None
+
+    def tearDown(self):
+        from PySide6.QtCore import QEvent
+        if self.burst is not None:
+            self.burst.cancel()
+            self.burst.deleteLater()
+        for _ in range(3):
+            self.app.processEvents()
+            self.app.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.tmp.cleanup()
+
+    def _run(self, target, script, wait_s=10.0):
+        from gui.banner_burst import BannerBurst
+        _FakeSession.SCRIPT = script
+        self.burst = BannerBurst(target, self.folder, log_path=self.log)
+        seen = []
+        self.burst.finished.connect(lambda path, message: seen.append((path, message)))
+        self.burst.start()
+        temp = self.burst._temp
+        deadline = time.monotonic() + wait_s
+        while not seen and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.005)
+        self.assertTrue(seen, "the burst never reported")
+        self.burst = None  # it deletes itself once its thread ends
+        deadline = time.monotonic() + 5
+        while temp.exists() and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.005)
+        self.assertFalse(temp.exists(), "the temporary grabs were left behind")
+        return seen[0]
+
+    def _log_grabs(self):
+        return [line for line in self.log.read_text(encoding="utf-8").splitlines() if line.startswith("+")]
+
+    def test_the_whole_banner_is_kept_not_the_first_match(self):
+        target = _maelstrom(ended_epoch=time.time() - 1)
+        path, message = self._run(target, {2: DRAWING_IN, 3: WHOLE, 4: DRAWING_OUT})
+        self.assertEqual(path, self.folder / target.file_name)
+        self.assertTrue(message.startswith("Score banner saved"))
+        from PySide6.QtGui import QImage
+        saved = QImage(str(path))
+        # the whole banner's band, symmetric about the region's centre (120):
+        # x 30..190 padded 6 a side and mirrored, 24..216; y 20..50 padded 12
+        self.assertEqual((saved.width(), saved.height()), (192, 54))
+        grabs = self._log_grabs()
+        self.assertEqual(len(grabs), 5)  # two blank, the first match and two follow-ups
+        self.assertTrue(grabs[0].endswith("no match"))
+        self.assertTrue(grabs[2].endswith("matched the score"))
+        self.assertTrue(grabs[3].endswith("matched the score, kept"))
+        self.assertTrue(grabs[4].endswith("matched the score"))
+        self.assertIn(r"\\.\DISPLAY9 bgra8 400x200", grabs[0])
+        self.assertIn(message, self.log.read_text(encoding="utf-8"))
+
+    def test_nothing_seen_keeps_nothing_and_logs_the_grabs(self):
+        target = _maelstrom(ended_epoch=time.time() - 100)
+        with patch.object(bc, "BURST_MIN_SECONDS", 0.05):
+            path, message = self._run(target, {})
+        self.assertIsNone(path)
+        self.assertIn("nothing kept", message)
+        self.assertFalse(self.folder.exists())
+        grabs = self._log_grabs()
+        self.assertTrue(grabs)
+        self.assertTrue(all(line.endswith("no match") for line in grabs))
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["config"])
+
+    def test_no_recognition_is_logged(self):
+        target = _maelstrom(ended_epoch=time.time() - 1)
+        with patch.object(bc, "OcrSession", _NoRecognition):
+            path, message = self._run(target, {})
+        self.assertIsNone(path)
+        text = self.log.read_text(encoding="utf-8")
+        self.assertIn(message, text)
+        self.assertIn("no text recognition language", text)
+        self.assertEqual(self._log_grabs(), [])
+
+    def test_a_cancelled_burst_is_logged(self):
+        from gui.banner_burst import BannerBurst
+        _FakeSession.SCRIPT = {}
+        burst = BannerBurst(_maelstrom(ended_epoch=time.time() - 1), self.folder, log_path=self.log)
+        burst.start()
+        time.sleep(0.05)
+        burst.cancel()
+        burst.deleteLater()
+        self.assertIn("cancelled, the window closed", self.log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
