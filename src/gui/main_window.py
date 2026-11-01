@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from app_startup import engine_settings
 from data_staleness import status_text, status_tooltip
 from fight_index import (
     FightIndex,
@@ -55,7 +56,6 @@ from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
-from app_startup import engine_settings
 from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller

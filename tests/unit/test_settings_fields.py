@@ -22,7 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
     from PySide6.QtCore import QCoreApplication, QEvent, Qt
-    from PySide6.QtGui import QAccessible, QFont, QFontDatabase
+    from PySide6.QtGui import QAccessible, QFont, QFontInfo
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import (
         QAbstractSpinBox,
@@ -84,9 +84,11 @@ class TestSettingsFields(unittest.TestCase):
         styles.append(self.app.style().objectName())
         dialog.show()
         for style in styles:
+            style_object = QStyleFactory.create(style)
+            style_object.setParent(dialog)  # freed with it
             for points in (9, 18):
                 for spin in dialog.findChildren(QAbstractSpinBox):
-                    spin.setStyle(QStyleFactory.create(style))
+                    spin.setStyle(style_object)
                     spin.setFont(QFont(self.app.font().family(), points))
                     spin.resize(spin.sizeHint())
                     self.app.processEvents()
@@ -145,9 +147,21 @@ class TestSettingsFields(unittest.TestCase):
         self.assertTrue(DELETE_WARNING.startswith("Warning:"))
         # The six settings the engine reads say so, in the same words
         for text in (RECAP_HELP, RULES_HELP, dialog.companion_accrual.accessibleDescription(),
-                     dialog.log_row.edit.accessibleDescription(),
-                     dialog.split_enabled.accessibleDescription()):
+                     dialog.log_row.edit.accessibleDescription()):
             self.assertTrue(text.endswith(REPLAYS), text)
+        # A path field says what blank means, which its row label never
+        # announces, then its help
+        self.assertEqual(dialog.log_row.edit.accessibleDescription(),
+                         "Blank = auto-detect. " + REPLAYS)
+        self.assertTrue(dialog.archive_dir.edit.accessibleDescription().startswith("Blank = "))
+        # The split switch and its folder both say they replay, in words
+        # that leave the zip and Recycle Bin rows out
+        for widget in (dialog.split_enabled, dialog.split_dir.edit):
+            self.assertIn("replays the session", widget.accessibleDescription())
+            self.assertIn("below do not", widget.accessibleDescription())
+        # The Update button sentence reaches the check box, which is never
+        # disabled, not only the channel combo, which is while checks are off
+        self.assertIn("Update button", dialog.update_check.accessibleDescription())
         for group in dialog.findChildren(QGroupBox):
             self.assertNotIn("(", group.title())
         self.assertEqual(dialog.update_check.text(),
@@ -178,15 +192,22 @@ class TestSettingsFields(unittest.TestCase):
         dialog.companion_accrual.setChecked(True)
         dialog.apply_to_config()
         self.assertNotEqual(engine_settings(self.config), before)
-        # The rules as text: a comment is a change
+        # The rules as the engine parses them: a comment, a blank line or
+        # CRLF line endings change nothing; a rule does
         again = engine_settings(self.config)
-        dialog.rules_edit.setPlainText(dialog.rules_edit.toPlainText() + "# mine\n")
+        text = dialog.rules_edit.toPlainText()
+        dialog.rules_edit.setPlainText(text + "# mine\n\n")
+        dialog.apply_to_config()
+        self.assertEqual(engine_settings(self.config), again)
+        self.config.set("tracking.rules", text.replace("\n", "\r\n"))
+        self.assertEqual(engine_settings(self.config), again)
+        dialog.rules_edit.setPlainText(text + "Mine = 12345 on self\n")
         dialog.apply_to_config()
         self.assertNotEqual(engine_settings(self.config), again)
 
     def test_the_rules_editor_prefers_consolas(self):
         from gui import text_size
-        if "Consolas" not in QFontDatabase.families():
+        if QFontInfo(QFont("Consolas")).family() != "Consolas":
             self.skipTest("Consolas not installed")
         self.assertEqual(text_size.fixed_font().family(), "Consolas")
         self.assertEqual(self._dialog().rules_edit.font().family(), "Consolas")

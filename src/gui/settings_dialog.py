@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
@@ -104,7 +104,15 @@ class _SpinBox(QSpinBox):
     box at its hint showed "10 secon" (measured offscreen, issue #187;
     Fusion and 9 pt fit). The style's edit-field rect at the hint size is
     the field the box really gets, to the pixel, so the shortfall against
-    the widest text is added to the hint."""
+    the widest text is added to the hint. Layouts ask for the hint on
+    every pass, so it is kept until the base hint, the font, the style,
+    the range or the affixes change (22 µs a pair of hints measured,
+    against 1 µs for the base class's cached one)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hint_key = None
+        self._hint = QSize()
 
     def _widest(self) -> int:
         fm = self.fontMetrics()
@@ -119,13 +127,18 @@ class _SpinBox(QSpinBox):
             QStyle.CC_SpinBox, option, QStyle.SC_SpinBoxEditField, self).width()
 
     def sizeHint(self):
-        hint = super().sizeHint()
-        # the line edit's own text margins, and a little slack
-        need = self._widest() + 6
-        field = self._field_width(hint.width(), hint.height())
-        if field < need:
-            hint.setWidth(hint.width() + need - field)
-        return hint
+        base = super().sizeHint()
+        key = (base.width(), base.height(), self.font().key(), self.style().objectName(),
+               self.minimum(), self.maximum(), self.prefix(), self.suffix())
+        if key != self._hint_key:
+            hint = QSize(base)
+            # the line edit's own text margins, and a little slack
+            need = self._widest() + 6
+            field = self._field_width(base.width(), base.height())
+            if field < need:
+                hint.setWidth(base.width() + need - field)
+            self._hint_key, self._hint = key, hint
+        return QSize(self._hint)
 
     def minimumSizeHint(self):
         return self.sizeHint()
@@ -136,9 +149,11 @@ class _PathRow(QHBoxLayout):
     what a screen reader calls the edit ("Log file") and, as "Browse for
     the log file", its button: a field added to a form as a layout gets no
     buddy label, so Qt fell back to the group's title for the edit, and
-    every button was "Browse…" (issue #187)."""
+    every button was "Browse…". *blank* is what a blank field means
+    ("auto-detect"), the row label's parenthesis, which that label does
+    not announce either; it opens the edit's description (issue #187)."""
 
-    def __init__(self, value: str, directory: bool, name: str = ""):
+    def __init__(self, value: str, directory: bool, name: str = "", blank: str = ""):
         super().__init__()
         self._directory = directory
         self.edit = QLineEdit(value or "")
@@ -147,6 +162,8 @@ class _PathRow(QHBoxLayout):
         if name:
             self.edit.setAccessibleName(name)
             browse.setAccessibleName(f"Browse for the {name[0].lower()}{name[1:]}")
+        if blank:
+            self.edit.setAccessibleDescription(f"Blank = {blank}.")
         self.addWidget(self.edit, 1)
         self.addWidget(browse)
 
@@ -213,7 +230,8 @@ class SettingsDialog(QDialog):
         # Log file
         log_group = QGroupBox("Encounter log")
         log_form = _form(log_group)
-        self.log_row = _PathRow(config.get("log_path") or "", directory=False, name="Log file")
+        self.log_row = _PathRow(config.get("log_path") or "", directory=False, name="Log file",
+                                blank="auto-detect")
         log_form.addRow("Log file (blank = auto-detect):", self.log_row)
         log_form.addRow(self._help(REPLAYS, self.log_row.edit))
         layout.addWidget(log_group)
@@ -224,10 +242,14 @@ class SettingsDialog(QDialog):
         self.split_enabled = QCheckBox("Create a split log file for each encounter")
         self.split_enabled.setChecked(bool(config.get("split.enabled", False)))
         self.split_dir = _PathRow(config.get("split.dir") or "", directory=True,
-                                  name="Split folder")
+                                  name="Split folder", blank="log folder")
         split_form.addRow(self.split_enabled)
         split_form.addRow("Split folder (blank = log folder):", self.split_dir)
-        split_form.addRow(self._help(REPLAYS, self.split_enabled))
+        # Read downwards this line heads the zip and Recycle Bin rows too,
+        # which do not replay, so it says which two it covers
+        split_form.addRow(self._help(
+            "Saving a change to the split log or its folder replays the session; the "
+            "zipping and moving below do not.", self.split_enabled, self.split_dir.edit))
         # Retention (split_retention, issue #86): what a run would do now is
         # counted from the same selection the run makes
         zip_row = QHBoxLayout()
@@ -291,7 +313,7 @@ class SettingsDialog(QDialog):
         archive_form.addRow(self._help("Checked when the app starts. " + SIZE_GUIDE,
                                        self.threshold))
         self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True,
-                                    name="Archive folder")
+                                    name="Archive folder", blank="log folder")
         archive_form.addRow("Archive folder (blank = log folder):", self.archive_dir)
         self.delete_original = QCheckBox("Delete Encounter.log after a verified archive")
         self.delete_original.setChecked(bool(config.get("archive.delete_original", False)))
@@ -335,7 +357,7 @@ class SettingsDialog(QDialog):
         self.update_channel.setEnabled(self.update_check.isChecked())
         self.update_check.toggled.connect(self.update_channel.setEnabled)
         update_form.addRow("Channel:", self.update_channel)
-        update_form.addRow(self._help(CHANNEL_HELP, self.update_channel))
+        update_form.addRow(self._help(CHANNEL_HELP, self.update_check, self.update_channel))
         layout.addWidget(update_group)
 
         # Display: the app-wide text size (issue #77, gui.text_size), applied
@@ -390,7 +412,7 @@ class SettingsDialog(QDialog):
                 "Capture the trial completion banner from the screen when a trial or arena ends")
             self.banner_enabled.setChecked(bool(config.get("banner.enabled", False)))
             self.banner_dir = _PathRow(config.get("banner.dir") or "", directory=True,
-                                       name="Banner folder")
+                                       name="Banner folder", blank="log folder\\Banners")
             banner_form.addRow(self.banner_enabled)
             banner_form.addRow("Banner folder (blank = log folder\\Banners):", self.banner_dir)
             banner_form.addRow(self._help(
@@ -536,16 +558,19 @@ class SettingsDialog(QDialog):
         color = theme["vet"] if role == "warning" else theme["muted"]
         return f"color: {color}; {size}"
 
-    def _help(self, text: str, control: QWidget, role: str = "muted") -> QLabel:
-        """A wrapped helper paragraph under *control*, the setting it
+    def _help(self, text: str, *controls: QWidget, role: str = "muted") -> QLabel:
+        """A wrapped helper paragraph under *controls*, the settings it
         explains, in the small muted style (or the warning one). The text
-        is also the control's accessible description, so a screen reader
-        says it with the control rather than as a paragraph on its own
-        (issue #187)."""
+        is also each control's accessible description, after whatever the
+        control already says of itself (a path field's "Blank = …"), so a
+        screen reader says it with the control rather than as a paragraph
+        on its own (issue #187)."""
         label = QLabel(text)
         label.setWordWrap(True)
         label.setStyleSheet(self._small_style(role))
-        control.setAccessibleDescription(text)
+        for control in controls:
+            said = control.accessibleDescription()
+            control.setAccessibleDescription(f"{said} {text}" if said else text)
         return label
 
     def _fit_to_screen(self, content: QWidget) -> None:

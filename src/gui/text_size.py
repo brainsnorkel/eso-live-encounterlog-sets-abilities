@@ -92,9 +92,11 @@ def fixed_font():
     system's fixed font. Qt's fixed font is Courier New on the Windows
     desktop and, offscreen, Agency FB, which is why the guide's rules
     looked condensed (issue #187)."""
-    from PySide6.QtGui import QFontDatabase
+    from PySide6.QtGui import QFont, QFontDatabase, QFontInfo
     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-    if "Consolas" in QFontDatabase.families():
+    # QFontInfo resolves the one family; QFontDatabase.families() would
+    # enumerate every installed font on each open of Settings
+    if QFontInfo(QFont("Consolas")).family() == "Consolas":
         font.setFamily("Consolas")
     font.setPointSizeF(font.pointSizeF() * _pct / 100.0)
     return font

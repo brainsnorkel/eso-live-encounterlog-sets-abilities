@@ -48,13 +48,15 @@ def engine_settings(config: AppConfig) -> tuple:
     with the engine's own defaults, so a config never saved (every key
     unset) compares equal to the same settings saved once: a blank path
     and an absent one are both None, absent rules are the default text, an
-    absent window is the default. The rules compare as text, so a comment
-    edited in the box replays too, which is what someone who edited the
-    box expects."""
+    absent window is the default. The rules are compared as build_analyzer
+    parses them (Rule is a frozen dataclass, so the tuple compares by
+    value): a comment, a blank line or the line endings of a hand-edited
+    config.json (the editor writes LF) change nothing the engine reads and
+    replay nothing."""
     return (config.get("log_path") or None,
             bool(config.get("split.enabled", False)),
             config.get("split.dir") or None,
-            config.get("tracking.rules", DEFAULT_RULES) or "",
+            tuple(parse_rules(config.get("tracking.rules", DEFAULT_RULES) or "")[0]),
             bool(config.get("companions.accrue_to_owner", False)),
             recap_window_s(config.get("death_recap.window_s")))
 
