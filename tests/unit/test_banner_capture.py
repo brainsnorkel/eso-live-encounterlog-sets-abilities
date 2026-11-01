@@ -237,6 +237,7 @@ class SettingsGroupTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    @unittest.skipUnless(sys.platform == "win32", "the dialog's Startup group reads the registry on win32")
     def test_group_on_windows_saves_its_fields(self):
         dialog, config = self._dialog("win32")
         try:

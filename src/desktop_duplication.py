@@ -38,7 +38,6 @@ from ctypes import (
     c_ubyte,
     c_uint,
     c_ulong,
-    c_ushort,
     c_void_p,
     wintypes,
 )
@@ -83,7 +82,10 @@ class DuplicationError(RuntimeError):
 
 
 class _GUID(Structure):
-    _fields_ = [("Data1", c_ulong), ("Data2", c_ushort), ("Data3", c_ushort), ("Data4", c_ubyte * 8)]
+    # Fixed widths: the module is imported on Linux too (the GUI tests),
+    # where c_ulong is 8 bytes and the 16-byte copy below would not fit
+    _fields_ = [("Data1", ctypes.c_uint32), ("Data2", ctypes.c_uint16), ("Data3", ctypes.c_uint16),
+                ("Data4", c_ubyte * 8)]
 
     @classmethod
     def of(cls, text: str) -> _GUID:
