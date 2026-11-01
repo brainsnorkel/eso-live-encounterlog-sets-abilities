@@ -129,6 +129,7 @@ SCRIPTS_UNKNOWN = "scripts not in log"
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
+BANNER_HREF = "esolog:banner/"  # + open, save or copy: the run's score banner (issue #167)
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
 # + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
 # penetration and critical damage over the fight (pen_crit); a click opens
@@ -140,6 +141,18 @@ MISFORTUNE_HREF = "esolog:misfortune/"
 # + the player's unit id: the '?' after a lone Class Mastery, whose hover
 # gives the likely second; a click opens the build window (issue #149)
 MASTERY_HREF = "esolog:mastery/"
+
+
+def _banner_links(entry, theme) -> str:
+    """The result strip's links to the run's saved score banner (issue
+    #167): open it, save it elsewhere, copy it; nothing when none was
+    captured."""
+    if not getattr(entry, "banner_path", None):
+        return ""
+    link = theme["link"]
+    return (f" &nbsp;·&nbsp; <a href='{BANNER_HREF}open' style='color:{link}'>Score banner</a>"
+            f" <a href='{BANNER_HREF}save' style='color:{link};text-decoration:none'>(save as…)</a>"
+            f" <a href='{BANNER_HREF}copy' style='color:{link};text-decoration:none'>(copy)</a>")
 SECOND_MASTERY_CUE = "?"
 SECOND_MASTERY_TITLE = "Second Class Mastery not seen"
 NEVER_LOGGED_NOTE = "never shows in the log"
@@ -1194,7 +1207,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
             f"style='border-style:solid;border-width:1px;"
             f"border-color:{theme['frame_border']};border-collapse:collapse;"
             f"background-color:{theme['frame_bg']};margin-bottom:6px'>"
-            f"<tr><td><b>{e(result_text(result))}</b></td></tr></table>")
+            f"<tr><td><b>{e(result_text(result))}</b>{_banner_links(entry, theme)}</td></tr></table>")
     # Not an <h3>: Qt would scale the nested stats by the heading's size
     # adjustment on top of their point size
     parts += [

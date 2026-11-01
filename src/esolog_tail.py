@@ -2012,8 +2012,17 @@ class ESOLogAnalyzer(ListenerMixin):
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_TRIAL - "
                      f"{trial_result.result_text(result) if result else entry.fields}{Style.RESET_ALL}")
+        if result is None:
+            return
+        # The line's own moment, for the frontends that act on the result
+        # before the fight carrying it is delivered (the score banner,
+        # issue #167): END_COMBAT trails a successful END_TRIAL by up to
+        # 6 s on the real logs (median 0 s, p90 5.9 s over 148 runs), and
+        # the banner is on screen for ten seconds from this line
+        result['ended_epoch'] = self.get_absolute_timestamp(entry.timestamp)
+        self._notify('on_trial_result', result)
         enc = self.current_encounter
-        if result is None or enc is None:
+        if enc is None:
             return
         # Finalized, not in_combat, tells a fight already sent: any combat
         # event after END_COMBAT sets in_combat again (Blackrose Prison's

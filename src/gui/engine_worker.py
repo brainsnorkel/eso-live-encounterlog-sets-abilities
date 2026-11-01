@@ -79,6 +79,9 @@ class SignalListener(AnalyzerListener):
     def on_data_check(self, check):
         self._emit("data_check", check)
 
+    def on_trial_result(self, result):
+        self._emit("trial_result", result)
+
 
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.
@@ -100,6 +103,7 @@ class EngineWorker(QObject):
     # The session's game version against the bundled data's, and what the
     # log named that the data does not know (data_staleness, issue #173)
     data_check = Signal(object)        # data_staleness.DataCheck
+    trial_result = Signal(object)      # END_TRIAL's result dict, as the line is read (issue #167)
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
     # A requested restart has begun: fights sent before this came from the

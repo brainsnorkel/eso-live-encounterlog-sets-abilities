@@ -6,10 +6,9 @@ typed events through AnalyzerListener callbacks. Frontends (the GUI) and tests
 register listeners; engine modules never import GUI toolkits.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 
 @dataclass
@@ -21,9 +20,9 @@ class LogStatus:
     from the file's mtime when source == "approximate"; and is None when
     source == "none" (no log file).
     """
-    log_path: Optional[Path] = None
+    log_path: Path | None = None
     size_bytes: int = 0
-    latest_entry_time: Optional[datetime] = None
+    latest_entry_time: datetime | None = None
     source: str = "none"  # "exact" | "approximate" | "none"
 
 
@@ -39,8 +38,8 @@ class ArchiveEvent:
         "failed"    - archive failed and was cleaned up (reason set)
     """
     kind: str
-    log_path: Optional[Path] = None
-    archive_path: Optional[Path] = None
+    log_path: Path | None = None
+    archive_path: Path | None = None
     done_bytes: int = 0
     total_bytes: int = 0
     reason: str = ""
@@ -86,12 +85,20 @@ class AnalyzerListener:
         and what the log named that the data does not know (issue #173):
         sent as a session begins and whenever something new is found."""
 
+    def on_trial_result(self, result: dict) -> None:
+        """END_TRIAL recorded a successful run: *result* as trial_result
+        builds it, with 'ended_epoch' (the line's own time as Unix
+        seconds, None when the log's start is unknown). Sent as the line
+        is read, before the fight that carries it is finalized and
+        delivered, so a frontend can act at once (the score banner,
+        issue #167)."""
+
 
 class ListenerMixin:
     """Mixin providing listener registration and safe fan-out notification."""
 
     def __init__(self):
-        self.listeners: List[AnalyzerListener] = []
+        self.listeners: list[AnalyzerListener] = []
 
     def add_listener(self, listener: AnalyzerListener) -> None:
         if listener not in self.listeners:
@@ -142,6 +149,9 @@ class RecordingListener(AnalyzerListener):
 
     def on_data_check(self, check) -> None:
         self.events.append(("data_check", check))
+
+    def on_trial_result(self, result: dict) -> None:
+        self.events.append(("trial_result", result))
 
     def of_kind(self, kind: str):
         return [e for e in self.events if e[0] == kind]
