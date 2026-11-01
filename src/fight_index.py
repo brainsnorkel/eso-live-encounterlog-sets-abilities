@@ -66,6 +66,7 @@ import json
 import os
 import re
 import threading
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from statistics import median
@@ -79,10 +80,12 @@ ROSTER_MIN = 8
 SET_MIN = 3
 # Kills in a player's hover
 PLAYER_LAST = 3
-# Bytes hashed to tell a byte-identical copy of a split log
+# Bytes hashed, with the size, to tell a byte-identical copy of a split log
 HEAD_BYTES = 262144
+# Fields that do not make a line different: the app version (the first
+# start after an update replays the session with a new one)
+_NOT_COMPARED = frozenset({"app"})
 
-ANON = "anon"
 _COUNT_WORDS = {1: "kill", 2: "two kills", 3: "three kills"}
 
 
@@ -102,14 +105,14 @@ def short_version(version) -> str:
 
 
 def fmt_dps(value) -> str:
-    """'441k', '1.10M', '950'."""
+    """'441.2k', '1.10M', '950': the fight pane's own dps format
+    (gui.fight_render's _fmt_dps is this), so the history line and the
+    header beside it read alike."""
     value = float(value or 0)
     if value >= 1_000_000:
         return f"{value / 1_000_000:.2f}M"
-    if value >= 10_000:
-        return f"{value / 1000:.0f}k"
     if value >= 1_000:
-        return f"{value / 1000:.1f}k"
+        return f"{value / 1_000:.1f}k"
     return f"{value:.0f}"
 
 
@@ -163,6 +166,10 @@ def fight_line(entry, app_version: str = "") -> dict | None:
         "group_boss_dps": round(float(getattr(entry, "group_boss_dps", 0) or 0)),
         "deaths": int(getattr(entry, "deaths", 0) or 0),
         "players": int(pull.get("players") or 0),
+        # A pull the game cut in two (pull_outcome): the later fight's
+        # figures cover only its tail, so it is never compared
+        "continues": bool(pull.get("continues")),
+        "cut": bool(pull.get("cut")),
         "handles": sorted(handles),
         "local": local,
         "rows": rows,
@@ -188,7 +195,7 @@ class FightIndex:
         self.skipped = 0  # lines that did not parse
         self._pending: list[str] = []
         self._by_boss: dict[tuple, list[str]] = {}
-        self._done: set[str] | None = None
+        self._done: tuple[set[str], set[str]] | None = None
         self._lock = threading.RLock()
 
     @property
@@ -238,7 +245,7 @@ class FightIndex:
         if not line or not line.get("key"):
             return False
         with self._lock:
-            if self.lines.get(line["key"]) == line:
+            if _same(self.lines.get(line["key"]), line):
                 return False
             try:
                 text = json.dumps(line, ensure_ascii=False, separators=(",", ":"))
@@ -271,26 +278,36 @@ class FightIndex:
 
     # ---- the backfill's notes ----
 
-    def done_names(self) -> set[str]:
-        """The split logs a backfill has read already."""
+    def backfill_notes(self) -> tuple[set[str], set[str]]:
+        """(the split logs a backfill has read, the copy marks of those
+        read: fight_index._copy_hash), from fights-backfill.json."""
         with self._lock:
             if self._done is None:
                 try:
                     data = json.loads(self.backfill_path.read_text(encoding="utf-8"))
-                    self._done = {str(name) for name in data.get("done", [])}
+                    self._done = ({str(name) for name in data.get("done", [])},
+                                  {str(mark) for mark in data.get("copies", [])})
                 except (OSError, ValueError, AttributeError):
-                    self._done = set()
-            return set(self._done)
+                    self._done = (set(), set())
+            return set(self._done[0]), set(self._done[1])
 
-    def mark_done(self, name: str) -> None:
+    def done_names(self) -> set[str]:
+        """The split logs a backfill has read already."""
+        return self.backfill_notes()[0]
+
+    def mark_done(self, name: str, copy_mark: str | None = None) -> None:
+        """Note *name* read (and its copy mark, so a copy of it is passed
+        over in a later build too)."""
         with self._lock:
-            done = self.done_names()
+            done, copies = self.backfill_notes()
             done.add(str(name))
-            self._done = done
+            if copy_mark:
+                copies.add(str(copy_mark))
+            self._done = (done, copies)
             try:
                 tmp = self.backfill_path.with_suffix(".json.tmp")
-                tmp.write_text(json.dumps({"done": sorted(done)}, ensure_ascii=False),
-                               encoding="utf-8")
+                tmp.write_text(json.dumps({"done": sorted(done), "copies": sorted(copies)},
+                                          ensure_ascii=False), encoding="utf-8")
                 os.replace(tmp, self.backfill_path)
             except OSError:
                 pass  # a later run reads the log again; its lines are held already
@@ -299,11 +316,14 @@ class FightIndex:
 
     def kills(self, zone_id: str, difficulty: str, boss: str, before_s: float | None) -> list[dict]:
         """The kills of *boss* at *difficulty* in the zone, before
-        *before_s* (Unix seconds; None for every one), oldest first."""
+        *before_s* (Unix seconds; None for every one), oldest first. A
+        kill that carried on a pull the game cut in two is left out: its
+        figures are the tail's (34 such fights in 2,362 pulls)."""
         with self._lock:
             keys = list(self._by_boss.get((str(zone_id), str(difficulty), str(boss)), ()))
             found = [self.lines[k] for k in keys if k in self.lines]
         found = [line for line in found if line.get("outcome") == "kill"
+                 and not line.get("continues")
                  and (before_s is None or float(line.get("start_s") or 0) < before_s)]
         found.sort(key=lambda line: float(line.get("start_s") or 0))
         return found
@@ -318,6 +338,14 @@ class FightIndex:
             return len({int(float(line.get("start_s") or 0) // 86400) for line in self.lines.values()})
 
 
+def _same(old: dict | None, new: dict) -> bool:
+    """Whether two lines hold the same fight figures (_NOT_COMPARED aside)."""
+    if old is None:
+        return False
+    keys = (set(old) | set(new)) - _NOT_COMPARED
+    return all(old.get(key) == new.get(key) for key in keys)
+
+
 def _boss_key(line: dict) -> tuple:
     return (str(line.get("zone_id") or ""), str(line.get("difficulty") or ""),
             str(line.get("boss") or ""))
@@ -330,7 +358,10 @@ def _roster(entry) -> set[str]:
             if str(p.get("name") or "").startswith("@")}
 
 
-def _earlier_kills(index: FightIndex | None, entry) -> list[dict]:
+def earlier_kills(index: FightIndex | None, entry) -> list[dict]:
+    """The index's kills of the fight's boss at its difficulty in its zone,
+    before it, oldest first; read once per render and handed to
+    comparison and player_history."""
     pull = getattr(entry, "pull", None)
     if index is None or not pull or pull.get("start_s") is None:
         return []
@@ -338,11 +369,12 @@ def _earlier_kills(index: FightIndex | None, entry) -> list[dict]:
                        pull.get("boss") or "", float(pull["start_s"]))
 
 
-def comparison(index: FightIndex | None, entry) -> dict | None:
+def comparison(index: FightIndex | None, entry, kills: list[dict] | None = None) -> dict | None:
     """The pull against the earlier kills of its boss (see the module):
-    {'boss', 'all': [figures], 'narrow': [figures], 'label', 'this'};
-    None when the index holds no earlier kill of it."""
-    kills = _earlier_kills(index, entry)
+    {'boss', 'all': [figures], 'narrow': [figures], 'label', 'every',
+    'this'}; None when the index holds no earlier kill of it. *kills*:
+    earlier_kills, when the caller has it already."""
+    kills = earlier_kills(index, entry) if kills is None else kills
     if not kills:
         return None
     roster = _roster(entry)
@@ -387,13 +419,16 @@ def comparison_text(found: dict | None) -> str:
     return text
 
 
-def player_history(index: FightIndex | None, entry, handle: str) -> list[float]:
+def player_history(index: FightIndex | None, entry, handle: str,
+                   kills: list[dict] | None = None) -> list[float]:
     """A named player's boss dps in their last PLAYER_LAST earlier kills of
-    the fight's boss in the index, most recent first."""
+    the fight's boss in the index, most recent first. *kills*:
+    earlier_kills, when the caller has it already."""
     if not str(handle or "").startswith("@"):
         return []
+    kills = earlier_kills(index, entry) if kills is None else kills
     values = []
-    for line in reversed(_earlier_kills(index, entry)):
+    for line in reversed(kills):
         for row in line.get("rows") or []:
             if row.get("handle") == handle:
                 values.append(float(row.get("boss_dps") or row.get("dps") or 0))
@@ -443,14 +478,18 @@ _SPLIT_NAME = re.compile(r"^\d{12}-.+\.(log|zip)$", re.IGNORECASE)
 
 def is_split_name(name: str) -> bool:
     """A file the splitter wrote, '<yymmddhhmmss>-<Zone>[-vet].log', or
-    split retention's zip of one; never Encounter.log or an archive, which
-    a blank split folder (the log's own) holds too."""
-    return bool(_SPLIT_NAME.match(str(name)))
+    split retention's zip of one ('<that>.log.zip'); never the live
+    session's '<yymmddhhmmss>-temp.log' the splitter is still writing, nor
+    Encounter.log or an archive, which a blank split folder (the log's
+    own) holds too."""
+    name = str(name)
+    return bool(_SPLIT_NAME.match(name)) and not name.lower().endswith("-temp.log")
 
 
 def split_logs(folder) -> list[tuple[Path, str | None]]:
     """The split folder's logs, newest first by name (the splitter names
-    them by their start): each split .log, and each log in a split's .zip."""
+    them by their start): each split .log, and each log in a split's .zip.
+    A zip that will not open is left out."""
     from log_open import is_zip, log_members
     folder = Path(folder)
     found = []
@@ -465,21 +504,26 @@ def split_logs(folder) -> list[tuple[Path, str | None]]:
         elif name.lower().endswith(".zip") and path.is_file() and is_zip(path):
             try:
                 found.extend((path, member) for member in log_members(path))
-            except (OSError, ValueError):
+            except (OSError, ValueError, zipfile.BadZipFile):
                 continue
     return found
 
 
-def _source_name(path: Path, member: str | None) -> str:
-    return f"{path.name}/{member}" if member else path.name
+def source_name(path: Path, member: str | None) -> str:
+    """A log's name in the backfill's notes: the split's own file name,
+    which split retention's zip keeps as its member's, so a log read and
+    later zipped is not read again."""
+    return Path(member).name if member else Path(path).name
 
 
-def _head_hash(path: Path, member: str | None) -> str | None:
+def _copy_hash(path: Path, member: str | None, size: int) -> str | None:
+    """A byte-identical copy's mark: the first HEAD_BYTES and the size (a
+    split cut short shares its head with the full one, not its size)."""
     if member:
         return None  # a zipped split is the one copy retention kept
     try:
         with open(path, "rb") as fh:
-            return hashlib.sha1(fh.read(HEAD_BYTES)).hexdigest()
+            return f"{hashlib.sha1(fh.read(HEAD_BYTES)).hexdigest()}:{size}"
     except OSError:
         return None
 
@@ -489,51 +533,66 @@ def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
              progress: Callable[[str, int, int], None] | None = None,
              cancel: threading.Event | None = None) -> dict:
     """Read the split logs the index has not read yet through the engine
-    (see the module): {'logs': read, 'skipped': copies skipped, 'fights':
-    lines added, 'left': logs still to read}. Raises
-    review_load.ReviewCancelled on *cancel*, after noting the logs done."""
+    (see the module): {'logs': read, 'skipped': copies skipped, 'failed':
+    logs that would not read, 'fights': lines added, 'left': logs still
+    to read}. A log that fails (a zip member that will not decompress, a
+    file moved away mid-read, an engine error) is counted and passed over,
+    not noted done, so the next build tries it again and the rest are
+    read. A log is noted done only once its lines are on disk. Raises
+    review_load.ReviewCancelled on *cancel*."""
     import review_load
     from log_open import log_size
-    done = index.done_names()
+    done, copies = index.backfill_notes()
     todo = [(path, member) for path, member in split_logs(folder)
-            if _source_name(path, member) not in done]
+            if source_name(path, member) not in done]
     sizes = []
     for path, member in todo:
         try:
             sizes.append(log_size(path, member))
-        except (OSError, ValueError):
+        except (OSError, ValueError, zipfile.BadZipFile):
             sizes.append(0)
     total = sum(sizes) or 1
-    result = {"logs": 0, "skipped": 0, "fights": 0, "left": len(todo)}
-    seen: set[str] = set()
+    result = {"logs": 0, "skipped": 0, "failed": 0, "fights": 0, "left": len(todo)}
+    unwritten: list[tuple[str, str | None]] = []  # read, lines not on disk yet
     offset = 0
     for number, ((path, member), size) in enumerate(zip(todo, sizes), start=1):
         # Between logs too: a replay checks only every megabyte or so
         if cancel is not None and cancel.is_set():
             raise review_load.ReviewCancelled()
-        head = _head_hash(path, member)
-        name = _source_name(path, member)
-        if head is not None and head in seen:
+        name = source_name(path, member)
+        mark = _copy_hash(path, member, size)
+        if mark is not None and mark in copies:
             result["skipped"] += 1
             index.mark_done(name)
             offset += size
             result["left"] -= 1
             continue
-        if head is not None:
-            seen.add(head)
         label = f"Fight history: log {number} of {len(todo)}, {path.name}"
 
         def step(_label, done_bytes, _total, base=offset, label=label):
             if progress:
                 progress(label, min(base + done_bytes, total), total)
 
-        analyzer = make_analyzer()
-        _shown, fights = review_load.replay_log(analyzer, path, member, -1, step, cancel)
+        try:
+            analyzer = make_analyzer()
+            _shown, fights = review_load.replay_log(analyzer, path, member, -1, step, cancel)
+        except review_load.ReviewCancelled:
+            raise
+        except Exception:  # one bad log must not stop the rest
+            result["failed"] += 1
+            result["left"] -= 1
+            offset += size
+            continue
         for entry in fights:
             if index.add(fight_line(entry, app_version), flush=False):
                 result["fights"] += 1
-        index.flush()
-        index.mark_done(name)
+        if mark is not None:
+            copies.add(mark)
+        unwritten.append((name, mark))
+        if index.flush():
+            for done_name, done_mark in unwritten:
+                index.mark_done(done_name, done_mark)
+            unwritten.clear()
         result["logs"] += 1
         result["left"] -= 1
         offset += size
