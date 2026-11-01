@@ -36,6 +36,9 @@ TOPICS = [
         "src/esolog_tail.py:ESOLogAnalyzer._resume_last_fight",
         "src/esolog_tail.py#A death just after END_COMBAT",
     ]),
+    ("Fight boundaries: combat with no enemy", [
+        "src/esolog_tail.py:ESOLogAnalyzer._note_enemy_met",
+    ]),
     ("The fight's opener", [
         "src/fight_opener.py",
     ]),

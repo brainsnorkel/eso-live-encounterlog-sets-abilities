@@ -472,11 +472,20 @@ class OpenerRecorder:
             return True
         if act.result == CAST and (act.enemy_id, act.ability_id) in fanned:
             return True
-        if self.scripted and (act.monster_id in SCRIPTED_MONSTERS
-                              or act.ability_id in SCRIPTED_ABILITIES):
-            return True
-        action_id = monster_action_id(act)
-        return bool(act.enemy_name) and act.enemy_name == self._ability_name(action_id)
+        return is_mechanic(act.monster_id, act.ability_id, act.enemy_name,
+                           self._ability_name(monster_action_id(act)), self.scripted)
+
+
+def is_mechanic(monster_id: str, ability_id: str, monster_name: str,
+                action_name: str | None, scripted: bool = True) -> bool:
+    """A monster's act that is a mechanic, never the monster going for
+    anyone: a hazard, which is a unit named as the ability it acts with
+    (*action_name*: for a shield absorb, the attack's), or with *scripted*
+    a listed scripted monster or ability (see the module's note on noise).
+    The engine asks it too, of a combat that met no enemy."""
+    if scripted and (monster_id in SCRIPTED_MONSTERS or ability_id in SCRIPTED_ABILITIES):
+        return True
+    return bool(monster_name) and monster_name == action_name
 
 
 def hit_ability_id(act: _Act) -> str:
