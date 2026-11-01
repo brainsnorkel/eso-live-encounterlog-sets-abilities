@@ -342,6 +342,26 @@ class TestBackfill(unittest.TestCase):
         result = fi.backfill(self.splits, self.index, self._analyzer)
         self.assertEqual((result["logs"], result["skipped"], result["fights"]), (2, 1, 2))
 
+    def test_a_sessions_cut_short_split_is_read_before_the_full_one(self):
+        # The full log, read last, keeps its lines where the two differ
+        from unittest import mock
+
+        import review_load
+        full = (self.splits / "260102200000-Kyne's-Aegis-vet.log").read_text(encoding="utf-8")
+        (self.splits / "260102200000-Kyne's-Aegis-vet-1.log").write_text(
+            full[:len(full) // 2], encoding="utf-8")
+        read = []
+
+        def replay(_analyzer, path, *_args):
+            read.append(path.name)
+            return path.name, []
+
+        with mock.patch.object(review_load, "replay_log", replay):
+            fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual(read, ["260102200000-Kyne's-Aegis-vet-1.log",
+                                "260102200000-Kyne's-Aegis-vet.log",
+                                "260101200000-Kyne's-Aegis-vet.log"])
+
     def test_the_splitters_temp_file_is_never_read(self):
         self.assertFalse(fi.is_split_name("261101203000-temp.log"))
 

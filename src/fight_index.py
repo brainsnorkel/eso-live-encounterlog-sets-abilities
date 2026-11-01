@@ -29,7 +29,10 @@ parsed for it: the line is the entry's own figures. Builds are not kept.
   first, through the engine itself (review_load.replay_log), on the
   review thread with its cancel and progress, so every figure is the
   app's own. Byte-identical copies, zipped or not, are skipped by a hash
-  of their first 256 KB and their size. Each log done is noted in
+  of their first 256 KB and their size. A session's re-splits that the
+  old splitter cut short (issue #85) are read too, shortest first, so
+  where two hold one fight the longest log's line is the one kept: in the
+  maintainer's folder 20 such logs in 10 sessions. Each log done is noted in
   ``fights-backfill.json`` beside the index, by its own name (which a zip
   of it keeps) and with its copy mark, once its lines are written, so a
   cancelled backfill carries on where it stopped. The
@@ -402,8 +405,8 @@ def comparison(index: FightIndex | None, entry, kills: list[dict] | None = None)
 
 
 def comparison_text(found: dict | None) -> str:
-    """'Your Lord Falgravn kills: median 441k over 28, best 953k; with 8+
-    of this roster on 12.1: median 470k over 10. This pull: 512k'."""
+    """'Your Lord Falgravn kills: median 441.2k over 28, best 953.4k; with
+    8+ of this roster on 12.1: median 470.6k over 10. This pull: 512.3k'."""
     if not found or not found["all"]:
         return ""
     figures = found["all"]
@@ -442,8 +445,8 @@ def player_history(index: FightIndex | None, entry, handle: str,
 
 
 def player_history_text(entry, handle: str, values: list[float], names=None) -> str:
-    """'@x on Lord Falgravn: 92k, 101k, 88k in their last three kills with
-    you'; 'in your last ...' for the logging player; '' for none.
+    """'@x on Lord Falgravn: 92.4k, 101.2k, 88.0k in their last three
+    kills with you'; 'in your last ...' for the logging player; '' for none.
     *names*: the Hide names mask."""
     if not values:
         return ""
@@ -561,6 +564,15 @@ def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
             sizes.append(log_size(path, member))
         except (OSError, ValueError, zipfile.BadZipFile):
             sizes.append(0)
+    # Newest session first, and one session's logs shortest first: the old
+    # splitter's re-splits of a session cut short (issue #85) share its
+    # start and hold its fights up to their end, and where two hold one
+    # fight with different figures (the shorter one's last fights, read
+    # without what came after), the longest log's line, read last, is kept
+    order = sorted(range(len(todo)), reverse=True,
+                   key=lambda i: (todo[i][0].name[:12], -sizes[i]))
+    todo = [todo[i] for i in order]
+    sizes = [sizes[i] for i in order]
     total = sum(sizes) or 1
     result = {"logs": 0, "skipped": 0, "failed": 0, "fights": 0, "left": len(todo)}
     # Read or passed over, the lines they stand for not on disk yet
