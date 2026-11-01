@@ -1071,6 +1071,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # one before it, for a fight the game cut in two (pull_outcome)
         self._last_pull: Optional[dict] = None
         self._prior_pull: Optional[dict] = None
+        # The game version on the session's BEGIN_LOG line, for each
+        # fight's entry (fight_index)
+        self.game_version: str = ""
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1966,6 +1969,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
         if entry.timestamp > 0:
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
+        # The game version that wrote this session, the line's last field
+        # ("eso.live.12.1"), on each of its fights for the fight history
+        # (fight_index, issue #170)
+        self.game_version = entry.fields[4] if len(entry.fields) > 4 else ""
         # Relative-ms offsets restart with each BEGIN_LOG session (the
         # entry's timestamp is the Unix time: the line's own is its first
         # field)
@@ -3336,6 +3343,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 lambda ability_id: self.ability_cache.get(ability_id, ""))]
 
         entry.trial_result = enc.trial_result
+        entry.game_version = self.game_version
 
         # Kill or wipe, the boss's health as it ended, and each player's
         # time dead (pull_outcome, issues #168 and #169). Players carried

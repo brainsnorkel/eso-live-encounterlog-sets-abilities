@@ -44,6 +44,9 @@ DEFAULTS = {
     },
     "history": {
         "load_recent_mb": 0,    # 0 -> attach at end; N -> parse trailing N MB
+        # The status bar's one hint that the fight history (fight_index,
+        # issue #170) can be built from the split logs has been shown
+        "backfill_offered": False,
     },
     "tracking": {
         "rules": DEFAULT_RULES,  # tracked effects, one rule per line (effect_rules)

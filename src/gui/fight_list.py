@@ -72,6 +72,7 @@ from PySide6.QtWidgets import (
     QToolTip,
 )
 
+from fight_index import fmt_dps, run_best_kill
 from gui.fight_render import (
     ISSUES_LIST_CUE,
     fight_issues_tooltip,
@@ -128,6 +129,17 @@ def header_text(entry) -> str:
     return f"{zone} · {difficulty}" if difficulty else zone
 
 
+def run_text(run, index=None) -> str:
+    """A run row's line: the run's summary, and the best earlier kill of
+    the boss with this roster from the fight history when there is one
+    (fight_index.run_best_kill, issue #170)."""
+    text = run_summary(run)
+    best = run_best_kill(index, run)
+    if best:
+        text += f", best kill with this roster {fmt_dps(best)}"
+    return text
+
+
 def run_tooltip(run, hide_names: bool = False) -> str:
     """A run row's hover text: its summary and the details under it."""
     entries = [fight for pull in run for fight in pull]
@@ -164,6 +176,10 @@ class FightList(QListWidget):
         self._block_items: dict[int, list] = {}
         self._block_runs: dict[int, list] = {}
         self._batch = False  # set_fights: one refresh per block at the end
+        # The fight history (fight_index.FightIndex, issue #170) the run
+        # rows read their best earlier kill from: plain Python, no Qt, and
+        # no reference back to the window; None without one
+        self.history_index = None
         # The window's Hide names switch, for the (i)'s hover text. A flag,
         # not the window's _names_for: a bound method kept here would tie
         # the window and the list in a reference cycle
@@ -250,6 +266,11 @@ class FightList(QListWidget):
             self.insertItem(at, item)
         return item
 
+    def refresh_all_runs(self):
+        """Every block's run rows anew (after the fight history grew)."""
+        for block in list(self._block_items):
+            self._refresh_runs(block)
+
     def _refresh_runs(self, block):
         """The block's run rows anew, each straight under its run's last
         fight (pull_outcome.runs). The words a fight row owes to later
@@ -268,7 +289,8 @@ class FightList(QListWidget):
             last = by_entry.get(id(run[-1][-1]))
             if last is None:
                 continue
-            item = self._add_row(RUN, run_summary(run), at=self.row(last) + 1, block=block)
+            item = self._add_row(RUN, run_text(run, self.history_index), at=self.row(last) + 1,
+                                 block=block)
             item.setData(RUN_ROLE, run)
             item.setData(Qt.AccessibleDescriptionRole, run_description(run))
             made.append(item)

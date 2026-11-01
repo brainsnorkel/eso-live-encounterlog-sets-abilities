@@ -16,14 +16,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import fight_index
 import review_load
 from app_startup import build_analyzer
+from version import __version__
 
 
 @dataclass
 class ReviewEvent:
     """kind: 'progress' (label, done, total), 'outlined' (outline),
-    'loaded' (shown, fights), 'cancelled', 'failed' (reason)."""
+    'loaded' (shown, fights), 'indexed' (label: the backfill's summary, a
+    fight_index.backfill result as done, the fights added, and total, the
+    logs still to read), 'cancelled', 'failed' (reason)."""
     kind: str
     path: str
     member: str = ""
@@ -74,6 +78,27 @@ class ReviewRunner:
                 analyzer, Path(path), member or None, from_begin_log, progress, cancel)
             notify(ReviewEvent("loaded", path, member, shown=shown, fights=fights))
         return self._start(path, member, work, notify)
+
+    def backfill(self, config, folder: str, index,
+                 notify: Callable[[ReviewEvent], None]) -> bool:
+        """Read the split folder's logs into the fight history's index
+        (fight_index.backfill) on this thread, each through an analyzer
+        built from a snapshot of the settings, as a review is."""
+        snapshot = config.snapshot()
+
+        def progress(label, done, total):
+            notify(ReviewEvent("progress", folder, label=label, done=done, total=total))
+
+        def work(cancel):
+            result = fight_index.backfill(folder, index, lambda: build_analyzer(snapshot, []),
+                                          __version__, progress, cancel)
+            notify(ReviewEvent(
+                "indexed", folder,
+                label=(f"Fight history: {result['fights']} fights from {result['logs']} "
+                       f"split log{'s' if result['logs'] != 1 else ''}"
+                       + (f", {result['skipped']} copies skipped" if result["skipped"] else "")),
+                done=result["fights"], total=result["left"]))
+        return self._start(folder, "", work, notify)
 
     def _start(self, path, member, work, notify) -> bool:
         if self.running:
