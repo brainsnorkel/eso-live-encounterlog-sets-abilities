@@ -117,7 +117,7 @@ The rules are fixed in this version; what each finding says is meant to be enoug
 
 #### Group effects and a second source
 
-What a second player bringing the same group effect adds, as the 379 split logs of 12 January to 1 November 2026 show it:
+What a second player bringing the same group effect adds, as the 378 split logs of 12 January to 1 November 2026 show it:
 
 - **A named buff is one buff.** Major Courage, Major Slayer, Pearlescent Ward and the rest do not stack: a player has the buff from one source at a time, and the log credits it to that source. With two wearers of a set the game shares the group out between them (two Pearlescent Wards gave six players each in a Lucent Citadel fight), so whose buff a player had says nothing about whether the second copy was needed. What it does show is a copy credited with almost nothing.
 - **A whole-group set does not reach everyone all the time.** With one wearer, living players had Pearlescent Ward 90% of their living time in groups of 9 to 12, Lucent Echoes 89% and Xoryn's Masterpiece 87%, so a second copy can add coverage when the group spreads out. The rule above flags only a copy the log credits with almost none of it. Lucent Echoes never counts for its own wearers, so with two copies neither wearer gets it.

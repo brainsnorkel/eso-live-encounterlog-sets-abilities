@@ -164,10 +164,9 @@ rule, player-fights / distinct characters in that survey:
   Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
   once named the complete sets worn instead, which read as noise.
 - **A second copy of a group buff set that gave the group next to nothing**
-  (issue #172; 21 copies, by player and set, in 17 of the 379 unique split
-  logs of 12 January to 1 November 2026, on 80 fights; the scans below that
-  read 378 of them ran before the 379th, a solo dungeon run with no group
-  set, was written). The issue proposed each wearer's
+  (issue #172; 21 copies, by player and set, in 17 of the 378 unique split
+  logs of 12 January to 1 November 2026, on 80 fights; a count of 379 seen
+  once took in a split the app was still writing). The issue proposed each wearer's
   loss: the group's uptime of the set's buff less the same without that
   wearer's spans. The log does not support the reading the issue gave it.
   The game writes one instance of a set's buff per receiver, credited to
@@ -201,8 +200,8 @@ rule, player-fights / distinct characters in that survey:
   beside a working one. In those logs' fights of a minute or more with two
   or more full wearers, the lesser copy's share is a median 22% for Spell
   Power Cure, 21% for Lucent Echoes, 28% for Pearlescent Ward, 11% for
-  Master Architect and Roaring Opportunist, 8% for Saxhleel Champion and 6%
-  for Powerful Assault and Ozezan the Inferno. The rule finds Saxhleel
+  Master Architect, 8% for Saxhleel Champion and 6% for Powerful Assault,
+  Roaring Opportunist and Ozezan the Inferno. The rule finds Saxhleel
   Champion and Powerful Assault five times each, Spell Power Cure and Lucent
   Echoes three, Ozezan the Inferno twice, Master Architect, Roaring
   Opportunist and Xoryn's Masterpiece once, and Pearlescent Ward never; one
