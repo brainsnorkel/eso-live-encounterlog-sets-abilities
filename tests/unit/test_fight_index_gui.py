@@ -78,9 +78,9 @@ class TestPaneAndList(unittest.TestCase):
         line = fi.comparison_text(fi.comparison(self.index, entry))
         page = render_html(entry, detailed=False, history=line)
         # Every earlier kill had this roster on this version: the set is
-        # said once
-        self.assertIn("Your Lord Falgravn kills: median 460k over 3, best 480k. This pull: 512k",
-                      page)
+        # said once, named
+        self.assertIn("Your Lord Falgravn kills, all with 8+ of this roster on 12.1: median 460k "
+                      "over 3, best 480k. This pull: 512k", page)
         self.assertLess(page.index("Deaths"), page.index("Your Lord Falgravn kills"))
         self.assertNotIn("Your Lord Falgravn", render_html(entry, detailed=False))
 

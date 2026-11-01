@@ -240,8 +240,12 @@ class FightIndex:
         with self._lock:
             if self.lines.get(line["key"]) == line:
                 return False
+            try:
+                text = json.dumps(line, ensure_ascii=False, separators=(",", ":"))
+            except (TypeError, ValueError):
+                return False  # a value JSON cannot hold: the fight is not kept
             self._hold(line)
-            self._pending.append(json.dumps(line, ensure_ascii=False, separators=(",", ":")))
+            self._pending.append(text)
             if flush:
                 self.flush()
             return True
@@ -350,13 +354,15 @@ def comparison(index: FightIndex | None, entry) -> dict | None:
         narrow, label = on_version, f"with {ROSTER_MIN}+ of this roster on {short_version(version)}"
     elif len(with_roster) >= SET_MIN:
         narrow, label = with_roster, f"with {ROSTER_MIN}+ of this roster"
-    if len(narrow) == len(kills):
-        narrow = []  # the same set as every kill: said once
+    every = bool(narrow) and len(narrow) == len(kills)
+    if every:
+        narrow = []  # the same set as every kill: said once, with its label
     this = float(getattr(entry, "group_boss_dps", 0) or getattr(entry, "group_dps", 0) or 0)
     return {"boss": getattr(entry, "pull", {}).get("boss") or "",
             "all": [_metric(line) for line in kills],
             "narrow": [_metric(line) for line in narrow],
-            "label": label if narrow else "",
+            "label": label if (narrow or every) else "",
+            "every": every,
             "this": this}
 
 
@@ -366,10 +372,12 @@ def comparison_text(found: dict | None) -> str:
     if not found or not found["all"]:
         return ""
     figures = found["all"]
+    # Every earlier kill was with this roster: the set is said once, named
+    every = f", all {found['label']}" if found.get("every") else ""
     if len(figures) == 1:
         text = f"Your earlier {found['boss']} kill: {fmt_dps(figures[0])}"
     else:
-        text = (f"Your {found['boss']} kills: median {fmt_dps(median(figures))} over "
+        text = (f"Your {found['boss']} kills{every}: median {fmt_dps(median(figures))} over "
                 f"{len(figures)}, best {fmt_dps(max(figures))}")
     if found["narrow"]:
         text += (f"; {found['label']}: median {fmt_dps(median(found['narrow']))} over "
