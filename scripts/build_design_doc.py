@@ -144,6 +144,16 @@ TOPICS = [
         "src/trial_result.py",
         "src/gui/fight_list.py",
     ]),
+    ("Kill or wipe, time dead, and a boss's pulls in a row", [
+        "src/pull_outcome.py",
+    ]),
+    ("The session recap: the fight list as text for Discord", [
+        "src/session_recap.py",
+        "src/fight_blocks.py",
+    ]),
+    ("Fight history across sessions: the index of boss fights", [
+        "src/fight_index.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),
