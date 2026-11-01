@@ -26,7 +26,8 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
 from data_staleness import DataCheckTracker
-from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
+from death_recap import (DEATH_RESULTS, SUBZONE_DEATH, DeathRecapRecorder, HEAL_RESULTS,
+                         RECAP_RESULTS)
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
@@ -2613,8 +2614,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # Player deaths arrive as DIED, or as KILLING_BLOW when the killer
             # is another player (friendly fire, PvP): the log then writes no
             # DIED for that death. DIED_XP is an enemy death that grants XP
-            # (its dying unit is the monster, never a player).
-            if combat_event_type in ('DIED', 'DIED_XP', 'KILLING_BLOW'):
+            # (its dying unit is the monster, never a player). A player's fall
+            # into lava or off the map is KILLED_BY_SUBZONE alone, the dying
+            # unit in the target block (issue #184, see death_recap). The logs
+            # hold none on an enemy, so an enemy's is not taken for its death:
+            # a boss dropped through the floor is no kill of the group's.
+            if combat_event_type in DEATH_RESULTS:
                 # Dying unit is the target unit-state block (fields[17]);
                 # a '*' target means self-inflicted: dying unit is the
                 # source (fields[7]).
@@ -2631,8 +2636,9 @@ class ESOLogAnalyzer(ListenerMixin):
                     self._record_player_death(dying_player, dying_unit_id, entry)
 
                 # If it's a hostile enemy death, mark it as damaged by players
-                elif (combat_event_type != 'KILLING_BLOW' and self.current_encounter and
-                      dying_unit_id in self.current_encounter.enemies):
+                elif (combat_event_type not in ('KILLING_BLOW', SUBZONE_DEATH)
+                      and self.current_encounter
+                      and dying_unit_id in self.current_encounter.enemies):
                     self._enemy_last_hit.pop(dying_unit_id, None)
                     enemy = self.current_encounter.enemies[dying_unit_id]
                     if enemy.died_at is None:

@@ -2,6 +2,12 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.31.1] - 2026-11-01
+
+### Fixed
+- **A fall into lava or off a ledge counts as a death** (#184): the log writes it as `KILLED_BY_SUBZONE` with no killer, and the app missed it, so the fight showed no death, no recap and no time dead, and a solo pull that ended in a fall read as left rather than a wipe. The recap now says the player was killed by *a fall or lava*. Pulls already in the fight history keep their old reading until it is rebuilt from the split logs (Settings → Fight history)
+- **Combat with no enemy in it is no longer listed as a fight**: breaking a Brimstone Orb in Vateshran Hollows to cross the lava, running past a neutral trap or a falling hazard, or simply being held in combat added fights with no damage in them to the list. A fight now needs a hit, cast or attack between the group and an enemy in it or in the ten seconds before it began, or a player's death in it or as it ended.
+
 ## [0.31.0] - 2026-11-01
 
 ### Added
