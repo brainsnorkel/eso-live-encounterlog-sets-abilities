@@ -111,9 +111,9 @@ def short_version(version) -> str:
 
 
 def fmt_dps(value) -> str:
-    """'441.2k', '1.10M', '950': the fight pane's own dps format
-    (gui.fight_render's _fmt_dps is this), so the history line and the
-    header beside it read alike."""
+    """'441.2k', '1.10M', '950': the fight pane's own dps format (that of
+    gui.fight_render's _fmt_dps), so the history line and the header
+    beside it read alike."""
     value = float(value or 0)
     if value >= 1_000_000:
         return f"{value / 1_000_000:.2f}M"

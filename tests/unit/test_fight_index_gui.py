@@ -163,6 +163,30 @@ class TestWindow(unittest.TestCase):
         self.assertFalse(started)
         self.assertIn("no split folder", message)
 
+    def test_a_build_from_split_logs_on_the_review_thread(self):
+        import time
+
+        from tests.unit.test_fight_index import _log
+        splits = self.root / "splits"
+        splits.mkdir()
+        (splits / "260101200000-Kyne's-Aegis-vet.log").write_text(_log(0), encoding="utf-8")
+        (splits / "260102200000-Kyne's-Aegis-vet.log").write_text(_log(86_400_000),
+                                                                   encoding="utf-8")
+        started, message = self.win.start_backfill()
+        self.assertTrue(started, message)
+        self.assertFalse(self.win.review_cancel_button.isHidden())  # Cancel stops it
+        self.assertEqual(self.win.start_backfill()[0], False)  # one at a time
+        self.win._review.wait(30)
+        deadline = time.monotonic() + 10
+        while self.win._backfilling and time.monotonic() < deadline:
+            QApplication.processEvents()  # the review thread's events
+        self.assertFalse(self.win._backfilling)
+        self.assertEqual(len(self.win.fight_index), 2)
+        self.assertEqual(self.win.statusBar().currentMessage(),
+                         "Fight history: 2 fights from 2 split logs")
+        self.assertTrue(self.win.history_status().startswith("2 boss fights on 2 days"))
+        self.assertTrue(self.win.review_cancel_button.isHidden())
+
 
 if __name__ == "__main__":
     unittest.main()
