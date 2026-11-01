@@ -8,7 +8,7 @@ QScreen.grabWindow, Windows Graphics Capture with an 8-bit format) comes out
 washed-out: Windows composes an HDR desktop in linear scRGB floating point and the
 8-bit paths clip it without the transfer curve. Desktop Duplication hands the
 composed desktop over as it is, R16G16B16A16_FLOAT when HDR is on, so the
-conversion to sRGB can be done properly (hdr_to_sdr in banner_capture). The
+conversion to sRGB can be done properly (gui.banner_burst.frame_to_image). The
 packages that wrap the API either need numpy and OpenCV (windows-capture, about
 150 MB in the frozen app) or still need a Direct3D device made by hand (pywinrt), so
 the API is driven directly through ctypes: a Direct3D 11 device per adapter, its

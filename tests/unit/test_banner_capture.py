@@ -111,6 +111,24 @@ class NamingTests(unittest.TestCase):
         self.assertTrue(target.is_live(now=target.ended_epoch + bc.LIVE_WINDOW_S))
         self.assertFalse(target.is_live(now=target.ended_epoch + bc.LIVE_WINDOW_S + 1))
 
+    def test_target_from_result_uses_the_lines_moment_and_the_run_as_key(self):
+        result = dict(RESULT, ended_epoch=1761999065.0)
+        a = BannerTarget.from_result(result)
+        self.assertEqual(a.ended_epoch, 1761999065.0)
+        self.assertEqual(a.key, (12, 253117, 1351407))
+        # the same run on a fight entry: the key and the file do not move
+        # with the fight's span (a fight the game cut in two grows later)
+        from fight_history import FightHistoryEntry
+        entry = FightHistoryEntry()
+        entry.trial_result = dict(result)
+        entry.timestamp = "2026-11-01 21:08:33"
+        entry.duration_s = 100.0
+        b = BannerTarget.from_entry(entry)
+        self.assertEqual((b.key, b.file_name), (a.key, a.file_name))
+        entry.duration_s = 1351.4
+        self.assertEqual(BannerTarget.from_entry(entry).file_name, a.file_name)
+        self.assertIsNone(BannerTarget.from_result(None))
+
     def test_target_falls_back_to_the_engine_clock(self):
         from fight_history import FightHistoryEntry
         entry = FightHistoryEntry()
@@ -240,6 +258,50 @@ class SettingsGroupTests(unittest.TestCase):
             self.assertFalse(config.get("banner.enabled"))
         finally:
             dialog.deleteLater()
+
+
+class EngineEventTests(unittest.TestCase):
+    """The engine reports END_TRIAL as it reads the line, with the line's
+    own moment, before the fight that carries the result is delivered."""
+
+    EPOCH_MS = 1761996000000
+
+    def _listener(self, lines):
+        from engine_events import RecordingListener
+        from esolog_tail import ESOLogAnalyzer
+        from fight_history import FightHistory
+        analyzer = ESOLogAnalyzer()
+        analyzer.fight_history = FightHistory()
+        listener = RecordingListener()
+        analyzer.add_listener(listener)
+        for line in lines:
+            entry = analyzer.log_parser.parse_line(line)
+            if entry is not None:
+                analyzer.process_log_entry(entry)
+        return listener
+
+    def test_trial_result_is_sent_as_the_line_is_read(self):
+        listener = self._listener([
+            f'5,BEGIN_LOG,{self.EPOCH_MS},15,"NA Megaserver","en","eso.live.12.1"',
+            '1000,ZONE_CHANGED,1121,"Sunspire",VETERAN',
+            '39033,END_TRIAL,12,1351407,T,253117,35000',
+        ])
+        events = listener.of_kind("trial_result")
+        self.assertEqual(len(events), 1)
+        result = events[0][1]
+        self.assertEqual((result["score"], result["name"], result["is_vet"]), (253117, "Sunspire", True))
+        self.assertAlmostEqual(result["ended_epoch"], self.EPOCH_MS / 1000 + 39.033, places=3)
+        target = BannerTarget.from_result(result)
+        self.assertEqual(target.key, (12, 253117, 1351407))
+        self.assertAlmostEqual(target.ended_epoch, result["ended_epoch"], places=3)
+
+    def test_a_failed_run_sends_nothing(self):
+        listener = self._listener([
+            f'5,BEGIN_LOG,{self.EPOCH_MS},15,"NA Megaserver","en","eso.live.12.1"',
+            '1000,ZONE_CHANGED,1121,"Sunspire",VETERAN',
+            '39033,END_TRIAL,12,1351407,F,0,0',
+        ])
+        self.assertEqual(listener.of_kind("trial_result"), [])
 
 
 class BannerInTheGuiTests(unittest.TestCase):

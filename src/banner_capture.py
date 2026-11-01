@@ -53,6 +53,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -131,33 +132,50 @@ class BannerTarget:
     score: int
     duration_ms: int
     ended_epoch: float
+    trial_id: int = 0
 
     @classmethod
-    def from_entry(cls, entry) -> BannerTarget | None:
-        """The target for a fight entry carrying a trial_result, else None.
-        The run ended at the fight's log start plus its duration; the wall
-        clock the engine stamped (ended_at) stands in when the start was
-        not readable."""
-        result = getattr(entry, "trial_result", None)
+    def from_result(cls, result, fallback_epoch: float | None = None) -> BannerTarget | None:
+        """The target for a trial_result dict, else None. The run ended at
+        the END_TRIAL line's own moment, which the engine puts on the dict
+        as 'ended_epoch'; *fallback_epoch* (or now) stands in when the
+        log's start was unknown."""
         if not result:
             return None
-        start = _parse_timestamp(getattr(entry, "timestamp", ""))
-        duration_s = float(getattr(entry, "duration_s", 0.0) or 0.0)
-        if start is not None:
-            ended = start + duration_s
-        else:
-            ended = float(getattr(entry, "ended_at", 0.0) or time.time())
+        ended = result.get("ended_epoch")
+        if not ended:
+            ended = fallback_epoch if fallback_epoch else time.time()
         return cls(
             name=str(result.get("name") or "Trial"),
             is_vet=bool(result.get("is_vet")),
             score=int(result.get("score") or 0),
             duration_ms=int(result.get("duration_ms") or 0),
-            ended_epoch=ended,
+            ended_epoch=float(ended),
+            trial_id=int(result.get("trial_id") or 0),
         )
+
+    @classmethod
+    def from_entry(cls, entry) -> BannerTarget | None:
+        """The target for a fight entry carrying a trial_result, else None.
+        Without the line's own moment on the result, the fight's log start
+        plus its duration stands in, then the wall clock the engine stamped
+        (ended_at)."""
+        result = getattr(entry, "trial_result", None)
+        if not result:
+            return None
+        start = _parse_timestamp(getattr(entry, "timestamp", ""))
+        if start is not None:
+            fallback = start + float(getattr(entry, "duration_s", 0.0) or 0.0)
+        else:
+            fallback = float(getattr(entry, "ended_at", 0.0) or 0.0)
+        return cls.from_result(result, fallback_epoch=fallback)
 
     @property
     def key(self) -> tuple:
-        return (self.name, self.is_vet, self.score, int(self.ended_epoch))
+        """What identifies the run: the result alone, which never changes,
+        where the fight's span can (a fight the game cut in two is rebuilt
+        longer when it really ends)."""
+        return (self.trial_id, self.score, self.duration_ms)
 
     @property
     def file_name(self) -> str:
@@ -380,26 +398,60 @@ class OcrSession:
         if sys.platform != "win32" or not os.path.isfile(exe):
             raise OcrError("Windows PowerShell is not available")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        # PowerShell's errors go to a file, not a pipe that could fill and
+        # stall it, and not nowhere: a process that ends without answering
+        # (a Constrained Language Mode or AppLocker policy refusing the
+        # WinRT types, a policy refusing the Bypass) is reported with them
+        self._stderr_path: str | None = None
+        self._proc = None
         try:
-            self._proc = subprocess.Popen(
-                [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=flags)
+            fd, self._stderr_path = tempfile.mkstemp(prefix="esolog-ocr-", suffix=".txt")
+            with os.fdopen(fd, "w", encoding="utf-8") as stderr_file:
+                self._proc = subprocess.Popen(
+                    [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr_file,
+                    text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=flags)
         except OSError as exc:
+            self.close()
             raise OcrError(f"Windows PowerShell could not start: {exc}") from exc
         assert self._proc.stdin is not None and self._proc.stdout is not None
-        # The script goes in on stdin, then an end-of-script marker, after
-        # which the paths follow on the same stream
+        # With -Command -, PowerShell runs each statement of its standard
+        # input as it arrives. The script's last statement is the read
+        # loop, which then takes the paths from the same stream
         self._proc.stdin.write(OCR_SCRIPT + "\n")
         self._proc.stdin.flush()
         ready = self._read_line()
-        if ready is None or ready.startswith("NOENGINE"):
+        if ready is None:
+            code = self._proc.poll()
+            errors = self._stderr_tail()
+            self.close()
+            raise OcrError(f"Windows PowerShell ended without answering (exit {code})"
+                           + (f": {errors}" if errors else ""))
+        if ready.startswith("NOENGINE"):
             self.close()
             raise OcrError("Windows has no text recognition language installed")
         if not ready.startswith("READY"):
             self.close()
             raise OcrError(f"unexpected reply from the recognition: {ready[:80]}")
         self.language = ready.split("\t")[1] if "\t" in ready else None
+
+    def _stderr_tail(self, limit: int = 300) -> str:
+        """The last part of what the process wrote to its standard error."""
+        if not self._stderr_path:
+            return ""
+        try:
+            with open(self._stderr_path, encoding="utf-8", errors="replace") as f:
+                text = " ".join(f.read().split())
+        except OSError:
+            return ""
+        return text[-limit:]
+
+    def kill(self) -> None:
+        """End the process now (a read that hangs): the pending read then
+        returns, and read() raises OcrError."""
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.kill()
 
     def _read_line(self) -> str | None:
         line = self._proc.stdout.readline()
@@ -408,7 +460,7 @@ class OcrSession:
     def read(self, path: str) -> list[OcrLine]:
         """The text lines on the image at *path* (any path form; made long
         here). Raises OcrError when the process is gone."""
-        if self._proc.poll() is not None:
+        if self._proc is None or self._proc.poll() is not None:
             raise OcrError("the recognition process has ended")
         try:
             self._proc.stdin.write(long_path(os.path.abspath(path)) + "\n")
@@ -431,18 +483,25 @@ class OcrSession:
 
     def close(self) -> None:
         proc = getattr(self, "_proc", None)
-        if proc is None:
-            return
-        try:
-            if proc.stdin:
-                proc.stdin.close()
-        except OSError:
-            pass
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        self._proc = None
+        if proc is not None:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+            self._proc = None
+        stderr_path = getattr(self, "_stderr_path", None)
+        if stderr_path:
+            self._stderr_path = None
+            try:
+                os.remove(stderr_path)
+            except OSError:
+                pass
 
     def __enter__(self):
         return self

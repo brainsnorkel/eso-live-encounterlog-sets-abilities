@@ -76,6 +76,9 @@ class SignalListener(AnalyzerListener):
     def on_warning(self, source, message):
         self._emit("warning", source, message)
 
+    def on_trial_result(self, result):
+        self._emit("trial_result", result)
+
 
 class EngineWorker(QObject):
     """Owns the engine objects; lives on a dedicated QThread.
@@ -94,6 +97,7 @@ class EngineWorker(QObject):
     # A lasting problem by source ('split', 'poll'): message, or None once
     # it has cleared (issue #111)
     warning = Signal(str, object)
+    trial_result = Signal(object)      # END_TRIAL's result dict, as the line is read (issue #167)
     waiting_for_log = Signal(str)      # expected path
     monitoring_started = Signal(str)   # log path
     # A requested restart has begun: fights sent before this came from the
