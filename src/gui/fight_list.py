@@ -143,6 +143,13 @@ def run_description(run) -> str:
     return ". ".join(line for line in lines if not line.startswith("Most time dead"))
 
 
+def result_row_text(entry) -> str:
+    """The result row's text, with a cue when the run's score banner was
+    captured from the screen (issue #167)."""
+    text = result_text(entry.trial_result)
+    return f"{text} · banner" if getattr(entry, "banner_path", None) else text
+
+
 def band_color(base: QColor, text: QColor) -> QColor:
     """*base* moved BAND_MIX of the way towards *text*."""
     def mix(a, b):
@@ -201,7 +208,7 @@ class FightList(QListWidget):
         item = self._add_row(FIGHT, summary_line(entry, death_cue=True, issue_cue=True,
                                                  zone=False), entry)
         if getattr(entry, "trial_result", None):
-            self._add_row(RESULT, result_text(entry.trial_result))
+            self._add_row(RESULT, result_row_text(entry))
         self._block_items.setdefault(self._block, []).append(item)
         if not self._batch:
             # A run row above it can move down under it
@@ -228,9 +235,9 @@ class FightList(QListWidget):
                 below += 1
             item = self.item(below)
             if item is not None and item.data(KIND_ROLE) == RESULT:
-                item.setText(result_text(result))
+                item.setText(result_row_text(entry))
             else:
-                self._add_row(RESULT, result_text(result), at=below, block=block)
+                self._add_row(RESULT, result_row_text(entry), at=below, block=block)
         self._refresh_runs(block)
         return self.row_of(entry)
 
