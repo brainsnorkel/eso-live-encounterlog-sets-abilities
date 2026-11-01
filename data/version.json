@@ -1,0 +1,86 @@
+{
+  "game_version": "eso.live.12.1",
+  "built": "2026-11-01",
+  "tables": [
+    {
+      "name": "Set names (game client)",
+      "file": "data/client/set_names_en.json",
+      "generated": "2026-10-27"
+    },
+    {
+      "name": "Set types (LibSets)",
+      "file": "data/gear_sets/LibSets_SetData.xlsm",
+      "generated": "2026-09-20"
+    },
+    {
+      "name": "Set bonus texts (UESP)",
+      "file": "data/sets/bonuses_en.json",
+      "generated": "2026-10-27"
+    },
+    {
+      "name": "Set penetration and critical damage (UESP)",
+      "file": "data/sets/offense.json",
+      "generated": "2026-10-27"
+    },
+    {
+      "name": "Set buffs (split logs)",
+      "file": "data/sets/set_buffs.json",
+      "generated": "2026-10-31"
+    },
+    {
+      "name": "Ability icons (game client)",
+      "file": "data/icons/abilities/manifest.json",
+      "generated": "2026-10-27"
+    },
+    {
+      "name": "Class passives and masteries (UESP)",
+      "file": "data/skills/class_passives.json",
+      "generated": "2026-10-31"
+    },
+    {
+      "name": "Weapon skill lines (UESP)",
+      "file": "data/skills/weapon_skill_lines.json",
+      "generated": "2026-10-24"
+    },
+    {
+      "name": "Skill target kinds (UESP)",
+      "file": "data/skills/ability_targets.json",
+      "generated": "2026-10-26"
+    },
+    {
+      "name": "Armor weights (UESP)",
+      "file": "data/items/armor_weights.json",
+      "generated": "2026-10-05"
+    },
+    {
+      "name": "Weapon types (UESP)",
+      "file": "data/items/weapon_types.json",
+      "generated": "2026-10-08"
+    },
+    {
+      "name": "Poison names (UESP)",
+      "file": "data/items/poisons_en.json",
+      "generated": "2026-10-05"
+    },
+    {
+      "name": "Food and drink (LibFoodDrinkBuff)",
+      "file": "data/buffs/food_drink.json",
+      "generated": "2026-10-05"
+    },
+    {
+      "name": "ESO-Hub set links",
+      "file": "data/esohub/sets_en.json",
+      "generated": "2026-10-06"
+    },
+    {
+      "name": "ESO-Hub skill links",
+      "file": "data/esohub/skills_en.json",
+      "generated": "2026-10-03"
+    },
+    {
+      "name": "ESO-Hub scribing links",
+      "file": "data/esohub/scribing_en.json",
+      "generated": "2026-10-05"
+    }
+  ]
+}

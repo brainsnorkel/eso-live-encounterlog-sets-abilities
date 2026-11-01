@@ -25,6 +25,7 @@ from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStat
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
+from data_staleness import DataCheckTracker
 from death_recap import DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
@@ -1039,6 +1040,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # The build-issue rules judged over the session: the proc sets that
         # never fire, and who has taunted (build_issues)
         self.build_issues = BuildIssueTracker()
+        # What the log names that the bundled game data does not know, and
+        # the session's game version against the data's (data_staleness,
+        # issue #173): sent to the listeners as it changes
+        self.data_check = DataCheckTracker()
 
         # Which ability each of the players' recent casts was, by cast
         # tracking id: a TAUNTED event names its skill through it
@@ -1630,6 +1635,9 @@ class ESOLogAnalyzer(ListenerMixin):
             logged_back = self._bar_slots(player_info.additional_data, scribed, player_key)
             front_bar_slots = [] if werewolf.is_werewolf_bar(player_info.champion_points) else logged_front
             back_bar_slots = [] if werewolf.is_werewolf_bar(player_info.additional_data) else logged_back
+            # Sets, items and icons the bundled data does not know (issue #173)
+            if self.data_check.note_player(player_info.gear_data, logged_front + logged_back):
+                self._notify('on_data_check', self.data_check.check())
             # Ability names per bar, and all equipped names. The equipped
             # names keep every slot the log wrote, dropped bar included: a
             # player with none is one the log has not described, and is
@@ -1999,6 +2007,10 @@ class ESOLogAnalyzer(ListenerMixin):
         self.casts.reset()
         self.resources.reset()
         self.build_issues.reset()
+        # The game version that wrote this session, the line's last field
+        # ("eso.live.12.1"), against the bundled data's (data_staleness)
+        self.data_check.reset(entry.fields[4] if len(entry.fields) > 4 else "")
+        self._notify('on_data_check', self.data_check.check())
 
     def _handle_trial_init(self, entry: ESOLogEntry):
         """TRIAL_INIT: the state of the instance's trial on entering it.

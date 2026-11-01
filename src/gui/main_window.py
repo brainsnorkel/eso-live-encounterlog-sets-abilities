@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from data_staleness import status_text, status_tooltip
 from fight_index import (
     FightIndex,
     comparison,
@@ -216,6 +217,7 @@ class MainWindow(QMainWindow):
         # Re-render everything that bakes theme colors into its output
         self._refresh_freshness_label()
         self._refresh_warning_label()
+        self._refresh_data_label()
         self._style_update_buttons()
         self.timeline_strip.update()
         if self._death_dialog is not None:
@@ -420,6 +422,13 @@ class MainWindow(QMainWindow):
         # failing to read poll after poll. Permanent, so a status message
         # never hides it; it goes when its source says the problem cleared
         self._warnings = {}
+        # The game version against the bundled data's, and what the log
+        # named that the data does not know (issue #173): a label of its
+        # own, beside the warnings, shown only when there is something to say
+        self._data_check = None
+        self.data_label = QLabel("")
+        self.data_label.setVisible(False)
+        self.statusBar().addPermanentWidget(self.data_label)
         self.warning_label = QLabel("")
         self.warning_label.setVisible(False)
         self.statusBar().addPermanentWidget(self.warning_label)
@@ -475,6 +484,7 @@ class MainWindow(QMainWindow):
         self.worker.archive_event.connect(self._on_archive_event)
         self.worker.diagnostic.connect(self._on_diagnostic)
         self.worker.warning.connect(self._on_warning)
+        self.worker.data_check.connect(self._on_data_check)
         self.worker.waiting_for_log.connect(self._on_waiting_for_log)
         self.worker.monitoring_started.connect(self._on_monitoring_started)
         self.worker.monitoring_restarting.connect(self._on_monitoring_restarting)
@@ -900,6 +910,24 @@ class MainWindow(QMainWindow):
         self.warning_label.setStyleSheet(state_style("none", self._dark))
         self.warning_label.setVisible(bool(text))
 
+    @Slot(object)
+    def _on_data_check(self, check):
+        """The live session's game data check (data_staleness, issue #173)."""
+        self._data_check = check
+        self._refresh_data_label()
+
+    def _refresh_data_label(self):
+        """One line, amber like a stale log, with the ids and names in its
+        hover; hidden when the data is current."""
+        text = status_text(self._data_check)
+        tooltip = status_tooltip(self._data_check)
+        self.data_label.setText(text)
+        self.data_label.setToolTip(tooltip)
+        self.data_label.setAccessibleName(text)
+        self.data_label.setAccessibleDescription(tooltip)
+        self.data_label.setStyleSheet(state_style("stale", self._dark))
+        self.data_label.setVisible(bool(text))
+
     @Slot(str)
     def _on_waiting_for_log(self, expected):
         self._last_status = None
@@ -925,6 +953,8 @@ class MainWindow(QMainWindow):
         self._fights.clear()
         if self._review_fights is None:
             self.history_list.clear()
+        # The new analyzer checks its session's data afresh
+        self._on_data_check(None)
 
     @Slot(str)
     def _on_monitoring_started(self, path):

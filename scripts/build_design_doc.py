@@ -87,6 +87,11 @@ TOPICS = [
     ("Set buffs: which set a Major or Minor buff came from", [
         "scripts/generate_set_buffs.py",
     ]),
+    ("Game data against the game's version: the staleness check", [
+        "src/data_staleness.py",
+        "scripts/stamp_data_version.py",
+        "scripts/check_data_staleness.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
