@@ -28,9 +28,11 @@ parsed for it: the line is the entry's own figures. Builds are not kept.
 - **Backfill**: the split folder's logs (and the logs in its zips), newest
   first, through the engine itself (review_load.replay_log), on the
   review thread with its cancel and progress, so every figure is the
-  app's own. Byte-identical copies are skipped by a hash of their first
-  256 KB. Each log done is noted in ``fights-backfill.json`` beside the
-  index, so a cancelled backfill carries on where it stopped. The
+  app's own. Byte-identical copies, zipped or not, are skipped by a hash
+  of their first 256 KB and their size. Each log done is noted in
+  ``fights-backfill.json`` beside the index, by its own name (which a zip
+  of it keeps) and with its copy mark, once its lines are written, so a
+  cancelled backfill carries on where it stopped. The
   maintainer's 378 unique split logs (35 GB) replay at the engine's 10
   MB/s on one thread.
 
@@ -67,6 +69,7 @@ import os
 import re
 import threading
 import zipfile
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 from statistics import median
@@ -518,14 +521,20 @@ def source_name(path: Path, member: str | None) -> str:
 
 def _copy_hash(path: Path, member: str | None, size: int) -> str | None:
     """A byte-identical copy's mark: the first HEAD_BYTES and the size (a
-    split cut short shares its head with the full one, not its size)."""
-    if member:
-        return None  # a zipped split is the one copy retention kept
+    split cut short shares its head with the full one, not its size). A
+    zip member's is its log's, so a copy zipped by split retention under
+    its own name is still known; None when the head will not read."""
     try:
-        with open(path, "rb") as fh:
-            return f"{hashlib.sha1(fh.read(HEAD_BYTES)).hexdigest()}:{size}"
-    except OSError:
+        if member:
+            with zipfile.ZipFile(path) as zf, zf.open(member) as fh:
+                head = fh.read(HEAD_BYTES)
+        else:
+            with open(path, "rb") as fh:
+                head = fh.read(HEAD_BYTES)
+    except (OSError, EOFError, ValueError, RuntimeError, NotImplementedError,
+            zipfile.BadZipFile, zlib.error):
         return None
+    return f"{hashlib.sha1(head).hexdigest()}:{size}"
 
 
 def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],

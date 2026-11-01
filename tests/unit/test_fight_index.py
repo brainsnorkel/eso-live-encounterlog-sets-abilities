@@ -333,6 +333,15 @@ class TestBackfill(unittest.TestCase):
         result = fi.backfill(self.splits, self.index, self._analyzer)
         self.assertEqual((result["skipped"], result["logs"]), (1, 1))
 
+    def test_a_copy_zipped_under_its_own_name_is_known(self):
+        import zipfile
+        name = "260102200000-Kyne's-Aegis-vet-1.log"
+        with zipfile.ZipFile(self.splits / (name + ".zip"), "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(self.splits / name, name)
+        (self.splits / name).unlink()
+        result = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((result["logs"], result["skipped"], result["fights"]), (2, 1, 2))
+
     def test_the_splitters_temp_file_is_never_read(self):
         self.assertFalse(fi.is_split_name("261101203000-temp.log"))
 
