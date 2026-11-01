@@ -266,6 +266,14 @@ class TestBackfill(unittest.TestCase):
         again = fi.backfill(self.splits, fi.FightIndex(self.index.path), self._analyzer)
         self.assertEqual(again, {"logs": 0, "skipped": 0, "fights": 0, "left": 0})
 
+    def test_only_the_splitters_files(self):
+        self.assertTrue(fi.is_split_name("260113192924-Kyne's-Aegis-vet-14.log"))
+        self.assertTrue(fi.is_split_name("260113192924-Kyne's-Aegis-vet.zip"))
+        # A blank split folder is the log's own: never the live log or an archive
+        self.assertFalse(fi.is_split_name("Encounter.log"))
+        self.assertFalse(fi.is_split_name("20250929-Encounter.log"))
+        self.assertFalse(fi.is_split_name("260102200000-Kyne's-Aegis-vet-report.txt"))
+
     def test_a_cancel_stops_and_the_next_build_carries_on(self):
         import review_load
         cancel = threading.Event()

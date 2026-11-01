@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
+import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from fight_index import (
@@ -614,8 +615,14 @@ class MainWindow(QMainWindow):
     # ---- the fight history's backfill (fight_index, issue #170) ----
 
     def _split_folder(self):
-        folder = self.config.get("split.dir")
-        return Path(folder) if folder else None
+        """The split folder: the one set, else the log's own (the
+        splitter's rule, as split retention reads it)."""
+        try:
+            return split_retention.split_folder(
+                self.config.get("split.dir") or "",
+                split_retention.resolve_log(self.config.get("log_path") or ""))
+        except OSError:
+            return None
 
     def history_status(self) -> str:
         """Settings' line on the fight history: what it holds and where."""
@@ -649,9 +656,11 @@ class MainWindow(QMainWindow):
         if len(self.fight_index) or self.config.get("history.backfill_offered", False):
             return
         folder = self._split_folder()
+        if folder is None:
+            return
         try:
-            logs = sum(1 for name in folder.iterdir() if name.suffix.lower() in (".log", ".zip"))
-        except (OSError, AttributeError):
+            logs = sum(1 for path in folder.iterdir() if fight_index.is_split_name(path.name))
+        except OSError:
             return
         if not logs:
             return

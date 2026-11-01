@@ -64,6 +64,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -429,14 +430,24 @@ def run_best_kill(index: FightIndex | None, run) -> float | None:
 
 # ------------------------------------------------------------ backfill --
 
+_SPLIT_NAME = re.compile(r"^\d{12}-.+\.(log|zip)$", re.IGNORECASE)
+
+
+def is_split_name(name: str) -> bool:
+    """A file the splitter wrote, '<yymmddhhmmss>-<Zone>[-vet].log', or
+    split retention's zip of one; never Encounter.log or an archive, which
+    a blank split folder (the log's own) holds too."""
+    return bool(_SPLIT_NAME.match(str(name)))
+
+
 def split_logs(folder) -> list[tuple[Path, str | None]]:
     """The split folder's logs, newest first by name (the splitter names
-    them by their start): each .log, and each log in a .zip."""
+    them by their start): each split .log, and each log in a split's .zip."""
     from log_open import is_zip, log_members
     folder = Path(folder)
     found = []
     try:
-        names = sorted(os.listdir(folder), reverse=True)
+        names = sorted((name for name in os.listdir(folder) if is_split_name(name)), reverse=True)
     except OSError:
         return []
     for name in names:
