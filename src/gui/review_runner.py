@@ -18,6 +18,7 @@ from pathlib import Path
 
 import fight_index
 import review_load
+import split_retention
 from app_startup import build_analyzer
 from version import __version__
 
@@ -90,8 +91,12 @@ class ReviewRunner:
             notify(ReviewEvent("progress", folder, label=label, done=done, total=total))
 
         def work(cancel):
+            # The live log's newest session is left to the window, which
+            # indexes it as it is played: its split may still be growing
+            live = split_retention.latest_session_stamp(
+                split_retention.resolve_log(snapshot.get("log_path") or ""))
             result = fight_index.backfill(folder, index, lambda: build_analyzer(snapshot, []),
-                                          __version__, progress, cancel)
+                                          __version__, progress, cancel, live)
             notify(ReviewEvent(
                 "indexed", folder,
                 label=(f"Fight history: {result['fights']} fights from {result['logs']} "

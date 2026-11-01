@@ -32,7 +32,10 @@ parsed for it: the line is the entry's own figures. Builds are not kept.
   of their first 256 KB and their size. A session's re-splits that the
   old splitter cut short (issue #85) are read too, shortest first, so
   where two hold one fight the longest log's line is the one kept: in the
-  maintainer's folder 20 such logs in 10 sessions. Each log done is noted in
+  maintainer's folder 20 such logs in 10 sessions. The live log's newest
+  session is left out: the splitter may still be writing its split (the
+  temp name lasts only until the zone is known), and the window indexes
+  that session itself as it replays and follows it. Each log done is noted in
   ``fights-backfill.json`` beside the index, by its own name (which a zip
   of it keeps) and with its copy mark, once its lines are written, so a
   cancelled backfill carries on where it stopped. The
@@ -543,7 +546,8 @@ def _copy_hash(path: Path, member: str | None, size: int) -> str | None:
 def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
              app_version: str = "",
              progress: Callable[[str, int, int], None] | None = None,
-             cancel: threading.Event | None = None) -> dict:
+             cancel: threading.Event | None = None,
+             live_stamp: str | None = None) -> dict:
     """Read the split logs the index has not read yet through the engine
     (see the module): {'logs': read, 'skipped': copies skipped, 'failed':
     logs that would not read, 'fights': lines added, 'left': logs still
@@ -551,13 +555,18 @@ def backfill(folder, index: FightIndex, make_analyzer: Callable[[], object],
     file moved away mid-read, an engine error) is counted and passed over,
     not noted done, so the next build tries it again and the rest are
     read. A log, or a copy passed over, is noted done only once the lines
-    it stands for are on disk. Raises review_load.ReviewCancelled on
-    *cancel*."""
+    it stands for are on disk. *live_stamp*: the live log's newest session
+    (split_retention.latest_session_stamp), whose split the splitter may
+    still be writing under its final name; it is left to the window, which
+    indexes that session as it replays and follows it, and is neither read
+    nor noted. Raises review_load.ReviewCancelled on *cancel*."""
     import review_load
     from log_open import log_size
     done, copies = index.backfill_notes()
+    live = f"{live_stamp}-" if live_stamp else None
     todo = [(path, member) for path, member in split_logs(folder)
-            if source_name(path, member) not in done]
+            if source_name(path, member) not in done
+            and not (live and path.name.startswith(live))]
     sizes = []
     for path, member in todo:
         try:

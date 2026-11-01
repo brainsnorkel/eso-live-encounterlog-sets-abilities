@@ -362,6 +362,15 @@ class TestBackfill(unittest.TestCase):
                                 "260102200000-Kyne's-Aegis-vet.log",
                                 "260101200000-Kyne's-Aegis-vet.log"])
 
+    def test_the_live_sessions_split_is_left_to_the_window(self):
+        # The splitter may still be writing it under its final name
+        result = fi.backfill(self.splits, self.index, self._analyzer, live_stamp="260102200000")
+        self.assertEqual((result["logs"], result["skipped"]), (1, 0))
+        self.assertEqual(self.index.done_names(), {"260101200000-Kyne's-Aegis-vet.log"})
+        # Once it is no longer the live session, a build reads it
+        again = fi.backfill(self.splits, self.index, self._analyzer)
+        self.assertEqual((again["logs"], again["skipped"]), (1, 1))
+
     def test_the_splitters_temp_file_is_never_read(self):
         self.assertFalse(fi.is_split_name("261101203000-temp.log"))
 
