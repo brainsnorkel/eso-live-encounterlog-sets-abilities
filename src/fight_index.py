@@ -80,6 +80,8 @@ from collections.abc import Callable
 from pathlib import Path
 from statistics import median
 
+from pull_outcome import dps_text
+
 INDEX_NAME = "fights.jsonl"
 BACKFILL_NAME = "fights-backfill.json"
 FORMAT = 1
@@ -114,15 +116,10 @@ def short_version(version) -> str:
 
 
 def fmt_dps(value) -> str:
-    """'441.2k', '1.10M', '950': the fight pane's own dps format (that of
-    gui.fight_render's _fmt_dps), so the history line and the header
-    beside it read alike."""
-    value = float(value or 0)
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.2f}M"
-    if value >= 1_000:
-        return f"{value / 1_000:.1f}k"
-    return f"{value:.0f}"
+    """'441.2k', '1.10M', '950': the one dps format of the pane, Copy fight
+    and the session recap (pull_outcome.dps_text), so the history line and
+    the header beside it read alike."""
+    return dps_text(value)
 
 
 # ------------------------------------------------------------ the line --
