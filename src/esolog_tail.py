@@ -38,6 +38,7 @@ from misfortunes import run_misfortunes
 from presence import present_share
 import casts
 import companions
+import fight_blocks
 import fight_opener
 import pen_crit
 import pull_outcome
@@ -2839,23 +2840,9 @@ class ESOLogAnalyzer(ListenerMixin):
                         self._notify('on_fight_updated', earlier)
 
     def _instance_fights(self) -> List[FightHistoryEntry]:
-        """The fights of the instance the newest fight is in, in order: back
-        from it while the zone and difficulty stay, stopping after a fight
-        that completed a run (the fight list's blocks, gui.fight_list)."""
-        fights = self.fight_history.fights
-        if not fights:
-            return []
-        newest = fights[-1]
-        key = (newest.zone_id or newest.zone_name, newest.difficulty)
-        block = []
-        for entry in reversed(fights):
-            if (entry.zone_id or entry.zone_name, entry.difficulty) != key:
-                break
-            if block and entry.trial_result:
-                break
-            block.append(entry)
-        block.reverse()
-        return block
+        """The fights of the instance the newest fight is in, in order: the
+        fight list's newest block (fight_blocks)."""
+        return fight_blocks.last_block(self.fight_history.fights)
 
     def _unit_kind(self, unit_id: str) -> Optional[str]:
         """What the encounter knows a unit to be, for effect_rules scopes:
