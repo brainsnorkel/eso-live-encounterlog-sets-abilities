@@ -1,6 +1,0 @@
-### Changed
-- **Settings on six pages** (#187): General (the log, starting with Windows, updates), Fights (death recaps, companions, penetration and crit), Tracked effects (the rules editor, given the page's height), History (the fight history and the score banner), Display (text size, colours, motion, names) and Files and splits (split logs, archiving), in a tab bar above Save and Cancel. One column of thirteen groups was 2,139 px tall, of which a 1080p screen showed 43%. The dialog opens at the size of its tallest page, whole on a 1366×768 screen at 100% text size and on 1080p at 200%, and reopens on the page it was last closed on until the app is closed. Every group keeps its title, so the guide's "Settings → …" references still hold; the guide shows one picture per page.
-- **Saving with a tracked-effect rule that will not parse asks first** (#187): the dialog turns to the Tracked effects page, puts the cursor in the editor and says how many lines will be skipped, with Save and Go back. Before, the only sign was a status line under the editor, which on another page is out of sight.
-
-### Fixed
-- **Settings' pages take no focus** (#187): Ctrl+Tab and a click on a tab land on the page's first control, where the old scrolling column was itself the first, invisible, tab stop.
