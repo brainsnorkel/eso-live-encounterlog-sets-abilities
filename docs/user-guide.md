@@ -336,6 +336,17 @@ Each boss's [pulls in a row](#fight-history) take one line, with what ended them
 
 **About** shows the version, the project link and the credits.
 
+## Your fight history
+
+The app keeps every boss fight it sees, kill or not, so a pull can be read against your group's own earlier kills of that boss, and a player against their own.
+
+- **Under the header** of a boss fight, a line sets the pull against your earlier kills of the boss at that difficulty: `Your Lord Falgravn kills: median 441.2k over 28, best 953.4k; with 8+ of this roster on 12.1: median 470.6k over 10. This pull: 512.3k`. The first part is every earlier kill. The second narrows it to kills with eight or more of tonight's named players on the same game version, and drops the version when that leaves fewer than three kills; it is left out when there are not three. When every earlier kill already had this roster, the line says so once: `Your Lokkestiiz kills, all with 8+ of this roster on 12.1: median 370k over 9, best 380k. This pull: 369k`. A figure is the group's boss DPS, or its whole DPS in a fight with no boss figure. Only kills before this fight count, so a fight read later is set against its own past.
+- **A player's name** in the fight pane: its hover adds their boss DPS in their last three kills of the boss, `@x on Lord Falgravn: 92.4k, 101.2k, 88.0k in their last three kills with you`.
+- **A boss's pulls in a row** in the fight list end with the best earlier kill of the boss with eight or more of the run's named players: `…, best kill with this roster 953.4k`.
+- **Your split logs** become history through **Settings → Fight history → Build from split logs**. The app reads every split log in the split folder through its own engine, newest first, on the review thread: the status bar shows the progress and its **Cancel** stops it, and the next build carries on where it stopped. Copies of one log are read once, and the session you are playing is left to the window, which keeps it as it goes. It takes about a minute per 800 MB: 37 GB of split logs took 44 minutes.
+
+The history lives beside the settings, in `fights.jsonl` (`%LOCALAPPDATA%\esolog-tail\` on Windows, `~/.config/esolog-tail/` on Linux), never in the split folder, so tidying old split logs leaves it alone. It is plain JSON Lines, one fight per line, and holds every named player's handle, as the logs do; builds are not kept. A player the log gave no handle is kept without one and never matched. With [Hide names](#hiding-other-players-names) on, the handles in the hovers are hidden too.
+
 ## Hiding other players' names
 
 For a screenshot or a pasted fight that should give away nobody else's identity, turn on **Hide names** on the toolbar (Ctrl+H toggles it; the same box is under Privacy in Settings). Every player but you keeps their row and their figures and loses their handle and character name: in the fight pane and in the build, damage and death-recap windows the name becomes a pixelated word with its `@` left readable, so it still reads as a handle; in hover text, pop-ups, the DPS graph's legend, window titles and the copied fight it reads as `@▒▒▒▒▒▒`. Enemy, pet, set and ability names stay. The switch is saved, and the pressed button shows it is on.
@@ -361,6 +372,7 @@ Open **Settings…** from the toolbar.
 - **Privacy**: hide other players' handles and character names, the same switch as the toolbar's **Hide names** button and Ctrl+H. See [Hiding other players' names](#hiding-other-players-names).
 - **Score banner** (Windows only, off by default): capture the game's trial completion banner from the screen when a trial ends, and the folder it is saved in (blank uses a `Banners` folder beside the log). See [The score banner](#the-score-banner).
 - **Companions**: also count a companion's damage and healing as its owner's (off by default). Saving replays the session, so the fights already listed change too. See [Companions](#companions).
+- **Fight history**: how many boss fights the history holds and where, and **Build from split logs**, which reads the split folder into it in the background; Save or Cancel leaves it running. See [Your fight history](#your-fight-history).
 - **Death recaps**: how many seconds before each death the recap keeps, 5 to 10 (5 by default). Saving replays the session, so the fights already listed are rebuilt with the new window. See [Death recaps](#death-recaps).
 - **Tracked effects**: the rules behind the timeline strip. See [Tracked effects](#tracked-effects).
 - **Penetration and critical damage**: the Champion Point stars the build window's sections assume (Piercing on by default; Fighting Finesse on by default in solo and small-group fights and never in a group of five or more; Backstabber and Force of Nature off, with Force of Nature's figure per status effect), and the penetration cap: by zone, or always 18,200 or 9,100. These apply to the next build window opened; no restart is needed. See [Penetration and critical damage](#penetration-and-critical-damage).

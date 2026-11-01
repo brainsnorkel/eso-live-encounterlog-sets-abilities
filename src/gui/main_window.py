@@ -21,8 +21,19 @@ from PySide6.QtWidgets import (
     QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
+import fight_index
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
+from fight_index import (
+    FightIndex,
+    comparison,
+    comparison_text,
+    earlier_kills,
+    fight_line,
+    index_path,
+    player_history,
+    player_history_text,
+)
 from gui import text_size
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
@@ -162,12 +173,20 @@ class MainWindow(QMainWindow):
         # The text size, before any widget is made, so all of them start at it
         text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
         set_reduce_motion(bool(config.get("display.reduce_motion", False)))
+        # The fight history across sessions (fight_index, issue #170): read
+        # once here, beside the config, and written as fights come
+        self.fight_index = FightIndex(index_path(config.path))
+        self.fight_index.load()
 
         self._build_ui()
+        self.history_list.history_index = self.fight_index
         self._build_update_poller()
         self._build_retention()
         self._build_review()
         self._build_worker()  # last: the engine thread starts here
+        # The once-only hint about building the fight history, shown after
+        # 'Monitoring …' (_on_monitoring_started), which would replace it
+        self._backfill_hint_due = True
 
         # Follow live theme switches (e.g. Windows auto dark mode after
         # sunset): rendered HTML embeds theme colors, so it must re-render.
@@ -547,6 +566,7 @@ class MainWindow(QMainWindow):
         that lives here; the thread holds it weakly, so it is never the one
         to free it (see gui/engine_worker.py on freeing Qt objects)."""
         self._review = ReviewRunner()
+        self._backfilling = False  # the review thread is reading the split logs
         self._review_bridge = _ReviewBridge(self)
         self._review_bridge.event.connect(self._on_review_event)
         self.review_cancel_button.clicked.connect(self._review.cancel)
@@ -596,12 +616,90 @@ class MainWindow(QMainWindow):
             self._ask_review_range(event)
         elif event.kind == "loaded":
             self._on_review_loaded(event.shown, event.fights)
+        elif event.kind == "indexed":
+            # The fight history grew: the run rows and the pane read it
+            self.statusBar().showMessage(event.label, 15000)
+            self.history_list.refresh_all_runs()
+            if self.history_list.current_entry() is not None:
+                self._show_fight()
+        elif event.kind == "cancelled" and self._backfilling:
+            self.statusBar().showMessage(
+                "Fight history paused: Build from split logs in Settings carries on "
+                "where it stopped", 15000)
+            self.history_list.refresh_all_runs()
         elif event.kind == "cancelled":
             self.statusBar().showMessage(f"Review of {Path(event.path).name} cancelled", 8000)
         elif event.kind == "failed":
             self.statusBar().clearMessage()
+            what = "build the fight history from" if self._backfilling else "review"
             QMessageBox.warning(self, "Review",
-                                f"Could not review {event.path}:\n{event.reason}")
+                                f"Could not {what} {event.path}:\n{event.reason}")
+        self._backfilling = False
+
+    # ---- the fight history's backfill (fight_index, issue #170) ----
+
+    def _split_folder(self):
+        """The split folder: the one set, else the log's own (the
+        splitter's rule, as split retention reads it)."""
+        try:
+            return split_retention.split_folder(
+                self.config.get("split.dir") or "",
+                split_retention.resolve_log(self.config.get("log_path") or ""))
+        except OSError:
+            return None
+
+    def history_status(self) -> str:
+        """Settings' line on the fight history: what it holds and where."""
+        count = len(self.fight_index)
+        held = (f"{count} boss fight{'s' if count != 1 else ''} on "
+                f"{self.fight_index.sessions()} day{'s' if self.fight_index.sessions() != 1 else ''}"
+                if count else "No boss fights yet")
+        return f"{held}, in {self.fight_index.path}"
+
+    def start_backfill(self, folder=None) -> tuple[bool, str]:
+        """Read the split logs into the fight history on the review thread
+        (gui.review_runner.ReviewRunner.backfill); the status bar shows the
+        progress and its Cancel button stops it. *folder*: the split folder
+        to read (Settings passes the one in its fields, saved or not), else
+        the saved one. (whether it started, what to tell the reader)."""
+        folder = Path(folder) if folder else self._split_folder()
+        if folder is None or not folder.is_dir():
+            return False, "There is no split folder to read: set one under Per-encounter split files."
+        if self._review.running:
+            return False, "A review is still loading: cancel it first, then build again."
+        self._backfilling = True
+        self._set_review_busy(True)
+        self._on_parse_progress("Fight history: looking through the split logs", 0, 0)
+        if not self._review.backfill(self.config, str(folder), self.fight_index,
+                                     self._review_notify()):
+            self._backfilling = False
+            self._set_review_busy(False)
+            return False, "A review is still loading: cancel it first, then build again."
+        return True, f"Building from {folder}: see the status bar."
+
+    def _offer_backfill(self):
+        """Once, while the fight history is empty and the split folder holds
+        logs: a line in the status bar saying where to build it (no
+        pop-up). Settings notes that it was offered."""
+        if len(self.fight_index) or self.config.get("history.backfill_offered", False):
+            return
+        folder = self._split_folder()
+        if folder is None:
+            return
+        try:
+            logs = sum(1 for path in folder.iterdir() if fight_index.is_split_name(path.name))
+        except OSError:
+            return
+        if not logs:
+            return
+        self.statusBar().showMessage(
+            f"Your fight history is empty: Settings, Fight history, Build from split logs "
+            f"reads your {logs} split log{'s' if logs != 1 else ''}", 60000)
+        self.config.set("history.backfill_offered", True)
+        try:
+            self.config.save()
+        except OSError:
+            pass
 
     def _ask_review_range(self, event):
         """The whole log, or its most recent sessions holding at least
@@ -674,6 +772,8 @@ class MainWindow(QMainWindow):
         except (RuntimeError, TypeError):
             pass
         self._save_window_layout()
+        # Lines a held file kept queued get one more try (fight_index)
+        self.fight_index.flush()
         # Stop worker timers on their own thread, then end the loop and wait.
         # Destroying a QThread that is still running is a native crash, so
         # block as long as it takes rather than proceed with it running.
@@ -692,10 +792,17 @@ class MainWindow(QMainWindow):
 
     # ---- engine events (UI thread) ----
 
+    def _index_fight(self, entry):
+        """A live boss fight into the fight history (fight_index): its line
+        is appended when it differs from the one held under its key, so a
+        restart's replay of the session adds nothing."""
+        self.fight_index.add(fight_line(entry, __version__))
+
     @Slot(object)
     def _on_fight_completed(self, entry):
         if self._restart_pending:
             return  # from the analyzer Settings is replacing
+        self._index_fight(entry)
         self._fights.append(entry)
         self._attach_banner(entry)
         if self._review_fights is None:
@@ -713,6 +820,7 @@ class MainWindow(QMainWindow):
         if self._restart_pending:
             return
         self._attach_banner(entry)
+        self._index_fight(entry)
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             self._show_fight()
@@ -833,6 +941,10 @@ class MainWindow(QMainWindow):
             self._show_placeholder(
                 "Monitoring for encounters… fight summaries appear here "
                 "as combat ends.")
+        # After 'Monitoring …', which would replace it (fight_index)
+        if self._backfill_hint_due:
+            self._backfill_hint_due = False
+            self._offer_backfill()
 
     @Slot(str, list)
     def _on_review_loaded(self, path, fights):
@@ -1051,7 +1163,17 @@ class MainWindow(QMainWindow):
         # same per-slot data. Death-recap buttons and the build link on each
         # player's name show in both views
         tooltips = death_tooltips(entry, names)
-        tooltips.update(build_tooltips(entry, names))
+        # Each named player's last kills of the boss, and the pull against
+        # the earlier kills (fight_index, issue #170)
+        kills = earlier_kills(self.fight_index, entry)  # once for the whole page
+        histories = {}
+        for p in entry.players:
+            handle = str(p.get("name") or "")
+            if handle.startswith("@") and not p.get("companion"):
+                histories[str(p.get("unit_id", ""))] = player_history_text(
+                    entry, handle, player_history(self.fight_index, entry, handle, kills), names)
+        history = comparison_text(comparison(self.fight_index, entry, kills))
+        tooltips.update(build_tooltips(entry, names, histories))
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
         tooltips.update(issues_tooltips(entry))
@@ -1079,7 +1201,8 @@ class MainWindow(QMainWindow):
                                             text_color=text_color,
                                             pen_crit_options=pen_crit_options,
                                             names=names,
-                                            line_px=QFontMetrics(self.fight_view.font()).height()))
+                                            line_px=QFontMetrics(self.fight_view.font()).height(),
+                                            history=history))
         self._apply_search()
 
     def _show_pen_crit(self, unit_id):
@@ -1475,7 +1598,8 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _open_settings(self):
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, self, history_status=self.history_status(),
+                                on_build_history=self.start_backfill)
         updates_before = self._update_settings_key()
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()

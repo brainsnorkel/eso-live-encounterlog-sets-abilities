@@ -256,13 +256,16 @@ def build_unit_from_href(href: str) -> Optional[str]:
     return None
 
 
-def build_tooltips(entry, names=None) -> dict:
+def build_tooltips(entry, names=None, histories=None) -> dict:
     """Hover text per player-name link: the handle, the character name
     under it when the log gave both (issue #71), a companion's ultimates
-    with their times and anyone's healing to others (issue #130), and that
-    a click opens the build window. *names*: the Hide names mask
-    (gui.name_mask), which hides another player's handle and character
-    name alike."""
+    with their times and anyone's healing to others (issue #130), the
+    player's boss dps in their last kills of the boss from the fight
+    history (*histories*: unit id -> fight_index.player_history_text,
+    names already masked; issue #170), and that a click opens the build
+    window. *names*: the Hide names mask (gui.name_mask), which hides
+    another player's handle and character name alike."""
+    histories = histories or {}
     names = names or NO_MASK
     e = html.escape
     tips = {}
@@ -280,6 +283,8 @@ def build_tooltips(entry, names=None) -> dict:
         healing = healing_text(p, fight_s)
         if healing:
             lines.append(e(healing))
+        if histories.get(unit_id):
+            lines.append(e(histories[unit_id]))
         if p.get("companion"):
             lines.append("<span style='font-size:85%'>Companion. Click for the skills it "
                          "was seen casting, with this fight's casts</span>")
@@ -1143,8 +1148,12 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
                 text_color: Optional[str] = None, pen_crit_options=None,
-                names=None, line_px: int = 0) -> str:
+                names=None, line_px: int = 0, history: str = "") -> str:
     """Render one fight as HTML for a QTextBrowser.
+
+    history: the line that sets the pull against the earlier kills of its
+    boss from the fight history (fight_index.comparison_text, issue #170),
+    muted under the header; '' for none.
 
     icons: object with has(stem) -> bool (the fight view's IconCache); None
     keeps the bars as text. links / set_links / script_links: callables
@@ -1227,6 +1236,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{title}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{stats}</span></p>",
     ]
+    # The pull against the earlier kills of its boss (fight_index)
+    if history:
+        parts.append(f"<p style='margin:0;color:{muted}'>{e(history)}</p>")
     # A solo dungeon run's Misfortunes, muted like the stats; each name with
     # a text carries an anchor for its hover, in the look of plain text
     misfortunes = getattr(entry, "misfortunes", None)

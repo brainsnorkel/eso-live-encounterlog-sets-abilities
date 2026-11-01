@@ -146,6 +146,9 @@ TOPICS = [
         "src/session_recap.py",
         "src/fight_blocks.py",
     ]),
+    ("Fight history across sessions: the index of boss fights", [
+        "src/fight_index.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),

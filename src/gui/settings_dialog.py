@@ -54,6 +54,12 @@ PRIVACY_HELP = ("For screenshots and sharing: every player but the one writing t
                 "pixelated in the fight pane and the windows, and reads as blocks in hover "
                 "text, pop-ups and the copied fight. The same switch as the toolbar's Hide "
                 "names button.")
+HISTORY_HELP = ("Every boss fight is kept, kill or not, so a pull can be read against your "
+                "group's earlier kills of the boss and a player against their own. The file "
+                "is plain JSON Lines and holds the players' handles, as the logs do. Build "
+                "from split logs reads the split folder's logs through the app, newest first, "
+                "on the review thread: the status bar shows the progress, its Cancel stops it, "
+                "and the next build carries on where it stopped. About a minute per 600 MB.")
 COMPANION_HELP = ("A companion that is out has its own row under its owner. Off, the owner's "
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
@@ -125,11 +131,17 @@ COLORBLIND_HELP = ("The graph's player lines in a set of colours chosen to stay 
 
 
 class SettingsDialog(QDialog):
-    """Edits the AppConfig; caller saves and restarts monitoring on accept."""
+    """Edits the AppConfig; caller saves and restarts monitoring on accept.
+    *history_status*: what the fight history holds and where;
+    *on_build_history*: starts reading the split logs into it (the
+    window's start_backfill), on the review thread, whatever the dialog
+    then saves or cancels (fight_index, issue #170)."""
 
-    def __init__(self, config: AppConfig, parent=None):
+    def __init__(self, config: AppConfig, parent=None, history_status: str = "",
+                 on_build_history=None):
         super().__init__(parent)
         self.config = config
+        self._on_build_history = on_build_history
         self.setWindowTitle("Settings")
         self.setMinimumWidth(560)
         # The groups scroll above fixed Save and Cancel buttons: the dialog
@@ -360,6 +372,27 @@ class SettingsDialog(QDialog):
         companion_form.addRow(companion_help)
         layout.addWidget(companion_group)
 
+        # The fight history across sessions (issue #170, fight_index): what
+        # it holds, and the backfill from the split logs
+        history_group = QGroupBox("Fight history")
+        history_box = QVBoxLayout(history_group)
+        self.history_status = QLabel(history_status or "")
+        self.history_status.setWordWrap(True)
+        self.history_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        history_box.addWidget(self.history_status)
+        history_row = QHBoxLayout()
+        self.build_history_button = QPushButton("Build from split logs")
+        self.build_history_button.setEnabled(on_build_history is not None)
+        self.build_history_button.clicked.connect(self._build_history)
+        history_row.addWidget(self.build_history_button)
+        history_row.addStretch(1)
+        history_box.addLayout(history_row)
+        history_help = QLabel(HISTORY_HELP)
+        history_help.setWordWrap(True)
+        history_help.setStyleSheet(self._small_style("muted"))
+        history_box.addWidget(history_help)
+        layout.addWidget(history_group)
+
         # Death recaps (issue #95, death_recap): the seconds kept before
         # each death; the engine reads it when a save rebuilds it
         recap_group = QGroupBox("Death recaps")
@@ -550,6 +583,19 @@ class SettingsDialog(QDialog):
             if doomed and not self.confirm_delete(split_retention.summarize(doomed)):
                 return  # stay in Settings
         super().accept()
+
+    def _build_history(self) -> None:
+        """Start the backfill on the split folder these fields name (saved
+        or not); the dialog stays open, its Save or Cancel leaves the
+        backfill running, and a refusal is said here, not behind the
+        dialog."""
+        if self._on_build_history is None:
+            return
+        started, message = self._on_build_history(self.retention_folder())
+        self.history_status.setText(message)
+        if started:
+            self.build_history_button.setEnabled(False)
+            self.build_history_button.setText("Building: see the status bar")
 
     def _snap_text_size(self, value: int) -> None:
         """Keep the slider on a step (a drag can stop between two) and
