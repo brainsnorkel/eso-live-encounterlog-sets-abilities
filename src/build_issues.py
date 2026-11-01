@@ -163,9 +163,9 @@ rule, player-fights / distinct characters in that survey:
   Disjunction, Azureblight Reaper with Corpseburster, Savage Werewolf with
   Order's Wrath. The finding is one sentence (issue #127 trimmed it): it
   once named the complete sets worn instead, which read as noise.
-- **A second copy of a group buff set that gave the group next to nothing** (issue
-  #172; 16 wearer-sessions in the 378 unique split logs of January to
-  October 2026, nearly every one at 0.0). The issue proposed each wearer's
+- **A second copy of a group buff set that gave the group next to nothing**
+  (issue #172; 21 copies, by player and set, in 17 of the 379 unique split
+  logs of January to October 2026, on 80 fights). The issue proposed each wearer's
   loss: the group's uptime of the set's buff less the same without that
   wearer's spans. The log does not support the reading the issue gave it.
   The game writes one instance of a set's buff per receiver, credited to
@@ -191,14 +191,19 @@ rule, player-fights / distinct characters in that survey:
   session that another full wearer was in, provided another wearer's copy
   reached the group in at least one of them: two Master Architects in a
   fight with no ultimate cast both read 0.0, and neither is a second copy
-  beside a working one. The lesser wearer's share in a
-  doubled fight is a median 16 points for Echoes, 23 for Ward, 20 for Spell
-  Power Cure, 10 for Master Architect, 6 for Powerful Assault and 5 for
-  Saxhleel Champion, and the wearers the rule finds sat at 0.0 in nearly
-  every fight (an Echoes and Powerful Assault wearer in 17 Dreadsail Reef
-  fights, a Ward wearer in four Cloudrest fights), 1.3 at the most; at 5
-  the rule would find 24, the eight more with copies that did reach a few
-  players now and then. The sets judged are those
+  beside a working one. In those logs' fights of a minute or more with two
+  or more full wearers, the lesser copy's share is a median 22% for Spell
+  Power Cure, 21% for Lucent Echoes, 28% for Pearlescent Ward, 11% for
+  Master Architect and Roaring Opportunist, 8% for Saxhleel Champion and 6%
+  for Powerful Assault and Ozezan the Inferno. The rule finds Saxhleel
+  Champion and Powerful Assault five times each, Spell Power Cure and Lucent
+  Echoes three, Ozezan the Inferno twice, Master Architect, Roaring
+  Opportunist and Xoryn's Masterpiece once, and Pearlescent Ward never; one
+  is an Echoes and Powerful Assault wearer whose copies reached no one in
+  17 Dreadsail Reef fights. A survey that read each player's last
+  PLAYER_INFO line found more, among them members who had left or changed
+  sets (a Ward "wearer" in four Cloudrest fights who no longer wore it); the
+  engine judges each fight's own build. The sets judged are those
   whose value is the buff they give others (GROUP_BUFF_SETS); a set whose
   buff is its wearer's own (Kinras's Wrath, Huntsman's Warmask) or a
   debuff on enemies is never judged, though data/sets/set_buffs.json lists
@@ -221,11 +226,14 @@ rule, player-fights / distinct characters in that survey:
   points against a ceiling of 50%. So the rule counts each holder's procs
   over the session's fights of a minute or more that had two or more
   holders: an Enlivening Overflow holder whose share of the holders' procs
-  stayed under STAR_PROC_SHARE (15%) is flagged (6 holder-sessions of the
-  74 with two holders), and a From the Brink holder who never procced
-  while another did (9 of 48; the star needs a heal on a player under 25%
-  health, which a damage dealer who slots it rarely gives). The procs are
-  counted per fight (CombatEncounter.note_star_proc).
+  stayed under STAR_PROC_SHARE (15%) is flagged, and a From the Brink
+  holder who never procced while another did (the star needs a heal on a
+  player under 25% health, which a damage dealer who slots it rarely
+  gives). Either is judged only once the other holders have procced
+  STAR_MIN_OTHER_PROCS (5) times in the fights counted: of the 10 From the
+  Brink holders still at no proc when their session ended, five sat beside
+  a holder with one or two procs, which two equal holders leave half the
+  time. The procs are counted per fight (CombatEncounter.note_star_proc).
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, GROUP_BUFF_SETS, PROC_SETS, SLAYER_SETS,
@@ -435,6 +443,10 @@ class Star(NamedTuple):
 # An Enlivening Overflow holder with less of the holders' procs than this
 # rarely got the chance: the others' procs had the players on cooldown
 STAR_PROC_SHARE = 0.15
+# A star is judged only once the other holders have procced this often in
+# the fights counted: with fewer, one holder's none is chance (two equal
+# holders sharing one or two procs leave one with none half the time)
+STAR_MIN_OTHER_PROCS = 5
 # The Champion Point stars judged for a second holder (issue #172)
 STARS = (
     Star("Enlivening Overflow", "156008", "156012", 12,
@@ -1139,7 +1151,7 @@ class BuildIssueTracker:
                     fights += 1
                     mine += per[player_key]
                     total += sum(per.values())
-            if total <= 0:
+            if total - mine < STAR_MIN_OTHER_PROCS:
                 continue
             share = mine / total
             if mine > 0 and share >= star.min_share:

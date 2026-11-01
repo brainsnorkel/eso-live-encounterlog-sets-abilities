@@ -248,13 +248,23 @@ class TestStarRule(unittest.TestCase):
 
     def test_from_the_brink_only_when_it_never_procced(self):
         tracker = BuildIssueTracker()
-        tracker.note_second_sources(1000, 90.0, {}, {'From the Brink': {'p1': 3, 'p2': 1}})
+        tracker.note_second_sources(1000, 90.0, {}, {'From the Brink': {'p1': 8, 'p2': 1}})
         self.assertEqual(tracker.second_source_findings(1000, 'p2'), [])
-        tracker.note_second_sources(200000, 90.0, {}, {'From the Brink': {'p1': 2, 'p3': 0}})
+        tracker.note_second_sources(200000, 90.0, {}, {'From the Brink': {'p1': 6, 'p3': 0}})
         found = tracker.second_source_findings(200000, 'p3')
         self.assertEqual([f['title'] for f in found], ['Second From the Brink: no proc in 1 fight'])
         self.assertIn('once every 30 seconds per player', found[0]['detail'])
         self.assertIn("never procced while the other holder's did", found[0]['detail'])
+
+    def test_too_few_procs_by_the_others_is_chance_not_a_finding(self):
+        # One or two shields between two holders leave one with none half
+        # the time: judged only once the others have procced five times
+        tracker = BuildIssueTracker()
+        tracker.note_second_sources(1000, 90.0, {}, {'From the Brink': {'p1': 2, 'p2': 0}})
+        self.assertEqual(tracker.second_source_findings(1000, 'p2'), [])
+        tracker.note_second_sources(200000, 90.0, {}, {'From the Brink': {'p1': 3, 'p2': 0}})
+        self.assertEqual(tracker.second_source_findings(200000, 'p2')[0]['title'],
+                         'Second From the Brink: no proc in 2 fights')
 
     def test_counted_over_the_session_and_no_procs_at_all_is_not_judged(self):
         tracker = BuildIssueTracker()
@@ -335,7 +345,7 @@ def _session(*fights_lines):
 def _fight(begin, end):
     """@ward1 and @ward2 wear Pearlescent Ward, and @ward1's is the one every
     player has; @ward1 and @ward2 slot Enlivening Overflow (nine procs to
-    one), @healer and @tank From the Brink (one shield to none)."""
+    one), @healer and @tank From the Brink (five shields to none)."""
     lines = [f'{begin},BEGIN_COMBAT',
              f'{begin + 1},PLAYER_INFO,1,[61257,156008],[1,1],{WARD_GEAR},[12345],[12345]',
              f'{begin + 1},PLAYER_INFO,2,[61257,156008],[1,1],{WARD_GEAR},[12345],[12345]',
@@ -344,7 +354,8 @@ def _fight(begin, end):
     lines += [_effect(begin + 5, 'GAINED', WARD, 1, target) for target in (1, 2, 3, 4)]
     lines += [_effect(begin + 1000 + 100 * n, 'GAINED', '156012', 1, 3) for n in range(9)]
     lines.append(_effect(begin + 3000, 'GAINED', '156012', 2, 4))
-    lines.append(_effect(begin + 4000, 'GAINED', '156020', 3, 4))
+    lines += [_effect(begin + 4000 + 100 * n, 'GAINED', '156020', 3, target)
+              for n, target in enumerate((4, 1, 2, 4, 1))]
     lines += [_hit(begin + 1000 + 10 * unit, unit) for unit in (1, 2, 3, 4)]
     lines += [_hit(end - 1000 + 10 * unit, unit) for unit in (1, 2, 3, 4)]
     lines.append(f'{end},END_COMBAT')
