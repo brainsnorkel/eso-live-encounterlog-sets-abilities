@@ -176,7 +176,9 @@ class TestTheMemoryBeforeTheLine(unittest.TestCase):
         self.assertEqual((second["name"], second["time_ms"], second["edge"]), ("@tank", -5000, True))
 
     def test_an_empty_fight_has_neither_record(self):
-        fight = _in_fight()
+        """A hit for nothing meets the enemy, so the fight is listed
+        (test_no_enemy_combat), but neither opens it."""
+        fight = _in_fight(_hit(12000, 1, value=0))
         self.assertIsNone(fight.opener)
         self.assertIsNone(fight.monster_first)
 

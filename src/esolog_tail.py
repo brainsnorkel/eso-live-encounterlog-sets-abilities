@@ -501,6 +501,10 @@ class CombatEncounter:
         # the analyzer's fight_opener.OpenerRecorder from BEGIN_COMBAT on;
         # None for a fight that had no BEGIN_COMBAT
         self.opening: fight_opener.FightOpening | None = None
+        # Whether a line passed between the group and an enemy in the fight
+        # or in the moments before it: combat without one is not listed
+        # (ESOLogAnalyzer._note_enemy_met)
+        self.met_enemy = False
 
         # The bosses' health on the fight's lines and each player's time
         # dead, for the pull's verdict (pull_outcome, issues #168, #169)
@@ -1088,6 +1092,11 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry: Optional[FightHistoryEntry] = None
         self._enemy_last_hit: Dict[str, int] = {}
         self._engaged_at_end: FrozenSet[str] = frozenset()
+        # When a line last passed between the group and an enemy, and the
+        # combat that ended without one, with its start: not listed unless
+        # a player dies as it ends (see _note_enemy_met)
+        self._enemy_met_at: int | None = None
+        self._held_fight: tuple[CombatEncounter, int] | None = None
         # The last fight's pull, which the next fight may carry on, and the
         # one before it, for a fight the game cut in two (pull_outcome)
         self._last_pull: Optional[dict] = None
@@ -1768,6 +1777,8 @@ class ESOLogAnalyzer(ListenerMixin):
             self.fight_death_recaps = []
             self._last_fight_entry = None
             self._resumed_fight_entry = None
+            self._enemy_met_at = None
+            self._held_fight = None
             # Unit ids are handed out afresh in each zone: the tracked
             # effects on hostiles and pets end here
             self.effect_tracker.zone_changed(entry.timestamp)
@@ -1821,6 +1832,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        # A combat that met no enemy is gone for good (see _note_enemy_met)
+        self._held_fight = None
 
         # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -1877,6 +1890,11 @@ class ESOLogAnalyzer(ListenerMixin):
         # star proc since the zone began: a fight counts its own (a fight
         # the game cut in two returned above and keeps its count)
         self.current_encounter.star_procs.clear()
+        # The group and an enemy met in the moments before the line, since
+        # the last fight ended (see _note_enemy_met)
+        if (self._enemy_met_at is not None
+                and entry.timestamp - self._enemy_met_at <= ENGAGED_ENEMY_MS):
+            self.current_encounter.met_enemy = True
 
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
@@ -1944,6 +1962,87 @@ class ESOLogAnalyzer(ListenerMixin):
         else:
             self._enemy_last_hit[target_unit_id] = entry.timestamp
 
+    def _note_enemy_met(self, timestamp_ms: int, result: str, ability_id: str,
+                        source_id: str, source_health: str, target_id: str,
+                        target_health: str):
+        """A combat event of *result*, or a cast (fight_opener.CAST), at
+        *timestamp_ms*, with each unit's 'current/max' health on the line:
+        the fight it falls in met an enemy when it passed between the group
+        (a player, a player's pet or companion) and an enemy (a hostile
+        unit, never a companion or a released pet, see _opener_enemy). The
+        group's line on an enemy counts whatever its result or value, but
+        not a cast at an enemy already dead; an enemy's line on the group
+        counts as the opener counts a monster's act (fight_opener): not
+        from a dead enemy, not a DoT tick (applied earlier), and not a
+        mechanic (_monster_mechanic).
+
+        Design: Combat with no enemy in it. The game enters combat for more
+        than enemies: for the group's weapon enchants, area damage and heavy
+        attacks on a neutral unit (Vateshran Hollows' Brimstone Orbs, broken
+        to cross the lava, or a Tomeshell in the Infinite Archive), for the
+        hits of a neutral trap (the Aetherian Archive's Shock and Frost
+        Traps), a unit the log never added (Cradle of Shadows' Pull of
+        Darkness), a hazard (the Infinite Archive's Molten Destruction), the
+        Arcane Knot's Temporal Splinters or a dead boss's poison, or for
+        nothing the log shows (two half-minute spells in Sunspire with no
+        combat event at all). Each ends with END_COMBAT and was listed as a
+        fight with nothing in it. Over the 395 split logs of January to
+        November 2026 that hold fights (9,023 of them), 53 in 26 logs met no
+        enemy from 10 s before BEGIN_COMBAT (since the last fight ended, as
+        the opener reads it, see fight_opener) to END_COMBAT: none had a hit
+        on an enemy or a player's death, 12 took damage, 14 lasted under a
+        second. Such combat is held back at END_COMBAT and never listed,
+        unless a player died in it or dies just after it ends (see
+        LATE_DEATH_GRACE_MS): a death to a trap keeps its fight and recap.
+        Replayed with this rule, every other fight's entry was unchanged.
+        The 10 s before the line count because the group's first hits often
+        land before it: a survey of combat events found 30 fights that met
+        an enemy only there, none with damage of its own (the hits went to
+        the fight before, issue #162). A cast counts as the opener's does:
+        six of the survey's empty fights stay listed for a monster's cast at
+        a player or a player's at a boss, acts the opener names."""
+        if target_id == '*':
+            return
+        enc = self.current_encounter
+        if self._opener_enemy(enc, target_id) is not None:
+            met = (self._opener_side(enc, source_id) is not None
+                   and not (result == fight_opener.CAST and self._zero_health(target_health)))
+        else:
+            enemy = self._opener_enemy(enc, source_id)
+            met = (enemy is not None and self._opener_side(enc, target_id) is not None
+                   and not self._zero_health(source_health)
+                   and result not in fight_opener.DOT_RESULTS
+                   and not self._monster_mechanic(enemy, ability_id))
+        if met:
+            self._enemy_met_at = timestamp_ms
+            if not enc.finalized:
+                enc.met_enemy = True
+
+    def _monster_mechanic(self, enemy: EnemyInfo, ability_id: str) -> bool:
+        """An enemy's act that is a mechanic, never a monster going for
+        anyone, as the opener reads it (fight_opener): a hazard, which is a
+        unit named as its ability (the Infinite Archive's falling Molten
+        Destruction), or a listed scripted monster or ability."""
+        return (enemy.monster_id in fight_opener.SCRIPTED_MONSTERS
+                or ability_id in fight_opener.SCRIPTED_ABILITIES
+                or (bool(enemy.name) and enemy.name == self.ability_cache.get(ability_id)))
+
+    def _publish_held_fight(self, timestamp_ms: int):
+        """A player's death at *timestamp_ms*, just after a combat that met
+        no enemy ended (see LATE_DEATH_GRACE_MS), makes it a fight after
+        all: it is listed as it ended, and the death is then its late one
+        (see _note_enemy_met)."""
+        enc = self.current_encounter
+        if self._held_fight is None or self._held_fight[0] is not enc:
+            return
+        if not 0 <= timestamp_ms - enc.combat_ended_at <= LATE_DEATH_GRACE_MS:
+            return
+        # A combat event since END_COMBAT moved the start (see
+        # _handle_combat_event)
+        enc.start_time = self._held_fight[1]
+        self._held_fight = None
+        self._publish_fight(self.current_zone)
+
     def _handle_end_combat_event(self, entry: ESOLogEntry):
         """Handle END_COMBAT events to start grace period for combat tracking."""
         # END_COMBAT format: timestamp,END_COMBAT (no additional data)
@@ -1955,6 +2054,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # The opener's pending millisecond settles into the fight before it
         # is built, and a new memory starts (fight_opener)
         self.opener.end_combat(entry.timestamp)
+        # A meeting from here on is the next fight's, as for the opener
+        # (see _note_enemy_met)
+        self._enemy_met_at = None
 
         # The living enemies the group hit in the fight's last seconds: if
         # combat starts again at once, they tell whether it is the same fight
@@ -1971,7 +2073,12 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.time_dead.end(entry.timestamp)
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
-            self._publish_fight(self.current_zone)
+            if self.current_encounter.met_enemy or self.fight_deaths:
+                self._publish_fight(self.current_zone)
+            else:
+                # Combat with no enemy in it: held back, listed only should
+                # a player die as it ends (see _note_enemy_met)
+                self._held_fight = (self.current_encounter, self.current_encounter.start_time)
 
     # Grace period logic removed - encounters are finalized immediately on END_COMBAT
 
@@ -2019,6 +2126,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        self._enemy_met_at = None
+        self._held_fight = None
         # A mastery found from here on is not filled into the last
         # session's fights: a character may have changed between sessions
         self._mastery_rows.clear()
@@ -2127,6 +2236,13 @@ class ESOLogAnalyzer(ListenerMixin):
             self.opener.note_cast(entry.fields[2], ability_id)
             if self.opener.listening and len(entry.fields) > 15:
                 self._feed_opener_cast(entry, ability_id, caster_unit_id)
+            # A cast between the group and an enemy is a meeting too
+            # (see _note_enemy_met); the parser stamps BEGIN_CAST with 0
+            if len(entry.fields) > 15 and (self.current_encounter.finalized
+                                           or not self.current_encounter.met_enemy):
+                fields = entry.fields
+                self._note_enemy_met(casts.line_time(entry.original_line), fight_opener.CAST,
+                                     ability_id, caster_unit_id, fields[5], fields[14], fields[15])
 
             # Remembered for the taunt the cast may land (see TAUNTED in
             # _handle_combat_event)
@@ -2433,6 +2549,14 @@ class ESOLogAnalyzer(ListenerMixin):
             if self.opener.listening and len(entry.fields) > 17:
                 self._feed_opener_event(entry, combat_event_type)
 
+            # Whether the group and an enemy met, looked for until they have
+            # in a fight, and always between fights (see _note_enemy_met)
+            if len(entry.fields) > 18 and (self.current_encounter.finalized
+                                           or not self.current_encounter.met_enemy):
+                fields = entry.fields
+                self._note_enemy_met(entry.timestamp, combat_event_type, fields[6],
+                                     fields[7], fields[8], fields[17], fields[18])
+
             # Taunts: a TAUNTED result shares its cast tracking id with the
             # taunting skill's own cast and hits, which name the skill
             if (len(entry.fields) > 17
@@ -2640,6 +2764,9 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, entry: ESOLogEntry):
         """Count a player's death and capture its recap (see death_recap.py)."""
+        # First the combat that met no enemy, should it have just ended:
+        # the death makes it a fight (see _note_enemy_met)
+        self._publish_held_fight(entry.timestamp)
         self.zone_deaths += 1
         self.fight_deaths += 1
 

@@ -243,9 +243,11 @@ class TestDeathLoggedAfterEndCombat(unittest.TestCase):
     def test_death_well_after_combat_is_not_part_of_the_fight(self):
         analyzer, listener = _run([
             '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
             '20000,END_COMBAT',
             _event(20000 + LATE_DEATH_GRACE_MS + 1, 'DIED', 0, NO_UNIT, _player(1, 0)),
             '100000,BEGIN_COMBAT',
+            _event(110000, 'DAMAGE', 719, BOSS, _player(2, 19281)),
             '130000,END_COMBAT',
         ])
         first, second = analyzer.fight_history.fights
