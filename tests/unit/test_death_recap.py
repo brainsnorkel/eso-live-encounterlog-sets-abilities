@@ -302,6 +302,7 @@ class TestFallDeaths(unittest.TestCase):
     def test_a_fall_just_after_end_combat_joins_the_fight(self):
         analyzer, _ = _run([
             '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
             '20000,END_COMBAT',
             _fall(20026, _player(1, 0)),
         ])
@@ -310,9 +311,11 @@ class TestFallDeaths(unittest.TestCase):
     def test_a_fall_outside_a_fight_belongs_to_no_fight(self):
         analyzer, _ = _run([
             '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
             '20000,END_COMBAT',
             _fall(50000, _player(1, 0)),
             '100000,BEGIN_COMBAT',
+            _event(110000, 'DAMAGE', 719, BOSS, _player(2, 19281)),
             '130000,END_COMBAT',
         ])
         first, second = analyzer.fight_history.fights
@@ -337,6 +340,7 @@ class TestFallDeaths(unittest.TestCase):
         """None is in the logs, and one would read as the group's kill."""
         analyzer, _ = _run([
             '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, _player(1, 20000), BOSS),
             _fall(15000, BOSS),
             '70000,END_COMBAT',
         ])
