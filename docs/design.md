@@ -3329,7 +3329,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:947](../src/gui/main_window.py#L947)*
+*[src/gui/main_window.py:969](../src/gui/main_window.py#L969)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3339,7 +3339,7 @@ early, and its fights showed above the new analyzer's.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1661](../src/gui/main_window.py#L1661)*
+*[src/gui/main_window.py:1746](../src/gui/main_window.py#L1746)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
@@ -3382,6 +3382,84 @@ window turns into a signal on an object living on the UI thread (as split
 retention does), so nothing Qt is created or freed here; the analyzer and
 its fights are plain Python. The settings are a snapshot taken when the
 review starts, since Settings may change them meanwhile.
+
+## Before the first fight: the archive line and recent activity
+
+### src/recent_activity.py
+
+*[src/recent_activity.py:1](../src/recent_activity.py#L1)*
+
+Recent activity: the newest archives of Encounter.log and the newest split
+logs, for the window to show while the fight list is empty (issue #191).
+
+Why. At a quiet start the fight list is empty, the pane said only
+"Monitoring for encounters…" or "Waiting for Encounter.log…", and the status
+bar "No log file" in red; meanwhile the app had just archived the log, and
+with *Delete Encounter.log after a verified archive* on, removed it. A
+reader could not tell "the app did its job and is waiting" from "something
+went wrong and my logs are gone". So the pane names the newest archive and
+when it was made, and offers the recent archives and splits, each of which
+opens for review.
+
+Which files. The archiver's own, ``Encounter-YYMMDDHHMMSS[-N].zip``
+(log_archiver.LogArchiver._archive_target), in the archive folder: the one
+set in Settings, else the log's folder, the archiver's rule. The splitter's
+own, plain or zipped (split_retention.scan_splits: never a ``-temp.log``
+still waiting for its zone, never another tool's files), in the split
+folder, the one set in Settings, else the log's folder. Nothing is opened:
+a scan is a directory listing, so it can run on the UI thread at every
+redraw of the pane.
+
+Which time. An archive shows when it was made, the file's own time, since
+"archived at" is what the reader wants to know; the stamp in its name is
+the log's newest entry (the archiver names it so), shown beside it as "its
+last entry". Archives are ordered by the time they were made. A split shows
+its session's start, the stamp in its name, and the splits are ordered by
+that stamp, not by file time: the splitter writes some old sessions out
+again long after they were played (issue #85; 433 of 899 files in the
+maintainer's folder were more than two days off), and by file time an old
+evening would head the list.
+
+### src/gui/activity_render.py
+
+*[src/gui/activity_render.py:1](../src/gui/activity_render.py#L1)*
+
+The pane before the first fight (issue #191): what the app is doing, when
+Encounter.log was last archived, and Recent activity, the newest archives
+and split logs, each a link that reviews it.
+
+The pane is the right place: it is empty exactly then, where the fight
+list's rows are a session's fights and a row that opened a file would look
+like one, and a dialog would say something was wrong when nothing is. The
+first line, in the pane's own text colour, says what is happening; the
+archive's detail follows in the muted colour. Archives and splits are
+listed apart, five of each: archives are rare (one per gigabyte of log) and
+splits frequent, so one list of five would nearly always be five splits
+and no archive. The lists start open, since they are the proof the reader
+came for (a UX review of 2026-11-03: a page that is three lines and white
+space, with the proof behind a link, reassures nobody); the Recent
+activity link closes them, and the choice is kept for the session.
+
+Each group's heading counts the files and their bytes on disk rather than
+naming the folder: "how much" is what a worried reader wants, and the full
+path is on each file's hover. A link to a file carries its place in
+activity_paths, never the path: a path put in an href comes back through
+QUrl with its percent-encoding undone here and there, and the window holds
+the list the page was drawn from anyway. Clicking one runs Open log for
+review on it, the toolbar action's own path, so a zipped split or an
+archive streams from its zip and a large log is outlined and the reader
+asked first.
+
+With no log and the app's own archive to explain it, the first line says
+so in the words of the setting that did it (*Delete Encounter.log after a
+verified archive*), and the advice on turning logging on goes last, under
+the lists, since it is then a reminder and not a fix; with nothing to
+explain the absence, the advice follows the first line as it always did.
+The explanation comes from this session's archive event (the archive
+whose completion deleted the log, ArchiveEvent.original_deleted), never
+from the setting and an archive's mere presence: an old archive beside a
+log missing for another reason (Settings pointing at a mistyped path, the
+game writing elsewhere) must not turn that problem into a reassurance.
 
 ## Updates: the schedule, the conditional request and the button
 
@@ -3757,7 +3835,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:348](../src/gui/fight_view.py#L348)*
+*[src/gui/fight_view.py:353](../src/gui/fight_view.py#L353)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -3845,7 +3923,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:220](../src/gui/fight_view.py#L220)*
+*[src/gui/fight_view.py:225](../src/gui/fight_view.py#L225)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
