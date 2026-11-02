@@ -166,12 +166,15 @@ class MainWindow(QMainWindow):
         # The pane before the first fight (gui.activity_render, issue #191):
         # why it is empty ('monitoring', 'waiting' or 'back'; None once a
         # fight is on it), where the log was looked for, the recent
-        # archives and splits the page links to, and whether their lists
-        # are open (the reader's choice, kept for the session)
+        # archives and splits the page links to, whether their lists are
+        # open (the reader's choice, kept for the session), and the archive
+        # whose completion deleted the log this session, which alone lets
+        # the page say the missing log was archived
         self._empty_reason = None
         self._empty_expected = ""
         self._activity = None
         self._activity_open = OPEN_AT_FIRST
+        self._archive_that_deleted_log = None
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
@@ -666,12 +669,14 @@ class MainWindow(QMainWindow):
 
     # ---- the fight history's backfill (fight_index, issue #170) ----
 
-    def _split_folder(self):
+    def _split_folder(self, log=None):
         """The split folder: the one set, else the log's own (the
-        splitter's rule, as split retention reads it)."""
+        splitter's rule, as split retention reads it). *log*: the log, when
+        the caller already knows it (_known_log), else resolved here."""
         try:
             return split_retention.split_folder(
                 self.config.get("split.dir") or "",
+                log if log is not None else
                 split_retention.resolve_log(self.config.get("log_path") or ""))
         except OSError:
             return None
@@ -879,6 +884,8 @@ class MainWindow(QMainWindow):
             deleted = " — original deleted" if event.original_deleted else ""
             self.statusBar().showMessage(
                 f"Archived to {event.archive_path}{deleted}", 15000)
+            if event.original_deleted and event.archive_path:
+                self._archive_that_deleted_log = Path(event.archive_path)
             # The pane names the newest archive while no fight is on it
             if self._empty_reason is not None:
                 self._show_empty_state(self._empty_reason)
@@ -1166,8 +1173,7 @@ class MainWindow(QMainWindow):
             # says so in the plain colour rather than "No log file" in red,
             # which would contradict the pane (gui.activity_render)
             explained = empty_status_text(
-                self._empty_reason, self._activity,
-                bool(self.config.get("archive.delete_original", False)))
+                self._empty_reason, self._activity, self._archive_that_deleted_log)
             self.freshness_label.setText(explained or "No log file")
             self.freshness_label.setStyleSheet(state_style("idle" if explained else "none", self._dark))
             return
@@ -1370,13 +1376,25 @@ class MainWindow(QMainWindow):
 
     # ---- the pane before the first fight (gui.activity_render, issue #191) ----
 
-    def _archive_folder(self):
+    def _known_log(self):
+        """The log the folders are taken from, without a search: the one
+        Settings names, else the one the engine monitors or waits for
+        (_log_path, _empty_expected: a log the app has just archived and
+        deleted is not on disk, and auto-detection then finds nothing on
+        Linux and walks the whole Logs folder on Windows), else, on a
+        first run, the auto-detected one; None when there is none."""
+        for candidate in (self.config.get("log_path"), self._log_path, self._empty_expected):
+            if candidate:
+                return Path(candidate)
+        return split_retention.resolve_log("")
+
+    def _archive_folder(self, log=None):
         """The archive folder: the one set, else the log's own (the
         archiver's rule, log_archiver.LogArchiver._archive_target)."""
         try:
             return recent_activity.archive_folder(
                 self.config.get("archive.dir") or "",
-                split_retention.resolve_log(self.config.get("log_path") or ""))
+                log if log is not None else self._known_log())
         except OSError:
             return None
 
@@ -1385,16 +1403,18 @@ class MainWindow(QMainWindow):
         when Encounter.log was last archived, and the Recent activity link
         with the newest archives and splits under it (gui.activity_render).
         The two folders are listed again at each redraw, so an archive just
-        made is on the page; a listing is all it costs."""
+        made is on the page; a listing is all it costs (the log is resolved
+        once, _known_log, and never by a search of the Logs folder)."""
         self._empty_reason = reason
-        self._activity = recent_activity.scan(self._archive_folder(), self._split_folder())
+        log = self._known_log()
+        self._activity = recent_activity.scan(self._archive_folder(log), self._split_folder(log))
         self.fight_view.set_anchor_names({})
         self.fight_view.set_tooltips(activity_tooltips(self._activity))
         self.fight_view.set_link_hover_color(link_color(self._dark))
         self._show_placeholder(empty_state_html(
             reason, self._activity, dark=self._dark,
             text_color=self.fight_view.palette().color(QPalette.Text).name(),
-            delete_original=bool(self.config.get("archive.delete_original", False)),
+            deleted_archive=self._archive_that_deleted_log,
             expected=self._empty_expected, show_activity=self._activity_open))
         self._refresh_freshness_label()  # the bar's text follows the page
 

@@ -25,14 +25,20 @@ review on it, the toolbar action's own path, so a zipped split or an
 archive streams from its zip and a large log is outlined and the reader
 asked first.
 
-With no log and the app's own archive to explain it (*Delete Encounter.log
-after a verified archive*), the first line says so in the words of that
-setting, and the advice on turning logging on goes last, under the lists,
-since it is then a reminder and not a fix; with nothing to explain the
-absence, the advice follows the first line as it always did.
+With no log and the app's own archive to explain it, the first line says
+so in the words of the setting that did it (*Delete Encounter.log after a
+verified archive*), and the advice on turning logging on goes last, under
+the lists, since it is then a reminder and not a fix; with nothing to
+explain the absence, the advice follows the first line as it always did.
+The explanation comes from this session's archive event (the archive
+whose completion deleted the log, ArchiveEvent.original_deleted), never
+from the setting and an archive's mere presence: an old archive beside a
+log missing for another reason (Settings pointing at a mistyped path, the
+game writing elsewhere) must not turn that problem into a reassurance.
 """
 
 import html
+from pathlib import Path
 
 from gui.fight_render import link_color
 from recent_activity import ArchiveFile, RecentActivity, format_when, split_time
@@ -70,7 +76,8 @@ def review_index_from_href(href: str) -> int | None:
     if not href or not href.startswith(REVIEW_HREF):
         return None
     rest = href[len(REVIEW_HREF):]
-    return int(rest) if rest.isdigit() else None
+    # isdigit alone takes '²', which int refuses
+    return int(rest) if rest.isascii() and rest.isdigit() else None
 
 
 def activity_action_from_href(href: str) -> str | None:
@@ -92,13 +99,19 @@ def activity_tooltips(activity: RecentActivity | None) -> dict:
     return tooltips
 
 
-def explaining_archive(activity: RecentActivity | None, delete_original: bool
+def explaining_archive(activity: RecentActivity | None, deleted_archive
                        ) -> ArchiveFile | None:
-    """The archive that explains a missing log: the newest, while the app
-    deletes the log after archiving it; else None."""
-    if activity is None or not delete_original:
+    """The archive that explains a missing log: *deleted_archive*, the one
+    whose completion deleted the log this session (see the module), as
+    listed in *activity*; None when there was no such archive or it is no
+    longer in the folder."""
+    if activity is None or not deleted_archive:
         return None
-    return activity.newest_archive
+    wanted = Path(deleted_archive)
+    for archive in activity.archives:
+        if archive.path == wanted or archive.path.name == wanted.name:
+            return archive
+    return None
 
 
 def _archive_detail(archive: ArchiveFile) -> str:
@@ -110,14 +123,14 @@ def _archive_detail(archive: ArchiveFile) -> str:
     return detail
 
 
-def first_line(reason: str, activity: RecentActivity | None, delete_original: bool) -> str:
+def first_line(reason: str, activity: RecentActivity | None, deleted_archive=None) -> str:
     """What the app is doing, as plain text: *reason* is 'monitoring' (the
     log is watched, no fight yet), 'waiting' (no log file) or 'back' (Back
-    to live, no fight in the session yet). With no log, the newest archive
-    and the delete setting explain where it went, in that setting's own
-    words."""
+    to live, no fight in the session yet). With no log, the archive that
+    deleted it this session (*deleted_archive*) explains where it went, in
+    the delete setting's own words."""
     if reason == "waiting":
-        archive = explaining_archive(activity, delete_original)
+        archive = explaining_archive(activity, deleted_archive)
         if archive is not None:
             return (f"Encounter.log was archived at {format_when(archive.made)}, verified and "
                     f"deleted, as set in Settings. Waiting for encounters.")
@@ -127,26 +140,27 @@ def first_line(reason: str, activity: RecentActivity | None, delete_original: bo
     return "Monitoring Encounter.log. Fight summaries appear here as combat ends."
 
 
-def archive_line(reason: str, activity: RecentActivity | None, delete_original: bool) -> str:
+def archive_line(reason: str, activity: RecentActivity | None, deleted_archive=None) -> str:
     """The newest archive, under the first line: which file it is when the
     first line said the log was archived, else when the log was last
     archived; '' with no archive."""
     newest = activity.newest_archive if activity is not None else None
     if newest is None:
         return ""
-    if reason == "waiting" and explaining_archive(activity, delete_original) is not None:
-        return (f"The archive is {_archive_detail(newest)}. ESO starts a fresh log the next "
+    explaining = explaining_archive(activity, deleted_archive) if reason == "waiting" else None
+    if explaining is not None:
+        return (f"The archive is {_archive_detail(explaining)}. ESO starts a fresh log the next "
                 f"time encounter logging is on.")
     return f"Encounter.log was last archived at {format_when(newest.made)}: {_archive_detail(newest)}."
 
 
-def status_text(reason, activity: RecentActivity | None, delete_original: bool) -> str:
+def status_text(reason, activity: RecentActivity | None, deleted_archive=None) -> str:
     """The status bar's text while nothing is monitored: the archive that
     explains it, so the bar does not say in red what the pane says is
     fine; '' when there is none."""
     if reason != "waiting":
         return ""
-    archive = explaining_archive(activity, delete_original)
+    archive = explaining_archive(activity, deleted_archive)
     if archive is None:
         return ""
     return f"Waiting for Encounter.log (archived {format_when(archive.made)})"
@@ -197,23 +211,25 @@ def _lists_html(activity: RecentActivity, dark: bool) -> str:
 
 
 def empty_state_html(reason: str, activity: RecentActivity | None, *, dark: bool,
-                     text_color: str = "", delete_original: bool = False,
+                     text_color: str = "", deleted_archive=None,
                      expected: str = "", show_activity: bool = OPEN_AT_FIRST) -> str:
     """The pane's page while the fight list is empty (see the module). The
     page goes inside the pane's muted placeholder, so the first line takes
-    the pane's own *text_color* when given. *expected* is where the log is
-    looked for, shown with the logging advice while there is none."""
+    the pane's own *text_color* when given. *deleted_archive* is the
+    archive whose completion deleted the log this session, if any;
+    *expected* is where the log is looked for, shown with the logging
+    advice while there is none."""
     link = link_color(dark)
-    opening = html.escape(first_line(reason, activity, delete_original))
+    opening = html.escape(first_line(reason, activity, deleted_archive))
     parts = [f"<p style='color:{text_color}'>{opening}</p>" if text_color else f"<p>{opening}</p>"]
-    archived = archive_line(reason, activity, delete_original)
+    archived = archive_line(reason, activity, deleted_archive)
     if archived:
         parts.append(f"<p>{html.escape(archived)}</p>")
     advice = []
     if reason == "waiting":
         where = html.escape(expected or "known ESO log locations")
         advice = [f"<p>Expected at:<br><code>{where}</code></p>", f"<p>{_LOGGING_ADVICE}</p>"]
-    explained = reason == "waiting" and explaining_archive(activity, delete_original) is not None
+    explained = reason == "waiting" and explaining_archive(activity, deleted_archive) is not None
     if not explained:
         parts.extend(advice)
     if activity:

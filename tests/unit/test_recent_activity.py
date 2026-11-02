@@ -64,6 +64,22 @@ def test_archives_newest_made_first_with_the_logs_last_entry(tmp_path):
     assert found[1].size == 20
 
 
+def test_an_archive_with_an_unreadable_time_is_left_out(tmp_path, monkeypatch):
+    good = _touch(tmp_path / "Encounter-261102204800.zip", datetime(2026, 11, 2, 21, 0))
+    bad = _touch(tmp_path / "Encounter-261027194400.zip", datetime(2026, 10, 27, 21, 14))
+    bad_mtime = bad.stat().st_mtime
+
+    class Clock(datetime):
+        @classmethod
+        def fromtimestamp(cls, value, *args, **kwargs):
+            if value == bad_mtime:
+                raise OSError(22, "Invalid argument")  # Windows, a time before 1970
+            return datetime.fromtimestamp(value, *args, **kwargs)
+
+    monkeypatch.setattr(ra, "datetime", Clock)
+    assert [a.path for a in ra.scan_archives(tmp_path)] == [good]
+
+
 def test_missing_folders_give_nothing(tmp_path):
     assert ra.scan_archives(tmp_path / "nowhere") == []
     assert ra.scan_archives(None) == []

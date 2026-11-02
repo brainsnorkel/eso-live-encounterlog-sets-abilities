@@ -184,11 +184,19 @@ class TestEmptyPane(EmptyStateTestCase):
         finally:
             win.close()
 
-    def test_waiting_with_delete_on_says_the_log_was_archived_and_removed(self):
-        self._archives()
+    def _archived_and_deleted(self, win, archive):
+        """The event the archiver sends when its archive deleted the log,
+        as it reaches the window before the engine reports it is waiting."""
+        from engine_events import ArchiveEvent
+        win._on_archive_event(ArchiveEvent(kind='completed', log_path=self.log, archive_path=archive,
+                                           done_bytes=1, total_bytes=1, original_deleted=True))
+
+    def test_waiting_after_this_sessions_archive_says_the_log_was_archived_and_deleted(self):
+        _older, newer = self._archives()
         self.config.set('archive.delete_original', True)
         win = self._window()
         try:
+            self._archived_and_deleted(win, newer)
             win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
             text = win._last_placeholder
             self.assertIn('Encounter.log was archived at 2 Nov 2026, 21:00, verified and deleted, '
@@ -215,8 +223,11 @@ class TestEmptyPane(EmptyStateTestCase):
         finally:
             win.close()
 
-    def test_waiting_with_the_original_kept_waits_as_before(self):
+    def test_waiting_with_an_old_archive_waits_as_before(self):
+        """An archive from an earlier run, even with the delete setting on,
+        does not explain a missing log: the page waits, in red."""
         self._archives()
+        self.config.set('archive.delete_original', True)
         win = self._window()
         try:
             win._on_waiting_for_log(str(self.log))
@@ -229,6 +240,43 @@ class TestEmptyPane(EmptyStateTestCase):
             self.assertLess(text.index('Expected at'), text.index('Recent activity'))
             self.assertEqual(win.freshness_label.text(), 'No log file')
             self.assertIn('c62828', win.freshness_label.styleSheet())
+        finally:
+            win.close()
+
+    def test_the_folders_come_from_the_log_the_engine_named(self):
+        """No log path in Settings and no log on disk: the folders are the
+        expected log's, not an auto-detection that finds nothing (Linux)
+        or walks the Logs folder (Windows)."""
+        from unittest import mock
+        _older, newer = self._archives()
+        self.config.set('log_path', None)
+        self.config.set('split.dir', None)
+        win = self._window()
+        try:
+            self._archived_and_deleted(win, newer)
+            with mock.patch('split_retention.resolve_log', side_effect=AssertionError('searched')):
+                win._on_waiting_for_log(str(self.log))
+            text = win._last_placeholder
+            self.assertIn('verified and deleted', text)
+            self.assertEqual(win._activity.archive_dir, self.dir)
+            self.assertEqual(win._activity.split_dir, self.dir)
+            self.assertIn('Waiting for Encounter.log (archived', win.freshness_label.text())
+        finally:
+            win.close()
+
+    def test_a_bad_href_index_is_ignored(self):
+        from PySide6.QtCore import QUrl
+
+        from gui.activity_render import REVIEW_HREF, review_index_from_href
+        self.assertIsNone(review_index_from_href(f'{REVIEW_HREF}²'))
+        win = self._window()
+        try:
+            win.request_review.disconnect(win._start_review)
+            requests = []
+            win.request_review.connect(lambda p, m: requests.append((p, m)))
+            win._on_monitoring_started(str(self.log))
+            win.fight_view.anchorClicked.emit(QUrl(f'{REVIEW_HREF}²'))
+            self.assertEqual(requests, [])
         finally:
             win.close()
 

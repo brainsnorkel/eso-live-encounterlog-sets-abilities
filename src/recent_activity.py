@@ -114,10 +114,13 @@ def scan_archives(folder: Path | None) -> list[ArchiveFile]:
                     if entry.is_symlink() or not entry.is_file():
                         continue
                     stat = entry.stat()
-                except OSError:
+                    # A file time a backup tool set to 0 or to nonsense is
+                    # no reason to lose the page: that file is left out
+                    made = datetime.fromtimestamp(stat.st_mtime)
+                except (OSError, OverflowError, ValueError):
                     continue
                 found.append(ArchiveFile(
-                    path=Path(entry.path), made=datetime.fromtimestamp(stat.st_mtime),
+                    path=Path(entry.path), made=made,
                     last_entry=datetime.strptime(stamp, _STAMP_FORMAT), size=stat.st_size))
     except OSError:
         pass
