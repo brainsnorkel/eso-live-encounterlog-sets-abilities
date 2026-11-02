@@ -58,9 +58,16 @@ class ArchiveFile:
 @dataclass
 class RecentActivity:
     """The newest archives and splits, newest first, RECENT_COUNT of each
-    at most; the folders they were looked for in (None: unknown)."""
+    at most; how many there are in all and their bytes on disk, which the
+    page shows in place of the folders (a worried reader wants "how much",
+    and the full path is on each file's hover); the folders they were
+    looked for in (None: unknown)."""
     archives: list[ArchiveFile] = field(default_factory=list)
     splits: list[SplitFile] = field(default_factory=list)
+    archive_count: int = 0
+    archive_bytes: int = 0
+    split_count: int = 0
+    split_bytes: int = 0
     archive_dir: Path | None = None
     split_dir: Path | None = None
 
@@ -135,9 +142,14 @@ def split_time(split: SplitFile) -> datetime:
 def scan(archive_dir: Path | None, split_dir: Path | None,
          count: int = RECENT_COUNT) -> RecentActivity:
     """The *count* newest archives and splits in the two folders, which may
-    be the same folder (then each file is listed once, under its own kind)."""
-    return RecentActivity(archives=scan_archives(archive_dir)[:count],
-                          splits=recent_splits(split_dir)[:count],
+    be the same folder (then each file is listed once, under its own kind),
+    with the count and size of all of them."""
+    archives = scan_archives(archive_dir)
+    splits = recent_splits(split_dir)
+    return RecentActivity(archives=archives[:count], splits=splits[:count],
+                          archive_count=len(archives),
+                          archive_bytes=sum(a.size for a in archives),
+                          split_count=len(splits), split_bytes=sum(s.size for s in splits),
                           archive_dir=archive_dir, split_dir=split_dir)
 
 

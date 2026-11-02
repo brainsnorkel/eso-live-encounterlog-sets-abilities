@@ -97,6 +97,9 @@ def test_scan_lists_five_of_each_newest_first(tmp_path):
     assert activity.splits[0].zipped and activity.splits[0].zone == "Dreadsail Reef"
     assert ra.split_time(activity.splits[0]) == datetime(2026, 10, 8, 20, 0)
     assert activity.archive_dir == tmp_path and activity.split_dir == tmp_path
+    # All of them are counted, not only the five shown
+    assert (activity.archive_count, activity.archive_bytes) == (7, 70)
+    assert (activity.split_count, activity.split_bytes) == (8, 80)
 
 
 def test_scan_count_can_be_changed(tmp_path):

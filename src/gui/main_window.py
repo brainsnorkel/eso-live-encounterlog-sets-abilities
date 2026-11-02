@@ -36,7 +36,9 @@ from fight_index import (
     player_history_text,
 )
 from gui import text_size
-from gui.activity_render import activity_paths, activity_tooltips, empty_state_html
+from gui.activity_render import (
+    OPEN_AT_FIRST, activity_paths, activity_tooltips, empty_state_html, status_text as empty_status_text,
+)
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import PEN_CRIT_ANCHOR, player_for
@@ -164,11 +166,12 @@ class MainWindow(QMainWindow):
         # The pane before the first fight (gui.activity_render, issue #191):
         # why it is empty ('monitoring', 'waiting' or 'back'; None once a
         # fight is on it), where the log was looked for, the recent
-        # archives and splits the page links to, and whether their list is open
+        # archives and splits the page links to, and whether their lists
+        # are open (the reader's choice, kept for the session)
         self._empty_reason = None
         self._empty_expected = ""
         self._activity = None
-        self._activity_open = False
+        self._activity_open = OPEN_AT_FIRST
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
@@ -1159,8 +1162,14 @@ class MainWindow(QMainWindow):
     def _refresh_freshness_label(self):
         status = self._last_status
         if status is None or status.latest_entry_time is None:
-            self.freshness_label.setText("No log file")
-            self.freshness_label.setStyleSheet(state_style("none", self._dark))
+            # While the app's own archive explains the missing log, the bar
+            # says so in the plain colour rather than "No log file" in red,
+            # which would contradict the pane (gui.activity_render)
+            explained = empty_status_text(
+                self._empty_reason, self._activity,
+                bool(self.config.get("archive.delete_original", False)))
+            self.freshness_label.setText(explained or "No log file")
+            self.freshness_label.setStyleSheet(state_style("idle" if explained else "none", self._dark))
             return
         age = (datetime.now() - status.latest_entry_time).total_seconds()
         state = ("live" if age < LIVE_SECONDS
@@ -1186,10 +1195,7 @@ class MainWindow(QMainWindow):
         entry = self.history_list.current_entry()
         if entry is None:
             return
-        # A fight on the pane ends the empty page; the lists start closed
-        # the next time it is empty
-        self._empty_reason = None
-        self._activity_open = False
+        self._empty_reason = None  # a fight on the pane ends the empty page
         fights = self._current_fights()
         self._follow_live = (self._review_fights is None
                              and bool(fights) and entry is fights[-1])
@@ -1390,6 +1396,7 @@ class MainWindow(QMainWindow):
             text_color=self.fight_view.palette().color(QPalette.Text).name(),
             delete_original=bool(self.config.get("archive.delete_original", False)),
             expected=self._empty_expected, show_activity=self._activity_open))
+        self._refresh_freshness_label()  # the bar's text follows the page
 
     @Slot(str)
     def _on_activity_requested(self, action):

@@ -95,16 +95,17 @@ class TestEmptyPane(EmptyStateTestCase):
         try:
             win._on_monitoring_started(str(self.log))
             text = win._last_placeholder
-            self.assertIn('Monitoring Encounter.log for encounters', text)
-            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00 '
-                          '(Encounter-261102204800.zip, 2 KB; its last entry 2 Nov 2026, 20:48).',
+            self.assertIn('Monitoring Encounter.log. Fight summaries appear here as combat ends.',
                           text)
-            # The lists wait behind the link
-            self.assertIn('Recent activity ▸', text)
-            self.assertIn("href='esolog:activity/show'", text)
-            self.assertNotIn(older.name, text)
-            self.assertNotIn('Lucent Citadel', text)
+            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00: '
+                          'Encounter-261102204800.zip, 2 KB, ending 2 Nov 2026, 20:48.', text)
+            # The lists start open: they are the proof the reader came for
+            self.assertIn('Recent activity ▾', text)
+            self.assertIn("href='esolog:activity/hide'", text)
+            self.assertIn(older.name, text)
+            self.assertIn('Lucent Citadel', text)
             self.assertEqual(win._empty_reason, 'monitoring')
+            self.assertEqual(win.freshness_label.text(), 'No log file')
         finally:
             win.close()
 
@@ -114,12 +115,18 @@ class TestEmptyPane(EmptyStateTestCase):
         win = self._window()
         try:
             win._on_monitoring_started(str(self.log))
-            win._on_activity_requested('show')
             text = win._last_placeholder
             self.assertIn('Recent activity ▾', text)
             self.assertIn("href='esolog:activity/hide'", text)
-            self.assertIn('<b>Archives</b>', text)
-            self.assertIn('<b>Split logs</b>', text)
+            # One table, a header row, a counting row for each group
+            self.assertEqual(text.count('<table'), 1)
+            self.assertIn("<th align='left'>When</th><th align='left'>File</th>"
+                          "<th align='right'>Size</th><th align='left'>Note</th>", text)
+            self.assertIn('<b>Archives</b>: 2, 4 KB</td>', text)
+            self.assertIn('<b>Split logs</b>: 3, ', text)
+            self.assertNotIn('newest five', text)
+            self.assertIn('Open log for review… on the toolbar', text)
+            self.assertIn('ending 2 Nov 2026, 20:48', text)
             # Archives newest first, then the splits by session, newest first
             self.assertLess(text.index(newer.name), text.index(older.name))
             self.assertLess(text.index('Lucent Citadel · Veteran'), text.index('Grahtwood'))
@@ -136,13 +143,16 @@ class TestEmptyPane(EmptyStateTestCase):
                 self.assertIn(f"href='{REVIEW_HREF}{index}'", text)
             self.assertEqual(win.fight_view._tooltips[f'{REVIEW_HREF}2'],
                              f'Open {plain} for review')
-            # The folders are named
-            self.assertIn(str(self.splits), text)
+            # The folders are on the hovers, not the page
+            self.assertNotIn(str(self.splits), text)
             win._on_activity_requested('hide')
             text = win._last_placeholder
             self.assertIn('Recent activity ▸', text)
             self.assertNotIn('<b>Archives</b>', text)
             self.assertNotIn(older.name, text)
+            self.assertNotIn('on the toolbar', text)
+            win._on_activity_requested('show')
+            self.assertIn(older.name, win._last_placeholder)
         finally:
             win.close()
 
@@ -181,19 +191,27 @@ class TestEmptyPane(EmptyStateTestCase):
         try:
             win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
             text = win._last_placeholder
-            self.assertIn('Encounter.log was archived at 2 Nov 2026, 21:00 '
-                          '(Encounter-261102204800.zip, 2 KB; its last entry 2 Nov 2026, 20:48) '
-                          'and removed, as Settings asks.', text)
-            self.assertIn('Waiting for encounters.', text)
+            self.assertIn('Encounter.log was archived at 2 Nov 2026, 21:00, verified and deleted, '
+                          'as set in Settings. Waiting for encounters.', text)
+            self.assertIn('The archive is Encounter-261102204800.zip, 2 KB, ending 2 Nov 2026, '
+                          '20:48. ESO starts a fresh log the next time encounter logging is on.',
+                          text)
             self.assertNotIn('Waiting for Encounter.log…', text)
             self.assertNotIn('last archived at', text)  # said once
-            # Where it is looked for and how to turn logging on, as before
+            # Where it is looked for and how to turn logging on, as before,
+            # but after the lists: a reminder now, not a fix
             self.assertIn(r'<code>C:\Users\R&amp;D &lt;x&gt;\Encounter.log</code>', text)
             self.assertIn('Always Logging (from GitHub', text)
             self.assertIn('Easy Stalking (ESOUI or Minion)', text)
             self.assertIn('not both', text)
-            self.assertIn('Recent activity ▸', text)
-            self.assertEqual(win.freshness_label.text(), 'No log file')
+            self.assertIn('Recent activity ▾', text)
+            self.assertLess(text.index('Recent activity'), text.index('Expected at'))
+            # The status bar agrees with the pane: plain, not red
+            self.assertEqual(win.freshness_label.text(),
+                             'Waiting for Encounter.log (archived 2 Nov 2026, 21:00)')
+            self.assertEqual(win.freshness_label.styleSheet(), '')
+            win._refresh_freshness_label()  # the ticker keeps it
+            self.assertIn('archived', win.freshness_label.text())
         finally:
             win.close()
 
@@ -204,8 +222,13 @@ class TestEmptyPane(EmptyStateTestCase):
             win._on_waiting_for_log(str(self.log))
             text = win._last_placeholder
             self.assertIn('Waiting for Encounter.log…', text)
-            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00', text)
-            self.assertNotIn('and removed', text)
+            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00: '
+                          'Encounter-261102204800.zip', text)
+            self.assertNotIn('deleted', text)
+            # The advice follows the first line, the lists come after
+            self.assertLess(text.index('Expected at'), text.index('Recent activity'))
+            self.assertEqual(win.freshness_label.text(), 'No log file')
+            self.assertIn('c62828', win.freshness_label.styleSheet())
         finally:
             win.close()
 
@@ -214,7 +237,7 @@ class TestEmptyPane(EmptyStateTestCase):
         try:
             win._on_monitoring_started(str(self.log))
             text = win._last_placeholder
-            self.assertIn('Monitoring Encounter.log for encounters', text)
+            self.assertIn('Monitoring Encounter.log.', text)
             self.assertNotIn('archived', text)
             self.assertNotIn('Recent activity', text)
             win._on_waiting_for_log('')
@@ -235,8 +258,9 @@ class TestEmptyPane(EmptyStateTestCase):
             win._on_archive_event(ArchiveEvent(kind='completed', log_path=self.log,
                                                archive_path=made, done_bytes=1, total_bytes=1))
             text = win._last_placeholder
-            self.assertIn('Encounter.log was last archived at 3 Nov 2026, 09:01', text)
-            self.assertIn('Recent activity ▸', text)
+            self.assertIn('Encounter.log was last archived at 3 Nov 2026, 09:01: '
+                          'Encounter-261103090000.zip', text)
+            self.assertIn('Recent activity ▾', text)
         finally:
             win.close()
 
@@ -247,7 +271,7 @@ class TestEmptyPane(EmptyStateTestCase):
             win._exit_review()
             text = win._last_placeholder
             self.assertIn('Back to live monitoring. No fight has ended in this session yet.', text)
-            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00', text)
+            self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00:', text)
             self.assertEqual(win._empty_reason, 'back')
         finally:
             win.close()
@@ -261,13 +285,19 @@ class TestEmptyPane(EmptyStateTestCase):
         win = self._window()
         try:
             win._on_monitoring_started(str(self.log))
-            win._on_activity_requested('show')
             self.assertTrue(win._activity_open)
+            win._on_activity_requested('hide')
             win._on_fight_completed(fights[0])
             self.assertIs(win.history_list.current_entry(), fights[0])
             self.assertIsNone(win._empty_reason)
-            self.assertFalse(win._activity_open)
             self.assertNotIn('Recent activity', win.fight_view.toPlainText())
+            # Closed stays closed for the session: the next empty page starts so
+            win._fights.clear()
+            win.history_list.clear()
+            win._on_monitoring_started(str(self.log))
+            self.assertIn('Recent activity ▸', win._last_placeholder)
+            win._on_activity_requested('show')
+            win._on_fight_completed(fights[0])
             # An archive completing now leaves the fight on the pane
             from engine_events import ArchiveEvent
             made = _file(self.dir / 'Encounter-261103090000.zip', datetime(2026, 11, 3, 9, 1))
@@ -330,6 +360,9 @@ class TestEmptyPageText(unittest.TestCase):
         activity = RecentActivity(splits=[split], split_dir=folder)
         text = empty_state_html('monitoring', activity, dark=False, show_activity=True)
         self.assertIn('R&amp;D &lt;x&gt;', text)
-        self.assertIn(f'<code>{html.escape(str(folder))}</code>', text)
         self.assertNotIn('<x>', text)
+        # The folder is not on the page, only on the file's hover
+        self.assertNotIn(html.escape(str(folder)), text)
         self.assertNotIn('<c>', text)
+        # A list built by hand, with no count, still counts what it shows
+        self.assertIn('<b>Split logs</b>: 1, 0 KB</td>', text)
