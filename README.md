@@ -77,8 +77,8 @@ Then start ESO Log Tail, before or during play. The status bar's **Last entry** 
 ## Troubleshooting
 
 - **SmartScreen warning on the installer**: the installer is not code-signed; choose *More info → Run anyway*.
-- **No fights appear**: make sure encounter logging is on in-game (**Last entry** turns green while the log is written). A fight appears once combat ends.
-- **"Waiting for Encounter.log"**: logging has never been enabled, or your log lives somewhere unusual: point Settings → Encounter log at it.
+- **No fights appear**: make sure encounter logging is on in-game (**Last entry** turns green while the log is written). A fight appears once combat ends. Meanwhile the pane says what the app is doing and when the log was last archived, and **Recent activity** on it lists your newest archives and split logs, each a click from a review.
+- **"Waiting for Encounter.log"**: logging has never been enabled, or your log lives somewhere unusual: point Settings → Encounter log at it. If the pane says the log was archived, verified and deleted, that is the app's own archiving at this start, as set in Settings.
 - **DPS differs from Combat Metrics or ESO Logs**: a player's figure counts the same hits over the same dps time as Combat Metrics. In a boss fight the first figure is boss DPS, and the group's DPS uses the group's own span rather than yours. See [when something looks wrong](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#when-something-looks-wrong).
 - **The app closed unexpectedly**: unhandled errors are written to `%LOCALAPPDATA%\esolog-tail\crash.log` (`~/.config/esolog-tail/crash.log` on Linux); please attach it to a [bug report](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/issues).
 - **Linux: the app does not start**: run `./esolog-gui` from a terminal to see Qt's message, and include it in a bug report with your distribution and whether the desktop is X11 or Wayland.
