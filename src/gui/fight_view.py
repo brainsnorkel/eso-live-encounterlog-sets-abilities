@@ -42,6 +42,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
+from gui.activity_render import activity_action_from_href, review_index_from_href
 from gui.death_render import unit_from_href
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
@@ -111,6 +112,10 @@ class FightView(QTextBrowser):
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
     taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
+    # The empty pane's links (gui.activity_render, issue #191): 'show' or
+    # 'hide' the recent activity; a file's place in it to open for review
+    activity_requested = Signal(str)
+    review_requested = Signal(int)
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -385,6 +390,14 @@ class FightView(QTextBrowser):
             return
         if url.toString().startswith(BANNER_HREF):
             self.banner_requested.emit(url.toString()[len(BANNER_HREF):])
+            return
+        action = activity_action_from_href(url.toString())
+        if action is not None:
+            self.activity_requested.emit(action)
+            return
+        index = review_index_from_href(url.toString())
+        if index is not None:
+            self.review_requested.emit(index)
             return
         unit_id = build_unit_from_href(url.toString())
         if unit_id is None:

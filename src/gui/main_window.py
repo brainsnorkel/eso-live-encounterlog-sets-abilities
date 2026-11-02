@@ -4,7 +4,6 @@ settings, manual archive, and the freshness status bar.
 """
 
 import base64
-import html
 import sys
 import weakref
 from datetime import datetime
@@ -37,6 +36,7 @@ from fight_index import (
     player_history_text,
 )
 from gui import text_size
+from gui.activity_render import activity_paths, activity_tooltips, empty_state_html
 from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import PEN_CRIT_ANCHOR, player_for
@@ -62,6 +62,7 @@ from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
+import recent_activity
 from recycle_bin import TRASH_NAME
 import review_load
 from session_recap import DISCORD_LIMIT, recap_text
@@ -160,6 +161,14 @@ class MainWindow(QMainWindow):
         self._follow_live = True
         self._restart_pending = False  # Save pressed, engine not yet restarted
         self._last_placeholder = ""
+        # The pane before the first fight (gui.activity_render, issue #191):
+        # why it is empty ('monitoring', 'waiting' or 'back'; None once a
+        # fight is on it), where the log was looked for, the recent
+        # archives and splits the page links to, and whether their list is open
+        self._empty_reason = None
+        self._empty_expected = ""
+        self._activity = None
+        self._activity_open = False
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
@@ -233,6 +242,8 @@ class MainWindow(QMainWindow):
             self._graph_dialog.refresh(dark)
         if self.history_list.current_entry() is not None:
             self._show_fight()
+        elif self._empty_reason is not None:
+            self._show_empty_state(self._empty_reason)  # its links take the theme's colour
         elif self._last_placeholder:
             self._show_placeholder(self._last_placeholder)
 
@@ -389,6 +400,9 @@ class MainWindow(QMainWindow):
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
         self.fight_view.banner_requested.connect(self._show_banner)
+        # The empty pane's Recent activity link and the files under it
+        self.fight_view.activity_requested.connect(self._on_activity_requested)
+        self.fight_view.review_requested.connect(self._on_review_requested)
         # The trial score banner captured from the screen (gui.banner_burst,
         # issue #167): the burst running, the runs already tried this
         # session, the files captured this session by run (the fight that
@@ -862,6 +876,9 @@ class MainWindow(QMainWindow):
             deleted = " — original deleted" if event.original_deleted else ""
             self.statusBar().showMessage(
                 f"Archived to {event.archive_path}{deleted}", 15000)
+            # The pane names the newest archive while no fight is on it
+            if self._empty_reason is not None:
+                self._show_empty_state(self._empty_reason)
         elif event.kind in ("skipped", "failed"):
             self.progress_bar.setVisible(False)
             self.statusBar().showMessage(f"Archive {event.kind}: {event.reason}", 15000)
@@ -933,15 +950,10 @@ class MainWindow(QMainWindow):
     def _on_waiting_for_log(self, expected):
         self._last_status = None
         self._refresh_freshness_label()
-        where = html.escape(expected or "known ESO log locations")
-        self._show_placeholder(
-            f"Waiting for Encounter.log…<br><br>"
-            f"Expected at:<br><code>{where}</code><br><br>"
-            f"Enable encounter logging in ESO (/encounterlog), or install an "
-            f"addon that turns it on for you, one or the other but not both: "
-            f"Always Logging (from GitHub, github.com/brainsnorkel/AlwaysLogging) "
-            f"or Easy Stalking (ESOUI or Minion). "
-            f"Monitoring starts automatically when the file appears.")
+        # No log: the pane says where it was looked for and, when the app
+        # archived and removed it, that it did (gui.activity_render)
+        self._empty_expected = expected or ""
+        self._show_empty_state("waiting")
 
     @Slot()
     def _on_monitoring_restarting(self):
@@ -969,9 +981,7 @@ class MainWindow(QMainWindow):
                     self.history_list.update_fight(entry)
         self.statusBar().showMessage(f"Monitoring {path}", 8000)
         if not self._fights:
-            self._show_placeholder(
-                "Monitoring for encounters… fight summaries appear here "
-                "as combat ends.")
+            self._show_empty_state("monitoring")
         # After 'Monitoring …', which would replace it (fight_index)
         if self._backfill_hint_due:
             self._backfill_hint_due = False
@@ -1176,6 +1186,10 @@ class MainWindow(QMainWindow):
         entry = self.history_list.current_entry()
         if entry is None:
             return
+        # A fight on the pane ends the empty page; the lists start closed
+        # the next time it is empty
+        self._empty_reason = None
+        self._activity_open = False
         fights = self._current_fights()
         self._follow_live = (self._review_fights is None
                              and bool(fights) and entry is fights[-1])
@@ -1347,6 +1361,50 @@ class MainWindow(QMainWindow):
             f"<div style='color:{muted_color(self._dark)};padding:16px'>"
             f"{html_text}</div>")
         self._apply_search()
+
+    # ---- the pane before the first fight (gui.activity_render, issue #191) ----
+
+    def _archive_folder(self):
+        """The archive folder: the one set, else the log's own (the
+        archiver's rule, log_archiver.LogArchiver._archive_target)."""
+        try:
+            return recent_activity.archive_folder(
+                self.config.get("archive.dir") or "",
+                split_retention.resolve_log(self.config.get("log_path") or ""))
+        except OSError:
+            return None
+
+    def _show_empty_state(self, reason):
+        """The pane while the fight list is empty: what the app is doing,
+        when Encounter.log was last archived, and the Recent activity link
+        with the newest archives and splits under it (gui.activity_render).
+        The two folders are listed again at each redraw, so an archive just
+        made is on the page; a listing is all it costs."""
+        self._empty_reason = reason
+        self._activity = recent_activity.scan(self._archive_folder(), self._split_folder())
+        self.fight_view.set_anchor_names({})
+        self.fight_view.set_tooltips(activity_tooltips(self._activity))
+        self.fight_view.set_link_hover_color(link_color(self._dark))
+        self._show_placeholder(empty_state_html(
+            reason, self._activity, dark=self._dark,
+            text_color=self.fight_view.palette().color(QPalette.Text).name(),
+            delete_original=bool(self.config.get("archive.delete_original", False)),
+            expected=self._empty_expected, show_activity=self._activity_open))
+
+    @Slot(str)
+    def _on_activity_requested(self, action):
+        """The Recent activity link: its lists open or close, in place."""
+        if self._empty_reason is None:
+            return
+        self._activity_open = action == "show"
+        self._show_empty_state(self._empty_reason)
+
+    @Slot(int)
+    def _on_review_requested(self, index):
+        """A file under Recent activity: Open log for review on it."""
+        paths = activity_paths(self._activity)
+        if 0 <= index < len(paths):
+            self._request_review_of(str(paths[index]))
 
     # ---- in-fight search ----
 
@@ -1672,8 +1730,14 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open encounter log for review", start_dir,
             "Encounter logs (*.log *.zip);;All files (*)")
-        if not path:
-            return
+        if path:
+            self._request_review_of(path)
+
+    def _request_review_of(self, path):
+        """Open log for review on *path*, from the toolbar's dialog or a
+        file under the empty pane's Recent activity: a zip's one log, or
+        the one chosen when it holds several, then the request to the
+        review thread (_start_review)."""
         member = ""
         if is_zip(Path(path)):
             # A zipped split or an archive: its one log, or the one chosen
@@ -1703,7 +1767,7 @@ class MainWindow(QMainWindow):
         self._reload_list(self._fights)
         self._follow_live = True
         if not self._fights:
-            self._show_placeholder("Back to live monitoring.")
+            self._show_empty_state("back")
 
 
 def _age_text(seconds: float) -> str:

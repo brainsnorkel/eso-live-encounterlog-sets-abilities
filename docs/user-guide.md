@@ -36,6 +36,12 @@ Joining mid-raid, the app replays the logging session already in the file: the s
 
 ![The main window: the fight history on the left, the selected fight on the right](screencaps/main-window.png)
 
+### Before the first fight
+
+Until the session's first fight is listed, the fight pane says what the app is doing. `Monitoring Encounter.log for encounters` means the log is there and being watched; under it, when the app has ever archived the log, `Encounter.log was last archived at 2 Nov 2026, 21:00 (Encounter-261102204800.zip, 65 MB; its last entry 2 Nov 2026, 20:48)` names the newest archive, when it was made, and the time of the last line it holds. If the log is not there because the app archived it at this start and removed it (*Delete Encounter.log after a verified archive* in Settings), the pane says that, in place of `Waiting for Encounter.log`, and that ESO writes a fresh log the next time encounter logging is on.
+
+**Recent activity** opens, in the pane, the five newest archives and the five newest split logs, each with its date, name, size and folder: the archives by when they were made, the split logs by the session they hold (a split can be written out again long after its session, so its file time can mislead). Click a file to open it for review, as [Open log for review](#reviewing-and-copying-fights) would; **Back to live** returns. The page goes as soon as a fight is listed, and comes back, with the archive just made, after **Archive now**.
+
 ### Fight history
 
 The list on the left has one line per completed fight, `boss · outcome · duration · group DPS · time`, grouped by the instance it was fought in. A bold header above each group names the zone and its difficulty, `Sunspire · Veteran`, and neighbouring groups alternate between a plain and a faintly shaded background. A new group starts when you change zone or difficulty, or at the first fight after a completed trial run, even in the same trial; walking back into the instance after a wipe keeps the group. `☠` marks a fight in which a player died, and `ⓘ` a fight with a player whose build has a [possible issue](#possible-build-issues). Hover the `ⓘ` to see who, with their class and the title of each finding, without selecting the fight; with **Hide names** on, the other players' names are hidden there too. A fight appears when combat ends. The newest fight is selected as it ends; select an older fight to read it (following pauses), and select the newest again to follow live fights.
@@ -530,8 +536,8 @@ The [design notes](design.md), collected from the code itself, go into each of t
 
 ## When something looks wrong
 
-- **No fights appear**: logging is off in-game (see [First run](#first-run)); **Last entry** turns green while the log is being written. A fight appears only once combat ends.
-- **"Waiting for Encounter.log"**: logging has never been enabled, or the log lives somewhere unusual: point Settings → Encounter log at it.
+- **No fights appear**: logging is off in-game (see [First run](#first-run)); **Last entry** turns green while the log is being written. A fight appears only once combat ends. The pane's [first page](#before-the-first-fight) says what the app is doing meanwhile, and **Recent activity** on it shows that your archives and split logs are where they should be.
+- **"Waiting for Encounter.log"**: logging has never been enabled, or the log lives somewhere unusual: point Settings → Encounter log at it. If the pane says instead that the log was archived and removed, nothing is wrong: the app did that at this start, as Settings asks, and ESO writes a fresh log when encounter logging is next on.
 - **DPS differs from Combat Metrics or ESO Logs**: a player's own figure counts the same hits over the same dps time as Combat Metrics, so it should agree. Check three things. In a fight with a boss, the first figure is boss DPS (`boss / total`). The group's DPS divides by the group's own first-to-last span, where Combat Metrics divides the group's damage by *your* dps time. And a fight the game split in two around a resurrection is one fight here. See [Damage](#what-the-numbers-are-based-on).
 - **An amber `Game 12.2, data built for 12.1` in the status bar**: the game was updated after the app's bundled data was built. Sets, items and skill icons the update added read as `Set#<id>`, a dash or text until a later release; the hover lists them. See [The status bar](#the-status-bar).
 - **A set shows as `Set#123`**: the set is newer than the bundled set table, so it has no name or link until the table is refreshed in a later release.

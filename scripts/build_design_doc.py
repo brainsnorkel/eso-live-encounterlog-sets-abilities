@@ -187,6 +187,10 @@ TOPICS = [
         "src/review_load.py",
         "src/gui/review_runner.py",
     ]),
+    ("Before the first fight: the archive line and recent activity", [
+        "src/recent_activity.py",
+        "src/gui/activity_render.py",
+    ]),
     ("Updates: the schedule, the conditional request and the button", [
         "src/update_check.py",
         "src/gui/update_poller.py",
