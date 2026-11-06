@@ -287,6 +287,34 @@ class TestGraphWindow(unittest.TestCase):
         finally:
             win.close()
 
+    def test_a_redraw_keeps_the_legends_line_and_scroll(self):
+        """The legend is filled anew at each redraw (its fight changing in
+        place, a theme switch, Hide names): the reader's line in it and its
+        scroll stay where they were (issue #196). It went back to the top,
+        with no line current."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtWidgets import QApplication
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
+            dialog = win._graph_dialog
+            dialog.resize(900, 300)
+            QApplication.processEvents()
+            legend, bar = dialog.legend, dialog.legend.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            legend.setCurrentRow(legend.count() - 1)
+            bar.setValue(bar.maximum())
+            place = (legend.currentRow(), bar.value())
+            win._on_fight_updated(entry)
+            self.assertEqual((legend.currentRow(), bar.value()), place)
+            dialog.refresh(True)
+            self.assertEqual((legend.currentRow(), bar.value()), place)
+        finally:
+            win.close()
+
     def test_window_from_the_engines_own_record(self):
         from PySide6.QtCore import QUrl
         from build_session import fights

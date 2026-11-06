@@ -565,10 +565,21 @@ class DpsGraphDialog(QDialog):
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the series colours follow it) or
         a flip of the Hide names switch (*names*, the new mask; None keeps
-        the one shown)."""
+        the one shown). The legend is filled anew, so its current line, known
+        by its key, and its scroll are put back, as the other windows keep
+        their place (issue #196)."""
         if self._shown is not None and self.isVisible():
             entry, _dark, shown = self._shown
+            current = self.legend.currentItem()
+            key = current.data(Qt.UserRole) if current is not None else None
+            scroll = self.legend.verticalScrollBar().value()
             self.show_graph(entry, dark, names=shown if names is None else names)
+            for row in range(self.legend.count()):
+                if key is not None and self.legend.item(row).data(Qt.UserRole) == key:
+                    self.legend.setCurrentRow(row)
+                    break
+            self.legend.doItemsLayout()  # the new rows' scroll range, before setting it
+            self.legend.verticalScrollBar().setValue(scroll)
 
     def entry_updated(self, entry, dark: bool, names=None) -> None:
         """The fight *entry* changed in place (MainWindow._fight_changed,

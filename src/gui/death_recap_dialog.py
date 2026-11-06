@@ -58,9 +58,8 @@ class DeathRecapDialog(QDialog):
         the one shown)."""
         if self._shown is not None and self.isVisible():
             entry, unit_id, shown = self._shown
-            scroll = self.view.verticalScrollBar().value()
-            self.show_recap(entry, unit_id, dark, names=shown if names is None else names)
-            self.view.restore_scroll(scroll)
+            with self.view.keeping_place():
+                self.show_recap(entry, unit_id, dark, names=shown if names is None else names)
 
     def entry_updated(self, entry, dark: bool, names=None) -> None:
         """The fight *entry* changed in place (MainWindow._fight_changed):

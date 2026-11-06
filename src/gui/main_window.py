@@ -861,10 +861,11 @@ class MainWindow(QMainWindow):
         """A delivered fight changed in place (a fight update from the
         engine, a score banner attached): its history line is rewritten, the
         pane redrawn if the fight is on screen, and every open window on that
-        fight redrawn, keeping its scroll, with the Hide names mask made
-        afresh from it, since a fight the game cut in two can bring players
-        its first part did not have (issue #196). A hidden window, or one on
-        another fight, is left alone: opening it draws the fight anew.
+        fight redrawn, each keeping its place, the windows with the Hide
+        names mask made afresh from the fight, since a fight the game cut in
+        two can bring players its first part did not have (issue #196). A
+        hidden window, or one on another fight, is left alone: opening it
+        draws the fight anew.
 
         A window tells its fight by identity (window.entry is entry), with
         no key of time, zone or boss, because the engine never sends a
@@ -885,7 +886,9 @@ class MainWindow(QMainWindow):
         list meanwhile would lose its items."""
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
-            self._show_fight()
+            # Where the reader had it, as the windows keep theirs
+            with self.fight_view.keeping_place():
+                self._show_fight()
         names = self._names_for(entry)
         for window in self._windows():
             window.entry_updated(entry, self._dark, names)
@@ -1558,12 +1561,11 @@ class MainWindow(QMainWindow):
         if self.history_list.current_entry() is not None:
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
-            scroll = self.fight_view.verticalScrollBar().value()
-            self._show_fight()
-            self.fight_view.restore_scroll(scroll)
+            with self.fight_view.keeping_place():
+                self._show_fight()
+        # A window hidden or never filled draws nothing (its refresh)
         for window in self._windows():
-            if window.isVisible() and window.entry is not None:
-                window.refresh(self._dark, names=self._names_for(window.entry))
+            window.refresh(self._dark, names=self._names_for(window.entry))
 
     # ---- text size ----
 

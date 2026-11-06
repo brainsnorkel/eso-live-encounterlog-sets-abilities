@@ -33,6 +33,7 @@ Reduce motion is on (set_reduce_motion).
 
 import weakref
 
+from contextlib import contextmanager
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QRect, Qt, QTimer, QUrl, QUrlQuery, Signal
@@ -150,7 +151,9 @@ class FightView(QTextBrowser):
         # until then; QTimer.singleShot(0, view, method) does not raise but
         # keeps the method, and so the wrapper, alive (all probed on PySide6
         # 6.12.0). A new page drops the step still pending for the one it
-        # replaces.
+        # replaces. A redraw of the page before that step has run, a second
+        # fight update in the same pass say, puts the page where the step
+        # was to put it, not where its bar is meanwhile (keeping_place).
         self._kept_scroll = 0
         self._kept_anchor = ""
         self._after_layout = QTimer(self)
@@ -223,6 +226,23 @@ class FightView(QTextBrowser):
         self.scrollToAnchor(self._kept_anchor)
         self._after_layout.start()
 
+    @contextmanager
+    def keeping_place(self):
+        """Redraw the page the reader is looking at inside the with block,
+        and put it back where it was: at the bar's position, or, while the
+        step after the last drawing is still to run, where that step was to
+        put it (its scroll or its anchor), since the bar is not there yet
+        (see __init__)."""
+        if self._after_layout.isActive():
+            anchor, scroll = self._kept_anchor, self._kept_scroll
+        else:
+            anchor, scroll = "", self.verticalScrollBar().value()
+        yield
+        if anchor:
+            self.open_at_anchor(anchor)
+        else:
+            self.restore_scroll(scroll)
+
     def _apply_after_layout(self) -> None:
         if self._kept_anchor:
             self.scrollToAnchor(self._kept_anchor)
@@ -237,10 +257,12 @@ class FightView(QTextBrowser):
         (issue #196)."""
         cursor = self.textCursor()
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and cursor.hasSelection():
-            start, end = QTextCursor(cursor), QTextCursor(cursor)
+            # The cursor at the link's start: its left edge, its line. The
+            # one at its end is on the next line when the link ends a
+            # wrapped line
+            start = QTextCursor(cursor)
             start.setPosition(cursor.selectionStart())
-            end.setPosition(cursor.selectionEnd())
-            rect = self.cursorRect(start).united(self.cursorRect(end))
+            rect = self.cursorRect(start)
             self._key_link_rect = QRect(self.viewport().mapToGlobal(rect.topLeft()), rect.size())
         try:
             super().keyPressEvent(event)
@@ -248,9 +270,10 @@ class FightView(QTextBrowser):
             self._key_link_rect = None
 
     def keyboard_link_rect(self) -> QRect | None:
-        """The link Enter is activating, as a rectangle on the screen (the
-        cursor rectangles at its two ends, joined), while the link's signal
-        is handled; None when a click activated it."""
+        """Where the link Enter is activating starts, as a rectangle on the
+        screen (the text cursor's there: the link's left edge, the height of
+        its line), while the link's signal is handled; None when a click
+        activated it."""
         return self._key_link_rect
 
     def _text_anchor_cursor(self, href: str) -> Optional[QTextCursor]:

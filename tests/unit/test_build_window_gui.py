@@ -1022,6 +1022,34 @@ class TestBuildWindow(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_the_pane_keeps_its_place_when_its_fight_changes_in_place(self):
+        """The fight on screen changing in place, here the game having cut
+        it in two, redraws the pane where the reader had it, as the windows
+        keep theirs (issue #196); it went back to the top."""
+        from fight_history import FightHistoryEntry
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            win.resize(1080, 380)
+            _app.processEvents()
+            bar = win.fight_view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            before = win.fight_view.toPlainText()
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            _app.processEvents()
+            self.assertNotEqual(win.fight_view.toPlainText(), before)
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
     def test_the_damage_taken_and_graph_windows_redraw_their_fight_too(self):
         """The same fight cut in two, the boss hitting @brainsnorkel in the
         second part: the damage, damage taken and DPS graph windows open on
@@ -1280,6 +1308,17 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
             bar.setValue(0)
             QApplication.processEvents()
             top = _anchor_top(view.document(), DEALT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
+
+            # Its fight changing before the step has run, the bar not yet on
+            # the heading: the redraw keeps the step's anchor
+            # (FightView.keeping_place), where it went back to the bar's 0
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            bar.setValue(0)
+            dialog.refresh(False)
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
             self.assertGreater(bar.value(), 0)
             self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
         finally:

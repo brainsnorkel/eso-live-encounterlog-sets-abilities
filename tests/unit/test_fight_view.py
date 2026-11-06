@@ -476,6 +476,97 @@ class TestStepsAfterLayout(FightViewTestCase):
             view.close()
             view.deleteLater()
 
+    def test_a_redraw_before_the_step_runs_keeps_the_steps_place(self):
+        """A second redraw in the same pass, two fight updates say, finds
+        the bar not yet where the step after the first will put it (a page
+        Qt lays out in parts leaves it short until then): keeping_place
+        takes the step's scroll or anchor, not the bar's position."""
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        lines = '<p>a line of the page</p>' * 150
+        page = f'{lines}<p><a name="there"></a>the heading</p>{lines}'
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            view.setHtml(page)
+            QApplication.processEvents()
+            bar = view.verticalScrollBar()
+            bar.setValue(400)
+            with view.keeping_place():
+                view.setHtml(page)
+            bar.setValue(0)
+            with view.keeping_place():
+                view.setHtml(page)
+            QApplication.processEvents()
+            self.assertEqual(bar.value(), 400)
+
+            # The same for a page just opened at an anchor
+            view.setHtml(page)
+            view.open_at_anchor('there')
+            QApplication.processEvents()
+            at_anchor = bar.value()
+            self.assertGreater(at_anchor, 400)
+            view.setHtml(page)
+            view.open_at_anchor('there')
+            bar.setValue(0)
+            with view.keeping_place():
+                view.setHtml(page)
+            QApplication.processEvents()
+            self.assertEqual(bar.value(), at_anchor)
+        finally:
+            view.close()
+            view.deleteLater()
+
+
+class TestEnterOnALink(FightViewTestCase):
+
+    def test_a_link_ending_a_wrapped_line_is_placed_on_its_line(self):
+        """Enter on a link that ends a wrapped line: keyboard_link_rect is
+        at the link, its left edge and its line. Joined with the cursor at
+        the link's end, which is on the next line, it took that line's left
+        margin and bottom, and the (i) popup opened there (issue #196)."""
+        from PySide6.QtCore import QRect, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        asked = []
+
+        def note(unit_id):
+            asked.append((unit_id, view.keyboard_link_rect()))
+        view.issues_requested.connect(note)
+        try:
+            view.resize(300, 300)
+            view.show()
+            view.activateWindow()
+            QApplication.processEvents()
+            # A line may break between any two ideographs: the count before
+            # the link that makes it the first line's last character
+            for n in range(1, 200):
+                view.setHtml(f"<p>{'文' * n}<a href='esolog:issues/2'>中</a>{'文' * 60}</p>")
+                start, end = QTextCursor(view.document()), QTextCursor(view.document())
+                start.setPosition(n)
+                end.setPosition(n + 1)
+                if view.cursorRect(end).top() > view.cursorRect(start).top():
+                    break
+            else:
+                self.fail('no count of ideographs ends the first line with the link')
+            mark = view.cursorRect(start)
+            view.setFocus()
+            QTest.keyClick(view, Qt.Key_Tab)
+            self.assertEqual(view.textCursor().selectionStart(), n)
+            QTest.keyClick(view, Qt.Key_Return)
+            self.assertEqual(asked, [('2', QRect(view.viewport().mapToGlobal(mark.topLeft()),
+                                                 mark.size()))])
+        finally:
+            view.issues_requested.disconnect(note)
+            view.close()
+            view.deleteLater()
+
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):
     """Ctrl+F matches an icon by the ability name behind it."""
