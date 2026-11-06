@@ -387,6 +387,32 @@ class TestEmptyPane(EmptyStateTestCase):
         finally:
             win.close()
 
+    def test_the_log_going_away_leaves_the_fight_read_on_the_pane(self):
+        """Issue #199: the app's archive deletes the log mid-session (Archive
+        now, with the original deleted) while the reader is on a fight. The
+        fight stays on the pane, the bar saying the log was archived, and
+        stays when ESO writes a log again. The waiting page took its place,
+        and stayed after the log came back, since monitoring_started draws
+        no page while fights are listed."""
+        self.config.set('archive.delete_original', True)
+        win = self._window()
+        try:
+            win._on_monitoring_started(str(self.log))
+            win._on_fight_completed(self._reviewed())
+            self.assertTrue(win.fight_view.toPlainText().startswith('Ozezan the Inferno'))
+            _older, newer = self._archives()
+            self._archived_and_deleted(win, newer)
+            win._on_waiting_for_log(str(self.log))
+            self.assertTrue(win.fight_view.toPlainText().startswith('Ozezan the Inferno'))
+            self.assertIsNone(win._empty_reason)
+            self.assertEqual(win.freshness_label.text(),
+                             'Waiting for Encounter.log (archived 2 Nov 2026, 21:00)')
+            self.assertEqual(win.freshness_label.styleSheet(), '')
+            win._on_monitoring_started(str(self.log))
+            self.assertTrue(win.fight_view.toPlainText().startswith('Ozezan the Inferno'))
+        finally:
+            win.close()
+
     def test_the_first_fight_replaces_the_page_and_closes_the_lists(self):
         import review_load
         from app_startup import build_analyzer

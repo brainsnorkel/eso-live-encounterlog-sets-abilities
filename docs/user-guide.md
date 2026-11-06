@@ -38,7 +38,7 @@ Joining mid-raid, the app replays the logging session already in the file: the s
 
 ### Before the first fight
 
-Until the session's first fight is listed, the fight pane says what the app is doing. `Monitoring Encounter.log` means the log is there and being watched; under it, when the app has ever archived the log, `Encounter.log was last archived at 2 Nov 2026, 21:00: Encounter-261102204800.zip, 65 MB, ending 2 Nov 2026, 20:48` names the newest archive, when it was made, and the time of the last line it holds. If the log is not there because the app archived it at this start and deleted it (*Delete Encounter.log after a verified archive* in Settings), the pane says so in place of `Waiting for Encounter.log` (only for an archive made in this run of the app: an old archive beside a log that is missing for another reason is no explanation, and the page then waits as usual): `Encounter.log was archived at 3 Nov 2026, 08:46, verified and deleted, as set in Settings. Waiting for encounters.`, with the archive's name under it and a note that ESO starts a fresh log the next time encounter logging is on; the status bar then reads `Waiting for Encounter.log (archived 3 Nov 2026, 08:46)` in the plain colour rather than `No log file` in red.
+Until the session's first fight is listed, the fight pane says what the app is doing. `Monitoring Encounter.log` means the log is there and being watched; under it, when the app has ever archived the log, `Encounter.log was last archived at 2 Nov 2026, 21:00: Encounter-261102204800.zip, 65 MB, ending 2 Nov 2026, 20:48` names the newest archive, when it was made, and the time of the last line it holds. If the log is not there because the app archived it at this start and deleted it (*Delete Encounter.log after a verified archive* in Settings), the pane says so in place of `Waiting for Encounter.log` (only for an archive made in this run of the app: an old archive beside a log that is missing for another reason is no explanation, and the page then waits as usual): `Encounter.log was archived at 3 Nov 2026, 08:46, verified and deleted, as set in Settings. Waiting for encounters.`, with the archive's name under it and a note that ESO starts a fresh log the next time encounter logging is on; the status bar then reads `Waiting for Encounter.log (archived 3 Nov 2026, 08:46)` in the plain colour rather than `No log file` in red. Once a fight is listed, the pane stays on the fight you are reading if the log goes away (Archive now with the original deleted, say), and the status bar says the log is missing until ESO writes a new one.
 
 ![Before the first fight: the log archived and deleted at this start, and the recent archives and split logs](screencaps/before-first-fight.png)
 
@@ -168,6 +168,8 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 | Ctrl + mouse wheel | Zoom the one page under the pointer until the app closes; the next text size change resets it |
 
 Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
+
+In the fight, and in the windows beside it, Tab and Shift+Tab move from link to link, and Enter opens the framed one. A redraw (the fight changing as more of it is logged, Hide names, a new text size, light or dark) keeps that link framed and, if you could see it, where it was on the screen.
 
 ## A player's build
 

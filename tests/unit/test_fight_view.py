@@ -598,6 +598,41 @@ class TestStepsAfterLayout(FightViewTestCase):
             view.close()
             view.deleteLater()
 
+    def test_tab_ends_the_hold(self):
+        """The fight is drawn shorter than where the reader was, so the
+        place is held to the end of HOLD_MS. Tab moves the page to the link
+        at its top, which the bar does not report: the hold ends there, and
+        a change of the bar's range leaves the page where Tab took it
+        (issue #199). It put the page back at the place still held."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from gui.fight_view import FightView
+        line = '<p>a line of the page</p>'
+        link = "<p><a href='esolog:issues/1'>(i) of 1</a></p>"
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            view.setHtml(link + line * 300)
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            bar.setValue(bar.maximum())
+            with view.keeping_place():
+                view.setHtml(link + line * 100)
+            _app.processEvents()
+            self.assertTrue(view._hold.isActive())
+            view.setFocus()
+            QTest.keyClick(view, Qt.Key_Tab)
+            place = bar.value()
+            self.assertLess(place, 50)  # at the link, at the page's top
+            view.resize(300, 180)  # the bar's range changes
+            _app.processEvents()
+            self.assertEqual(bar.value(), place)
+        finally:
+            view.close()
+            view.deleteLater()
+
 
 class TestEnterOnALink(FightViewTestCase):
 
@@ -848,6 +883,44 @@ class TestALinkReachedWithTab(FightViewTestCase):
             reached.append((selected.selectionStart(), selected.selectionEnd()))
         self.assertEqual(len(reached), 8)
         self.assertEqual(reached, [(start, end) for _href, start, end in self.view._links()])
+
+    def _moved_down(self):
+        """The page with ten rows more above the first (i), as an update
+        that ranks its player lower adds them."""
+        return self.PAGE.replace("<p><a href='esolog:issues/2'>",
+                                 "<p>a line of the page</p>" * 10 + "<p><a href='esolog:issues/2'>")
+
+    def test_a_link_on_the_screen_stays_where_it_was_on_it(self):
+        """The fight on screen changes in place and moves the link the
+        reader reached with Tab down the page: the link stays where it was
+        on the screen, with Tab's focus, and the page moves under it (issue
+        #199). Kept by the bar's position, it went out of sight with its
+        focus frame, and Enter opened a link the reader could not see."""
+        self.view.setHtml(self.PAGE)
+        self._tab(4)
+        self.assertEqual(self._selected(), '(i) of 2')
+        top = self.view.link_top()
+        self.assertIsNotNone(top)
+        bar = self.view.verticalScrollBar()
+        scroll = bar.value()
+        self._redraw(self._moved_down())
+        self.assertEqual(self._selected(), '(i) of 2')
+        self.assertEqual(self.view.link_top(), top)
+        self.assertGreater(bar.value(), scroll)
+
+    def test_a_link_scrolled_out_of_view_leaves_the_page_where_the_reader_put_it(self):
+        """The reader has scrolled the link they reached with Tab out of
+        view when the fight moves it: the page stays at their scroll, the
+        link keeping Tab's focus (issue #199)."""
+        self.view.setHtml(self.PAGE)
+        self._tab(4)
+        bar = self.view.verticalScrollBar()
+        bar.setValue(0)
+        _app.processEvents()
+        self.assertIsNone(self.view.link_top())  # below the screen
+        self._redraw(self._moved_down())
+        self.assertEqual(self._selected(), '(i) of 2')
+        self.assertEqual(bar.value(), 0)
 
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):

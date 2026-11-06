@@ -1024,12 +1024,16 @@ class MainWindow(QMainWindow):
         # No log: the pane says where it was looked for and, when the app
         # archived and removed it, that it did (gui.activity_render)
         self._empty_expected = expected or ""
-        if self._review_fights is None:  # never over a review's fight
+        if self._review_fights is None and self.history_list.current_entry() is None:
             self._show_empty_state("waiting")  # and the bar with it
         else:
-            # The bar alone says it, from the folders listed again: the
-            # page the review covers was listed before the archive that
-            # may just have deleted the log
+            # Never over a fight the reader is on, live or under review
+            # (issue #199): the waiting page took the place of a fight read
+            # as the log went away, and stayed when it came back, since
+            # monitoring_started draws no page while fights are listed. The
+            # bar alone says it, from the folders listed again: the page
+            # last listed came before the archive that may just have deleted
+            # the log
             self._scan_activity()
             self._refresh_freshness_label()
 
@@ -1664,6 +1668,10 @@ class MainWindow(QMainWindow):
                 before, on_match = search_from
                 index = before if on_match else before - 1  # the match the cursor goes to
                 start = starts[min(index, len(starts) - 1)] if index >= 0 else 0
+            else:
+                # A search typed, or a new page: the page is the search's to
+                # move, not a redraw's to put back (FightView.release_place)
+                self.fight_view.release_place()
             first = QTextCursor(self.fight_view.document())
             first.setPosition(start)
             self.fight_view.setTextCursor(first)
@@ -1687,6 +1695,7 @@ class MainWindow(QMainWindow):
                       matches[0])  # wrap around
         cursor = QTextCursor(target)
         cursor.setPosition(target.selectionStart())
+        self.fight_view.release_place()  # the reader's move, not undone by a redraw
         self.fight_view.setTextCursor(cursor)
         self.fight_view.ensureCursorVisible()
 
@@ -1735,15 +1744,22 @@ class MainWindow(QMainWindow):
         """Apply and save the app-wide text size, then redraw every page.
         A view zoomed with Ctrl + mouse wheel drops its own size and takes
         the new one, so the setting is what the user sees everywhere."""
+        views = [self.fight_view] + [view for window in self._windows() for view in window.views()]
+        # Where each page's link reached with Tab is on the screen, before
+        # the new size moves it: the redraw cannot see it once the font has
+        # changed, so it is put back there afterwards (FightView.keeping_place)
+        tops = [(view, view.link_top()) for view in views]
         applied = text_size.apply(pct)
         self.config.set(text_size.CONFIG_KEY, applied)
         self.config.save()
-        views = [self.fight_view] + [view for window in self._windows() for view in window.views()]
         for view in views:
             view.setFont(QFont())  # inherit the application font again
         # The pane and every open window are rendered from their view's
         # font, as for a flip of Hide names
         self._refresh_names()
+        for view, top in tops:
+            if top is not None and view.isVisible():
+                view.keep_link_at(top)
         self.statusBar().showMessage(f"Text size {applied}%", 3000)
 
     def _apply_privacy_settings(self):

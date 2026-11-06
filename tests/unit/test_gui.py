@@ -466,6 +466,27 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_the_search_ends_the_hold_on_a_redrawn_page(self):
+        """A redraw holds the reader's place while Qt lays the page out.
+        Typing a search, or Enter in it, moves the page to a match, which
+        the bar does not report: the hold ends there (issue #199), so the
+        next change of the page's range leaves the page at the match."""
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            view = win.fight_view
+            view.restore_scroll(10 ** 6)  # held, out of the page's reach
+            self.assertTrue(view._hold.isActive())
+            win.search_field.setText('a')
+            self.assertFalse(view._hold.isActive())
+            view.restore_scroll(10 ** 6)
+            win._goto_next_match()
+            self.assertFalse(view._hold.isActive())
+        finally:
+            win.close()
+
     def test_archive_events_drive_progress_bar(self):
         from engine_events import ArchiveEvent
         win = self._window()

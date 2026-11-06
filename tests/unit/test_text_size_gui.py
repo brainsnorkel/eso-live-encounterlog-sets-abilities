@@ -274,6 +274,47 @@ class TestPixels(TextSizeTestCase):
             self.assertEqual((image.width(), image.height()), (64, 64), path.name)
 
 
+class TestTheLinkReachedWithTab(TextSizeTestCase):
+
+    def test_a_new_size_keeps_the_link_where_it_was_on_the_screen(self):
+        """Tabbed to a link at the foot of the pane, the reader makes the
+        text bigger: the link keeps Tab's focus where it was on the screen,
+        so Enter opens one they can see (issue #199). The page grew under
+        the bar's old position, which put the link out of sight."""
+        from copy import deepcopy
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self._window()
+        group = _entry()
+        one = group.players[0]
+        group.players = [dict(deepcopy(one), unit_id=str(n), name=f"@player{n}",
+                              character=f"Char {n}", is_local=n == 1) for n in range(1, 9)]
+        win._on_fight_completed(group)
+        win.history_list.select_fight(-1)
+        view = win.fight_view
+        view.setMaximumHeight(160)  # short enough to scroll on every platform
+        _app.processEvents()
+        bar = view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        view.setFocus()
+        for _ in range(40):
+            QTest.keyClick(view, Qt.Key_Tab)
+            if bar.value() > 0:
+                break
+        else:
+            self.fail('no link below the pane\'s first screen')
+        link = view.textCursor().selectedText()
+        top = view.link_top()
+        self.assertIsNotNone(top)
+        win.set_text_size(150)
+        _app.processEvents()
+        self.assertEqual(view.textCursor().selectedText(), link)
+        self.assertIsNotNone(view.link_top())
+        # Higher up by its line's growth at most, so all of it shows
+        self.assertLessEqual(abs(view.link_top() - top), view.cursorRect().height())
+
+
 class TestSettings(TextSizeTestCase):
 
     def _dialog(self, pct=None):
