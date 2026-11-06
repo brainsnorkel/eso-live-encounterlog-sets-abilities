@@ -1163,8 +1163,8 @@ _ZONE_EXPLAIN = {
 }
 _ROW_EXPLAIN = ("The bar is the armour left after the group's armour debuffs each second "
                 "while the group was hitting the target, and the label's second figure is "
-                "that armour left, averaged over time; the click summary and the build "
-                "window's effective figures weigh each second by the damage dealt instead.")
+                "that armour left, averaged over time; the click summary and the Pen and "
+                "crit tab's effective figures weigh each second by the damage dealt instead.")
 _PACK_EXPLAIN = ("The paler stretches read each second on whatever the group hit hardest "
                  "then, the hover naming it.")
 
