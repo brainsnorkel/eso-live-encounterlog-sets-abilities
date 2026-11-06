@@ -44,11 +44,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.activity_render import activity_action_from_href, review_index_from_href
-from gui.death_render import unit_from_href
+from gui.death_render import RECAP_HREF, recap_from_href, unit_from_href
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
-    damage_unit_from_href, issues_unit_from_href, mastery_unit_from_href, pen_crit_unit_from_href,
-    taken_unit_from_href,
+    damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
+    pen_crit_unit_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -113,6 +113,12 @@ class FightView(QTextBrowser):
     issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
     taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
+    # unit id of the player whose healing received line was clicked, on their
+    # damage taken page (issue #196)
+    healing_requested = Signal(str)
+    # unit id and number from 1 of one death, in a list of a fight's deaths
+    # (issue #196)
+    recap_requested = Signal(str, int)
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
     # The empty pane's links (gui.activity_render, issue #191): 'show' or
     # 'hide' the recent activity; a file's place in it to open for review
@@ -183,8 +189,13 @@ class FightView(QTextBrowser):
         # The link Enter is activating, on the screen, while its signal is
         # handled (see keyPressEvent)
         self._key_link_rect: QRect | None = None
+        # The link Tab had the focus on when the focus last left the page,
+        # which Qt drops (see focusOutEvent)
+        self._left_link = None
         _views.add(self)
-        # What a screen reader is given in place of the images (see above)
+        # What a screen reader is given in place of the images (see above),
+        # after a lead line of the window's (set_accessible_lead)
+        self._accessible_lead = ""
         self.textChanged.connect(self._update_accessible_text)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
@@ -222,10 +233,12 @@ class FightView(QTextBrowser):
         self._pulse_phase = 0
         self._pulse.stop()
         # A scroll still to be put back belongs to the page being replaced,
-        # and so does the link Tab reached (keeping_place gives it back)
+        # and so do the link Tab reached (keeping_place gives it back) and
+        # a link to give back (give_link_back)
         self._after_layout.stop()
         self._hold.stop()
         self._key_link = None
+        self._left_link = None
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -482,6 +495,30 @@ class FightView(QTextBrowser):
         finally:
             self._own_step = False
 
+    def focusOutEvent(self, event) -> None:
+        """Qt drops the link Tab has the focus on when the focus leaves the
+        page, unless it leaves for another window or a popup; so it does as
+        a tab widget hides the page. The link is kept here first, for the
+        page's window to give back when the tab is shown again
+        (give_link_back, issue #196)."""
+        if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
+            self._left_link = self._tab_link()
+        super().focusOutEvent(event)
+
+    def give_link_back(self) -> None:
+        """Give Tab's focus back to the link it had when the focus last left
+        the page, the page staying where it is, which Tab's step would
+        scroll to the link; nothing when there was none, when the page has
+        a selection again, or when it was drawn anew since (setHtml). A
+        redraw that keeps the page's place (keeping_place) keeps the link."""
+        link, self._left_link = self._left_link, None
+        if link is None or self.textCursor().hasSelection():
+            return
+        bar = self.verticalScrollBar()
+        scroll = bar.value()
+        self._focus_link(*link)
+        bar.setValue(scroll)
+
     def keyPressEvent(self, event) -> None:
         """Enter on a link the reader moved to with Tab activates it inside
         this call: Qt emits anchorClicked from the key press. While that is
@@ -559,7 +596,7 @@ class FightView(QTextBrowser):
         is the pointer on the anchor.
         """
         selections = []
-        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF)):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF, RECAP_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -629,10 +666,18 @@ class FightView(QTextBrowser):
                     return image
         return super().loadResource(resource_type, name)
 
+    def set_accessible_lead(self, text: str) -> None:
+        """A line a screen reader hears before the page (accessible_text):
+        the fight, on the player window's pages, whose header names it
+        outside the page (issue #196)."""
+        self._accessible_lead = str(text or "")
+        self._update_accessible_text()
+
     def accessible_text(self) -> str:
         """The page as a screen reader should hear it: its text, each
-        image replaced by its alt text, one line per paragraph or cell."""
-        lines = []
+        image replaced by its alt text, one line per paragraph or cell,
+        after the lead line when there is one (set_accessible_lead)."""
+        lines = [self._accessible_lead] if self._accessible_lead else []
         block = self.document().begin()
         while block.isValid():
             pieces = []
@@ -741,6 +786,14 @@ class FightView(QTextBrowser):
         unit_id = taken_unit_from_href(url.toString())
         if unit_id is not None:
             self.taken_requested.emit(unit_id)
+            return
+        unit_id = healing_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.healing_requested.emit(unit_id)
+            return
+        death = recap_from_href(url.toString())
+        if death is not None:
+            self.recap_requested.emit(*death)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

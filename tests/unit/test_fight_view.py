@@ -437,16 +437,18 @@ class TestStepsAfterLayout(FightViewTestCase):
             return view, view
         self.assertEqual(self._deleted_before_the_step(make), (False, []))
 
-    def test_a_build_window_deleted_before_its_anchor_scroll_is_freed_quietly(self):
-        from build_session import fights
-
-        from gui.build_dialog import BuildDialog
-        from gui.build_render import PEN_CRIT_ANCHOR
+    def test_a_player_window_deleted_before_its_anchor_scroll_is_freed_quietly(self):
+        """The player window opened at one death scrolls its Deaths page to
+        that death's anchor after layout (issue #196): deleted before the
+        step runs, with its page, it is freed and raises nothing."""
+        from gui.player_window import DEATHS_TAB, PlayerWindow
+        from tests.unit.test_death_recap_gui import _entry_with_deaths
 
         def make():
-            dialog = BuildDialog(icons=self._cache())
-            dialog.show_build(fights()[0], '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
-            return dialog, dialog.view
+            window = PlayerWindow(icons=self._cache())
+            window.open(_entry_with_deaths(), '1', DEATHS_TAB, dark=False, death=2)
+            window.hide()
+            return window, window.view(DEATHS_TAB)
         self.assertEqual(self._deleted_before_the_step(make), (False, []))
 
     def test_the_step_runs_once_laid_out_and_only_for_its_page(self):

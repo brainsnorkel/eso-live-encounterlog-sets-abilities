@@ -15,16 +15,17 @@ time, so the pictures stay in step with the app:
     main-window.png                 detail view and timeline strip, a boss fight selected
     compact-view.png                Detail view off
     search.png                      a search in the fight
-    build-window.png                one player's build window
-    build-damage-dealt.png          the same window scrolled to its Damage dealt section
-    build-pen-crit.png              the same window scrolled to its penetration and crit sections
-    build-resources.png             the same window scrolled to its Resources section, the last
+    build-window.png                the top damage dealer's player window, on its Build tab
+    build-pen-crit.png              the same window on its Pen and crit tab
+    build-resources.png             the same window on its Resources tab
     build-issues.png                the (i) popup of a player's possible build issues
     update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
     update-notes.png                the ⓘ popup with that release's notes
-    damage-window.png               one player's damage by ability and target
+    damage-window.png               the same window on its Damage done tab
+    taken-window.png                the fight's tank's Damage taken tab
+    healing-received.png            the same player's Healing received tab
     dps-graph.png                   the dps over time graph
-    death-recap.png                 one player's death recap
+    death-recap.png                 the Deaths tab, the fullest recap of the fight shown
     settings-general.png            the Settings dialog, one picture per page
     settings-fights.png
     settings-tracked-effects.png
@@ -117,7 +118,6 @@ def main():
     # session; the fight list is complete only then (a long fight can take
     # seconds to replay, during which the list looks finished)
     started = {"flag": False}
-    problems = []  # pictures that need another fight, reported at the end
 
     def pump(seconds, until_started=False):
         t0 = time.time()
@@ -181,34 +181,36 @@ def main():
         win.search_field.clear()
         pump(0.5)
 
-    # Build window for the top damage dealer
+    # The player window (issue #196) for the top damage dealer, one picture
+    # per tab, at its default size: on the offscreen platform's small
+    # virtual screen it would open capped at nine tenths of that screen
+    from gui.player_window import (
+        DEFAULT_SIZE,
+        HEALING_TAB,
+        PEN_CRIT_TAB,
+        RESOURCES_TAB,
+        TAB_KEYS,
+    )
+
+    def player_window(open_link, unit_id, name):
+        open_link(unit_id)
+        window = win._player_window
+        window.resize(*DEFAULT_SIZE)
+        pump(1.5)
+        save(window, name)
+        return window
+
+    def tab(window, key, name):
+        window.tabs.setCurrentIndex(TAB_KEYS.index(key))
+        pump(0.5)
+        save(window, name)
+
     players = sorted(fight.players, key=lambda p: -p.get("dps", 0))
     if players:
-        win._show_build(players[0]["unit_id"])
-        pump(1.5)
-        save(win._build_dialog, "build-window.png")
-        # Under the gear grid: Damage dealt, then the Penetration and
-        # Critical damage sections, then Resources last (issue #143); the
-        # Resources heading reaches the top of the view only when its
-        # section is taller than the view, as a trial player's is
-        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
-        win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-damage-dealt.png")
-        win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-pen-crit.png")
-        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-resources.png")
-        bar = win._build_dialog.view.verticalScrollBar()
-        top = _anchor_top(win._build_dialog.view.document(), RESOURCES_ANCHOR)
-        if top is not None and bar.value() < int(top) - 1:
-            problems.append("build-resources.png opens on the window's end, not on the Resources "
-                            "heading: this player's Resources section is shorter than the window. "
-                            "Pick a trial fight (--boss) for the guide's picture.")
-        bar.setValue(0)
-        win._build_dialog.hide()
+        window = player_window(win._show_build, players[0]["unit_id"], "build-window.png")
+        tab(window, PEN_CRIT_TAB, "build-pen-crit.png")
+        tab(window, RESOURCES_TAB, "build-resources.png")
+        window.hide()
 
     # The (i) popup: the first player of the fight with a possible build issue
     flagged = next((p for p in fight.players if p.get("build_issues")), None)
@@ -254,21 +256,17 @@ def main():
     win._on_update_gone()
     pump(0.5)
 
-    # Damage window for the same player
+    # Damage done for the same player
     if players:
-        win._show_damage(players[0]["unit_id"])
-        pump(1.5)
-        save(win._damage_dialog, "damage-window.png")
-        win._damage_dialog.hide()
+        player_window(win._show_damage, players[0]["unit_id"], "damage-window.png").hide()
 
-    # Damage taken window for the fight's tank (the reader it is for), else
-    # the same player
+    # Damage taken and Healing received for the fight's tank (the reader
+    # they are for), else the same player
     if players:
         tank = next((p for p in players if p.get("role") == "T"), players[0])
-        win._show_taken(tank["unit_id"])
-        pump(1.5)
-        save(win._taken_dialog, "taken-window.png")
-        win._taken_dialog.hide()
+        window = player_window(win._show_taken, tank["unit_id"], "taken-window.png")
+        tab(window, HEALING_TAB, "healing-received.png")
+        window.hide()
 
     # The dps over time graph of the fight
     win._show_graph()
@@ -276,16 +274,17 @@ def main():
     save(win._graph_dialog, "dps-graph.png")
     win._graph_dialog.hide()
 
-    # Death recap: the first fight with a death, its first death
-    dead = next(((f, r) for f in fights for r in f.death_recaps), None)
+    # The Deaths tab: in the fight shown, the death with the most hits and
+    # heals logged before it, for a full table; else the first fight with a
+    # death, its first death
+    recaps = sorted(fight.death_recaps, key=lambda r: -len(r.get("events") or []))
+    dead = ((fight, recaps[0]) if recaps
+            else next(((f, r) for f in fights for r in f.death_recaps), None))
     if dead is not None:
         f, recap = dead
         win.history_list.select_fight(fights.index(f))
         pump(1)
-        win._show_death_recap(recap["unit_id"])
-        pump(1.5)
-        save(win._death_dialog, "death-recap.png")
-        win._death_dialog.hide()
+        player_window(win._show_death_recap, recap["unit_id"], "death-recap.png").hide()
         win.history_list.select_fight(row)
         pump(1)
     else:
@@ -335,25 +334,6 @@ def main():
     win.close()
     pump(1)
     scratch.cleanup()
-    if problems:
-        # The pictures are saved; say which one needs another fight
-        sys.exit("\n".join(problems))
-
-
-def _anchor_top(doc, name):
-    """The top of the block that carries the named anchor, as
-    QTextEdit.scrollToAnchor reads it, or None."""
-    block = doc.begin()
-    while block.isValid():
-        if name in block.charFormat().anchorNames():
-            return doc.documentLayout().blockBoundingRect(block).top()
-        it = block.begin()
-        while not it.atEnd():
-            if name in it.fragment().charFormat().anchorNames():
-                return doc.documentLayout().blockBoundingRect(block).top()
-            it += 1
-        block = block.next()
-    return None
 
 
 if __name__ == "__main__":

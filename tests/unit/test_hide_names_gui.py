@@ -286,45 +286,48 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_open_windows_follow_a_flip(self):
+        """The player window and the graph follow a flip of the switch: the
+        window's title, picker and page on screen at once (issue #196)."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB, DAMAGE_TAB, DEATHS_TAB
         win = self._window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
-            self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
-            win.fight_view.anchorClicked.emit(QUrl("esolog:damage/2"))
-            damage = win._damage_dialog
-            self.assertEqual(damage.windowTitle(), "Damage – @friend")
-            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
-            recap = win._death_dialog
-            self.assertEqual(recap.windowTitle(), "Death recap – @me")
-            self.assertIn("@friend", recap.view.toPlainText())
+            window = win._player_window
+            self.assertEqual(window.windowTitle(), "Build – @friend (Friend Char)")
+            self.assertIn("@friend", window.picker.currentText())
             win.graph_action.trigger()
             graph = win._graph_dialog
             self.assertTrue(graph.legend.item(2).text().startswith("@friend"))
 
             win.hide_names_action.setChecked(True)
-            self.assertEqual(build.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
-            self.assertIn("mask:", build.view.toHtml())
-            self.assertNotIn("@friend", build.view.toPlainText())
-            self.assertEqual(damage.windowTitle(), f"Damage – {FRIEND}")
-            self.assertIn("mask:", damage.view.toHtml())
+            self.assertEqual(window.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
+            self.assertIn(FRIEND, window.picker.currentText())
+            names = [window.picker.itemText(i) for i in range(window.picker.count())]
+            self.assertFalse(any("@friend" in name for name in names), names)
+            self.assertNotIn("@friend", window.view(BUILD_TAB).toPlainText())
+            win.fight_view.anchorClicked.emit(QUrl("esolog:damage/2"))
+            self.assertEqual(window.windowTitle(), f"Damage – {FRIEND}")
+            self.assertNotIn("@friend", window.view(DAMAGE_TAB).toPlainText())
             # The logging player's own recap keeps their name; the heal
             # from the friend is hidden, the killing enemy is not
-            self.assertEqual(recap.windowTitle(), "Death recap – @me")
-            recap_text = recap.view.toPlainText()
-            self.assertIn("@me", recap_text)
+            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
+            self.assertEqual(window.windowTitle(), "Death recap – @me")
+            recap = window.view(DEATHS_TAB)
+            recap_text = recap.toPlainText()
             self.assertNotIn("@friend", recap_text)
             self.assertIn("Sharpfang", recap_text)
-            self.assertIn("mask:", recap.view.toHtml())
+            self.assertIn("mask:", recap.toHtml())
             self.assertTrue(graph.legend.item(1).text().startswith("@me"))
             self.assertTrue(graph.legend.item(2).text().startswith(FRIEND))
             self.assertTrue(graph.legend.item(3).text().startswith(BLOCK * 12))
 
+            win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             win.hide_names_action.setChecked(False)
-            self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
+            self.assertEqual(window.windowTitle(), "Build – @friend (Friend Char)")
             self.assertTrue(graph.legend.item(2).text().startswith("@friend"))
         finally:
             win.close()
@@ -336,7 +339,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             build.hide()
             win.hide_names_action.setChecked(True)
             self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
@@ -382,7 +385,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(second)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             win.history_list.select_fight(1)
             win.hide_names_action.setChecked(True)
             pane = win.fight_view.toPlainText()
@@ -440,13 +443,14 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/2"))
-            recap = win._death_dialog
+            from gui.player_window import DEATHS_TAB
+            recap = win._player_window
             self.assertEqual(recap.windowTitle(), f"Death recap – {FRIEND}")
-            text = recap.view.toPlainText()
+            self.assertIn(FRIEND, recap.picker.currentText())
+            text = recap.view(DEATHS_TAB).toPlainText()
             self.assertNotIn("@friend", text)
             self.assertIn("@me", text)  # the logging player's heal
             self.assertIn("Sharpfang", text)
-            self.assertIn("mask:", recap.view.toHtml())
         finally:
             win.close()
 
@@ -463,8 +467,9 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
-            recap = win._death_dialog
-            self.assertEqual(recap.view.toPlainText().count("Radiating Regeneration"), 1)
+            from gui.player_window import DEATHS_TAB
+            page = win._player_window.view(DEATHS_TAB)
+            self.assertEqual(page.toPlainText().count("Radiating Regeneration"), 1)
             # The whole fight's players and recaps, as the engine copies them
             # onto the entry the window holds
             entry.players = entry.players + [_player("4", "Late Comer", "Late Comer")]
@@ -472,11 +477,13 @@ class TestTheWindows(HideNamesTestCase):
                                        events=[_heal_row("Late Comer"), _heal_row("@friend")]),
                                   entry.death_recaps[1]]
             win._on_fight_updated(entry)
-            text = recap.view.toPlainText()
+            _app.processEvents()  # the window draws a burst of updates once
+            text = page.toPlainText()
             self.assertEqual(text.count("Radiating Regeneration"), 2)
             self.assertNotIn("Late Comer", text)
             self.assertNotIn("@friend", text)
-            self.assertIn("@me", text)
+            # The window's title names the player, the logging one, unhidden
+            self.assertEqual(win._player_window.windowTitle(), "Death recap – @me")
         finally:
             win.close()
 
@@ -487,11 +494,12 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            from gui.player_window import BUILD_TAB
+            build = win._player_window
             build.refresh(True)
             self.assertEqual(build.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
-            self.assertIn("mask:", build.view.toHtml())
-            self.assertIn("#9aa0a6", build.view.toHtml())  # the dark theme's muted colour
+            self.assertIn(FRIEND, build.picker.currentText())
+            self.assertIn("#9aa0a6", build.view(BUILD_TAB).toHtml())  # the dark theme's muted colour
         finally:
             win.close()
 
@@ -512,7 +520,7 @@ class TestTheWindows(HideNamesTestCase):
             self.assertNotIn("@friend", win.fight_view.toPlainText())
             # From the build window too (the action's context is the application)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             build.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(build, 2000))
             QTest.keyClick(build, Qt.Key_H, Qt.ControlModifier)

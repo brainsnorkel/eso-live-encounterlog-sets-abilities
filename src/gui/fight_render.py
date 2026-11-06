@@ -181,6 +181,9 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # since any player takes damage, in the link colour like the (i)
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
+# + the player's unit id: the healing received line of their damage taken
+# page, which opens its own page, the table by healer (issue #196)
+HEALING_HREF = "esolog:healing/"
 # The (i) of possible build issues after a player's name, drawn bold with a
 # faint halo (gui.glyphs, issue #140) on an image as tall as the text line,
 # so the halo has room around a ring the size of the font's ⓘ. The main
@@ -353,6 +356,17 @@ def taken_unit_from_href(href: str) -> str | None:
     """The player's unit id when *href* is a damage-taken shield, else None."""
     if href and href.startswith(TAKEN_HREF):
         return href[len(TAKEN_HREF):]
+    return None
+
+
+def healing_href(unit_id) -> str:
+    return f"{HEALING_HREF}{unit_id}"
+
+
+def healing_unit_from_href(href: str) -> str | None:
+    """The player's unit id when *href* is a healing received line, else None."""
+    if href and href.startswith(HEALING_HREF):
+        return href[len(HEALING_HREF):]
     return None
 
 

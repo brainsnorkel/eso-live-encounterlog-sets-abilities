@@ -315,8 +315,8 @@ def status_tooltip(check: DataCheck | None) -> str:
         lines = [f"The app's game data was built for game version {data}{built}."]
     else:
         lines = ["The app's game data carries no version."]
-    lines.append("What the game added since shows as Set#<id>, as a dash in the build "
-                 "window's Type column, or as a skill's name where its icon would be, "
+    lines.append("What the game added since shows as Set#<id>, as a dash in the Build "
+                 "tab's Type column, or as a skill's name where its icon would be, "
                  "until a release of the app brings new data.")
     if check.unknown_sets:
         lines.append("Unknown sets: " + _listed([f"Set#{s}" for s in check.unknown_sets]))

@@ -898,28 +898,36 @@ class TestBuildRender(BuildGuiTestCase):
 
 
 class TestBuildWindow(BuildGuiTestCase):
+    """The player window's Build tab (issue #196), where the build window
+    was: a player's name opens it."""
 
     def test_real_mouse_click_on_a_name_opens_the_build(self):
         """End to end: a click on the rendered name, not an emitted signal."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
+
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry(), show=True)
         try:
-            self.assertIsNone(win._build_dialog)
+            self.assertIsNone(win._player_window)
             view = win.fight_view
             QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier,
                              self._point_on(view, '@brainsnorkel'))
             _app.processEvents()
-            dialog = win._build_dialog
-            self.assertIsNotNone(dialog)
-            self.assertTrue(dialog.isVisible())
-            self.assertFalse(dialog.isModal())
-            self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
-            text = dialog.view.toPlainText()
-            for expected in ('Pïque', 'High Elf Warden', 'The Thief',
+            window = win._player_window
+            self.assertIsNotNone(window)
+            self.assertTrue(window.isVisible())
+            self.assertFalse(window.isModal())
+            self.assertEqual(window.current_tab(), BUILD_TAB)
+            self.assertEqual(window.windowTitle(), 'Build – @brainsnorkel (Pïque)')
+            text = window.view(BUILD_TAB).toPlainText()
+            for expected in ('High Elf Warden', 'The Thief',
                              'Perfected Whorl of the Depths', 'Bloodthirsty', '3/5',
                              'Increase Max Health & Magicka', '6 medium, 1 light'):
                 self.assertIn(expected, text)
+            # The player and the fight are the window's header, not the page's
+            self.assertIn('@brainsnorkel', window.picker.currentText())
+            self.assertIn('Test Boss', window.fight_label.text())
         finally:
             win.close()
 
@@ -967,14 +975,16 @@ class TestBuildWindow(BuildGuiTestCase):
 
     def test_second_player_reuses_the_window(self):
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry())
         try:
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            dialog = win._build_dialog
+            window = win._player_window
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/2'))
-            self.assertIs(win._build_dialog, dialog)
-            self.assertEqual(dialog.windowTitle(), 'Build – @dualwield (Stabby)')
-            text = dialog.view.toPlainText()
+            self.assertIs(win._player_window, window)
+            self.assertEqual(window.windowTitle(), 'Build – @dualwield (Stabby)')
+            text = window.view(BUILD_TAB).toPlainText()
             self.assertIn('Crown Lethal Poison', text)
             self.assertNotIn('Perfected Whorl of the Depths', text)
         finally:
@@ -987,17 +997,20 @@ class TestBuildWindow(BuildGuiTestCase):
             win.detail_action.setChecked(False)
             self.assertIn('esolog:build/3', win.fight_view._tooltips)
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/3'))
-            self.assertEqual(win._build_dialog.windowTitle(), 'Build – anon')
+            self.assertEqual(win._player_window.windowTitle(), 'Build – anon')
         finally:
             win.close()
 
     def test_window_stays_on_the_fight_it_was_opened_for(self):
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry())
         try:
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            dialog = win._build_dialog
-            shown = dialog.view.toHtml()
+            dialog = win._player_window
+            page = dialog.view(BUILD_TAB)
+            shown = page.toHtml()
             # A new fight arrives and becomes the fight on screen
             later = _entry()
             later.boss_name = 'Another Boss'
@@ -1005,11 +1018,12 @@ class TestBuildWindow(BuildGuiTestCase):
             win._on_fight_completed(later)
             self.assertEqual(win.history_list.current_fight_index(), 1)
             self.assertIn('Another Boss', win.fight_view.toPlainText())
-            self.assertEqual(dialog.view.toHtml(), shown)
+            self.assertEqual(page.toHtml(), shown)
             self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
+            self.assertIn('Test Boss', dialog.fight_label.text())
             # Selecting the older fight again changes nothing either
             win.history_list.select_fight(0)
-            self.assertEqual(dialog.view.toHtml(), shown)
+            self.assertEqual(page.toHtml(), shown)
         finally:
             win.close()
 
@@ -1022,17 +1036,22 @@ class TestBuildWindow(BuildGuiTestCase):
         from PySide6.QtCore import QUrl
 
         from fight_history import FightHistoryEntry
+        from gui.player_window import DAMAGE_TAB
         first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
         resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
                    '90000,END_COMBAT']
         held = fights(first_part)[0]
         win = self._window(held, show=True)
         try:
-            win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            dialog = win._build_dialog
+            # The kinds of damage dealt are on Damage done now, which the
+            # dps figure opens
+            win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
+            dialog = win._player_window
+            page = dialog.view(DAMAGE_TAB)
+            page.setMaximumHeight(160)  # short enough to scroll on every platform
             _app.processEvents()
-            self.assertIn('100,000 damage dealt in this fight', dialog.view.toPlainText())
-            bar = dialog.view.verticalScrollBar()
+            self.assertIn('100,000 damage dealt in this fight', page.toPlainText())
+            bar = page.verticalScrollBar()
             kept = bar.maximum() // 2
             self.assertGreater(kept, 0)
             bar.setValue(kept)
@@ -1043,7 +1062,7 @@ class TestBuildWindow(BuildGuiTestCase):
                 setattr(held, field, getattr(whole, field))
             win._on_fight_updated(held)
             _app.processEvents()
-            text = dialog.view.toPlainText()
+            text = page.toPlainText()
             self.assertIn('145,000 damage dealt in this fight', text)
             self.assertNotIn('100,000 damage dealt', text)
             self.assertEqual(bar.value(), kept)
@@ -1051,16 +1070,18 @@ class TestBuildWindow(BuildGuiTestCase):
 
             # Another fight changing leaves the window alone: a change to
             # its own fight that no update announced stays undrawn
-            shown = dialog.view.toHtml()
-            _player(held, '1')['gear'] = []
+            shown = page.toHtml()
+            _player(held, '1')['damage']['kinds']['total'] = 1
             other = _entry()
             win._on_fight_completed(other)
             win._on_fight_updated(other)
-            self.assertEqual(dialog.view.toHtml(), shown)
+            _app.processEvents()
+            self.assertEqual(page.toHtml(), shown)
             # So does its own fight's update while it is hidden
             dialog.hide()
             win._on_fight_updated(held)
-            self.assertEqual(dialog.view.toHtml(), shown)
+            _app.processEvents()
+            self.assertEqual(page.toHtml(), shown)
         finally:
             win.close()
 
@@ -1096,11 +1117,13 @@ class TestBuildWindow(BuildGuiTestCase):
 
     def test_the_damage_taken_and_graph_windows_redraw_their_fight_too(self):
         """The same fight cut in two, the boss hitting @brainsnorkel in the
-        second part: the damage, damage taken and DPS graph windows open on
-        it redraw it as the build window does (issue #196), with the damage
-        dealt, the hit taken and the longer fight of the whole; on another
-        fight's update, or hidden, they are left alone."""
+        second part: the player window's Damage done and Damage taken tabs
+        and the DPS graph open on it redraw it (issue #196), with the damage
+        dealt, the hit taken and the longer fight of the whole, the tab on
+        screen at once and the other when shown; on another fight's update,
+        or hidden, they are left alone."""
         from fight_history import FightHistoryEntry
+        from gui.player_window import DAMAGE_TAB, TAKEN_TAB
         from gui.taken_render import NO_DAMAGE_TAKEN
         first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
         resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
@@ -1111,10 +1134,11 @@ class TestBuildWindow(BuildGuiTestCase):
             win._show_damage('1')
             win._show_taken('1')
             win._show_graph()
-            damage, taken, graph = win._damage_dialog, win._taken_dialog, win._graph_dialog
+            window, graph = win._player_window, win._graph_dialog
 
             def pages():
-                return damage.view.toPlainText(), taken.view.toPlainText(), graph.header.text()
+                return (window.view(DAMAGE_TAB).toPlainText(), window.view(TAKEN_TAB).toPlainText(),
+                        graph.header.text())
             dealt, hit, header = pages()
             self.assertIn('100,000 damage in', dealt)
             self.assertIn(NO_DAMAGE_TAKEN, hit)
@@ -1124,46 +1148,52 @@ class TestBuildWindow(BuildGuiTestCase):
             for field in FightHistoryEntry.__slots__:
                 setattr(held, field, getattr(whole, field))
             win._on_fight_updated(held)
-            dealt, hit, header = pages()
-            self.assertIn('145,000 damage in', dealt)
+            _app.processEvents()
+            _dealt, hit, header = pages()
             self.assertIn('5,000 damage taken', hit)
             self.assertNotIn(NO_DAMAGE_TAKEN, hit)
             self.assertIn('1:20 fight', header)
-            self.assertEqual([w.entry for w in (damage, taken, graph)], [held] * 3)
+            window.tabs.setCurrentIndex(window.tabs.indexOf(window.view(DAMAGE_TAB)))
+            self.assertIn('145,000 damage in', window.view(DAMAGE_TAB).toPlainText())
+            self.assertEqual([w.entry for w in (window, graph)], [held] * 2)
 
-            # A change to the fight that no update announced, which all
-            # three pages would show, stays undrawn on another fight's
-            # update, and on this one's while the windows are hidden
+            # A change to the fight that no update announced, which every
+            # page would show, stays undrawn on another fight's update, and
+            # on this one's while the windows are hidden
             shown = pages()
             held.duration_s = 3600.0
             other = _entry()
             win._on_fight_completed(other)
             win._on_fight_updated(other)
+            _app.processEvents()
             self.assertEqual(pages(), shown)
-            for window in (damage, taken, graph):
-                window.hide()
+            for each in (window, graph):
+                each.hide()
             win._on_fight_updated(held)
+            _app.processEvents()
             self.assertEqual(pages(), shown)
         finally:
             win.close()
 
     def test_the_damage_and_damage_taken_windows_redrawn_twice_keep_their_place(self):
-        """Each window redrawn, its bar moved before the step after layout
+        """Each page redrawn, its bar moved before the step after layout
         has run, and redrawn again, two fight updates in the same pass say:
         it comes back where the reader had it, the step's place, not where
         the bar was meanwhile (FightView.keeping_place, issue #196). The
         boss hits @brainsnorkel forty times, for a damage taken page long
         enough to scroll."""
+        from gui.player_window import DAMAGE_TAB, TAKEN_TAB
         lines = (SESSION[:-1] + [f'{12000 + n},' + BOSS_HIT.format(dmg=100 + n, unit=1)
                                  for n in range(40)] + ['70000,END_COMBAT'])
         win = self._window(fights(lines)[0], show=True)
         try:
-            win._show_damage('1')
-            win._show_taken('1')
-            for window in (win._damage_dialog, win._taken_dialog):
-                window.view.setMaximumHeight(120)
+            for show, tab in ((win._show_damage, DAMAGE_TAB), (win._show_taken, TAKEN_TAB)):
+                show('1')
+                window = win._player_window
+                view = window.view(tab)
+                view.setMaximumHeight(120)
                 _app.processEvents()
-                bar = window.view.verticalScrollBar()
+                bar = view.verticalScrollBar()
                 self.assertGreater(bar.maximum(), 0)
                 kept = bar.maximum() // 2
                 bar.setValue(kept)
@@ -1171,7 +1201,7 @@ class TestBuildWindow(BuildGuiTestCase):
                 bar.setValue(0)
                 window.refresh(False)
                 _app.processEvents()
-                self.assertEqual(bar.value(), kept, type(window).__name__)
+                self.assertEqual(bar.value(), kept, tab)
         finally:
             win.close()
 
@@ -1202,21 +1232,26 @@ class TestBuildWindow(BuildGuiTestCase):
 
     def test_build_opens_for_a_fight_of_a_reviewed_log(self):
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB
         win = self._window()
         try:
             win._on_review_loaded('old.log', [_entry()])
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/2'))
-            self.assertIn('Cloudy Hindering Poison IX', win._build_dialog.view.toPlainText())
+            self.assertIn('Cloudy Hindering Poison IX',
+                          win._player_window.view(BUILD_TAB).toPlainText())
         finally:
             win.close()
 
     def test_hovering_an_ability_and_a_set_in_the_window_shows_their_text(self):
         from PySide6.QtCore import QUrl
+
         from ability_icons import esohub_set_url
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry())
         try:
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            view = win._build_dialog.view
+            view = win._player_window.view(BUILD_TAB)
             view.highlighted.emit(QUrl('esolog:ability/12345'))
             self.assertIn('Damage Ability', view.current_tooltip)
             url = esohub_set_url('Slimecraw')
@@ -1229,11 +1264,13 @@ class TestBuildWindow(BuildGuiTestCase):
 
     def test_set_link_opens_in_the_browser_and_not_as_a_build(self):
         from PySide6.QtCore import QUrl
+
         from ability_icons import esohub_set_url
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry())
         try:
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            view = win._build_dialog.view
+            view = win._player_window.view(BUILD_TAB)
             opened = []
             view._open_external = lambda url: opened.append(url.toString()) or True
             view.anchorClicked.emit(QUrl(esohub_set_url('Slimecraw')))
@@ -1244,12 +1281,14 @@ class TestBuildWindow(BuildGuiTestCase):
     def test_open_window_follows_a_theme_switch(self):
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QColor, QPalette
+
         from gui.build_render import _QUALITY_COLORS
+        from gui.player_window import BUILD_TAB
         win = self._window(_entry())
         try:
             win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
-            dialog = win._build_dialog
-            self.assertIn(_QUALITY_COLORS[False]['LEGENDARY'], dialog.view.toHtml())
+            view = win._player_window.view(BUILD_TAB)
+            self.assertIn(_QUALITY_COLORS[False]['LEGENDARY'], view.toHtml())
 
             palette = QPalette()
             for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
@@ -1257,8 +1296,8 @@ class TestBuildWindow(BuildGuiTestCase):
                 palette.setColor(group, QPalette.WindowText, QColor('#eeeeee'))
             win.setPalette(palette)
             win._on_theme_maybe_changed()
-            self.assertIn(_QUALITY_COLORS[True]['LEGENDARY'], dialog.view.toHtml())
-            self.assertNotIn(_QUALITY_COLORS[False]['LEGENDARY'], dialog.view.toHtml())
+            self.assertIn(_QUALITY_COLORS[True]['LEGENDARY'], view.toHtml())
+            self.assertNotIn(_QUALITY_COLORS[False]['LEGENDARY'], view.toHtml())
         finally:
             win.close()
 
@@ -1304,17 +1343,20 @@ class TestDamageDealtSection(unittest.TestCase):
         self.assertIn(DEALT_NOT_RECORDED, render_build_html(older, '1'))
 
     def test_the_window_serves_the_star_hover_text(self):
+        """The section is on the player window's Damage done tab, beside the
+        damage it sorts (issue #196), with the star links' hover text."""
         from damage_kinds import stars_for
-        from gui.build_dialog import BuildDialog
-        dialog = BuildDialog()
+        from gui.player_window import DAMAGE_TAB, PlayerWindow
+        window = PlayerWindow()
         try:
-            dialog.show_build(_entry(), '1', dark=True)
+            window.open(_entry(), '1', DAMAGE_TAB, dark=True)
+            view = window.view(DAMAGE_TAB)
             url = stars_for('dealt', 'dot')[0]['url']
-            self.assertIn('Thaumaturge', dialog.view._tooltips.get(url, ''))
-            self.assertIn('Damage dealt', dialog.view.toPlainText())
+            self.assertIn('Thaumaturge', view._tooltips.get(url, ''))
+            self.assertIn('Damage dealt', view.toPlainText())
         finally:
-            dialog.close()
-            dialog.deleteLater()
+            window.close()
+            window.deleteLater()
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -1352,20 +1394,21 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
             self.assertIn('border-bottom-style:solid', cell, title)
         self.assertNotIn("<p style='margin:6px 0 2px 0;padding-top:7px", html)
 
-    def test_the_anchors_scroll_the_window_to_their_headings(self):
+    def test_the_anchors_scroll_the_page_to_their_headings(self):
         # The empty <a name> now precedes a <table>: Qt hangs it on the
-        # heading cell, where scrollToAnchor (the pen/crit token's click,
-        # the screenshot script) must find it
+        # heading cell, where scrollToAnchor must find it on the page drawn
+        # whole
         from PySide6.QtWidgets import QApplication
 
-        from gui.build_dialog import BuildDialog
-        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
-        dialog = BuildDialog()
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR, render_build_html
+        from gui.fight_view import FightView
+        view = FightView()
         try:
-            dialog.show_build(_entry(), '1', dark=False)
-            dialog.show()
+            view.resize(860, 700)
+            view.setHtml(render_build_html(_entry(), '1'))
+            view.show()
             QApplication.processEvents()
-            view, bar = dialog.view, dialog.view.verticalScrollBar()
+            bar = view.verticalScrollBar()
             self.assertGreater(bar.maximum(), 0)
             for anchor in (DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR):
                 top = _anchor_top(view.document(), anchor)
@@ -1374,53 +1417,51 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
                 self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1, anchor)
                 self.assertGreater(bar.value(), 0, anchor)
         finally:
-            dialog.close()
-            dialog.deleteLater()
+            view.close()
+            view.deleteLater()
 
-    def test_a_window_drawn_at_an_anchor_lands_on_its_heading(self):
-        """show_build(scroll_to=...), as the pen/crit token opens the
-        window: drawn while hidden and then shown (MainWindow._show_build),
-        it opens at the heading, the view's step after layout landing there
-        too (issue #196); drawn again while open, the step puts it back on
-        the heading, whatever moved it meanwhile."""
+    def test_a_window_opened_at_a_death_lands_on_it(self):
+        """The player window opened at one death (MainWindow._open_player,
+        death=n), drawn while hidden and then shown: it opens at that
+        death's heading, the view's step after layout landing there too
+        (issue #196); opened at it again while open, the step puts it back
+        on the heading, whatever moved it meanwhile, and so does a redraw
+        before the step has run."""
         from PySide6.QtWidgets import QApplication
 
-        from gui.build_dialog import BuildDialog
-        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR
-        dialog = BuildDialog()
+        from gui.death_render import death_anchor
+        from gui.player_window import DEATHS_TAB, PlayerWindow
+        from tests.unit.test_death_recap_gui import _entry_with_deaths
+        entry = _entry_with_deaths()
+        window = PlayerWindow()
         try:
-            dialog.resize(880, 400)
-            view, bar = dialog.view, dialog.view.verticalScrollBar()
-            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
-            dialog.show()
+            window.resize(900, 300)
+            view = window.view(DEATHS_TAB)
+            bar = view.verticalScrollBar()
+            window.open(entry, '1', DEATHS_TAB, dark=False, death=2)
             QApplication.processEvents()
-            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
+            top = _anchor_top(view.document(), death_anchor(2))
+            self.assertIsNotNone(top)
             self.assertGreater(bar.value(), 0)
             self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
 
-            # At this height the Damage dealt heading is inside the bar's
-            # range (930 of 1,077 px on Windows), so back on the heading is
-            # not merely at the page's end
-            dialog.show_build(_entry(), '1', dark=False, scroll_to=DEALT_ANCHOR)
+            window.open(entry, '1', DEATHS_TAB, dark=False, death=2)
             bar.setValue(0)
             QApplication.processEvents()
-            top = _anchor_top(view.document(), DEALT_ANCHOR)
-            self.assertGreater(bar.value(), 0)
             self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
 
             # Its fight changing before the step has run, the bar not yet on
             # the heading: the redraw keeps the step's anchor
             # (FightView.keeping_place), where it went back to the bar's 0
-            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            window.open(entry, '1', DEATHS_TAB, dark=False, death=2)
             bar.setValue(0)
-            dialog.refresh(False)
+            window.refresh(False)
             QApplication.processEvents()
-            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
             self.assertGreater(bar.value(), 0)
             self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
         finally:
-            dialog.close()
-            dialog.deleteLater()
+            window.close()
+            window.deleteLater()
 
 
 def _anchor_top(doc, name):

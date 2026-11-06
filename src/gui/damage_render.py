@@ -17,7 +17,7 @@ import html
 from typing import List
 
 from damage_stats import dps as dps_over, dps_time_s
-from gui.build_render import player_for
+from gui.build_render import DEALT_TITLE, DEALT_WHOLE_FIGHT_TITLE, _damage_dealt_html, player_for
 from gui.fight_render import ROLE_NAMES, _fmt_dps, _fmt_duration, _join, _subclass_text, _theme
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -196,7 +196,8 @@ def _target_table_html(targets: List[dict], total: int, boss_only: bool, theme, 
 
 def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = False,
                        icons=None, base_pt: float = 9.0, names=None,
-                       text_color: str | None = None) -> str:
+                       text_color: str | None = None, header: bool = True,
+                       dealt_kinds: bool = False) -> str:
     """One player's damage in a fight as HTML for the damage window.
 
     boss_only: the rows and totals for the units the game flags as bosses
@@ -204,6 +205,12 @@ def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = Fal
     IconCache); None keeps the rows as text. base_pt: the window's font size.
     names: the Hide names mask (gui.name_mask) for the header's name;
     text_color: the pane's own text colour, which a hidden name is drawn in.
+
+    For a page under a header of its own, which names the player and the
+    fight (issue #196): header=False leaves out the page's own; dealt_kinds
+    adds the build page's Damage dealt section, the kinds of the damage,
+    under the tables. The record keeps no boss kinds, so under boss_only
+    that section is the whole fight's, and says so in its title.
     """
     theme = dict(_theme(dark))
     theme["rule"] = _RULES[dark]
@@ -213,7 +220,7 @@ def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = Fal
     if p is None:
         return f"<p style='color:{muted}'>{NO_RECORD}</p>"
     parts = [_header_html(entry, p, theme, base_pt, e, names or NO_MASK,
-                          text_color or theme["text"])]
+                          text_color or theme["text"])] if header else []
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         # An entry from before the record was kept
@@ -232,6 +239,10 @@ def render_damage_html(entry, unit_id, boss_only: bool = False, dark: bool = Fal
     if targets:
         parts.append("<p style='margin:12px 0 2px 0'><b>Targets</b></p>")
         parts.append(_target_table_html(targets, total, boss_only, theme, e))
+    if dealt_kinds:
+        parts.append(_damage_dealt_html(
+            p, dark, dict(theme, text=text_color or theme["text"]), base_pt, e,
+            DEALT_WHOLE_FIGHT_TITLE if boss_only else DEALT_TITLE))
     parts.append(f"<p style='margin:10px 0 0 0;color:{muted};font-size:{base_pt * 0.85:.2f}pt'>"
                  f"{DPS_TIME_NOTE}</p>")
     return "".join(parts)
