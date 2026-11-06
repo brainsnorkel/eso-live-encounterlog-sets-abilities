@@ -314,6 +314,51 @@ class TestTheLinkReachedWithTab(TextSizeTestCase):
         # Higher up by its line's growth at most, so all of it shows
         self.assertLessEqual(abs(view.link_top() - top), view.cursorRect().height())
 
+    def test_a_link_at_the_panes_foot_stays_whole_as_the_window_grows(self):
+        """Tab leaves each link it scrolls to at the pane's foot. A bigger
+        size grows the toolbar, the strip, the search row and the status
+        bar, and the pane gives them that height after the redraw: the link
+        goes back once the window is laid out at the new size, so the whole
+        of its line stays in the pane (review of PR #200). Where the window
+        does not shrink the pane, its line stays whole too."""
+        from copy import deepcopy
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        win = self._window()
+        win.resize(900, 560)
+        group = _entry()
+        one = group.players[0]
+        # Long enough to scroll in a window that does not shrink
+        group.players = [dict(deepcopy(one), unit_id=str(n), name=f"@player{n}",
+                              character=f"Char {n}", is_local=n == 1) for n in range(1, 17)]
+        win._on_fight_completed(group)
+        win.history_list.select_fight(-1)
+        _app.processEvents()
+        view = win.fight_view
+        bar = view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+
+        def line():
+            cursor = view.textCursor()
+            start = QTextCursor(cursor)
+            start.setPosition(cursor.selectionStart())
+            return view.cursorRect(start)
+        view.setFocus()
+        for _ in range(200):
+            QTest.keyClick(view, Qt.Key_Tab)
+            if bar.value() > 0 and line().bottom() >= view.viewport().height() - 4:
+                break
+        else:
+            self.fail("Tab left no link at the pane's foot")
+        link = view.textCursor().selectedText()
+        win.set_text_size(200)
+        QTest.qWait(600)  # the hold over, as the reader sees it
+        self.assertEqual(view.textCursor().selectedText(), link)
+        self.assertGreaterEqual(line().top(), 0)
+        self.assertLess(line().bottom(), view.viewport().height())
+
 
 class TestSettings(TextSizeTestCase):
 

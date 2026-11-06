@@ -9,7 +9,9 @@ import weakref
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    QByteArray, QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot,
+)
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QKeySequence, QPalette,
     QCursor, QShortcut, QTextCharFormat, QTextCursor,
@@ -1757,6 +1759,14 @@ class MainWindow(QMainWindow):
         # The pane and every open window are rendered from their view's
         # font, as for a flip of Hide names
         self._refresh_names()
+        # The windows are laid out at the new size before the links go
+        # back: the toolbar, the strip, the search row and the status bar
+        # grow, and the pane loses that height, so a link kept where it was
+        # in the pane as it was would end below its foot, where Tab leaves
+        # the links it scrolls to. A layout's request posts its parent's, so
+        # it takes a few passes.
+        for _ in range(3):
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
         for view, top in tops:
             if top is not None and view.isVisible():
                 view.keep_link_at(top)
