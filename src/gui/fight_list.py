@@ -61,7 +61,7 @@ so a run row moves down as the run grows and a refresh never walks the
 whole list.
 """
 
-from PySide6.QtCore import QEvent, QRect, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -327,7 +327,20 @@ class FightList(QListWidget):
     def moveCursor(self, action, modifiers):
         """Qt's own move, then on to the nearest fight when it lands on a
         header or result row: the arrows skip them already, Home, End and
-        the page keys do not. A key that moves up looks up first."""
+        the page keys do not. A key that moves up looks up first.
+
+        With no fight current, as through a Settings replay until its
+        fights are in (MainWindow._on_monitoring_restarting), Qt starts
+        every key at the first fight, and End took a reader following the
+        live log to the oldest. End, the page keys and the keys that move
+        up go to the newest instead; Home, Down and Next keep the first."""
+        if not self.currentIndex().isValid() and action in (
+                QAbstractItemView.MoveEnd, QAbstractItemView.MovePageDown,
+                QAbstractItemView.MoveUp, QAbstractItemView.MovePrevious,
+                QAbstractItemView.MovePageUp):
+            rows = self._fight_rows()
+            if rows:
+                return self.model().index(rows[-1], 0)
         index = super().moveCursor(action, modifiers)
         if not index.isValid() or index.flags() & Qt.ItemIsEnabled:
             return index
@@ -341,6 +354,18 @@ class FightList(QListWidget):
                     return self.model().index(near, 0)
                 near += step
         return self.currentIndex()
+
+    def focusInEvent(self, event):
+        """Taking the focus never makes a fight current. Qt makes the first
+        row current when a list with none takes the focus, unless a current
+        index was set since its model was last reset (the view's private
+        currentIndexSet, probed on PySide6 6.12), so none is set first,
+        whatever emptied or reset the list. Otherwise an Alt+Tab back
+        during a Settings replay would pick the oldest fight for the reader
+        (MainWindow._on_monitoring_restarting, issue #196)."""
+        if not self.currentIndex().isValid():
+            self.setCurrentIndex(QModelIndex())
+        super().focusInEvent(event)
 
     # ---- the (i)'s hover text ----
 
