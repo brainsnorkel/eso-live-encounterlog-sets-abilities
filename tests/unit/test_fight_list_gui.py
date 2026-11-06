@@ -77,6 +77,27 @@ class TestBlockRule(unittest.TestCase):
         self.assertEqual(header_text(_entry('a', difficulty='NORMAL')), 'Sunspire · Normal')
         self.assertEqual(header_text(_entry('a', 'Craglorn', '888', 'NONE')), 'Craglorn')
 
+    def test_a_fight_read_again_has_the_same_key(self):
+        # Issue #196: a Settings replay builds new entries for the same
+        # fights, with other figures
+        from types import SimpleNamespace
+
+        from fight_blocks import fight_key
+        first, again = _entry('Lokkestiiz'), _entry('Lokkestiiz', result=RESULT)
+        again.group_dps, again.deaths, again.players = 1.0, 3, []
+        self.assertEqual(fight_key(first), ('2026-10-21 21:50:00', '1121', 'Lokkestiiz'))
+        self.assertEqual(fight_key(first), fight_key(again))
+        # Another start, boss or zone is another fight
+        later = _entry('Lokkestiiz')
+        later.timestamp = '2026-10-21 21:58:12'
+        for other in (later, _entry('Yolnahkriin'),
+                      _entry('Lokkestiiz', 'March of Sacrifices', '1055', 'NORMAL')):
+            self.assertNotEqual(fight_key(first), fight_key(other))
+        # An entry from before the zone id was kept
+        old = SimpleNamespace(timestamp='2026-10-21 21:50:00', boss_name='Lokkestiiz',
+                              zone_name='Sunspire')
+        self.assertEqual(fight_key(old), ('2026-10-21 21:50:00', '', 'Lokkestiiz'))
+
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
 class TestFightList(unittest.TestCase):

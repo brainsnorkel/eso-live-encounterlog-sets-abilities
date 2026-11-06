@@ -61,7 +61,7 @@ so a run row moves down as the run grows and a refresh never walks the
 whole list.
 """
 
-from PySide6.QtCore import QEvent, QRect, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -168,7 +168,14 @@ class FightList(QListWidget):
     # ---- building ----
 
     def clear(self):
+        """Every row gone and no fight current. The current index is set
+        to none rather than left unset: a list with none set makes its
+        first fight current when it next takes the focus (Qt's
+        QAbstractItemView.focusInEvent, probed on PySide6 6.12), and an
+        Alt+Tab back during a Settings replay would then pick a fight for
+        the reader (MainWindow._on_monitoring_restarting, issue #196)."""
         super().clear()
+        self.setCurrentIndex(QModelIndex())
         self._last_entry = None
         self._block = -1
         self._block_items = {}

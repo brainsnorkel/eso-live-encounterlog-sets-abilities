@@ -1,0 +1,2 @@
+### Fixed
+- **Saving Settings comes back to the fight you were reading** (#196): with an older fight selected, a save that replays the session (one that changes the split files, the tracked effects, the companion accrual or the death recap window) left no fight selected, and the pane's links did nothing until you picked one again. The list now selects that fight again as the replay brings it back, or the newest when it is gone, and until then the pane says the session is being replayed.
