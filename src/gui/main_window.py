@@ -182,6 +182,12 @@ class MainWindow(QMainWindow):
         self._activity = None
         self._activity_open = OPEN_AT_FIRST
         self._archive_that_deleted_log = None
+        # The engine waits for a log that is not there (waiting_for_log)
+        # until it monitors one (monitoring_started) or restarts, which may
+        # find it: Back to live with no fight listed then waits too
+        # (_exit_review), and the bar keeps its explanation under a review
+        # or a fight (_refresh_freshness_label)
+        self._log_missing = False
         self._death_dialog = None  # created on the first death-recap click
         self._build_dialog = None  # created on the first click on a player's name
         self._damage_dialog = None  # created on the first click on a player's dps
@@ -976,13 +982,19 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_waiting_for_log(self, expected):
+        self._log_missing = True
         self._last_status = None
-        self._refresh_freshness_label()
         # No log: the pane says where it was looked for and, when the app
         # archived and removed it, that it did (gui.activity_render)
         self._empty_expected = expected or ""
         if self._review_fights is None:  # never over a review's fight
-            self._show_empty_state("waiting")
+            self._show_empty_state("waiting")  # and the bar with it
+        else:
+            # The bar alone says it, from the folders listed again: the
+            # page the review covers was listed before the archive that
+            # may just have deleted the log
+            self._scan_activity()
+            self._refresh_freshness_label()
 
     @Slot()
     def _on_monitoring_restarting(self):
@@ -1002,7 +1014,8 @@ class MainWindow(QMainWindow):
         the engine sends after the replayed fights: the fight with that key
         is selected as it arrives, unless the reader has picked one (the
         emptied list picks none itself when it takes the focus,
-        FightList.focusInEvent), and no other fight is. Without the hold,
+        FightList.focusInEvent, and End goes to the newest so far,
+        FightList.moveCursor), and no other fight is. Without the hold,
         _show_fight would start following once the fight came back as the
         newest so far, and every later fight of the replay would be
         selected in turn. A restart that finds no log waits for it
@@ -1017,10 +1030,20 @@ class MainWindow(QMainWindow):
         earlier session the app tailed is gone, as is every fight when the
         log is another or was replaced since. Following is then
         _show_fight's rule again for the fight selected: the newest
-        follows, an older fight does not. A review keeps its list and its
-        selection, and Back to live goes to the newest, during a replay
-        once it is in (_exit_review)."""
+        follows, an older fight does not.
+
+        A review keeps its list and its selection, and the hold starts
+        under it all the same, with no fight to come back to: Back to live
+        during the replay lists the fights so far, none selected, under the
+        replay's line, and the newest is selected once the replay is in
+        (_exit_review). Without the hold, Back to live followed the live
+        log and selected each fight of the replay in turn. While the engine
+        waits for a log the restart did not find (_log_missing, cleared
+        here and set again by waiting_for_log), Back to live with no fight
+        listed draws the waiting page instead: nothing is replayed until
+        the log appears."""
         self._restart_pending = False
+        self._log_missing = False  # the restart may find it
         if self._review_fights is None:
             entry = self.history_list.current_entry()
             # During a replay this one cuts short, following is held off,
@@ -1030,9 +1053,11 @@ class MainWindow(QMainWindow):
                 self._replay_key = self._listed_key(entry)
             elif not self._replaying:
                 self._replay_key = None
-            self._replaying = True
             self.history_list.clear()
             self._show_replaying()
+        elif not self._replaying:
+            self._replay_key = None  # no live fight on screen to come back to
+        self._replaying = True
         self._fights.clear()
         # The new analyzer checks its session's data afresh
         self._on_data_check(None)
@@ -1069,6 +1094,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_monitoring_started(self, path):
         self._log_path = path
+        self._log_missing = False
         # The fights replayed at attach came before the log was known: the
         # banners saved beside it are found now (banner_capture, #167)
         for entry in self._fights:
@@ -1260,9 +1286,11 @@ class MainWindow(QMainWindow):
         if status is None or status.latest_entry_time is None:
             # While the app's own archive explains the missing log, the bar
             # says so in the plain colour rather than "No log file" in red,
-            # which would contradict the pane (gui.activity_render)
-            explained = empty_status_text(
-                self._empty_reason, self._activity, self._archive_that_deleted_log)
+            # which would contradict the pane (gui.activity_render), and it
+            # goes on saying so under a review or a fight while the engine
+            # waits for the log
+            reason = "waiting" if self._log_missing else self._empty_reason
+            explained = empty_status_text(reason, self._activity, self._archive_that_deleted_log)
             self.freshness_label.setText(explained or "No log file")
             self.freshness_label.setStyleSheet(state_style("idle" if explained else "none", self._dark))
             return
@@ -1487,6 +1515,12 @@ class MainWindow(QMainWindow):
         except OSError:
             return None
 
+    def _scan_activity(self):
+        """The newest archives and splits, listed again from the folders
+        of the log known now (_known_log)."""
+        log = self._known_log()
+        self._activity = recent_activity.scan(self._archive_folder(log), self._split_folder(log))
+
     def _show_empty_state(self, reason):
         """The pane while the fight list is empty: what the app is doing,
         when Encounter.log was last archived, and the Recent activity link
@@ -1495,8 +1529,7 @@ class MainWindow(QMainWindow):
         made is on the page; a listing is all it costs (the log is resolved
         once, _known_log, and never by a search of the Logs folder)."""
         self._empty_reason = reason
-        log = self._known_log()
-        self._activity = recent_activity.scan(self._archive_folder(log), self._split_folder(log))
+        self._scan_activity()
         self.fight_view.set_anchor_names({})
         self.fight_view.set_tooltips(activity_tooltips(self._activity))
         self.fight_view.set_link_hover_color(link_color(self._dark))
@@ -1886,12 +1919,19 @@ class MainWindow(QMainWindow):
             # rather than each one drawn as it comes
             self._replay_key = None
             self.history_list.set_fights(self._fights)
-            self._show_replaying()
+            if self._log_missing and not self._fights:
+                # The restart found no log, so nothing is being replayed:
+                # the log's first fight, once it appears, puts the replay's
+                # line up (_on_fight_completed)
+                self._show_empty_state("waiting")
+            else:
+                self._show_replaying()
             return
         self._reload_list(self._fights)
         self._follow_live = True
         if not self._fights:
-            self._show_empty_state("back")
+            # 'back' would say a log is monitored
+            self._show_empty_state("waiting" if self._log_missing else "back")
 
 
 def _age_text(seconds: float) -> str:

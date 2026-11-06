@@ -328,6 +328,30 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         self.assertIs(self._current(), replayed[1])
         self.assertFalse(win._follow_live)
 
+    def test_back_to_live_while_the_restart_waits_for_the_log(self):
+        # A review opened from the waiting page: Back to live waits too,
+        # where the replay's line said the session was being replayed
+        # while the engine waited for its log
+        win = self.win
+        self._live(select=1)
+        self._restart()
+        win._on_waiting_for_log(str(Path(self.tmp.name) / "Encounter.log"))
+        win._on_review_loaded("some.log", [_played("Ozezan the Inferno", "2026-09-05 20:22:57")])
+        win._exit_review()
+        self.assertTrue(win.fight_view.toPlainText().startswith("Waiting for Encounter.log"))
+        self.assertEqual(win._empty_reason, "waiting")
+        self.assertEqual(self._listed(), [])
+        # Its first fight once the log appears is the replay
+        replayed = _session()
+        win._on_fight_completed(replayed[0])
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
+        for entry in replayed[1:]:
+            win._on_fight_completed(entry)
+            self.assertIsNone(self._current())
+        self._started()
+        self.assertIs(self._current(), replayed[-1])
+        self.assertTrue(win._follow_live)
+
     def test_the_list_taking_the_focus_during_the_replay_picks_no_fight(self):
         from PySide6.QtCore import QEvent, Qt
         from PySide6.QtGui import QFocusEvent
@@ -343,6 +367,26 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         self.assertIsNone(self._current())
         win._on_fight_completed(replayed[1])
         self.assertIs(self._current(), replayed[1])
+
+    def test_end_during_the_replay_goes_to_the_newest_so_far(self):
+        # With no fight current Qt would start every key at the oldest; End
+        # goes to the newest so far (FightList.moveCursor). It is the
+        # reader's pick, like a click: it stays once the replay is in, and
+        # the live log is not followed
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self.win
+        self._live()  # following the live log
+        self._restart()
+        replayed = _session()
+        for entry in replayed[:2]:
+            win._on_fight_completed(entry)
+        QTest.keyClick(win.history_list, Qt.Key_End)
+        self.assertIs(self._current(), replayed[1])
+        win._on_fight_completed(replayed[2])
+        self._started()
+        self.assertIs(self._current(), replayed[1])
+        self.assertFalse(win._follow_live)
 
     def test_a_fight_the_game_cut_in_two_comes_back_as_it_arrives(self):
         win = self.win
@@ -425,6 +469,18 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         win._on_waiting_for_log(str(Path(self.tmp.name) / "Encounter.log"))
         self.assertIs(self._current(), reviewed[0])
         self.assertTrue(win.fight_view.toPlainText().startswith("Ozezan the Inferno"))
+        # Back to live waits for the log; once it appears, its fights are
+        # the replay, held as for a Save made outside a review
+        win._exit_review()
+        self.assertTrue(win.fight_view.toPlainText().startswith("Waiting for Encounter.log"))
+        replayed = _session()
+        win._on_fight_completed(replayed[0])
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
+        for entry in replayed[1:]:
+            win._on_fight_completed(entry)
+            self.assertIsNone(self._current())
+        self._started()
+        self.assertIs(self._current(), replayed[-1])
 
     def test_with_no_fight_the_replay_line_gives_way_to_the_empty_page(self):
         win = self.win
@@ -460,6 +516,44 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         self._started()
         self.assertIs(self._current(), replayed[-1])
         self.assertTrue(win._follow_live)
+
+    def test_back_to_live_during_a_replay_begun_under_a_review(self):
+        # Saved with a review open: the hold starts all the same, so Back
+        # to live does not follow the replay through every fight
+        win = self.win
+        self._live(select=1)
+        win._on_review_loaded("some.log", [_played("Ozezan the Inferno", "2026-09-05 20:22:57")])
+        self._restart()
+        replayed = _session()
+        win._on_fight_completed(replayed[0])
+        win._exit_review()
+        self.assertEqual(self._listed(), ["Lokkestiiz"])
+        self.assertIsNone(self._current())
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
+        for entry in replayed[1:]:
+            win._on_fight_completed(entry)
+            self.assertIsNone(self._current())
+        self._started()
+        self.assertIs(self._current(), replayed[-1])
+        self.assertTrue(win._follow_live)
+
+    def test_back_to_live_before_the_replay_of_a_log_found_at_last(self):
+        # The app waited for its log (setUp) and a review was opened; the
+        # Save names a log that is there. Back to live before the replay's
+        # first fight: its line, not the wait from before the Save
+        win = self.win
+        self.assertEqual(win._empty_reason, "waiting")
+        win._on_review_loaded("some.log", [_played("Ozezan the Inferno", "2026-09-05 20:22:57")])
+        self._press_save()
+        win._on_monitoring_restarting()
+        win._exit_review()
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
+        replayed = _session()
+        for entry in replayed:
+            win._on_fight_completed(entry)
+            self.assertIsNone(self._current())
+        self._started()
+        self.assertIs(self._current(), replayed[-1])
 
     def test_a_second_save_during_the_replay_keeps_the_fight(self):
         win = self.win

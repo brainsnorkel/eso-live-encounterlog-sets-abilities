@@ -204,6 +204,26 @@ class TestFightList(unittest.TestCase):
         QTest.keyClick(self.list, Qt.Key_End)
         self.assertEqual(self.list.current_fight_index(), 3)
 
+    def test_the_keys_with_no_fight_current(self):
+        # Issue #196: a Settings replay leaves no fight current until its
+        # fights are in, and Qt then starts every key at the first. End,
+        # the page keys and the keys that move up go to the newest
+        from PySide6.QtCore import QModelIndex, Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QAbstractItemView
+        self.list.show()
+        for key, expected in ((Qt.Key_End, 3), (Qt.Key_PageDown, 3), (Qt.Key_Up, 3),
+                              (Qt.Key_PageUp, 3), (Qt.Key_Home, 0), (Qt.Key_Down, 0)):
+            self.list.setCurrentIndex(QModelIndex())
+            QTest.keyClick(self.list, key)
+            self.assertEqual(self.list.current_fight_index(), expected, key.name)
+        # Shift+Tab and Tab, with tab key navigation on
+        self.list.setCurrentIndex(QModelIndex())
+        for action, expected in ((QAbstractItemView.MovePrevious, 3),
+                                 (QAbstractItemView.MoveNext, 0)):
+            row = self.list.moveCursor(action, Qt.NoModifier).row()
+            self.assertIs(self.list.entry_at(row), self.fights[expected], action.name)
+
     def test_a_result_that_came_after_its_fight(self):
         from gui.fight_list import FightList
         listed = FightList()

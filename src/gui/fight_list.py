@@ -327,7 +327,20 @@ class FightList(QListWidget):
     def moveCursor(self, action, modifiers):
         """Qt's own move, then on to the nearest fight when it lands on a
         header or result row: the arrows skip them already, Home, End and
-        the page keys do not. A key that moves up looks up first."""
+        the page keys do not. A key that moves up looks up first.
+
+        With no fight current, as through a Settings replay until its
+        fights are in (MainWindow._on_monitoring_restarting), Qt starts
+        every key at the first fight, and End took a reader following the
+        live log to the oldest. End, the page keys and the keys that move
+        up go to the newest instead; Home, Down and Next keep the first."""
+        if not self.currentIndex().isValid() and action in (
+                QAbstractItemView.MoveEnd, QAbstractItemView.MovePageDown,
+                QAbstractItemView.MoveUp, QAbstractItemView.MovePrevious,
+                QAbstractItemView.MovePageUp):
+            rows = self._fight_rows()
+            if rows:
+                return self.model().index(rows[-1], 0)
         index = super().moveCursor(action, modifiers)
         if not index.isValid() or index.flags() & Qt.ItemIsEnabled:
             return index
