@@ -1033,7 +1033,9 @@ class TestBuildWindow(BuildGuiTestCase):
         held = fights(first_part)[0]
         win = self._window(held, show=True)
         try:
-            win.resize(1080, 380)
+            # A pane short enough for the page to scroll, whatever the
+            # platform's fonts and the window's least height
+            win.fight_view.setMaximumHeight(160)
             _app.processEvents()
             bar = win.fight_view.verticalScrollBar()
             self.assertGreater(bar.maximum(), 0)
