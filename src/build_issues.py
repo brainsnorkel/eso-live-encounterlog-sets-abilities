@@ -59,8 +59,13 @@ rule, player-fights / distinct characters in that survey:
   ever sourced by the player in any fight of the session; one fire clears
   the finding for the session. In those logs Alkosh wearers sourced Roar
   of Alkosh as 76667 and 75751, Roaring Opportunist wearers Major Slayer as
-  93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
-  came from other sets). The one wearer who never fired Alkosh never used a
+  93109 and 135923. Only 135923 counts: War Machine and Master Architect
+  wearers write 93109 too (48 of 53 and 76 of 84 sessions without Roaring
+  Opportunist, 395 split logs of 2026-10-31), so either would hide a
+  Roaring Opportunist that never fires, while in Roaring Opportunist
+  sessions the two ids came together (both in 152 of 159, neither in the
+  other 7). The other Major Slayer ids, 93120, 93442 and 177886, come from
+  other sets. The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
 - **Huntsman's Warmask that never fires** (issue #47, the same session
   rule, the mythic's one piece being the set): its Mark of Hircine
@@ -379,7 +384,7 @@ class ProcSet(NamedTuple):
 
 
 _ALKOSH_EFFECTS = frozenset({"76667", "75751", "75752", "120018"})
-_SLAYER_EFFECTS = frozenset({"93109", "135923"})
+_SLAYER_EFFECTS = frozenset({"135923"})  # not 93109: War Machine and Master Architect write it too
 MARK_OF_HIRCINE_ID = "252048"  # the debuff a Huntsman's Warmask wearer puts on their target
 # The proc sets judged over the session, by set id
 PROC_SETS = {
