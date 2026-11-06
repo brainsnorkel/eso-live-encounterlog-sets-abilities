@@ -1,4 +1,0 @@
-### Fixed
-- **The link you reached with Tab stays in sight** (#199): after a new text size, Hide names or an update that ranks the players anew, the link you had reached with Tab kept its focus but could be scrolled out of sight, so Enter opened a link you could not see. A link you could see now stays where it was on the screen, and the page moves under it.
-- **Tab and the search are not undone by a redraw** (#199): moving with Tab, or with Enter in the search, just after the fight was redrawn could be taken back by a second redraw within half a second.
-- **The fight you are reading stays when Encounter.log goes away** (#199): when the log went away mid-session (Archive now deleting the original, say), the waiting page replaced the fight you were reading, and stayed after the log came back. The fight now stays, and the status bar says the log is missing.
