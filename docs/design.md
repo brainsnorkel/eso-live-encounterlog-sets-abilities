@@ -1592,7 +1592,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:688](../src/gui/build_render.py#L688)*
+*[src/gui/build_render.py:717](../src/gui/build_render.py#L717)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1614,7 +1614,7 @@ an absence would draw the eye to nothing.
 
 ### _heading_html
 
-*[src/gui/build_render.py:521](../src/gui/build_render.py#L521)*
+*[src/gui/build_render.py:549](../src/gui/build_render.py#L549)*
 
 A section heading with its rule, as a one-cell table head: Qt rich
 text draws borders on table cells and never on a <p>, so the Damage
@@ -3099,6 +3099,68 @@ The kinds bars are the death recap's block (death_render.kinds_block_html)
 so the two windows read alike; the player names go through the Hide names
 mask (gui.name_mask), the sources and healers included.
 
+## The player window: one window, a tab for each link
+
+### src/gui/player_window.py
+
+*[src/gui/player_window.py:1](../src/gui/player_window.py#L1)*
+
+The player window (issue #196): one player's fight on seven tabs, in place
+of the build, damage, damage taken and death recap windows.
+
+Design: One window for a player. Each player link on the fight pane opens
+this one window at the tab for that link: the name and the lone mastery's
+'?' at Build, the dps figure at Damage done, the 'p:... cd:...' token at
+Pen and crit, the shield at Damage taken, the skull and the Also died chip
+at Deaths. Four windows to place became one, and the build page, which no
+window fitted (2,352 px at the median), became pages that mostly do.
+
+```
+    Build · Damage done · Pen and crit · Resources · Damage taken ·
+    Healing received · Deaths
+```
+
+Each tab is a FightView drawing one part of the four pages (build_render,
+damage_render, taken_render and death_render, each with header=False), under
+two header rows the window draws itself: the previous player button, the
+player picker, the next player button and Boss targets only (shown on Damage
+done); then the fight line and Show in list. The order is the build window's
+(#143: gear, then what the player did with it, the cap sections and
+Resources), then the damage taken side. The kinds of damage dealt moved from
+the build page to Damage done, beside the damage they sort, and the death
+recap's closing block of the whole fight's damage taken became a link to
+the Damage taken tab, which has all of it (decision 4, reversing that part
+of #95). The damage taken page is two tabs, its healing received line a link
+to the second (decision 1).
+
+The window keeps the fight it was opened for, as the four windows did
+(#143): a pane link binds the pane's fight and the player and names the tab,
+and the tabs, the picker and the links in the pages work on that pair,
+never on the list. The fight changing in place (entry_updated) redraws the
+page on screen, each other page when it is next shown, each keeping its
+scroll; a burst of updates (mark_context and the mastery backfill send one
+per earlier fight) draws once, on the event loop's next turn. A Settings
+replay builds new entries: MainWindow puts the window on the replayed copy
+of its fight, found by its key and checked by the player's handle, and
+leaves it on the old one, saying so, when there is none.
+
+Tabs that do not apply stay enabled and say so in a line (Qt moves off a
+disabled current tab). The Alt letters are the tab labels' mnemonics and
+never shortcuts too: a key bound twice in one window works every other
+press (probed on PySide6 6.12.0). Ctrl+PgDn and Ctrl+PgUp change the tab
+from anywhere in the window, Ctrl+Down and Ctrl+Up the player, keeping the
+tab. Opening puts the focus in the page; an Alt letter or Ctrl+PgDn from the
+header rows moves it into the new page, since Qt leaves it in the picker,
+where PgDn changes the player. A link reached with Tab has Tab's focus
+again when its tab is shown again, as it kept it between the four windows:
+Qt drops it as the tab widget hides the page (FightView.give_link_back).
+The window has no Close or default button, so Enter never closes it; Esc
+and the title bar's x hide it.
+
+It holds no reference to MainWindow: it asks for its fight to be shown in
+the list by a signal, and its pages' links are its own tab switches. It
+stores no lambda on a child.
+
 ## Experimental buff timeline
 
 ### src/buff_timeline.py
@@ -3329,7 +3391,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1037](../src/gui/main_window.py#L1037)*
+*[src/gui/main_window.py:1047](../src/gui/main_window.py#L1047)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3376,15 +3438,20 @@ here and set again by waiting_for_log), Back to live with no fight
 listed draws the waiting page instead: nothing is replayed until
 the log appears.
 
+The player window's fight is known again by its key too, with the
+player's handle (_end_replay puts the window on the replayed copy);
+a window on a reviewed fight, which no replay builds again, keeps
+it.
+
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1940](../src/gui/main_window.py#L1940)*
+*[src/gui/main_window.py:2004](../src/gui/main_window.py#L2004)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:886](../src/gui/main_window.py#L886)*
+*[src/gui/main_window.py:892](../src/gui/main_window.py#L892)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -3415,13 +3482,13 @@ list meanwhile would lose its items.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:141](../src/gui/fight_view.py#L141)*
+*[src/gui/fight_view.py:147](../src/gui/fight_view.py#L147)*
 
-restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader scrolling, with the wheel, a key or the bar, ends the hold at once, so the page is never taken back from under them. The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
+restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
+*[src/gui/fight_view.py:333](../src/gui/fight_view.py#L333)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -3452,6 +3519,16 @@ step is taken only for a link the page has, with the links reachable
 from the keyboard, and from where that link is the next one the
 search finds, since _links reads the page's links as the search does
 (issue #196).
+
+A link the reader could see stays where they saw it on the screen
+(keep_link_at), and the page moves under it: a fight ranking its
+player anew moves the link down the page, and Hide names moves it
+too. Kept by the bar's position, the link was often scrolled out of
+sight, its focus frame with it, and Enter opened a link the reader
+could not see (issue #199). A new text size moves it before the page
+is redrawn, so MainWindow.set_text_size notes it first. A link the
+reader has scrolled out of view leaves the page at their scroll, as
+does a page with no link reached.
 
 ## Reviews: a thread of their own, and where a large log is cut
 
@@ -3945,7 +4022,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:567](../src/gui/fight_view.py#L567)*
+*[src/gui/fight_view.py:716](../src/gui/fight_view.py#L716)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -4033,7 +4110,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:439](../src/gui/fight_view.py#L439)*
+*[src/gui/fight_view.py:580](../src/gui/fight_view.py#L580)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

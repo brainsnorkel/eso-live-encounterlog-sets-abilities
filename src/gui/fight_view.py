@@ -154,9 +154,10 @@ class FightView(QTextBrowser):
         # near its end landed up to 92 px short of where it was (97 of 940
         # redraws of real build pages, issue #196). So the place is held for
         # HOLD_MS: each change of the bar's range puts the page there again,
-        # until it gets there, and the reader scrolling, with the wheel, a
-        # key or the bar, ends the hold at once, so the page is never taken
-        # back from under them. The step runs on a single-shot timer the
+        # until it gets there, and the reader moving the page, with the
+        # wheel, a key, the bar, Tab or the in-fight search, ends the hold at
+        # once, so the page is never taken back from under them
+        # (release_place). The step runs on a single-shot timer the
         # view owns, connected to the view's own method: deleted with the
         # view, the timer never fires at a dead one, and the connection
         # keeps nothing alive. The forms used before,
@@ -173,6 +174,9 @@ class FightView(QTextBrowser):
         # they were to put it, not where its bar is meanwhile (keeping_place).
         self._kept_scroll = 0
         self._kept_anchor = ""
+        self._kept_link_top: int | None = None  # where keep_link_at put the Tab link
+        self._own_step = False  # keeping_place's Tab step, not the reader's (_focus_link)
+        self._key_link: tuple[int, int] | None = None  # what Tab's step selected (_tab_link)
         self._after_layout = QTimer(self)
         self._after_layout.setSingleShot(True)
         self._after_layout.setInterval(0)
@@ -229,9 +233,11 @@ class FightView(QTextBrowser):
         self._pulse_phase = 0
         self._pulse.stop()
         # A scroll still to be put back belongs to the page being replaced,
-        # as does a link to give back
+        # and so do the link Tab reached (keeping_place gives it back) and
+        # a link to give back (give_link_back)
         self._after_layout.stop()
         self._hold.stop()
+        self._key_link = None
         self._left_link = None
         super().setHtml(text)
 
@@ -245,6 +251,7 @@ class FightView(QTextBrowser):
         step after layout, and at each change of the bar's range while the
         place is held (see __init__)."""
         self._kept_anchor = ""
+        self._kept_link_top = None
         self._kept_scroll = int(value)
         self.verticalScrollBar().setValue(self._kept_scroll)
         self._after_layout.start()
@@ -256,9 +263,71 @@ class FightView(QTextBrowser):
         layout, and at each change of the bar's range while the place is
         held (see __init__)."""
         self._kept_anchor = str(name)
+        self._kept_link_top = None
         self.scrollToAnchor(self._kept_anchor)
         self._after_layout.start()
         self._hold.start()
+
+    def release_place(self) -> None:
+        """The reader has moved the page: the scroll or anchor kept for the
+        last redraw is put back no more (see __init__). The wheel, a key or
+        the bar end it here on their own (_on_reader_scrolled); Tab
+        (focusNextPrevChild) and the in-fight search (MainWindow) move the
+        page in ways the bar does not report, so they call this too (issue
+        #199). Their move otherwise lasted only until a second redraw
+        within HOLD_MS, which took the page back to the place still held."""
+        self._after_layout.stop()
+        self._hold.stop()
+
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        # The reader's Tab or Shift+Tab, to the next link: their place from
+        # now on. keeping_place's own step to the link it gives the focus
+        # back to is not the reader's (_focus_link)
+        if not self._own_step:
+            self.release_place()
+        moved = super().focusNextPrevChild(forward)
+        # The link the step reached, or none when it left the page
+        cursor = self.textCursor()
+        self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
+                          if cursor.hasSelection() else None)
+        return moved
+
+    def mousePressEvent(self, event) -> None:
+        # A click is not Tab: the link it selects is no link Tab reached
+        # (_tab_link)
+        self._key_link = None
+        super().mousePressEvent(event)
+
+    def link_top(self) -> int | None:
+        """Where the link the reader reached with Tab is on the screen: the
+        top of its line, in the viewport's coordinates. None when no link
+        has Tab's focus, or the reader has it out of view."""
+        if self._tab_link() is None:
+            return None
+        rect = self.cursorRect(self._selection_start())
+        if rect.bottom() < 0 or rect.top() >= self.viewport().height():
+            return None
+        return rect.top()
+
+    def keep_link_at(self, top: int) -> None:
+        """Scroll the page so the link that has Tab's focus is at *top* on
+        the screen (a viewport y), the whole of its line in view, and hold
+        it there while Qt lays the page out (restore_scroll); nothing when
+        no link has Tab's focus. See keeping_place."""
+        if self._tab_link() is None:
+            return
+        rect = self.cursorRect(self._selection_start())
+        top = max(0, min(int(top), self.viewport().height() - rect.height()))
+        # The cursor rectangle is in the viewport, the bar's value the
+        # viewport's offset into the page
+        self.restore_scroll(max(0, rect.top() + self.verticalScrollBar().value() - top))
+        self._kept_link_top = top
+
+    def _selection_start(self) -> QTextCursor:
+        """A cursor at the start of the text cursor's selection."""
+        start = QTextCursor(self.textCursor())
+        start.setPosition(start.selectionStart())
+        return start
 
     @contextmanager
     def keeping_place(self):
@@ -290,17 +359,36 @@ class FightView(QTextBrowser):
         step is taken only for a link the page has, with the links reachable
         from the keyboard, and from where that link is the next one the
         search finds, since _links reads the page's links as the search does
-        (issue #196)."""
-        if self._after_layout.isActive() or self._hold.isActive():
+        (issue #196).
+
+        A link the reader could see stays where they saw it on the screen
+        (keep_link_at), and the page moves under it: a fight ranking its
+        player anew moves the link down the page, and Hide names moves it
+        too. Kept by the bar's position, the link was often scrolled out of
+        sight, its focus frame with it, and Enter opened a link the reader
+        could not see (issue #199). A new text size moves it before the page
+        is redrawn, so MainWindow.set_text_size notes it first. A link the
+        reader has scrolled out of view leaves the page at their scroll, as
+        does a page with no link reached."""
+        held = self._after_layout.isActive() or self._hold.isActive()
+        if held:
             anchor, scroll = self._kept_anchor, self._kept_scroll
         else:
             anchor, scroll = "", self.verticalScrollBar().value()
         link = self._tab_link()
+        if link is None:
+            top = None
+        elif held and self._kept_link_top is not None:
+            top = self._kept_link_top  # the bar is not there yet
+        else:
+            top = self.link_top()
         yield self.textCursor().position()
         if link is not None:
             self._focus_link(*link)
         # After the link, which Tab's step scrolls into view
-        if anchor:
+        if top is not None and self._tab_link() is not None:
+            self.keep_link_at(top)
+        elif anchor:
             self.open_at_anchor(anchor)
         else:
             self.restore_scroll(scroll)
@@ -326,8 +414,7 @@ class FightView(QTextBrowser):
 
     def _on_reader_scrolled(self, _action) -> None:
         # The wheel, a key or the bar itself: the reader's place from now on
-        self._after_layout.stop()
-        self._hold.stop()
+        self.release_place()
 
     def _links(self):
         """(href, start, end) of each link on the page, in document order,
@@ -360,12 +447,25 @@ class FightView(QTextBrowser):
 
     def _tab_link(self):
         """The link Tab has the focus on, as (href, its place among the
-        page's links with that href); None when no link is selected."""
+        page's links with that href); None when no link is selected, or a
+        click selected it.
+
+        Qt selects a link clicked with the mouse as Tab selects one, framed
+        the same way, and the selection stays when the window the click
+        opens takes the focus. Taken for a link the reader reached with Tab,
+        a clicked name was kept where it was on the screen when the fight
+        ranked its players anew, and the pane scrolled down the page after
+        it, 815 px in the review's probe, where v0.34.1 stayed at the top
+        (issue #202). So only the selection Tab's own step made counts
+        (focusNextPrevChild), the reader's Tab and Shift+Tab or
+        keeping_place's, until a click or a new page."""
         cursor = self.textCursor()
         if not (cursor.hasSelection()
                 and self.textInteractionFlags() & Qt.LinksAccessibleByKeyboard):
             return None
         place = (cursor.selectionStart(), cursor.selectionEnd())
+        if place != self._key_link:
+            return None
         seen = {}  # the links so far to each href
         for href, start, end in self._links():
             if (start, end) == place:
@@ -389,7 +489,11 @@ class FightView(QTextBrowser):
             before.setPosition(start)
             before.setPosition(end, QTextCursor.KeepAnchor)
         self.setTextCursor(before)
-        self.focusNextPrevChild(True)
+        self._own_step = True
+        try:
+            self.focusNextPrevChild(True)
+        finally:
+            self._own_step = False
 
     def focusOutEvent(self, event) -> None:
         """Qt drops the link Tab has the focus on when the focus leaves the

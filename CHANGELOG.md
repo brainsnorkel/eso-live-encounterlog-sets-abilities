@@ -2,6 +2,24 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.35.0] - 2026-11-07
+
+### Added
+- **A player picker in the player's window** (#196): step through the fight's players without going back to the fight pane, with ◀ and ▶ or Ctrl+Up and Ctrl+Down, on the same tab. The picker lists each player with role, class and deaths, a companion under its owner, and last anyone who died in the fight without a row of their own.
+- **The fight on its own line, with Show in list** (#196): a player's window names the fight it shows (`Lord Falgravn · Kyne's Aegis VET · Wipe 86% · 1:30 · 2026-10-15 19:30:07`), and Show in list selects that fight in the fight list.
+- **Keys for a player's window** (#196): Alt+B, D, P, R, T, H and E open its tabs, Ctrl+PgDn and Ctrl+PgUp step through them, Alt+O switches Boss targets only on Damage done, and Esc closes the window; Enter never does. It opens with the cursor in its page, and for a screen reader each page has a name and its text begins with the fight.
+- **A player's window keeps its size and place** (#196) from one start of the app to the next, no larger than nine tenths of the screen and never too narrow for its tabs at the text size in use.
+
+### Changed
+- **One window for a player, a tab for each link** (#196): the build, damage, damage taken and death recap windows are now one window with seven tabs: Build, Damage done, Pen and crit, Resources, Damage taken, Healing received and Deaths. Each link on a player's row opens it at its own tab: the name (and the `?` after a lone mastery) at Build, the DPS figure at Damage done, the `p:… cd:…` token at Pen and crit, the shield at Damage taken, the skull at Deaths. It still keeps the fight it was opened for, and a link from one tab to another changes tab in the same window. The build page is three tabs, so each mostly fits without scrolling; the kinds of damage dealt moved to Damage done, beside the damage they sort, and a death's page ends with a link to Damage taken where it repeated the whole fight's damage taken.
+- **Saving new penetration and crit assumptions redraws at once** (#196): the fight pane's `p:… cd:…` figures and an open Pen and crit tab take the Champion Point stars and the cap you saved straight away, each keeping its place, where they waited for the next build window.
+- **A Settings save that replays the session keeps a player's window up to date** (#196): the window goes on to the replayed copy of its fight, at the same player and tab, where it kept the fight as it was before the Save. If the replay no longer has that fight, the window keeps it and says so.
+
+### Fixed
+- **The link you reached with Tab stays in sight** (#199): after a new text size, Hide names or an update that ranks the players anew, the link you had reached with Tab kept its focus but could be scrolled out of sight, so Enter opened a link you could not see. A link you could see now stays where it was on the screen, and the page moves under it.
+- **Tab and the search are not undone by a redraw** (#199): moving with Tab, or with Enter in the search, just after the fight was redrawn could be taken back by a second redraw within half a second.
+- **The fight you are reading stays when Encounter.log goes away** (#199): when the log went away mid-session (Archive now deleting the original, say), the waiting page replaced the fight you were reading, and stayed after the log came back. The fight now stays, and the status bar says the log is missing.
+
 ## [0.34.1] - 2026-11-06
 
 ### Fixed
