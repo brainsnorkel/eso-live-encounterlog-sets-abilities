@@ -401,6 +401,38 @@ class TestGraphWindow(unittest.TestCase):
         finally:
             win.close()
 
+    def test_a_line_scrolled_out_of_view_keeps_the_legends_scroll(self):
+        """The reader has scrolled the legend away from their line, above it
+        or below it, when the fight changing in place ranks that player a
+        place up or down: the line is current on its new row, and the legend
+        stays where the reader put it (issue #196). Scrolled into view, the
+        line took the legend back to it."""
+        from PySide6.QtCore import Qt
+        # (the line's row, the legend scrolled to its end, the players swapped)
+        for row, at_end, swap in ((1, True, (0, 1)), (16, False, (14, 15))):
+            with self.subTest(row=row):
+                win = self._main_window()
+                try:
+                    entry = _entry(players=16)
+                    _dialog, legend, bar = self._graph_on(win, entry)
+                    # Three rows or more to scroll, so a line moved a row stays out of view
+                    self.assertGreaterEqual(bar.maximum(), 3)
+                    legend.setCurrentRow(row)
+                    bar.setValue(bar.maximum() if at_end else 0)
+                    place = bar.value()
+                    key = legend.currentItem().data(Qt.UserRole)
+                    viewport = legend.viewport().rect()
+                    self.assertFalse(legend.visualItemRect(legend.currentItem()).intersects(viewport))
+                    players = list(entry.players)
+                    players[swap[0]], players[swap[1]] = players[swap[1]], players[swap[0]]
+                    entry.players = players
+                    win._on_fight_updated(entry)
+                    self.assertNotEqual(legend.currentRow(), row)
+                    self.assertEqual(legend.currentItem().data(Qt.UserRole), key)
+                    self.assertEqual(bar.value(), place)
+                finally:
+                    win.close()
+
     def test_the_colour_blind_switch_keeps_the_legends_line_and_scroll(self):
         """A Settings save that switches the graph to its colour-blind
         colours redraws the open graph with them, and the legend keeps its

@@ -245,7 +245,7 @@ With **Hide names** on, other players are masked here as everywhere, as sources 
 
 ## DPS over time
 
-Click the group DPS figure in the fight header, the one ending in a small graph line, or **DPS graph** on the toolbar, for a graph of the fight: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis.
+Click the group DPS figure in the fight header, the one ending in a small graph line, or **DPS graph** on the toolbar, for a graph of the fight: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis. The window stays open beside the main window and keeps the fight it was opened for, redrawing it when the fight changes, as the build window does; clicking the figure or **DPS graph** again shows the fight selected then.
 
 ![The DPS graph: the group and the players over a fight](screencaps/dps-graph.png)
 
