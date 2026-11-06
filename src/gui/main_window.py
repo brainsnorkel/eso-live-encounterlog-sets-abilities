@@ -1466,6 +1466,10 @@ class MainWindow(QMainWindow):
             entry = self.history_list.current_entry()
         if entry is None:
             return
+        # A link clicked while a Settings replay runs is where the window
+        # goes: the replay's end does not take it back to the fight it
+        # showed before the Save (_rebind_player_window)
+        self._player_window_key = None
         if self._player_window is None:
             self._player_window = PlayerWindow(self, icons=self.fight_view.icons,
                                                config=self.config)

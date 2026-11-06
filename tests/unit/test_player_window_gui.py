@@ -365,6 +365,30 @@ class TestTheWindowsFight(PlayerWindowTestCase):
             window.tabs.setCurrentIndex(TAB_KEYS.index(BUILD_TAB))
             self.assertEqual(render.call_count, count)
 
+    def test_an_update_in_place_redraws_the_header_too(self):
+        """The header rows follow the fight as the page does: a death the
+        game writes after the fight ended shows in the picker, a player the
+        fight gained is listed, and the fight line takes the whole length of
+        a fight the game had cut in two (review of PR #203)."""
+        from gui.player_window import DEATHS_TAB, fight_line
+        entry = _entry_with_deaths()
+        win = self._window(entry, show=True)
+        window = self._click(win, "esolog:deaths/2")
+        self.assertEqual(window.picker.itemText(1), "D  @friend")
+        late = dict(entry.death_recaps[0], unit_id="2", name="@friend")
+        entry.death_recaps = entry.death_recaps + [late]
+        entry.players = entry.players + [dict(entry.players[1], unit_id="5", name="@latecomer")]
+        entry.duration_s = entry.duration_s + 30
+        win._on_fight_updated(entry)
+        _app.processEvents()
+        self.assertEqual((window.unit_id, window.current_tab()), ("2", DEATHS_TAB))
+        self.assertIn("Death 1 of 1", window.view(DEATHS_TAB).toPlainText())
+        rows = [window.picker.itemText(i) for i in range(window.picker.count())]
+        self.assertEqual(rows, ["D  @tester  ☠ ×2", "D  @friend  ☠", "D  @latecomer",
+                                "@passerby  ☠  · also died"])
+        self.assertEqual(window.picker.currentIndex(), 1)
+        self.assertEqual(window.fight_label.text(), fight_line(entry))
+
     def _replay(self, win, replayed):
         """A Settings replay as the engine's queued signals bring it."""
         win._restart_pending = True
@@ -386,6 +410,28 @@ class TestTheWindowsFight(PlayerWindowTestCase):
         self.assertEqual(window.current_tab(), DAMAGE_TAB)
         self.assertFalse(window.replayed_label.isVisibleTo(window))
         self.assertTrue(window.show_in_list.isEnabled())
+
+    def test_a_link_clicked_during_a_replay_is_kept_when_it_ends(self):
+        """A pane link the reader clicks while a Settings replay runs puts
+        the window on that fight and player, and the replay's end leaves it
+        there, where it went back to the replayed copy of the fight from
+        before the Save (review of PR #203)."""
+        from gui.player_window import DAMAGE_TAB
+        win = self._window(fights()[0], fights()[0])
+        window = self._click(win, "esolog:build/1")
+        before = window.entry
+        win._restart_pending = True
+        win._on_monitoring_restarting()
+        replayed = [fights()[0], fights()[0]]
+        for entry in replayed:
+            win._on_fight_completed(entry)
+        other = next(entry for entry in replayed if win._listed_key(entry) != win._listed_key(before))
+        win.history_list.select_entry(other)
+        window = self._click(win, "esolog:damage/2")
+        self.assertIs(window.entry, other)
+        win._on_monitoring_started(str(self.root / "Encounter.log"))
+        self.assertIs(window.entry, other)
+        self.assertEqual((window.unit_id, window.current_tab()), ("2", DAMAGE_TAB))
 
     def test_a_replay_without_the_fight_keeps_it_and_says_so(self):
         from gui.player_window import REPLAYED_NOTE

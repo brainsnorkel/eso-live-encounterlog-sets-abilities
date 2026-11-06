@@ -469,6 +469,9 @@ class PlayerWindow(QDialog):
 
     def _redraw_current(self) -> None:
         if self.isVisible():
+            # The header follows the fight as the page does: the fight
+            # line's outcome and length, and the picker's players and deaths
+            self._fill_header()
             self._draw(self.current_tab())
 
     def _render(self, tab: str) -> None:
