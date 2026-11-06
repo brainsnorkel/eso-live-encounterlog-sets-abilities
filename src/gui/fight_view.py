@@ -142,12 +142,15 @@ class FightView(QTextBrowser):
         # returns. The second step runs on a single-shot timer the view owns,
         # connected to the view's own method (issue #196): deleted with the
         # view, the timer never fires at a dead one, and the connection keeps
-        # nothing alive. QTimer.singleShot(0, bound_method), the form used
-        # before, raised "Internal C++ object already deleted" when the view
-        # was deleted first and kept its Python wrapper alive until then;
-        # QTimer.singleShot(0, view, method) does not raise but keeps the
-        # method, and so the wrapper, alive (both probed on PySide6 6.12.0).
-        # A new page drops the step still pending for the one it replaces.
+        # nothing alive. The forms used before, QTimer.singleShot(0, ...)
+        # with a bound method (restore_scroll) or with a lambda holding the
+        # window (the build window's anchor scroll), raised "Internal C++
+        # object already deleted" when the view was deleted first, and kept
+        # the view's Python wrapper, and the lambda the window's too, alive
+        # until then; QTimer.singleShot(0, view, method) does not raise but
+        # keeps the method, and so the wrapper, alive (all probed on PySide6
+        # 6.12.0). A new page drops the step still pending for the one it
+        # replaces.
         self._kept_scroll = 0
         self._kept_anchor = ""
         self._after_layout = QTimer(self)

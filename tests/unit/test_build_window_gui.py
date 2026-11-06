@@ -25,6 +25,10 @@ SKILL_URL = 'https://eso-hub.com/en/skills/weapon/two-handed/damage-ability'
 SET_URLS = {'Slimecraw': 'https://eso-hub.com/en/sets/slimecraw',
             'Perfected Whorl of the Depths':
                 'https://eso-hub.com/en/sets/perfected-whorl-of-the-depths'}
+# The boss's hit on a player: build_session.HIT the other way round
+BOSS_HIT = ('COMBAT_EVENT,DAMAGE,PHYSICAL,1,{dmg},0,4021668,12345,70,105634/105634,0/0,0/0,0/0,0/0,'
+            '0,0.4081,0.5662,0.0256,{unit},22762/22762,26657/26657,13021/13021,500/500,1000/1000,'
+            '0,0.2696,0.5942,5.5492')
 
 
 def _ensure_app():
@@ -1018,6 +1022,59 @@ class TestBuildWindow(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_the_damage_taken_and_graph_windows_redraw_their_fight_too(self):
+        """The same fight cut in two, the boss hitting @brainsnorkel in the
+        second part: the damage, damage taken and DPS graph windows open on
+        it redraw it as the build window does (issue #196), with the damage
+        dealt, the hit taken and the longer fight of the whole; on another
+        fight's update, or hidden, they are left alone."""
+        from fight_history import FightHistoryEntry
+        from gui.taken_render import NO_DAMAGE_TAKEN
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '72000,' + BOSS_HIT.format(dmg=5000, unit=1), '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            win._show_damage('1')
+            win._show_taken('1')
+            win._show_graph()
+            damage, taken, graph = win._damage_dialog, win._taken_dialog, win._graph_dialog
+
+            def pages():
+                return damage.view.toPlainText(), taken.view.toPlainText(), graph.header.text()
+            dealt, hit, header = pages()
+            self.assertIn('100,000 damage in', dealt)
+            self.assertIn(NO_DAMAGE_TAKEN, hit)
+            self.assertIn('1:00 fight', header)
+
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            dealt, hit, header = pages()
+            self.assertIn('145,000 damage in', dealt)
+            self.assertIn('5,000 damage taken', hit)
+            self.assertNotIn(NO_DAMAGE_TAKEN, hit)
+            self.assertIn('1:20 fight', header)
+            self.assertEqual([w.entry for w in (damage, taken, graph)], [held] * 3)
+
+            # A change to the fight that no update announced, which all
+            # three pages would show, stays undrawn on another fight's
+            # update, and on this one's while the windows are hidden
+            shown = pages()
+            held.duration_s = 3600.0
+            other = _entry()
+            win._on_fight_completed(other)
+            win._on_fight_updated(other)
+            self.assertEqual(pages(), shown)
+            for window in (damage, taken, graph):
+                window.hide()
+            win._on_fight_updated(held)
+            self.assertEqual(pages(), shown)
+        finally:
+            win.close()
+
     def test_build_opens_for_a_fight_of_a_reviewed_log(self):
         from PySide6.QtCore import QUrl
         win = self._window()
@@ -1191,6 +1248,40 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
                 view.scrollToAnchor(anchor)
                 self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1, anchor)
                 self.assertGreater(bar.value(), 0, anchor)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+    def test_a_window_drawn_at_an_anchor_lands_on_its_heading(self):
+        """show_build(scroll_to=...), as the pen/crit token opens the
+        window: drawn while hidden and then shown (MainWindow._show_build),
+        it opens at the heading, the view's step after layout landing there
+        too (issue #196); drawn again while open, the step puts it back on
+        the heading, whatever moved it meanwhile."""
+        from PySide6.QtWidgets import QApplication
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR
+        dialog = BuildDialog()
+        try:
+            dialog.resize(880, 400)
+            view, bar = dialog.view, dialog.view.verticalScrollBar()
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            dialog.show()
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
+
+            # At this height the Damage dealt heading is inside the bar's
+            # range (930 of 1,077 px on Windows), so back on the heading is
+            # not merely at the page's end
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=DEALT_ANCHOR)
+            bar.setValue(0)
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), DEALT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
         finally:
             dialog.close()
             dialog.deleteLater()

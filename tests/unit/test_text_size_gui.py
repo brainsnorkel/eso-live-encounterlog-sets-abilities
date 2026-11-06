@@ -211,6 +211,19 @@ class TestShortcuts(TextSizeTestCase):
         self._press(win.history_list, "Ctrl+=")
         self.assertAlmostEqual(win.fight_view.font().pointSizeF(), self._base_pt() * 1.1)
 
+    def test_a_wheel_zoom_in_an_open_window_gives_way_too(self):
+        """The pages of the windows open beside the main one take the
+        setting as the pane does: their views are in the list it goes
+        through (MainWindow._windows, issue #196)."""
+        from PySide6.QtCore import QUrl
+        win = self._window()
+        win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
+        view = win._build_dialog.view
+        view.zoomIn(4)
+        self.assertGreater(view.font().pointSizeF(), self._base_pt())
+        self._press(win.history_list, "Ctrl+=")
+        self.assertAlmostEqual(view.font().pointSizeF(), self._base_pt() * 1.1)
+
 
 class TestPixels(TextSizeTestCase):
 

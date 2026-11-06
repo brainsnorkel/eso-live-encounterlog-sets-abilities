@@ -397,7 +397,9 @@ class TestFightViewWidget(FightViewTestCase):
 
 class TestStepsAfterLayout(FightViewTestCase):
     """restore_scroll and the build window's scroll to an anchor act again
-    once the page is laid out, on a timer the view owns (issue #196)."""
+    once the page is laid out, on a timer the view owns (issue #196). Where
+    the anchor's step lands is tested on the build window's headings
+    (test_build_window_gui)."""
 
     def _deleted_before_the_step(self, make):
         """Delete the window *make* returns, with its view (the two may be
@@ -458,6 +460,10 @@ class TestStepsAfterLayout(FightViewTestCase):
             QApplication.processEvents()
             view.setHtml('<p>a line of the page</p>' * 300)
             view.restore_scroll(400)
+            self.assertEqual(view.verticalScrollBar().value(), 400)
+            # Moved before the loop runs, the bar goes back: the step, not
+            # restore_scroll's own setValue, has the last word
+            view.verticalScrollBar().setValue(0)
             QApplication.processEvents()
             self.assertEqual(view.verticalScrollBar().value(), 400)
             # A new page opens at its top: the step still pending was for

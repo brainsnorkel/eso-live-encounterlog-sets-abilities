@@ -871,16 +871,18 @@ class MainWindow(QMainWindow):
         changed fight as a new object: it changes the one the frontends
         already hold. A late death replaces that entry's deaths and recaps,
         a fight the game cut in two has every slot of the finished entry
-        copied onto it, a mastery found later in the session and a later
-        pull's reading of its outcome are written into it, and the banner is
-        attached to it here. The engine writes on its own thread and then
-        sends fight_updated, and the windows read the entry without a lock,
-        as the pane and the run rows do: safe while each write replaces a
-        value, a slot or a key the entry was built with. So the GUI writes
-        nothing into an entry, a pull, a player row or a recap (banner_path
-        aside), and orders with sorted() and new dicts, never .sort() or an
-        added key: CPython empties a list while it sorts it, so an engine
-        write built from that list meanwhile would lose its items."""
+        copied onto it, the run's result (trial_result, its pull marked won)
+        is written into it when END_TRIAL follows the fight, a mastery found
+        later in the session and a later pull's reading of its outcome are
+        written into it, and the banner is attached to it here. The engine
+        writes on its own thread and then sends fight_updated, and the
+        windows read the entry without a lock, as the pane and the run rows
+        do: safe while each write replaces a value, a slot or a key the
+        entry was built with. So the GUI writes nothing into an entry, a
+        pull, a player row or a recap (banner_path aside), and orders with
+        sorted() and new dicts, never .sort() or an added key: CPython
+        empties a list while it sorts it, so an engine write built from that
+        list meanwhile would lose its items."""
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             self._show_fight()
