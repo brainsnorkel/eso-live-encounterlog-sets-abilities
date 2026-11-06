@@ -932,7 +932,7 @@ class TestBuildWindow(BuildGuiTestCase):
             win.close()
 
     def test_a_clicked_name_leaves_the_pane_where_it_was_as_the_fight_ranks_anew(self):
-        """A name clicked with the mouse opens the build, and Qt leaves the
+        """A name clicked with the mouse opens the build tab, and Qt leaves the
         name selected as Tab leaves a link it reaches. The fight then ranks
         its sixteen players the other way round: the pane stays at its top,
         where the reader had it (issue #202). Taken for a link reached with
@@ -962,7 +962,7 @@ class TestBuildWindow(BuildGuiTestCase):
             QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier,
                              QPoint((left.left() + right.left()) // 2, left.center().y()))
             _app.processEvents()
-            self.assertTrue(win._build_dialog.isVisible())
+            self.assertTrue(win._player_window.isVisible())
             self.assertEqual(view.textCursor().selectedText(), '@player1')
             # The engine changes the fight in place, as a fight the game cut
             # in two does when it really ends
