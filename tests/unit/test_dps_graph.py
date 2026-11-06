@@ -371,6 +371,36 @@ class TestGraphWindow(unittest.TestCase):
         finally:
             win.close()
 
+    def test_a_line_ranked_a_row_up_keeps_the_legends_scroll(self):
+        """The legend scrolled to its end, the reader's line near it, when
+        the fight changing in place ranks that player a place up: the line
+        is current on its new row, still in view at the reader's scroll,
+        and the legend stays there (issue #196). Scrolled into view from
+        the refilled legend's top, the line was brought only just into
+        view, the rows the reader had scrolled to out of it."""
+        from PySide6.QtCore import Qt
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            _dialog, legend, bar = self._graph_on(win, entry)
+            legend.setCurrentRow(12)
+            bar.setValue(bar.maximum())
+            place = bar.value()
+            key = legend.currentItem().data(Qt.UserRole)
+            # The engine's new ranking: the players of rows 11 and 12 change places
+            players = list(entry.players)
+            players[10], players[11] = players[11], players[10]
+            entry.players = players
+            win._on_fight_updated(entry)
+            self.assertEqual(legend.currentRow(), 11)
+            self.assertEqual(legend.currentItem().data(Qt.UserRole), key)
+            self.assertEqual(bar.value(), place)
+            line = legend.visualItemRect(legend.currentItem())
+            self.assertGreaterEqual(line.top(), 0)
+            self.assertLessEqual(line.bottom(), legend.viewport().rect().bottom())
+        finally:
+            win.close()
+
     def test_the_colour_blind_switch_keeps_the_legends_line_and_scroll(self):
         """A Settings save that switches the graph to its colour-blind
         colours redraws the open graph with them, and the legend keeps its

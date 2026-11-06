@@ -580,9 +580,11 @@ class DpsGraphDialog(QDialog):
         place in it back, as the other windows keep theirs (issue #196): the
         current line, known by its key, is current again, and selected only
         if it was (the legend makes GROUP current, unselected, when it takes
-        the focus); the scroll is put back, or, when the fight has ranked
-        the line's player anew and the line moved, its row scrolled into
-        view."""
+        the focus); the scroll is put back, and when the fight has ranked
+        the line's player anew onto a row out of view at that scroll, the
+        row is scrolled into view. scrollToItem's EnsureVisible scrolls only
+        then, so a line moved a row or two, still in view, leaves the legend
+        where the reader had it."""
         current = self.legend.currentItem()
         key = current.data(Qt.UserRole) if current is not None else None
         selected = current is not None and current.isSelected()
@@ -600,10 +602,9 @@ class DpsGraphDialog(QDialog):
                         moved = item
                     break
         self.legend.doItemsLayout()  # the new rows' scroll range, before setting it
+        self.legend.verticalScrollBar().setValue(scroll)
         if moved is not None:
             self.legend.scrollToItem(moved)
-        else:
-            self.legend.verticalScrollBar().setValue(scroll)
 
     def entry_updated(self, entry, dark: bool, names=None) -> None:
         """The fight *entry* changed in place (MainWindow._fight_changed,

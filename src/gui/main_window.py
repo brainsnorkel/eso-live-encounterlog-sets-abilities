@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
         if self.history_list.current_entry() is not None:
             # Where the reader had it, as the windows keep theirs
             with self.fight_view.keeping_place() as position:
-                self._show_fight(search_from=position)
+                self._show_fight(search_from=self._search_place(position))
         elif self._empty_reason is not None:
             self._show_empty_state(self._empty_reason)  # its links take the theme's colour
         elif self._last_placeholder:
@@ -890,7 +890,7 @@ class MainWindow(QMainWindow):
         if row is not None and row == self.history_list.currentRow():
             # Where the reader had it, as the windows keep theirs
             with self.fight_view.keeping_place() as position:
-                self._show_fight(search_from=position)
+                self._show_fight(search_from=self._search_place(position))
         names = self._names_for(entry)
         for window in self._windows():
             window.entry_updated(entry, self._dark, names)
@@ -1236,7 +1236,8 @@ class MainWindow(QMainWindow):
         """The current fight in the pane and the strip (the list's
         currentRowChanged passes the row, which a header row never is).
         *search_from*, for the page redrawn in place, is where the reader
-        had the text cursor: the search goes on from there (_apply_search)."""
+        had the text cursor among the search's matches (_search_place): the
+        search goes on from there (_apply_search)."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
@@ -1501,9 +1502,21 @@ class MainWindow(QMainWindow):
     def _apply_search(self, *_, search_from=None):
         """Highlight the search's matches in the pane and count them (the
         field's textChanged passes the text). The text cursor goes to the
-        first match, where Enter goes on from (_goto_next_match); for the
-        page redrawn in place, to the first at or after *search_from*, where
-        the reader had it, so they go on from the match they were at."""
+        first match, where Enter goes on from (_goto_next_match).
+
+        For the page redrawn in place, *search_from* is where the reader
+        had the cursor among the matches (_search_place). The cursor goes to
+        the start of the match with that number; from between two matches
+        (a click leaves it so), to the start of the one before, or the
+        page's start before the first, so the next Enter reaches the match
+        it would have reached; with fewer matches now, to the last. By
+        number, not by offset: the text before the match can change length,
+        as a fight the game cut in two goes from 'Wipe 54%' to 'Cut 54%'
+        above every match, and the cursor kept by its offset went on to the
+        next match. An update that ranks the players anew moves the matches
+        with their rows: the number keeps the search's place among the
+        matches, not the occurrence, as the pane's scroll is kept by
+        position (issue #196)."""
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -1523,14 +1536,24 @@ class MainWindow(QMainWindow):
         else:
             self.search_count.setText("")
         if selections:
-            target = selections[0].cursor
+            starts = [selection.cursor.selectionStart() for selection in selections]
+            start = starts[0]
             if search_from is not None:
-                target = next((s.cursor for s in selections
-                               if s.cursor.selectionStart() >= search_from), target)
-            first = QTextCursor(target)
-            first.setPosition(first.selectionStart())
+                before, on_match = search_from
+                index = before if on_match else before - 1  # the match the cursor goes to
+                start = starts[min(index, len(starts) - 1)] if index >= 0 else 0
+            first = QTextCursor(self.fight_view.document())
+            first.setPosition(start)
             self.fight_view.setTextCursor(first)
             self.fight_view.ensureCursorVisible()
+
+    def _search_place(self, position):
+        """Where the text cursor, at *position*, is among the search's
+        matches on the page shown, read before the page is drawn again for
+        _apply_search to put it back: the number of matches that start
+        before it, and whether one starts at it."""
+        starts = [match.selectionStart() for match in self._search_matches()]
+        return sum(1 for start in starts if start < position), position in starts
 
     def _goto_next_match(self):
         """Enter in the search field cycles through matches."""
@@ -1575,7 +1598,7 @@ class MainWindow(QMainWindow):
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
             with self.fight_view.keeping_place() as position:
-                self._show_fight(search_from=position)
+                self._show_fight(search_from=self._search_place(position))
         # A window hidden or never filled draws nothing (its refresh)
         for window in self._windows():
             window.refresh(self._dark, names=self._names_for(window.entry))

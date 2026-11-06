@@ -522,9 +522,15 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_the_pane_stays_where_it_was_scrolled(self):
+        """The fight's page, scrolled half way down, is redrawn by the
+        switch where the reader had it (FightView.keeping_place)."""
         win = self._window()
         try:
             win.show()
+            # Flush the worker's queued startup signals: its "waiting for
+            # log" page would replace the fight drawn below, and the page
+            # scrolled would be that one
+            _app.processEvents()
             # A long page in a short pane, whatever the platform's fonts and
             # window geometry make of the layout
             win.fight_view.setFixedHeight(120)
@@ -538,15 +544,16 @@ class TestTheWindows(HideNamesTestCase):
             # got there on its own)
             view.document().documentLayout().documentSize()
             _app.processEvents()
+            self.assertIn("@friend", view.toPlainText())
             bar = view.verticalScrollBar()
-            if bar.maximum() <= 0:
-                self.skipTest("the pane did not overflow on this platform")
+            self.assertGreater(bar.maximum(), 0)
             bar.setValue(bar.maximum() // 2)
             kept = bar.value()
             self.assertGreater(kept, 0)
             win.hide_names_action.setChecked(True)
             view.document().documentLayout().documentSize()
             _app.processEvents()
+            self.assertNotIn("@friend", view.toPlainText())
             self.assertEqual(bar.value(), kept)
         finally:
             win.close()

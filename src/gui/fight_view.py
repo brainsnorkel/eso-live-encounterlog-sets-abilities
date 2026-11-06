@@ -254,8 +254,8 @@ class FightView(QTextBrowser):
         step after the last drawing is still to run or its place is held,
         where they were to put it (its scroll or its anchor), since the bar
         is not there yet (see __init__). The with block is given where the
-        text cursor was, for the in-fight search to go on from
-        (MainWindow._apply_search).
+        text cursor was, for the in-fight search to find its place among its
+        matches before the page is drawn again (MainWindow._search_place).
 
         A link the reader had reached with Tab has Tab's focus again, known
         by its href and its place among the page's links with that href (an
@@ -263,12 +263,21 @@ class FightView(QTextBrowser):
         player's own links move when the fight ranks them anew), or none
         when the page no longer has it. Selecting it with setTextCursor
         would paint it as selected text, in the palette's highlight, where
-        Tab draws a dotted frame round it; so the character before it is
-        selected and Tab's own step taken from there, which finds that link
-        and frames it. The step is QTextBrowser.focusNextPrevChild, which
-        moves the focus on to the next widget when it finds no link, so it
-        is taken only for a link the page has, with the links reachable from
-        the keyboard (issue #196)."""
+        Tab draws a dotted frame round it; so Tab's own step is taken, which
+        frames it: from the link before it, selected as Tab selects it, or,
+        for the page's first link, from no selection, where Tab starts at
+        the page's start. Never from a selection of the character before
+        it: QTextCursor widens a selection that crosses into a table over
+        the whole table, and a bar's first ability begins a table's first
+        cell (the build card's in the pane, its bar's own in the build
+        window), so Tab's search went on from the table's end, to the next
+        link after it. The step is QTextBrowser.focusNextPrevChild, which
+        moves the focus on to the next widget when its search finds no
+        link, as it did then with none after the table. It cannot now: the
+        step is taken only for a link the page has, with the links reachable
+        from the keyboard, and from where that link is the next one the
+        search finds, since _links reads the page's links as the search does
+        (issue #196)."""
         if self._after_layout.isActive() or self._hold.isActive():
             anchor, scroll = self._kept_anchor, self._kept_scroll
         else:
@@ -309,8 +318,11 @@ class FightView(QTextBrowser):
 
     def _links(self):
         """(href, start, end) of each link on the page, in document order,
-        as Tab goes from one to the next: a run of text or images within a
-        paragraph that are an anchor to that href."""
+        read as Tab's search reads them (QWidgetTextControl's
+        findNextPrevAnchor), so the two agree on the links Tab reaches: a
+        link starts at a fragment, text or image, that is an anchor with an
+        href, and runs on, within its paragraph, over the fragments that are
+        anchors to that href."""
         block = self.document().begin()
         while block.isValid():
             run = None  # [href, start, end] of the link being read
@@ -318,14 +330,16 @@ class FightView(QTextBrowser):
             while not it.atEnd():
                 fragment = it.fragment()
                 fmt = fragment.charFormat()
-                href = fmt.anchorHref() if fmt.isAnchor() else ""
                 end = fragment.position() + fragment.length()
-                if run is not None and href == run[0]:
+                if run is not None and fmt.isAnchor() and fmt.anchorHref() == run[0]:
                     run[2] = end
                 else:
                     if run is not None:
                         yield tuple(run)
-                    run = [href, fragment.position(), end] if href else None
+                    # Tab's search starts a link at an anchor that has an
+                    # href, even an empty one; an <a name> alone has none
+                    run = ([fmt.anchorHref(), fragment.position(), end]
+                           if fmt.isAnchor() and fmt.hasProperty(QTextFormat.AnchorHref) else None)
                 it += 1
             if run is not None:
                 yield tuple(run)
@@ -348,15 +362,19 @@ class FightView(QTextBrowser):
 
     def _focus_link(self, href: str, n: int) -> None:
         """Give Tab's focus to the page's link *n* (from 0) of those to
-        *href*, as Tab gives it (see keeping_place); nothing when the page
-        has fewer."""
-        starts = [start for link, start, _end in self._links() if link == href]
-        if n >= len(starts):
+        *href*, as Tab gives it: Tab's step taken from the link before it,
+        selected over its run as Tab selects it, or, for the page's first
+        link, from no selection, where Tab starts at the page's start (see
+        keeping_place); nothing when the page has fewer."""
+        links = list(self._links())
+        places = [i for i, (link, _start, _end) in enumerate(links) if link == href]
+        if n >= len(places):
             return
         before = QTextCursor(self.document())
-        if starts[n]:
-            before.setPosition(starts[n] - 1)
-            before.setPosition(starts[n], QTextCursor.KeepAnchor)
+        if places[n]:
+            _link, start, end = links[places[n] - 1]
+            before.setPosition(start)
+            before.setPosition(end, QTextCursor.KeepAnchor)
         self.setTextCursor(before)
         self.focusNextPrevChild(True)
 

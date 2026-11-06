@@ -414,6 +414,58 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_a_redraw_in_place_keeps_the_searchs_match_by_its_number(self):
+        """The game had cut the fight on screen in two: its verdict goes
+        from 'Wipe 62%' to 'Cut 62%' (pull_outcome.mark_context), a
+        character shorter, above every match. The cursor stays on the
+        reader's match, the fourth, and the next Enter goes on to the fifth
+        (issue #196); kept by its offset, the cursor went on to the fifth."""
+        from pull_outcome import WIPE
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            entry.pull = {'boss': entry.boss_name, 'outcome': WIPE, 'health_left': 62.0}
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            self.assertIn('Wipe 62%', win.fight_view.toPlainText())
+            win.search_field.setText('a')
+            for _ in range(3):
+                win._goto_next_match()
+            entry.pull['cut'] = True  # as mark_context writes it
+            win._on_fight_updated(entry)
+            self.assertIn('Cut 62%', win.fight_view.toPlainText())
+            starts = [m.selectionStart() for m in win._search_matches()]
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[4])
+        finally:
+            win.close()
+
+    def test_a_redraw_in_place_goes_on_from_between_two_matches(self):
+        """A click has left the cursor between the search's third and
+        fourth matches when the fight on screen changes in place: the next
+        Enter still goes to the fourth (issue #196). Kept by its offset,
+        the cursor went on to the fourth, and the next Enter to the
+        fifth."""
+        from PySide6.QtGui import QTextCursor
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.search_field.setText('a')
+            starts = [m.selectionStart() for m in win._search_matches()]
+            between = (starts[2] + starts[3]) // 2
+            self.assertLess(starts[2], between)
+            cursor = QTextCursor(win.fight_view.document())
+            cursor.setPosition(between)
+            win.fight_view.setTextCursor(cursor)
+            win._on_fight_updated(entry)
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+        finally:
+            win.close()
+
     def test_archive_events_drive_progress_bar(self):
         from engine_events import ArchiveEvent
         win = self._window()

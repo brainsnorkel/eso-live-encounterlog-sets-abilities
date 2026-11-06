@@ -661,6 +661,13 @@ class TestALinkReachedWithTab(FightViewTestCase):
             + "<p><a href='esolog:issues/2'>(i) of 2</a> "
             "<a href='esolog:issues/3'>(i) of 3</a></p>"
             + "<p>a line of the page</p>" * 30)
+    # Two ability bars as the pane's build card and the build window draw
+    # them: tables whose first cell begins with the bar's first ability
+    FRONT = ("<table><tr><td><a href='esolog:ability/1'>one</a>&nbsp;"
+             "<a href='esolog:ability/2'>two</a></td></tr></table>")
+    BACK = ("<table><tr><td><a href='esolog:ability/3'>three</a>&nbsp;"
+            "<a href='esolog:ability/4'>four</a></td></tr></table>")
+    LINES = "<p>a line of the page</p>" * 30
 
     def setUp(self):
         super().setUp()
@@ -756,6 +763,91 @@ class TestALinkReachedWithTab(FightViewTestCase):
         self._redraw(self.PAGE.replace(" <a href='esolog:issues/3'>(i) of 3</a>", ""))
         self.assertIsNone(self._selected())
         self.assertIs(QApplication.focusWidget(), self.view)
+
+    def test_a_link_that_begins_a_tables_first_cell(self):
+        """A bar's first ability, after the player's name, begins its
+        table's first cell: after the redraw it has Tab's focus again,
+        Enter opens it and the next Tab goes on to the next ability (issue
+        #196). The step taken from a selection of the character before it,
+        which QTextCursor widened over the whole table, framed the set link
+        after the table."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        opened = []
+        self.view.anchorClicked.connect(lambda url: opened.append(url.toString()))
+        page = ("<p><a href='esolog:build/1'>a name</a></p>" + self.FRONT
+                + "<p><a href='https://eso-hub.com/en/sets/x'>a set</a></p>" + self.LINES)
+        self.view.setHtml(page)
+        self._tab(2)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertEqual(self._selected(), 'one')
+        QTest.keyClick(self.view, Qt.Key_Return)
+        self.assertEqual(opened, ['esolog:ability/1'])
+        QTest.keyClick(self.view, Qt.Key_Tab)
+        self.assertEqual(self._selected(), 'two')
+
+    def test_a_link_that_begins_a_tables_first_cell_with_none_after_it(self):
+        """The same with no link after the table: the focus stays on the
+        page, on that link. Tab's step found no link after the table and
+        moved the focus on to the field below the page."""
+        from PySide6.QtWidgets import QApplication
+        page = "<p><a href='esolog:build/1'>a name</a></p>" + self.FRONT + self.LINES
+        self.view.setHtml(page)
+        self._tab(2)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertIs(QApplication.focusWidget(), self.view)
+        self.assertEqual(self._selected(), 'one')
+
+    def test_the_pages_first_link(self):
+        """The page's first link has no link before it to take Tab's step
+        from: the step is taken from no selection, from which Tab starts at
+        the page's start. As in the build window, that link begins the front
+        bar's table, the back bar's following it; the step taken from a
+        selection of the character before it framed the back bar's first
+        ability."""
+        from PySide6.QtWidgets import QApplication
+        page = "<p>a build</p>" + self.FRONT + self.BACK + self.LINES
+        self.view.setHtml(page)
+        self._tab(1)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertIs(QApplication.focusWidget(), self.view)
+        self.assertEqual(self._selected(), 'one')
+
+    def test_the_pages_links_are_the_ones_tab_reaches(self):
+        """The view reads the page's links as Tab's search does, since the
+        step it takes after a redraw finds the link after the one it starts
+        from: links side by side, an icon in a link, the bars' tables, an
+        anchor with a name alone, which is no link, and a link whose href is
+        empty, which is one. setHtml never makes that last; it is written
+        here in code."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCharFormat, QTextCursor
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        self.view.setHtml("<p><a name='top'>a heading</a> <a href='esolog:build/1'>a name</a>"
+                          "<a href='esolog:damage/1'>1.0k</a> <a href='esolog:issues/1'>"
+                          "<img src='icon:ability_test_001'></a></p>" + self.FRONT + self.BACK)
+        empty = QTextCharFormat()
+        empty.setAnchor(True)
+        empty.setAnchorHref('')
+        cursor = QTextCursor(self.view.document())
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertBlock()
+        cursor.insertText('an empty href', empty)
+        cursor.insertText(' then a line', QTextCharFormat())
+        reached = []
+        self.view.setFocus()
+        while True:
+            QTest.keyClick(self.view, Qt.Key_Tab)
+            selected = self.view.textCursor()
+            if QApplication.focusWidget() is not self.view or not selected.hasSelection():
+                break
+            reached.append((selected.selectionStart(), selected.selectionEnd()))
+        self.assertEqual(len(reached), 8)
+        self.assertEqual(reached, [(start, end) for _href, start, end in self.view._links()])
 
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):
