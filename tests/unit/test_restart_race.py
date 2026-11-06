@@ -217,9 +217,9 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         self.assertTrue(win.fight_view.toPlainText().startswith("Yolnahkriin"))
         # A pane link opens on it
         win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
-        self.assertIsNotNone(win._build_dialog)
-        self.assertIs(win._build_dialog.entry, replayed[1])
-        self.assertEqual(win._build_dialog.windowTitle(), "Build – @me")
+        self.assertIsNotNone(win._player_window)
+        self.assertIs(win._player_window.entry, replayed[1])
+        self.assertEqual(win._player_window.windowTitle(), "Build – @me")
         # An older fight does not follow the live log: the next one is
         # listed, not selected
         later = _played("Lokkestiiz", "2026-08-30 14:52:17")

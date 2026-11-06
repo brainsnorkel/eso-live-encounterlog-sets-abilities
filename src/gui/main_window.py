@@ -40,12 +40,9 @@ from gui import text_size
 from gui.activity_render import (
     OPEN_AT_FIRST, activity_paths, activity_tooltips, empty_state_html, status_text as empty_status_text,
 )
-from gui.build_dialog import BuildDialog
 from gui.build_issues_popup import BuildIssuesPopup
-from gui.build_render import PEN_CRIT_ANCHOR, player_for
-from gui.damage_dialog import DamageDialog
-from gui.death_recap_dialog import DeathRecapDialog
-from gui.death_render import death_tooltips
+from gui.build_render import player_for
+from gui.death_render import death_tooltips, deaths_by_unit
 from gui.dps_graph import DpsGraphDialog
 from gui.engine_worker import EngineWorker
 from gui.fight_list import FightList
@@ -57,9 +54,11 @@ from gui.fight_render import (
 )
 from gui.fight_view import FightView, set_reduce_motion
 from gui.name_mask import NameMask
+from gui.player_window import (
+    BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
+)
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
-from gui.taken_dialog import TakenDialog
 from gui.timeline_strip import TimelineStrip, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
@@ -188,10 +187,11 @@ class MainWindow(QMainWindow):
         # (_exit_review), and the bar keeps its explanation under a review
         # or a fight (_refresh_freshness_label)
         self._log_missing = False
-        self._death_dialog = None  # created on the first death-recap click
-        self._build_dialog = None  # created on the first click on a player's name
-        self._damage_dialog = None  # created on the first click on a player's dps
-        self._taken_dialog = None  # created on the first click on a player's shield
+        # The player window, created at the first player link (issue #196),
+        # and its fight's key and player across a Settings replay
+        # (_end_replay)
+        self._player_window = None
+        self._player_window_key = None
         self._graph_dialog = None  # created on the first DPS graph request
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
@@ -498,6 +498,11 @@ class MainWindow(QMainWindow):
     def _save_window_layout(self):
         self.config.set("window.geometry", _encode_state(self.saveGeometry()))
         self.config.set("window.splitter", _encode_state(self._splitter.saveState()))
+        # The player window's too, here: a dialog gets no close event when
+        # the app quits (issue #196)
+        if self._player_window is not None:
+            self.config.set("window.player_geometry",
+                            _encode_state(self._player_window.saveGeometry()))
         self.config.save()
 
     def _build_worker(self):
@@ -876,11 +881,10 @@ class MainWindow(QMainWindow):
 
     def _windows(self):
         """The windows opened so far beside this one (each is made at its
-        first use): death recap, build, damage, damage taken and DPS graph.
-        The one list a theme switch, a flip of Hide names, a new text size
-        and a fight changing in place go through (issue #196)."""
-        return [window for window in (self._death_dialog, self._build_dialog, self._damage_dialog,
-                                      self._taken_dialog, self._graph_dialog)
+        first use): the player window and the DPS graph. The one list a
+        theme switch, a flip of Hide names, a new text size and a fight
+        changing in place go through (issue #196)."""
+        return [window for window in (self._player_window, self._graph_dialog)
                 if window is not None]
 
     def _fight_changed(self, entry):
@@ -1078,9 +1082,20 @@ class MainWindow(QMainWindow):
         waits for a log the restart did not find (_log_missing, cleared
         here and set again by waiting_for_log), Back to live with no fight
         listed draws the waiting page instead: nothing is replayed until
-        the log appears."""
+        the log appears.
+
+        The player window's fight is known again by its key too, with the
+        player's handle (_end_replay puts the window on the replayed copy);
+        a window on a reviewed fight, which no replay builds again, keeps
+        it."""
         self._restart_pending = False
         self._log_missing = False  # the restart may find it
+        window = self._player_window
+        if window is not None and any(fight is window.entry for fight in self._fights):
+            self._player_window_key = (self._listed_key(window.entry), window.unit_id,
+                                       _player_handle(window.entry, window.unit_id))
+        elif not self._replaying:
+            self._player_window_key = None
         if self._review_fights is None:
             entry = self.history_list.current_entry()
             # During a replay this one cuts short, following is held off,
@@ -1096,6 +1111,7 @@ class MainWindow(QMainWindow):
             self._replay_key = None  # no live fight on screen to come back to
         self._replaying = True
         self._fights.clear()
+        self._update_player_listed()
         # The new analyzer checks its session's data afresh
         self._on_data_check(None)
 
@@ -1120,6 +1136,7 @@ class MainWindow(QMainWindow):
         if not self._replaying or self._restart_pending:
             return
         self._replaying = False
+        self._rebind_player_window()
         if self._review_fights is not None:
             return  # Back to live goes to the newest
         if self.history_list.current_entry() is None:
@@ -1127,6 +1144,26 @@ class MainWindow(QMainWindow):
         entry = self.history_list.current_entry()
         # _show_fight's rule, last applied while fights were still coming
         self._follow_live = entry is None or entry is self._fights[-1]
+
+    def _rebind_player_window(self):
+        """The replay is in: the player window goes on to the replayed copy
+        of its fight, the one with its key, when the player under its unit
+        id has the same handle (a replay of the same log keeps both); with
+        none it keeps its fight as it was before the Save, and says so
+        (see _on_monitoring_restarting)."""
+        window, key = self._player_window, self._player_window_key
+        self._player_window_key = None
+        if window is None or key is None:
+            return
+        wanted, unit_id, handle = key
+        for index, entry in enumerate(self._fights):
+            if fight_key(entry, self._fights[:index]) == wanted:
+                if _player_handle(entry, unit_id) == handle:
+                    window.rebind(entry, names=self._names_for(entry))
+                    self._update_player_listed()
+                    return
+                break
+        window.mark_replayed()
 
     @Slot(str)
     def _on_monitoring_started(self, path):
@@ -1348,6 +1385,7 @@ class MainWindow(QMainWindow):
     def _reload_list(self, fights):
         self.history_list.set_fights(fights)
         self.history_list.select_fight(-1)
+        self._update_player_listed()
 
     def _show_fight(self, *_, search_from=None):
         """The current fight in the pane and the strip (the list's
@@ -1419,81 +1457,63 @@ class MainWindow(QMainWindow):
                                             history=history))
         self._apply_search(search_from=search_from)
 
-    def _show_pen_crit(self, unit_id):
-        """A player's pen/crit token was clicked: their build window, open
-        at its Penetration and Critical damage sections."""
-        self._show_build(unit_id, scroll_to=PEN_CRIT_ANCHOR)
-
-    def _show_death_recap(self, unit_id):
-        """A player's death-recap button was clicked in the fight on screen."""
-        entry = self.history_list.current_entry()
-        if entry is None:
-            return
-        if self._death_dialog is None:
-            self._death_dialog = DeathRecapDialog(self, icons=self.fight_view.icons)
-            # The fight block's link to the damage taken window (issue #98),
-            # for the fight the recap shows (issue #143)
-            self._death_dialog.view.taken_requested.connect(
-                lambda unit_id: self._show_taken(unit_id, self._death_dialog.entry))
-        self._death_dialog.show_recap(entry, unit_id, self._dark,
-                                      names=self._names_for(entry))
-        self._death_dialog.show()
-        self._death_dialog.raise_()
-        self._death_dialog.activateWindow()
-
-    def _show_build(self, unit_id, scroll_to=None):
-        """A player's name was clicked in the fight on screen (*scroll_to*:
-        the anchor the window opens at, for the pen/crit token)."""
-        entry = self.history_list.current_entry()
-        if entry is None:
-            return
-        if self._build_dialog is None:
-            self._build_dialog = BuildDialog(self, icons=self.fight_view.icons)
-            # The Damage dealt heading's link to the damage taken window
-            # (issue #98), for the fight the build window shows (issue #143)
-            self._build_dialog.view.taken_requested.connect(
-                lambda unit_id: self._show_taken(unit_id, self._build_dialog.entry))
-        # The Settings' assumed Champion Point rows and cap, read at render
-        # time so a change applies to the next build window without a restart
-        self._build_dialog.show_build(entry, unit_id, self._dark,
-                                      pen_crit_options=self.config.get("pen_crit") or {},
-                                      scroll_to=scroll_to, names=self._names_for(entry))
-        self._build_dialog.show()
-        self._build_dialog.raise_()
-        self._build_dialog.activateWindow()
-
-    def _show_damage(self, unit_id):
-        """A player's dps figure was clicked in the fight on screen."""
-        entry = self.history_list.current_entry()
-        if entry is None:
-            return
-        if self._damage_dialog is None:
-            self._damage_dialog = DamageDialog(self, icons=self.fight_view.icons)
-        self._damage_dialog.show_damage(entry, unit_id, self._dark,
-                                        names=self._names_for(entry))
-        self._damage_dialog.show()
-        self._damage_dialog.raise_()
-        self._damage_dialog.activateWindow()
-
-    def _show_taken(self, unit_id, entry=None):
-        """A player's damage-taken shield was clicked in the fight on screen,
-        or the link to it in their build or death recap window: the whole
-        fight's damage taken and healing received (taken_render, issue #98).
-        The shield opens the fight on screen; a window's link passes the
-        fight that window shows (*entry*), which stays the fight it was
-        opened for while the list moves on to each new pull as the app
-        follows the live log (issue #143)."""
+    def _open_player(self, unit_id, tab, entry=None, death=None):
+        """A player link on the fight pane: the player window on the player
+        *unit_id* of the fight on screen (or *entry*), at the tab *tab*, at
+        the death *death* (from 1) on the Deaths tab (issue #196). The window
+        keeps that fight while the list moves on (#143)."""
         if entry is None:
             entry = self.history_list.current_entry()
         if entry is None:
             return
-        if self._taken_dialog is None:
-            self._taken_dialog = TakenDialog(self, icons=self.fight_view.icons)
-        self._taken_dialog.show_taken(entry, unit_id, self._dark,
-                                      names=self._names_for(entry))
-        self._taken_dialog.show()
-        self._taken_dialog.raise_()
-        self._taken_dialog.activateWindow()
+        if self._player_window is None:
+            self._player_window = PlayerWindow(self, icons=self.fight_view.icons,
+                                               config=self.config)
+            geometry = _decode_state(self.config.get("window.player_geometry"))
+            if geometry is not None:
+                self._player_window.restoreGeometry(geometry)
+            self._player_window.show_in_list_requested.connect(self._show_in_list)
+        self._player_window.open(entry, unit_id, tab, self._dark, names=self._names_for(entry),
+                                 death=death, listed=self.history_list.row_of(entry) is not None)
+
+    def _show_pen_crit(self, unit_id):
+        """A player's pen/crit token was clicked: the Pen and crit tab."""
+        self._open_player(unit_id, PEN_CRIT_TAB)
+
+    def _show_death_recap(self, unit_id):
+        """A player's death-recap chip was clicked: the Deaths tab."""
+        self._open_player(unit_id, DEATHS_TAB)
+
+    def _show_build(self, unit_id):
+        """A player's name, or the '?' after a lone mastery: the Build tab."""
+        self._open_player(unit_id, BUILD_TAB)
+
+    def _show_damage(self, unit_id):
+        """A player's dps figure was clicked: the Damage done tab."""
+        self._open_player(unit_id, DAMAGE_TAB)
+
+    def _show_taken(self, unit_id, entry=None):
+        """A player's damage-taken shield was clicked: the Damage taken tab,
+        the whole fight's damage taken (taken_render, issue #98)."""
+        self._open_player(unit_id, TAKEN_TAB, entry)
+
+    def _show_in_list(self, entry):
+        """The player window's Show in list: its fight selected in the
+        list, and this window brought up; the player window, which this one
+        owns, stays above it."""
+        if self.history_list.row_of(entry) is None:
+            self.statusBar().showMessage("That fight is not in the list now", 5000)
+            return
+        self.history_list.select_entry(entry)
+        self.raise_()
+        self.activateWindow()
+
+    def _update_player_listed(self):
+        """The player window's Show in list follows the list as it is
+        replaced: a review, Back to live, a Settings replay."""
+        window = self._player_window
+        if window is not None and window.entry is not None:
+            window.set_listed(self.history_list.row_of(window.entry) is not None)
 
     def _show_issues(self, unit_id):
         """A player's (i) was clicked in the fight on screen: their possible
@@ -1746,6 +1766,17 @@ class MainWindow(QMainWindow):
         self._refresh_names()
         self.statusBar().showMessage(f"Text size {applied}%", 3000)
 
+    def _apply_pen_crit_settings(self):
+        """Settings saved new pen/crit options (the assumed Champion Point
+        rows and the cap): the pane's tokens and the player window's pages
+        take them at once, each keeping its place (decision 10, issue #196),
+        where they waited for the next build window."""
+        if self.history_list.current_entry() is not None:
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=self._search_place(position))
+        if self._player_window is not None:
+            self._player_window.redraw_pages()
+
     def _apply_privacy_settings(self):
         """Settings saved: the action follows the box (its toggled signal
         redraws when the state changed)."""
@@ -1913,11 +1944,14 @@ class MainWindow(QMainWindow):
                                 on_build_history=self.start_backfill)
         updates_before = self._update_settings_key()
         engine_before = engine_settings(self.config)
+        pen_crit_before = repr(self.config.get("pen_crit") or {})
         if dialog.exec() == SettingsDialog.Accepted:
             dialog.apply_to_config()
             self.config.save()
             self._apply_update_settings(updates_before)
             self._apply_privacy_settings()
+            if repr(self.config.get("pen_crit") or {}) != pen_crit_before:
+                self._apply_pen_crit_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
             if self._graph_dialog is not None:
                 self._graph_dialog.set_colorblind(
@@ -1991,6 +2025,7 @@ class MainWindow(QMainWindow):
             # rather than each one drawn as it comes
             self._replay_key = None
             self.history_list.set_fights(self._fights)
+            self._update_player_listed()
             if self._log_missing and not self._fights:
                 # The restart found no log, so nothing is being replayed:
                 # the log's first fight, once it appears, puts the replay's
@@ -2004,6 +2039,17 @@ class MainWindow(QMainWindow):
         if not self._fights:
             # 'back' would say a log is monitored
             self._show_empty_state("waiting" if self._log_missing else "back")
+
+
+def _player_handle(entry, unit_id) -> str:
+    """The name the player *unit_id* has in the fight *entry*, a row's or,
+    for a player the table does not list, their death recap's: what a
+    Settings replay is checked by (MainWindow._rebind_player_window)."""
+    p = player_for(entry, unit_id)
+    if p is not None:
+        return str(p.get("name") or "")
+    recaps = deaths_by_unit(entry).get(str(unit_id), [])
+    return str(recaps[0].get("name") or "") if recaps else ""
 
 
 def _age_text(seconds: float) -> str:

@@ -167,6 +167,9 @@ TOPICS = [
     ("The damage taken window: by source and by healer, over the whole fight", [
         "src/gui/taken_render.py",
     ]),
+    ("The player window: one window, a tab for each link", [
+        "src/gui/player_window.py",
+    ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",

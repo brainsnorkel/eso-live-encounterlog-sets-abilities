@@ -451,10 +451,11 @@ class TestBuildWindow(IssuesGuiTestCase):
         from gui.fight_render import ISSUES_TITLE
         win = self._window(_entry())
         try:
+            from gui.player_window import BUILD_TAB
             win._show_build('2')
-            self.assertIn(ISSUES_TITLE, win._build_dialog.view.toPlainText())
+            self.assertIn(ISSUES_TITLE, win._player_window.view(BUILD_TAB).toPlainText())
             win._show_build('1')
-            self.assertNotIn(ISSUES_TITLE, win._build_dialog.view.toPlainText())
+            self.assertNotIn(ISSUES_TITLE, win._player_window.view(BUILD_TAB).toPlainText())
         finally:
             win.close()
 

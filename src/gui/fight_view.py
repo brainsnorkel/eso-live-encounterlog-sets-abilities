@@ -186,7 +186,9 @@ class FightView(QTextBrowser):
         # handled (see keyPressEvent)
         self._key_link_rect: QRect | None = None
         _views.add(self)
-        # What a screen reader is given in place of the images (see above)
+        # What a screen reader is given in place of the images (see above),
+        # after a lead line of the window's (set_accessible_lead)
+        self._accessible_lead = ""
         self.textChanged.connect(self._update_accessible_text)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
@@ -531,10 +533,18 @@ class FightView(QTextBrowser):
                     return image
         return super().loadResource(resource_type, name)
 
+    def set_accessible_lead(self, text: str) -> None:
+        """A line a screen reader hears before the page (accessible_text):
+        the fight, on the player window's pages, whose header names it
+        outside the page (issue #196)."""
+        self._accessible_lead = str(text or "")
+        self._update_accessible_text()
+
     def accessible_text(self) -> str:
         """The page as a screen reader should hear it: its text, each
-        image replaced by its alt text, one line per paragraph or cell."""
-        lines = []
+        image replaced by its alt text, one line per paragraph or cell,
+        after the lead line when there is one (set_accessible_lead)."""
+        lines = [self._accessible_lead] if self._accessible_lead else []
         block = self.document().begin()
         while block.isValid():
             pieces = []

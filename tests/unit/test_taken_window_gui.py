@@ -393,54 +393,81 @@ class TestTakenWindow(TakenWindowTestCase):
         return win
 
     def test_click_on_the_shield_opens_the_players_window(self):
+        """The shield opens the player window's Damage taken tab, where the
+        damage taken window was; its healing received line opens the
+        Healing received tab, the page's second half (issue #196)."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import HEALING_TAB, TAKEN_TAB
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
-            self.assertIsNone(win._taken_dialog)
+            self.assertIsNone(win._player_window)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            dialog = win._taken_dialog
+            dialog = win._player_window
             self.assertTrue(dialog.isVisible())
+            self.assertEqual(dialog.current_tab(), TAKEN_TAB)
             self.assertEqual(dialog.windowTitle(), 'Damage taken – @tester')
-            text = dialog.view.toPlainText()
+            taken = dialog.view(TAKEN_TAB)
+            text = taken.toPlainText()
             for expected in ('112,000 damage taken', 'Damage by source', 'Nahviintaas',
-                             'Healing received', 'Radiating Regeneration'):
+                             '340,000 healing received'):
                 self.assertIn(expected, text)
+            self.assertNotIn('Radiating Regeneration', text)
             # The star links carry their hover text
-            self.assertTrue(any('Warfare stars' in tip for tip in dialog.view._tooltips.values()))
+            self.assertTrue(any('Warfare stars' in tip for tip in taken._tooltips.values()))
+            # The healing line is the way to the table by healer
+            self.assertIn("href='esolog:healing/1'", taken.toHtml().replace('"', "'"))
+            taken.anchorClicked.emit(QUrl('esolog:healing/1'))
+            self.assertEqual(dialog.current_tab(), HEALING_TAB)
+            self.assertEqual(dialog.windowTitle(), 'Healing received – @tester')
+            healing = dialog.view(HEALING_TAB).toPlainText()
+            for expected in ('Healing received', 'Radiating Regeneration', '@friend'):
+                self.assertIn(expected, healing)
+            self.assertNotIn('Damage by source', healing)
 
             # Another player's shield reuses the window
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/2'))
-            self.assertIs(win._taken_dialog, dialog)
+            self.assertIs(win._player_window, dialog)
             self.assertEqual(dialog.windowTitle(), 'Damage taken – @friend')
-            self.assertIn('Damage kinds were not recorded', dialog.view.toPlainText())
+            self.assertIn('Damage kinds were not recorded', taken.toPlainText())
         finally:
             win.close()
 
     def test_the_links_in_the_build_and_recap_windows_open_it(self):
+        """The Damage done tab's Damage dealt heading and the Deaths tab's
+        last line link to the player's damage taken: the window's own tab
+        (issue #196), where they opened a window of its own."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import DAMAGE_TAB, DEATHS_TAB, TAKEN_TAB
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
-            win._show_build('1')
-            win._build_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            self.assertIsNotNone(win._taken_dialog)
-            self.assertEqual(win._taken_dialog.windowTitle(), 'Damage taken – @tester')
-            win._taken_dialog.close()
+            win._show_damage('1')
+            window = win._player_window
+            window.view(DAMAGE_TAB).anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertEqual(window.current_tab(), TAKEN_TAB)
+            self.assertEqual(window.windowTitle(), 'Damage taken – @tester')
+            window.close()
             win._show_death_recap('1')
-            win._death_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            self.assertTrue(win._taken_dialog.isVisible())
+            self.assertEqual(window.current_tab(), DEATHS_TAB)
+            window.view(DEATHS_TAB).anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertTrue(window.isVisible())
+            self.assertEqual(window.current_tab(), TAKEN_TAB)
         finally:
             win.close()
 
     def test_the_windows_links_open_their_own_fight_once_the_list_has_moved_on(self):
         # Following the live log, each completed fight becomes the current
-        # row; a build or recap window opened on the pull before keeps that
-        # pull, and so does its link (issue #143)
+        # row; the player window opened on the pull before keeps that pull,
+        # and so do its pages' links (issue #143)
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB, DEATHS_TAB, TAKEN_TAB
         win = self._main_window()
         try:
             first, later = _entry(), _entry()
@@ -448,36 +475,42 @@ class TestTakenWindow(TakenWindowTestCase):
             win._on_fight_completed(first)
             win.history_list.select_fight(0)
             win._show_build('1')
-            win._show_death_recap('1')
+            window = win._player_window
             win._on_fight_completed(later)
             win.history_list.select_fight(1)
             self.assertIs(win.history_list.current_entry(), later)
-            win._build_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            self.assertIs(win._taken_dialog.entry, first)
-            win._death_dialog.view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            self.assertIs(win._taken_dialog.entry, first)
+            window.view(BUILD_TAB).anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertIs(window.entry, first)
+            self.assertEqual(window.current_tab(), TAKEN_TAB)
+            window.view(DEATHS_TAB).anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertIs(window.entry, first)
             # The shield on the fight pane still opens the fight on screen
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            self.assertIs(win._taken_dialog.entry, later)
+            self.assertIs(window.entry, later)
         finally:
             win.close()
 
     def test_open_window_follows_a_theme_switch_and_the_hide_names_switch(self):
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import HEALING_TAB, TAKEN_TAB
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:taken/1'))
-            dialog = win._taken_dialog
-            before = dialog.view.toHtml()
+            dialog = win._player_window
+            page = dialog.view(TAKEN_TAB)
+            before = page.toHtml()
             dialog.refresh(not win._dark)
-            self.assertNotEqual(before, dialog.view.toHtml())
+            self.assertNotEqual(before, page.toHtml())
             # Hide names: the other player's handle goes from the healers
-            self.assertIn('@friend', dialog.view.toPlainText())
+            page.anchorClicked.emit(QUrl('esolog:healing/1'))
+            healing = dialog.view(HEALING_TAB)
+            self.assertIn('@friend', healing.toPlainText())
             win.hide_names_action.setChecked(True)
-            self.assertNotIn('@friend', dialog.view.toPlainText())
-            self.assertIn('@tester', dialog.view.toPlainText())
+            self.assertNotIn('@friend', healing.toPlainText())
+            self.assertIn('@tester', healing.toPlainText())
         finally:
             win.close()
 
