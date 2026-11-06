@@ -457,7 +457,8 @@ class EngineEventTests(unittest.TestCase):
 
 class BannerInTheGuiTests(unittest.TestCase):
     """The captured banner in the app: the result row's cue, the result
-    strip's links and the pane's signal for them."""
+    strip's links and the pane's signal for them, and a banner attached to
+    a fight already listed reaching the pane and the windows open on it."""
 
     @classmethod
     def setUpClass(cls):
@@ -518,6 +519,80 @@ class BannerInTheGuiTests(unittest.TestCase):
             self.assertEqual(seen, ["copy", "open"])
         finally:
             view.deleteLater()
+
+    def _main_window(self, folder):
+        """The app's window, its log, and so its Banners folder, in *folder*;
+        its engine thread stopped."""
+        from app_config import AppConfig
+        from gui.main_window import MainWindow
+        config = AppConfig(path=folder / "config.json")
+        config.set("log_path", str(folder / "Encounter.log"))
+        config.set("update.check_enabled", False)
+        win = MainWindow(config)
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        return win
+
+    def test_a_banner_found_at_monitoring_start_redraws_the_fight_on_screen(self):
+        """The fights replayed at attach come before the log is known, so
+        their banners are looked for again at monitoring start (here the
+        file is written only after the listing): the fight on screen is
+        redrawn with the banner's links, as for any change to a listed
+        fight (MainWindow._fight_changed, issue #196), where the pane kept
+        the page drawn without them."""
+        from gui.fight_render import BANNER_HREF
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            win = self._main_window(folder)
+            try:
+                entry = self._entry()
+                win._on_fight_completed(entry)
+                win.history_list.select_fight(0)
+                self.assertNotIn(BANNER_HREF, win.fight_view.toHtml())
+                banner = folder / "Banners" / BannerTarget.from_entry(entry).file_name
+                banner.parent.mkdir()
+                banner.write_bytes(b"png")
+                win._on_monitoring_started(str(folder / "Encounter.log"))
+                self.assertEqual(entry.banner_path, banner)
+                self.assertIn(f"{BANNER_HREF}open", win.fight_view.toHtml())
+            finally:
+                win.close()
+
+    def test_a_banner_the_burst_reports_reaches_the_windows_on_its_fight(self):
+        """The burst saves the banner after the fight was listed: the pane
+        takes its links, and every window open on that fight is told, as
+        for any change to a listed fight (MainWindow._fight_changed, issue
+        #196)."""
+        from types import SimpleNamespace
+
+        from gui.dps_graph import DpsGraphDialog
+        from gui.fight_render import BANNER_HREF
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            win = self._main_window(folder)
+            try:
+                entry = self._entry()
+                target = BannerTarget.from_entry(entry)
+                # The burst _on_trial_result started for the run, still at
+                # work when the fight arrives, which hands it the fight
+                # (_attach_banner); cancel is for the window's close
+                win._banner_burst = SimpleNamespace(target=target, entry=None, cancel=lambda: None)
+                win._on_fight_completed(entry)
+                win.history_list.select_fight(0)
+                self.assertIs(win._banner_burst.entry, entry)
+                win._show_graph()
+                banner = folder / "Banners" / target.file_name
+                banner.parent.mkdir()
+                banner.write_bytes(b"png")
+                with patch.object(DpsGraphDialog, "entry_updated", autospec=True) as told:
+                    win._on_banner_finished(banner, "Score banner saved")
+                self.assertEqual(entry.banner_path, banner)
+                self.assertIn(f"{BANNER_HREF}open", win.fight_view.toHtml())
+                self.assertEqual(told.call_count, 1)
+                self.assertIs(told.call_args.args[0], win._graph_dialog)
+                self.assertIs(told.call_args.args[1], entry)
+            finally:
+                win.close()
 
 
 class _FakeSource:

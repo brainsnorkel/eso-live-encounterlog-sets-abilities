@@ -30,9 +30,10 @@ panel shows four or fewer.
 """
 
 import math
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget,
@@ -393,8 +394,9 @@ def _curve_points(series, window: dict, mode_window: int, duration_s: float):
 class DpsGraphDialog(QDialog):
     """The graph window: the chart, a legend of checkboxes, the mode and
     the boss switch. Modeless like the other windows; it keeps the fight it
-    was opened for, and its mode and legend choices from one fight to the
-    next within a session."""
+    was opened for (redrawn when that fight changes in place, issue #196),
+    and its mode and legend choices from one fight to the next within a
+    session."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -553,18 +555,70 @@ class DpsGraphDialog(QDialog):
         super().changeEvent(event)
 
     def set_colorblind(self, on: bool) -> None:
-        """Switch the series set; a graph on display is redrawn with it."""
+        """Switch the series set; a graph on display is redrawn with it,
+        the legend keeping its place."""
         if bool(on) == self.colorblind:
             return
         self.colorblind = bool(on)
         if self._shown is not None:
             entry, dark, names = self._shown
-            self.show_graph(entry, dark, names=names)
+            with self._keeping_legend_place():
+                self.show_graph(entry, dark, names=names)
 
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the series colours follow it) or
         a flip of the Hide names switch (*names*, the new mask; None keeps
-        the one shown)."""
+        the one shown), the legend keeping its place."""
         if self._shown is not None and self.isVisible():
             entry, _dark, shown = self._shown
-            self.show_graph(entry, dark, names=shown if names is None else names)
+            with self._keeping_legend_place():
+                self.show_graph(entry, dark, names=shown if names is None else names)
+
+    @contextmanager
+    def _keeping_legend_place(self):
+        """Fill the legend anew inside the with block and put the reader's
+        place in it back, as the other windows keep theirs (issue #196): the
+        current line, known by its key, is current again, and selected only
+        if it was (the legend makes GROUP current, unselected, when it takes
+        the focus); the scroll is put back, and when the fight has ranked
+        the line's player anew onto a row out of view at that scroll, the
+        row is scrolled into view, if the reader could see the line: one
+        they had scrolled away from leaves the legend where they put it.
+        scrollToItem's EnsureVisible scrolls only for a row out of view, so
+        a line moved a row or two, still in view, leaves the legend where
+        the reader had it."""
+        current = self.legend.currentItem()
+        key = current.data(Qt.UserRole) if current is not None else None
+        selected = current is not None and current.isSelected()
+        seen = current is not None and self.legend.visualItemRect(current).intersects(
+            self.legend.viewport().rect())
+        row = self.legend.currentRow()
+        scroll = self.legend.verticalScrollBar().value()
+        yield
+        moved = None  # the line, when the redraw put it on another row
+        if key is not None:
+            for new_row in range(self.legend.count()):
+                item = self.legend.item(new_row)
+                if item.data(Qt.UserRole) == key:
+                    self.legend.setCurrentRow(new_row, QItemSelectionModel.ClearAndSelect
+                                              if selected else QItemSelectionModel.NoUpdate)
+                    if new_row != row:
+                        moved = item
+                    break
+        self.legend.doItemsLayout()  # the new rows' scroll range, before setting it
+        self.legend.verticalScrollBar().setValue(scroll)
+        if moved is not None and seen:
+            self.legend.scrollToItem(moved)
+
+    def entry_updated(self, entry, dark: bool, names=None) -> None:
+        """The fight *entry* changed in place (MainWindow._fight_changed,
+        issue #196): redrawn when it is the fight on display, with *names*,
+        the Hide names mask made afresh for it (None keeps the one shown).
+        Nothing while the window is hidden or on another fight."""
+        if entry is self.entry:
+            self.refresh(dark, names=names)
+
+    def views(self):
+        """No pages to give a new text size: the chart and its legend size
+        themselves on the font change (changeEvent)."""
+        return []

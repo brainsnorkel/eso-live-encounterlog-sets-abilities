@@ -450,6 +450,36 @@ class TestTheWindows(HideNamesTestCase):
         finally:
             win.close()
 
+    def test_a_window_redrawn_for_its_fight_hides_a_player_the_fight_gained(self):
+        """The game cut the fight in two, and a player without a handle who
+        joined in the second part healed @me before the death. The recap
+        window open on the fight redraws with a mask made from the whole
+        fight, so that player is hidden too (issue #196); the mask the
+        window had knew only the first part's players."""
+        from PySide6.QtCore import QUrl
+        win = self._window(hide=True)
+        try:
+            entry = _entry()
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
+            recap = win._death_dialog
+            self.assertEqual(recap.view.toPlainText().count("Radiating Regeneration"), 1)
+            # The whole fight's players and recaps, as the engine copies them
+            # onto the entry the window holds
+            entry.players = entry.players + [_player("4", "Late Comer", "Late Comer")]
+            entry.death_recaps = [dict(entry.death_recaps[0],
+                                       events=[_heal_row("Late Comer"), _heal_row("@friend")]),
+                                  entry.death_recaps[1]]
+            win._on_fight_updated(entry)
+            text = recap.view.toPlainText()
+            self.assertEqual(text.count("Radiating Regeneration"), 2)
+            self.assertNotIn("Late Comer", text)
+            self.assertNotIn("@friend", text)
+            self.assertIn("@me", text)
+        finally:
+            win.close()
+
     def test_a_theme_flip_keeps_the_mask(self):
         from PySide6.QtCore import QUrl
         win = self._window(hide=True)
@@ -492,9 +522,15 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_the_pane_stays_where_it_was_scrolled(self):
+        """The fight's page, scrolled half way down, is redrawn by the
+        switch where the reader had it (FightView.keeping_place)."""
         win = self._window()
         try:
             win.show()
+            # Flush the worker's queued startup signals: its "waiting for
+            # log" page would replace the fight drawn below, and the page
+            # scrolled would be that one
+            _app.processEvents()
             # A long page in a short pane, whatever the platform's fonts and
             # window geometry make of the layout
             win.fight_view.setFixedHeight(120)
@@ -508,14 +544,47 @@ class TestTheWindows(HideNamesTestCase):
             # got there on its own)
             view.document().documentLayout().documentSize()
             _app.processEvents()
+            self.assertIn("@friend", view.toPlainText())
             bar = view.verticalScrollBar()
-            if bar.maximum() <= 0:
-                self.skipTest("the pane did not overflow on this platform")
+            self.assertGreater(bar.maximum(), 0)
             bar.setValue(bar.maximum() // 2)
             kept = bar.value()
             self.assertGreater(kept, 0)
             win.hide_names_action.setChecked(True)
             view.document().documentLayout().documentSize()
+            _app.processEvents()
+            self.assertNotIn("@friend", view.toPlainText())
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
+    def test_the_pane_redrawn_again_before_the_step_keeps_its_place(self):
+        """The switch flipped and flipped back in the same pass, the bar
+        moved between, before the step after layout has run: the pane comes
+        back where the reader had it, the step's place, not where the bar
+        was meanwhile (FightView.keeping_place, issue #196)."""
+        win = self._window()
+        try:
+            win.show()
+            # Flush the worker's queued startup signals (its "waiting for
+            # log" page would replace the fight drawn below)
+            _app.processEvents()
+            win.fight_view.setFixedHeight(120)
+            entry = _entry()
+            entry.players = entry.players * 20
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            view = win.fight_view
+            view.document().documentLayout().documentSize()  # as above
+            _app.processEvents()
+            self.assertIn("@me", view.toPlainText())
+            bar = view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            win.hide_names_action.setChecked(True)
+            bar.setValue(0)
+            win.hide_names_action.setChecked(False)
             _app.processEvents()
             self.assertEqual(bar.value(), kept)
         finally:

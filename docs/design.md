@@ -3329,7 +3329,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:969](../src/gui/main_window.py#L969)*
+*[src/gui/main_window.py:1037](../src/gui/main_window.py#L1037)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3337,11 +3337,121 @@ history is cleared now rather than when Save was pressed: a replay
 still running at that moment went on filling a list cleared too
 early, and its fights showed above the new analyzer's.
 
+The replay comes back to the fight the reader was on (issue #196):
+the clear used to leave a reader of an older fight with nothing
+selected, under a page whose links all returned early for want of a
+current fight. The new analyzer builds new entries, so the fight is
+known again by its key (fight_blocks.fight_key), kept here, and the
+pane says the session is being replayed in place of the stale page.
+Following the live log is held off until monitoring_started, which
+the engine sends after the replayed fights: the fight with that key
+is selected as it arrives, unless the reader has picked one (the
+emptied list picks none itself when it takes the focus,
+FightList.focusInEvent, and End goes to the newest so far,
+FightList.moveCursor), and no other fight is. Without the hold,
+_show_fight would start following once the fight came back as the
+newest so far, and every later fight of the replay would be
+selected in turn. A restart that finds no log waits for it
+(waiting_for_log), and the hold lasts until the monitoring_started
+sent once the log appears and is read; the first fight read from it
+puts the replay's line back in place of the waiting page. At
+monitoring_started (_end_replay) the fight on screen stays, the one
+that came back or the reader's pick; with none the newest is
+selected, the list having followed the live log or the fight not
+having come back. The replay reads only the log's latest logging
+session (LogFileMonitor._load_latest_session), so a fight of an
+earlier session the app tailed is gone, as is every fight when the
+log is another or was replaced since. Following is then
+_show_fight's rule again for the fight selected: the newest
+follows, an older fight does not.
+
+A review keeps its list and its selection, and the hold starts
+under it all the same, with no fight to come back to: Back to live
+during the replay lists the fights so far, none selected, under the
+replay's line, and the newest is selected once the replay is in
+(_exit_review). Without the hold, Back to live followed the live
+log and selected each fight of the replay in turn. While the engine
+waits for a log the restart did not find (_log_missing, cleared
+here and set again by waiting_for_log), Back to live with no fight
+listed draws the waiting page instead: nothing is replayed until
+the log appears.
+
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:1746](../src/gui/main_window.py#L1746)*
+*[src/gui/main_window.py:1940](../src/gui/main_window.py#L1940)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
+
+### MainWindow._fight_changed
+
+*[src/gui/main_window.py:886](../src/gui/main_window.py#L886)*
+
+A delivered fight changed in place (a fight update from the
+engine, a score banner attached): its history line is rewritten, the
+pane redrawn if the fight is on screen, and every open window on that
+fight redrawn, each keeping its place, the windows with the Hide
+names mask made afresh from the fight, since a fight the game cut in
+two can bring players its first part did not have (issue #196). A
+hidden window, or one on another fight, is left alone: opening it
+draws the fight anew.
+
+A window tells its fight by identity (window.entry is entry), with
+no key of time, zone or boss, because the engine never sends a
+changed fight as a new object: it changes the one the frontends
+already hold. A late death replaces that entry's deaths and recaps,
+a fight the game cut in two has every slot of the finished entry
+copied onto it, the run's result (trial_result, its pull marked won)
+is written into it when END_TRIAL follows the fight, a mastery found
+later in the session and a later pull's reading of its outcome are
+written into it, and the banner is attached to it here. The engine
+writes on its own thread and then sends fight_updated, and the
+windows read the entry without a lock, as the pane and the run rows
+do: safe while each write replaces a value, a slot or a key the
+entry was built with. So the GUI writes nothing into an entry, a
+pull, a player row or a recap (banner_path aside), and orders with
+sorted() and new dicts, never .sort() or an added key: CPython
+empties a list while it sorts it, so an engine write built from that
+list meanwhile would lose its items.
+
+### Steps after the page is laid out
+
+*[src/gui/fight_view.py:141](../src/gui/fight_view.py#L141)*
+
+restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader scrolling, with the wheel, a key or the bar, ends the hold at once, so the page is never taken back from under them. The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
+
+### FightView.keeping_place
+
+*[src/gui/fight_view.py:251](../src/gui/fight_view.py#L251)*
+
+Redraw the page the reader is looking at inside the with block,
+and put it back where it was: at the bar's position, or, while the
+step after the last drawing is still to run or its place is held,
+where they were to put it (its scroll or its anchor), since the bar
+is not there yet (see __init__). The with block is given where the
+text cursor was, for the in-fight search to find its place among its
+matches before the page is drawn again (MainWindow._search_place).
+
+A link the reader had reached with Tab has Tab's focus again, known
+by its href and its place among the page's links with that href (an
+ESO-Hub set link is on every player who wears the set, and a
+player's own links move when the fight ranks them anew), or none
+when the page no longer has it. Selecting it with setTextCursor
+would paint it as selected text, in the palette's highlight, where
+Tab draws a dotted frame round it; so Tab's own step is taken, which
+frames it: from the link before it, selected as Tab selects it, or,
+for the page's first link, from no selection, where Tab starts at
+the page's start. Never from a selection of the character before
+it: QTextCursor widens a selection that crosses into a table over
+the whole table, and a bar's first ability begins a table's first
+cell (the build card's in the pane, its bar's own in the build
+window), so Tab's search went on from the table's end, to the next
+link after it. The step is QTextBrowser.focusNextPrevChild, which
+moves the focus on to the next widget when its search finds no
+link, as it did then with none after the table. It cannot now: the
+step is taken only for a link the page has, with the links reachable
+from the keyboard, and from where that link is the next one the
+search finds, since _links reads the page's links as the search does
+(issue #196).
 
 ## Reviews: a thread of their own, and where a large log is cut
 
@@ -3835,7 +3945,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:353](../src/gui/fight_view.py#L353)*
+*[src/gui/fight_view.py:567](../src/gui/fight_view.py#L567)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -3923,7 +4033,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:225](../src/gui/fight_view.py#L225)*
+*[src/gui/fight_view.py:439](../src/gui/fight_view.py#L439)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

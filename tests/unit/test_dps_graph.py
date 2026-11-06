@@ -287,6 +287,168 @@ class TestGraphWindow(unittest.TestCase):
         finally:
             win.close()
 
+    def _graph_on(self, win, entry):
+        """The graph opened from the pane's group dps figure on *entry*, at
+        a height its legend scrolls in: (window, legend, the legend's bar)."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtWidgets import QApplication
+        win._on_fight_completed(entry)
+        win.history_list.select_fight(0)
+        win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
+        dialog = win._graph_dialog
+        dialog.resize(900, 300)
+        QApplication.processEvents()
+        bar = dialog.legend.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        return dialog, dialog.legend, bar
+
+    def test_a_redraw_keeps_the_legends_line_and_scroll(self):
+        """The legend is filled anew at each redraw (its fight changing in
+        place, a theme switch, Hide names): the reader's line in it and its
+        scroll stay where they were (issue #196). It went back to the top,
+        with no line current. GROUP, the first line, is current with the
+        legend scrolled to its end: making the line current again scrolls
+        to it, so only the scroll put back brings the end back."""
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            dialog, legend, bar = self._graph_on(win, entry)
+            legend.setCurrentRow(0)
+            bar.setValue(bar.maximum())
+            place = (legend.currentRow(), bar.value())
+            self.assertEqual(place, (0, bar.maximum()))
+            win._on_fight_updated(entry)
+            self.assertEqual((legend.currentRow(), bar.value()), place)
+            dialog.refresh(True)
+            self.assertEqual((legend.currentRow(), bar.value()), place)
+        finally:
+            win.close()
+
+    def test_a_redraw_leaves_a_line_current_but_not_selected_unselected(self):
+        """The legend makes GROUP current without selecting it when it
+        takes the focus, as the graph opens: a redraw makes the line current
+        again and leaves it unselected, where it showed it selected though
+        the reader never picked it (issue #196). A line they picked stays
+        selected."""
+        from PySide6.QtCore import QItemSelectionModel
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            dialog, legend, _bar = self._graph_on(win, entry)
+            legend.setCurrentRow(5, QItemSelectionModel.NoUpdate)
+            self.assertEqual(legend.selectedItems(), [])
+            win._on_fight_updated(entry)
+            self.assertEqual(legend.currentRow(), 5)
+            self.assertEqual(legend.selectedItems(), [])
+            legend.setCurrentRow(3)
+            dialog.refresh(True)
+            self.assertEqual(legend.currentRow(), 3)
+            self.assertEqual(legend.selectedItems(), [legend.item(3)])
+        finally:
+            win.close()
+
+    def test_a_line_the_fight_ranked_anew_is_scrolled_into_view(self):
+        """The reader's line is near the legend's top, scrolled to the top,
+        when the fight changing in place ranks that player last: the line is
+        current on its new row and scrolled into view, where the old scroll
+        put back left it out of sight (issue #196)."""
+        from PySide6.QtCore import Qt
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            _dialog, legend, bar = self._graph_on(win, entry)
+            legend.setCurrentRow(2)
+            bar.setValue(0)
+            key = legend.currentItem().data(Qt.UserRole)
+            # The engine's new ranking: the player of row 2 last
+            entry.players = entry.players[:1] + entry.players[2:] + entry.players[1:2]
+            win._on_fight_updated(entry)
+            self.assertEqual(legend.currentRow(), legend.count() - 1)
+            self.assertEqual(legend.currentItem().data(Qt.UserRole), key)
+            line = legend.visualItemRect(legend.currentItem())
+            self.assertGreaterEqual(line.top(), 0)
+            self.assertLessEqual(line.bottom(), legend.viewport().rect().bottom())
+        finally:
+            win.close()
+
+    def test_a_line_ranked_a_row_up_keeps_the_legends_scroll(self):
+        """The legend scrolled to its end, the reader's line near it, when
+        the fight changing in place ranks that player a place up: the line
+        is current on its new row, still in view at the reader's scroll,
+        and the legend stays there (issue #196). Scrolled into view from
+        the refilled legend's top, the line was brought only just into
+        view, the rows the reader had scrolled to out of it."""
+        from PySide6.QtCore import Qt
+        win = self._main_window()
+        try:
+            entry = _entry(players=16)
+            _dialog, legend, bar = self._graph_on(win, entry)
+            legend.setCurrentRow(12)
+            bar.setValue(bar.maximum())
+            place = bar.value()
+            key = legend.currentItem().data(Qt.UserRole)
+            # The engine's new ranking: the players of rows 11 and 12 change places
+            players = list(entry.players)
+            players[10], players[11] = players[11], players[10]
+            entry.players = players
+            win._on_fight_updated(entry)
+            self.assertEqual(legend.currentRow(), 11)
+            self.assertEqual(legend.currentItem().data(Qt.UserRole), key)
+            self.assertEqual(bar.value(), place)
+            line = legend.visualItemRect(legend.currentItem())
+            self.assertGreaterEqual(line.top(), 0)
+            self.assertLessEqual(line.bottom(), legend.viewport().rect().bottom())
+        finally:
+            win.close()
+
+    def test_a_line_scrolled_out_of_view_keeps_the_legends_scroll(self):
+        """The reader has scrolled the legend away from their line, above it
+        or below it, when the fight changing in place ranks that player a
+        place up or down: the line is current on its new row, and the legend
+        stays where the reader put it (issue #196). Scrolled into view, the
+        line took the legend back to it."""
+        from PySide6.QtCore import Qt
+        # (the line's row, the legend scrolled to its end, the players swapped)
+        for row, at_end, swap in ((1, True, (0, 1)), (16, False, (14, 15))):
+            with self.subTest(row=row):
+                win = self._main_window()
+                try:
+                    entry = _entry(players=16)
+                    _dialog, legend, bar = self._graph_on(win, entry)
+                    # Three rows or more to scroll, so a line moved a row stays out of view
+                    self.assertGreaterEqual(bar.maximum(), 3)
+                    legend.setCurrentRow(row)
+                    bar.setValue(bar.maximum() if at_end else 0)
+                    place = bar.value()
+                    key = legend.currentItem().data(Qt.UserRole)
+                    viewport = legend.viewport().rect()
+                    self.assertFalse(legend.visualItemRect(legend.currentItem()).intersects(viewport))
+                    players = list(entry.players)
+                    players[swap[0]], players[swap[1]] = players[swap[1]], players[swap[0]]
+                    entry.players = players
+                    win._on_fight_updated(entry)
+                    self.assertNotEqual(legend.currentRow(), row)
+                    self.assertEqual(legend.currentItem().data(Qt.UserRole), key)
+                    self.assertEqual(bar.value(), place)
+                finally:
+                    win.close()
+
+    def test_the_colour_blind_switch_keeps_the_legends_line_and_scroll(self):
+        """A Settings save that switches the graph to its colour-blind
+        colours redraws the open graph with them, and the legend keeps its
+        line and scroll as at any other redraw (issue #196). It went back to
+        the top, with no line current."""
+        win = self._main_window()
+        try:
+            dialog, legend, bar = self._graph_on(win, _entry(players=16))
+            legend.setCurrentRow(2)
+            bar.setValue(bar.maximum())
+            place = (legend.currentRow(), bar.value())
+            dialog.set_colorblind(not dialog.colorblind)
+            self.assertEqual((legend.currentRow(), bar.value()), place)
+        finally:
+            win.close()
+
     def test_window_from_the_engines_own_record(self):
         from PySide6.QtCore import QUrl
         from build_session import fights

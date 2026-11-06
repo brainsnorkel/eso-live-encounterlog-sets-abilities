@@ -2,6 +2,17 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.34.1] - 2026-11-06
+
+### Fixed
+- **Saving Settings comes back to the fight you were reading** (#196): with an older fight selected, a save that replays the session (one that changes the log path, the split files, the tracked effects, the companion accrual or the death recap window) left no fight selected, and the pane's links did nothing until you picked one again. The list now selects that fight again as the replay brings it back, or the newest when it is gone, and until then the pane says the session is being replayed.
+- **A review stays on the pane through a Settings replay** (#196): with a review open, a save whose replay found no fight in the live log, or no log at all, drew the Monitoring or Waiting page over the fight under review.
+- **Back to live with no log waits for it** (#196): leaving a review while Encounter.log was missing and no fight was listed said `Back to live monitoring`, though there was no log to monitor. The pane now says it is waiting for the log, with where it is expected, or that the app archived and deleted it.
+- **The status bar goes on saying the app archived the log** (#196): once the app had archived and deleted Encounter.log, a review or a fight on the pane turned the bar to `No log file` in red. It now reads `Waiting for Encounter.log (archived …)` in the plain colour until there is a log again.
+- **Open windows keep up with their fight** (#196): a build, damage, damage taken, death recap or DPS graph window went on showing its fight as it first arrived. It now redraws when that fight changes: a death the game writes just after combat ends (the last player standing in a wipe), or a fight the game had cut in two, often as you accept a resurrection, that has now really ended. The window stays where you had scrolled it, and so does the fight pane, which went back to its top; with Hide names on, a player who joined in the fight's second part is hidden there too.
+- **Redraws keep your place** (#196): the fight pane and the windows beside it, drawn again for a change to their fight, a switch between light and dark, Hide names or a new text size, keep the link you had reached with Tab, where the next Tab went back to the page's first link, and the pane's search keeps its place among the matches, where it went back to the first. A build window scrolled to its end stays there, where it could come back a few lines short; a switch between light and dark keeps the pane where you had scrolled it, where it went back to its top; and the DPS graph's legend keeps its line and scroll when Settings switches the graph to its colour-blind colours.
+- **Enter on a player's ⓘ opens its popup under it** (#196): Tab to the ⓘ on the fight pane and press Enter, and the possible build issues open just under the ⓘ, where they opened at the mouse pointer, wherever that was.
+
 ## [0.34.0] - 2026-11-03
 
 ### Added

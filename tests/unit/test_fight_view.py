@@ -395,6 +395,461 @@ class TestFightViewWidget(FightViewTestCase):
         self.assertEqual(opened, [hrefs[0]])
 
 
+class TestStepsAfterLayout(FightViewTestCase):
+    """restore_scroll and the build window's scroll to an anchor act again
+    once the page is laid out, on a timer the view owns (issue #196). Where
+    the anchor's step lands is tested on the build window's headings
+    (test_build_window_gui)."""
+
+    def _deleted_before_the_step(self, make):
+        """Delete the window *make* returns, with its view (the two may be
+        one), before the step after layout runs, then run the event loop.
+        Returns whether the view's Python wrapper outlived the deletion
+        (freeing it needs no garbage collector once nothing holds it, and
+        conftest keeps the collector off) and what Qt's callbacks raised,
+        which PySide only prints."""
+        import sys
+        import weakref
+
+        from PySide6.QtCore import QCoreApplication, QEvent
+        errors = []
+        hook = sys.excepthook
+        sys.excepthook = lambda kind, value, tb: errors.append(value)
+        try:
+            window, view = make()
+            freed = weakref.ref(view)
+            window.deleteLater()
+            del window, view
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+            alive = freed() is not None
+            _app.processEvents()  # when the step would run
+        finally:
+            sys.excepthook = hook
+        return alive, errors
+
+    def test_a_view_deleted_before_its_scroll_is_put_back_is_freed_quietly(self):
+        from gui.fight_view import FightView
+
+        def make():
+            view = FightView(icons=self._cache())
+            view.setHtml('<p>a line of the page</p>' * 300)
+            view.restore_scroll(120)
+            return view, view
+        self.assertEqual(self._deleted_before_the_step(make), (False, []))
+
+    def test_a_build_window_deleted_before_its_anchor_scroll_is_freed_quietly(self):
+        from build_session import fights
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import PEN_CRIT_ANCHOR
+
+        def make():
+            dialog = BuildDialog(icons=self._cache())
+            dialog.show_build(fights()[0], '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            return dialog, dialog.view
+        self.assertEqual(self._deleted_before_the_step(make), (False, []))
+
+    def test_the_step_runs_once_laid_out_and_only_for_its_page(self):
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            QApplication.processEvents()
+            view.setHtml('<p>a line of the page</p>' * 300)
+            view.restore_scroll(400)
+            self.assertEqual(view.verticalScrollBar().value(), 400)
+            # Moved before the loop runs, the bar goes back: the step, not
+            # restore_scroll's own setValue, has the last word
+            view.verticalScrollBar().setValue(0)
+            QApplication.processEvents()
+            self.assertEqual(view.verticalScrollBar().value(), 400)
+            # A new page opens at its top: the step still pending was for
+            # the page it replaced
+            view.restore_scroll(250)
+            view.setHtml('<p>a line of another page</p>' * 300)
+            QApplication.processEvents()
+            self.assertEqual(view.verticalScrollBar().value(), 0)
+        finally:
+            view.close()
+            view.deleteLater()
+
+    def test_a_redraw_before_the_step_runs_keeps_the_steps_place(self):
+        """A second redraw in the same pass, two fight updates say, finds
+        the bar not yet where the step after the first will put it (a page
+        Qt lays out in parts leaves it short until then): keeping_place
+        takes the step's scroll or anchor, not the bar's position."""
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        lines = '<p>a line of the page</p>' * 150
+        page = f'{lines}<p><a name="there"></a>the heading</p>{lines}'
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            view.setHtml(page)
+            QApplication.processEvents()
+            bar = view.verticalScrollBar()
+            bar.setValue(400)
+            with view.keeping_place():
+                view.setHtml(page)
+            bar.setValue(0)
+            with view.keeping_place():
+                view.setHtml(page)
+            QApplication.processEvents()
+            self.assertEqual(bar.value(), 400)
+
+            # The same for a page just opened at an anchor
+            view.setHtml(page)
+            view.open_at_anchor('there')
+            QApplication.processEvents()
+            at_anchor = bar.value()
+            self.assertGreater(at_anchor, 400)
+            view.setHtml(page)
+            view.open_at_anchor('there')
+            bar.setValue(0)
+            with view.keeping_place():
+                view.setHtml(page)
+            QApplication.processEvents()
+            self.assertEqual(bar.value(), at_anchor)
+        finally:
+            view.close()
+            view.deleteLater()
+
+    @staticmethod
+    def _until_laid_out(bar, whole):
+        """Run the event loop until the bar has the page's whole range,
+        *whole* (Qt's layout ticks, the view's step and hold), and a pass
+        more."""
+        import time
+        deadline = time.monotonic() + 5
+        while bar.maximum() != whole and time.monotonic() < deadline:
+            _app.processEvents()
+        _app.processEvents()
+
+    def test_a_page_laid_out_in_parts_lands_where_it_was_kept(self):
+        """A page taller for its length at its end than at its start (long
+        paragraphs, then short lines): Qt lays it out in parts, on its ticks
+        after setHtml, and until then the bar's range is an estimate from
+        the part laid out, short of the page's. The scroll put back stopped
+        at it, thousands of pixels short; it is held until the bar gets
+        there (issue #196). The reader scrolling just after a redraw is
+        left where they scrolled to."""
+        from PySide6.QtWidgets import QAbstractSlider
+
+        from gui.fight_view import FightView
+        page = ('<p>' + 'word ' * 400 + '</p>') * 10 + '<p>x</p>' * 800
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 300)
+            view.show()
+            view.setHtml(page)
+            view.document().size()  # laid out whole, for the bar's whole range
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            whole = bar.maximum()
+            kept = whole * 9 // 10
+            bar.setValue(kept)
+            with view.keeping_place():
+                view.setHtml(page)
+            self.assertLess(bar.maximum(), kept)  # the estimate
+            self._until_laid_out(bar, whole)
+            self.assertEqual(bar.value(), kept)
+
+            with view.keeping_place():
+                view.setHtml(page)
+            bar.triggerAction(QAbstractSlider.SliderToMinimum)
+            self._until_laid_out(bar, whole)
+            self.assertEqual(bar.value(), 0)
+        finally:
+            view.close()
+            view.deleteLater()
+
+    def test_a_redraw_while_the_place_is_held_puts_the_page_there(self):
+        """While the place is held the bar can be short of it, the page's
+        range not yet grown to it or the page drawn shorter: a redraw then,
+        a second fight update say, puts the page where it is held, not
+        where the bar is meanwhile (keeping_place). Here the fight is drawn
+        shorter than where the reader was, the bar stopping at its end, and
+        then as long again."""
+        from gui.fight_view import FightView
+        line = '<p>a line of the page</p>'
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            view.setHtml(line * 300)
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            kept = bar.maximum() - 50
+            bar.setValue(kept)
+            with view.keeping_place():
+                view.setHtml(line * 100)
+            _app.processEvents()  # the step has run
+            self.assertLess(bar.value(), kept)
+            with view.keeping_place():
+                view.setHtml(line * 300)
+            _app.processEvents()
+            self.assertEqual(bar.value(), kept)
+        finally:
+            view.close()
+            view.deleteLater()
+
+
+class TestEnterOnALink(FightViewTestCase):
+
+    def test_a_link_ending_a_wrapped_line_is_placed_on_its_line(self):
+        """Enter on a link that ends a wrapped line: keyboard_link_rect is
+        at the link, its left edge and its line. Joined with the cursor at
+        the link's end, which is on the next line, it took that line's left
+        margin and bottom, and the (i) popup opened there (issue #196)."""
+        from PySide6.QtCore import QRect, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        asked = []
+
+        def note(unit_id):
+            asked.append((unit_id, view.keyboard_link_rect()))
+        view.issues_requested.connect(note)
+        try:
+            view.resize(300, 300)
+            view.show()
+            view.activateWindow()
+            QApplication.processEvents()
+            # A line may break between any two ideographs: the count before
+            # the link that makes it the first line's last character
+            for n in range(1, 200):
+                view.setHtml(f"<p>{'文' * n}<a href='esolog:issues/2'>中</a>{'文' * 60}</p>")
+                start, end = QTextCursor(view.document()), QTextCursor(view.document())
+                start.setPosition(n)
+                end.setPosition(n + 1)
+                if view.cursorRect(end).top() > view.cursorRect(start).top():
+                    break
+            else:
+                self.fail('no count of ideographs ends the first line with the link')
+            mark = view.cursorRect(start)
+            view.setFocus()
+            QTest.keyClick(view, Qt.Key_Tab)
+            self.assertEqual(view.textCursor().selectionStart(), n)
+            QTest.keyClick(view, Qt.Key_Return)
+            self.assertEqual(asked, [('2', QRect(view.viewport().mapToGlobal(mark.topLeft()),
+                                                 mark.size()))])
+        finally:
+            view.issues_requested.disconnect(note)
+            view.close()
+            view.deleteLater()
+
+
+class TestALinkReachedWithTab(FightViewTestCase):
+    """The fight on screen can change while the reader tabs through its
+    links, the (i) marks say: the redraw in place gives the link they had
+    reached Tab's focus back (FightView.keeping_place, issue #196). It left
+    nothing selected, so Enter did nothing and the next Tab went back to
+    the page's first link."""
+
+    PAGE = ("<p><a href='esolog:build/1'>a name</a> wears "
+            "<a href='https://eso-hub.com/en/sets/x'>a set</a> and "
+            "<a href='https://eso-hub.com/en/sets/x'>the set again</a></p>"
+            + "<p>a line of the page</p>" * 30
+            + "<p><a href='esolog:issues/2'>(i) of 2</a> "
+            "<a href='esolog:issues/3'>(i) of 3</a></p>"
+            + "<p>a line of the page</p>" * 30)
+    # Two ability bars as the pane's build card and the build window draw
+    # them: tables whose first cell begins with the bar's first ability
+    FRONT = ("<table><tr><td><a href='esolog:ability/1'>one</a>&nbsp;"
+             "<a href='esolog:ability/2'>two</a></td></tr></table>")
+    BACK = ("<table><tr><td><a href='esolog:ability/3'>three</a>&nbsp;"
+            "<a href='esolog:ability/4'>four</a></td></tr></table>")
+    LINES = "<p>a line of the page</p>" * 30
+
+    def setUp(self):
+        super().setUp()
+        from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
+
+        from gui.fight_view import FightView
+        # A field after the view: where Tab goes from the page's last link
+        self.host = QWidget()
+        layout = QVBoxLayout(self.host)
+        self.view = FightView(icons=self._cache())
+        layout.addWidget(self.view)
+        layout.addWidget(QLineEdit())
+        self.host.resize(400, 300)
+        self.host.show()
+        self.host.activateWindow()
+        _app.processEvents()
+
+    def tearDown(self):
+        self.host.close()
+        self.host.deleteLater()
+        super().tearDown()
+
+    def _tab(self, times):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.view.setFocus()
+        for _ in range(times):
+            QTest.keyClick(self.view, Qt.Key_Tab)
+
+    def _redraw(self, page):
+        with self.view.keeping_place():
+            self.view.setHtml(page)
+        _app.processEvents()
+
+    def _selected(self):
+        cursor = self.view.textCursor()
+        return cursor.selectedText() if cursor.hasSelection() else None
+
+    def test_the_link_has_tabs_frame_again_and_the_next_tab_goes_on(self):
+        """Tabbed to an (i) and scrolled on a little, the reader sees the
+        page redrawn: the (i) has Tab's dotted frame again, painted as Tab
+        painted it (the viewport the same to the pixel, the scroll where the
+        reader had it), rather than the highlight of selected text; Enter
+        opens it, the next Tab goes on to the next (i), and the focus never
+        leaves the page."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        opened = []
+        self.view.anchorClicked.connect(lambda url: opened.append(url.toString()))
+        self.view.setHtml(self.PAGE)
+        self._tab(4)
+        self.assertEqual(self._selected(), '(i) of 2')
+        bar = self.view.verticalScrollBar()
+        self.assertGreater(bar.value(), 0)
+        bar.setValue(bar.value() + 20)  # the (i) still in view
+        _app.processEvents()
+        place = bar.value()
+        framed = self.view.viewport().grab().toImage()
+        self._redraw(self.PAGE)
+        self.assertEqual(self._selected(), '(i) of 2')
+        self.assertEqual(bar.value(), place)
+        self.assertEqual(self.view.viewport().grab().toImage(), framed)
+        QTest.keyClick(self.view, Qt.Key_Return)
+        self.assertEqual(opened, ['esolog:issues/2'])
+        QTest.keyClick(self.view, Qt.Key_Tab)
+        self.assertEqual(self._selected(), '(i) of 3')
+        self.assertIs(QApplication.focusWidget(), self.view)
+
+    def test_the_link_is_known_by_its_place_among_the_links_to_its_href(self):
+        """One href on several links (an ESO-Hub set link on each player who
+        wears the set): the second is kept as the second, text added before
+        it or not. A player's own (i), moved up the page by the fight ranking
+        the players anew, is kept too. A link the page no longer has leaves
+        nothing selected, and the focus on the page."""
+        from PySide6.QtWidgets import QApplication
+        self.view.setHtml(self.PAGE)
+        self._tab(3)
+        self.assertEqual(self._selected(), 'the set again')
+        self._redraw(self.PAGE.replace("<p><a href='esolog:build/1'>",
+                                       "<p>new words <a href='esolog:build/1'>"))
+        self.assertEqual(self._selected(), 'the set again')
+
+        self.view.setHtml(self.PAGE)
+        self._tab(5)
+        self.assertEqual(self._selected(), '(i) of 3')
+        moved = ("<p><a href='esolog:issues/3'>(i) of 3</a></p>"
+                 + self.PAGE.replace(" <a href='esolog:issues/3'>(i) of 3</a>", ""))
+        self._redraw(moved)
+        self.assertEqual(self._selected(), '(i) of 3')
+        self.assertEqual(self.view.textCursor().selectionStart(), 0)
+
+        self._redraw(self.PAGE.replace(" <a href='esolog:issues/3'>(i) of 3</a>", ""))
+        self.assertIsNone(self._selected())
+        self.assertIs(QApplication.focusWidget(), self.view)
+
+    def test_a_link_that_begins_a_tables_first_cell(self):
+        """A bar's first ability, after the player's name, begins its
+        table's first cell: after the redraw it has Tab's focus again,
+        Enter opens it and the next Tab goes on to the next ability (issue
+        #196). The step taken from a selection of the character before it,
+        which QTextCursor widened over the whole table, framed the set link
+        after the table."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        opened = []
+        self.view.anchorClicked.connect(lambda url: opened.append(url.toString()))
+        page = ("<p><a href='esolog:build/1'>a name</a></p>" + self.FRONT
+                + "<p><a href='https://eso-hub.com/en/sets/x'>a set</a></p>" + self.LINES)
+        self.view.setHtml(page)
+        self._tab(2)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertEqual(self._selected(), 'one')
+        QTest.keyClick(self.view, Qt.Key_Return)
+        self.assertEqual(opened, ['esolog:ability/1'])
+        QTest.keyClick(self.view, Qt.Key_Tab)
+        self.assertEqual(self._selected(), 'two')
+
+    def test_a_link_that_begins_a_tables_first_cell_with_none_after_it(self):
+        """The same with no link after the table: the focus stays on the
+        page, on that link. Tab's step found no link after the table and
+        moved the focus on to the field below the page."""
+        from PySide6.QtWidgets import QApplication
+        page = "<p><a href='esolog:build/1'>a name</a></p>" + self.FRONT + self.LINES
+        self.view.setHtml(page)
+        self._tab(2)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertIs(QApplication.focusWidget(), self.view)
+        self.assertEqual(self._selected(), 'one')
+
+    def test_the_pages_first_link(self):
+        """The page's first link has no link before it to take Tab's step
+        from: the step is taken from no selection, from which Tab starts at
+        the page's start. As in the build window, that link begins the front
+        bar's table, the back bar's following it; the step taken from a
+        selection of the character before it framed the back bar's first
+        ability."""
+        from PySide6.QtWidgets import QApplication
+        page = "<p>a build</p>" + self.FRONT + self.BACK + self.LINES
+        self.view.setHtml(page)
+        self._tab(1)
+        self.assertEqual(self._selected(), 'one')
+        self._redraw(page)
+        self.assertIs(QApplication.focusWidget(), self.view)
+        self.assertEqual(self._selected(), 'one')
+
+    def test_the_pages_links_are_the_ones_tab_reaches(self):
+        """The view reads the page's links as Tab's search does, since the
+        step it takes after a redraw finds the link after the one it starts
+        from: links side by side, an icon in a link, the bars' tables, an
+        anchor with a name alone, which is no link, and a link whose href is
+        empty, which is one. setHtml never makes that last; it is written
+        here in code."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCharFormat, QTextCursor
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        self.view.setHtml("<p><a name='top'>a heading</a> <a href='esolog:build/1'>a name</a>"
+                          "<a href='esolog:damage/1'>1.0k</a> <a href='esolog:issues/1'>"
+                          "<img src='icon:ability_test_001'></a></p>" + self.FRONT + self.BACK)
+        empty = QTextCharFormat()
+        empty.setAnchor(True)
+        empty.setAnchorHref('')
+        cursor = QTextCursor(self.view.document())
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertBlock()
+        cursor.insertText('an empty href', empty)
+        cursor.insertText(' then a line', QTextCharFormat())
+        reached = []
+        self.view.setFocus()
+        while True:
+            QTest.keyClick(self.view, Qt.Key_Tab)
+            selected = self.view.textCursor()
+            if QApplication.focusWidget() is not self.view or not selected.hasSelection():
+                break
+            reached.append((selected.selectionStart(), selected.selectionEnd()))
+        self.assertEqual(len(reached), 8)
+        self.assertEqual(reached, [(start, end) for _href, start, end in self.view._links()])
+
+
 class TestSearchFindsAbilityIcons(FightViewTestCase):
     """Ctrl+F matches an icon by the ability name behind it."""
 

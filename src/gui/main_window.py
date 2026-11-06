@@ -249,18 +249,12 @@ class MainWindow(QMainWindow):
         self._refresh_data_label()
         self._style_update_buttons()
         self.timeline_strip.update()
-        if self._death_dialog is not None:
-            self._death_dialog.refresh(dark)
-        if self._build_dialog is not None:
-            self._build_dialog.refresh(dark)
-        if self._damage_dialog is not None:
-            self._damage_dialog.refresh(dark)
-        if self._taken_dialog is not None:
-            self._taken_dialog.refresh(dark)
-        if self._graph_dialog is not None:
-            self._graph_dialog.refresh(dark)
+        for window in self._windows():
+            window.refresh(dark)
         if self.history_list.current_entry() is not None:
-            self._show_fight()
+            # Where the reader had it, as the windows keep theirs
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=self._search_place(position))
         elif self._empty_reason is not None:
             self._show_empty_state(self._empty_reason)  # its links take the theme's colour
         elif self._last_placeholder:
@@ -872,15 +866,58 @@ class MainWindow(QMainWindow):
         """A delivered fight changed: it gained a death (logged just after
         combat ended), the game had cut it in two and it has now really
         ended, or the run's result came just after it (trial_result). Its
-        history line is rewritten, and the pane is redrawn if it is the
-        fight on screen."""
+        history line is rewritten, the pane redrawn if it is the fight on
+        screen, and the open windows on it redrawn (_fight_changed)."""
         if self._restart_pending:
             return
         self._attach_banner(entry)
         self._index_fight(entry)
+        self._fight_changed(entry)
+
+    def _windows(self):
+        """The windows opened so far beside this one (each is made at its
+        first use): death recap, build, damage, damage taken and DPS graph.
+        The one list a theme switch, a flip of Hide names, a new text size
+        and a fight changing in place go through (issue #196)."""
+        return [window for window in (self._death_dialog, self._build_dialog, self._damage_dialog,
+                                      self._taken_dialog, self._graph_dialog)
+                if window is not None]
+
+    def _fight_changed(self, entry):
+        """A delivered fight changed in place (a fight update from the
+        engine, a score banner attached): its history line is rewritten, the
+        pane redrawn if the fight is on screen, and every open window on that
+        fight redrawn, each keeping its place, the windows with the Hide
+        names mask made afresh from the fight, since a fight the game cut in
+        two can bring players its first part did not have (issue #196). A
+        hidden window, or one on another fight, is left alone: opening it
+        draws the fight anew.
+
+        A window tells its fight by identity (window.entry is entry), with
+        no key of time, zone or boss, because the engine never sends a
+        changed fight as a new object: it changes the one the frontends
+        already hold. A late death replaces that entry's deaths and recaps,
+        a fight the game cut in two has every slot of the finished entry
+        copied onto it, the run's result (trial_result, its pull marked won)
+        is written into it when END_TRIAL follows the fight, a mastery found
+        later in the session and a later pull's reading of its outcome are
+        written into it, and the banner is attached to it here. The engine
+        writes on its own thread and then sends fight_updated, and the
+        windows read the entry without a lock, as the pane and the run rows
+        do: safe while each write replaces a value, a slot or a key the
+        entry was built with. So the GUI writes nothing into an entry, a
+        pull, a player row or a recap (banner_path aside), and orders with
+        sorted() and new dicts, never .sort() or an added key: CPython
+        empties a list while it sorts it, so an engine write built from that
+        list meanwhile would lose its items."""
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
-            self._show_fight()
+            # Where the reader had it, as the windows keep theirs
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=self._search_place(position))
+        names = self._names_for(entry)
+        for window in self._windows():
+            window.entry_updated(entry, self._dark, names)
 
     @Slot(str, str)
     def _on_zone_changed(self, zone, difficulty):
@@ -1101,7 +1138,7 @@ class MainWindow(QMainWindow):
             if getattr(entry, "trial_result", None) and not getattr(entry, "banner_path", None):
                 self._attach_banner(entry)
                 if getattr(entry, "banner_path", None):
-                    self.history_list.update_fight(entry)
+                    self._fight_changed(entry)
         self.statusBar().showMessage(f"Monitoring {path}", 8000)
         self._end_replay()
         # Never over a review's fight, which stays on the pane
@@ -1312,9 +1349,12 @@ class MainWindow(QMainWindow):
         self.history_list.set_fights(fights)
         self.history_list.select_fight(-1)
 
-    def _show_fight(self, *_):
+    def _show_fight(self, *_, search_from=None):
         """The current fight in the pane and the strip (the list's
-        currentRowChanged passes the row, which a header row never is)."""
+        currentRowChanged passes the row, which a header row never is).
+        *search_from*, for the page redrawn in place, is where the reader
+        had the text cursor among the search's matches (_search_place): the
+        search goes on from there (_apply_search)."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
@@ -1377,7 +1417,7 @@ class MainWindow(QMainWindow):
                                             names=names,
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
                                             history=history))
-        self._apply_search()
+        self._apply_search(search_from=search_from)
 
     def _show_pen_crit(self, unit_id):
         """A player's pen/crit token was clicked: their build window, open
@@ -1457,16 +1497,22 @@ class MainWindow(QMainWindow):
 
     def _show_issues(self, unit_id):
         """A player's (i) was clicked in the fight on screen: their possible
-        build issues, each with its rule, in a popup at the pointer. The
-        popup owns itself (Qt.Popup, deleted on close), so nothing here
-        keeps a reference to it."""
+        build issues, each with its rule, in a popup at the pointer; under
+        the (i) when Enter opened it from the keyboard, since the pointer
+        may be anywhere then (issue #196). The popup owns itself (Qt.Popup,
+        deleted on close), so nothing here keeps a reference to it."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
         text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
-            BuildIssuesPopup(text, self).show_at(QCursor.pos())
+            popup = BuildIssuesPopup(text, self)
+            link = self.fight_view.keyboard_link_rect()
+            if link is not None:
+                popup.show_under(link)
+            else:
+                popup.show_at(QCursor.pos())
 
     def _show_graph(self):
         """The toolbar's DPS graph, or the header's group dps figure, was
@@ -1575,7 +1621,24 @@ class MainWindow(QMainWindow):
             matches.sort(key=lambda c: c.selectionStart())
         return matches
 
-    def _apply_search(self):
+    def _apply_search(self, *_, search_from=None):
+        """Highlight the search's matches in the pane and count them (the
+        field's textChanged passes the text). The text cursor goes to the
+        first match, where Enter goes on from (_goto_next_match).
+
+        For the page redrawn in place, *search_from* is where the reader
+        had the cursor among the matches (_search_place). The cursor goes to
+        the start of the match with that number; from between two matches
+        (a click leaves it so), to the start of the one before, or the
+        page's start before the first, so the next Enter reaches the match
+        it would have reached; with fewer matches now, to the last. By
+        number, not by offset: the text before the match can change length,
+        as a fight the game cut in two goes from 'Wipe 54%' to 'Cut 54%'
+        above every match, and the cursor kept by its offset went on to the
+        next match. An update that ranks the players anew moves the matches
+        with their rows: the number keeps the search's place among the
+        matches, not the occurrence, as the pane's scroll is kept by
+        position (issue #196)."""
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -1595,10 +1658,24 @@ class MainWindow(QMainWindow):
         else:
             self.search_count.setText("")
         if selections:
-            first = QTextCursor(selections[0].cursor)
-            first.setPosition(first.selectionStart())
+            starts = [selection.cursor.selectionStart() for selection in selections]
+            start = starts[0]
+            if search_from is not None:
+                before, on_match = search_from
+                index = before if on_match else before - 1  # the match the cursor goes to
+                start = starts[min(index, len(starts) - 1)] if index >= 0 else 0
+            first = QTextCursor(self.fight_view.document())
+            first.setPosition(start)
             self.fight_view.setTextCursor(first)
             self.fight_view.ensureCursorVisible()
+
+    def _search_place(self, position):
+        """Where the text cursor, at *position*, is among the search's
+        matches on the page shown, read before the page is drawn again for
+        _apply_search to put it back: the number of matches that start
+        before it, and whether one starts at it."""
+        starts = [match.selectionStart() for match in self._search_matches()]
+        return sum(1 for start in starts if start < position), position in starts
 
     def _goto_next_match(self):
         """Enter in the search field cycles through matches."""
@@ -1642,13 +1719,11 @@ class MainWindow(QMainWindow):
         if self.history_list.current_entry() is not None:
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
-            scroll = self.fight_view.verticalScrollBar().value()
-            self._show_fight()
-            self.fight_view.restore_scroll(scroll)
-        for dialog in (self._death_dialog, self._build_dialog,
-                       self._damage_dialog, self._taken_dialog, self._graph_dialog):
-            if dialog is not None and dialog.isVisible() and dialog.entry is not None:
-                dialog.refresh(self._dark, names=self._names_for(dialog.entry))
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=self._search_place(position))
+        # A window hidden or never filled draws nothing (its refresh)
+        for window in self._windows():
+            window.refresh(self._dark, names=self._names_for(window.entry))
 
     # ---- text size ----
 
@@ -1663,9 +1738,8 @@ class MainWindow(QMainWindow):
         applied = text_size.apply(pct)
         self.config.set(text_size.CONFIG_KEY, applied)
         self.config.save()
-        for view in [self.fight_view] + [dialog.view for dialog in (
-                self._death_dialog, self._build_dialog, self._damage_dialog,
-                self._taken_dialog) if dialog is not None]:
+        views = [self.fight_view] + [view for window in self._windows() for view in window.views()]
+        for view in views:
             view.setFont(QFont())  # inherit the application font again
         # The pane and every open window are rendered from their view's
         # font, as for a flip of Hide names
@@ -1801,9 +1875,7 @@ class MainWindow(QMainWindow):
         if entry is None:
             return  # the fight is still to come: _attach_banner finds the file
         entry.banner_path = path
-        row = self.history_list.update_fight(entry)
-        if row is not None and row == self.history_list.currentRow():
-            self._show_fight()
+        self._fight_changed(entry)
 
     @Slot(str)
     def _show_banner(self, action):

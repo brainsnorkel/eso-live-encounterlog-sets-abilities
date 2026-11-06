@@ -11,7 +11,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from build_session import fights  # noqa: E402
+from build_session import HIT, SESSION, fights  # noqa: E402
 
 try:
     from PySide6.QtWidgets import QApplication
@@ -25,6 +25,10 @@ SKILL_URL = 'https://eso-hub.com/en/skills/weapon/two-handed/damage-ability'
 SET_URLS = {'Slimecraw': 'https://eso-hub.com/en/sets/slimecraw',
             'Perfected Whorl of the Depths':
                 'https://eso-hub.com/en/sets/perfected-whorl-of-the-depths'}
+# The boss's hit on a player: build_session.HIT the other way round
+BOSS_HIT = ('COMBAT_EVENT,DAMAGE,PHYSICAL,1,{dmg},0,4021668,12345,70,105634/105634,0/0,0/0,0/0,0/0,'
+            '0,0.4081,0.5662,0.0256,{unit},22762/22762,26657/26657,13021/13021,500/500,1000/1000,'
+            '0,0.2696,0.5942,5.5492')
 
 
 def _ensure_app():
@@ -967,6 +971,193 @@ class TestBuildWindow(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_open_window_redraws_its_fight_when_the_game_cut_it_in_two(self):
+        """Combat ended and began again within a second, as when the logging
+        player accepts a resurrection: the engine listed the first part,
+        then copies every slot of the whole fight onto that entry and sends
+        it again. A build window open on it redraws it where it was scrolled
+        to (issue #196); one on another fight, or hidden, is left alone."""
+        from PySide6.QtCore import QUrl
+
+        from fight_history import FightHistoryEntry
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
+            dialog = win._build_dialog
+            _app.processEvents()
+            self.assertIn('100,000 damage dealt in this fight', dialog.view.toPlainText())
+            bar = dialog.view.verticalScrollBar()
+            kept = bar.maximum() // 2
+            self.assertGreater(kept, 0)
+            bar.setValue(kept)
+
+            # The fight's real end, as esolog_tail's _publish_fight sends it
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            _app.processEvents()
+            text = dialog.view.toPlainText()
+            self.assertIn('145,000 damage dealt in this fight', text)
+            self.assertNotIn('100,000 damage dealt', text)
+            self.assertEqual(bar.value(), kept)
+            self.assertIs(dialog.entry, held)
+
+            # Another fight changing leaves the window alone: a change to
+            # its own fight that no update announced stays undrawn
+            shown = dialog.view.toHtml()
+            _player(held, '1')['gear'] = []
+            other = _entry()
+            win._on_fight_completed(other)
+            win._on_fight_updated(other)
+            self.assertEqual(dialog.view.toHtml(), shown)
+            # So does its own fight's update while it is hidden
+            dialog.hide()
+            win._on_fight_updated(held)
+            self.assertEqual(dialog.view.toHtml(), shown)
+        finally:
+            win.close()
+
+    def test_the_pane_keeps_its_place_when_its_fight_changes_in_place(self):
+        """The fight on screen changing in place, here the game having cut
+        it in two, redraws the pane where the reader had it, as the windows
+        keep theirs (issue #196); it went back to the top."""
+        from fight_history import FightHistoryEntry
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            # A pane short enough for the page to scroll, whatever the
+            # platform's fonts and the window's least height
+            win.fight_view.setMaximumHeight(160)
+            _app.processEvents()
+            bar = win.fight_view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            before = win.fight_view.toPlainText()
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            _app.processEvents()
+            self.assertNotEqual(win.fight_view.toPlainText(), before)
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
+    def test_the_damage_taken_and_graph_windows_redraw_their_fight_too(self):
+        """The same fight cut in two, the boss hitting @brainsnorkel in the
+        second part: the damage, damage taken and DPS graph windows open on
+        it redraw it as the build window does (issue #196), with the damage
+        dealt, the hit taken and the longer fight of the whole; on another
+        fight's update, or hidden, they are left alone."""
+        from fight_history import FightHistoryEntry
+        from gui.taken_render import NO_DAMAGE_TAKEN
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '72000,' + BOSS_HIT.format(dmg=5000, unit=1), '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            win._show_damage('1')
+            win._show_taken('1')
+            win._show_graph()
+            damage, taken, graph = win._damage_dialog, win._taken_dialog, win._graph_dialog
+
+            def pages():
+                return damage.view.toPlainText(), taken.view.toPlainText(), graph.header.text()
+            dealt, hit, header = pages()
+            self.assertIn('100,000 damage in', dealt)
+            self.assertIn(NO_DAMAGE_TAKEN, hit)
+            self.assertIn('1:00 fight', header)
+
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            dealt, hit, header = pages()
+            self.assertIn('145,000 damage in', dealt)
+            self.assertIn('5,000 damage taken', hit)
+            self.assertNotIn(NO_DAMAGE_TAKEN, hit)
+            self.assertIn('1:20 fight', header)
+            self.assertEqual([w.entry for w in (damage, taken, graph)], [held] * 3)
+
+            # A change to the fight that no update announced, which all
+            # three pages would show, stays undrawn on another fight's
+            # update, and on this one's while the windows are hidden
+            shown = pages()
+            held.duration_s = 3600.0
+            other = _entry()
+            win._on_fight_completed(other)
+            win._on_fight_updated(other)
+            self.assertEqual(pages(), shown)
+            for window in (damage, taken, graph):
+                window.hide()
+            win._on_fight_updated(held)
+            self.assertEqual(pages(), shown)
+        finally:
+            win.close()
+
+    def test_the_damage_and_damage_taken_windows_redrawn_twice_keep_their_place(self):
+        """Each window redrawn, its bar moved before the step after layout
+        has run, and redrawn again, two fight updates in the same pass say:
+        it comes back where the reader had it, the step's place, not where
+        the bar was meanwhile (FightView.keeping_place, issue #196). The
+        boss hits @brainsnorkel forty times, for a damage taken page long
+        enough to scroll."""
+        lines = (SESSION[:-1] + [f'{12000 + n},' + BOSS_HIT.format(dmg=100 + n, unit=1)
+                                 for n in range(40)] + ['70000,END_COMBAT'])
+        win = self._window(fights(lines)[0], show=True)
+        try:
+            win._show_damage('1')
+            win._show_taken('1')
+            for window in (win._damage_dialog, win._taken_dialog):
+                window.view.setMaximumHeight(120)
+                _app.processEvents()
+                bar = window.view.verticalScrollBar()
+                self.assertGreater(bar.maximum(), 0)
+                kept = bar.maximum() // 2
+                bar.setValue(kept)
+                window.refresh(False)
+                bar.setValue(0)
+                window.refresh(False)
+                _app.processEvents()
+                self.assertEqual(bar.value(), kept, type(window).__name__)
+        finally:
+            win.close()
+
+    def test_the_pane_keeps_its_place_through_a_theme_switch(self):
+        """A switch between light and dark redraws the pane in the new
+        theme's colours where the reader had it, as each open window keeps
+        its place (issue #196); it went back to the top."""
+        from PySide6.QtGui import QColor, QPalette
+        win = self._window(fights()[0], show=True)
+        try:
+            win.fight_view.setMaximumHeight(160)
+            _app.processEvents()
+            bar = win.fight_view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            palette = QPalette()
+            for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+                palette.setColor(group, QPalette.Window, QColor('#1e1e1e'))
+                palette.setColor(group, QPalette.WindowText, QColor('#eeeeee'))
+            win.setPalette(palette)
+            win._on_theme_maybe_changed()
+            _app.processEvents()
+            self.assertTrue(win._dark)
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
     def test_build_opens_for_a_fight_of_a_reviewed_log(self):
         from PySide6.QtCore import QUrl
         win = self._window()
@@ -1140,6 +1331,51 @@ class TestSectionOrderAndHeadings(unittest.TestCase):
                 view.scrollToAnchor(anchor)
                 self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1, anchor)
                 self.assertGreater(bar.value(), 0, anchor)
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+
+    def test_a_window_drawn_at_an_anchor_lands_on_its_heading(self):
+        """show_build(scroll_to=...), as the pen/crit token opens the
+        window: drawn while hidden and then shown (MainWindow._show_build),
+        it opens at the heading, the view's step after layout landing there
+        too (issue #196); drawn again while open, the step puts it back on
+        the heading, whatever moved it meanwhile."""
+        from PySide6.QtWidgets import QApplication
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR
+        dialog = BuildDialog()
+        try:
+            dialog.resize(880, 400)
+            view, bar = dialog.view, dialog.view.verticalScrollBar()
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            dialog.show()
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
+
+            # At this height the Damage dealt heading is inside the bar's
+            # range (930 of 1,077 px on Windows), so back on the heading is
+            # not merely at the page's end
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=DEALT_ANCHOR)
+            bar.setValue(0)
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), DEALT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
+
+            # Its fight changing before the step has run, the bar not yet on
+            # the heading: the redraw keeps the step's anchor
+            # (FightView.keeping_place), where it went back to the bar's 0
+            dialog.show_build(_entry(), '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            bar.setValue(0)
+            dialog.refresh(False)
+            QApplication.processEvents()
+            top = _anchor_top(view.document(), PEN_CRIT_ANCHOR)
+            self.assertGreater(bar.value(), 0)
+            self.assertLessEqual(abs(bar.value() - min(int(top), bar.maximum())), 1)
         finally:
             dialog.close()
             dialog.deleteLater()

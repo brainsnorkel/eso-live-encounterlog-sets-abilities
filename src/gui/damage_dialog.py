@@ -5,8 +5,9 @@ target (see damage_render), with a switch to the boss units alone.
 Modeless, so it can stay open beside the fight view; asking for another
 player's damage reuses the same window. It keeps the fight it was opened
 for: a new fight arriving, or another one being selected, does not change
-it. The boss switch keeps its state from one player to the next while the
-fight has a boss, and is hidden (and off) when it has none.
+it, and that fight changing in place redraws it (entry_updated, issue
+#196). The boss switch keeps its state from one player to the next while
+the fight has a boss, and is hidden (and off) when it has none.
 """
 
 from PySide6.QtGui import QPalette
@@ -67,9 +68,21 @@ class DamageDialog(QDialog):
         the one shown)."""
         if self._shown is not None and self.isVisible():
             entry, unit_id, _dark, shown = self._shown
-            scroll = self.view.verticalScrollBar().value()
-            self.show_damage(entry, unit_id, dark, names=shown if names is None else names)
-            self.view.restore_scroll(scroll)
+            with self.view.keeping_place():
+                self.show_damage(entry, unit_id, dark, names=shown if names is None else names)
+
+    def entry_updated(self, entry, dark: bool, names=None) -> None:
+        """The fight *entry* changed in place (MainWindow._fight_changed):
+        redrawn when it is the fight on display, keeping the scroll, with
+        *names*, the Hide names mask made afresh for it (None keeps the one
+        shown). Nothing while the window is hidden or on another fight."""
+        if entry is self.entry:
+            self.refresh(dark, names=names)
+
+    def views(self):
+        """The window's pages, which take a new text size
+        (MainWindow.set_text_size)."""
+        return [self.view]
 
     def _rerender(self) -> None:
         if self._shown is None:
