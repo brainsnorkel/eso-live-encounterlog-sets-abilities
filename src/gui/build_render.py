@@ -85,6 +85,11 @@ EXTRA_LABELS = (("light", "Light attacks"), ("heavy", "Heavy attacks"), ("bash",
 # swaps, takes a synergy or drinks a potion, and it blocks by casting
 COMPANION_EXTRA_LABELS = (("light", "Light attacks"), ("bash", "Bashes"), ("block", "Blocks"),
                           ("dodge", "Dodges"), ("break_free", "Break Free"))
+# The parts render_build_html draws alone, each a page of its own under a
+# header that names the player and the fight (issue #196)
+BUILD_PART = "build"  # the facts line, mundus, food, masteries, issues, bars, gear
+PEN_CRIT_PART = "pen_crit"  # Penetration and Critical damage
+RESOURCES_PART = "resources"
 RESOURCES_TITLE = "Resources"
 RESOURCES_ANCHOR = "resources"  # <a name>, where the section begins
 RESOURCES_CAPTION = "as the log's unit states show them"
@@ -100,6 +105,9 @@ PEN_CRIT_ANCHOR = "pen-crit"  # <a name>, where the two sections begin
 ASSUMED_MARK = "assumed"
 NO_PEN_CRIT = "No penetration or critical damage figures for this fight."
 DEALT_TITLE = "Damage dealt"
+# The section's title on a page of the boss damage alone: the kinds are the
+# whole fight's, since the record keeps no boss kinds (issue #196)
+DEALT_WHOLE_FIGHT_TITLE = "Damage dealt, whole fight"
 DEALT_ANCHOR = "damage-dealt"  # <a name>, where the section begins
 NO_DEALT = "This player dealt no damage in this fight."
 DEALT_NOT_RECORDED = "Damage kinds were not recorded for this fight."
@@ -214,8 +222,26 @@ def _header_html(entry, p, theme, base_pt: float, e, names, text_color: str) -> 
             f"{' · '.join(part for part in fight if part)}</p>")
 
 
+def _facts_html(p, theme, e) -> str:
+    """The line a build page begins with under a header of its own, which
+    names the player and the fight (issue #196): race, class, champion
+    points, role and borrowed lines, and that the build is as logged when
+    the fight began; a companion's, that it is one and its level."""
+    if p.get("companion"):
+        level = p.get("level") or 0
+        facts = ["Companion", f"level {level}" if level else ""]
+    else:
+        kind = " ".join(part for part in (str(p.get("race") or ""), str(p.get("class_name") or ""))
+                        if part and part != "Unknown")
+        cp = p.get("cp") or 0
+        facts = [kind, f"CP {cp}" if cp else "", ROLE_NAMES.get(p.get("role"), ""),
+                 _subclass_text(p), SNAPSHOT_NOTE]
+    return (f"<p style='margin:0 0 2px 0;color:{theme['muted']}'>"
+            f"{' · '.join(e(fact) for fact in facts if fact)}</p>")
+
+
 def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
-                    text_color: str) -> str:
+                    text_color: str, header: bool = True) -> str:
     """A companion's window (companions.py): its name, which names its
     owner, its level, the fight, and the skills it was seen casting this
     session with this fight's casts under each and its ultimate set apart,
@@ -223,7 +249,8 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     when it cast its ultimate this fight and the healing it did to others.
     The log writes no bar, gear or perks for a companion, so there is
     nothing else of a build; render_build_html adds the kinds of its damage
-    under it."""
+    under it. header=False puts the facts line (_facts_html) where its name
+    and the fight are."""
     muted = theme["muted"]
     level = p.get("level") or 0
     facts = ["Companion", f"level {level}" if level else ""]
@@ -258,10 +285,11 @@ def _companion_html(entry, p, theme, icons, links, base_pt: float, e, names,
     after = [*ultimate_lines(p), healing_text(p, float(getattr(entry, "duration_s", 0) or 0))]
     after_html = (f"<p style='margin:4px 0;color:{muted}'>"
                   f"{' · '.join(e(line) for line in after if line)}</p>" if any(after) else "")
-    return (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
+    head = (f"<p style='margin:0'>{title}&nbsp;&nbsp; <span style='color:{muted}'>"
             f"{' · '.join(e(fact) for fact in facts if fact)}</span></p>"
             f"<p style='margin:2px 0;color:{muted}'>{' · '.join(part for part in fight if part)}</p>"
-            f"<p style='margin:8px 0 6px 0;color:{muted}'>{COMPANION_NOTE}</p>"
+            if header else _facts_html(p, theme, e))
+    return (f"{head}<p style='margin:8px 0 6px 0;color:{muted}'>{COMPANION_NOTE}</p>"
             f"{no_skills}{card}{after_html}")
 
 
@@ -534,12 +562,13 @@ def _heading_html(title: str, extra: str, dark: bool, theme, anchor: str = "") -
             f"{title}{extra}</td></tr></table>")
 
 
-def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
+def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e, title: str = DEALT_TITLE) -> str:
     """The Damage dealt section (damage_kinds, issue #73): the kinds of the
     player's damage in the fight from the damage record's 'kinds', drawn by
     the same block as the death recap window, so the two read alike; the
     shield absorbs sit outside the splits and are named; the hover on a
-    side's label names the Warfare stars for damage dealt."""
+    side's label names the Warfare stars for damage dealt. *title* is the
+    section's (DEALT_WHOLE_FIGHT_TITLE on a page of the boss damage)."""
     muted = theme["muted"]
     # Beside the heading, the way to the other side: the player's damage
     # taken window (taken_render, issue #98); not for a companion, which
@@ -550,7 +579,7 @@ def _damage_dealt_html(p, dark: bool, theme, base_pt: float, e) -> str:
         taken_link = (f" <span style='font-weight:normal;font-size:{base_pt * 0.85:.2f}pt'>"
                       f"<a href='{e(taken_href(unit_id), quote=True)}' style='text-decoration:none;"
                       f"color:{theme['link']}'>{TAKEN_LINK}</a></span>")
-    title = _heading_html(DEALT_TITLE, taken_link, dark, theme, DEALT_ANCHOR)
+    title = _heading_html(title, taken_link, dark, theme, DEALT_ANCHOR)
     damage = p.get("damage")
     if not isinstance(damage, dict) or not damage:
         return title + f"<p style='margin:0;color:{muted}'>{DEALT_NOT_RECORDED}</p>"
@@ -858,7 +887,7 @@ def _pen_crit_html(entry, p, dark: bool, theme, options, base_pt: float, e, name
 def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None,
                       set_links=None, script_links=None, base_pt: float = 9.0,
                       text_color: Optional[str] = None, pen_crit_options: Optional[dict] = None,
-                      names=None) -> str:
+                      names=None, header: bool = True, part: str | None = None) -> str:
     """One player's build in a fight as HTML for the build window.
 
     icons: object with has(stem) -> bool (the view's IconCache); None draws
@@ -870,6 +899,16 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     config's pen_crit section (the assumed Champion Point rows and the cap);
     None assumes nothing and takes the cap from the zone. names: the Hide
     names mask (gui.name_mask) for the header and the casters.
+
+    For a page under a header of its own, which names the player and the
+    fight (issue #196): header=False puts the facts line (_facts_html) where
+    they were; *part* draws one part of the page alone, BUILD_PART (mundus to
+    gear), PEN_CRIT_PART or RESOURCES_PART, a part after BUILD_PART with no
+    line above it unless header is left on. A companion has no part after
+    its skills. The Damage dealt section between the gear and the cap
+    sections goes with the player's damage (damage_render.render_damage_html,
+    dealt_kinds=True). With no part, the page has every section, as the
+    build window shows them.
     """
     theme = _theme(dark)
     names = names or NO_MASK
@@ -877,25 +916,38 @@ def render_build_html(entry, unit_id, dark: bool = False, icons=None, links=None
     p = player_for(entry, unit_id)
     if p is None:
         return f"<p style='color:{theme['muted']}'>{NO_BUILD}</p>"
+    text = text_color or theme["text"]
     if p.get("companion"):
+        if part in (PEN_CRIT_PART, RESOURCES_PART):
+            return ""
         # A companion's window: its skills, then the kinds of its damage
         # (damage_kinds), as the build window shows a player's
-        return (_companion_html(entry, p, theme, icons, links, base_pt, e, names,
-                                text_color or theme["text"])
-                + _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]),
-                                     base_pt, e))
-    return "".join((
-        _header_html(entry, p, theme, base_pt, e, names, text_color or theme["text"]),
+        skills = _companion_html(entry, p, theme, icons, links, base_pt, e, names, text, header)
+        if part == BUILD_PART:
+            return skills
+        return skills + _damage_dealt_html(p, dark, dict(theme, text=text), base_pt, e)
+    head = _header_html(entry, p, theme, base_pt, e, names, text) if header else ""
+    if part == PEN_CRIT_PART:
+        return head + _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e, names)
+    if part == RESOURCES_PART:
+        return head + _resources_html(p, dark, theme, base_pt, e, names)
+    build = "".join((
+        head or _facts_html(p, theme, e),
         _mundus_food_html(p, theme, icons, e),
         # The possible build issues the fight pane's (i) shows, repeated
         # here where the build is read (build_issues)
         issues_html(p, dark, set_links, links, base_pt),
         _bars_html(p, theme, icons, links, script_links, base_pt, e),
-        _gear_html(p, dark, theme, set_links, text_color or theme["text"], base_pt, e),
+        _gear_html(p, dark, theme, set_links, text, base_pt, e),
+    ))
+    if part == BUILD_PART:
+        return build
+    return "".join((
+        build,
         # What the player did with the build, as one block: the kinds of
         # the damage dealt (damage_kinds), then the penetration and
         # critical damage figures weighed by that damage
-        _damage_dealt_html(p, dark, dict(theme, text=text_color or theme["text"]), base_pt, e),
+        _damage_dealt_html(p, dark, dict(theme, text=text), base_pt, e),
         _pen_crit_html(entry, p, dark, theme, pen_crit_options, base_pt, e, names),
         # Magicka, stamina and ultimate spent and gained (resources), the
         # tallest section, last (issue #143)

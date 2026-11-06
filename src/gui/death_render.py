@@ -53,6 +53,17 @@ from pull_outcome import at_clock, dead_hover_text
 from gui.text_size import scaled_px
 
 DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
+# + the player's unit id, '/' and the death's number from 1: one death of a
+# player, as a list of the fight's deaths links each to its recap (issue
+# #196); apart from DEATHS_HREF, which is the player's chip
+RECAP_HREF = "esolog:recap/"
+# + the death's number from 1: the <a name> each death's recap begins with,
+# where a link to that death scrolls to
+DEATH_ANCHOR = "death-"
+# In place of the fight block, the line to the player's whole fight's damage
+# taken on a page of its own (issue #196)
+FIGHT_LINK_LEAD = "Over the whole fight:"
+FIGHT_LINK_TEXT = "Damage taken tab"
 SKULL = "☠"
 ICON_PX = 20  # ability icon edge in the recap table
 NOT_RECORDED = "Damage kinds were not recorded for this fight."
@@ -139,6 +150,27 @@ def unit_from_href(href: str) -> Optional[str]:
     if href and href.startswith(DEATHS_HREF):
         return href[len(DEATHS_HREF):]
     return None
+
+
+def recap_href(unit_id, number: int) -> str:
+    """The link to death *number* (from 1) of the player *unit_id*."""
+    return f"{RECAP_HREF}{unit_id}/{int(number)}"
+
+
+def recap_from_href(href: str) -> tuple[str, int] | None:
+    """(unit id, death number) when *href* is a link to one death, else
+    None."""
+    if not (href and href.startswith(RECAP_HREF)):
+        return None
+    unit_id, _, number = href[len(RECAP_HREF):].rpartition("/")
+    if not unit_id or not number.isdigit() or int(number) < 1:
+        return None
+    return unit_id, int(number)
+
+
+def death_anchor(number: int) -> str:
+    """The <a name> death *number*'s recap begins with."""
+    return f"{DEATH_ANCHOR}{int(number)}"
 
 
 def deaths_by_unit(entry) -> Dict[str, List[dict]]:
@@ -556,7 +588,9 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
     ability = e(str(recap.get("ability", "")))
     killed_by = f"{icon}&nbsp;{ability}" if icon else ability
     parts = [
-        f"<p style='margin:14px 0 2px 0'><b>Death {index} of {total}</b>"
+        # The anchor inside the paragraph, so it adds no line of its own
+        f"<p style='margin:14px 0 2px 0'><a name='{death_anchor(index)}'></a>"
+        f"<b>Death {index} of {total}</b>"
         f" <span style='color:{muted}'>· {' · '.join(facts)}</span></p>",
         f"<p style='margin:0 0 4px 0'>Killed by <b>{killed_by}</b>"
         + (f" <span style='color:{muted}'>from</span> {killer}" if killer else "")
@@ -611,9 +645,20 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
     return "".join(parts)
 
 
+def _fight_link_html(unit_id, theme: dict, e, base_pt: float) -> str:
+    """The line that takes the place of the fight block on a page beside
+    the player's damage taken (issue #196): a link to it."""
+    # fight_render imports this module, so its href helper is taken here
+    from gui.fight_render import taken_href
+    return (f"<p style='margin:14px 0 2px 0;color:{theme['muted']}'>{FIGHT_LINK_LEAD} "
+            f"<a href='{e(taken_href(unit_id), quote=True)}' style='text-decoration:none;"
+            f"color:{theme['muted']}'><b>{FIGHT_LINK_TEXT}</b></a></p>")
+
+
 def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                             base_pt: float = 9.0, names=None,
-                            text_color: str | None = None) -> str:
+                            text_color: str | None = None, header: bool = True,
+                            fight_block: bool = True) -> str:
     """One player's deaths in a fight as HTML for the recap window: each
     death, then the whole fight's damage taken.
 
@@ -623,6 +668,11 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     the Hide names mask (gui.name_mask) for the title and the heal sources;
     text_color: the pane's own text colour, which a hidden name is drawn in.
     The hover text for the star links is kind_tooltips().
+
+    For a page under a header of its own (issue #196): header=False leaves
+    out the player's name and the fight; fight_block=False puts a line
+    linking to the player's damage taken where the whole fight's block was.
+    Each death's recap begins with an <a name>, death_anchor(n).
     """
     theme = dict(_THEMES[bool(dark)])
     if text_color:
@@ -640,16 +690,19 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
         f"<p style='margin:0'>"
         f"<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>{name}</span>"
         f"&nbsp;&nbsp; <span style='color:{muted}'>{where}</span></p>",
-    ]
+    ] if header else []
     if not deaths:
         parts.append(f"<p style='color:{muted}'>No deaths recorded for this player.</p>")
         return "".join(parts)
-    parts.append(f"<p style='margin:8px 0 2px 0;color:{muted}'>Damage and healing in the "
-                 f"{window_text(deaths[0])} before each death, oldest first. "
-                 f"Health is the value after each event.</p>")
+    parts.append(f"<p style='margin:{'8px' if header else '0'} 0 2px 0;color:{muted}'>Damage "
+                 f"and healing in the {window_text(deaths[0])} before each death, oldest "
+                 f"first. Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
         parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt))
     # The whole fight closes the window: the deaths are what it is opened
     # for (issue #95)
-    parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
+    if fight_block:
+        parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
+    else:
+        parts.append(_fight_link_html(unit_id, theme, e, base_pt))
     return "".join(parts)

@@ -67,7 +67,14 @@ from gui.death_render import (
     _kind_words,
     kinds_block_html,
 )
-from gui.fight_render import ROLE_NAMES, _fmt_duration, _join, _subclass_text, _theme
+from gui.fight_render import (
+    ROLE_NAMES,
+    _fmt_duration,
+    _join,
+    _subclass_text,
+    _theme,
+    healing_href,
+)
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 
@@ -85,15 +92,19 @@ SELF_MARK = "own"  # the player's heals on themselves
 DASH = "–"
 INDENT_PX = 14  # an ability row under its source or healer
 # The small print under the tables
-NOTES = (
-    ("Per-second figures divide by the fight time, pull to end, so two pulls compare; "
-     "the dps figures divide by the span of hits instead."),
-    ("What a block, armour or resistances prevented is not in the log: a blocked hit's "
-     "figure is what got through. What shields absorbed never reached health and sits "
-     "outside the damage taken."),
-    ("Overheal is the part of a heal past full health. A HoT ticking on a full bar is all "
-     "overheal."),
-)
+PER_SECOND_NOTE = ("Per-second figures divide by the fight time, pull to end, so two pulls "
+                   "compare; the dps figures divide by the span of hits instead.")
+PREVENTED_NOTE = ("What a block, armour or resistances prevented is not in the log: a blocked "
+                  "hit's figure is what got through. What shields absorbed never reached "
+                  "health and sits outside the damage taken.")
+OVERHEAL_NOTE = ("Overheal is the part of a heal past full health. A HoT ticking on a full bar "
+                 "is all overheal.")
+NOTES = (PER_SECOND_NOTE, PREVENTED_NOTE, OVERHEAL_NOTE)
+# The page's two parts, each a page of its own under a header that names
+# the player and the fight (issue #196): the damage, with the healing
+# received line as a link to the other; the healing, by healer
+TAKEN_PART = "taken"
+HEALING_PART = "healing"
 SOURCE_COLUMNS = (("", "left"), ("Source · ability", "left"), ("Damage", "right"), ("%", "right"),
                   ("Hits", "right"), ("Max", "right"), ("Avg", "right"), ("Kind", "left"))
 HEALER_COLUMNS = (("", "left"), ("Healer · ability", "left"), ("Received", "right"), ("%", "right"),
@@ -145,15 +156,34 @@ def _header_html(entry, p, theme, vet_color: str, base_pt: float, e, names) -> s
             f"{' · '.join(part for part in fight if part)}</p>")
 
 
-def _figures_html(entry, taken: dict, theme, e) -> str:
+def _healing_line(entry, taken: dict, theme, href: str = "") -> str:
+    """The healing received and its rate with the overheal share; with an
+    *href*, the words 'healing received' link there (issue #196)."""
+    muted = theme["muted"]
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
+    healed = int(taken.get("healed") or 0)
+    overheal = int(taken.get("overheal") or 0)
+    words = "healing received"
+    if href:
+        words = (f"<a href='{html.escape(href, quote=True)}' style='text-decoration:none;"
+                 f"color:{theme['link']}'>{words}</a>")
+    heal = f"<span style='color:{theme['heal']}'><b>{_n(healed)}</b> {words}</span>"
+    if fight_s > 0 and healed:
+        heal += f" · <b>{_rate(healed, fight_s)}</b> a second"
+    if healed + overheal:
+        heal += (f" <span style='color:{muted}'>· {_pct(overheal, healed + overheal)} of all "
+                 f"healing on this player was overheal</span>")
+    return heal
+
+
+def _figures_html(entry, taken: dict, theme, e, healing_href: str = "") -> str:
     """The headline figures: damage taken and its rate over the fight, the
-    healing received and its rate with the overheal share, and the
-    mitigation the log does carry: shields, blocked hits, avoided hits."""
+    healing received and its rate with the overheal share (a link to
+    *healing_href* when there is one), and the mitigation the log does
+    carry: shields, blocked hits, avoided hits."""
     muted = theme["muted"]
     fight_s = float(getattr(entry, "duration_s", 0) or 0)
     total = int(taken.get("total") or 0)
-    healed = int(taken.get("healed") or 0)
-    overheal = int(taken.get("overheal") or 0)
     absorbed = int(taken.get("absorbed") or 0)
     lines = []
     damage = f"<b>{_n(total)}</b> damage taken"
@@ -165,13 +195,7 @@ def _figures_html(entry, taken: dict, theme, e) -> str:
         damage += (f" <span style='color:{muted}'>· hits over {_clock(int(last) - int(first))}, "
                    f"first to last</span>")
     lines.append(damage)
-    heal = f"<span style='color:{theme['heal']}'><b>{_n(healed)}</b> healing received</span>"
-    if fight_s > 0 and healed:
-        heal += f" · <b>{_rate(healed, fight_s)}</b> a second"
-    if healed + overheal:
-        heal += (f" <span style='color:{muted}'>· {_pct(overheal, healed + overheal)} of all "
-                 f"healing on this player was overheal</span>")
-    lines.append(heal)
+    lines.append(_healing_line(entry, taken, theme, healing_href))
     bits = []
     if absorbed:
         ratio = f", {_pct(absorbed, total)} as much as reached health" if total else ""
@@ -343,14 +367,17 @@ def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
     return "".join(parts)
 
 
-def _notes_html(taken: dict, theme, base_pt: float) -> str:
+def _notes_html(taken: dict, theme, base_pt: float, part: str | None = None) -> str:
+    """The small print, every note on the whole page; on a part's page, the
+    notes on what it shows (the overheal note goes with the healing)."""
     muted = theme["muted"]
     small = f"font-size:{base_pt * 0.85:.2f}pt"
-    notes = list(NOTES)
+    notes = list({TAKEN_PART: (PER_SECOND_NOTE, PREVENTED_NOTE),
+                  HEALING_PART: (PER_SECOND_NOTE, OVERHEAL_NOTE)}.get(part, NOTES))
     rules = taken.get("rules") or {}
     total = int(taken.get("total") or 0)
     table_share = int(rules.get("table") or 0)
-    if total and table_share:
+    if total and table_share and part != HEALING_PART:
         notes.append(f"Area or single target: {round(100.0 * table_share / total)}% of the damage "
                      f"classed by the skill table (a player's own skill), the rest by the casts.")
     return "".join(f"<p style='margin:{'8px' if i == 0 else '1px'} 0 1px 0;color:{muted};{small}'>"
@@ -358,7 +385,8 @@ def _notes_html(taken: dict, theme, base_pt: float) -> str:
 
 
 def render_taken_html(entry, unit_id, dark: bool = False, icons=None, base_pt: float = 9.0,
-                      names=None, text_color: str | None = None) -> str:
+                      names=None, text_color: str | None = None, header: bool = True,
+                      part: str | None = None) -> str:
     """One player's damage taken and healing received in a fight as HTML
     for the damage taken window.
 
@@ -368,25 +396,39 @@ def render_taken_html(entry, unit_id, dark: bool = False, icons=None, base_pt: f
     (gui.name_mask) for the title, the player sources and the healers.
     text_color: the pane's own text colour, which a hidden name is drawn
     in. The hover text for the star links is death_render.kind_tooltips().
+
+    For a page under a header of its own, which names the player and the
+    fight (issue #196): header=False leaves out the page's own; *part* draws
+    one of the page's two halves alone. TAKEN_PART is the figures, the kinds
+    and the sources, its healing received line a link to the other half
+    (fight_render.healing_href); HEALING_PART is that line, then the table
+    by healer. Each takes the notes on what it shows.
     """
     theme = dict(_THEMES[bool(dark)])
     if text_color:
         theme["text"] = text_color
+    theme["link"] = _theme(dark)["link"]
     names = names or NO_MASK
     e = html.escape
     p = player_for(entry, unit_id)
     if p is None:
         return f"<p style='color:{theme['muted']}'>{NO_PLAYER}</p>"
-    parts = [_header_html(entry, p, theme, _theme(dark)["vet"], base_pt, e, names)]
+    parts = [_header_html(entry, p, theme, _theme(dark)["vet"], base_pt, e, names)] if header else []
     taken = p.get("taken")
     if not isinstance(taken, dict) or "total" not in taken:
         parts.append(f"<p style='margin:8px 0;color:{theme['muted']}'>{NOT_RECORDED}</p>")
         return "".join(parts)
-    parts.append(_figures_html(entry, taken, theme, e))
-    parts.append(_section_title(KINDS_TITLE, theme, dark, "kinds"))
-    parts.append(kinds_block_html(summary_of_taken(taken), "taken", theme, e, base_pt,
-                                  "taken in this fight", NO_DAMAGE_TAKEN))
-    parts.append(_sources_html(taken, theme, dark, icons, e, names, base_pt))
-    parts.append(_healers_html(taken, theme, dark, icons, e, names, base_pt))
-    parts.append(_notes_html(taken, theme, base_pt))
+    if part == HEALING_PART:
+        parts.append(f"<p style='margin:{'8px' if header else '0'} 0 2px 0'>"
+                     f"{_healing_line(entry, taken, theme)}</p>")
+    else:
+        healing_link = healing_href(p.get("unit_id", unit_id)) if part == TAKEN_PART else ""
+        parts.append(_figures_html(entry, taken, theme, e, healing_link))
+        parts.append(_section_title(KINDS_TITLE, theme, dark, "kinds"))
+        parts.append(kinds_block_html(summary_of_taken(taken), "taken", theme, e, base_pt,
+                                      "taken in this fight", NO_DAMAGE_TAKEN))
+        parts.append(_sources_html(taken, theme, dark, icons, e, names, base_pt))
+    if part != TAKEN_PART:
+        parts.append(_healers_html(taken, theme, dark, icons, e, names, base_pt))
+    parts.append(_notes_html(taken, theme, base_pt, part))
     return "".join(parts)
