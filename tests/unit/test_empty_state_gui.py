@@ -191,6 +191,14 @@ class TestEmptyPane(EmptyStateTestCase):
         win._on_archive_event(ArchiveEvent(kind='completed', log_path=self.log, archive_path=archive,
                                            done_bytes=1, total_bytes=1, original_deleted=True))
 
+    def _reviewed(self):
+        """A fight to review."""
+        from fight_history import FightHistoryEntry
+        entry = FightHistoryEntry()
+        entry.boss_name, entry.zone_name = 'Ozezan the Inferno', 'Sunspire'
+        entry.timestamp, entry.duration_s = '2026-09-05 20:22:57', 20.0
+        return entry
+
     def test_waiting_after_this_sessions_archive_says_the_log_was_archived_and_deleted(self):
         _older, newer = self._archives()
         self.config.set('archive.delete_original', True)
@@ -220,6 +228,12 @@ class TestEmptyPane(EmptyStateTestCase):
             self.assertEqual(win.freshness_label.styleSheet(), '')
             win._refresh_freshness_label()  # the ticker keeps it
             self.assertIn('archived', win.freshness_label.text())
+            # And with a fight to review on the pane
+            win._on_review_loaded('some.log', [self._reviewed()])
+            win._refresh_freshness_label()
+            self.assertEqual(win.freshness_label.text(),
+                             'Waiting for Encounter.log (archived 2 Nov 2026, 21:00)')
+            self.assertEqual(win.freshness_label.styleSheet(), '')
         finally:
             win.close()
 
@@ -321,6 +335,55 @@ class TestEmptyPane(EmptyStateTestCase):
             self.assertIn('Back to live monitoring. No fight has ended in this session yet.', text)
             self.assertIn('Encounter.log was last archived at 2 Nov 2026, 21:00:', text)
             self.assertEqual(win._empty_reason, 'back')
+        finally:
+            win.close()
+
+    def test_back_to_live_with_no_fights_and_no_log_waits_for_it(self):
+        """Issue #196: Back to live while the engine waits for the log
+        draws the waiting page, where 'Back to live monitoring' said a log
+        was being monitored."""
+        win = self._window()
+        try:
+            win._on_waiting_for_log(str(self.log))
+            win._on_review_loaded('some.log', [self._reviewed()])
+            win._exit_review()
+            text = win._last_placeholder
+            self.assertIn('Waiting for Encounter.log…', text)
+            self.assertIn(f'<code>{html.escape(str(self.log))}</code>', text)
+            self.assertNotIn('Back to live monitoring', text)
+            self.assertEqual(win._empty_reason, 'waiting')
+            # Monitoring again: Back to live is back to the log
+            win._on_monitoring_started(str(self.log))
+            win._on_review_loaded('some.log', [self._reviewed()])
+            win._exit_review()
+            self.assertEqual(win._empty_reason, 'back')
+        finally:
+            win.close()
+
+    def test_a_review_open_as_the_apps_archive_deletes_the_log(self):
+        """Issue #196: the review stays on the pane, and the bar still
+        says the log was archived, from an archive made since the page
+        last listed the folder."""
+        self.config.set('archive.delete_original', True)
+        win = self._window()
+        try:
+            win._on_monitoring_started(str(self.log))
+            win._on_review_loaded('some.log', [self._reviewed()])
+            _older, newer = self._archives()
+            self._archived_and_deleted(win, newer)
+            win._on_waiting_for_log(str(self.log))
+            self.assertTrue(win.fight_view.toPlainText().startswith('Ozezan the Inferno'))
+            self.assertEqual(win.freshness_label.text(),
+                             'Waiting for Encounter.log (archived 2 Nov 2026, 21:00)')
+            self.assertEqual(win.freshness_label.styleSheet(), '')
+            win._refresh_freshness_label()  # the ticker keeps it
+            self.assertIn('archived', win.freshness_label.text())
+            # Back to live: the page says it too
+            win._exit_review()
+            self.assertIn('Encounter.log was archived at 2 Nov 2026, 21:00, verified and deleted',
+                          win._last_placeholder)
+            self.assertEqual(win.freshness_label.text(),
+                             'Waiting for Encounter.log (archived 2 Nov 2026, 21:00)')
         finally:
             win.close()
 
