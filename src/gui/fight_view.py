@@ -170,6 +170,7 @@ class FightView(QTextBrowser):
         self._kept_anchor = ""
         self._kept_link_top: int | None = None  # where keep_link_at put the Tab link
         self._own_step = False  # keeping_place's Tab step, not the reader's (_focus_link)
+        self._key_link: tuple[int, int] | None = None  # what Tab's step selected (_tab_link)
         self._after_layout = QTimer(self)
         self._after_layout.setSingleShot(True)
         self._after_layout.setInterval(0)
@@ -220,9 +221,11 @@ class FightView(QTextBrowser):
         self._ring_urls = {}
         self._pulse_phase = 0
         self._pulse.stop()
-        # A scroll still to be put back belongs to the page being replaced
+        # A scroll still to be put back belongs to the page being replaced,
+        # and so does the link Tab reached (keeping_place gives it back)
         self._after_layout.stop()
         self._hold.stop()
+        self._key_link = None
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -269,7 +272,18 @@ class FightView(QTextBrowser):
         # back to is not the reader's (_focus_link)
         if not self._own_step:
             self.release_place()
-        return super().focusNextPrevChild(forward)
+        moved = super().focusNextPrevChild(forward)
+        # The link the step reached, or none when it left the page
+        cursor = self.textCursor()
+        self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
+                          if cursor.hasSelection() else None)
+        return moved
+
+    def mousePressEvent(self, event) -> None:
+        # A click is not Tab: the link it selects is no link Tab reached
+        # (_tab_link)
+        self._key_link = None
+        super().mousePressEvent(event)
 
     def link_top(self) -> int | None:
         """Where the link the reader reached with Tab is on the screen: the
@@ -420,12 +434,25 @@ class FightView(QTextBrowser):
 
     def _tab_link(self):
         """The link Tab has the focus on, as (href, its place among the
-        page's links with that href); None when no link is selected."""
+        page's links with that href); None when no link is selected, or a
+        click selected it.
+
+        Qt selects a link clicked with the mouse as Tab selects one, framed
+        the same way, and the selection stays when the window the click
+        opens takes the focus. Taken for a link the reader reached with Tab,
+        a clicked name was kept where it was on the screen when the fight
+        ranked its players anew, and the pane scrolled down the page after
+        it, 815 px in the review's probe, where v0.34.1 stayed at the top
+        (issue #202). So only the selection Tab's own step made counts
+        (focusNextPrevChild), the reader's Tab and Shift+Tab or
+        keeping_place's, until a click or a new page."""
         cursor = self.textCursor()
         if not (cursor.hasSelection()
                 and self.textInteractionFlags() & Qt.LinksAccessibleByKeyboard):
             return None
         place = (cursor.selectionStart(), cursor.selectionEnd())
+        if place != self._key_link:
+            return None
         seen = {}  # the links so far to each href
         for href, start, end in self._links():
             if (start, end) == place:

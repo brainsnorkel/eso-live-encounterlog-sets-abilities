@@ -923,6 +923,48 @@ class TestBuildWindow(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_a_clicked_name_leaves_the_pane_where_it_was_as_the_fight_ranks_anew(self):
+        """A name clicked with the mouse opens the build, and Qt leaves the
+        name selected as Tab leaves a link it reaches. The fight then ranks
+        its sixteen players the other way round: the pane stays at its top,
+        where the reader had it (issue #202). Taken for a link reached with
+        Tab, the name was kept where it was on the screen, so the pane
+        scrolled down the page after it."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        entry = _entry()
+        one = _player(entry, '1')
+        entry.players = [dict(copy.deepcopy(one), unit_id=str(n), name=f'@player{n}',
+                              is_local=n == 1) for n in range(1, 17)]
+        win = self._window(entry, show=True)
+        try:
+            win.activateWindow()
+            self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
+            view = win.fight_view
+            bar = view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            self.assertEqual(bar.value(), 0)
+            name = view._text_anchor_cursor('esolog:build/1')
+            edge = QTextCursor(name)
+            edge.setPosition(name.selectionStart())
+            left = view.cursorRect(edge)
+            edge.setPosition(name.selectionEnd())
+            right = view.cursorRect(edge)
+            QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier,
+                             QPoint((left.left() + right.left()) // 2, left.center().y()))
+            _app.processEvents()
+            self.assertTrue(win._build_dialog.isVisible())
+            self.assertEqual(view.textCursor().selectedText(), '@player1')
+            # The engine changes the fight in place, as a fight the game cut
+            # in two does when it really ends
+            entry.players = list(reversed(entry.players))
+            win._on_fight_updated(entry)
+            _app.processEvents()
+            self.assertEqual(bar.value(), 0)
+        finally:
+            win.close()
+
     def test_second_player_reuses_the_window(self):
         from PySide6.QtCore import QUrl
         win = self._window(_entry())

@@ -922,6 +922,50 @@ class TestALinkReachedWithTab(FightViewTestCase):
         self.assertEqual(self._selected(), '(i) of 2')
         self.assertEqual(bar.value(), 0)
 
+    def _click(self, href):
+        """A click with the mouse in the middle of the link to *href*."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        _href, start, end = next(link for link in self.view._links() if link[0] == href)
+        cursor = QTextCursor(self.view.document())
+        cursor.setPosition(start)
+        left = self.view.cursorRect(cursor)
+        cursor.setPosition(end)
+        right = self.view.cursorRect(cursor)
+        QTest.mouseClick(self.view.viewport(), Qt.LeftButton, Qt.NoModifier,
+                         QPoint((left.left() + right.left()) // 2, left.center().y()))
+        _app.processEvents()
+
+    def test_a_link_clicked_is_not_one_reached_with_tab(self):
+        """Qt selects a link clicked with the mouse as Tab selects one, and
+        the selection stays when the window the link opens takes the focus.
+        It is not a link reached with Tab: a redraw that moves it down the
+        page leaves the page where the reader had it, at its top (issue
+        #202). Taken for one, it was kept where it was on the screen, and
+        the page scrolled down after it. Tab from it goes on to the next
+        link, which is one."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.view.setHtml(self.PAGE)
+        self.view.setFocus()
+        bar = self.view.verticalScrollBar()
+        self._click('esolog:build/1')
+        self.assertEqual(self._selected(), 'a name')
+        self.assertIsNone(self.view.link_top())
+        self._redraw("<p>a line of the page</p>" * 30 + self.PAGE)
+        self.assertEqual(bar.value(), 0)
+        self.assertIsNone(self._selected())
+
+        self.view.setHtml(self.PAGE)
+        self._click('esolog:build/1')
+        QTest.keyClick(self.view, Qt.Key_Tab)
+        self.assertEqual(self._selected(), 'a set')
+        self.assertIsNotNone(self.view.link_top())
+        self._redraw(self.PAGE.replace("<p><a href='esolog:build/1'>",
+                                       "<p>new words <a href='esolog:build/1'>"))
+        self.assertEqual(self._selected(), 'a set')
+
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):
     """Ctrl+F matches an icon by the ability name behind it."""
