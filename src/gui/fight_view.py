@@ -185,6 +185,9 @@ class FightView(QTextBrowser):
         # The link Enter is activating, on the screen, while its signal is
         # handled (see keyPressEvent)
         self._key_link_rect: QRect | None = None
+        # The link Tab had the focus on when the focus last left the page,
+        # which Qt drops (see focusOutEvent)
+        self._left_link = None
         _views.add(self)
         # What a screen reader is given in place of the images (see above),
         # after a lead line of the window's (set_accessible_lead)
@@ -225,9 +228,11 @@ class FightView(QTextBrowser):
         self._ring_urls = {}
         self._pulse_phase = 0
         self._pulse.stop()
-        # A scroll still to be put back belongs to the page being replaced
+        # A scroll still to be put back belongs to the page being replaced,
+        # as does a link to give back
         self._after_layout.stop()
         self._hold.stop()
+        self._left_link = None
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -385,6 +390,30 @@ class FightView(QTextBrowser):
             before.setPosition(end, QTextCursor.KeepAnchor)
         self.setTextCursor(before)
         self.focusNextPrevChild(True)
+
+    def focusOutEvent(self, event) -> None:
+        """Qt drops the link Tab has the focus on when the focus leaves the
+        page, unless it leaves for another window or a popup; so it does as
+        a tab widget hides the page. The link is kept here first, for the
+        page's window to give back when the tab is shown again
+        (give_link_back, issue #196)."""
+        if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
+            self._left_link = self._tab_link()
+        super().focusOutEvent(event)
+
+    def give_link_back(self) -> None:
+        """Give Tab's focus back to the link it had when the focus last left
+        the page, the page staying where it is, which Tab's step would
+        scroll to the link; nothing when there was none, when the page has
+        a selection again, or when it was drawn anew since (setHtml). A
+        redraw that keeps the page's place (keeping_place) keeps the link."""
+        link, self._left_link = self._left_link, None
+        if link is None or self.textCursor().hasSelection():
+            return
+        bar = self.verticalScrollBar()
+        scroll = bar.value()
+        self._focus_link(*link)
+        bar.setValue(scroll)
 
     def keyPressEvent(self, event) -> None:
         """Enter on a link the reader moved to with Tab activates it inside

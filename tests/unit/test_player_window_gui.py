@@ -137,8 +137,10 @@ class TestOneWindowForEveryLink(PlayerWindowTestCase):
         entry = _damage_entry()
         win = self._window(entry)
         window = self._click(win, "esolog:damage/1")
+        # The start's date with its time, as the windows' headers had it, for
+        # a fight from an older log under review (#204)
         self.assertEqual(window.fight_label.text(),
-                         "Sharpfang · Moonlit Cove VET · 1:40 · 16:54:04")
+                         "Sharpfang · Moonlit Cove VET · 1:40 · 2026-10-03 16:54:04")
         self.assertEqual(window.fight_label.text(), fight_line(entry))
         self.assertEqual(window.picker.currentText(), "D  @tester  Templar")
 
@@ -226,6 +228,51 @@ class TestKeys(PlayerWindowTestCase):
         QTest.keyClick(window.view(TAKEN_TAB), Qt.Key_Escape)
         self.assertFalse(window.isVisible())
 
+    def test_a_tab_link_comes_back_with_its_tab(self):
+        """A link reached with Tab has Tab's focus again when its tab is
+        shown again, by Ctrl+PgDn and Ctrl+PgUp or by an Alt letter, though
+        Qt drops it as the page is hidden, the page where it was; and so
+        when the fight changed in place meanwhile (#204)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from gui.player_window import BUILD_TAB, DAMAGE_TAB
+        entry = fights()[0]
+        window = self._alone(entry, BUILD_TAB)
+        page = window.view(BUILD_TAB)
+        for _ in range(3):
+            QTest.keyClick(page, Qt.Key_Tab)
+        link = page._tab_link()
+        self.assertIsNotNone(link)
+        scroll = page.verticalScrollBar().value()
+        QTest.keyClick(page, Qt.Key_PageDown, Qt.ControlModifier)
+        self.assertEqual(window.current_tab(), DAMAGE_TAB)
+        QTest.keyClick(window.view(DAMAGE_TAB), Qt.Key_PageUp, Qt.ControlModifier)
+        self.assertEqual(window.current_tab(), BUILD_TAB)
+        self.assertEqual(page._tab_link(), link)
+        self.assertEqual(page.verticalScrollBar().value(), scroll)
+        QTest.keyClick(window, Qt.Key_D, Qt.AltModifier)
+        window.entry_updated(entry, dark=False)
+        QTest.keyClick(window, Qt.Key_B, Qt.AltModifier)
+        self.assertEqual(page._tab_link(), link)
+        QTest.qWait(50)  # the update's own redraw, of the tab on screen
+        self.assertEqual(page._tab_link(), link)
+
+    def test_a_player_button_going_off_leaves_the_focus_by_the_picker(self):
+        """Space on ▶ at the second-last player steps to the last, and the
+        button, off now, hands the focus to the picker, where Qt would move
+        it on to Show in list (#204)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from gui.player_window import BUILD_TAB
+        window = self._alone(fights()[0], BUILD_TAB, unit="2")
+        window.next_player.setFocus()
+        QTest.keyClick(window.next_player, Qt.Key_Space)
+        self.assertEqual(window.unit_id, "3")
+        self.assertFalse(window.next_player.isEnabled())
+        self.assertIs(window.focusWidget(), window.picker)
+
     def test_a_link_from_the_main_window_puts_the_focus_in_the_page(self):
         """Opened from the pane, the main window still active: the player
         window's own focus is in the opened tab's page, for when it is
@@ -255,6 +302,26 @@ class TestWhatTheTabsShow(PlayerWindowTestCase):
         self.assertIn("Death 1 of 1", window.view(DEATHS_TAB).toPlainText())
         window.tabs.setCurrentIndex(window.tabs.indexOf(window.view(BUILD_TAB)))
         self.assertIn(NO_BUILD, window.view(BUILD_TAB).toPlainText())
+
+    def test_an_also_died_player_is_named_on_every_tab(self):
+        """A player the table does not list who died: each tab's title names
+        them, and their Deaths tab ends without the link to a Damage taken
+        tab that has nothing of theirs, which a row's player keeps (#204)."""
+        from gui.death_render import FIGHT_LINK_LEAD
+        from gui.player_window import DEATHS_TAB, TAB_KEYS
+        win = self._window(_entry_with_deaths())
+        window = self._click(win, "esolog:deaths/77")
+        self.assertIn("Death 1 of 1", window.view(DEATHS_TAB).toPlainText())
+        self.assertNotIn(FIGHT_LINK_LEAD, window.view(DEATHS_TAB).toPlainText())
+        titles = []
+        for index in range(len(TAB_KEYS)):
+            window.tabs.setCurrentIndex(index)
+            titles.append(window.windowTitle())
+        self.assertEqual(titles, [f"{prefix} – @passerby" for prefix in (
+            "Build", "Damage", "Pen and crit", "Resources", "Damage taken",
+            "Healing received", "Death recap")])
+        window = self._click(win, "esolog:deaths/1")
+        self.assertIn(FIGHT_LINK_LEAD, window.view(DEATHS_TAB).toPlainText())
 
     def test_tabs_that_do_not_apply_say_so(self):
         """A survivor's Deaths tab says they did not die; a companion's tabs

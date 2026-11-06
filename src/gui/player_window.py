@@ -43,8 +43,11 @@ press (probed on PySide6 6.12.0). Ctrl+PgDn and Ctrl+PgUp change the tab
 from anywhere in the window, Ctrl+Down and Ctrl+Up the player, keeping the
 tab. Opening puts the focus in the page; an Alt letter or Ctrl+PgDn from the
 header rows moves it into the new page, since Qt leaves it in the picker,
-where PgDn changes the player. The window has no Close or default button,
-so Enter never closes it; Esc and the title bar's x hide it.
+where PgDn changes the player. A link reached with Tab has Tab's focus
+again when its tab is shown again, as it kept it between the four windows:
+Qt drops it as the tab widget hides the page (FightView.give_link_back).
+The window has no Close or default button, so Enter never closes it; Esc
+and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
 the list by a signal, and its pages' links are its own tab switches. It
@@ -124,14 +127,16 @@ PICKER_CHARS = 28  # the picker's width in characters; its list shows whole rows
 
 def fight_line(entry) -> str:
     """The fight the window shows, in one line: 'Lord Falgravn · Kyne's
-    Aegis VET · Wipe 62% · 4:21 · 22:01:03'."""
+    Aegis VET · Wipe 86% · 1:30 · 2026-10-15 19:30:07'. Its start has the
+    date, as the windows' headers had, for a fight from an older log under
+    review."""
     boss = str(getattr(entry, "boss_name", "") or "")
     zone = str(getattr(entry, "zone_name", "") or "")
     if zone and getattr(entry, "is_vet", False):
         zone += " VET"
-    stamp = str(getattr(entry, "timestamp", "") or "")
     parts = (boss, zone, outcome_text(getattr(entry, "pull", None), boss),
-             clock(getattr(entry, "duration_s", 0)), stamp.rsplit(" ", 1)[-1])
+             clock(getattr(entry, "duration_s", 0)),
+             str(getattr(entry, "timestamp", "") or ""))
     return " · ".join(part for part in parts if part)
 
 
@@ -405,8 +410,14 @@ class PlayerWindow(QDialog):
         view = self.picker.view()
         view.setMinimumWidth(view.sizeHintForColumn(0) + 2 * view.frameWidth()
                              + view.verticalScrollBar().sizeHint().width())
-        self.previous_player.setEnabled(index > 0)
-        self.next_player.setEnabled(0 <= index < len(rows) - 1)
+        # A button going off with the focus on it hands the focus to the
+        # picker beside it: Qt would move it on along the Tab chain, from ▶
+        # past the picker to Show in list
+        for button, on in ((self.previous_player, index > 0),
+                           (self.next_player, 0 <= index < len(rows) - 1)):
+            if not on and self.focusWidget() is button:
+                self.picker.setFocus()
+            button.setEnabled(on)
         line = fight_line(entry)
         self.fight_label.setText(line)
         self.picker.setAccessibleDescription(line)
@@ -434,11 +445,14 @@ class PlayerWindow(QDialog):
         'Death recap – @x'."""
         tab = self.current_tab()
         entry, unit_id, names = self._entry, self._unit_id, self._names
-        if tab == BUILD_TAB:
+        # Those three name the table's row; a player it does not list (Also
+        # died) is named as the other tabs name them
+        listed = player_for(entry, unit_id) is not None
+        if listed and tab == BUILD_TAB:
             title = build_title(entry, unit_id, names)
-        elif tab == DAMAGE_TAB:
+        elif listed and tab == DAMAGE_TAB:
             title = damage_title(entry, unit_id, names)
-        elif tab == TAKEN_TAB:
+        elif listed and tab == TAKEN_TAB:
             title = taken_title(entry, unit_id, names)
         else:
             prefix = {key: title for key, _label, title in TABS}[tab]
@@ -543,9 +557,14 @@ class PlayerWindow(QDialog):
 
     def _on_tab_changed(self, index: int) -> None:
         tab = TAB_KEYS[index]
-        if self._entry is not None and (tab in self._dirty
-                                        or self._drawn.get(tab) != (self._entry, self._unit_id)):
-            self._draw(tab)
+        if self._entry is not None:
+            same = self._drawn.get(tab) == (self._entry, self._unit_id)
+            if same:
+                # Qt dropped the link Tab had the focus on as the page was
+                # hidden: it has it again, before a redraw, which keeps it
+                self._views[tab].give_link_back()
+            if tab in self._dirty or not same:
+                self._draw(tab)
         self._fill_boss_only()
         self._fill_title()
         # The window's focus goes into the new page, unless the reader is on

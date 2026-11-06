@@ -5,6 +5,6 @@
 
 ### Added
 - **A player picker in the player's window** (#196): step through the fight's players without going back to the fight pane, with ◀ and ▶ or Ctrl+Up and Ctrl+Down, on the same tab. The picker lists each player with role, class and deaths, a companion under its owner, and last anyone who died in the fight without a row of their own.
-- **The fight on its own line, with Show in list** (#196): a player's window names the fight it shows (`Lord Falgravn · Kyne's Aegis VET · Wipe 62% · 4:21 · 22:01:03`), and Show in list selects that fight in the fight list.
+- **The fight on its own line, with Show in list** (#196): a player's window names the fight it shows (`Lord Falgravn · Kyne's Aegis VET · Wipe 86% · 1:30 · 2026-10-15 19:30:07`), and Show in list selects that fight in the fight list.
 - **Keys for a player's window** (#196): Alt+B, D, P, R, T, H and E open its tabs, Ctrl+PgDn and Ctrl+PgUp step through them, Alt+O switches Boss targets only on Damage done, and Esc closes the window; Enter never does. It opens with the cursor in its page, and for a screen reader each page has a name and its text begins with the fight.
 - **A player's window keeps its size and place** (#196) from one start of the app to the next, no larger than nine tenths of the screen and never too narrow for its tabs at the text size in use.

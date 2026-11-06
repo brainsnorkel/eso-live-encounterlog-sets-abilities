@@ -671,7 +671,8 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
 
     For a page under a header of its own (issue #196): header=False leaves
     out the player's name and the fight; fight_block=False puts a line
-    linking to the player's damage taken where the whole fight's block was.
+    linking to the player's damage taken where the whole fight's block was,
+    or nothing for a player the fight's table does not list.
     Each death's recap begins with an <a name>, death_anchor(n).
     """
     theme = dict(_THEMES[bool(dark)])
@@ -703,6 +704,7 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     # for (issue #95)
     if fight_block:
         parts.append(fight_block_html(_player_for(entry, unit_id), theme, icons, e, names, base_pt))
-    else:
+    elif _player_for(entry, unit_id) is not None:
+        # A player the table does not list has no damage taken to link to
         parts.append(_fight_link_html(unit_id, theme, e, base_pt))
     return "".join(parts)
