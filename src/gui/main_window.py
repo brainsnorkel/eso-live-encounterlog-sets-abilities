@@ -239,7 +239,9 @@ class MainWindow(QMainWindow):
         for window in self._windows():
             window.refresh(dark)
         if self.history_list.current_entry() is not None:
-            self._show_fight()
+            # Where the reader had it, as the windows keep theirs
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=position)
         elif self._empty_reason is not None:
             self._show_empty_state(self._empty_reason)  # its links take the theme's colour
         elif self._last_placeholder:
@@ -887,8 +889,8 @@ class MainWindow(QMainWindow):
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             # Where the reader had it, as the windows keep theirs
-            with self.fight_view.keeping_place():
-                self._show_fight()
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=position)
         names = self._names_for(entry)
         for window in self._windows():
             window.entry_updated(entry, self._dark, names)
@@ -1230,9 +1232,11 @@ class MainWindow(QMainWindow):
         self.history_list.set_fights(fights)
         self.history_list.select_fight(-1)
 
-    def _show_fight(self, *_):
+    def _show_fight(self, *_, search_from=None):
         """The current fight in the pane and the strip (the list's
-        currentRowChanged passes the row, which a header row never is)."""
+        currentRowChanged passes the row, which a header row never is).
+        *search_from*, for the page redrawn in place, is where the reader
+        had the text cursor: the search goes on from there (_apply_search)."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
@@ -1295,7 +1299,7 @@ class MainWindow(QMainWindow):
                                             names=names,
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
                                             history=history))
-        self._apply_search()
+        self._apply_search(search_from=search_from)
 
     def _show_pen_crit(self, unit_id):
         """A player's pen/crit token was clicked: their build window, open
@@ -1494,7 +1498,12 @@ class MainWindow(QMainWindow):
             matches.sort(key=lambda c: c.selectionStart())
         return matches
 
-    def _apply_search(self):
+    def _apply_search(self, *_, search_from=None):
+        """Highlight the search's matches in the pane and count them (the
+        field's textChanged passes the text). The text cursor goes to the
+        first match, where Enter goes on from (_goto_next_match); for the
+        page redrawn in place, to the first at or after *search_from*, where
+        the reader had it, so they go on from the match they were at."""
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -1514,7 +1523,11 @@ class MainWindow(QMainWindow):
         else:
             self.search_count.setText("")
         if selections:
-            first = QTextCursor(selections[0].cursor)
+            target = selections[0].cursor
+            if search_from is not None:
+                target = next((s.cursor for s in selections
+                               if s.cursor.selectionStart() >= search_from), target)
+            first = QTextCursor(target)
             first.setPosition(first.selectionStart())
             self.fight_view.setTextCursor(first)
             self.fight_view.ensureCursorVisible()
@@ -1561,8 +1574,8 @@ class MainWindow(QMainWindow):
         if self.history_list.current_entry() is not None:
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
-            with self.fight_view.keeping_place():
-                self._show_fight()
+            with self.fight_view.keeping_place() as position:
+                self._show_fight(search_from=position)
         # A window hidden or never filled draws nothing (its refresh)
         for window in self._windows():
             window.refresh(self._dark, names=self._names_for(window.entry))

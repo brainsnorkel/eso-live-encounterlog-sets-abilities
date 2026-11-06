@@ -529,6 +529,33 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         finally:
             win.close()
 
+    def test_a_recap_redrawn_twice_before_the_step_keeps_its_place(self):
+        """The recap window redrawn, its bar moved before the step after
+        layout has run, and redrawn again, two fight updates in the same
+        pass say: it comes back where the reader had it, the step's place,
+        not where the bar was meanwhile (FightView.keeping_place, issue
+        #196)."""
+        from PySide6.QtCore import QUrl
+        win = self._window()
+        try:
+            win._on_fight_completed(_entry_with_deaths())
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
+            dialog = win._death_dialog
+            dialog.view.setMaximumHeight(120)
+            _app.processEvents()
+            bar = dialog.view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            dialog.refresh(False)
+            bar.setValue(0)
+            dialog.refresh(False)
+            _app.processEvents()
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
     def test_real_mouse_click_on_the_button(self):
         """End to end: a click on the rendered button, not an emitted signal."""
         from PySide6.QtCore import QPoint, Qt

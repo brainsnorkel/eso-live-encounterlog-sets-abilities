@@ -391,6 +391,29 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_a_redraw_in_place_keeps_the_searchs_match(self):
+        """Enter has taken the search to its fourth match when the fight on
+        screen changes in place: the cursor stays on that match, and the
+        next Enter goes on to the fifth (issue #196). The redraw took it
+        back to the first."""
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.search_field.setText('a')
+            starts = [m.selectionStart() for m in win._search_matches()]
+            self.assertGreater(len(starts), 4)
+            for _ in range(3):
+                win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._on_fight_updated(entry)
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[4])
+        finally:
+            win.close()
+
     def test_archive_events_drive_progress_bar(self):
         from engine_events import ArchiveEvent
         win = self._window()

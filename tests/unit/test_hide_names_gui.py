@@ -551,6 +551,38 @@ class TestTheWindows(HideNamesTestCase):
         finally:
             win.close()
 
+    def test_the_pane_redrawn_again_before_the_step_keeps_its_place(self):
+        """The switch flipped and flipped back in the same pass, the bar
+        moved between, before the step after layout has run: the pane comes
+        back where the reader had it, the step's place, not where the bar
+        was meanwhile (FightView.keeping_place, issue #196)."""
+        win = self._window()
+        try:
+            win.show()
+            # Flush the worker's queued startup signals (its "waiting for
+            # log" page would replace the fight drawn below)
+            _app.processEvents()
+            win.fight_view.setFixedHeight(120)
+            entry = _entry()
+            entry.players = entry.players * 20
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            view = win.fight_view
+            view.document().documentLayout().documentSize()  # as above
+            _app.processEvents()
+            self.assertIn("@me", view.toPlainText())
+            bar = view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            win.hide_names_action.setChecked(True)
+            bar.setValue(0)
+            win.hide_names_action.setChecked(False)
+            _app.processEvents()
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
     def test_the_copy_follows_the_switch(self):
         from gui.fight_render import render_plain_text
         win = self._window(hide=True)

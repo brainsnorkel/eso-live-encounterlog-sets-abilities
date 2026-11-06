@@ -1105,6 +1105,59 @@ class TestBuildWindow(BuildGuiTestCase):
         finally:
             win.close()
 
+    def test_the_damage_and_damage_taken_windows_redrawn_twice_keep_their_place(self):
+        """Each window redrawn, its bar moved before the step after layout
+        has run, and redrawn again, two fight updates in the same pass say:
+        it comes back where the reader had it, the step's place, not where
+        the bar was meanwhile (FightView.keeping_place, issue #196). The
+        boss hits @brainsnorkel forty times, for a damage taken page long
+        enough to scroll."""
+        lines = (SESSION[:-1] + [f'{12000 + n},' + BOSS_HIT.format(dmg=100 + n, unit=1)
+                                 for n in range(40)] + ['70000,END_COMBAT'])
+        win = self._window(fights(lines)[0], show=True)
+        try:
+            win._show_damage('1')
+            win._show_taken('1')
+            for window in (win._damage_dialog, win._taken_dialog):
+                window.view.setMaximumHeight(120)
+                _app.processEvents()
+                bar = window.view.verticalScrollBar()
+                self.assertGreater(bar.maximum(), 0)
+                kept = bar.maximum() // 2
+                bar.setValue(kept)
+                window.refresh(False)
+                bar.setValue(0)
+                window.refresh(False)
+                _app.processEvents()
+                self.assertEqual(bar.value(), kept, type(window).__name__)
+        finally:
+            win.close()
+
+    def test_the_pane_keeps_its_place_through_a_theme_switch(self):
+        """A switch between light and dark redraws the pane in the new
+        theme's colours where the reader had it, as each open window keeps
+        its place (issue #196); it went back to the top."""
+        from PySide6.QtGui import QColor, QPalette
+        win = self._window(fights()[0], show=True)
+        try:
+            win.fight_view.setMaximumHeight(160)
+            _app.processEvents()
+            bar = win.fight_view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            palette = QPalette()
+            for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+                palette.setColor(group, QPalette.Window, QColor('#1e1e1e'))
+                palette.setColor(group, QPalette.WindowText, QColor('#eeeeee'))
+            win.setPalette(palette)
+            win._on_theme_maybe_changed()
+            _app.processEvents()
+            self.assertTrue(win._dark)
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
     def test_build_opens_for_a_fight_of_a_reviewed_log(self):
         from PySide6.QtCore import QUrl
         win = self._window()

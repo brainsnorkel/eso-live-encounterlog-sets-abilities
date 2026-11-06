@@ -519,6 +519,85 @@ class TestStepsAfterLayout(FightViewTestCase):
             view.close()
             view.deleteLater()
 
+    @staticmethod
+    def _until_laid_out(bar, whole):
+        """Run the event loop until the bar has the page's whole range,
+        *whole* (Qt's layout ticks, the view's step and hold), and a pass
+        more."""
+        import time
+        deadline = time.monotonic() + 5
+        while bar.maximum() != whole and time.monotonic() < deadline:
+            _app.processEvents()
+        _app.processEvents()
+
+    def test_a_page_laid_out_in_parts_lands_where_it_was_kept(self):
+        """A page taller for its length at its end than at its start (long
+        paragraphs, then short lines): Qt lays it out in parts, on its ticks
+        after setHtml, and until then the bar's range is an estimate from
+        the part laid out, short of the page's. The scroll put back stopped
+        at it, thousands of pixels short; it is held until the bar gets
+        there (issue #196). The reader scrolling just after a redraw is
+        left where they scrolled to."""
+        from PySide6.QtWidgets import QAbstractSlider
+
+        from gui.fight_view import FightView
+        page = ('<p>' + 'word ' * 400 + '</p>') * 10 + '<p>x</p>' * 800
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 300)
+            view.show()
+            view.setHtml(page)
+            view.document().size()  # laid out whole, for the bar's whole range
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            whole = bar.maximum()
+            kept = whole * 9 // 10
+            bar.setValue(kept)
+            with view.keeping_place():
+                view.setHtml(page)
+            self.assertLess(bar.maximum(), kept)  # the estimate
+            self._until_laid_out(bar, whole)
+            self.assertEqual(bar.value(), kept)
+
+            with view.keeping_place():
+                view.setHtml(page)
+            bar.triggerAction(QAbstractSlider.SliderToMinimum)
+            self._until_laid_out(bar, whole)
+            self.assertEqual(bar.value(), 0)
+        finally:
+            view.close()
+            view.deleteLater()
+
+    def test_a_redraw_while_the_place_is_held_puts_the_page_there(self):
+        """While the place is held the bar can be short of it, the page's
+        range not yet grown to it or the page drawn shorter: a redraw then,
+        a second fight update say, puts the page where it is held, not
+        where the bar is meanwhile (keeping_place). Here the fight is drawn
+        shorter than where the reader was, the bar stopping at its end, and
+        then as long again."""
+        from gui.fight_view import FightView
+        line = '<p>a line of the page</p>'
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            view.setHtml(line * 300)
+            _app.processEvents()
+            bar = view.verticalScrollBar()
+            kept = bar.maximum() - 50
+            bar.setValue(kept)
+            with view.keeping_place():
+                view.setHtml(line * 100)
+            _app.processEvents()  # the step has run
+            self.assertLess(bar.value(), kept)
+            with view.keeping_place():
+                view.setHtml(line * 300)
+            _app.processEvents()
+            self.assertEqual(bar.value(), kept)
+        finally:
+            view.close()
+            view.deleteLater()
+
 
 class TestEnterOnALink(FightViewTestCase):
 
@@ -566,6 +645,117 @@ class TestEnterOnALink(FightViewTestCase):
             view.issues_requested.disconnect(note)
             view.close()
             view.deleteLater()
+
+
+class TestALinkReachedWithTab(FightViewTestCase):
+    """The fight on screen can change while the reader tabs through its
+    links, the (i) marks say: the redraw in place gives the link they had
+    reached Tab's focus back (FightView.keeping_place, issue #196). It left
+    nothing selected, so Enter did nothing and the next Tab went back to
+    the page's first link."""
+
+    PAGE = ("<p><a href='esolog:build/1'>a name</a> wears "
+            "<a href='https://eso-hub.com/en/sets/x'>a set</a> and "
+            "<a href='https://eso-hub.com/en/sets/x'>the set again</a></p>"
+            + "<p>a line of the page</p>" * 30
+            + "<p><a href='esolog:issues/2'>(i) of 2</a> "
+            "<a href='esolog:issues/3'>(i) of 3</a></p>"
+            + "<p>a line of the page</p>" * 30)
+
+    def setUp(self):
+        super().setUp()
+        from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
+
+        from gui.fight_view import FightView
+        # A field after the view: where Tab goes from the page's last link
+        self.host = QWidget()
+        layout = QVBoxLayout(self.host)
+        self.view = FightView(icons=self._cache())
+        layout.addWidget(self.view)
+        layout.addWidget(QLineEdit())
+        self.host.resize(400, 300)
+        self.host.show()
+        self.host.activateWindow()
+        _app.processEvents()
+
+    def tearDown(self):
+        self.host.close()
+        self.host.deleteLater()
+        super().tearDown()
+
+    def _tab(self, times):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.view.setFocus()
+        for _ in range(times):
+            QTest.keyClick(self.view, Qt.Key_Tab)
+
+    def _redraw(self, page):
+        with self.view.keeping_place():
+            self.view.setHtml(page)
+        _app.processEvents()
+
+    def _selected(self):
+        cursor = self.view.textCursor()
+        return cursor.selectedText() if cursor.hasSelection() else None
+
+    def test_the_link_has_tabs_frame_again_and_the_next_tab_goes_on(self):
+        """Tabbed to an (i) and scrolled on a little, the reader sees the
+        page redrawn: the (i) has Tab's dotted frame again, painted as Tab
+        painted it (the viewport the same to the pixel, the scroll where the
+        reader had it), rather than the highlight of selected text; Enter
+        opens it, the next Tab goes on to the next (i), and the focus never
+        leaves the page."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        opened = []
+        self.view.anchorClicked.connect(lambda url: opened.append(url.toString()))
+        self.view.setHtml(self.PAGE)
+        self._tab(4)
+        self.assertEqual(self._selected(), '(i) of 2')
+        bar = self.view.verticalScrollBar()
+        self.assertGreater(bar.value(), 0)
+        bar.setValue(bar.value() + 20)  # the (i) still in view
+        _app.processEvents()
+        place = bar.value()
+        framed = self.view.viewport().grab().toImage()
+        self._redraw(self.PAGE)
+        self.assertEqual(self._selected(), '(i) of 2')
+        self.assertEqual(bar.value(), place)
+        self.assertEqual(self.view.viewport().grab().toImage(), framed)
+        QTest.keyClick(self.view, Qt.Key_Return)
+        self.assertEqual(opened, ['esolog:issues/2'])
+        QTest.keyClick(self.view, Qt.Key_Tab)
+        self.assertEqual(self._selected(), '(i) of 3')
+        self.assertIs(QApplication.focusWidget(), self.view)
+
+    def test_the_link_is_known_by_its_place_among_the_links_to_its_href(self):
+        """One href on several links (an ESO-Hub set link on each player who
+        wears the set): the second is kept as the second, text added before
+        it or not. A player's own (i), moved up the page by the fight ranking
+        the players anew, is kept too. A link the page no longer has leaves
+        nothing selected, and the focus on the page."""
+        from PySide6.QtWidgets import QApplication
+        self.view.setHtml(self.PAGE)
+        self._tab(3)
+        self.assertEqual(self._selected(), 'the set again')
+        self._redraw(self.PAGE.replace("<p><a href='esolog:build/1'>",
+                                       "<p>new words <a href='esolog:build/1'>"))
+        self.assertEqual(self._selected(), 'the set again')
+
+        self.view.setHtml(self.PAGE)
+        self._tab(5)
+        self.assertEqual(self._selected(), '(i) of 3')
+        moved = ("<p><a href='esolog:issues/3'>(i) of 3</a></p>"
+                 + self.PAGE.replace(" <a href='esolog:issues/3'>(i) of 3</a>", ""))
+        self._redraw(moved)
+        self.assertEqual(self._selected(), '(i) of 3')
+        self.assertEqual(self.view.textCursor().selectionStart(), 0)
+
+        self._redraw(self.PAGE.replace(" <a href='esolog:issues/3'>(i) of 3</a>", ""))
+        self.assertIsNone(self._selected())
+        self.assertIs(QApplication.focusWidget(), self.view)
 
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):

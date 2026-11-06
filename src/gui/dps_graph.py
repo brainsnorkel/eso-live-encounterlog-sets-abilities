@@ -30,9 +30,10 @@ panel shows four or fewer.
 """
 
 import math
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget,
@@ -554,31 +555,54 @@ class DpsGraphDialog(QDialog):
         super().changeEvent(event)
 
     def set_colorblind(self, on: bool) -> None:
-        """Switch the series set; a graph on display is redrawn with it."""
+        """Switch the series set; a graph on display is redrawn with it,
+        the legend keeping its place."""
         if bool(on) == self.colorblind:
             return
         self.colorblind = bool(on)
         if self._shown is not None:
             entry, dark, names = self._shown
-            self.show_graph(entry, dark, names=names)
+            with self._keeping_legend_place():
+                self.show_graph(entry, dark, names=names)
 
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the series colours follow it) or
         a flip of the Hide names switch (*names*, the new mask; None keeps
-        the one shown). The legend is filled anew, so its current line, known
-        by its key, and its scroll are put back, as the other windows keep
-        their place (issue #196)."""
+        the one shown), the legend keeping its place."""
         if self._shown is not None and self.isVisible():
             entry, _dark, shown = self._shown
-            current = self.legend.currentItem()
-            key = current.data(Qt.UserRole) if current is not None else None
-            scroll = self.legend.verticalScrollBar().value()
-            self.show_graph(entry, dark, names=shown if names is None else names)
-            for row in range(self.legend.count()):
-                if key is not None and self.legend.item(row).data(Qt.UserRole) == key:
-                    self.legend.setCurrentRow(row)
+            with self._keeping_legend_place():
+                self.show_graph(entry, dark, names=shown if names is None else names)
+
+    @contextmanager
+    def _keeping_legend_place(self):
+        """Fill the legend anew inside the with block and put the reader's
+        place in it back, as the other windows keep theirs (issue #196): the
+        current line, known by its key, is current again, and selected only
+        if it was (the legend makes GROUP current, unselected, when it takes
+        the focus); the scroll is put back, or, when the fight has ranked
+        the line's player anew and the line moved, its row scrolled into
+        view."""
+        current = self.legend.currentItem()
+        key = current.data(Qt.UserRole) if current is not None else None
+        selected = current is not None and current.isSelected()
+        row = self.legend.currentRow()
+        scroll = self.legend.verticalScrollBar().value()
+        yield
+        moved = None  # the line, when the redraw put it on another row
+        if key is not None:
+            for new_row in range(self.legend.count()):
+                item = self.legend.item(new_row)
+                if item.data(Qt.UserRole) == key:
+                    self.legend.setCurrentRow(new_row, QItemSelectionModel.ClearAndSelect
+                                              if selected else QItemSelectionModel.NoUpdate)
+                    if new_row != row:
+                        moved = item
                     break
-            self.legend.doItemsLayout()  # the new rows' scroll range, before setting it
+        self.legend.doItemsLayout()  # the new rows' scroll range, before setting it
+        if moved is not None:
+            self.legend.scrollToItem(moved)
+        else:
             self.legend.verticalScrollBar().setValue(scroll)
 
     def entry_updated(self, entry, dark: bool, names=None) -> None:

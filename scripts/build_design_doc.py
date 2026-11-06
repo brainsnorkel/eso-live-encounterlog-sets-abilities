@@ -184,6 +184,7 @@ TOPICS = [
         "src/gui/main_window.py#Qt objects are freed on the UI thread",
         "src/gui/main_window.py:MainWindow._fight_changed",
         "src/gui/fight_view.py#Steps after the page is laid out",
+        "src/gui/fight_view.py:FightView.keeping_place",
     ]),
     ("Reviews: a thread of their own, and where a large log is cut", [
         "src/review_load.py",
