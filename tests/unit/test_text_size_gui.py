@@ -193,14 +193,15 @@ class TestShortcuts(TextSizeTestCase):
         from PySide6.QtTest import QTest
         win = self._window()
         win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
-        build = win._build_dialog
+        from gui.player_window import BUILD_TAB
+        build = win._player_window
         build.activateWindow()
         self.assertTrue(QTest.qWaitForWindowActive(build, 2000))
-        html = build.view.toHtml()
+        html = build.view(BUILD_TAB).toHtml()
         self._press(build, "Ctrl+=")
         self.assertEqual(self._saved(), 110)
-        self.assertAlmostEqual(build.view.font().pointSizeF(), self._base_pt() * 1.1)
-        self.assertNotEqual(build.view.toHtml(), html)  # re-rendered at the new size
+        self.assertAlmostEqual(build.view(BUILD_TAB).font().pointSizeF(), self._base_pt() * 1.1)
+        self.assertNotEqual(build.view(BUILD_TAB).toHtml(), html)  # re-rendered at the new size
 
     def test_a_wheel_zoom_gives_way_to_the_setting(self):
         win = self._window()
@@ -218,7 +219,8 @@ class TestShortcuts(TextSizeTestCase):
         from PySide6.QtCore import QUrl
         win = self._window()
         win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
-        view = win._build_dialog.view
+        from gui.player_window import BUILD_TAB
+        view = win._player_window.view(BUILD_TAB)
         view.zoomIn(4)
         self.assertGreater(view.font().pointSizeF(), self._base_pt())
         self._press(win.history_list, "Ctrl+=")

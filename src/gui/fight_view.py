@@ -185,8 +185,13 @@ class FightView(QTextBrowser):
         # The link Enter is activating, on the screen, while its signal is
         # handled (see keyPressEvent)
         self._key_link_rect: QRect | None = None
+        # The link Tab had the focus on when the focus last left the page,
+        # which Qt drops (see focusOutEvent)
+        self._left_link = None
         _views.add(self)
-        # What a screen reader is given in place of the images (see above)
+        # What a screen reader is given in place of the images (see above),
+        # after a lead line of the window's (set_accessible_lead)
+        self._accessible_lead = ""
         self.textChanged.connect(self._update_accessible_text)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
@@ -223,9 +228,11 @@ class FightView(QTextBrowser):
         self._ring_urls = {}
         self._pulse_phase = 0
         self._pulse.stop()
-        # A scroll still to be put back belongs to the page being replaced
+        # A scroll still to be put back belongs to the page being replaced,
+        # as does a link to give back
         self._after_layout.stop()
         self._hold.stop()
+        self._left_link = None
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -384,6 +391,30 @@ class FightView(QTextBrowser):
         self.setTextCursor(before)
         self.focusNextPrevChild(True)
 
+    def focusOutEvent(self, event) -> None:
+        """Qt drops the link Tab has the focus on when the focus leaves the
+        page, unless it leaves for another window or a popup; so it does as
+        a tab widget hides the page. The link is kept here first, for the
+        page's window to give back when the tab is shown again
+        (give_link_back, issue #196)."""
+        if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
+            self._left_link = self._tab_link()
+        super().focusOutEvent(event)
+
+    def give_link_back(self) -> None:
+        """Give Tab's focus back to the link it had when the focus last left
+        the page, the page staying where it is, which Tab's step would
+        scroll to the link; nothing when there was none, when the page has
+        a selection again, or when it was drawn anew since (setHtml). A
+        redraw that keeps the page's place (keeping_place) keeps the link."""
+        link, self._left_link = self._left_link, None
+        if link is None or self.textCursor().hasSelection():
+            return
+        bar = self.verticalScrollBar()
+        scroll = bar.value()
+        self._focus_link(*link)
+        bar.setValue(scroll)
+
     def keyPressEvent(self, event) -> None:
         """Enter on a link the reader moved to with Tab activates it inside
         this call: Qt emits anchorClicked from the key press. While that is
@@ -531,10 +562,18 @@ class FightView(QTextBrowser):
                     return image
         return super().loadResource(resource_type, name)
 
+    def set_accessible_lead(self, text: str) -> None:
+        """A line a screen reader hears before the page (accessible_text):
+        the fight, on the player window's pages, whose header names it
+        outside the page (issue #196)."""
+        self._accessible_lead = str(text or "")
+        self._update_accessible_text()
+
     def accessible_text(self) -> str:
         """The page as a screen reader should hear it: its text, each
-        image replaced by its alt text, one line per paragraph or cell."""
-        lines = []
+        image replaced by its alt text, one line per paragraph or cell,
+        after the lead line when there is one (set_accessible_lead)."""
+        lines = [self._accessible_lead] if self._accessible_lead else []
         block = self.document().begin()
         while block.isValid():
             pieces = []

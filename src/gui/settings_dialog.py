@@ -30,10 +30,10 @@ from pen_crit import (
 
 # The facts a paragraph used to carry sit in the labels of the controls
 # they describe (issue #187); the help says only what no label can
-PEN_CRIT_HELP = ("The build window's Penetration and Critical damage sections read everything "
-                 "else from the log. Champion Point stars that only change a stat are never "
-                 "logged, so tick the ones to assume; they show as assumed rows. The cap is "
-                 "also the armour estimate behind the timeline strip's Armour row.")
+PEN_CRIT_HELP = ("A player's Pen and crit tab reads everything else from the log. Champion "
+                 "Point stars that only change a stat are never logged, so tick the ones to "
+                 "assume; they show as assumed rows. The cap is also the armour estimate behind "
+                 "the timeline strip's Armour row.")
 BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} instanced, {SOLO_BOSS_ARMOUR:,} solo dungeon bosses, "
            f"{PEN_CAP_OVERLAND:,} overland")
 CAP_CHOICES = (("auto", BY_ZONE),
@@ -49,7 +49,7 @@ REPLAYS = "Saving a change here replays the session."
 # title, so the guide's "Settings → Encounter log" still reads true; only
 # the page it sits on is new. When a change takes effect: General, the
 # log path replays and the rest apply at once; Fights, recaps and
-# companions replay, pen/crit at the next build window; Tracked effects
+# companions replay, pen/crit at once; Tracked effects
 # replays; History and Display at once; Files and splits, the split files
 # replay, retention at its next run, archiving at the next start.
 PAGES = ("General", "Fights", "Tracked effects", "History", "Display", "Files and splits")
@@ -78,7 +78,7 @@ CHANNEL_HELP = ("An Update button appears at the right end of the toolbar when a
                 "has been used in real fights for a while with nothing found. Moving from Beta "
                 "to Stable never takes you back a version: you keep the one you have until a "
                 "Stable release is newer.")
-RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
+RECAP_HELP = ("Each death's table and its summary on a player's Deaths tab cover this many "
               "seconds before the death. One shows the killing blow; three covers most deaths "
               "from half health; ten shows the lead-up. "
               + REPLAYS)

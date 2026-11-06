@@ -710,7 +710,7 @@ class TimelineStrip(QWidget):
                    f"for {int(armour.get('no_debuff_pct', 0))}% {of_what}")
         weighted = armour.get("weighted_left")
         if weighted is not None:
-            figures += (f". Weighed by the damage dealt, as the build window does: "
+            figures += (f". Weighed by the damage dealt, as the Pen and crit tab does: "
                         f"{int(weighted):,} left")
         parts = [head, figures]
         if pack_units and not armour.get("pack_only"):
