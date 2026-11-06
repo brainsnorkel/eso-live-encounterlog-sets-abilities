@@ -67,9 +67,12 @@ def last_block(entries) -> list:
 def fight_key(entry) -> tuple:
     """What makes two entries one fight when the same log is read again,
     as a Settings replay reads it (issue #196): the log's time of the
-    fight's start, the zone's id and the boss. A replay builds new
-    entries, and of the settings that replay the session only the log
-    path changes which fights there are: the split files, the tracked
+    fight's start, the zone's id and the boss. A replay reads the log's
+    latest logging session again (LogFileMonitor._load_latest_session)
+    and builds new entries for its fights, so the key finds a fight of
+    that session again; a fight of an earlier session the app tailed is
+    not read again. Of the settings that replay the session only the log
+    path changes which fights those are: the split files, the tracked
     effects, the companion accrual and the death recap window change what
     a fight holds, never when and where it began or its boss. The zone id
     is '' on an entry from before it was kept."""

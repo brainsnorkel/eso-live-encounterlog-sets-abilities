@@ -307,6 +307,27 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         win._on_fight_completed(replayed[1])
         self.assertTrue(win.fight_view.toPlainText().startswith("Yolnahkriin"))
 
+    def test_a_log_missing_at_the_restart_is_the_replay_once_it_appears(self):
+        # The restart found no log (waiting_for_log); once it appears the
+        # engine reads it and sends monitoring_started, with no
+        # monitoring_restarting of its own (engine_worker._check_log_appeared)
+        win = self.win
+        self._live(select=1)
+        self._restart()
+        win._on_waiting_for_log(str(Path(self.tmp.name) / "Encounter.log"))
+        self.assertTrue(win.fight_view.toPlainText().startswith("Waiting for Encounter.log"))
+        replayed = _session()
+        win._on_fight_completed(replayed[0])
+        # Its fights are the replay: the waiting page gives way to its line
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
+        self.assertIsNone(self._current())
+        for entry in replayed[1:]:
+            win._on_fight_completed(entry)
+        self.assertIs(self._current(), replayed[1])
+        self._started()
+        self.assertIs(self._current(), replayed[1])
+        self.assertFalse(win._follow_live)
+
     def test_the_list_taking_the_focus_during_the_replay_picks_no_fight(self):
         from PySide6.QtCore import QEvent, Qt
         from PySide6.QtGui import QFocusEvent

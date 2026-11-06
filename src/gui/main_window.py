@@ -850,9 +850,13 @@ class MainWindow(QMainWindow):
             if self._replaying:
                 # Only the fight that was on screen is selected again, and
                 # only while the reader has picked none
-                if (self.history_list.current_entry() is None
-                        and fight_key(entry) == self._replay_key):
-                    self.history_list.setCurrentRow(row)
+                if self.history_list.current_entry() is None:
+                    if fight_key(entry) == self._replay_key:
+                        self.history_list.setCurrentRow(row)
+                    elif self._empty_reason is not None:
+                        # The log was missing at the restart (waiting_for_log)
+                        # and has appeared: these are the replay's fights
+                        self._show_replaying()
             elif self._follow_live:
                 self.history_list.setCurrentRow(row)
 
@@ -999,14 +1003,20 @@ class MainWindow(QMainWindow):
         FightList.clear), and no other fight is. Without the hold,
         _show_fight would start following once the fight came back as the
         newest so far, and every later fight of the replay would be
-        selected in turn. At monitoring_started (_end_replay) a fight the
-        reader picked meanwhile stays; else the fight with the key is
-        selected, or the newest when the list was following the live log
-        or no fight has the key (another log, or the log replaced since);
-        and following is _show_fight's rule again for the fight selected:
-        the newest follows, an older fight does not. A review keeps its
-        list and its selection, and Back to live goes to the newest, as
-        before."""
+        selected in turn. A restart that finds no log waits for it
+        (waiting_for_log), and the hold lasts until the monitoring_started
+        sent once the log appears and is read; the first fight read from it
+        puts the replay's line back in place of the waiting page. At
+        monitoring_started (_end_replay) a fight the reader picked
+        meanwhile stays; else the fight with the key is selected, or the
+        newest when the list was following the live log or no fight has
+        the key. The replay reads only the log's latest logging session
+        (LogFileMonitor._load_latest_session), so a fight of an earlier
+        session the app tailed is gone, as is every fight when the log is
+        another or was replaced since. Following is then _show_fight's rule
+        again for the fight selected: the newest follows, an older fight
+        does not. A review keeps its list and its selection, and Back to
+        live goes to the newest, as before."""
         self._restart_pending = False
         self._fights.clear()
         if self._review_fights is None:
@@ -1020,10 +1030,15 @@ class MainWindow(QMainWindow):
                 self._replay_key = None
             self._replaying = True
             self.history_list.clear()
-            self._empty_reason = None  # the replay's line ends the empty page
-            self._show_placeholder("Replaying the session with the new settings…")
+            self._show_replaying()
         # The new analyzer checks its session's data afresh
         self._on_data_check(None)
+
+    def _show_replaying(self):
+        """The pane while a Settings replay brings the fights back, in place
+        of the page before it (see _on_monitoring_restarting)."""
+        self._empty_reason = None  # the replay's line ends the empty page
+        self._show_placeholder("Replaying the session with the new settings…")
 
     def _end_replay(self):
         """The replay's fights are all in: the hold on following live ends
