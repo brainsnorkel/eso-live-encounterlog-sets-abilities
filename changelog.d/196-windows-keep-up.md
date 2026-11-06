@@ -1,0 +1,3 @@
+### Fixed
+- **Open windows keep up with their fight** (#196): a build, damage, damage taken, death recap or DPS graph window went on showing its fight as it first arrived. It now redraws when that fight changes: a death the game writes just after combat ends (the last player standing in a wipe), or a fight the game had cut in two, often as you accept a resurrection, that has now really ended. The window stays where you had scrolled it, and with Hide names on, a player who joined in the fight's second part is hidden there too
+- **Enter on a player's ⓘ opens its popup under it** (#196): Tab to the ⓘ on the fight pane and press Enter, and the possible build issues open just under the ⓘ, where they opened at the mouse pointer, wherever that was

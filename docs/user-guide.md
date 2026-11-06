@@ -171,7 +171,7 @@ Tab used to toggle Detail view, which kept the focus on the fight list; that is 
 
 ## A player's build
 
-Click a player's name, in either view, to open their build for that fight. The name carries no mark, unlike the DPS figures; it is underlined while the pointer is over it. The window stays open beside the main window and keeps the fight it was opened for; clicking another name reuses it.
+Click a player's name, in either view, to open their build for that fight. The name carries no mark, unlike the DPS figures; it is underlined while the pointer is over it. The window stays open beside the main window and keeps the fight it was opened for; clicking another name reuses it. When that fight changes after it is listed (a death the game writes just after it ended, or a fight the game had cut in two that has now really ended), the window redraws it, staying where you had scrolled.
 
 ![The build window: mundus and food, both bars, and the gear grid](screencaps/build-window.png)
 
@@ -221,7 +221,7 @@ The figures come from the pools' rises and falls between one logged state and th
 
 ## A player's damage
 
-Click a player's DPS figure, the one with the small three-bar mark after it, to open their damage for that fight. The window stays open beside the main window and keeps the fight it was opened for; clicking another figure reuses it.
+Click a player's DPS figure, the one with the small three-bar mark after it, to open their damage for that fight. The window stays open beside the main window and keeps the fight it was opened for, redrawing it when the fight changes, as the build window does; clicking another figure reuses it.
 
 ![The damage window: one player's damage by ability, and by target below](screencaps/damage-window.png)
 
@@ -232,7 +232,7 @@ Click a player's DPS figure, the one with the small three-bar mark after it, to 
 
 ## A player's damage taken
 
-Click the shield after a player's name, in either view, for everything that reached that player's health over the fight and everything that healed them. Every player has one, died or not: the [death recap](#death-recaps) is for a player who died and keeps the last seconds before each death, and its **Damage taken this fight** block links here, as the **Damage dealt** heading of the [build window](#a-players-build) does. The window stays open beside the main window and keeps the fight it was opened for; clicking another shield reuses it.
+Click the shield after a player's name, in either view, for everything that reached that player's health over the fight and everything that healed them. Every player has one, died or not: the [death recap](#death-recaps) is for a player who died and keeps the last seconds before each death, and its **Damage taken this fight** block links here, as the **Damage dealt** heading of the [build window](#a-players-build) does. The window stays open beside the main window and keeps the fight it was opened for, redrawing it when the fight changes, as the build window does; clicking another shield reuses it.
 
 ![The damage taken window: the figures, the kinds, damage by source, healing by healer](screencaps/taken-window.png)
 
@@ -256,7 +256,7 @@ Click the group DPS figure in the fight header, the one ending in a small graph 
 
 ## Death recaps
 
-A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deaths. Hover it for when and to what they died, and how long they spent dead, `Dead for 1:32 of 5:10 (30%)`: from each death until they were back on their feet, or the fight's end. When that was a tenth of the fight or more, the row says so after the skull, `dead 1:32`, and **Copy fight** adds it to their line. Click the skull for the recap window, which stays open beside the fight view.
+A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deaths. Hover it for when and to what they died, and how long they spent dead, `Dead for 1:32 of 5:10 (30%)`: from each death until they were back on their feet, or the fight's end. When that was a tenth of the fight or more, the row says so after the skull, `dead 1:32`, and **Copy fight** adds it to their line. Click the skull for the recap window, which stays open beside the fight view and keeps the fight it was opened for. It redraws when that fight changes, so it shows a death the game writes just after the fight ended, and the rest of a fight the game had cut in two.
 
 ![The death recap window: the last seconds before a death](screencaps/death-recap.png)
 

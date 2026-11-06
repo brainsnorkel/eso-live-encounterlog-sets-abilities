@@ -393,8 +393,9 @@ def _curve_points(series, window: dict, mode_window: int, duration_s: float):
 class DpsGraphDialog(QDialog):
     """The graph window: the chart, a legend of checkboxes, the mode and
     the boss switch. Modeless like the other windows; it keeps the fight it
-    was opened for, and its mode and legend choices from one fight to the
-    next within a session."""
+    was opened for (redrawn when that fight changes in place, issue #196),
+    and its mode and legend choices from one fight to the next within a
+    session."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -568,3 +569,16 @@ class DpsGraphDialog(QDialog):
         if self._shown is not None and self.isVisible():
             entry, _dark, shown = self._shown
             self.show_graph(entry, dark, names=shown if names is None else names)
+
+    def entry_updated(self, entry, dark: bool, names=None) -> None:
+        """The fight *entry* changed in place (MainWindow._fight_changed,
+        issue #196): redrawn when it is the fight on display, with *names*,
+        the Hide names mask made afresh for it (None keeps the one shown).
+        Nothing while the window is hidden or on another fight."""
+        if entry is self.entry:
+            self.refresh(dark, names=names)
+
+    def views(self):
+        """No pages to give a new text size: the chart and its legend size
+        themselves on the font change (changeEvent)."""
+        return []

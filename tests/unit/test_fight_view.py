@@ -395,6 +395,82 @@ class TestFightViewWidget(FightViewTestCase):
         self.assertEqual(opened, [hrefs[0]])
 
 
+class TestStepsAfterLayout(FightViewTestCase):
+    """restore_scroll and the build window's scroll to an anchor act again
+    once the page is laid out, on a timer the view owns (issue #196)."""
+
+    def _deleted_before_the_step(self, make):
+        """Delete the window *make* returns, with its view (the two may be
+        one), before the step after layout runs, then run the event loop.
+        Returns whether the view's Python wrapper outlived the deletion
+        (freeing it needs no garbage collector once nothing holds it, and
+        conftest keeps the collector off) and what Qt's callbacks raised,
+        which PySide only prints."""
+        import sys
+        import weakref
+
+        from PySide6.QtCore import QCoreApplication, QEvent
+        errors = []
+        hook = sys.excepthook
+        sys.excepthook = lambda kind, value, tb: errors.append(value)
+        try:
+            window, view = make()
+            freed = weakref.ref(view)
+            window.deleteLater()
+            del window, view
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+            alive = freed() is not None
+            _app.processEvents()  # when the step would run
+        finally:
+            sys.excepthook = hook
+        return alive, errors
+
+    def test_a_view_deleted_before_its_scroll_is_put_back_is_freed_quietly(self):
+        from gui.fight_view import FightView
+
+        def make():
+            view = FightView(icons=self._cache())
+            view.setHtml('<p>a line of the page</p>' * 300)
+            view.restore_scroll(120)
+            return view, view
+        self.assertEqual(self._deleted_before_the_step(make), (False, []))
+
+    def test_a_build_window_deleted_before_its_anchor_scroll_is_freed_quietly(self):
+        from build_session import fights
+
+        from gui.build_dialog import BuildDialog
+        from gui.build_render import PEN_CRIT_ANCHOR
+
+        def make():
+            dialog = BuildDialog(icons=self._cache())
+            dialog.show_build(fights()[0], '1', dark=False, scroll_to=PEN_CRIT_ANCHOR)
+            return dialog, dialog.view
+        self.assertEqual(self._deleted_before_the_step(make), (False, []))
+
+    def test_the_step_runs_once_laid_out_and_only_for_its_page(self):
+        from PySide6.QtWidgets import QApplication
+
+        from gui.fight_view import FightView
+        view = FightView(icons=self._cache())
+        try:
+            view.resize(300, 200)
+            view.show()
+            QApplication.processEvents()
+            view.setHtml('<p>a line of the page</p>' * 300)
+            view.restore_scroll(400)
+            QApplication.processEvents()
+            self.assertEqual(view.verticalScrollBar().value(), 400)
+            # A new page opens at its top: the step still pending was for
+            # the page it replaced
+            view.restore_scroll(250)
+            view.setHtml('<p>a line of another page</p>' * 300)
+            QApplication.processEvents()
+            self.assertEqual(view.verticalScrollBar().value(), 0)
+        finally:
+            view.close()
+            view.deleteLater()
+
+
 class TestSearchFindsAbilityIcons(FightViewTestCase):
     """Ctrl+F matches an icon by the ability name behind it."""
 

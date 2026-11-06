@@ -4,10 +4,10 @@ the log recorded them when combat started (see build_render).
 
 Modeless, so it can stay open beside the fight view; asking for another
 player's build reuses the same window. It keeps the fight it was opened for:
-a new fight arriving, or another one being selected, does not change it.
+a new fight arriving, or another one being selected, does not change it,
+and that fight changing in place redraws it (entry_updated, issue #196).
 """
 
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout
 
@@ -65,9 +65,7 @@ class BuildDialog(QDialog):
             text_color=self.view.palette().color(QPalette.Text).name(),
             pen_crit_options=pen_crit_options, names=names))
         if scroll_to:
-            # Now, and once the view has laid the document out
-            self.view.scrollToAnchor(scroll_to)
-            QTimer.singleShot(0, lambda: self.view.scrollToAnchor(scroll_to))
+            self.view.open_at_anchor(scroll_to)
 
     def refresh(self, dark: bool, names=None) -> None:
         """Re-render for a theme switch (the HTML embeds theme colors) or
@@ -79,3 +77,16 @@ class BuildDialog(QDialog):
             self.show_build(entry, unit_id, dark, options,
                             names=shown if names is None else names)
             self.view.restore_scroll(scroll)
+
+    def entry_updated(self, entry, dark: bool, names=None) -> None:
+        """The fight *entry* changed in place (MainWindow._fight_changed):
+        redrawn when it is the fight on display, keeping the scroll, with
+        *names*, the Hide names mask made afresh for it (None keeps the one
+        shown). Nothing while the window is hidden or on another fight."""
+        if entry is self.entry:
+            self.refresh(dark, names=names)
+
+    def views(self):
+        """The window's pages, which take a new text size
+        (MainWindow.set_text_size)."""
+        return [self.view]

@@ -35,7 +35,7 @@ import weakref
 
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QTimer, QUrl, QUrlQuery, Signal
+from PySide6.QtCore import QRect, Qt, QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
     QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument, QTextFormat,
@@ -136,6 +136,27 @@ class FightView(QTextBrowser):
         self._pulse = QTimer(self)
         self._pulse.setInterval(PULSE_INTERVAL_MS)
         self._pulse.timeout.connect(self._pulse_step)
+        # Design: Steps after the page is laid out. restore_scroll and
+        # open_at_anchor put the page where it should be now and again once
+        # Qt has laid the new document out, which happens after setHtml
+        # returns. The second step runs on a single-shot timer the view owns,
+        # connected to the view's own method (issue #196): deleted with the
+        # view, the timer never fires at a dead one, and the connection keeps
+        # nothing alive. QTimer.singleShot(0, bound_method), the form used
+        # before, raised "Internal C++ object already deleted" when the view
+        # was deleted first and kept its Python wrapper alive until then;
+        # QTimer.singleShot(0, view, method) does not raise but keeps the
+        # method, and so the wrapper, alive (both probed on PySide6 6.12.0).
+        # A new page drops the step still pending for the one it replaces.
+        self._kept_scroll = 0
+        self._kept_anchor = ""
+        self._after_layout = QTimer(self)
+        self._after_layout.setSingleShot(True)
+        self._after_layout.setInterval(0)
+        self._after_layout.timeout.connect(self._apply_after_layout)
+        # The link Enter is activating, on the screen, while its signal is
+        # handled (see keyPressEvent)
+        self._key_link_rect: QRect | None = None
         _views.add(self)
         # What a screen reader is given in place of the images (see above)
         self.textChanged.connect(self._update_accessible_text)
@@ -174,6 +195,8 @@ class FightView(QTextBrowser):
         self._ring_urls = {}
         self._pulse_phase = 0
         self._pulse.stop()
+        # A scroll still to be put back belongs to the page being replaced
+        self._after_layout.stop()
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -182,14 +205,50 @@ class FightView(QTextBrowser):
     def restore_scroll(self, value: int) -> None:
         """Put the vertical scroll back at *value* after a setHtml that
         redrew the page the reader was looking at (a flip of the Hide names
-        switch, a theme change): now, and again once the new document is
-        laid out."""
+        switch, a theme change, its fight changing in place): now, and again
+        once the new document is laid out (see __init__)."""
+        self._kept_anchor = ""
         self._kept_scroll = int(value)
         self.verticalScrollBar().setValue(self._kept_scroll)
-        QTimer.singleShot(0, self._apply_kept_scroll)
+        self._after_layout.start()
 
-    def _apply_kept_scroll(self) -> None:
-        self.verticalScrollBar().setValue(getattr(self, "_kept_scroll", 0))
+    def open_at_anchor(self, name: str) -> None:
+        """Scroll the page just set to the anchor *name* (an <a name> before
+        a heading, build_render.PEN_CRIT_ANCHOR say): now, and again once the
+        new document is laid out (see __init__)."""
+        self._kept_anchor = str(name)
+        self.scrollToAnchor(self._kept_anchor)
+        self._after_layout.start()
+
+    def _apply_after_layout(self) -> None:
+        if self._kept_anchor:
+            self.scrollToAnchor(self._kept_anchor)
+        else:
+            self.verticalScrollBar().setValue(self._kept_scroll)
+
+    def keyPressEvent(self, event) -> None:
+        """Enter on a link the reader moved to with Tab activates it inside
+        this call: Qt emits anchorClicked from the key press. While that is
+        handled, keyboard_link_rect says where the link is, so what it opens
+        can open beside it rather than at the pointer, which may be anywhere
+        (issue #196)."""
+        cursor = self.textCursor()
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and cursor.hasSelection():
+            start, end = QTextCursor(cursor), QTextCursor(cursor)
+            start.setPosition(cursor.selectionStart())
+            end.setPosition(cursor.selectionEnd())
+            rect = self.cursorRect(start).united(self.cursorRect(end))
+            self._key_link_rect = QRect(self.viewport().mapToGlobal(rect.topLeft()), rect.size())
+        try:
+            super().keyPressEvent(event)
+        finally:
+            self._key_link_rect = None
+
+    def keyboard_link_rect(self) -> QRect | None:
+        """The link Enter is activating, as a rectangle on the screen (the
+        cursor rectangles at its two ends, joined), while the link's signal
+        is handled; None when a click activated it."""
+        return self._key_link_rect
 
     def _text_anchor_cursor(self, href: str) -> Optional[QTextCursor]:
         """A cursor selecting the text of the anchor that leads to *href*

@@ -11,7 +11,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from build_session import fights  # noqa: E402
+from build_session import HIT, SESSION, fights  # noqa: E402
 
 try:
     from PySide6.QtWidgets import QApplication
@@ -963,6 +963,57 @@ class TestBuildWindow(BuildGuiTestCase):
             self.assertEqual(dialog.windowTitle(), 'Build – @brainsnorkel (Pïque)')
             # Selecting the older fight again changes nothing either
             win.history_list.select_fight(0)
+            self.assertEqual(dialog.view.toHtml(), shown)
+        finally:
+            win.close()
+
+    def test_open_window_redraws_its_fight_when_the_game_cut_it_in_two(self):
+        """Combat ended and began again within a second, as when the logging
+        player accepts a resurrection: the engine listed the first part,
+        then copies every slot of the whole fight onto that entry and sends
+        it again. A build window open on it redraws it where it was scrolled
+        to (issue #196); one on another fight, or hidden, is left alone."""
+        from PySide6.QtCore import QUrl
+
+        from fight_history import FightHistoryEntry
+        first_part = SESSION[:-1] + ['69500,' + HIT.format(dmg=10000, unit=1), '70000,END_COMBAT']
+        resumed = ['70300,BEGIN_COMBAT', '71000,' + HIT.format(dmg=45000, unit=1),
+                   '90000,END_COMBAT']
+        held = fights(first_part)[0]
+        win = self._window(held, show=True)
+        try:
+            win.fight_view.anchorClicked.emit(QUrl('esolog:build/1'))
+            dialog = win._build_dialog
+            _app.processEvents()
+            self.assertIn('100,000 damage dealt in this fight', dialog.view.toPlainText())
+            bar = dialog.view.verticalScrollBar()
+            kept = bar.maximum() // 2
+            self.assertGreater(kept, 0)
+            bar.setValue(kept)
+
+            # The fight's real end, as esolog_tail's _publish_fight sends it
+            whole = fights(first_part + resumed)[0]
+            for field in FightHistoryEntry.__slots__:
+                setattr(held, field, getattr(whole, field))
+            win._on_fight_updated(held)
+            _app.processEvents()
+            text = dialog.view.toPlainText()
+            self.assertIn('145,000 damage dealt in this fight', text)
+            self.assertNotIn('100,000 damage dealt', text)
+            self.assertEqual(bar.value(), kept)
+            self.assertIs(dialog.entry, held)
+
+            # Another fight changing leaves the window alone: a change to
+            # its own fight that no update announced stays undrawn
+            shown = dialog.view.toHtml()
+            _player(held, '1')['gear'] = []
+            other = _entry()
+            win._on_fight_completed(other)
+            win._on_fight_updated(other)
+            self.assertEqual(dialog.view.toHtml(), shown)
+            # So does its own fight's update while it is hidden
+            dialog.hide()
+            win._on_fight_updated(held)
             self.assertEqual(dialog.view.toHtml(), shown)
         finally:
             win.close()

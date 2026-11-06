@@ -236,16 +236,8 @@ class MainWindow(QMainWindow):
         self._refresh_data_label()
         self._style_update_buttons()
         self.timeline_strip.update()
-        if self._death_dialog is not None:
-            self._death_dialog.refresh(dark)
-        if self._build_dialog is not None:
-            self._build_dialog.refresh(dark)
-        if self._damage_dialog is not None:
-            self._damage_dialog.refresh(dark)
-        if self._taken_dialog is not None:
-            self._taken_dialog.refresh(dark)
-        if self._graph_dialog is not None:
-            self._graph_dialog.refresh(dark)
+        for window in self._windows():
+            window.refresh(dark)
         if self.history_list.current_entry() is not None:
             self._show_fight()
         elif self._empty_reason is not None:
@@ -848,15 +840,53 @@ class MainWindow(QMainWindow):
         """A delivered fight changed: it gained a death (logged just after
         combat ended), the game had cut it in two and it has now really
         ended, or the run's result came just after it (trial_result). Its
-        history line is rewritten, and the pane is redrawn if it is the
-        fight on screen."""
+        history line is rewritten, the pane redrawn if it is the fight on
+        screen, and the open windows on it redrawn (_fight_changed)."""
         if self._restart_pending:
             return
         self._attach_banner(entry)
         self._index_fight(entry)
+        self._fight_changed(entry)
+
+    def _windows(self):
+        """The windows opened so far beside this one (each is made at its
+        first use): death recap, build, damage, damage taken and DPS graph.
+        The one list a theme switch, a flip of Hide names, a new text size
+        and a fight changing in place go through (issue #196)."""
+        return [window for window in (self._death_dialog, self._build_dialog, self._damage_dialog,
+                                      self._taken_dialog, self._graph_dialog)
+                if window is not None]
+
+    def _fight_changed(self, entry):
+        """A delivered fight changed in place (a fight update from the
+        engine, a score banner attached): its history line is rewritten, the
+        pane redrawn if the fight is on screen, and every open window on that
+        fight redrawn, keeping its scroll, with the Hide names mask made
+        afresh from it, since a fight the game cut in two can bring players
+        its first part did not have (issue #196). A hidden window, or one on
+        another fight, is left alone: opening it draws the fight anew.
+
+        A window tells its fight by identity (window.entry is entry), with
+        no key of time, zone or boss, because the engine never sends a
+        changed fight as a new object: it changes the one the frontends
+        already hold. A late death replaces that entry's deaths and recaps,
+        a fight the game cut in two has every slot of the finished entry
+        copied onto it, a mastery found later in the session and a later
+        pull's reading of its outcome are written into it, and the banner is
+        attached to it here. The engine writes on its own thread and then
+        sends fight_updated, and the windows read the entry without a lock,
+        as the pane and the run rows do: safe while each write replaces a
+        value, a slot or a key the entry was built with. So the GUI writes
+        nothing into an entry, a pull, a player row or a recap (banner_path
+        aside), and orders with sorted() and new dicts, never .sort() or an
+        added key: CPython empties a list while it sorts it, so an engine
+        write built from that list meanwhile would lose its items."""
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             self._show_fight()
+        names = self._names_for(entry)
+        for window in self._windows():
+            window.entry_updated(entry, self._dark, names)
 
     @Slot(str, str)
     def _on_zone_changed(self, zone, difficulty):
@@ -988,7 +1018,7 @@ class MainWindow(QMainWindow):
             if getattr(entry, "trial_result", None) and not getattr(entry, "banner_path", None):
                 self._attach_banner(entry)
                 if getattr(entry, "banner_path", None):
-                    self.history_list.update_fight(entry)
+                    self._fight_changed(entry)
         self.statusBar().showMessage(f"Monitoring {path}", 8000)
         if not self._fights:
             self._show_empty_state("monitoring")
@@ -1340,16 +1370,22 @@ class MainWindow(QMainWindow):
 
     def _show_issues(self, unit_id):
         """A player's (i) was clicked in the fight on screen: their possible
-        build issues, each with its rule, in a popup at the pointer. The
-        popup owns itself (Qt.Popup, deleted on close), so nothing here
-        keeps a reference to it."""
+        build issues, each with its rule, in a popup at the pointer; under
+        the (i) when Enter opened it from the keyboard, since the pointer
+        may be anywhere then (issue #196). The popup owns itself (Qt.Popup,
+        deleted on close), so nothing here keeps a reference to it."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
         text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
-            BuildIssuesPopup(text, self).show_at(QCursor.pos())
+            popup = BuildIssuesPopup(text, self)
+            link = self.fight_view.keyboard_link_rect()
+            if link is not None:
+                popup.show_under(link)
+            else:
+                popup.show_at(QCursor.pos())
 
     def _show_graph(self):
         """The toolbar's DPS graph, or the header's group dps figure, was
@@ -1523,10 +1559,9 @@ class MainWindow(QMainWindow):
             scroll = self.fight_view.verticalScrollBar().value()
             self._show_fight()
             self.fight_view.restore_scroll(scroll)
-        for dialog in (self._death_dialog, self._build_dialog,
-                       self._damage_dialog, self._taken_dialog, self._graph_dialog):
-            if dialog is not None and dialog.isVisible() and dialog.entry is not None:
-                dialog.refresh(self._dark, names=self._names_for(dialog.entry))
+        for window in self._windows():
+            if window.isVisible() and window.entry is not None:
+                window.refresh(self._dark, names=self._names_for(window.entry))
 
     # ---- text size ----
 
@@ -1541,9 +1576,8 @@ class MainWindow(QMainWindow):
         applied = text_size.apply(pct)
         self.config.set(text_size.CONFIG_KEY, applied)
         self.config.save()
-        for view in [self.fight_view] + [dialog.view for dialog in (
-                self._death_dialog, self._build_dialog, self._damage_dialog,
-                self._taken_dialog) if dialog is not None]:
+        views = [self.fight_view] + [view for window in self._windows() for view in window.views()]
+        for view in views:
             view.setFont(QFont())  # inherit the application font again
         # The pane and every open window are rendered from their view's
         # font, as for a flip of Hide names
@@ -1679,9 +1713,7 @@ class MainWindow(QMainWindow):
         if entry is None:
             return  # the fight is still to come: _attach_banner finds the file
         entry.banner_path = path
-        row = self.history_list.update_fight(entry)
-        if row is not None and row == self.history_list.currentRow():
-            self._show_fight()
+        self._fight_changed(entry)
 
     @Slot(str)
     def _show_banner(self, action):

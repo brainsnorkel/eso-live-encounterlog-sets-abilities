@@ -657,6 +657,7 @@ EPOCH_MS = 1755729685851
 _BOSS = "70,287485/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
 _NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
 _DEAD_PLAYER = "1,0/20000,26657/26657,13021/13021,500/500,1000/1000,0,0.2,0.5,5.5"
+_LIVE_PLAYER = "1,15000/20000,26657/26657,13021/13021,500/500,1000/1000,0,0.2,0.5,5.5"
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -711,6 +712,69 @@ class TestLiveTail(DeathRecapGuiTestCase):
                              [(719, 1224)])
         finally:
             worker.stop()
+
+    def test_a_death_after_end_combat_redraws_an_open_recap_of_that_fight(self):
+        """The player died in the fight, was raised, and died again as the
+        wipe ended: the second DIED is written after END_COMBAT, in a later
+        poll. The recap window already open on that fight redraws with it
+        (issue #196); it went on showing one death."""
+        from PySide6.QtCore import QUrl
+
+        from app_config import AppConfig
+        from gui.engine_worker import EngineWorker
+        from gui.icon_cache import IconCache
+        from gui.main_window import MainWindow
+        self.log = self.icons_root / 'Encounter.log'
+        config = AppConfig(path=self.icons_root / 'config.json')
+        config.set('log_path', str(self.log))
+        config.set('update.check_enabled', False)
+        self._append([f'5,BEGIN_LOG,{EPOCH_MS},15,"NA Megaserver","en","eso.live.11.1"'])
+        win = MainWindow(config)
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        win.fight_view.icons = IconCache(self.icons_root)
+        _app.processEvents()  # the window's own worker's startup signals
+        # The engine tailing the log, connected to the window as the
+        # window's own worker is
+        worker = EngineWorker(config)
+        worker.fight_completed.connect(win._on_fight_completed)
+        worker.fight_updated.connect(win._on_fight_updated)
+        worker.start()
+        try:
+            self._append([
+                '1000,ZONE_CHANGED,1301,"Coral Aerie",VETERAN',
+                '2000,UNIT_ADDED,1,PLAYER,T,1,0,F,117,7,"Beam Hal","@brainsnorkel",17085246191555785013,50,3084,0,PLAYER_ALLY,T',
+                '2500,UNIT_ADDED,70,MONSTER,F,0,105634,F,0,0,"Test Boss","",0,50,160,0,HOSTILE,F',
+                '2600,ABILITY_INFO,12437,"Toppling Blow","/esoui/art/icons/death_recap_test.dds",F,T',
+                '10000,BEGIN_COMBAT',
+                f'14900,COMBAT_EVENT,DAMAGE,PHYSICAL,1,900,300,800,12437,{_BOSS},{_DEAD_PLAYER}',
+                f'15000,COMBAT_EVENT,DIED,PHYSICAL,0,0,0,801,12437,{_NO_UNIT},{_DEAD_PLAYER}',
+                f'17000,COMBAT_EVENT,DAMAGE,PHYSICAL,1,1000,0,850,12437,{_BOSS},{_LIVE_PLAYER}',
+                f'19900,COMBAT_EVENT,DAMAGE,PHYSICAL,1,719,1224,900,12437,{_BOSS},{_DEAD_PLAYER}',
+                '20000,END_COMBAT',
+            ])
+            worker._poll()
+            _app.processEvents()
+            entry = win.history_list.current_entry()
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.deaths, 1)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
+            recap = win._death_dialog
+            self.assertIs(recap.entry, entry)
+            self.assertIn('Death 1 of 1', recap.view.toPlainText())
+
+            self._append([f'20085,COMBAT_EVENT,DIED,PHYSICAL,0,0,0,901,12437,{_NO_UNIT},{_DEAD_PLAYER}'])
+            worker._poll()
+            _app.processEvents()
+            self.assertEqual(entry.deaths, 2)
+            self.assertIs(win.history_list.current_entry(), entry)
+            text = recap.view.toPlainText()
+            self.assertIn('Death 2 of 2', text)
+            self.assertNotIn('Death 1 of 1', text)
+            self.assertIn('Death recap – @brainsnorkel', recap.windowTitle())
+        finally:
+            worker.stop()
+            win.close()
 
 
 def _entry_no_deaths():

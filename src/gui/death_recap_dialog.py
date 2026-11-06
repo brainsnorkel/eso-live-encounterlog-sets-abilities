@@ -3,7 +3,9 @@ Death recap window: one player's deaths in a fight, each with the last
 seconds of damage and healing before it (see death_render).
 
 Modeless, so it can stay open beside the fight view; asking for another
-player's recap reuses the same window.
+player's recap reuses the same window. It keeps the fight it was opened
+for, and that fight changing in place (a death logged just after it ended)
+redraws it (entry_updated, issue #196).
 """
 
 from PySide6.QtGui import QPalette
@@ -59,3 +61,16 @@ class DeathRecapDialog(QDialog):
             scroll = self.view.verticalScrollBar().value()
             self.show_recap(entry, unit_id, dark, names=shown if names is None else names)
             self.view.restore_scroll(scroll)
+
+    def entry_updated(self, entry, dark: bool, names=None) -> None:
+        """The fight *entry* changed in place (MainWindow._fight_changed):
+        redrawn when it is the fight on display, keeping the scroll, with
+        *names*, the Hide names mask made afresh for it (None keeps the one
+        shown). Nothing while the window is hidden or on another fight."""
+        if entry is self.entry:
+            self.refresh(dark, names=names)
+
+    def views(self):
+        """The window's pages, which take a new text size
+        (MainWindow.set_text_size)."""
+        return [self.view]

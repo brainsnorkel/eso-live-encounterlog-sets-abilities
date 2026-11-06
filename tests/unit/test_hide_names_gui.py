@@ -450,6 +450,36 @@ class TestTheWindows(HideNamesTestCase):
         finally:
             win.close()
 
+    def test_a_window_redrawn_for_its_fight_hides_a_player_the_fight_gained(self):
+        """The game cut the fight in two, and a player without a handle who
+        joined in the second part healed @me before the death. The recap
+        window open on the fight redraws with a mask made from the whole
+        fight, so that player is hidden too (issue #196); the mask the
+        window had knew only the first part's players."""
+        from PySide6.QtCore import QUrl
+        win = self._window(hide=True)
+        try:
+            entry = _entry()
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
+            recap = win._death_dialog
+            self.assertEqual(recap.view.toPlainText().count("Radiating Regeneration"), 1)
+            # The whole fight's players and recaps, as the engine copies them
+            # onto the entry the window holds
+            entry.players = entry.players + [_player("4", "Late Comer", "Late Comer")]
+            entry.death_recaps = [dict(entry.death_recaps[0],
+                                       events=[_heal_row("Late Comer"), _heal_row("@friend")]),
+                                  entry.death_recaps[1]]
+            win._on_fight_updated(entry)
+            text = recap.view.toPlainText()
+            self.assertEqual(text.count("Radiating Regeneration"), 2)
+            self.assertNotIn("Late Comer", text)
+            self.assertNotIn("@friend", text)
+            self.assertIn("@me", text)
+        finally:
+            win.close()
+
     def test_a_theme_flip_keeps_the_mask(self):
         from PySide6.QtCore import QUrl
         win = self._window(hide=True)
