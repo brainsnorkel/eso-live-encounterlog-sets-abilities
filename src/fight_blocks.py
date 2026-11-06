@@ -64,18 +64,27 @@ def last_block(entries) -> list:
     return out
 
 
-def fight_key(entry) -> tuple:
+def fight_key(entry, earlier=()) -> tuple:
     """What makes two entries one fight when the same log is read again,
     as a Settings replay reads it (issue #196): the log's time of the
-    fight's start, the zone's id and the boss. A replay reads the log's
-    latest logging session again (LogFileMonitor._load_latest_session)
-    and builds new entries for its fights, so the key finds a fight of
-    that session again; a fight of an earlier session the app tailed is
-    not read again. Of the settings that replay the session only the log
-    path changes which fights those are: the split files, the tracked
-    effects, the companion accrual and the death recap window change what
-    a fight holds, never when and where it began or its boss. The zone id
-    is '' on an entry from before it was kept."""
-    return (str(getattr(entry, "timestamp", "") or ""),
-            str(getattr(entry, "zone_id", "") or ""),
-            str(getattr(entry, "boss_name", "") or ""))
+    fight's start, to the second, the zone's id, and how many of the
+    fights listed before it (*earlier*) share those two, since a fight
+    over in under a second shares them with the next one. A replay reads
+    the log's latest logging session again, in its order
+    (LogFileMonitor._load_latest_session), and builds new entries for
+    its fights, so the key finds a fight of that session again; a fight
+    of an earlier session the app tailed is not read again. Of the
+    settings that replay the session only the log path changes which
+    fights those are: the split files, the tracked effects, the companion
+    accrual and the death recap window change what a fight holds, never
+    when and where it began. Nor does an update in place: a fight the game
+    cut in two keeps its first part's start, while its boss, the most
+    damaged hostile, can change, and with it whether it has a pull; so
+    neither the boss nor the pull's start (fight_index.line_key) is in
+    the key, which then matches as the fight arrives. The zone id is ''
+    on an entry from before it was kept."""
+    def start(fight):
+        return (str(getattr(fight, "timestamp", "") or ""),
+                str(getattr(fight, "zone_id", "") or ""))
+    first = start(entry)
+    return first + (sum(1 for fight in earlier if start(fight) == first),)

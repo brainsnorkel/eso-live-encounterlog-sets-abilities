@@ -337,30 +337,48 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         replayed = _session()
         win._on_fight_completed(replayed[0])
         # Alt+Tab back to the app, the list focused: an emptied list would
-        # make its first fight current (FightList.clear)
+        # make its first fight current (FightList.focusInEvent)
         self.app.sendEvent(win.history_list,
                            QFocusEvent(QEvent.FocusIn, Qt.ActiveWindowFocusReason))
         self.assertIsNone(self._current())
         win._on_fight_completed(replayed[1])
         self.assertIs(self._current(), replayed[1])
 
-    def test_a_fight_given_its_key_by_an_update_is_found_at_the_end(self):
+    def test_a_fight_the_game_cut_in_two_comes_back_as_it_arrives(self):
         win = self.win
         self._live(select=1)
         self._restart()
         replayed = _session()
-        # The game cut the fight in two: its first half came with an add
-        # as its boss, and the whole fight, sent again, with Yolnahkriin
+        # The game cut the fight in two: its first part comes with an add
+        # as its boss, and the whole fight, sent again, with Yolnahkriin.
+        # The key holds no boss, so the first part is the fight
         replayed[1].boss_name = "Grim Warden"
         win._on_fight_completed(replayed[0])
         win._on_fight_completed(replayed[1])
-        self.assertIsNone(self._current())
+        self.assertIs(self._current(), replayed[1])
         replayed[1].boss_name = "Yolnahkriin"
         win._on_fight_updated(replayed[1])
         win._on_fight_completed(replayed[2])
         self._started()
         self.assertIs(self._current(), replayed[1])
         self.assertFalse(win._follow_live)
+
+    def test_two_fights_begun_in_one_second_are_told_apart(self):
+        # A fight over in under a second shares its start and its zone with
+        # the next one; the reader's is the second of the two
+        win = self.win
+        pair = (("Sea Viper", "2026-08-30 13:58:42"), ("Sea Viper", "2026-08-30 13:58:42"),
+                ("Lokkestiiz", "2026-08-30 14:03:20"))
+        fights = _session(pair)
+        for entry in fights:
+            win._on_fight_completed(entry)
+        win.history_list.select_entry(fights[1])
+        self._restart()
+        replayed = _session(pair)
+        for entry in replayed:
+            win._on_fight_completed(entry)
+        self._started()
+        self.assertIs(self._current(), replayed[1])
 
     def test_a_review_opened_during_the_replay_keeps_its_fight(self):
         win = self.win
@@ -388,12 +406,25 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         win._on_review_loaded("some.log", reviewed)
         self._started()  # the log holds no fight now
         self.assertIs(self._current(), reviewed[0])
+        # The pane keeps the review's fight, not the Monitoring page
+        self.assertTrue(win.fight_view.toPlainText().startswith("Ozezan the Inferno"))
+        self.assertIsNone(win._empty_reason)
         win._exit_review()
         self.assertIsNone(self._current())
         self.assertEqual(win._empty_reason, "back")
         later = _played("Lokkestiiz", "2026-08-30 14:52:17")
         win._on_fight_completed(later)
         self.assertIs(self._current(), later)
+
+    def test_a_review_keeps_its_page_through_a_restart_that_finds_no_log(self):
+        win = self.win
+        reviewed = [_played("Ozezan the Inferno", "2026-09-05 20:22:57")]
+        win._on_review_loaded("some.log", reviewed)
+        self._press_save()
+        win._on_monitoring_restarting()
+        win._on_waiting_for_log(str(Path(self.tmp.name) / "Encounter.log"))
+        self.assertIs(self._current(), reviewed[0])
+        self.assertTrue(win.fight_view.toPlainText().startswith("Ozezan the Inferno"))
 
     def test_with_no_fight_the_replay_line_gives_way_to_the_empty_page(self):
         win = self.win
@@ -410,7 +441,7 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         win._on_fight_completed(first)
         self.assertIs(self._current(), first)
 
-    def test_back_to_live_during_the_replay_follows_the_log(self):
+    def test_back_to_live_during_the_replay_goes_to_the_newest_once_it_is_in(self):
         win = self.win
         self._live(select=1)
         self._restart()
@@ -418,10 +449,14 @@ class TestTheReplayComesBackToTheFight(_WindowTestCase):
         win._on_fight_completed(replayed[0])
         win._on_review_loaded("some.log", [_played("Ozezan the Inferno", "2026-09-05 20:22:57")])
         win._exit_review()
-        self.assertIs(self._current(), replayed[0])
+        # The fights so far listed, none drawn, the replay's line up; the
+        # fight on screen before the Save no longer comes back
+        self.assertEqual(self._listed(), ["Lokkestiiz"])
+        self.assertIsNone(self._current())
+        self.assertEqual(win.fight_view.toPlainText(), REPLAYING)
         for entry in replayed[1:]:
             win._on_fight_completed(entry)
-            self.assertIs(self._current(), entry)
+            self.assertIsNone(self._current())
         self._started()
         self.assertIs(self._current(), replayed[-1])
         self.assertTrue(win._follow_live)

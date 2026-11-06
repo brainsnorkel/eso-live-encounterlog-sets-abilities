@@ -168,14 +168,7 @@ class FightList(QListWidget):
     # ---- building ----
 
     def clear(self):
-        """Every row gone and no fight current. The current index is set
-        to none rather than left unset: a list with none set makes its
-        first fight current when it next takes the focus (Qt's
-        QAbstractItemView.focusInEvent, probed on PySide6 6.12), and an
-        Alt+Tab back during a Settings replay would then pick a fight for
-        the reader (MainWindow._on_monitoring_restarting, issue #196)."""
         super().clear()
-        self.setCurrentIndex(QModelIndex())
         self._last_entry = None
         self._block = -1
         self._block_items = {}
@@ -348,6 +341,18 @@ class FightList(QListWidget):
                     return self.model().index(near, 0)
                 near += step
         return self.currentIndex()
+
+    def focusInEvent(self, event):
+        """Taking the focus never makes a fight current. Qt makes the first
+        row current when a list with none takes the focus, unless a current
+        index was set since its model was last reset (the view's private
+        currentIndexSet, probed on PySide6 6.12), so none is set first,
+        whatever emptied or reset the list. Otherwise an Alt+Tab back
+        during a Settings replay would pick the oldest fight for the reader
+        (MainWindow._on_monitoring_restarting, issue #196)."""
+        if not self.currentIndex().isValid():
+            self.setCurrentIndex(QModelIndex())
+        super().focusInEvent(event)
 
     # ---- the (i)'s hover text ----
 

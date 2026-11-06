@@ -1,2 +1,3 @@
 ### Fixed
 - **Saving Settings comes back to the fight you were reading** (#196): with an older fight selected, a save that replays the session (one that changes the log path, the split files, the tracked effects, the companion accrual or the death recap window) left no fight selected, and the pane's links did nothing until you picked one again. The list now selects that fight again as the replay brings it back, or the newest when it is gone, and until then the pane says the session is being replayed.
+- **A review stays on the pane through a Settings replay** (#196): with a review open, a save whose replay found no fight in the live log, or no log at all, drew the Monitoring or Waiting page over the fight under review.
