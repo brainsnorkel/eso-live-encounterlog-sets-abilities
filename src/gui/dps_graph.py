@@ -54,8 +54,8 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSizePolicy,
-    QToolTip, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem,
+    QSizePolicy, QStyledItemDelegate, QToolTip, QVBoxLayout, QWidget,
 )
 
 from damage_stats import running_dps, smoothed_dps
@@ -413,6 +413,17 @@ def _curve_points(series, window: dict, mode_window: int, duration_s: float):
     return running_dps(series or [], window.get("first_s"), window.get("last_s"), duration_s)
 
 
+class _LegendRows(QStyledItemDelegate):
+    """The legend's rows no wider than the legend, so a long one is cut
+    short with an ellipsis, whole in its hover, where a list view gives
+    each row its text's width and scrolls sideways."""
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setWidth(min(size.width(), self.parent().viewport().width()))
+        return size
+
+
 def legend_key(p: dict) -> str:
     """The key a player's legend tick is kept by: their handle, or a
     companion's name, which is its owner's handle and Companion; else the
@@ -450,6 +461,9 @@ class DpsGraphPanel(QWidget):
         self.legend = QListWidget()
         self.legend.setAccessibleName(LEGEND_NAME)
         self.legend.setTextElideMode(Qt.ElideRight)
+        self.legend.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.legend.setResizeMode(QListView.Adjust)  # rows laid out again as it narrows
+        self.legend.setItemDelegate(_LegendRows(self.legend))
         self.legend.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self._size_legend()
         self.legend.itemChanged.connect(self._on_legend_changed)
