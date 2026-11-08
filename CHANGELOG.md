@@ -2,6 +2,15 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.36.0] - 2026-11-09
+
+### Added
+- **Every death of a fight on its own tab** (#196): the main window's right side is now tabs on the fight selected in the list: Fight, Deaths and the DPS graph. Deaths lists the fight's deaths in the order they came, each with the player, what killed them and from whom, and how long they stayed dead, then the killers with the bosses' share, each player's time dead and the companions' deaths. Click a name for that death on the player's Deaths tab. The header's `Deaths N` opens the tab, Alt+F and Alt+E pick the Fight and Deaths tabs, and Ctrl+PgDn and Ctrl+PgUp step through the tabs from anywhere in the window. The tab you choose stays as you pick other fights and as new ones come in.
+
+### Changed
+- **The DPS graph is a tab beside the fight** (#196): the graph that opened in a window of its own is now the main window's DPS graph tab (Alt+G), beside Fight and Deaths, on the fight selected in the list; the header's group dps figure and the toolbar's DPS graph open it. Its legend narrows with the window, a name cut short showing whole in its hover, and the lines you tick are kept by the player's handle, so they carry into the next instance, where the game numbers the players afresh.
+- **The search sits in the tab bar's corner and searches the tab on screen** (#196): `Find (Ctrl+F)` is at the right of the tabs, so the fight keeps the height the search's own row took, and the count of matches is inside the field. At a large text size in a narrow window it takes a row of its own above the tabs.
+
 ## [0.35.0] - 2026-11-07
 
 ### Added
