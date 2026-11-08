@@ -297,6 +297,22 @@ class TestRuns(unittest.TestCase):
                                    " 67% by Lord Falgravn")
         self.assertEqual(lines[2], "Most time dead: @▒▒ 1:40, @me 1:30")
 
+    def test_hide_names_hides_killers_without_merging_them(self):
+        """Two players' kills with one ability stay two killers under Hide
+        names, as without it: counted by the hidden names, which look alike,
+        they made one count and pushed a killer off the line (found against
+        main over 19 real blocks, the review of PR #208)."""
+        fight = _Entry(_pull(po.WIPE, 80.0), [
+            _recap("1", "@me", 1000, "Mirror Drain", "@duelist"),
+            _recap("2", "@other", 2000, "Mirror Drain", "@rival"),
+            _recap("3", "@third", 3000, "Flare", "Gloom Shaper"),
+            _recap("4", "@fourth", 4000, "Flare", "Gloom Shaper")])
+        run = [[fight]]
+        self.assertEqual(po.run_details(run)[1], "Killers: Flare (Gloom Shaper) 2, "
+                         "Mirror Drain (@duelist) 1, Mirror Drain (@rival) 1")
+        self.assertEqual(po.run_details(run, _Mask())[1], "Killers: Flare (Gloom Shaper) 2, "
+                         "Mirror Drain (@▒▒) 1, Mirror Drain (@▒▒) 1")
+
     def test_players_with_no_name_stay_apart(self):
         fight = _Entry(_pull(po.WIPE, 80.0), [
             _recap("5", "anon", 5000, "Claw", "Lord Falgravn"),
