@@ -463,6 +463,7 @@ class MainWindow(QMainWindow):
         self.fight_views.add_tab(self.deaths_view, "D&eaths")
         # The dps over time graph (gui.dps_graph), a tab where it was a window
         self.dps_panel = DpsGraphPanel()
+        self.dps_panel.setAccessibleName("DPS graph")
         self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self.fight_views.add_tab(self.dps_panel, "DPS &graph")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)

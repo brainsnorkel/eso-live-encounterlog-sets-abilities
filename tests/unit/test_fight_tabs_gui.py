@@ -584,6 +584,32 @@ class TestTheSearch(FightTabsTestCase):
         self._settle()
         self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), bar)
 
+    def test_the_graphs_legend_and_picker_take_their_room(self):
+        """The legend is its widest at 100% text and grows past a list view's
+        256 px at 150%, where it stayed at 256 and cut its rows' figures off;
+        the Show picker is as wide as its longest item at 100% and 200%,
+        where it was held to ten characters and cut its own items (the
+        fresh review of #207)."""
+        from gui import text_size
+        from gui.dps_graph import LEGEND_WIDTH
+        win = self._window(_entry_with_deaths())
+        win.graph_action.trigger()
+        panel = win.dps_panel
+        self._settle()
+        self.assertEqual(panel.legend.width(), LEGEND_WIDTH)
+        self.assertGreaterEqual(panel.mode.width(), panel.mode.sizeHint().width())
+        for pct in (150, 200):
+            win.set_text_size(pct)
+            self._settle()
+            with self.subTest(pct=pct):
+                self.assertGreater(panel.legend.width(), 256)
+                self.assertLessEqual(panel.legend.width(), text_size.scaled_px(LEGEND_WIDTH))
+                # As wide as its row allows, where its ten characters held it
+                # (the row is narrower than the longest item at 200% in the
+                # test runner's wide font)
+                self.assertLess(panel.mode.minimumSizeHint().width(), panel.mode.sizeHint().width())
+                self.assertGreater(panel.mode.width(), panel.mode.minimumSizeHint().width())
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""

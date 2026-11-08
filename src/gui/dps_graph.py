@@ -7,7 +7,7 @@ stood at each second).
 
 The data is the fight entry's group series (FightHistoryEntry.damage_series)
 and each player's (the 'series' and 'boss_series' of their 'damage' dict),
-damage summed per second of the fight. The window offers the window length
+damage summed per second of the fight. The tab offers the window length
 (1, 5, 10 or 30 s) or the running figure, the boss units alone in a fight
 with a boss, and a legend of checkboxes for the group and every player. The
 first eight players (in the fight's ranking) are on to begin with and the
@@ -39,12 +39,17 @@ px at 150% text and 844 px at 200%, cutting the fight list from 347 px to
 leaves, from its 230 px down to 100 px (scaled), each name elided there
 and whole in its hover. The legend is named Lines drawn, and the Show
 label is the mode's buddy, for a screen reader. The legend's ticks are
-kept by the player's handle where there is one, else by the unit id for
-that fight alone, a companion by its name, which is its owner's handle
-and Companion (gui.fight_render): unit ids change in every zone, so ticks
-kept by them never carried to the next instance. The mode carries across
-fights, and the boss switch between boss fights; a fight without boss
-damage hides and clears it.
+kept by the player's handle where there is one, a companion by its name,
+which is its owner's handle and Companion (gui.fight_render), and an
+anonymous player by the zone and the unit id: the game keeps a player's
+unit id through an instance's pulls and gives it to another player in the
+next zone, so ticks kept by the id alone went to whoever had it there, and
+dropped at every pull they followed the anonymous players no further than
+the fight. The mode carries across fights, and the boss switch between
+boss fights; a fight without boss damage hides and clears it. The chart's
+time axis takes a wider step than the timeline strip's for a long fight
+when its labels would run together: the chart is narrower in the tab than
+it was in the window.
 """
 
 import math
@@ -55,7 +60,8 @@ from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, 
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem,
-    QSizePolicy, QStyledItemDelegate, QToolTip, QVBoxLayout, QWidget,
+    QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionComboBox, QToolTip, QVBoxLayout,
+    QWidget,
 )
 
 from damage_stats import running_dps, smoothed_dps
@@ -63,6 +69,10 @@ from gui.fight_render import _fmt_dps, _fmt_duration, _join
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 from gui.timeline_strip import _fmt_tick, _tick_step_ms
+
+# The time axis's steps past the timeline strip's, in milliseconds, tried
+# in turn until the labels fit (axis_step_ms)
+AXIS_STEPS_MS = (10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000)
 
 # The categorical palette, light and dark steps of the same eight hues
 SERIES_COLORS = {
@@ -120,6 +130,23 @@ def series_style(index: int, colorblind: bool = False):
     if colorblind:
         return DASH_CYCLE[index % len(DASH_CYCLE)]
     return Qt.DashLine if index >= MAX_HUES else Qt.SolidLine
+
+
+def axis_step_ms(duration_ms: int, plot_px: float, metrics) -> int:
+    """The time axis's step for a fight *duration_ms* long on a plot
+    *plot_px* wide: the timeline strip's for that length, or a wider one
+    until the widest label, two characters apart, fits between two ticks
+    (see the module notes). *metrics*: the font's QFontMetrics."""
+    step = _tick_step_ms(duration_ms)
+    if duration_ms <= 0 or plot_px <= 0:
+        return step
+    gap = 2 * metrics.averageCharWidth()
+    for candidate in [step] + [s for s in AXIS_STEPS_MS if s > step]:
+        widest = max(metrics.horizontalAdvance(_fmt_tick(ms))
+                     for ms in range(0, duration_ms + 1, candidate))
+        if plot_px * candidate / duration_ms >= widest + gap:
+            return candidate
+    return AXIS_STEPS_MS[-1]
 
 
 def _nice_step(span: float) -> float:
@@ -270,7 +297,7 @@ class DpsGraph(QWidget):
         metrics = painter.fontMetrics()
         plot = self._plot_rect()
         # Time ticks: hairlines down the whole plot, labels under its foot
-        step_ms = _tick_step_ms(int(self._duration_s * 1000))
+        step_ms = axis_step_ms(int(self._duration_s * 1000), plot.width(), metrics)
         ms = 0
         while ms <= self._duration_s * 1000:
             x = self._x_for(ms / 1000.0)
@@ -413,6 +440,35 @@ def _curve_points(series, window: dict, mode_window: int, duration_s: float):
     return running_dps(series or [], window.get("first_s"), window.get("last_s"), duration_s)
 
 
+class _Legend(QListWidget):
+    """The legend, asking for its widest at the text size in force: a
+    list view's own width hint is 256 px at any text size, so from 125%
+    text the legend never grew past it and its rows lost their figures
+    (the fresh review of PR #207)."""
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setWidth(scaled_px(LEGEND_WIDTH))
+        return hint
+
+
+class _ModePicker(QComboBox):
+    """The curve picker, as wide as its longest item, on a row of its own,
+    and never narrower than about ten characters: held to those ten it cut
+    its own items, the default among them at 200% text (the fresh review
+    of PR #207)."""
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        least = self.style().sizeFromContents(
+            QStyle.CT_ComboBox, option,
+            QSize(MODE_LEAST_CHARS * self.fontMetrics().averageCharWidth(), hint.height()), self)
+        hint.setWidth(min(hint.width(), least.width()))
+        return hint
+
+
 class _LegendRows(QStyledItemDelegate):
     """The legend's rows no wider than the legend, so a long one is cut
     short with an ellipsis, whole in its hover, where a list view gives
@@ -424,14 +480,15 @@ class _LegendRows(QStyledItemDelegate):
         return size
 
 
-def legend_key(p: dict) -> str:
+def legend_key(p: dict, zone: str = "") -> str:
     """The key a player's legend tick is kept by: their handle, or a
     companion's name, which is its owner's handle and Companion; else the
-    unit id, for that fight alone (see the module notes)."""
+    *zone* and the unit id, the game keeping a player's id through an
+    instance's pulls (see the module notes)."""
     name = _join(p.get("name", ""))
     if name.startswith("@"):
         return name
-    return str(p.get("unit_id", ""))
+    return f"{zone}/{p.get('unit_id', '')}"
 
 
 class DpsGraphPanel(QWidget):
@@ -448,6 +505,7 @@ class DpsGraphPanel(QWidget):
         self._checked: Dict[str, bool] = {}  # legend choices by key, kept across fights
         self._players: List[Tuple[str, str, int]] = []  # (unit id, name, rank)
         self._keys: Dict[str, str] = {}  # unit id -> its legend key, for the fight shown
+        self._zone = None  # the zone of the fights the anonymous players' ticks are for
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -458,7 +516,7 @@ class DpsGraphPanel(QWidget):
         self.graph = DpsGraph()
         self.graph.setAccessibleName("DPS over time")
         middle.addWidget(self.graph, 1)
-        self.legend = QListWidget()
+        self.legend = _Legend()
         self.legend.setAccessibleName(LEGEND_NAME)
         self.legend.setTextElideMode(Qt.ElideRight)
         self.legend.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -475,11 +533,7 @@ class DpsGraphPanel(QWidget):
         bottom = QHBoxLayout()
         show = QLabel(SHOW_LABEL)
         bottom.addWidget(show)
-        self.mode = QComboBox()
-        # As narrow as about ten characters, its list showing each whole:
-        # the widest item set the tab's least width (see the module notes)
-        self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.mode.setMinimumContentsLength(MODE_LEAST_CHARS)
+        self.mode = _ModePicker()
         show.setBuddy(self.mode)
         # Named Show for a screen reader: Qt on Windows names a combo box by
         # its buddy, and on Linux by its current item, the label reaching a
@@ -522,11 +576,13 @@ class DpsGraphPanel(QWidget):
         """Show the fight *entry*: the group's line and every player's.
         *names* is the Hide names mask (gui.name_mask) for the legend and
         the hover."""
-        if self._shown is None or entry is not self._shown[0]:
-            # A tick kept by a unit id is its fight's alone: in the next
-            # fight the id can be another player's (legend_key)
+        zone = str(getattr(entry, "zone_name", "") or "")
+        if zone != self._zone:
+            # An anonymous player's tick is their instance's: in the next
+            # zone the game gives the unit id to another player (legend_key)
             self._checked = {key: on for key, on in self._checked.items()
                              if key == GROUP or key.startswith("@")}
+            self._zone = zone
         self._shown = (entry, dark, names)
         facts = [entry.boss_name or "", entry.zone_name or "",
                  str(entry.timestamp or ""), f"{_fmt_duration(entry.duration_s)} fight"]
@@ -566,7 +622,7 @@ class DpsGraphPanel(QWidget):
             # Hide names mask, so a hidden player reads as blocks there too
             name = names.text(_join(p.get("name", ""))) or unit_id
             self._players.append((unit_id, name, rank))
-            self._keys[unit_id] = legend_key(p)
+            self._keys[unit_id] = legend_key(p, self._zone)
             item = QListWidgetItem(_line_icon(series_color(rank, dark, self.colorblind),
                                               series_style(rank, self.colorblind)),
                                    self._legend_label(name, p.get("boss_dps"), p.get("dps"),
@@ -681,20 +737,10 @@ class DpsGraphPanel(QWidget):
             with self._keeping_legend_place():
                 self.show_graph(entry, dark, names=names)
 
-    def refresh(self, dark: bool, names=None) -> None:
-        """Re-render the fight shown, changed in place or for a theme
-        switch (the series colours follow it) or a flip of the Hide names
-        switch (*names*, the new mask; None keeps the one shown), the
-        legend keeping its place."""
-        if self._shown is not None:
-            entry, _dark, shown = self._shown
-            with self._keeping_legend_place():
-                self.show_graph(entry, dark, names=shown if names is None else names)
-
     @contextmanager
     def _keeping_legend_place(self):
         """Fill the legend anew inside the with block and put the reader's
-        place in it back, as the other windows keep theirs (issue #196): the
+        place in it back, as the other pages keep theirs (issue #196): the
         current line, known by its key, is current again, and selected only
         if it was (the legend makes GROUP current, unselected, when it takes
         the focus); the scroll is put back, and when the fight has ranked

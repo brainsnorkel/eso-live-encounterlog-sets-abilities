@@ -282,7 +282,7 @@ class TestGraphTab(unittest.TestCase):
             self.assertEqual({c.key for c in dialog.graph.curves}, {'Group', '1', '3'})
             third = next(c for c in dialog.graph.curves if c.key == '3')
             self.assertEqual(third.color.name(), '#1baf7a')
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             third = next(c for c in dialog.graph.curves if c.key == '3')
             self.assertEqual(third.color.name(), '#199e70')
         finally:
@@ -325,7 +325,7 @@ class TestGraphTab(unittest.TestCase):
             self.assertEqual(place, (0, bar.maximum()))
             win._on_fight_updated(entry)
             self.assertEqual((legend.currentRow(), bar.value()), place)
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             self.assertEqual((legend.currentRow(), bar.value()), place)
         finally:
             win.close()
@@ -347,7 +347,7 @@ class TestGraphTab(unittest.TestCase):
             self.assertEqual(legend.currentRow(), 5)
             self.assertEqual(legend.selectedItems(), [])
             legend.setCurrentRow(3)
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             self.assertEqual(legend.currentRow(), 3)
             self.assertEqual(legend.selectedItems(), [legend.item(3)])
         finally:
@@ -484,7 +484,8 @@ class TestGraphTab(unittest.TestCase):
         anons.players[0]['name'] = 'anon'
         anons.players[1]['name'] = 'anon'
         anons.players[2]['name'] = "@player3's Companion"
-        self.assertEqual([legend_key(p) for p in anons.players], ['1', '2', "@player3's Companion"])
+        self.assertEqual([legend_key(p, 'Moonlit Cove') for p in anons.players],
+                         ['Moonlit Cove/1', 'Moonlit Cove/2', "@player3's Companion"])
         panel.show_graph(anons, False)
         panel.legend.item(1).setCheckState(Qt.Unchecked)  # the first anon
         self.assertEqual([panel.legend.item(row).checkState() for row in (1, 2)],
@@ -507,10 +508,13 @@ class TestGraphTab(unittest.TestCase):
                 self.assertLessEqual(panel.minimumSizeHint().width(), least + 20)
                 self.assertEqual(panel.sizeHint().width(), panel.minimumSizeHint().width())
 
-    def test_a_tick_kept_by_unit_id_is_its_fights_alone(self):
-        """An anonymous player unticked in one fight: in the next, another
-        anonymous player with that unit id starts ticked (review of #207).
-        The tick kept by the id went to them."""
+    def test_an_anonymous_players_tick_is_their_instances(self):
+        """An anonymous player unticked on one pull stays unticked on the
+        next in the same zone, where the game keeps their unit id (the
+        fresh review of #207: dropped at every fight, it had to be unticked
+        after each pull). In another zone, another anonymous player with
+        that unit id starts ticked (the review on open: the tick kept by the
+        id alone went to them)."""
         from PySide6.QtCore import Qt
         from gui.dps_graph import DpsGraphPanel
         panel = DpsGraphPanel()
@@ -519,13 +523,38 @@ class TestGraphTab(unittest.TestCase):
         first.players[1]['name'] = 'anon'
         panel.show_graph(first, False)
         panel.legend.item(2).setCheckState(Qt.Unchecked)
-        second = _entry(players=2)
-        second.players[0]['name'] = 'anon'
-        second.players[0]['unit_id'] = '2'
-        second.players[1]['unit_id'] = '7'
-        panel.show_graph(second, False)
+        next_pull = _entry(players=2)
+        next_pull.players[1]['name'] = 'anon'
+        panel.show_graph(next_pull, False)
+        self.assertEqual(panel.legend.item(2).checkState(), Qt.Unchecked)
+        elsewhere = _entry(players=2)
+        elsewhere.zone_name = 'Sunspire'
+        elsewhere.players[0]['name'] = 'anon'
+        elsewhere.players[0]['unit_id'] = '2'
+        elsewhere.players[1]['unit_id'] = '7'
+        panel.show_graph(elsewhere, False)
         self.assertEqual(panel.legend.item(1).data(Qt.UserRole), '2')
         self.assertEqual(panel.legend.item(1).checkState(), Qt.Checked)
+
+    def test_the_time_axis_steps_wider_until_its_labels_fit(self):
+        """A 22-minute fight on the tab's narrower chart takes a wider step
+        than the timeline strip's, so its labels no longer run together (the
+        fresh review of #207: 0s 1m2m3m...); a short fight, or the same one
+        on the window's wider chart, keeps the strip's step."""
+        from PySide6.QtGui import QFont, QFontMetrics
+        from gui.dps_graph import axis_step_ms
+        from gui.timeline_strip import _fmt_tick
+        metrics = QFontMetrics(QFont())
+        long_fight = 1_314_000
+        step = axis_step_ms(long_fight, 469, metrics)
+        self.assertGreater(step, 60_000)
+        widest = max(metrics.horizontalAdvance(_fmt_tick(ms)) for ms in range(0, long_fight + 1, step))
+        self.assertGreaterEqual(469 * step / long_fight, widest + 2 * metrics.averageCharWidth())
+        # Charts wide enough for the strip's step in any font
+        self.assertEqual(axis_step_ms(90_000, 1200, metrics), 10_000)
+        self.assertEqual(axis_step_ms(long_fight, 2400, metrics), 60_000)
+
+
 
     def test_a_players_two_rows_follow_one_tick(self):
         """A player gone and back in the fight has two rows, a unit id each,

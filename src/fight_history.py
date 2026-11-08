@@ -31,7 +31,7 @@ class FightHistoryEntry:
         # the group to its last, and the same for the hits on the bosses
         self.dps_time_s = 0.0
         self.boss_dps_time_s = 0.0
-        # The group's damage per second of the fight for the graph window
+        # The group's damage per second of the fight for the DPS graph
         # (damage_stats.FightDamage.series): {'all', 'boss', 'window',
         # 'boss_window'}; None on an entry built without it
         self.damage_series = None

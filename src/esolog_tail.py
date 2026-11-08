@@ -3283,7 +3283,7 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.boss_dps_time_s = damage.boss_window.span_ms / 1000.0
         entry.group_dps = dps_over(enc.total_damage, damage.window.span_ms)
         entry.group_boss_dps = dps_over(enc.boss_damage, damage.boss_window.span_ms)
-        # The group's damage per second, for the graph window
+        # The group's damage per second, for the DPS graph
         entry.damage_series = damage.series(enc.start_time)
         entry.deaths = self.fight_deaths  # this fight's player deaths
         # The recaps' rows are classed once more with every cast of the
