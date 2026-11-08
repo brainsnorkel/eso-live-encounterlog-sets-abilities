@@ -120,7 +120,9 @@ class TestDeathButtonInFightView(DeathRecapGuiTestCase):
     def test_hover_summarises_each_death(self):
         from gui.death_render import death_tooltips
         tips = death_tooltips(_entry_with_deaths())
-        self.assertEqual(set(tips), {'esolog:deaths/1', 'esolog:deaths/77'})
+        # Each player's chip, and the header's Deaths N (issue #196)
+        self.assertEqual(set(tips), {'esolog:deaths/1', 'esolog:deaths/77', 'esolog:fightdeaths/'})
+        self.assertIn('on the Deaths tab', tips['esolog:fightdeaths/'])
         tip = tips['esolog:deaths/1']
         self.assertIn('@tester: 2 deaths', tip)
         self.assertIn('0:54', tip)
@@ -589,10 +591,12 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.select_fight(0)
             view = win.fight_view
-            found = view.document().find('☠')
-            self.assertFalse(found.isNull())
+            # The player's chip, not the header's Deaths N, which has a
+            # skull too (issue #196)
+            found = view._text_anchor_cursor('esolog:deaths/1')
+            self.assertIsNotNone(found)
             inside = QTextCursor(view.document())
-            inside.setPosition(found.selectionStart() + 3)
+            inside.setPosition(found.selectionStart() + 1)
             self.assertEqual(inside.charFormat().anchorHref(), 'esolog:deaths/1')
             point = view.cursorRect(inside).center() + QPoint(2, 0)
             QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, point)

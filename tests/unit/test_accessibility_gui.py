@@ -162,8 +162,9 @@ class TestMainWindow(AccessibilityTestCase):
     def test_the_parts_are_named(self):
         from PySide6.QtGui import QAccessible
         win = self._window()
-        for widget, name in ((win.history_list, "Fights"), (win.search_field, "Search in fight"),
-                             (win.fight_view, "Fight"), (win.timeline_strip, "Buff timeline")):
+        for widget, name in ((win.history_list, "Fights"), (win.search_field, "Search this tab"),
+                             (win.fight_tabs, "Fight views"), (win.fight_view, "Fight"),
+                             (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline")):
             self.assertEqual(QAccessible.queryAccessibleInterface(widget).text(QAccessible.Name),
                              name)
 

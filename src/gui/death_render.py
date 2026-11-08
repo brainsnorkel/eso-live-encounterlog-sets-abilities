@@ -57,6 +57,10 @@ DEATHS_HREF = "esolog:deaths/"  # + the player's unit id
 # player, as a list of the fight's deaths links each to its recap (issue
 # #196); apart from DEATHS_HREF, which is the player's chip
 RECAP_HREF = "esolog:recap/"
+# The fight header's Deaths N: every death of the fight, on the main
+# window's Deaths tab (issue #196)
+FIGHT_DEATHS_HREF = "esolog:fightdeaths/"
+FIGHT_DEATHS_TIP = "Click for every death of the fight, on the Deaths tab (Alt+E)"
 # + the death's number from 1: the <a name> each death's recap begins with,
 # where a link to that death scrolls to
 DEATH_ANCHOR = "death-"
@@ -230,7 +234,8 @@ def death_chip_html(unit_id, deaths: List[dict], dark: bool,
 
 def death_tooltips(entry, names=None) -> Dict[str, str]:
     """Hover text per death-recap button: when and to what the player
-    died; *names* is the Hide names mask (gui.name_mask)."""
+    died; and the header's Deaths N's. *names* is the Hide names mask
+    (gui.name_mask)."""
     names = names or NO_MASK
     e = html.escape
     tips = {}
@@ -246,6 +251,9 @@ def death_tooltips(entry, names=None) -> Dict[str, str]:
             lines.append(e(dead))
         lines.append("<span style='font-size:85%'>Click for the death recap</span>")
         tips[death_href(unit_id)] = "<br>".join(lines)
+    if int(getattr(entry, "deaths", 0) or 0):
+        tips[FIGHT_DEATHS_HREF] = (f"<b>Deaths</b><br><span style='font-size:85%'>"
+                                   f"{e(FIGHT_DEATHS_TIP)}</span>")
     return tips
 
 

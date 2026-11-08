@@ -44,7 +44,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.activity_render import activity_action_from_href, review_index_from_href
-from gui.death_render import RECAP_HREF, recap_from_href, unit_from_href
+from gui.death_render import FIGHT_DEATHS_HREF, RECAP_HREF, recap_from_href, unit_from_href
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
     damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
@@ -110,6 +110,7 @@ class FightView(QTextBrowser):
     build_requested = Signal(str)  # unit id of the player whose name was clicked
     damage_requested = Signal(str)  # unit id of the player whose dps figure was clicked
     graph_requested = Signal()  # the header's group dps figure was clicked
+    fight_deaths_requested = Signal()  # the header's Deaths N: the fight's Deaths tab (issue #196)
     issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
     taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
@@ -596,7 +597,8 @@ class FightView(QTextBrowser):
         is the pointer on the anchor.
         """
         selections = []
-        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF, RECAP_HREF)):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF, RECAP_HREF,
+                            FIGHT_DEATHS_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -774,6 +776,9 @@ class FightView(QTextBrowser):
             return
         if url.toString() == GRAPH_HREF:
             self.graph_requested.emit()
+            return
+        if url.toString() == FIGHT_DEATHS_HREF:
+            self.fight_deaths_requested.emit()
             return
         unit_id = issues_unit_from_href(url.toString())
         if unit_id is not None:

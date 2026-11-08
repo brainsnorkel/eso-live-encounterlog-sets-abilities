@@ -15,6 +15,7 @@ time, so the pictures stay in step with the app:
     main-window.png                 detail view and timeline strip, a boss fight selected
     compact-view.png                Detail view off
     search.png                      a search in the fight
+    fight-deaths.png                the fight's Deaths tab, every death of the fight
     build-window.png                the top damage dealer's player window, on its Build tab
     build-pen-crit.png              the same window on its Pen and crit tab
     build-resources.png             the same window on its Resources tab
@@ -180,6 +181,13 @@ def main():
         save(win, "search.png")
         win.search_field.clear()
         pump(0.5)
+
+    # The fight's Deaths tab (issue #196), then the Fight tab again
+    win.fight_tabs.setCurrentWidget(win.deaths_view)
+    pump(1)
+    save(win, "fight-deaths.png")
+    win.fight_tabs.setCurrentIndex(0)
+    pump(0.5)
 
     # The player window (issue #196) for the top damage dealer, one picture
     # per tab, at its default size: on the offscreen platform's small
