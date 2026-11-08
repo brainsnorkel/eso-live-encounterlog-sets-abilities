@@ -503,6 +503,7 @@ class TestGraphTab(unittest.TestCase):
             panel = DpsGraphPanel()
             self.addCleanup(panel.deleteLater)
             panel.show_graph(_entry(players=10), False)
+            panel.show()  # its floor counts only while it is shown
             least = 360 + text_size.scaled_px(LEGEND_LEAST)
             with self.subTest(pct=pct):
                 self.assertLessEqual(panel.minimumSizeHint().width(), least + 20)

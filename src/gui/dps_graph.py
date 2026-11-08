@@ -559,6 +559,27 @@ class DpsGraphPanel(QWidget):
         hint.setWidth(self.minimumSizeHint().width())
         return hint
 
+    def minimumSizeHint(self):
+        """The chart's floor and the legend's narrowest, with the tab on
+        screen; nothing while it is hidden. A tab widget is at least as
+        large as its largest page, hidden ones too, and the graph's floor
+        held the window at 556 px on every tab, against 286 before the tab
+        (the fresh review of PR #207; Chris chose this): showing the graph
+        in a narrower window widens it to fit."""
+        hint = super().minimumSizeHint()
+        if not self.isVisible():
+            hint.setWidth(0)
+            hint.setHeight(0)
+        return hint
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.updateGeometry()  # the floor counts again (minimumSizeHint)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.updateGeometry()
+
     def _size_legend(self) -> None:
         """The legend's widest and narrowest at the text size in force
         (see the module notes)."""

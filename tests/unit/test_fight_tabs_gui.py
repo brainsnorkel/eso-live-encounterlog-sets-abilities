@@ -610,6 +610,26 @@ class TestTheSearch(FightTabsTestCase):
                 self.assertLess(panel.mode.minimumSizeHint().width(), panel.mode.sizeHint().width())
                 self.assertGreater(panel.mode.width(), panel.mode.minimumSizeHint().width())
 
+    def test_the_graphs_floor_counts_only_on_its_tab(self):
+        """On the Fight tab the window's least width leaves the graph's floor
+        out, as it was before the graph was a tab; on the graph's tab the
+        column is at least the chart's floor and the legend's narrowest (the
+        fresh review of #207: the hidden graph held the window at 556 px on
+        every tab, against 286; Chris chose this)."""
+        from gui import text_size
+        from gui.dps_graph import LEGEND_LEAST
+        win = self._window(_entry_with_deaths())
+        self._settle()
+        floor = 360 + text_size.scaled_px(LEGEND_LEAST)
+        self.assertLess(win.fight_tabs.widget(0).minimumSizeHint().width(), floor)
+        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+        win.graph_action.trigger()
+        self._settle()
+        self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), floor)
+        win.fight_tabs.setCurrentIndex(0)
+        self._settle()
+        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""
