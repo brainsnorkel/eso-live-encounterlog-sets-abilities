@@ -1,0 +1,2 @@
+### Changed
+- **The DPS graph is a tab beside the fight** (#196): the graph that opened in a window of its own is now the main window's DPS graph tab (Alt+G), beside Fight and Deaths, on the fight selected in the list; the header's group dps figure and the toolbar's DPS graph open it. Its legend narrows with the window, a name cut short showing whole in its hover, and the lines you tick are kept by the player's handle, so they carry into the next instance, where the game numbers the players afresh.
