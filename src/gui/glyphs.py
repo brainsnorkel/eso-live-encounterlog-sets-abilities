@@ -60,11 +60,12 @@ one image per kind, colour, size and ratio, kept for the session.
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QRadialGradient
 
-from gui.fight_render import BREAKDOWN_GLYPH, GRAPH_GLYPH, ISSUES_GLYPH, TAKEN_GLYPH
+from gui.death_render import SKULL
+from gui.fight_render import BREAKDOWN_GLYPH, DEATHS_GLYPH, GRAPH_GLYPH, ISSUES_GLYPH, TAKEN_GLYPH
 
-KINDS = (GRAPH_GLYPH, BREAKDOWN_GLYPH, TAKEN_GLYPH, ISSUES_GLYPH)
+KINDS = (GRAPH_GLYPH, BREAKDOWN_GLYPH, TAKEN_GLYPH, ISSUES_GLYPH, DEATHS_GLYPH)
 
 # The build-issues mark: its ring's outer edge as a share of the image's
 # edge (11.5 px of 16 at 9 pt, about the font's own ⓘ), and the halo's
@@ -125,6 +126,14 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
         painter.drawPath(path)
     elif kind == ISSUES_GLYPH:
         _draw_issues(painter, color, size, dpr)
+    elif kind == DEATHS_GLYPH:
+        # The death chip's skull, as the application's font draws it (its
+        # fallback finds the glyph), after the header's Deaths N (#206)
+        font = QFont()
+        font.setPixelSize(max(1, round(px * 0.95)))
+        painter.setFont(font)
+        painter.setPen(color)
+        painter.drawText(QRectF(0, 0, px, px), Qt.AlignCenter, SKULL)
     else:
         # A breakdown: three bars, the longest on top, as the damage
         # window ranks abilities

@@ -77,6 +77,9 @@ import split_retention
 from update_check import CHANNEL_CHOICES, format_release_date, normalize_channel
 from version import __version__
 
+# The fight pane's least height, in pixels (see _build_ui, #206)
+PANE_LEAST_PX = 48
+
 # Freshness state thresholds (log-freshness spec)
 LIVE_SECONDS = 2 * 60
 IDLE_SECONDS = 30 * 60
@@ -210,6 +213,9 @@ class MainWindow(QMainWindow):
         # for a new fight's first match (_note_search_place)
         self._fight_entry = None
         self._search_places = {}
+        # The search's text when it last ran on each page: a search typed on
+        # one tab starts at the other's first match when that is shown
+        self._searched = {}
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
         # The Hide names switch (issue #72, gui.name_mask): every player
@@ -404,7 +410,7 @@ class MainWindow(QMainWindow):
         self.fight_tabs = self.fight_views.tabs
         fight_page = QWidget()
         fight_layout = QVBoxLayout(fight_page)
-        fight_layout.setContentsMargins(0, 4, 0, 0)
+        fight_layout.setContentsMargins(0, 0, 0, 0)
         # EXPERIMENTAL buff timeline strip: sits between the header area and
         # the summary text; hidden whenever the fight has no timeline data
         self.timeline_strip = TimelineStrip()
@@ -420,6 +426,11 @@ class MainWindow(QMainWindow):
         # Serves bundled ability icons, hover names, and ESO-Hub link clicks
         self.fight_view = FightView()
         self.fight_view.setAccessibleName("Fight")
+        # The tab bar costs the window's least height its own (25 px at 100%
+        # text, 39 at 200%), which kept the window from fitting a 1280x720
+        # screen at 200% (#206): the pane's least height is Qt's 70 px less
+        # that, a line or two of the page when the window is at its least
+        self.fight_view.setMinimumHeight(PANE_LEAST_PX)
         self.fight_view.death_recap_requested.connect(self._show_death_recap)
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
@@ -694,7 +705,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(event.label, 15000)
             self.history_list.refresh_all_runs()
             if self.history_list.current_entry() is not None:
-                self._show_fight()
+                self._redraw_fight()  # each page where the reader had it
         elif event.kind == "cancelled" and self._backfilling:
             self.statusBar().showMessage(
                 "Fight history paused: Build from split logs in Settings carries on "
@@ -1420,12 +1431,14 @@ class MainWindow(QMainWindow):
         self.history_list.select_fight(-1)
         self._update_player_listed()
 
-    def _show_fight(self, *_, search_from=None):
+    def _show_fight(self, *_, search_from=None, deaths=True):
         """The current fight on the fight's tabs (the list's
         currentRowChanged passes the row, which a header row never is).
         *search_from*, for the page redrawn in place, is where the reader
         had the text cursor among the search's matches on the tab on screen
         (_search_place): the search goes on from there (_apply_search).
+        *deaths* False leaves the Deaths page as it is, for a change to the
+        Fight page alone (Detail view).
 
         The Fight page, the strip and the pane, is always drawn, as the
         issue's design has it: one path for the pane, which the list's
@@ -1511,6 +1524,8 @@ class MainWindow(QMainWindow):
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
                                             history=history))
         if self.fight_tabs.currentWidget() is self.deaths_view:
+            if not deaths:
+                return
             with ExitStack() as kept:
                 if entry is self._deaths_entry:
                     kept.enter_context(self.deaths_view.keeping_place())
@@ -1742,6 +1757,7 @@ class MainWindow(QMainWindow):
         matches, not the occurrence, as the pane's scroll is kept by
         position (issue #196)."""
         view = self._search_view()
+        self._searched[view] = self.search_field.text()
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -1835,8 +1851,13 @@ class MainWindow(QMainWindow):
     def _on_fight_tab_changed(self, index):
         """A tab chosen, which stays as the fights change: its page is
         drawn if it was marked, in place when it shows the fight already,
-        and the search goes to it, the text cursor left where it was on a
-        page shown as it was left."""
+        and the search goes to it. On a page shown as it was left the text
+        cursor stays where it was, and the link reached with Tab has Tab's
+        focus again, which Qt drops as the tab widget hides the page (the
+        player window gives it back too); a page drawn again while hidden
+        goes on from its place (_note_search_place). A search typed while
+        the page was hidden, or a new fight, starts at its first match
+        (#206)."""
         if not self.fight_views.is_shown():
             return  # no fight: the Fight tab, put there by set_shown
         self._chosen_tab = index
@@ -1846,24 +1867,37 @@ class MainWindow(QMainWindow):
         for view in (self.fight_view, self.deaths_view):
             if view is not searched:
                 view.set_search_selections([])
+        same_search = self._searched.get(searched, "") == self.search_field.text()
         if (searched is self.deaths_view and entry is not None
                 and (self._deaths_dirty or entry is not self._deaths_entry)):
             if entry is self._deaths_entry:
-                # Drawn again in place, the search going on from its place
-                place = self._search_place(self.deaths_view.textCursor().position())
+                # Drawn again in place, its Tab link kept by the redraw, the
+                # search going on from its place, read before the link moves
+                # the cursor
+                place = (self._search_place(self.deaths_view.textCursor().position())
+                         if same_search else None)
+                self.deaths_view.give_link_back()
                 with self.deaths_view.keeping_place():
                     self._draw_deaths(entry)
-                    self._apply_search(search_from=place)
+                    if place is not None:
+                        self._apply_search(search_from=place)
+                if place is None:
+                    self._apply_search()  # a search typed meanwhile: its first match
             else:
                 self._draw_deaths(entry)
                 self._apply_search()  # a new fight: its first match
             return
-        if searched not in self._search_places:
-            self._apply_search(keep_cursor=True)  # as it was left
+        noted = self._search_places.pop(searched, None)
+        if noted is None:
+            if same_search:
+                searched.give_link_back()
+                self._apply_search(keep_cursor=True)  # as it was left
+            else:
+                self._apply_search()  # a search typed meanwhile: its first match
             return
-        place = self._search_places.pop(searched)
-        if place is None:
-            self._apply_search()  # a new fight drawn meanwhile: its first match
+        text, place = noted
+        if place is None or text != self.search_field.text():
+            self._apply_search()  # a new fight, or a new search: its first match
         else:
             with searched.keeping_place():
                 self._apply_search(search_from=place)
@@ -1873,11 +1907,14 @@ class MainWindow(QMainWindow):
         it is next shown, the search goes on from its place among the
         matches if it shows the same fight (*same*), taken before the first
         such drawing, while its cursor is where the reader left it; or
-        from the first match of a new fight."""
-        if not same:
-            self._search_places[view] = None
+        from the first match of a new fight, or of a search typed since it
+        last ran there. Kept with the search's text, which the place is
+        for."""
+        text = self.search_field.text()
+        if not same or self._searched.get(view, "") != text:
+            self._search_places[view] = (text, None)
         elif view not in self._search_places:
-            self._search_places[view] = self._search_place(view.textCursor().position(), view)
+            self._search_places[view] = (text, self._search_place(view.textCursor().position(), view))
 
     def _draw_deaths(self, entry):
         """Every death of *entry* on the Deaths page
@@ -1914,7 +1951,15 @@ class MainWindow(QMainWindow):
 
     def _toggle_detail(self, checked):
         self._detailed = checked
-        self._show_fight()
+        if self.fight_tabs.currentWidget() is self.deaths_view:
+            # Detail view changes the Fight page alone: the Deaths page on
+            # screen is left as it is, its search where it was, and the
+            # Fight page's search starts at its first match when it is next
+            # shown, as on a page drawn anew (#206)
+            self._search_places[self.fight_view] = (self.search_field.text(), None)
+            self._show_fight(deaths=False)
+        else:
+            self._show_fight()
 
     # ---- hidden names ----
 

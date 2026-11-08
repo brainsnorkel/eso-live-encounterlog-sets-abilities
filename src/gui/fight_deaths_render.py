@@ -49,8 +49,9 @@ NO_DEATHS = "No one died in this fight."
 NO_PLAYER_DEATHS = "No player died in this fight."
 DASH = "–"
 # Under the table when a death's time dead is a dash (see the module)
-DEAD_FOR_NOTE = ("A dash: time dead is kept for each player in all, not death by death, "
-                 "so for a player who died more than once it is in Time dead, below.")
+DEAD_FOR_NOTE = ("A dash: the log keeps time dead for each player in all, not death by "
+                 "death, so only some deaths can be given their own; each player's total is "
+                 "in Time dead, below.")
 KILLERS_LEAD = "Killers:"
 TIME_DEAD_LEAD = "Time dead:"
 COMPANIONS_LEAD = "Companions:"
@@ -135,16 +136,18 @@ def _table_html(entry, deaths, at_end, dark: bool, theme: dict, icons, names,
     rows = {str(p.get("unit_id", "")): p for p in getattr(entry, "players", None) or []}
     head = (f"style='color:{muted};border-bottom-style:solid;"
             f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
-    # Fixed column shares, as the recap's table has; the icon in a column of
-    # its own, and not 100% wide, for the reasons given there
+    # Fixed shares for the player and the source, as the recap's table has;
+    # the short columns as wide as their text, never broken (#206); the
+    # icon in a column of its own, and not 100% wide, for the reasons given
+    # there
     parts = [(
         "<table cellpadding='3' cellspacing='0' width='99%'>"
-        f"<tr><td width='7%' align='right' {head}>Time</td>"
-        f"<td width='5%' {head}>Role</td>"
+        f"<tr><td align='right' {head[:-1]};white-space:nowrap'>Time</td>"
+        f"<td {head[:-1]};white-space:nowrap'>Role</td>"
         f"<td width='22%' {head}>Player</td>"
         f"<td colspan='2' {head}>Killed by</td>"
         f"<td width='22%' {head}>From</td>"
-        f"<td width='15%' align='right' {head}>Dead for</td></tr>")]
+        f"<td align='right' {head[:-1]};white-space:nowrap'>Dead for</td></tr>")]
     dashed = False
     for recap, unit_id, n, of in deaths:
         p = rows.get(unit_id)
@@ -175,14 +178,18 @@ def _table_html(entry, deaths, at_end, dark: bool, theme: dict, icons, names,
             dead = e(clock(ms / 1000))
             if n == of and at_end and unit_id in at_end:
                 dead += f" <span style='color:{muted}'>to the end</span>"
+        # The time, the role, the player and how long they were dead never
+        # break inside a word: at 150-200% text the table's fixed shares
+        # broke 'Time', '1:03' and a long handle in two (#206)
+        nowrap = "white-space:nowrap;"
         cells = (
-            (" align='right'", f"color:{muted};", e(at_clock(recap.get("time_ms")))),
-            ("", "", role_html),
-            ("", "", link),
+            (" align='right'", f"color:{muted};{nowrap}", e(at_clock(recap.get("time_ms")))),
+            ("", nowrap, role_html),
+            ("", nowrap, link),
             (f" width='{scaled_px(ICON_PX)}'", "", icon),
             ("", "", e(str(recap.get("ability") or "unknown"))),
             ("", "", source),
-            (" align='right'", "", dead),
+            (" align='right'", nowrap, dead),
         )
         parts.append("<tr>" + "".join(
             f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"

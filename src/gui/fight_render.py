@@ -99,7 +99,7 @@ from typing import List, Optional, Tuple
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
 from fight_opener import PlayerName, opener_parts
-from gui.death_render import FIGHT_DEATHS_HREF, SKULL, death_chip_html, deaths_by_unit
+from gui.death_render import FIGHT_DEATHS_HREF, death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
@@ -181,6 +181,9 @@ BREAKDOWN_GLYPH = "breakdown"  # after a player's dps figure
 # since any player takes damage, in the link colour like the (i)
 TAKEN_HREF = "esolog:taken/"
 TAKEN_GLYPH = "taken"
+# After the header's Deaths N, which opens the fight's Deaths tab: the
+# skull, drawn as an image so a screen reader is given its words (#206)
+DEATHS_GLYPH = "deaths"
 # + the player's unit id: the healing received line of their damage taken
 # page, which opens its own page, the table by healer (issue #196)
 HEALING_HREF = "esolog:healing/"
@@ -194,7 +197,8 @@ ISSUES_GLYPH_LINE = 1.3
 # What a screen reader says for each glyph (its alt text; FightView reads
 # alt text out in place of the image, issue #77)
 GLYPH_ALT = {GRAPH_GLYPH: "DPS graph", BREAKDOWN_GLYPH: "damage breakdown",
-             TAKEN_GLYPH: "damage taken", ISSUES_GLYPH: "possible build issues"}
+             TAKEN_GLYPH: "damage taken", ISSUES_GLYPH: "possible build issues",
+             DEATHS_GLYPH: "Deaths tab"}
 # A player's bars as the entry holds them: the two the log writes, then the
 # werewolf bar rebuilt from casts (werewolf.py)
 BAR_KEYS = ("front_bar_slots", "back_bar_slots", "werewolf_bar_slots")
@@ -638,17 +642,17 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
             f"<table cellpadding='2' cellspacing='0'>{''.join(rows)}</table>")
 
 
-def _deaths_link(entry, theme: dict) -> str:
+def _deaths_link(entry, theme: dict, px: int) -> str:
     """The header's Deaths N. With a death, a link to the fight's Deaths
     tab (issue #196), keeping the look of plain text as the group dps
-    figure does, a skull in the link colour inside it saying it is one;
-    the &nbsp; keeps the skull on its line when the header wraps."""
+    figure does, the skull glyph (*px* square) in the link colour inside
+    it saying it is one, which a screen reader reads as the Deaths tab
+    (#206); the &nbsp; keeps the glyph on its line when the header wraps."""
     deaths = int(getattr(entry, "deaths", 0) or 0)
     if not deaths:
         return f"Deaths {deaths}"
-    muted, link = theme["muted"], theme["link"]
-    return (f'<a href="{FIGHT_DEATHS_HREF}" style="text-decoration:none;color:{muted}">'
-            f"Deaths {deaths}&nbsp;<span style='color:{link}'>{SKULL}</span></a>")
+    return (f'<a href="{FIGHT_DEATHS_HREF}" style="text-decoration:none;color:{theme["muted"]}">'
+            f'Deaths {deaths}&nbsp;{glyph_html(DEATHS_GLYPH, theme["link"], px)}</a>')
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -1249,7 +1253,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
-             f" · {_deaths_link(entry, theme)}")
+             f" · {_deaths_link(entry, theme, px)}")
     # The fight that completed a trial: the run's result in a strip across
     # the top, framed like a build card (trial_result)
     result = getattr(entry, "trial_result", None)
