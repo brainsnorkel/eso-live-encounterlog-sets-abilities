@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.37.0] - 2026-11-09
+
+### Added
+- **Each instance on a tab of its own** (#196): the Instance tab (Alt+I), beside Fight, Deaths and the DPS graph, sums up the trial, arena or dungeon run the fight on screen belongs to, its group in the fight list: when it was fought, its fights and players and the game version; the run's result with its score banner; each boss's pulls, how they ended, the kill's time and boss dps, the deaths and the best earlier kill with this roster, each pull a link to that fight; what ended the pulls; the trash; and every player's pulls, deaths, time dead and possible build issues, each name opening that player's window. **Copy this instance** copies it as Copy session writes each instance. Click a header, pull or result line in the fight list to open the tab on that instance, a pull line's at that boss.
+
 ## [0.36.0] - 2026-11-09
 
 ### Added
