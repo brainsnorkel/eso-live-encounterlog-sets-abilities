@@ -137,6 +137,20 @@ class TestFightDeathsPage(unittest.TestCase):
         self.assertIn("Killers: Tremor from Sharpfang's Hound ×2", text)
         self.assertNotIn("% by", text)
 
+    def test_the_dash_note_holds_in_a_fight_that_carries_on_the_last_pull(self):
+        """In a fight that carries on the last pull, a player's only death
+        shows a dash too, and the note says only that some deaths cannot be
+        given their own time, not that the dashed player died more than
+        once (#206)."""
+        from gui.fight_deaths_render import DEAD_FOR_NOTE
+        entry = _entry()
+        entry.pull = dict(entry.pull, continues=True)
+        page = self._render(entry)
+        friend = [row for row in _cells(page)[1:] if row[2] == "@friend"][0]
+        self.assertEqual(friend[-1], "–")
+        self.assertIn(DEAD_FOR_NOTE, page)
+        self.assertNotIn("more than once", DEAD_FOR_NOTE)
+
     def test_a_player_the_table_does_not_list_is_there_without_a_role(self):
         page = self._render(_entry())
         passerby = _cells(page)[3]

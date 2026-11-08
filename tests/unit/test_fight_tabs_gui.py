@@ -398,6 +398,96 @@ class TestTheSearch(FightTabsTestCase):
             self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
         self.assertNotIn("@passerby", win.deaths_view.toPlainText())
 
+    def test_detail_view_leaves_the_deaths_page_and_its_search_alone(self):
+        """Ctrl+D with Deaths on screen changes the Fight page only: the
+        Deaths page's search stays at its match, and the Fight page's starts
+        at its first match when it is shown (#206)."""
+        win = self._window(_entry_with_deaths())
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        at = self._search(win, "Sharpfang", steps=2)
+        win.detail_action.setChecked(False)
+        self.assertEqual(win.deaths_view.textCursor().position(), at)
+        win.fight_tabs.setCurrentIndex(0)
+        self.assertEqual(win.fight_view.textCursor().position(),
+                         win._search_matches()[0].selectionStart())
+
+    def test_a_search_typed_on_one_tab_starts_at_the_others_first_match(self):
+        """Fight at its third match, a new search typed on Deaths: back on
+        Fight, the new search's first match (#206)."""
+        win = self._window(_entry_with_deaths())
+        self._search(win, "Sharpfang", steps=2)
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        self._search(win, "Slap")
+        win.fight_tabs.setCurrentIndex(0)
+        matches = win._search_matches()
+        self.assertTrue(matches)
+        self.assertEqual(win.fight_view.textCursor().position(), matches[0].selectionStart())
+
+    def test_the_tab_link_comes_back_with_its_tab(self):
+        """A link reached with Tab on the Fight page has Tab's focus again
+        after Ctrl+PgDn and Ctrl+PgUp, as in the player window (#206)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self._window(_entry_with_deaths())
+        view = win.fight_view
+        view.setFocus()
+        _app.processEvents()
+        for _ in range(3):
+            QTest.keyClick(view, Qt.Key_Tab)
+        link = view._tab_link()
+        self.assertIsNotNone(link)
+        self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
+        self._key(win, Qt.Key_PageUp, Qt.ControlModifier)
+        self.assertEqual(win.fight_tabs.currentIndex(), 0)
+        self.assertEqual(view._tab_link(), link)
+
+    def test_the_deaths_table_never_breaks_a_word_at_large_text(self):
+        """At 200% text in the default window, each cell of the Deaths
+        table's time, role, player and dead-for columns is one line: their
+        fixed shares broke 'Time' and '1:03' in two (#206)."""
+        import re
+        win = self._window(_entry_with_deaths())
+        win.set_text_size(200)
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        self._settle()
+        short = re.compile(r"^(Time|Role|Dead for|\d+:\d\d|@\w+)$")
+        checked = 0
+        block = win.deaths_view.document().begin()
+        while block.isValid():
+            if short.match(block.text().strip()):
+                self.assertEqual(block.layout().lineCount(), 1, block.text())
+                checked += 1
+            block = block.next()
+        self.assertGreaterEqual(checked, 8)
+
+    def test_the_headers_skull_is_read_as_the_deaths_tab(self):
+        """The header's Deaths N ends in a glyph image whose alt text a
+        screen reader is given, as the dps figure's is (#206)."""
+        from gui.fight_render import DEATHS_GLYPH
+        from gui.glyphs import glyph_image
+        win = self._window(_entry_with_deaths())
+        self.assertIn("Deaths 3 Deaths tab", win.fight_view.accessible_text())
+        image = glyph_image(DEATHS_GLYPH, "#1a73e8", 13)
+        self.assertIsNotNone(image)
+        self.assertTrue(any(image.pixelColor(x, y).alpha() for x in range(13) for y in range(13)))
+
+    def test_the_tabs_cost_the_windows_least_height_no_more_than_their_bar(self):
+        """The window's least height with a fight shown is no more than its
+        least with none (the bar hidden) and the bar's height, and the pane
+        gives up height for it: a 1280x720 screen held the window at 200%
+        text before the tabs and did not after (#206)."""
+        from gui.main_window import PANE_LEAST_PX
+        win = self._window()
+        self._settle()
+        bare = win.minimumSizeHint().height()
+        win._on_fight_completed(_entry_with_deaths())
+        self._settle()
+        bar = win.fight_tabs.tabBar().sizeHint().height()
+        self.assertTrue(win.fight_views.in_corner())
+        self.assertLessEqual(win.minimumSizeHint().height(), bare + bar)
+        self.assertEqual(win.fight_view.minimumHeight(), PANE_LEAST_PX)
+        self.assertLess(PANE_LEAST_PX, win.fight_view.minimumSizeHint().height())
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""
