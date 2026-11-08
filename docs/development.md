@@ -46,8 +46,8 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/update_poller.py`, `gui/update_popup.py` | The 15-minute release check and the installer download on their own thread; the ⓘ popup with the release notes. |
-| `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window and its dialogs, the example tracked-effect rules picker among them. |
-| `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/taken_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage, their damage taken and a death recap, each in parts for the player window's tabs. They take fight data and return strings, so they are tested without a window. |
+| `gui/main_window.py`, `gui/fight_tabs.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window, its fight's tabs and the search in their corner, and its dialogs, the example tracked-effect rules picker among them. |
+| `gui/fight_render.py`, `gui/fight_deaths_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/taken_render.py`, `gui/death_render.py` | HTML and plain text for a fight, every death of a fight, a build, a player's damage, their damage taken and a death recap, each in parts for the player window's tabs. They take fight data and return strings, so they are tested without a window. |
 | `gui/player_window.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py` | A player's window, a tab for each of their pages; the dps over time graph, the buff timeline strip, the icon cache, and the small glyphs drawn after the dps figures to show they can be clicked. |
 
 ## Running from source

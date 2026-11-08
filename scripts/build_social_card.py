@@ -38,9 +38,9 @@ TITLE = "ESO Log Tail"
 TAGLINE = ("Live fight summaries from your Elder Scrolls Online "
            "encounter log, the moment combat ends.")
 FOOTNOTE = "Builds · DPS · deaths · buff uptimes   |   free, open source, Windows and Linux"
-# The part of main-window.png the card shows: the right pane from the top
-# of the buff timeline to the fourth player's set line (left, top, right,
-# bottom), at the screenshot's own 1400 x 880
+# The part of main-window.png the card shows: the right pane from the
+# fight's tabs over the buff timeline to the fourth player's bars (left,
+# top, right, bottom), at the screenshot's own 1400 x 880
 CROP = (460, 36, 1386, 600)
 SHOT_X, SHOT_SCALE = 640, 0.78
 

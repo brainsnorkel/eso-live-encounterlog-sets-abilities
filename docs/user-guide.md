@@ -33,6 +33,8 @@ Joining mid-raid, the app replays the logging session already in the file: the s
 
 ![The main window: the fight history on the left, the selected fight on the right](screencaps/main-window.png)
 
+On the right, the fight selected in the list is on two tabs: **Fight** (Alt+F), the fight itself as described below, and **Deaths** (Alt+E), [every death of the fight](#every-death-of-a-fight). The tab you choose stays as you pick other fights and as new fights come in. Ctrl+PgDn and Ctrl+PgUp step through the tabs from anywhere in the window, the fight list too. Until a fight is listed, the tabs and the search are hidden.
+
 ### Before the first fight
 
 Until the session's first fight is listed, the fight pane says what the app is doing. `Monitoring Encounter.log` means the log is there and being watched; under it, when the app has ever archived the log, `Encounter.log was last archived at 2 Nov 2026, 21:00: Encounter-261102204800.zip, 65 MB, ending 2 Nov 2026, 20:48` names the newest archive, when it was made, and the time of the last line it holds. If the log is not there because the app archived and deleted it in this run, at its start or with **Archive now** (*Delete Encounter.log after a verified archive* in Settings), the pane says so in place of `Waiting for Encounter.log` (an older archive beside a log that is missing for another reason is no explanation, and the page then waits as usual): `Encounter.log was archived at 3 Nov 2026, 08:46, verified and deleted, as set in Settings. Waiting for encounters.`, with the archive's name under it and a note that ESO starts a fresh log the next time encounter logging is on; the status bar then reads `Waiting for Encounter.log (archived 3 Nov 2026, 08:46)` in the plain colour rather than `No log file` in red. Once a fight is listed, the pane stays on the fight you are reading if the log goes away (Archive now with the original deleted, say), and the status bar says the log is missing until ESO writes a new one.
@@ -62,7 +64,7 @@ When a fight completes a trial or an arena, a line under it gives the run's resu
 ### The fight
 
 - **Trial result**: on the fight that completed a trial or an arena, a strip across the top gives the run's result, the same line as in the fight list. **Copy fight** adds it under the first line.
-- **Header**: boss or mob name, then how the pull ended (`Wipe 62%`, as in the [fight list](#fight-history)), duration, group DPS, zone, start time, and player deaths. In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. The group DPS ends in a small graph line in the link colour: click it, or **DPS graph** on the toolbar, for the [dps over time graph](#dps-over-time).
+- **Header**: boss or mob name, then how the pull ended (`Wipe 62%`, as in the [fight list](#fight-history)), duration, group DPS, zone, start time, and player deaths: when anyone died, `Deaths 14` ends in a skull in the link colour, and opens the [Deaths tab](#every-death-of-a-fight). In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. The group DPS ends in a small graph line in the link colour: click it, or **DPS graph** on the toolbar, for the [dps over time graph](#dps-over-time).
 - **Misfortunes**: in a solo dungeon (March of Sacrifices, Moon Hunter Keep), a line under the header names the Misfortunes the run was started with, `Misfortunes: Warm Welcome · Revoke of Respite · Alleviating Assault`, or reads `Misfortunes: none`; hover a name for what it does. **Copy fight** adds the same line. Other zones have no such line.
 - **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; seven boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Elemental Catalyst's weaknesses, Alkosh); and, commented out for an Arcanist to switch on, Crux, the mean and peak Crux you held. Each of these is a [tracked-effect rule](#tracked-effects) and has a row when its effect was up; the group buffs other than Powerful Assault also show at `0%`, in dark red bold, in a group of five or more when nobody had them, and the taunt in any group. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
@@ -143,9 +145,17 @@ What a second player bringing the same group effect adds, as the 378 split logs 
 - **A per-player cooldown shared by every source means turns, not more.** Enlivening Overflow (12 seconds) and From the Brink (30 seconds) were measured: of 282,366 Enlivening Overflow procs, 2 landed on a player still on another holder's cooldown, and of 4,572 From the Brink shields, none. With one holder the Enlivening Overflow buff covered 32% of a 12-player group's time, with two 36%, against a ceiling of 50%. Sets that say "once every N seconds per target" (Symphony of Blades, Nazaray, Pillager's Profit's 45 seconds) read the same way, but are not measured or judged.
 - **Damage sets stack.** Each wearer's damage set works for its wearer: two Slivers of the Null Arca or two Deadly Strikes are never a finding.
 
+### Every death of a fight
+
+The **Deaths** tab (Alt+E) lists every death of the fight on one page; the header's `Deaths 14` opens it too. A line sums it up: `14 deaths of 9 players · first at 1:42 · the pull ended 1:12 after it · 6 dead at the end`, with the pull's end on a wipe, and who was dead at the end in a fight with a boss the group damaged. Under it, a table gives the deaths in the order they came: when, the role, the player, what killed them and from whom, and how long they stayed dead. The log keeps each player's time dead in all, not death by death, so a player who died more than once shows a dash there, except for a last death that lasted to the end of the fight; their total is in the line below.
+
+Then come the killers, each ability with its source and how many it killed, `a fall or lava` among them, and the share the bosses dealt; everyone's time dead, longest first, with its share of the fight; and the companions' deaths, as a count, since the log keeps no recap of them. A player the table does not list (Also died, on the fight's rows) is there too. Click a name, or hover it for when and to what, for that death on the player's [Deaths](#deaths) tab. With [Hide names](#hiding-other-players-names) on, the other players' names are hidden here too.
+
+![Every death of a fight, on the Deaths tab](screencaps/fight-deaths.png)
+
 ### Finding things in a fight
 
-Type in the search field above the fight (Ctrl+F puts the cursor there). Every match is highlighted and counted, Enter jumps to the next one, Esc clears. Icons match by the ability they stand for, so searching `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights.
+Type in the search field at the right of the tabs, `Find (Ctrl+F)`; Ctrl+F puts the cursor there. It searches the tab on screen: every match is highlighted and counted, the count inside the field at its right end; Enter jumps to the next match, Esc clears. Icons match by the ability they stand for, so searching `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights and tabs. At a large text size in a narrow window, where the tabs leave the field too little room, it has a row of its own above them.
 
 ![Searching a fight for an ability name](screencaps/search.png)
 
@@ -153,10 +163,12 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 
 | Key | Does |
 |---|---|
-| Tab, Shift+Tab | Move between the fight list, the search field and the fight |
+| Tab, Shift+Tab | Move between the fight list, the tabs, the search field and the tab's page |
 | Up, Down | Pick a fight in the list |
+| Alt+F, Alt+E | The Fight and Deaths tabs |
+| Ctrl+PgDn, Ctrl+PgUp | The next or previous tab, from anywhere in the window |
 | Ctrl+D | Detail view on or off |
-| Ctrl+F | Put the cursor in the search field; Enter jumps to the next match, Esc clears |
+| Ctrl+F | Put the cursor in the search field, which searches the tab on screen; Enter jumps to the next match, Esc clears |
 | Ctrl+C | Copy fight |
 | Ctrl+Shift+C | Copy session: the whole list as a recap |
 | Ctrl+H | [Hide names](#hiding-other-players-names) on or off, from any of the app's windows |
@@ -166,7 +178,7 @@ Type in the search field above the fight (Ctrl+F puts the cursor there). Every m
 
 Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
 
-In the fight, and in a player's window, Tab and Shift+Tab move from link to link, and Enter opens the framed one. A redraw (the fight changing as more of it is logged, Hide names, a new text size, light or dark) keeps that link framed and, if you could see it, where it was on the screen. A player's window keeps each tab's framed link while you look at another tab.
+In a fight's tab, and in a player's window, Tab and Shift+Tab move from link to link, and Enter opens the framed one. A redraw (the fight changing as more of it is logged, Hide names, a new text size, light or dark) keeps that link framed and, if you could see it, where it was on the screen. A player's window keeps each tab's framed link while you look at another tab.
 
 In a [player's window](#a-players-window):
 
@@ -504,11 +516,11 @@ The run's result row in the fight list gains a *banner* cue, and the result stri
 
 What the app does for readers who use the keyboard, need bigger text, see colour differently, use a screen reader or are bothered by motion.
 
-- **Keyboard**: Tab and Shift+Tab move between the fight list, the search field and the fight; the arrow keys pick a fight; every toolbar switch has a key. A player's window opens with the cursor in its page; Alt letters and Ctrl+PgDn and Ctrl+PgUp change its tab, Ctrl+Up and Ctrl+Down its player. See [Keyboard](#keyboard).
+- **Keyboard**: Tab and Shift+Tab move between the fight list, the fight's tabs, the search field and the tab's page; the arrow keys pick a fight, Alt+F and Alt+E the tab; every toolbar switch has a key. A player's window opens with the cursor in its page; Alt letters and Ctrl+PgDn and Ctrl+PgUp change its tab, Ctrl+Up and Ctrl+Down its player. See [Keyboard](#keyboard).
 - **Text size**: Settings → Display → *Text size*, 80% to 200%, or Ctrl+=, Ctrl+- and Ctrl+0 from any window. Everything follows it: the list, the pages, every window, Settings, the timeline strip's rows and labels, the DPS graph's legend and the ability icons, which are bundled at the game's own 64 px so they stay sharp when they grow.
 - **Colour**: text stands at least 4.5:1 against its background and bars and lines at least 3:1, in the light and the dark theme alike, and a unit test keeps it so. Nothing is said by colour alone: a player's role is a printed letter, health has its percentage beside it, a heal has a `+`, a buff on one or two players is cross-hatched rather than paler, an expected buff that never came is bold as well as red, and the clickable figures carry a small mark.
 - **Colour blindness**: Settings → Display → *Colour-blind colours and line styles in the DPS graph* swaps the graph's colours for a set chosen to stay apart for red-green and blue-yellow colour blindness and draws each player solid, dashed, dotted or dash-dotted in turn. The timeline strip's rows are named, so its colours never have to be told apart.
-- **Screen readers**: the fight pane and a player's window's tabs give a screen reader their text with each picture read as words: an ability icon on a bar as the ability's name, the marks after a figure as what they open ("DPS graph", "damage breakdown", "damage taken"), a hidden player as "hidden name". The timeline strip reads each row's label, whose effect it is and "expected but not up" for a red row; the DPS graph reads each drawn line with its dps at the end, and its legend is an ordinary list. The fight list, the search field and the fight pane are named, as are a player's window's tabs, its player picker and the previous and next player buttons, and each tab's text begins with the fight it shows; and a fight with an `ⓘ` is described as how many players have a possible build issue ("Possible build issues: 2 players"). **Copy fight** (Ctrl+C) gives the whole fight as plain text, for reading anywhere.
+- **Screen readers**: the fight pane and a player's window's tabs give a screen reader their text with each picture read as words: an ability icon on a bar as the ability's name, the marks after a figure as what they open ("DPS graph", "damage breakdown", "damage taken"), a hidden player as "hidden name". The timeline strip reads each row's label, whose effect it is and "expected but not up" for a red row; the DPS graph reads each drawn line with its dps at the end, and its legend is an ordinary list. The fight list, the fight's tabs (Fight views), the search field (Search this tab, its count and its keys in its description), the fight pane and the Deaths page are named, as are a player's window's tabs, its player picker and the previous and next player buttons, and each tab's text begins with the fight it shows; and a fight with an `ⓘ` is described as how many players have a possible build issue ("Possible build issues: 2 players"). **Copy fight** (Ctrl+C) gives the whole fight as plain text, for reading anywhere.
 - **Motion**: the ring on a taunt skill's icon pulses; Settings → Display → *Reduce motion* keeps it still. Nothing else on screen moves by itself.
 
 Not yet checked: Windows' High Contrast themes (the app picks its colours from whether the background is light or dark, not from the theme's own colours), and every screen reader; tell us on the [issue tracker](https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/issues) what does not work for you.
