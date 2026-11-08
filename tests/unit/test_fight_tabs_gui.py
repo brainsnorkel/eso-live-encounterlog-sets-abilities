@@ -246,25 +246,39 @@ class TestTheSearch(FightTabsTestCase):
         self.assertEqual(win.deaths_view.textCursor().position(), at)
 
     def test_the_search_keeps_the_focus_as_it_moves(self):
-        """Typing in the search, a new text size moves it from the corner
-        to its own row: the focus stays in it, and typing goes on there
-        (review of #205)."""
-        from PySide6.QtCore import Qt
+        """Typing in the search, the column narrowed past what the corner
+        needs takes the field to its own row, and widened again back to
+        the corner: the focus stays in it, and typing goes on there. A new
+        text size moves it by the same step (FightViews.place_search);
+        review of #205. The widths come from the bar and the field, so the
+        test holds in any font."""
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
         win = self._window(_entry_with_deaths())
+        views, field = win.fight_views, win.search_field
+        bar = win.fight_tabs.tabBar()
         total = sum(win._splitter.sizes())
-        win._splitter.setSizes([total - 520, 520])
-        self._settle()
-        self.assertTrue(win.fight_views.in_corner())
-        win.search_field.setFocus()
-        QTest.keyClicks(win.search_field, "Sharp")
-        win.set_text_size(200)
-        self._settle()
-        self.assertFalse(win.fight_views.in_corner())
-        self.assertIs(QApplication.focusWidget(), win.search_field)
+        margins = views.parentWidget().layout().contentsMargins()
+
+        def column(width):
+            right = width + margins.left() + margins.right()
+            win._splitter.setSizes([total - right, right])
+            self._settle()
+            self.assertEqual(views.width(), width)
+
+        need = bar.sizeHint().width() + field.least_width()
+        column(need + 40)
+        self.assertTrue(views.in_corner())
+        field.setFocus()
+        QTest.keyClicks(field, "Sharp")
+        column(need - 40)
+        self.assertFalse(views.in_corner())
+        self.assertIs(QApplication.focusWidget(), field)
         QTest.keyClicks(QApplication.focusWidget(), "fang")
-        self.assertEqual(win.search_field.text(), "Sharpfang")
+        column(need + 40)
+        self.assertTrue(views.in_corner())
+        self.assertIs(QApplication.focusWidget(), field)
+        self.assertEqual(field.text(), "Sharpfang")
 
     def test_the_search_works_on_the_tab_on_screen(self):
         """Ctrl+F on Deaths puts the cursor in the search, which counts the
