@@ -522,6 +522,11 @@ class DpsGraphPanel(QWidget):
         """Show the fight *entry*: the group's line and every player's.
         *names* is the Hide names mask (gui.name_mask) for the legend and
         the hover."""
+        if self._shown is None or entry is not self._shown[0]:
+            # A tick kept by a unit id is its fight's alone: in the next
+            # fight the id can be another player's (legend_key)
+            self._checked = {key: on for key, on in self._checked.items()
+                             if key == GROUP or key.startswith("@")}
         self._shown = (entry, dark, names)
         facts = [entry.boss_name or "", entry.zone_name or "",
                  str(entry.timestamp or ""), f"{_fmt_duration(entry.duration_s)} fight"]
@@ -585,7 +590,17 @@ class DpsGraphPanel(QWidget):
 
     def _on_legend_changed(self, item) -> None:
         unit_id = str(item.data(Qt.UserRole))
-        self._checked[self._keys.get(unit_id, unit_id)] = item.checkState() == Qt.Checked
+        key = self._keys.get(unit_id, unit_id)
+        ticked = item.checkState() == Qt.Checked
+        self._checked[key] = ticked
+        # A player with two rows (gone and back in the fight, a unit id
+        # each) shares one key: the other row follows the tick
+        self.legend.blockSignals(True)
+        for row in range(self.legend.count()):
+            other = self.legend.item(row)
+            if other is not item and self._keys.get(str(other.data(Qt.UserRole))) == key:
+                other.setCheckState(Qt.Checked if ticked else Qt.Unchecked)
+        self.legend.blockSignals(False)
         self._rerender()
 
     def checked_keys(self) -> List[str]:
@@ -632,6 +647,16 @@ class DpsGraphPanel(QWidget):
             self._size_legend()
         super().changeEvent(event)
 
+    def draw(self, entry, dark: bool, names=None) -> None:
+        """Show the fight *entry*: in place, the legend keeping its place,
+        when it is the fight shown already (changed, a theme switch, Hide
+        names); else anew."""
+        if self._shown is not None and entry is self._shown[0]:
+            with self._keeping_legend_place():
+                self.show_graph(entry, dark, names=names)
+        else:
+            self.show_graph(entry, dark, names=names)
+
     def clear(self) -> None:
         """Show no fight: the page with no fight (the main window's), whose
         tab is hidden, keeps no names from the last."""
@@ -644,13 +669,14 @@ class DpsGraphPanel(QWidget):
         self._keys = {}
         self.graph.set_curves([], 0.0)
 
-    def set_colorblind(self, on: bool) -> None:
-        """Switch the series set; a graph on display is redrawn with it,
-        the legend keeping its place."""
+    def set_colorblind(self, on: bool, redraw: bool = True) -> None:
+        """Switch the series set; with *redraw*, a graph on display is
+        redrawn with it, the legend keeping its place (the main window
+        draws a hidden tab when it is next shown instead)."""
         if bool(on) == self.colorblind:
             return
         self.colorblind = bool(on)
-        if self._shown is not None:
+        if redraw and self._shown is not None:
             entry, dark, names = self._shown
             with self._keeping_legend_place():
                 self.show_graph(entry, dark, names=names)

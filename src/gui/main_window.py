@@ -1534,8 +1534,8 @@ class MainWindow(QMainWindow):
                                             names=names,
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
                                             history=history))
-        if self.fight_tabs.currentWidget() is self.dps_panel:
-            # The graph on screen: no search there (_on_fight_tab_changed)
+        if self._search_off_on_graph():
+            # The graph on screen: no search there
             if others:
                 self._draw_graph(entry)
                 self._deaths_dirty = True
@@ -1877,14 +1877,9 @@ class MainWindow(QMainWindow):
             return  # no fight: the Fight tab, put there by set_shown
         self._chosen_tab = index
         entry = self.history_list.current_entry()
-        # The graph has no text to search: the field is off there, its text
-        # kept for the pages of text
-        on_graph = self.fight_tabs.currentWidget() is self.dps_panel
-        self.search_field.setEnabled(not on_graph)
-        if on_graph:
+        if self._search_off_on_graph():
             for view in (self.fight_view, self.deaths_view):
                 view.set_search_selections([])
-            self.search_field.set_count("")
             if entry is not None and (self._graph_dirty or entry is not self.dps_panel.entry):
                 self._draw_graph(entry)
             return
@@ -1955,14 +1950,23 @@ class MainWindow(QMainWindow):
         self._deaths_entry = entry
         self._deaths_dirty = False
 
+    def _search_off_on_graph(self) -> bool:
+        """The search off, its text kept and its count blank, with the DPS
+        graph on screen, which has no text to search; on with a page of
+        text. Whether the graph is on screen. Both ways a tab comes on
+        screen set it: a tab chosen, and a fight bringing the chosen tab
+        back after a page with no fight, which counted that page's
+        matches."""
+        on_graph = self.fight_tabs.currentWidget() is self.dps_panel
+        self.search_field.setEnabled(not on_graph)
+        if on_graph:
+            self.search_field.set_count("")
+        return on_graph
+
     def _draw_graph(self, entry):
         """The DPS graph tab on *entry*: in place, the legend keeping its
         place, when it shows that fight already (gui.dps_graph)."""
-        names = self._names_for(entry)
-        if entry is self.dps_panel.entry:
-            self.dps_panel.refresh(self._dark, names=names)
-        else:
-            self.dps_panel.show_graph(entry, self._dark, names=names)
+        self.dps_panel.draw(entry, self._dark, names=self._names_for(entry))
         self._graph_dirty = False
 
     def _show_fight_deaths(self):
@@ -2250,7 +2254,13 @@ class MainWindow(QMainWindow):
             if repr(self.config.get("pen_crit") or {}) != pen_crit_before:
                 self._apply_pen_crit_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
-            self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
+            # The graph on screen redraws with the new colours; a hidden one
+            # is drawn when it is next shown
+            on_graph = self.fight_tabs.currentWidget() is self.dps_panel
+            self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)),
+                                          redraw=on_graph)
+            if not on_graph:
+                self._graph_dirty = True
             if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
                 self.set_text_size(self.config.get(text_size.CONFIG_KEY))
             if engine_settings(self.config) != engine_before:

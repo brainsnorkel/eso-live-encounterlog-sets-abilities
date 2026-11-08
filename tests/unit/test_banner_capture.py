@@ -584,13 +584,13 @@ class BannerInTheGuiTests(unittest.TestCase):
                 banner = folder / "Banners" / target.file_name
                 banner.parent.mkdir()
                 banner.write_bytes(b"png")
-                with patch.object(DpsGraphPanel, "refresh", autospec=True) as told:
+                with patch.object(DpsGraphPanel, "draw", autospec=True) as told:
                     win._on_banner_finished(banner, "Score banner saved")
                 self.assertEqual(entry.banner_path, banner)
                 self.assertIn(f"{BANNER_HREF}open", win.fight_view.toHtml())
                 self.assertEqual(told.call_count, 1)
                 self.assertIs(told.call_args.args[0], win.dps_panel)
-                self.assertIs(win.dps_panel.entry, entry)
+                self.assertIs(told.call_args.args[1], entry)
             finally:
                 win.close()
 

@@ -556,6 +556,34 @@ class TestTheSearch(FightTabsTestCase):
         self.assertEqual(widths[0], widths[1])
         self.assertGreaterEqual(widths[0], sum(win._splitter.sizes()) // 3 - 2)
 
+    def test_a_fight_back_on_the_graph_leaves_the_search_off_and_uncounted(self):
+        """The graph chosen, a page with no fight counts its own matches;
+        the next fight brings the graph back with the search off and no
+        count, where the page's count stayed (review of #207)."""
+        win = self._window(_entry_with_deaths())
+        win.search_field.setText("Sharpfang")
+        win.graph_action.trigger()
+        win._show_replaying()
+        win._show_fight()
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self.assertFalse(win.search_field.isEnabled())
+        self.assertEqual(win.search_count.text(), "")
+
+    def test_with_no_fight_the_column_keeps_no_floor_for_the_hidden_bar(self):
+        """With no fight the tab bar is hidden, and the column is no wider
+        at least than its pages need; a fight brings the bar's floor back
+        (review of #207)."""
+        win = self._window()
+        # Labels wider than any page, so the bar's floor is the one that binds
+        win.fight_tabs.setTabText(0, "&Fight " + "x" * 120)
+        win.fight_views.place_search()
+        self._settle()
+        bar = win.fight_tabs.tabBar().sizeHint().width()
+        self.assertLess(win.fight_views.minimumSizeHint().width(), bar)
+        win._on_fight_completed(_entry_with_deaths())
+        self._settle()
+        self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), bar)
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""

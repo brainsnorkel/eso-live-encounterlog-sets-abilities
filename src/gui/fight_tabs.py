@@ -213,6 +213,8 @@ class FightViews(QWidget):
     def set_shown(self, shown: bool) -> None:
         """The bar and the search shown with a fight; without one, hidden
         together, the first tab on screen (see the module notes)."""
+        if bool(shown) != self._shown:
+            self.updateGeometry()  # the least width follows the bar (minimumSizeHint)
         self._shown = bool(shown)
         if not self._shown:
             self.tabs.setCurrentIndex(0)
@@ -229,7 +231,8 @@ class FightViews(QWidget):
         scrolls the labels (three need 552 px at 200% text in the test
         runner's font)."""
         hint = super().minimumSizeHint()
-        hint.setWidth(max(hint.width(), self.tabs.tabBar().sizeHint().width()))
+        if self._shown:  # a hidden bar draws no labels to keep whole
+            hint.setWidth(max(hint.width(), self.tabs.tabBar().sizeHint().width()))
         return hint
 
     def in_corner(self) -> bool:

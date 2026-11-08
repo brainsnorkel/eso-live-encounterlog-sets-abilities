@@ -507,6 +507,83 @@ class TestGraphTab(unittest.TestCase):
                 self.assertLessEqual(panel.minimumSizeHint().width(), least + 20)
                 self.assertEqual(panel.sizeHint().width(), panel.minimumSizeHint().width())
 
+    def test_a_tick_kept_by_unit_id_is_its_fights_alone(self):
+        """An anonymous player unticked in one fight: in the next, another
+        anonymous player with that unit id starts ticked (review of #207).
+        The tick kept by the id went to them."""
+        from PySide6.QtCore import Qt
+        from gui.dps_graph import DpsGraphPanel
+        panel = DpsGraphPanel()
+        self.addCleanup(panel.deleteLater)
+        first = _entry(players=2)
+        first.players[1]['name'] = 'anon'
+        panel.show_graph(first, False)
+        panel.legend.item(2).setCheckState(Qt.Unchecked)
+        second = _entry(players=2)
+        second.players[0]['name'] = 'anon'
+        second.players[0]['unit_id'] = '2'
+        second.players[1]['unit_id'] = '7'
+        panel.show_graph(second, False)
+        self.assertEqual(panel.legend.item(1).data(Qt.UserRole), '2')
+        self.assertEqual(panel.legend.item(1).checkState(), Qt.Checked)
+
+    def test_a_players_two_rows_follow_one_tick(self):
+        """A player gone and back in the fight has two rows, a unit id each,
+        and one key: unticking one unticks the other, whose line goes too
+        (review of #207). The other row stayed ticked until the next
+        redraw unticked it."""
+        from PySide6.QtCore import Qt
+        from gui.dps_graph import DpsGraphPanel
+        panel = DpsGraphPanel()
+        self.addCleanup(panel.deleteLater)
+        entry = _entry(players=3)
+        entry.players[2]['name'] = '@player1'
+        panel.show_graph(entry, False)
+        panel.legend.item(1).setCheckState(Qt.Unchecked)
+        self.assertEqual(panel.legend.item(3).checkState(), Qt.Unchecked)
+        self.assertEqual({c.key for c in panel.graph.curves}, {'Group', '2'})
+
+    def test_the_colour_blind_switch_waits_for_a_hidden_graph(self):
+        """A Settings save that turns the colour-blind colours on while the
+        graph's tab is hidden draws nothing then, and the graph takes them
+        when it is shown (review of #207)."""
+        from unittest import mock
+
+        from gui.dps_graph import COLORBLIND_SERIES_COLORS, DpsGraphPanel
+        win = self._main_window()
+        try:
+            win._on_fight_completed(_entry(players=3))
+            win.history_list.select_fight(0)
+            win.graph_action.trigger()
+            win.fight_tabs.setCurrentIndex(0)
+
+            class Settings:
+                Accepted = 1
+
+                def __init__(self, config, *_args, **_kwargs):
+                    self.config = config
+
+                def exec(self):
+                    return self.Accepted
+
+                def apply_to_config(self):
+                    self.config.set('display.colorblind_graph', True)
+
+                def deleteLater(self):
+                    pass
+            with mock.patch('gui.main_window.SettingsDialog', Settings), \
+                    mock.patch.object(DpsGraphPanel, 'show_graph', autospec=True,
+                                      side_effect=DpsGraphPanel.show_graph) as drawn:
+                win._open_settings()
+                self.assertEqual(drawn.call_count, 0)
+                self.assertTrue(win.dps_panel.colorblind)
+                win.graph_action.trigger()
+                self.assertEqual(drawn.call_count, 1)
+            first = next(c for c in win.dps_panel.graph.curves if c.key == '1')
+            self.assertEqual(first.color.name(), COLORBLIND_SERIES_COLORS[win._dark][0])
+        finally:
+            win.close()
+
     def test_window_from_the_engines_own_record(self):
         from PySide6.QtCore import QUrl
         from build_session import fights
