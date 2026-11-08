@@ -2695,6 +2695,24 @@ redoes its block's run rows (_refresh_runs) from the block's own rows,
 so a run row moves down as the run grows and a refresh never walks the
 whole list.
 
+The instance (issue #196): a click on a header, run or result row opens
+the window's Instance tab on that row's block (instance_requested,
+instance_of), a run row's at that boss. The rows stay inert, so the
+current row is always a fight and every caller of current_entry() still
+gets one. Qt 6.12 sends itemClicked for an inert row, but does not
+promise to, so the list tells the click itself: the row the left button
+went down on, and its release on that same row (mouseReleaseEvent); a
+drag to another row, or another button, opens nothing, nor does the
+double-click a click on an inert row begins: Qt makes it a second press,
+which opened the instance again, or, the first click having selected a
+fight and scrolled the list, selected whatever fight came under the
+pointer. The rows show they can be clicked with the pointing hand, set
+again as rows move under a pointer that does not (a scroll, a fight
+coming in), once the rows have moved, and
+the hover line INSTANCE_CUE, which a run row's hover text ends with; a
+screen reader hears INSTANCE_DESCRIPTION as their description, after a
+run row's own.
+
 ## Kill or wipe, time dead, and a boss's pulls in a row
 
 ### src/pull_outcome.py
@@ -3184,7 +3202,7 @@ It holds no reference to MainWindow: it asks for its fight to be shown in
 the list by a signal, and its pages' links are its own tab switches. It
 stores no lambda on a child.
 
-## The fight's tabs: Fight and Deaths
+## The fight's tabs: Fight, Deaths and Instance
 
 ### src/gui/fight_tabs.py
 
@@ -3195,10 +3213,12 @@ review banner, as tabs on the fight selected in the list, with the search
 in the tab bar's corner.
 
 Design: The fight tabs. The list's fight is shown on tabs: Fight, the buff
-timeline strip and the fight pane as they were, and Deaths, every death of
-the fight on one page (fight_deaths_render). The tabs show the fight the
-list has selected, so this level cannot go stale, where the player window
-keeps the fight it was opened for. The tab chosen stays when the fight
+timeline strip and the fight pane as they were; Deaths, every death of the
+fight on one page (fight_deaths_render); the DPS graph (dps_graph); and
+Instance, the instance the fight belongs to, its block of the list
+(instance_render). The tabs show the fight the list has selected, so this
+level cannot go stale, where the player window keeps the fight it was
+opened for. The tab chosen stays when the fight
 changes, new live fights included, and is not kept from one run of the app
 to the next. The Alt letters are the labels' mnemonics; Ctrl+PgDn and
 Ctrl+PgUp change the tab from anywhere in the window, the list included.
@@ -3211,8 +3231,8 @@ was, it clipped the tab labels at 190-200% text (probed with the window's
 own text). The field takes the width the bar leaves, at most about forty
 characters (260 px at 100% in Segoe UI). When the bar leaves less than the
 widest count ('999+ matches') and about six characters, at a large text
-size in a narrow column or in a wide font (the labels of the four tabs
-planned need 424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
+size in a narrow column or in a wide font (the four tabs' labels need
+424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
 takes a row of its own above the tabs. It is placed again as the column's
 width, the text size or the tabs change, so the bar is never narrower than
 its labels and none hides behind Qt's scroll arrows.
@@ -3227,7 +3247,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1446](../src/gui/main_window.py#L1446)*
+*[src/gui/main_window.py:1469](../src/gui/main_window.py#L1469)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -3243,9 +3263,11 @@ selection, Hide names, the theme, the text size, Detail view and
 the pen/crit settings all draw through, and a fight changes in place
 only a few times (a late death, its banner, a mastery found later).
 Then the tab on screen, if it is another, in place when it shows
-this fight already; the other tabs are marked, and drawn when they
-are next shown, the search going on where it was on a page drawn
-while hidden (_on_fight_tab_changed, gui.fight_tabs, issue #196).
+this fight already (the Instance page: this fight's instance, the
+search going on from its place); the other tabs are marked, and
+drawn when they are next shown, the search going on where it was on
+a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
+issue #196).
 
 ### src/gui/fight_deaths_render.py
 
@@ -3285,6 +3307,108 @@ of a fight without one says nothing of the end.
 Nothing here changes the entry: the engine's thread updates an entry in
 place while a page is drawn, so its lists are read with sorted() and
 copies, never sorted in place.
+
+### src/gui/instance_render.py
+
+*[src/gui/instance_render.py:1](../src/gui/instance_render.py#L1)*
+
+The Instance tab (issue #196): the trial, arena or dungeon run the fight
+on screen belongs to, on one page, where the fight list spreads it over a
+header row, run rows and their hover, a result row and Copy session.
+
+Design: The instance page. An instance is a block of the fight list
+(fight_blocks.blocks: the fights fought one after another in one zone at
+one difficulty, closed by a completed run, #129), taken anew at each
+drawing. The page reads, from the top:
+
+- **Heading**: the zone and difficulty, the time from the first fight's
+  start to the last one's end, the fights, the group's size and the game
+  version, the span and the size as the session recap writes them
+  (session_recap.span and players), then Copy this instance, which copies
+  the block as Copy session writes each instance (session_recap.recap_text,
+  #171). The live list's first instance can have begun before the logging
+  session the app read at its start, since a start reads the log's latest
+  session only (LogFileMonitor._load_latest_session), so that page says
+  it is listed from its first fight and that any earlier fights are in
+  the previous session's log: "any", since mostly there are none.
+- **Result**: a completed veteran trial's or arena's result, as the result
+  row writes it (trial_result), with the fight pane's Score banner links,
+  which act on the fight with the result whichever fight is on screen.
+  Nothing for a dungeon or a failed run: only a veteran run that succeeds
+  writes END_TRIAL. #194's split files are to go under it, a line of their
+  own.
+- **Bosses**: a row for each boss's pulls in a row (pull_outcome.runs),
+  one pull included: the pulls, the result, the kill's time and boss dps,
+  and the deaths over all its pulls. The result is the run row's words
+  after its count ("killed on pull 3, 41s between pulls"), or one pull's
+  verdict ("kill", "wipe 62%"), then the best earlier kill with this
+  roster from the fight history (fight_index.run_best_kill, #170), as the
+  run row adds it. The kill's figures are the session recap's
+  (session_recap.kill_figures): its time over the pull's fights, and the
+  boss damage of each fight over their boss dps times (the group's dps,
+  said so, for a boss the game does not flag), so the page and its copy
+  agree. Under two or more pulls a line
+  reads "Pulls: pull 1 (wipe 62%) · pull 2 (kill)", each pull a link to
+  its last fight, whose verdict it names (the log can cut a pull in two).
+  Each row holds a named anchor (run_anchor), numbered over every run of
+  the block in order, where a click on the list's run row opens the page.
+  It sits on the count of pulls, plain text: Qt hangs an empty named
+  anchor on the first letter of the text after it, and when that text
+  was a link, only that letter stayed marked as an anchor, all
+  FightView's hover cue and Tab key then took for the link (probed on
+  PySide6 6.12.0).
+- **What ended the pulls**: the run row's hover widened to every pull of
+  the instance, counted once for both (pull_outcome.what_ended): the
+  first death of each pull, the killers and the share the bosses dealt,
+  and the longest dead, a second or more (a solo player's fight ends as
+  they die, which would read "0s"), the TOP of each and an ellipsis when
+  there are more. A killer is named after the ability when it is not one
+  of the instance's bosses.
+- **Trash**, in the copy's words (session_recap.trash_text), and a solo
+  dungeon's Misfortunes once: the run's, the same at every pull
+  (misfortunes.py).
+- **Players**: everyone of the instance but the companions, each once,
+  told by handle across its fights, a player the log gives no name
+  ("anon") by unit id and class, as the run row's hover tells them apart:
+  the class keeps apart two that took one unit id in two logging sessions
+  of the instance. Not by role, which the engine guesses fight by fight (a
+  healer can read as a damage dealer on trash): role and class are the
+  ones most of their fights read, the latest winning a tie. Pulls
+  counts the pulls they were in; deaths and time dead count every fight,
+  trash too, as each death in a trial costs vitality, so a player's time
+  dead can exceed the longest dead line's, which counts the pulls. A
+  player's possible build issues go on a line under their row, each
+  finding once (by its rule, set, skill and star) in its latest words,
+  with the number of their fights it was found in: as a column beside the
+  names they were squeezed to a word a line at 200% text, a 12-player
+  trial's table 1,522 px tall, 688 with the line (measured; the line
+  costs 30-85 px at 100%). A player who died with no row of their own
+  (the pane's Also died) is listed with no role. Each name is a link to
+  that player's window on Build, on the fight on screen when they have a
+  row in it, else their last fight of the instance with one; a player who
+  never had a row (their build never reached the log) opens on Deaths, at
+  their last death, as the pane's Also died does. The hover names that
+  fight ("@x in Nahviintaas, pull 13").
+
+The tables keep their words whole up to 200% text (measured over real
+splits): no heading breaks; the figures' columns are as narrow as their
+words (FIT) and set apart from the column before (FIGURE), so the boss
+and the result keep the width; and every column of the players' table is
+as narrow as its words, an empty one taking the rest, so role and class
+stay by the name.
+
+Links carry the fight's place in the list the page was drawn from
+(index_of), never a path or an entry, as the Recent activity page's do
+(gui.activity_render): a link whose fight has left the list does nothing,
+and the window says so. A fight index_of does not place gets no link.
+Pull links take the link colour; the players' names keep the look of
+plain text, as the fight pane's do. Every player's name goes through the
+Hide names mask, in its text form in the hover texts.
+
+Nothing here changes an entry: the engine's thread updates delivered
+fights in place while a page is drawn (MainWindow._fight_changed), so
+their lists are read and counted into new lists and dicts, sorted with
+sorted(), never in place.
 
 ## Experimental buff timeline
 
@@ -3516,7 +3640,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1097](../src/gui/main_window.py#L1097)*
+*[src/gui/main_window.py:1120](../src/gui/main_window.py#L1120)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3570,13 +3694,13 @@ it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:2280](../src/gui/main_window.py#L2280)*
+*[src/gui/main_window.py:2485](../src/gui/main_window.py#L2485)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:943](../src/gui/main_window.py#L943)*
+*[src/gui/main_window.py:964](../src/gui/main_window.py#L964)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -3607,13 +3731,13 @@ list meanwhile would lose its items.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:148](../src/gui/fight_view.py#L148)*
+*[src/gui/fight_view.py:156](../src/gui/fight_view.py#L156)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:334](../src/gui/fight_view.py#L334)*
+*[src/gui/fight_view.py:342](../src/gui/fight_view.py#L342)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -4147,7 +4271,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:718](../src/gui/fight_view.py#L718)*
+*[src/gui/fight_view.py:726](../src/gui/fight_view.py#L726)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -4235,7 +4359,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:581](../src/gui/fight_view.py#L581)*
+*[src/gui/fight_view.py:589](../src/gui/fight_view.py#L589)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

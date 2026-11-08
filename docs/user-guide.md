@@ -33,7 +33,7 @@ Joining mid-raid, the app replays the logging session already in the file: the s
 
 ![The main window: the fight history on the left, the selected fight on the right](screencaps/main-window.png)
 
-On the right, the fight selected in the list is on three tabs: **Fight** (Alt+F), the fight itself as described below, **Deaths** (Alt+E), [every death of the fight](#every-death-of-a-fight), and **DPS graph** (Alt+G), the [dps over time](#dps-over-time). The tab you choose stays as you pick other fights and as new fights come in. Ctrl+PgDn and Ctrl+PgUp step through the tabs from anywhere in the window, the fight list too. Until a fight is listed, the tabs and the search are hidden.
+On the right, the fight selected in the list is on four tabs: **Fight** (Alt+F), the fight itself as described below, **Deaths** (Alt+E), [every death of the fight](#every-death-of-a-fight), **DPS graph** (Alt+G), the [dps over time](#dps-over-time), and **Instance** (Alt+I), [the instance](#an-instance) the fight belongs to. The tab you choose stays as you pick other fights and as new fights come in. Ctrl+PgDn and Ctrl+PgUp step through the tabs from anywhere in the window, the fight list too. Until a fight is listed, the tabs and the search are hidden.
 
 ### Before the first fight
 
@@ -59,7 +59,7 @@ When the boss's name differs from the line's (an add took more damage than the b
 
 Two or more pulls of one boss in a row get a line of their own under the last of them: `Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48s between pulls`, or `killed on pull 13`. The best is the lowest health a pull left the boss at. The wipes are named when four or more of them, half or more, ended within one ten-point band of health: a mechanic the group keeps failing at the same point. Fights on other enemies between the pulls do not break the run; a pull of another boss, or a kill, ends it. Hover the line for what ended the pulls: the first death of each pull by ability, the killers over every death of the run with the share the boss dealt itself, and the three players who spent longest dead. With **Hide names** on, the other players' names are hidden there too.
 
-When a fight completes a trial or an arena, a line under it gives the run's result as the game scored it: `✓ Sunspire vet · Vitality 35/36 · 253,117 · 22:31` is the vitality left, the score and the trial's own timer, rounded to the second as the game's banner shows it. Vitality is out of 36 in a trial, 24 in Dragonstar Arena and Blackrose Prison, and 15 in Maelstrom Arena and Vateshran Hollows. The figure is the game's, not a count of the deaths in the fight pane: the log does not always hold every death the game charged (see [Limitations](#limitations)). Only veteran runs have a result: the game scores those alone, and writes nothing for a normal run. A run that fails or is abandoned has no result either. The header, pull and result lines cannot be selected; the arrow keys, Home, End and the page keys step over them.
+When a fight completes a trial or an arena, a line under it gives the run's result as the game scored it: `✓ Sunspire vet · Vitality 35/36 · 253,117 · 22:31` is the vitality left, the score and the trial's own timer, rounded to the second as the game's banner shows it. Vitality is out of 36 in a trial, 24 in Dragonstar Arena and Blackrose Prison, and 15 in Maelstrom Arena and Vateshran Hollows. The figure is the game's, not a count of the deaths in the fight pane: the log does not always hold every death the game charged (see [Limitations](#limitations)). Only veteran runs have a result: the game scores those alone, and writes nothing for a normal run. A run that fails or is abandoned has no result either. The header, pull and result lines cannot be selected: the arrow keys, Home, End and the page keys step over them. Click one for its instance on the [Instance tab](#an-instance), a pull line for that boss.
 
 ### The fight
 
@@ -153,6 +153,21 @@ Then come the killers, each ability with its source and how many it killed, `a f
 
 ![Every death of a fight, on the Deaths tab](screencaps/fight-deaths.png)
 
+### An instance
+
+The **Instance** tab (Alt+I) sums up the instance the fight on screen belongs to: its group in the [fight list](#fight-history), from the header line down. Click a header, pull or result line of the list for the tab on that instance, a pull line's at that boss. The fight on screen stays when it is in the instance, or for a pull line in that boss's pulls; else the instance's last fight is selected, or that boss's last pull.
+
+- **Heading**: `Sunspire · Veteran`, when it was fought (the first fight's start to the last one's end), the fights, the group's size and the game version, then **Copy this instance**, which puts the instance on the clipboard as [Copy session](#reviewing-and-copying-fights) writes each one. When the app starts it reads only the log's latest session, so the list's first instance may have begun before it: its heading says so, `Listed from 21:12; any earlier fights are in the previous session's log`.
+- **Result**: a completed veteran trial's or arena's result, as on its line in the list, with the [score banner](#the-score-banner) links when one was captured. A dungeon, or a run that failed, has none.
+- **Bosses**: one row for each boss's pulls in a row: the pulls, how they ended (`killed on pull 3, 41s between pulls`, `best 48%`, or one pull's `kill` or `wipe 62%`) with the best earlier kill with this roster from [your fight history](#your-fight-history), the kill's time and boss dps, and the deaths over the pulls. Under two or more pulls, `Pulls: pull 1 (wipe 62%) · pull 2 (wipe 48%) · pull 3 (kill)`: click one for that fight on the Fight tab.
+- **What ended the pulls**: over every pull of the instance, the first death of each pull by ability, the killers with the share the bosses dealt, and the three players longest dead in the pulls (the table below counts the trash too).
+- **Trash**: `Trash: 12 fights, 8:20, 3 deaths`; in a solo dungeon, the run's Misfortunes once.
+- **Players**: everyone in the instance, once, with their role, class, how many pulls they were in, and their deaths and time dead over all its fights, trash included; their [possible build issues](#possible-build-issues) go on a line under them, each with the number of fights it was found in. A player is known by their handle across the fights; anonymous players, whom the log does not name, each keep a row of their own. Click a name for that player's window on its Build tab, on the fight on screen if they were in it, else their last fight of the instance; hover it to see which. A player who died without a row of their own, their build never logged, opens on Deaths at that death, as Also died does on the fight.
+
+The page keeps its place while you pick other fights of the instance and as new pulls come in; another instance opens at the top. With [Hide names](#hiding-other-players-names) on, the other players' names are hidden here too.
+
+![An instance on the Instance tab](screencaps/instance.png)
+
 ### Finding things in a fight
 
 Type in the search field at the right of the tabs, `Find (Ctrl+F)`; Ctrl+F puts the cursor there. It searches the tab on screen: every match is highlighted and counted, the count inside the field at its right end; Enter jumps to the next match, Esc clears. The DPS graph has no text to search: on its tab the field is greyed out, keeping its text, and Ctrl+F goes to the Fight tab first. Icons match by the ability they stand for, so searching `jabs` lights up every Biting Jabs icon. The search follows you as you switch fights and tabs. At a large text size in a narrow window, where the tabs leave the field too little room, it has a row of its own above them.
@@ -165,7 +180,7 @@ Type in the search field at the right of the tabs, `Find (Ctrl+F)`; Ctrl+F puts 
 |---|---|
 | Tab, Shift+Tab | Move between the fight list, the tabs, the search field and the tab's page |
 | Up, Down | Pick a fight in the list |
-| Alt+F, Alt+E, Alt+G | The Fight, Deaths and DPS graph tabs |
+| Alt+F, Alt+E, Alt+G, Alt+I | The Fight, Deaths, DPS graph and Instance tabs |
 | Ctrl+PgDn, Ctrl+PgUp | The next or previous tab, from anywhere in the window |
 | Ctrl+D | Detail view on or off |
 | Ctrl+F | Put the cursor in the search field, which searches the tab on screen; Enter jumps to the next match, Esc clears |
@@ -388,7 +403,7 @@ Trash: 14 fights, 9:30, 3 deaths
 ✓ Kyne's Aegis vet · Vitality 30/36 · 153,117 · 1:12:40
 ```
 
-Each boss's [pulls in a row](#fight-history) take one line, with what ended them under it when there were two or more; the trash is a count and a time; build issues are a count, never names. The text is plain lines, which Discord keeps and wraps on a phone. A Discord message holds 2,000 characters: the status bar says how long the copy is, and a long night is pasted in parts. **Hide names** hides the names in it as in Copy fight.
+Each boss's [pulls in a row](#fight-history) take one line, with what ended them under it when there were two or more; the trash is a count and a time; build issues are a count, never names. The text is plain lines, which Discord keeps and wraps on a phone. A Discord message holds 2,000 characters: the status bar says how long the copy is, and a long night is pasted in parts. **Hide names** hides the names in it as in Copy fight. **Copy this instance**, on the [Instance tab](#an-instance), copies one instance's paragraph the same way.
 
 **About** shows the version, the project link and the credits.
 
@@ -516,7 +531,7 @@ The run's result row in the fight list gains a *banner* cue, and the result stri
 
 What the app does for readers who use the keyboard, need bigger text, see colour differently, use a screen reader or are bothered by motion.
 
-- **Keyboard**: Tab and Shift+Tab move between the fight list, the fight's tabs, the search field and the tab's page; the arrow keys pick a fight, Alt+F and Alt+E the tab; every toolbar switch has a key. A player's window opens with the cursor in its page; Alt letters and Ctrl+PgDn and Ctrl+PgUp change its tab, Ctrl+Up and Ctrl+Down its player. See [Keyboard](#keyboard).
+- **Keyboard**: Tab and Shift+Tab move between the fight list, the fight's tabs, the search field and the tab's page; the arrow keys pick a fight, Alt+F, Alt+E, Alt+G and Alt+I the tab; every toolbar switch has a key. A player's window opens with the cursor in its page; Alt letters and Ctrl+PgDn and Ctrl+PgUp change its tab, Ctrl+Up and Ctrl+Down its player. See [Keyboard](#keyboard).
 - **Text size**: Settings → Display → *Text size*, 80% to 200%, or Ctrl+=, Ctrl+- and Ctrl+0 from any window. Everything follows it: the list, the pages, every window, Settings, the timeline strip's rows and labels, the DPS graph's legend and the ability icons, which are bundled at the game's own 64 px so they stay sharp when they grow.
 - **Colour**: text stands at least 4.5:1 against its background and bars and lines at least 3:1, in the light and the dark theme alike, and a unit test keeps it so. Nothing is said by colour alone: a player's role is a printed letter, health has its percentage beside it, a heal has a `+`, a buff on one or two players is cross-hatched rather than paler, an expected buff that never came is bold as well as red, and the clickable figures carry a small mark.
 - **Colour blindness**: Settings → Display → *Colour-blind colours and line styles in the DPS graph* swaps the graph's colours for a set chosen to stay apart for red-green and blue-yellow colour blindness and draws each player solid, dashed, dotted or dash-dotted in turn. The timeline strip's rows are named, so its colours never have to be told apart.

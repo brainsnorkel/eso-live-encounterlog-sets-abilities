@@ -81,20 +81,21 @@ class FightTabsTestCase(unittest.TestCase):
 class TestTheTabs(FightTabsTestCase):
 
     def test_the_tabs_with_their_alt_letters(self):
-        """Fight, Deaths and DPS graph, named for a screen reader; Alt+E,
-        Alt+G and Alt+F each land on their tab both times they are
-        pressed."""
+        """Fight, Deaths, DPS graph and Instance, named for a screen
+        reader; Alt+E, Alt+G, Alt+I and Alt+F each land on their tab both
+        times they are pressed."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         win = self._window(_entry_with_deaths())
         tabs = win.fight_tabs
         self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
-                         ["&Fight", "D&eaths", "DPS &graph"])
+                         ["&Fight", "D&eaths", "DPS &graph", "&Instance"])
         self.assertEqual(tabs.accessibleName(), "Fight views")
         self.assertEqual(win.deaths_view.accessibleName(), "Deaths")
+        self.assertEqual(win.instance_view.accessibleName(), "Instance")
         self.assertTrue(tabs.tabBar().isVisible())
         for letter, page in ((Qt.Key_E, win.deaths_view), (Qt.Key_G, win.dps_panel),
-                             (Qt.Key_F, tabs.widget(0))):
+                             (Qt.Key_I, win.instance_view), (Qt.Key_F, tabs.widget(0))):
             for press in (1, 2):
                 QTest.keyClick(win, letter, Qt.AltModifier)
                 self.assertIs(tabs.currentWidget(), page, press)
@@ -113,11 +114,13 @@ class TestTheTabs(FightTabsTestCase):
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
         self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
+        self.assertIs(win.fight_tabs.currentWidget(), win.instance_view)
+        self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
         self.assertEqual(win.fight_tabs.currentIndex(), 0)
         win.fight_view.setFocus()
         _app.processEvents()
         self._key(win, Qt.Key_PageUp, Qt.ControlModifier)
-        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self.assertIs(win.fight_tabs.currentWidget(), win.instance_view)
 
     def test_the_tab_chosen_stays_as_fights_come(self):
         """Deaths chosen stays on screen as a new live fight is selected,
@@ -535,10 +538,11 @@ class TestTheSearch(FightTabsTestCase):
         """A first run's window gives the fight list a third of its width at
         100% and 200% text, the graph tab notwithstanding: the splitter
         shared out the width by the pages' sizes, and the graph's took the
-        list from 348 px of 1080 to 121 (issue #196)."""
+        list from 348 px of 1080 to 121 (issue #196). Or what the column's
+        least leaves, which the four tabs' labels set at 200% in the test
+        runner's font: 768 px, where Segoe UI's need 424."""
         from app_config import AppConfig
         from gui.main_window import MainWindow
-        widths = []
         for pct in (100, 200):
             config = AppConfig(path=self.root / f"config{pct}.json")
             config.set("log_path", str(self.root / "Encounter.log"))
@@ -552,9 +556,12 @@ class TestTheSearch(FightTabsTestCase):
             win.show()
             win._on_fight_completed(_entry_with_deaths())
             self._settle()
-            widths.append(win._splitter.sizes()[0])
-        self.assertEqual(widths[0], widths[1])
-        self.assertGreaterEqual(widths[0], sum(win._splitter.sizes()) // 3 - 2)
+            sizes = win._splitter.sizes()
+            least = win._splitter.widget(1).minimumSizeHint().width()
+            with self.subTest(pct=pct):
+                self.assertGreaterEqual(sizes[0], min(sum(sizes) // 3, sum(sizes) - least) - 2)
+                if pct == 100:
+                    self.assertGreaterEqual(sizes[0], sum(sizes) // 3 - 2)
 
     def test_a_fight_back_on_the_graph_leaves_the_search_off_and_uncounted(self):
         """The graph chosen, a page with no fight counts its own matches;
@@ -632,7 +639,8 @@ class TestTheSearch(FightTabsTestCase):
 
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
-        Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""
+        Ctrl+PgDn, Ctrl+PgUp and the Alt letters do nothing. A fight brings
+        them back."""
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
         win = self._window()
@@ -643,7 +651,7 @@ class TestTheSearch(FightTabsTestCase):
         _app.processEvents()
         for key, modifier in ((Qt.Key_F, Qt.ControlModifier), (Qt.Key_PageDown, Qt.ControlModifier),
                               (Qt.Key_PageUp, Qt.ControlModifier), (Qt.Key_E, Qt.AltModifier),
-                              (Qt.Key_G, Qt.AltModifier)):
+                              (Qt.Key_G, Qt.AltModifier), (Qt.Key_I, Qt.AltModifier)):
             self._key(win, key, modifier)
             self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
             self.assertIsNot(QApplication.focusWidget(), win.search_field, key)

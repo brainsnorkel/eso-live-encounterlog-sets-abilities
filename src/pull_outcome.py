@@ -556,7 +556,17 @@ def run_summary(run) -> str:
     """'Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48s
     between pulls'; 'Captain Vrol: 2 pulls, killed on pull 2, ...'."""
     count = len(run)
-    parts = [f"{count} pull{'s' if count != 1 else ''}"]
+    parts = [f"{count} pull{'s' if count != 1 else ''}"] + run_outcome_parts(run)
+    return f"{run_name(run)}: " + ", ".join(parts)
+
+
+def run_outcome_parts(run) -> list:
+    """The run's summary after its count of pulls, in parts: 'killed on
+    pull 13', or 'best 48%' (and 'lost sight on pull 2, group went on'),
+    the wipes in one band of health, the time between pulls. The Instance
+    tab's Result column writes them too (gui.instance_render)."""
+    count = len(run)
+    parts = []
     finals = [_pull_of(pull[-1]) for pull in run]
     last = finals[-1]
     if last.get("outcome") == KILL:
@@ -582,82 +592,97 @@ def run_summary(run) -> str:
             gaps.append(start - end)
     if gaps:
         parts.append(f"{clock(median(gaps))} between pulls")
-    return f"{run_name(run)}: " + ", ".join(parts)
+    return parts
 
 
-def _death_label(recap: dict, bosses, names) -> str:
-    """'Grievous Pulse', or 'Sanguine Grasp (Lieutenant Njordal)' when the
-    killer is not one of the run's bosses; a player killer is masked."""
-    ability = str(recap.get("ability") or "unknown")
-    killer = str(recap.get("killer") or "")
-    if not killer or killer in bosses:
-        return ability
-    return f"{ability} ({names.text(killer) if names is not None else killer})"
+def what_ended(pulls) -> dict:
+    """What ended *pulls* (lists of fights, as pulls() gives them: a run's,
+    or every pull of an instance), counted once for the run row's hover
+    (run_details) and the Instance tab (gui.instance_render), which each
+    write it their own way:
 
+    - bosses: the bosses the pulls name, in order;
+    - firsts, killers: Counters of the first death of each pull (in its
+      first fight with one, a pull the log cut in two being in order) and
+      of every death, each as (ability, killer), the killer '' when it is
+      one of those bosses; by_boss and total: the deaths the bosses dealt,
+      of all;
+    - dead: a Counter of each player's time dead in ms, by who they are,
+      the handle or, for a player with no name in the log, (ANON, unit id);
+      who: each one's name and their row in the last fight that counted
+      their time, None when it had none."""
+    bosses = []
+    for pull in pulls:
+        for fight in pull:
+            for boss in _pull_of(fight).get("bosses") or []:
+                if boss not in bosses:
+                    bosses.append(boss)
 
-def _counted(counter: Counter) -> str:
-    return ", ".join(f"{label} {n}" for label, n in counter.most_common(TOP))
+    def death(recap):
+        killer = str(recap.get("killer") or "")
+        return (str(recap.get("ability") or "unknown"),
+                "" if not killer or killer in bosses else killer)
+
+    firsts, killers, dead, who = Counter(), Counter(), Counter(), {}
+    by_boss = 0
+    for pull in pulls:
+        for fight in pull:
+            recaps = getattr(fight, "death_recaps", None) or []
+            if recaps:
+                firsts[death(min(recaps, key=lambda r: int(r.get("time_ms") or 0)))] += 1
+                break
+    for fight in _fight_entries(pulls):
+        recaps = getattr(fight, "death_recaps", None) or []
+        for recap in recaps:
+            killers[death(recap)] += 1
+            if str(recap.get("killer") or "") in bosses:
+                by_boss += 1
+        names = {str(r.get("unit_id", "")): str(r.get("name") or "") for r in recaps}
+        rows = {str(p.get("unit_id", "")): p for p in (getattr(fight, "players", None) or [])}
+        for key, ms in (getattr(fight, "time_dead", None) or {}).items():
+            name = names.get(str(key))
+            if not name:
+                continue
+            ident = (ANON, str(key)) if name == ANON else name
+            dead[ident] += int(ms)
+            who[ident] = (name, rows.get(str(key)))
+    return {"bosses": bosses, "firsts": firsts, "killers": killers, "by_boss": by_boss,
+            "total": sum(killers.values()), "dead": dead, "who": who}
 
 
 def run_details(run, names=None) -> list:
-    """The run's hover lines under its summary: the first death of each
-    pull, the killers over every death of the run and the share by its
-    bosses, and the players who spent longest dead (*names*: the Hide
-    names mask; None keeps every name)."""
-    bosses = set()
-    for pull in run:
-        for fight in pull:
-            bosses.update(_pull_of(fight).get("bosses") or [])
+    """The run's hover lines under its summary (what_ended): the first
+    death of each pull, the killers over every death of the run and the
+    share by its bosses, and the players who spent longest dead, a player
+    with no name in the log by their row's role and class (*names*: the
+    Hide names mask; None keeps every name)."""
+    ended = what_ended(run)
+
+    def shown(name):
+        return names.text(name) if names is not None else name
+
+    def counted(counter):
+        return ", ".join(f"{ability} ({shown(killer)}) {n}" if killer else f"{ability} {n}"
+                         for (ability, killer), n in counter.most_common(TOP))
+
+    def dead_label(ident):
+        name, row = ended["who"][ident]
+        if name == ANON and row:
+            return f"{ANON} ({row.get('role') or '?'}, {row.get('class_abbr') or '?'})"
+        return name
+
     lines = []
-    firsts = Counter()
-    for pull in run:
-        # The pull's first death: in its first fight with one (a pull the
-        # log cut in two is in order), the earliest
-        for fight in pull:
-            fight_recaps = getattr(fight, "death_recaps", None) or []
-            if fight_recaps:
-                first = min(fight_recaps, key=lambda r: int(r.get("time_ms") or 0))
-                firsts[_death_label(first, bosses, names)] += 1
-                break
-    if firsts:
-        lines.append(f"First deaths: {_counted(firsts)}")
-    killers = Counter()
-    by_boss = total = 0
-    for fight in _fight_entries(run):
-        for recap in getattr(fight, "death_recaps", None) or []:
-            killers[_death_label(recap, bosses, names)] += 1
-            total += 1
-            if str(recap.get("killer") or "") in bosses:
-                by_boss += 1
-    if killers:
-        line = f"Killers: {_counted(killers)}"
-        if by_boss:
-            line += f"; {100 * by_boss / total:.0f}% by {run_name(run)}"
+    if ended["firsts"]:
+        lines.append(f"First deaths: {counted(ended['firsts'])}")
+    if ended["killers"]:
+        line = f"Killers: {counted(ended['killers'])}"
+        if ended["by_boss"]:
+            line += f"; {100 * ended['by_boss'] / ended['total']:.0f}% by {run_name(run)}"
         lines.append(line)
-    dead, labels = Counter(), {}
-    for fight in _fight_entries(run):
-        who = {str(r.get("unit_id", "")): str(r.get("name") or "") for r in
-               (getattr(fight, "death_recaps", None) or [])}
-        rows = {str(p.get("unit_id", "")): p for p in (getattr(fight, "players", None) or [])}
-        for key, ms in (getattr(fight, "time_dead", None) or {}).items():
-            name = who.get(str(key))
-            if not name:
-                continue
-            if name == ANON:
-                # Players with no name in the log each keep their own
-                # entry, told apart by their row's role and class
-                row = rows.get(str(key))
-                ident, label = (ANON, str(key)), ANON
-                if row:
-                    label = f"{ANON} ({row.get('role') or '?'}, {row.get('class_abbr') or '?'})"
-            else:
-                ident = label = name
-            dead[ident] += int(ms)
-            labels[ident] = label
-    if dead:
+    if ended["dead"]:
         lines.append("Most time dead: " + ", ".join(
-            f"{names.text(labels[ident]) if names is not None else labels[ident]} {clock(ms / 1000)}"
-            for ident, ms in dead.most_common(TOP)))
+            f"{shown(dead_label(ident))} {clock(ms / 1000)}"
+            for ident, ms in ended["dead"].most_common(TOP)))
     return lines
 
 

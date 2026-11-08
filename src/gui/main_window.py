@@ -6,7 +6,6 @@ settings, manual archive, and the freshness status bar.
 import base64
 import sys
 import weakref
-from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 
@@ -58,6 +57,7 @@ from gui.fight_render import (
 )
 from gui.fight_tabs import FightViews, count_text
 from gui.fight_view import FightView, set_reduce_motion
+from gui.instance_render import instance_tooltips, render_instance_html, run_anchor
 from gui.name_mask import NameMask
 from gui.player_window import (
     BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
@@ -69,6 +69,7 @@ from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members, log_size
 from pen_crit import armour_row
+from pull_outcome import runs
 import recent_activity
 from recycle_bin import TRASH_NAME
 import review_load
@@ -217,6 +218,13 @@ class MainWindow(QMainWindow):
         # The search's text when it last ran on each page: a search typed on
         # one tab starts at the other's first match when that is shown
         self._searched = {}
+        # The Instance tab's page (gui.instance_render): the block of the
+        # list it was drawn for, its fights by the place in the list its
+        # links carry, and whether it is to be drawn again before it is next
+        # shown
+        self._instance_block = []
+        self._instance_links = {}
+        self._instance_dirty = True
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
         # The Hide names switch (issue #72, gui.name_mask): every player
@@ -392,6 +400,8 @@ class MainWindow(QMainWindow):
         # (gui.fight_list, issue #129)
         self.history_list = FightList()
         self.history_list.currentRowChanged.connect(self._show_fight)
+        # A header, run or result row: the Instance tab on its instance
+        self.history_list.instance_requested.connect(self._open_instance_from_list)
         # The (i)'s hover text hides names as the rest of the window does
         self.history_list.hide_names = self._hide_names
         splitter.addWidget(self.history_list)
@@ -466,6 +476,15 @@ class MainWindow(QMainWindow):
         self.dps_panel.setAccessibleName("DPS graph")
         self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self.fight_views.add_tab(self.dps_panel, "DPS &graph")
+        # The instance the fight belongs to, its block of the list
+        # (gui.instance_render): a pull opens that fight, a name that player
+        self.instance_view = FightView(icons=self.fight_view.icons)
+        self.instance_view.setAccessibleName("Instance")
+        self.instance_view.fight_requested.connect(self._open_instance_fight)
+        self.instance_view.player_requested.connect(self._open_instance_player)
+        self.instance_view.instance_copy_requested.connect(self._copy_instance)
+        self.instance_view.banner_requested.connect(self._instance_banner)
+        self.fight_views.add_tab(self.instance_view, "&Instance")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)
         self.fight_views.search_placed.connect(self._set_tab_order)
         right_layout.addWidget(self.fight_views, 1)
@@ -919,6 +938,8 @@ class MainWindow(QMainWindow):
                         self._show_replaying()
             elif self._follow_live:
                 self.history_list.setCurrentRow(row)
+            if self.history_list.current_entry() is not entry:
+                self._instance_changed(entry)  # a pull joining the instance on screen
 
     @Slot(object)
     def _on_fight_updated(self, entry):
@@ -971,6 +992,8 @@ class MainWindow(QMainWindow):
         if row is not None and row == self.history_list.currentRow():
             # Where the reader had it, as the windows keep theirs
             self._redraw_fight()
+        elif row is not None:
+            self._instance_changed(entry)  # another fight of the instance on screen
         names = self._names_for(entry)
         for window in self._windows():
             window.entry_updated(entry, self._dark, names)
@@ -1458,9 +1481,11 @@ class MainWindow(QMainWindow):
         the pen/crit settings all draw through, and a fight changes in place
         only a few times (a late death, its banner, a mastery found later).
         Then the tab on screen, if it is another, in place when it shows
-        this fight already; the other tabs are marked, and drawn when they
-        are next shown, the search going on where it was on a page drawn
-        while hidden (_on_fight_tab_changed, gui.fight_tabs, issue #196)."""
+        this fight already (the Instance page: this fight's instance, the
+        search going on from its place); the other tabs are marked, and
+        drawn when they are next shown, the search going on where it was on
+        a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
+        issue #196)."""
         entry = self.history_list.current_entry()
         if entry is None:
             return
@@ -1539,20 +1564,30 @@ class MainWindow(QMainWindow):
             # The graph on screen: no search there
             if others:
                 self._draw_graph(entry)
-                self._deaths_dirty = True
+                self._deaths_dirty = self._instance_dirty = True
             return
         if others:
             self._graph_dirty = True
-        if self.fight_tabs.currentWidget() is self.deaths_view:
+        page = self.fight_tabs.currentWidget()
+        if page in (self.deaths_view, self.instance_view):
             if not others:
                 return
-            with ExitStack() as kept:
-                if entry is self._deaths_entry:
-                    kept.enter_context(self.deaths_view.keeping_place())
-                self._draw_deaths(entry)
+            # The other of the two is drawn when it is next shown
+            if page is self.deaths_view:
+                self._instance_dirty = True
+            else:
+                self._deaths_dirty = True
+            if self._page_state(page, entry)[1]:
+                if search_from is None:
+                    # Another fight of the instance on screen: the search
+                    # goes on from its place, as the page keeps its own
+                    search_from = self._search_place(page.textCursor().position())
+                self._draw_in_place(page, entry, search_from)
+            else:
+                self._draw_page(page, entry)
                 self._apply_search(search_from=search_from)
             return
-        self._deaths_dirty = True
+        self._deaths_dirty = self._instance_dirty = True
         self._apply_search(search_from=search_from)
 
     def _open_player(self, unit_id, tab, entry=None, death=None):
@@ -1653,10 +1688,14 @@ class MainWindow(QMainWindow):
         self._graph_dirty = True
         self._fight_entry = None
         self._search_places.clear()
-        # Nor is the last fight's deaths kept on the hidden Deaths page, its
-        # names as they were drawn, Hide names or not
-        self.deaths_view.set_tooltips({})
-        self.deaths_view.setHtml("")
+        self._instance_block = []
+        self._instance_links = {}
+        self._instance_dirty = True
+        # Nor is the last fight's deaths or instance kept on the hidden
+        # pages, their names as they were drawn, Hide names or not
+        for view in (self.deaths_view, self.instance_view):
+            view.set_tooltips({})
+            view.setHtml("")
         self.timeline_strip.set_timeline(None)
         self.fight_view.setHtml(
             f"<div style='color:{muted_color(self._dark)};padding:16px'>"
@@ -1836,11 +1875,13 @@ class MainWindow(QMainWindow):
         QWidget.setTabOrder(bar, self.search_field)
         QWidget.setTabOrder(self.search_field, self.fight_view)
         QWidget.setTabOrder(self.fight_view, self.deaths_view)
+        QWidget.setTabOrder(self.deaths_view, self.instance_view)
 
     def _search_view(self):
         """The page the search works on: the tab on screen's."""
-        if self.fight_tabs.currentWidget() is self.deaths_view:
-            return self.deaths_view
+        page = self.fight_tabs.currentWidget()
+        if page in (self.deaths_view, self.instance_view):
+            return page
         return self.fight_view
 
     def _find(self):
@@ -1879,35 +1920,31 @@ class MainWindow(QMainWindow):
         self._chosen_tab = index
         entry = self.history_list.current_entry()
         if self._search_off_on_graph():
-            for view in (self.fight_view, self.deaths_view):
+            for view in (self.fight_view, self.deaths_view, self.instance_view):
                 view.set_search_selections([])
             if entry is not None and (self._graph_dirty or entry is not self.dps_panel.entry):
                 self._draw_graph(entry)
             return
         searched = self._search_view()
         # The page left keeps no matches; the one on screen has the search's
-        for view in (self.fight_view, self.deaths_view):
+        for view in (self.fight_view, self.deaths_view, self.instance_view):
             if view is not searched:
                 view.set_search_selections([])
         same_search = self._searched.get(searched, "") == self.search_field.text()
-        if (searched is self.deaths_view and entry is not None
-                and (self._deaths_dirty or entry is not self._deaths_entry)):
-            if entry is self._deaths_entry:
+        stale, same = (self._page_state(searched, entry)
+                       if searched is not self.fight_view and entry is not None else (False, False))
+        if stale:
+            if same:
                 # Drawn again in place, its Tab link kept by the redraw, the
                 # search going on from its place, read before the link moves
                 # the cursor
-                place = (self._search_place(self.deaths_view.textCursor().position())
+                place = (self._search_place(searched.textCursor().position())
                          if same_search else None)
-                self.deaths_view.give_link_back()
-                with self.deaths_view.keeping_place():
-                    self._draw_deaths(entry)
-                    if place is not None:
-                        self._apply_search(search_from=place)
-                if place is None:
-                    self._apply_search()  # a search typed meanwhile: its first match
+                searched.give_link_back()
+                self._draw_in_place(searched, entry, place)
             else:
-                self._draw_deaths(entry)
-                self._apply_search()  # a new fight: its first match
+                self._draw_page(searched, entry)
+                self._apply_search()  # a new fight or instance: its first match
             return
         noted = self._search_places.pop(searched, None)
         if noted is None:
@@ -1950,6 +1987,163 @@ class MainWindow(QMainWindow):
             names=names, text_color=view.palette().color(QPalette.Text).name()))
         self._deaths_entry = entry
         self._deaths_dirty = False
+
+    def _page_state(self, view, entry):
+        """For the Deaths or Instance page *view*: whether it is to be
+        drawn for *entry* before it is shown, and whether it shows what it
+        would show already (the same fight, the same instance), so is drawn
+        in place."""
+        if view is self.deaths_view:
+            same = entry is self._deaths_entry
+            return self._deaths_dirty or not same, same
+        same = self._same_instance(entry)
+        return self._instance_dirty or not same, same
+
+    def _draw_page(self, view, entry):
+        """The Deaths or Instance page *view* drawn for *entry*."""
+        if view is self.deaths_view:
+            self._draw_deaths(entry)
+        else:
+            self._draw_instance(entry)
+
+    def _draw_in_place(self, view, entry, search_from=None):
+        """The Deaths or Instance page *view* drawn again for *entry* where
+        the reader had it (FightView.keeping_place), the search going on
+        from its place among the matches (*search_from*, _search_place); or,
+        with None, a search typed while the page was hidden, from its first
+        match, found after the page is put back, which would otherwise take
+        the page from it. The one way a page is drawn in place: a fight, a
+        tab chosen, a pull or a change in the instance on screen."""
+        with view.keeping_place():
+            self._draw_page(view, entry)
+            if search_from is not None:
+                self._apply_search(search_from=search_from)
+        if search_from is None:
+            self._apply_search()
+
+    def _same_instance(self, entry) -> bool:
+        """Whether *entry* is in the instance the Instance page shows: the
+        block of the list that the same fight opens."""
+        block = self.history_list.block_of(entry)
+        return bool(block) and bool(self._instance_block) and block[0] is self._instance_block[0]
+
+    def _draw_instance(self, entry):
+        """The instance of *entry*, its block of the list, on the Instance
+        page (gui.instance_render). The block is taken anew at each
+        drawing, and the page's links carry the places in the list of the
+        fights they open, kept here with those fights, so a link whose
+        fight is no longer listed says so (_instance_fight)."""
+        view = self.instance_view
+        fights = self._current_fights()
+        block = self.history_list.block_of(entry) or [entry]
+        places = {id(fight): index for index, fight in enumerate(fights)}
+
+        def index_of(fight):
+            return places.get(id(fight))
+
+        names = NameMask.for_entries(block, self._hide_names)
+        # The live list's first instance may have begun before the log's
+        # latest logging session, the one the app reads at its start
+        opens_list = self._review_fights is None and bool(fights) and block[0] is fights[0]
+        view.set_link_hover_color(link_color(self._dark))
+        view.set_tooltips(instance_tooltips(block, index_of, shown=entry, names=names))
+        view.setHtml(render_instance_html(
+            block, index_of, shown=entry, dark=self._dark, icons=view.icons,
+            base_pt=view.font().pointSizeF(), names=names,
+            text_color=view.palette().color(QPalette.Text).name(),
+            opens_list=opens_list, fight_index=self.fight_index))
+        self._instance_block = block
+        self._instance_links = {places[id(fight)]: fight for fight in block if id(fight) in places}
+        self._instance_dirty = False
+
+    def _instance_changed(self, entry):
+        """*entry* changed in place, or came in, with another fight on
+        screen: if it is in the instance the Instance page shows, the page
+        is drawn again in place while it is on screen, the search going on
+        from its place, and else when it is next shown."""
+        shown = self.history_list.current_entry()
+        if shown is None or not self._same_instance(entry):
+            return
+        view = self.instance_view
+        if self.fight_tabs.currentWidget() is not view:
+            self._instance_dirty = True
+            return
+        self._draw_in_place(view, shown, self._search_place(view.textCursor().position()))
+
+    def _open_instance_from_list(self, row):
+        """A click on a header, run or result row of the list: the Instance
+        tab on that row's instance (FightList.instance_of), the fight on
+        screen kept when it is in it, at the page's top, or at the boss of
+        a run row."""
+        target = self.history_list.instance_of(row, self.history_list.current_entry())
+        if target is None:
+            return
+        entry, run = target
+        if entry is not self.history_list.current_entry():
+            self.history_list.select_entry(entry)
+        if not self.fight_views.is_shown():
+            return
+        self.fight_tabs.setCurrentWidget(self.instance_view)
+        view = self.instance_view
+        number = self._run_number(run) if run is not None else None
+        if number is None:
+            view.restore_scroll(0)
+        else:
+            view.open_at_anchor(run_anchor(number))
+
+    def _run_number(self, run):
+        """*run*'s number from 1 among the runs of the instance on the
+        Instance page, as the page's anchors count them; None when the
+        page does not have it."""
+        first = run[0][0]
+        for number, each in enumerate(runs(self._instance_block), 1):
+            if each[0][0] is first:
+                return number
+        return None
+
+    def _instance_fight(self, index):
+        """The fight a link on the Instance page names by its place in the
+        list the page was drawn from; None, the status bar saying so, when
+        it is no longer listed."""
+        entry = self._instance_links.get(index)
+        if entry is None or self.history_list.row_of(entry) is None:
+            self.statusBar().showMessage("That fight is not in the list now", 5000)
+            return None
+        return entry
+
+    def _open_instance_fight(self, index):
+        """A pull on the Instance page: that fight, on the Fight tab."""
+        entry = self._instance_fight(index)
+        if entry is not None:
+            self.fight_tabs.setCurrentIndex(0)
+            self.history_list.select_entry(entry)
+
+    def _open_instance_player(self, index, unit_id):
+        """A name on the Instance page: the player window on the fight the
+        link names (gui.instance_render), on Build; on Deaths for a player
+        with no row in it, who only died there, as the pane's Also died
+        opens them."""
+        entry = self._instance_fight(index)
+        if entry is not None:
+            tab = BUILD_TAB if player_for(entry, unit_id) is not None else DEATHS_TAB
+            self._open_player(unit_id, tab, entry=entry)
+
+    def _copy_instance(self):
+        """Copy this instance, on the Instance page: its fights as a recap,
+        as Copy session writes each instance (session_recap)."""
+        block = self._instance_block
+        if not block or self.history_list.row_of(block[0]) is None:
+            self.statusBar().showMessage("That instance is not in the list now", 5000)
+            return
+        self._copy_recap(block, "Instance")
+
+    @Slot(str)
+    def _instance_banner(self, action):
+        """The Instance page's banner links: the banner of the instance's
+        result, whichever of its fights is on screen."""
+        result = next((fight for fight in reversed(self._instance_block)
+                       if getattr(fight, "trial_result", None)), None)
+        self._banner_action(result, action)
 
     def _search_off_on_graph(self) -> bool:
         """The search off, its text kept and its count blank, with the DPS
@@ -2042,7 +2236,7 @@ class MainWindow(QMainWindow):
         """Apply and save the app-wide text size, then redraw every page.
         A view zoomed with Ctrl + mouse wheel drops its own size and takes
         the new one, so the setting is what the user sees everywhere."""
-        views = ([self.fight_view, self.deaths_view]
+        views = ([self.fight_view, self.deaths_view, self.instance_view]
                  + [view for window in self._windows() for view in window.views()])
         # Where each page's link reached with Tab is on the screen, before
         # the new size moves it: the redraw cannot see it once the font has
@@ -2100,9 +2294,15 @@ class MainWindow(QMainWindow):
         if not fights:
             self.statusBar().showMessage("No fights to copy", 3000)
             return
+        self._copy_recap(fights, "Session")
+
+    def _copy_recap(self, fights, what):
+        """*fights* on the clipboard as a recap (session_recap), names
+        through the Hide names switch; the status bar says how long it is
+        against a Discord message."""
         text = recap_text(fights, NameMask.for_entries(fights, self._hide_names))
         QGuiApplication.clipboard().setText(text)
-        note = f"Session recap copied to clipboard, {len(text):,} characters"
+        note = f"{what} recap copied to clipboard, {len(text):,} characters"
         if len(text) > DISCORD_LIMIT:
             note += f": a Discord message takes {DISCORD_LIMIT:,}, so paste it in parts"
         self.statusBar().showMessage(note, 6000)
@@ -2212,10 +2412,15 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _show_banner(self, action):
-        """The result strip's banner links: open the PNG, save a copy
-        elsewhere, or put the image on the clipboard."""
+        """The result strip's banner links, on the fight on screen."""
+        self._banner_action(self.history_list.current_entry(), action)
+
+    def _banner_action(self, entry, action):
+        """A banner link on *entry*, the fight that carries a run's result:
+        open the PNG, save a copy elsewhere, or put the image on the
+        clipboard. The Instance page's links act on its result's fight,
+        which need not be the fight on screen (issue #196)."""
         import shutil
-        entry = self.history_list.current_entry()
         path = getattr(entry, "banner_path", None) if entry is not None else None
         if not path or not Path(path).is_file():
             self.statusBar().showMessage("The score banner file is gone", 5000)

@@ -170,10 +170,11 @@ TOPICS = [
     ("The player window: one window, a tab for each link", [
         "src/gui/player_window.py",
     ]),
-    ("The fight's tabs: Fight and Deaths", [
+    ("The fight's tabs: Fight, Deaths and Instance", [
         "src/gui/fight_tabs.py",
         "src/gui/main_window.py:MainWindow._show_fight",
         "src/gui/fight_deaths_render.py",
+        "src/gui/instance_render.py",
     ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",

@@ -4,10 +4,12 @@ review banner, as tabs on the fight selected in the list, with the search
 in the tab bar's corner.
 
 Design: The fight tabs. The list's fight is shown on tabs: Fight, the buff
-timeline strip and the fight pane as they were, and Deaths, every death of
-the fight on one page (fight_deaths_render). The tabs show the fight the
-list has selected, so this level cannot go stale, where the player window
-keeps the fight it was opened for. The tab chosen stays when the fight
+timeline strip and the fight pane as they were; Deaths, every death of the
+fight on one page (fight_deaths_render); the DPS graph (dps_graph); and
+Instance, the instance the fight belongs to, its block of the list
+(instance_render). The tabs show the fight the list has selected, so this
+level cannot go stale, where the player window keeps the fight it was
+opened for. The tab chosen stays when the fight
 changes, new live fights included, and is not kept from one run of the app
 to the next. The Alt letters are the labels' mnemonics; Ctrl+PgDn and
 Ctrl+PgUp change the tab from anywhere in the window, the list included.
@@ -20,8 +22,8 @@ was, it clipped the tab labels at 190-200% text (probed with the window's
 own text). The field takes the width the bar leaves, at most about forty
 characters (260 px at 100% in Segoe UI). When the bar leaves less than the
 widest count ('999+ matches') and about six characters, at a large text
-size in a narrow column or in a wide font (the labels of the four tabs
-planned need 424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
+size in a narrow column or in a wide font (the four tabs' labels need
+424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
 takes a row of its own above the tabs. It is placed again as the column's
 width, the text size or the tabs change, so the bar is never narrower than
 its labels and none hides behind Qt's scroll arrows.

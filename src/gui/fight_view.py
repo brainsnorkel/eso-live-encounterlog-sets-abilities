@@ -52,6 +52,7 @@ from gui.fight_render import (
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
+from gui.instance_render import INSTANCE_COPY_HREF, PLAYER_HREF, fight_from_href, player_from_href
 from gui.name_mask import MASK_SCHEME, mask_image, mask_request
 
 ICON_SCHEME = "icon"
@@ -125,6 +126,13 @@ class FightView(QTextBrowser):
     # 'hide' the recent activity; a file's place in it to open for review
     activity_requested = Signal(str)
     review_requested = Signal(int)
+    # The Instance page's links (gui.instance_render, issue #196): a pull,
+    # by its place in the list the page was drawn from; a player, by the
+    # place of the fight to open them on and their unit id there; Copy this
+    # instance
+    fight_requested = Signal(int)
+    player_requested = Signal(int, str)
+    instance_copy_requested = Signal()
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -598,7 +606,7 @@ class FightView(QTextBrowser):
         """
         selections = []
         if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF, RECAP_HREF,
-                            FIGHT_DEATHS_HREF)):
+                            FIGHT_DEATHS_HREF, PLAYER_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -763,6 +771,17 @@ class FightView(QTextBrowser):
         index = review_index_from_href(url.toString())
         if index is not None:
             self.review_requested.emit(index)
+            return
+        index = fight_from_href(url.toString())
+        if index is not None:
+            self.fight_requested.emit(index)
+            return
+        player = player_from_href(url.toString())
+        if player is not None:
+            self.player_requested.emit(*player)
+            return
+        if url.toString() == INSTANCE_COPY_HREF:
+            self.instance_copy_requested.emit()
             return
         unit_id = build_unit_from_href(url.toString())
         if unit_id is None:

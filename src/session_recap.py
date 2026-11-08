@@ -48,50 +48,62 @@ TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DISCORD_LIMIT = 2000  # characters in one Discord message
 
 
-def _start(entry):
+def start(entry):
     """The fight's start as the list shows it: local wall-clock time, with
-    no zone to name."""
+    no zone to name; None for a fight fought before the log gave the time.
+    The Instance tab reads it too (gui.instance_render)."""
     try:
         return datetime.strptime(str(entry.timestamp), TIME_FORMAT)  # noqa: DTZ007
     except (TypeError, ValueError):
         return None
 
 
-def _span(fights) -> str:
+def span(fights) -> str:
     """'2026-10-31 20:05 to 22:40': the first fight's start to the last's
     end, from the first and the last fights with a clock (one fought
-    before the log gave the time reads 'Unknown Time'); '' with none."""
-    timed = [(start, fight) for fight in fights if (start := _start(fight)) is not None]
+    before the log gave the time reads 'Unknown Time'); '' with none. The
+    Instance tab's heading uses it too (gui.instance_render)."""
+    timed = [(began, fight) for fight in fights if (began := start(fight)) is not None]
     if not timed:
         return ""
-    start, (last, last_fight) = timed[0][0], timed[-1]
+    first, (last, last_fight) = timed[0][0], timed[-1]
     end = last + timedelta(seconds=float(last_fight.duration_s or 0))
-    end_text = end.strftime("%H:%M") if end.date() == start.date() else end.strftime("%Y-%m-%d %H:%M")
-    return f"{start.strftime('%Y-%m-%d %H:%M')} to {end_text}"
+    end_text = end.strftime("%H:%M") if end.date() == first.date() else end.strftime("%Y-%m-%d %H:%M")
+    return f"{first.strftime('%Y-%m-%d %H:%M')} to {end_text}"
 
 
-def _kill_part(pull_fights) -> str:
-    """'3:00, 441k boss dps' for a kill: the time over the pull's fights,
-    and the dps over the same, the boss damage of each fight (its boss dps
-    by its boss dps time) over their boss dps times; plain 'dps' when the
-    fights kept no boss figure (a boss the game does not flag)."""
+def kill_figures(pull_fights) -> tuple[float, float, bool]:
+    """(seconds, dps, whether that is boss dps) of a kill: the time over the
+    pull's fights, and the dps over the same, the boss damage of each fight
+    (its boss dps by its boss dps time) over their boss dps times; the
+    group's dps the same way when the fights kept no boss figure (a boss
+    the game does not flag). The Instance tab writes the same figures
+    (gui.instance_render)."""
     duration = sum(float(f.duration_s or 0) for f in pull_fights)
     boss_time = sum(float(getattr(f, "boss_dps_time_s", 0) or 0) for f in pull_fights)
     if boss_time > 0 and any(f.group_boss_dps for f in pull_fights):
         damage = sum(float(f.group_boss_dps or 0) * float(getattr(f, "boss_dps_time_s", 0) or 0)
                      for f in pull_fights)
-        return f"{clock(duration)}, {dps_text(damage / boss_time)} boss dps"
+        return duration, damage / boss_time, True
     times = sum(float(getattr(f, "dps_time_s", 0) or 0) for f in pull_fights)
     if times > 0:
         damage = sum(float(f.group_dps or 0) * float(getattr(f, "dps_time_s", 0) or 0)
                      for f in pull_fights)
-        return f"{clock(duration)}, {dps_text(damage / times)} dps"
-    return f"{clock(duration)}, {dps_text(pull_fights[-1].group_dps)} dps"
+        return duration, damage / times, False
+    return duration, float(pull_fights[-1].group_dps or 0), False
 
 
-def _players(fights) -> int:
+def _kill_part(pull_fights) -> str:
+    """'3:00, 441k boss dps' for a kill (kill_figures); plain 'dps' when the
+    fights kept no boss figure."""
+    duration, dps, of_bosses = kill_figures(pull_fights)
+    return f"{clock(duration)}, {dps_text(dps)} {'boss dps' if of_bosses else 'dps'}"
+
+
+def players(fights) -> int:
     """The group's size: the largest a pull counted, else the most player
-    rows in a fight."""
+    rows in a fight. The Instance tab's heading uses it too
+    (gui.instance_render)."""
     pulls = [int(f.pull.get("players") or 0) for f in fights if getattr(f, "pull", None)]
     if pulls:
         return max(pulls)
@@ -134,23 +146,33 @@ def _flagged_players(fights) -> int:
     return len(flagged)
 
 
+def trash_text(fights) -> str:
+    """'14 fights, 9:30, 3 deaths': the fights of *fights* that are no
+    pull, their time and their deaths; '' with none. The Instance tab
+    writes the same (gui.instance_render)."""
+    trash = [f for f in fights if not getattr(f, "pull", None)]
+    if not trash:
+        return ""
+    deaths = sum(int(f.deaths or 0) for f in trash)
+    text = (f"{len(trash)} fight{'s' if len(trash) != 1 else ''}, "
+            f"{clock(sum(float(f.duration_s or 0) for f in trash))}")
+    return text + (f", {_deaths(deaths)}" if deaths else "")
+
+
 def _block_lines(fights, names) -> list:
     heading = [header_text(fights[0])]
-    span = _span(fights)
-    if span:
-        heading.append(span)
-    players = _players(fights)
-    if players:
-        heading.append(f"{players} player{'s' if players != 1 else ''}")
+    when = span(fights)
+    if when:
+        heading.append(when)
+    size = players(fights)
+    if size:
+        heading.append(f"{size} player{'s' if size != 1 else ''}")
     lines = [" · ".join(heading)]
     for run in runs(fights):
         lines += _run_lines(run, names)
-    trash = [f for f in fights if not getattr(f, "pull", None)]
+    trash = trash_text(fights)
     if trash:
-        deaths = sum(int(f.deaths or 0) for f in trash)
-        line = f"Trash: {len(trash)} fight{'s' if len(trash) != 1 else ''}, " \
-               f"{clock(sum(float(f.duration_s or 0) for f in trash))}"
-        lines.append(line + (f", {_deaths(deaths)}" if deaths else ""))
+        lines.append(f"Trash: {trash}")
     flagged = _flagged_players(fights)
     if flagged:
         lines.append(f"ⓘ {flagged} player{'s' if flagged != 1 else ''} with possible build issues")
