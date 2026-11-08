@@ -51,7 +51,7 @@ that matter, read from LibCombat.lua and CombatMetrics.lua (October 2026):
   first and last points carried to the fight's edges. Its total curve is
   the live figure as it stood: the damage so far over the dps time so far
   (``sum / (min(dpsend, t) - dpsstart)``), from half a window after the
-  first hit on. The graph window draws both (smoothed_dps, running_dps),
+  first hit on. The DPS graph draws both (smoothed_dps, running_dps),
   for the group and for each player, from the same per-second buckets
   (PlayerDamage.buckets, FightDamage.buckets).
 

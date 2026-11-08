@@ -194,6 +194,7 @@ class FightViews(QWidget):
         self.search_field = SearchField()
         self._row.addWidget(self.search_field)
         self._shown = True
+        self._bar_width = 0  # the bar's width when the column's least was last set
         # The tab widget's own Ctrl+Tab and Ctrl+Shift+Tab, from a page,
         # change the tab with the bar hidden too: without a fight, the first
         # tab is put back (the fresh review of PR #205)
@@ -212,6 +213,8 @@ class FightViews(QWidget):
     def set_shown(self, shown: bool) -> None:
         """The bar and the search shown with a fight; without one, hidden
         together, the first tab on screen (see the module notes)."""
+        if bool(shown) != self._shown:
+            self.updateGeometry()  # the least width follows the bar (minimumSizeHint)
         self._shown = bool(shown)
         if not self._shown:
             self.tabs.setCurrentIndex(0)
@@ -222,6 +225,16 @@ class FightViews(QWidget):
         if not self._shown and index != 0:
             self.tabs.setCurrentIndex(0)
 
+    def minimumSizeHint(self):
+        """Never narrower than the tab bar's labels need, as the player
+        window's least width is its tab bar's: in a narrower column Qt
+        scrolls the labels (three need 552 px at 200% text in the test
+        runner's font)."""
+        hint = super().minimumSizeHint()
+        if self._shown:  # a hidden bar draws no labels to keep whole
+            hint.setWidth(max(hint.width(), self.tabs.tabBar().sizeHint().width()))
+        return hint
+
     def in_corner(self) -> bool:
         return self.tabs.cornerWidget(Qt.TopRightCorner) is self.search_field
 
@@ -230,7 +243,12 @@ class FightViews(QWidget):
         up to its most, when that is at least its least; else on its own
         row (see the module notes)."""
         field = self.search_field
-        room = self.width() - self.tabs.tabBar().sizeHint().width()
+        bar = self.tabs.tabBar().sizeHint().width()
+        if bar != self._bar_width:
+            # The labels' width changed (a tab, a text size): so has the least
+            self._bar_width = bar
+            self.updateGeometry()
+        room = self.width() - bar
         # A new parent takes the focus from the field: it is given back, so
         # typing goes on through a new text size or a resize
         had_focus = field is self.window().focusWidget()

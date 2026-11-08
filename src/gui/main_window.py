@@ -46,7 +46,7 @@ from gui.activity_render import (
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import player_for
 from gui.death_render import death_tooltips, deaths_by_unit
-from gui.dps_graph import DpsGraphDialog
+from gui.dps_graph import DpsGraphPanel
 from gui.engine_worker import EngineWorker
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
@@ -200,7 +200,8 @@ class MainWindow(QMainWindow):
         # (_end_replay)
         self._player_window = None
         self._player_window_key = None
-        self._graph_dialog = None  # created on the first DPS graph request
+        # The DPS graph tab's page is to be drawn before it is next shown
+        self._graph_dirty = True
         # The fight's tabs (gui.fight_tabs, issue #196): the tab chosen, which
         # stays as the fights change, and the fight the Deaths page shows,
         # with whether it is to be drawn again before it is next shown
@@ -460,6 +461,11 @@ class MainWindow(QMainWindow):
         self.deaths_view.setAccessibleName("Deaths")
         self.deaths_view.recap_requested.connect(self._show_fight_death)
         self.fight_views.add_tab(self.deaths_view, "D&eaths")
+        # The dps over time graph (gui.dps_graph), a tab where it was a window
+        self.dps_panel = DpsGraphPanel()
+        self.dps_panel.setAccessibleName("DPS graph")
+        self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
+        self.fight_views.add_tab(self.dps_panel, "DPS &graph")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)
         self.fight_views.search_placed.connect(self._set_tab_order)
         right_layout.addWidget(self.fight_views, 1)
@@ -535,6 +541,13 @@ class MainWindow(QMainWindow):
         splitter = _decode_state(self.config.get("window.splitter"))
         if splitter is not None:
             self._splitter.restoreState(splitter)
+        else:
+            # A first run: the fight list a third of the window, as it had
+            # before the fight's tabs. The splitter shares out width it was
+            # never given by the pages' sizes, and the DPS graph tab's took
+            # the list from 348 px of 1080 down to 226 (issue #196)
+            third = self.width() // 3
+            self._splitter.setSizes([third, self.width() - third])
 
     def _save_window_layout(self):
         self.config.set("window.geometry", _encode_state(self.saveGeometry()))
@@ -922,11 +935,10 @@ class MainWindow(QMainWindow):
 
     def _windows(self):
         """The windows opened so far beside this one (each is made at its
-        first use): the player window and the DPS graph. The one list a
-        theme switch, a flip of Hide names, a new text size and a fight
-        changing in place go through (issue #196)."""
-        return [window for window in (self._player_window, self._graph_dialog)
-                if window is not None]
+        first use): the player window, the DPS graph being a fight tab now.
+        The one list a theme switch, a flip of Hide names, a new text size
+        and a fight changing in place go through (issue #196)."""
+        return [window for window in (self._player_window,) if window is not None]
 
     def _fight_changed(self, entry):
         """A delivered fight changed in place (a fight update from the
@@ -1431,14 +1443,14 @@ class MainWindow(QMainWindow):
         self.history_list.select_fight(-1)
         self._update_player_listed()
 
-    def _show_fight(self, *_, search_from=None, deaths=True):
+    def _show_fight(self, *_, search_from=None, others=True):
         """The current fight on the fight's tabs (the list's
         currentRowChanged passes the row, which a header row never is).
         *search_from*, for the page redrawn in place, is where the reader
         had the text cursor among the search's matches on the tab on screen
         (_search_place): the search goes on from there (_apply_search).
-        *deaths* False leaves the Deaths page as it is, for a change to the
-        Fight page alone (Detail view).
+        *others* False leaves the other tabs' pages as they are, for a
+        change to the Fight page alone (Detail view).
 
         The Fight page, the strip and the pane, is always drawn, as the
         issue's design has it: one path for the pane, which the list's
@@ -1523,8 +1535,16 @@ class MainWindow(QMainWindow):
                                             names=names,
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
                                             history=history))
+        if self._search_off_on_graph():
+            # The graph on screen: no search there
+            if others:
+                self._draw_graph(entry)
+                self._deaths_dirty = True
+            return
+        if others:
+            self._graph_dirty = True
         if self.fight_tabs.currentWidget() is self.deaths_view:
-            if not deaths:
+            if not others:
                 return
             with ExitStack() as kept:
                 if entry is self._deaths_entry:
@@ -1618,18 +1638,9 @@ class MainWindow(QMainWindow):
 
     def _show_graph(self):
         """The toolbar's DPS graph, or the header's group dps figure, was
-        clicked: the dps over time graph of the fight on screen."""
-        entry = self.history_list.current_entry()
-        if entry is None:
-            return
-        if self._graph_dialog is None:
-            self._graph_dialog = DpsGraphDialog(self)
-        self._graph_dialog.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
-        self._graph_dialog.show_graph(entry, self._dark,
-                                      names=self._names_for(entry))
-        self._graph_dialog.show()
-        self._graph_dialog.raise_()
-        self._graph_dialog.activateWindow()
+        clicked: the DPS graph tab, on the fight on screen (issue #196)."""
+        if self.fight_views.is_shown():
+            self.fight_tabs.setCurrentWidget(self.dps_panel)
 
     def _show_placeholder(self, html_text):
         self._last_placeholder = html_text
@@ -1638,6 +1649,8 @@ class MainWindow(QMainWindow):
         self.fight_views.set_shown(False)
         self._deaths_entry = None
         self._deaths_dirty = True
+        self.dps_panel.clear()
+        self._graph_dirty = True
         self._fight_entry = None
         self._search_places.clear()
         # Nor is the last fight's deaths kept on the hidden Deaths page, its
@@ -1831,9 +1844,12 @@ class MainWindow(QMainWindow):
         return self.fight_view
 
     def _find(self):
-        """Ctrl+F: the search, for the tab on screen; nothing while no
-        fight is shown, the field hidden with the tab bar."""
+        """Ctrl+F: the search, for the tab on screen, the Fight tab first
+        from the graph, which has no text to search; nothing while no fight
+        is shown, the field hidden with the tab bar."""
         if self.fight_views.is_shown():
+            if self.fight_tabs.currentWidget() is self.dps_panel:
+                self.fight_tabs.setCurrentIndex(0)
             self.search_field.setFocus()
             self.search_field.selectAll()
 
@@ -1862,6 +1878,12 @@ class MainWindow(QMainWindow):
             return  # no fight: the Fight tab, put there by set_shown
         self._chosen_tab = index
         entry = self.history_list.current_entry()
+        if self._search_off_on_graph():
+            for view in (self.fight_view, self.deaths_view):
+                view.set_search_selections([])
+            if entry is not None and (self._graph_dirty or entry is not self.dps_panel.entry):
+                self._draw_graph(entry)
+            return
         searched = self._search_view()
         # The page left keeps no matches; the one on screen has the search's
         for view in (self.fight_view, self.deaths_view):
@@ -1929,6 +1951,25 @@ class MainWindow(QMainWindow):
         self._deaths_entry = entry
         self._deaths_dirty = False
 
+    def _search_off_on_graph(self) -> bool:
+        """The search off, its text kept and its count blank, with the DPS
+        graph on screen, which has no text to search; on with a page of
+        text. Whether the graph is on screen. Both ways a tab comes on
+        screen set it: a tab chosen, and a fight bringing the chosen tab
+        back after a page with no fight, which counted that page's
+        matches."""
+        on_graph = self.fight_tabs.currentWidget() is self.dps_panel
+        self.search_field.setEnabled(not on_graph)
+        if on_graph:
+            self.search_field.set_count("")
+        return on_graph
+
+    def _draw_graph(self, entry):
+        """The DPS graph tab on *entry*: in place, the legend keeping its
+        place, when it shows that fight already (gui.dps_graph)."""
+        self.dps_panel.draw(entry, self._dark, names=self._names_for(entry))
+        self._graph_dirty = False
+
     def _show_fight_deaths(self):
         """The fight header's Deaths N: the Deaths tab."""
         if self.fight_views.is_shown():
@@ -1951,13 +1992,13 @@ class MainWindow(QMainWindow):
 
     def _toggle_detail(self, checked):
         self._detailed = checked
-        if self.fight_tabs.currentWidget() is self.deaths_view:
-            # Detail view changes the Fight page alone: the Deaths page on
-            # screen is left as it is, its search where it was, and the
-            # Fight page's search starts at its first match when it is next
+        if self.fight_tabs.currentIndex() != 0:
+            # Detail view changes the Fight page alone: the page on screen
+            # is left as it is, its search where it was, and the Fight
+            # page's search starts at its first match when it is next
             # shown, as on a page drawn anew (#206)
             self._search_places[self.fight_view] = (self.search_field.text(), None)
-            self._show_fight(deaths=False)
+            self._show_fight(others=False)
         else:
             self._show_fight()
 
@@ -2214,9 +2255,13 @@ class MainWindow(QMainWindow):
             if repr(self.config.get("pen_crit") or {}) != pen_crit_before:
                 self._apply_pen_crit_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
-            if self._graph_dialog is not None:
-                self._graph_dialog.set_colorblind(
-                    bool(self.config.get("display.colorblind_graph", False)))
+            # The graph on screen redraws with the new colours; a hidden one
+            # is drawn when it is next shown
+            on_graph = self.fight_tabs.currentWidget() is self.dps_panel
+            self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)),
+                                          redraw=on_graph)
+            if not on_graph:
+                self._graph_dirty = True
             if self.config.get(text_size.CONFIG_KEY) != text_size.percent():
                 self.set_text_size(self.config.get(text_size.CONFIG_KEY))
             if engine_settings(self.config) != engine_before:

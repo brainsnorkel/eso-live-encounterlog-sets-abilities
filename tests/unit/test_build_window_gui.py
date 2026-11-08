@@ -358,16 +358,13 @@ class TestHoverCue(BuildGuiTestCase):
             cue = self._cue(view).cursor.selectedText()
             self.assertFalse(cue.endswith('\xa0'), repr(cue))
             self.assertIn('Click for the damage breakdown', view.current_tooltip)
-            # A click on the header's glyph opens the graph window
-            self.assertIsNone(win._graph_dialog)
+            # A click on the header's glyph opens the DPS graph tab
+            self.assertIsNot(win.fight_tabs.currentWidget(), win.dps_panel)
             QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier,
                              glyph_point(GRAPH_HREF))
             _app.processEvents()
-            self.assertIsNotNone(win._graph_dialog)
-            self.assertTrue(win._graph_dialog.isVisible())
+            self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
         finally:
-            if win._graph_dialog is not None:
-                win._graph_dialog.close()
             win.close()
 
     def test_a_fight_drawn_while_a_name_is_hovered_starts_clean(self):
@@ -1118,10 +1115,11 @@ class TestBuildWindow(BuildGuiTestCase):
     def test_the_damage_taken_and_graph_windows_redraw_their_fight_too(self):
         """The same fight cut in two, the boss hitting @brainsnorkel in the
         second part: the player window's Damage done and Damage taken tabs
-        and the DPS graph open on it redraw it (issue #196), with the damage
+        and the DPS graph tab on it redraw it (issue #196), with the damage
         dealt, the hit taken and the longer fight of the whole, the tab on
-        screen at once and the other when shown; on another fight's update,
-        or hidden, they are left alone."""
+        screen at once and the other when shown. On another fight's update,
+        or hidden, the player window is left alone; the graph tab follows
+        the list's fight, as the fight's tabs do."""
         from fight_history import FightHistoryEntry
         from gui.player_window import DAMAGE_TAB, TAKEN_TAB
         from gui.taken_render import NO_DAMAGE_TAKEN
@@ -1134,7 +1132,7 @@ class TestBuildWindow(BuildGuiTestCase):
             win._show_damage('1')
             win._show_taken('1')
             win._show_graph()
-            window, graph = win._player_window, win._graph_dialog
+            window, graph = win._player_window, win.dps_panel
 
             def pages():
                 return (window.view(DAMAGE_TAB).toPlainText(), window.view(TAKEN_TAB).toPlainText(),
@@ -1158,20 +1156,19 @@ class TestBuildWindow(BuildGuiTestCase):
             self.assertEqual([w.entry for w in (window, graph)], [held] * 2)
 
             # A change to the fight that no update announced, which every
-            # page would show, stays undrawn on another fight's update, and
-            # on this one's while the windows are hidden
-            shown = pages()
+            # page would show, stays undrawn in the player window on another
+            # fight's update, and on this one's while it is hidden
+            shown = pages()[:2]
             held.duration_s = 3600.0
             other = _entry()
             win._on_fight_completed(other)
             win._on_fight_updated(other)
             _app.processEvents()
-            self.assertEqual(pages(), shown)
-            for each in (window, graph):
-                each.hide()
+            self.assertEqual(pages()[:2], shown)
+            window.hide()
             win._on_fight_updated(held)
             _app.processEvents()
-            self.assertEqual(pages(), shown)
+            self.assertEqual(pages()[:2], shown)
         finally:
             win.close()
 

@@ -128,14 +128,21 @@ class TestPaintedWidgets(AccessibilityTestCase):
         self.assertEqual(lines[1], "Lucent Echoes:0% group, expected but not up")
 
     def test_the_graph_reads_its_lines(self):
-        from gui.dps_graph import DpsGraphDialog
+        from gui.dps_graph import DpsGraphPanel
         from tests.unit.test_dps_graph import _entry
-        dialog = DpsGraphDialog()
+        dialog = DpsGraphPanel()
         self.addCleanup(dialog.deleteLater)
         dialog.show_graph(_entry(3), False)
         from PySide6.QtGui import QAccessible
         iface = QAccessible.queryAccessibleInterface(dialog.graph)
         self.assertEqual(iface.text(QAccessible.Name), "DPS over time")
+        # The legend and the curve picker are named too (issue #196). Qt on
+        # Linux names a combo box by its current item whatever its name, the
+        # Show label reaching a reader as its buddy, so the picker's own name
+        # is checked here
+        self.assertEqual(QAccessible.queryAccessibleInterface(dialog.legend).text(QAccessible.Name),
+                         "Lines drawn")
+        self.assertEqual(dialog.mode.accessibleName(), "Show")
         text = _described(dialog.graph)
         names = [c.name for c in dialog.graph.curves]
         self.assertTrue(names)

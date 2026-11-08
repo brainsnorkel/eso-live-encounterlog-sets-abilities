@@ -25,7 +25,7 @@ time, so the pictures stay in step with the app:
     damage-window.png               the same window on its Damage done tab
     taken-window.png                the fight's tank's Damage taken tab
     healing-received.png            the same player's Healing received tab
-    dps-graph.png                   the dps over time graph
+    dps-graph.png                   the DPS graph tab: the dps over time graph
     death-recap.png                 the Deaths tab, the fullest recap of the fight shown
     settings-general.png            the Settings dialog, one picture per page
     settings-fights.png
@@ -276,11 +276,13 @@ def main():
         tab(window, HEALING_TAB, "healing-received.png")
         window.hide()
 
-    # The dps over time graph of the fight
+    # The dps over time graph of the fight, the main window on its DPS graph
+    # tab (issue #196), then the Fight tab again
     win._show_graph()
     pump(1.5)
-    save(win._graph_dialog, "dps-graph.png")
-    win._graph_dialog.hide()
+    save(win, "dps-graph.png")
+    win.fight_tabs.setCurrentIndex(0)
+    pump(0.5)
 
     # The Deaths tab: in the fight shown, the death with the most hits and
     # heals logged before it, for a full table; else the first fight with a

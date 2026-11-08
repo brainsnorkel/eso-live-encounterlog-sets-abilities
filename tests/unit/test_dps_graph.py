@@ -178,7 +178,8 @@ class TestGraphWidget(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
-class TestGraphWindow(unittest.TestCase):
+class TestGraphTab(unittest.TestCase):
+    """The DPS graph tab of the main window (issue #196), which was a window."""
 
     def setUp(self):
         _ensure_app()
@@ -215,11 +216,10 @@ class TestGraphWindow(unittest.TestCase):
         try:
             win._on_fight_completed(_entry(players=10))
             win.history_list.select_fight(0)
-            self.assertIsNone(win._graph_dialog)
+            self.assertIsNot(win.fight_tabs.currentWidget(), win.dps_panel)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
-            dialog = win._graph_dialog
-            self.assertTrue(dialog.isVisible())
-            self.assertEqual(dialog.windowTitle(), 'DPS over time – Sharpfang')
+            dialog = win.dps_panel
+            self.assertIs(win.fight_tabs.currentWidget(), dialog)
             self.assertIn('10s fight', dialog.header.text())
             # The legend: the group and every player, the first eight on
             self.assertEqual(dialog.legend.count(), 11)
@@ -232,9 +232,10 @@ class TestGraphWindow(unittest.TestCase):
             self.assertTrue(curves['10'].dashed)
             self.assertEqual(curves['10'].color.name(), curves['2'].color.name())
             self.assertFalse(curves['2'].dashed)
-            # The toolbar reuses the window
+            # The toolbar opens the same tab, from the Fight tab too
+            win.fight_tabs.setCurrentIndex(0)
             win.graph_action.trigger()
-            self.assertIs(win._graph_dialog, dialog)
+            self.assertIs(win.fight_tabs.currentWidget(), dialog)
         finally:
             win.close()
 
@@ -245,7 +246,7 @@ class TestGraphWindow(unittest.TestCase):
             win._on_fight_completed(_entry(players=2, boss=True))
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
-            dialog = win._graph_dialog
+            dialog = win.dps_panel
             self.assertTrue(dialog.boss_only.isVisibleTo(dialog))
             group = next(c for c in dialog.graph.curves if c.key == 'Group')
             self.assertEqual(group.points, smoothed_dps(SERIES, 5, 10.0))
@@ -273,7 +274,7 @@ class TestGraphWindow(unittest.TestCase):
             win._on_fight_completed(_entry(players=3))
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
-            dialog = win._graph_dialog
+            dialog = win.dps_panel
             dialog.legend.item(2).setCheckState(Qt.Unchecked)
             self.assertEqual({c.key for c in dialog.graph.curves}, {'Group', '1', '3'})
             # The same fight again keeps the choice; the player's hue stays theirs
@@ -281,22 +282,27 @@ class TestGraphWindow(unittest.TestCase):
             self.assertEqual({c.key for c in dialog.graph.curves}, {'Group', '1', '3'})
             third = next(c for c in dialog.graph.curves if c.key == '3')
             self.assertEqual(third.color.name(), '#1baf7a')
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             third = next(c for c in dialog.graph.curves if c.key == '3')
             self.assertEqual(third.color.name(), '#199e70')
         finally:
             win.close()
 
     def _graph_on(self, win, entry):
-        """The graph opened from the pane's group dps figure on *entry*, at
-        a height its legend scrolls in: (window, legend, the legend's bar)."""
+        """The graph opened from the pane's group dps figure on *entry*, its
+        legend at a height it scrolls in: (the panel, legend, the legend's
+        bar)."""
         from PySide6.QtCore import QUrl
         from PySide6.QtWidgets import QApplication
         win._on_fight_completed(entry)
         win.history_list.select_fight(0)
         win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
-        dialog = win._graph_dialog
-        dialog.resize(900, 300)
+        dialog = win.dps_panel
+        # A height its rows scroll in, whatever the window's (a shown window
+        # lays the legend out; Linux CI's will not shrink)
+        dialog.legend.setFixedHeight(200)
+        win.resize(1080, 720)
+        win.show()
         QApplication.processEvents()
         bar = dialog.legend.verticalScrollBar()
         self.assertGreater(bar.maximum(), 0)
@@ -319,7 +325,7 @@ class TestGraphWindow(unittest.TestCase):
             self.assertEqual(place, (0, bar.maximum()))
             win._on_fight_updated(entry)
             self.assertEqual((legend.currentRow(), bar.value()), place)
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             self.assertEqual((legend.currentRow(), bar.value()), place)
         finally:
             win.close()
@@ -341,7 +347,7 @@ class TestGraphWindow(unittest.TestCase):
             self.assertEqual(legend.currentRow(), 5)
             self.assertEqual(legend.selectedItems(), [])
             legend.setCurrentRow(3)
-            dialog.refresh(True)
+            dialog.draw(dialog.entry, True)
             self.assertEqual(legend.currentRow(), 3)
             self.assertEqual(legend.selectedItems(), [legend.item(3)])
         finally:
@@ -449,6 +455,165 @@ class TestGraphWindow(unittest.TestCase):
         finally:
             win.close()
 
+    def test_ticks_are_kept_by_handle_across_a_zone(self):
+        """A line unticked stays unticked in a fight of another zone, where
+        the game gave the player another unit id; two anonymous players in
+        one fight keep a tick each, by their unit ids; a companion's tick is
+        its own (issue #196). Ticks kept by unit id went to whoever had that
+        id in the next zone."""
+        from PySide6.QtCore import Qt
+        from gui.dps_graph import DpsGraphPanel, legend_key
+        panel = DpsGraphPanel()
+        self.addCleanup(panel.deleteLater)
+
+        def row_of(name):
+            return next(panel.legend.item(row) for row in range(panel.legend.count())
+                        if panel.legend.item(row).text().startswith(name))
+
+        panel.show_graph(_entry(players=3), False)
+        row_of('@player2').setCheckState(Qt.Unchecked)
+        moved = _entry(players=3)
+        for n, p in enumerate(moved.players):
+            p['unit_id'] = str(40 + n)  # the next zone's ids
+        moved.players[0]['unit_id'] = '2'  # @player1 now has @player2's old id
+        panel.show_graph(moved, False)
+        self.assertEqual(row_of('@player2').checkState(), Qt.Unchecked)
+        self.assertEqual(row_of('@player1').checkState(), Qt.Checked)
+
+        anons = _entry(players=3)
+        anons.players[0]['name'] = 'anon'
+        anons.players[1]['name'] = 'anon'
+        anons.players[2]['name'] = "@player3's Companion"
+        self.assertEqual([legend_key(p, 'Moonlit Cove') for p in anons.players],
+                         ['Moonlit Cove/1', 'Moonlit Cove/2', "@player3's Companion"])
+        panel.show_graph(anons, False)
+        panel.legend.item(1).setCheckState(Qt.Unchecked)  # the first anon
+        self.assertEqual([panel.legend.item(row).checkState() for row in (1, 2)],
+                         [Qt.Unchecked, Qt.Checked])
+
+    def test_the_tab_is_never_wider_than_the_chart_and_the_narrow_legend(self):
+        """The tab asks for no more width than the chart's floor and the
+        legend's narrowest, at 100% and 200% text: the legend, fixed at its
+        widest, widened the fight's column to 844 px at 200% (issue #196)."""
+        from gui import text_size
+        from gui.dps_graph import LEGEND_LEAST, DpsGraphPanel
+        self.addCleanup(text_size.apply, text_size.DEFAULT_PCT)
+        for pct in (100, 200):
+            text_size.apply(pct)
+            panel = DpsGraphPanel()
+            self.addCleanup(panel.deleteLater)
+            panel.show_graph(_entry(players=10), False)
+            panel.show()  # its floor counts only while it is shown
+            least = 360 + text_size.scaled_px(LEGEND_LEAST)
+            with self.subTest(pct=pct):
+                self.assertLessEqual(panel.minimumSizeHint().width(), least + 20)
+                self.assertEqual(panel.sizeHint().width(), panel.minimumSizeHint().width())
+
+    def test_an_anonymous_players_tick_is_their_instances(self):
+        """An anonymous player unticked on one pull stays unticked on the
+        next in the same zone, where the game keeps their unit id (the
+        fresh review of #207: dropped at every fight, it had to be unticked
+        after each pull). In another zone, another anonymous player with
+        that unit id starts ticked (the review on open: the tick kept by the
+        id alone went to them)."""
+        from PySide6.QtCore import Qt
+        from gui.dps_graph import DpsGraphPanel
+        panel = DpsGraphPanel()
+        self.addCleanup(panel.deleteLater)
+        first = _entry(players=2)
+        first.players[1]['name'] = 'anon'
+        panel.show_graph(first, False)
+        panel.legend.item(2).setCheckState(Qt.Unchecked)
+        next_pull = _entry(players=2)
+        next_pull.players[1]['name'] = 'anon'
+        panel.show_graph(next_pull, False)
+        self.assertEqual(panel.legend.item(2).checkState(), Qt.Unchecked)
+        elsewhere = _entry(players=2)
+        elsewhere.zone_name = 'Sunspire'
+        elsewhere.players[0]['name'] = 'anon'
+        elsewhere.players[0]['unit_id'] = '2'
+        elsewhere.players[1]['unit_id'] = '7'
+        panel.show_graph(elsewhere, False)
+        self.assertEqual(panel.legend.item(1).data(Qt.UserRole), '2')
+        self.assertEqual(panel.legend.item(1).checkState(), Qt.Checked)
+
+    def test_the_time_axis_steps_wider_until_its_labels_fit(self):
+        """A 22-minute fight on the tab's narrower chart takes a wider step
+        than the timeline strip's, so its labels no longer run together (the
+        fresh review of #207: 0s 1m2m3m...); a short fight, or the same one
+        on the window's wider chart, keeps the strip's step."""
+        from PySide6.QtGui import QFont, QFontMetrics
+        from gui.dps_graph import axis_step_ms
+        from gui.timeline_strip import _fmt_tick
+        metrics = QFontMetrics(QFont())
+        long_fight = 1_314_000
+        step = axis_step_ms(long_fight, 469, metrics)
+        self.assertGreater(step, 60_000)
+        widest = max(metrics.horizontalAdvance(_fmt_tick(ms)) for ms in range(0, long_fight + 1, step))
+        self.assertGreaterEqual(469 * step / long_fight, widest + 2 * metrics.averageCharWidth())
+        # Charts wide enough for the strip's step in any font
+        self.assertEqual(axis_step_ms(90_000, 1200, metrics), 10_000)
+        self.assertEqual(axis_step_ms(long_fight, 2400, metrics), 60_000)
+
+
+
+    def test_a_players_two_rows_follow_one_tick(self):
+        """A player gone and back in the fight has two rows, a unit id each,
+        and one key: unticking one unticks the other, whose line goes too
+        (review of #207). The other row stayed ticked until the next
+        redraw unticked it."""
+        from PySide6.QtCore import Qt
+        from gui.dps_graph import DpsGraphPanel
+        panel = DpsGraphPanel()
+        self.addCleanup(panel.deleteLater)
+        entry = _entry(players=3)
+        entry.players[2]['name'] = '@player1'
+        panel.show_graph(entry, False)
+        panel.legend.item(1).setCheckState(Qt.Unchecked)
+        self.assertEqual(panel.legend.item(3).checkState(), Qt.Unchecked)
+        self.assertEqual({c.key for c in panel.graph.curves}, {'Group', '2'})
+
+    def test_the_colour_blind_switch_waits_for_a_hidden_graph(self):
+        """A Settings save that turns the colour-blind colours on while the
+        graph's tab is hidden draws nothing then, and the graph takes them
+        when it is shown (review of #207)."""
+        from unittest import mock
+
+        from gui.dps_graph import COLORBLIND_SERIES_COLORS, DpsGraphPanel
+        win = self._main_window()
+        try:
+            win._on_fight_completed(_entry(players=3))
+            win.history_list.select_fight(0)
+            win.graph_action.trigger()
+            win.fight_tabs.setCurrentIndex(0)
+
+            class Settings:
+                Accepted = 1
+
+                def __init__(self, config, *_args, **_kwargs):
+                    self.config = config
+
+                def exec(self):
+                    return self.Accepted
+
+                def apply_to_config(self):
+                    self.config.set('display.colorblind_graph', True)
+
+                def deleteLater(self):
+                    pass
+            with mock.patch('gui.main_window.SettingsDialog', Settings), \
+                    mock.patch.object(DpsGraphPanel, 'show_graph', autospec=True,
+                                      side_effect=DpsGraphPanel.show_graph) as drawn:
+                win._open_settings()
+                self.assertEqual(drawn.call_count, 0)
+                self.assertTrue(win.dps_panel.colorblind)
+                win.graph_action.trigger()
+                self.assertEqual(drawn.call_count, 1)
+            first = next(c for c in win.dps_panel.graph.curves if c.key == '1')
+            self.assertEqual(first.color.name(), COLORBLIND_SERIES_COLORS[win._dark][0])
+        finally:
+            win.close()
+
     def test_window_from_the_engines_own_record(self):
         from PySide6.QtCore import QUrl
         from build_session import fights
@@ -462,7 +627,7 @@ class TestGraphWindow(unittest.TestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
-            dialog = win._graph_dialog
+            dialog = win.dps_panel
             self.assertEqual(dialog.legend.count(), 4)
             group = next(c for c in dialog.graph.curves if c.key == 'Group')
             self.assertEqual(group.points[-1][0], entry.duration_s)

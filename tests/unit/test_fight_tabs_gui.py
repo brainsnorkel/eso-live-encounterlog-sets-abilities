@@ -80,18 +80,21 @@ class FightTabsTestCase(unittest.TestCase):
 
 class TestTheTabs(FightTabsTestCase):
 
-    def test_two_tabs_with_their_alt_letters(self):
-        """Fight and Deaths, named for a screen reader; Alt+E and Alt+F
-        each land on their tab both times they are pressed."""
+    def test_the_tabs_with_their_alt_letters(self):
+        """Fight, Deaths and DPS graph, named for a screen reader; Alt+E,
+        Alt+G and Alt+F each land on their tab both times they are
+        pressed."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         win = self._window(_entry_with_deaths())
         tabs = win.fight_tabs
-        self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ["&Fight", "D&eaths"])
+        self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
+                         ["&Fight", "D&eaths", "DPS &graph"])
         self.assertEqual(tabs.accessibleName(), "Fight views")
         self.assertEqual(win.deaths_view.accessibleName(), "Deaths")
         self.assertTrue(tabs.tabBar().isVisible())
-        for letter, page in ((Qt.Key_E, win.deaths_view), (Qt.Key_F, tabs.widget(0))):
+        for letter, page in ((Qt.Key_E, win.deaths_view), (Qt.Key_G, win.dps_panel),
+                             (Qt.Key_F, tabs.widget(0))):
             for press in (1, 2):
                 QTest.keyClick(win, letter, Qt.AltModifier)
                 self.assertIs(tabs.currentWidget(), page, press)
@@ -108,11 +111,13 @@ class TestTheTabs(FightTabsTestCase):
         self.assertIs(win.fight_tabs.currentWidget(), win.deaths_view)
         self.assertIs(QApplication.focusWidget(), win.history_list)
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
         self.assertEqual(win.fight_tabs.currentIndex(), 0)
         win.fight_view.setFocus()
         _app.processEvents()
         self._key(win, Qt.Key_PageUp, Qt.ControlModifier)
-        self.assertIs(win.fight_tabs.currentWidget(), win.deaths_view)
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
 
     def test_the_tab_chosen_stays_as_fights_come(self):
         """Deaths chosen stays on screen as a new live fight is selected,
@@ -246,11 +251,10 @@ class TestTheSearch(FightTabsTestCase):
         self.assertEqual(win.deaths_view.textCursor().position(), at)
 
     def test_the_search_keeps_the_focus_as_it_moves(self):
-        """Typing in the search, the column narrowed past what the corner
-        needs takes the field to its own row, and widened again back to
-        the corner: the focus stays in it, and typing goes on there. A new
-        text size moves it by the same step (FightViews.place_search);
-        review of #205. The widths come from the bar and the field, so the
+        """Typing in the search, a bigger text size takes the field from the
+        tab bar's corner to its own row, and a smaller one back: the focus
+        stays in it, and typing goes on there (review of #205). The column's
+        width is measured to hold the corner at 100% and not at 200%, so the
         test holds in any font."""
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
@@ -259,23 +263,28 @@ class TestTheSearch(FightTabsTestCase):
         bar = win.fight_tabs.tabBar()
         total = sum(win._splitter.sizes())
         margins = views.parentWidget().layout().contentsMargins()
-
-        def column(width):
-            right = width + margins.left() + margins.right()
-            win._splitter.setSizes([total - right, right])
-            self._settle()
-            self.assertEqual(views.width(), width)
-
-        need = bar.sizeHint().width() + field.least_width()
-        column(need + 40)
+        win.set_text_size(200)
+        self._settle()
+        need_200 = bar.sizeHint().width() + field.least_width()
+        least_200 = views.minimumSizeHint().width()
+        win.set_text_size(100)
+        self._settle()
+        width = max(bar.sizeHint().width() + field.least_width() + 20, least_200)
+        if width >= need_200:
+            self.skipTest("no column width holds the corner at 100% and not at 200% here")
+        right = width + margins.left() + margins.right()
+        win._splitter.setSizes([total - right, right])
+        self._settle()
         self.assertTrue(views.in_corner())
         field.setFocus()
         QTest.keyClicks(field, "Sharp")
-        column(need - 40)
+        win.set_text_size(200)
+        self._settle()
         self.assertFalse(views.in_corner())
         self.assertIs(QApplication.focusWidget(), field)
         QTest.keyClicks(QApplication.focusWidget(), "fang")
-        column(need + 40)
+        win.set_text_size(100)
+        self._settle()
         self.assertTrue(views.in_corner())
         self.assertIs(QApplication.focusWidget(), field)
         self.assertEqual(field.text(), "Sharpfang")
@@ -385,6 +394,8 @@ class TestTheSearch(FightTabsTestCase):
         fresh review of #205)."""
         from PySide6.QtCore import Qt
         win = self._window(_entry_with_deaths())
+        win.graph_action.trigger()  # the graph drawn, its legend naming the players
+        self.assertGreater(win.dps_panel.legend.count(), 0)
         win.fight_tabs.setCurrentWidget(win.deaths_view)
         self.assertIn("@passerby", win.deaths_view.toPlainText())
         win._on_monitoring_restarting()  # a Settings Save: the list cleared, the replay's page
@@ -397,6 +408,7 @@ class TestTheSearch(FightTabsTestCase):
             self._key(win, key, modifier)
             self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
         self.assertNotIn("@passerby", win.deaths_view.toPlainText())
+        self.assertEqual(win.dps_panel.legend.count(), 0)  # the graph's names gone too
 
     def test_detail_view_leaves_the_deaths_page_and_its_search_alone(self):
         """Ctrl+D with Deaths on screen changes the Fight page only: the
@@ -498,6 +510,126 @@ class TestTheSearch(FightTabsTestCase):
         self.assertEqual(win.fight_view.minimumHeight(), PANE_LEAST_PX)
         self.assertLess(PANE_LEAST_PX, win.fight_view.minimumSizeHint().height())
 
+    def test_the_search_is_off_on_the_graph_and_ctrl_f_goes_to_fight(self):
+        """The DPS graph has no text to search: on its tab the search field
+        is off, its text kept, and Ctrl+F goes to the Fight tab and puts the
+        cursor in the search (issue #196)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        win = self._window(_entry_with_deaths())
+        win.search_field.setText("Sharpfang")
+        win.graph_action.trigger()
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self.assertFalse(win.search_field.isEnabled())
+        self.assertEqual(win.search_field.text(), "Sharpfang")
+        self.assertEqual(win.search_count.text(), "")
+        win.dps_panel.legend.setFocus()
+        _app.processEvents()
+        self._key(win, Qt.Key_F, Qt.ControlModifier)
+        self.assertEqual(win.fight_tabs.currentIndex(), 0)
+        self.assertTrue(win.search_field.isEnabled())
+        self.assertIs(QApplication.focusWidget(), win.search_field)
+        self.assertTrue(win.search_count.text())
+
+    def test_a_new_window_gives_the_list_a_third_at_any_text_size(self):
+        """A first run's window gives the fight list a third of its width at
+        100% and 200% text, the graph tab notwithstanding: the splitter
+        shared out the width by the pages' sizes, and the graph's took the
+        list from 348 px of 1080 to 121 (issue #196)."""
+        from app_config import AppConfig
+        from gui.main_window import MainWindow
+        widths = []
+        for pct in (100, 200):
+            config = AppConfig(path=self.root / f"config{pct}.json")
+            config.set("log_path", str(self.root / "Encounter.log"))
+            config.set("update.check_enabled", False)
+            config.set("display.text_scale", pct)
+            win = MainWindow(config)
+            win.worker_thread.quit()
+            win.worker_thread.wait(3000)
+            self.windows.append(win)
+            win.resize(1080, 720)
+            win.show()
+            win._on_fight_completed(_entry_with_deaths())
+            self._settle()
+            widths.append(win._splitter.sizes()[0])
+        self.assertEqual(widths[0], widths[1])
+        self.assertGreaterEqual(widths[0], sum(win._splitter.sizes()) // 3 - 2)
+
+    def test_a_fight_back_on_the_graph_leaves_the_search_off_and_uncounted(self):
+        """The graph chosen, a page with no fight counts its own matches;
+        the next fight brings the graph back with the search off and no
+        count, where the page's count stayed (review of #207)."""
+        win = self._window(_entry_with_deaths())
+        win.search_field.setText("Sharpfang")
+        win.graph_action.trigger()
+        win._show_replaying()
+        win._show_fight()
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self.assertFalse(win.search_field.isEnabled())
+        self.assertEqual(win.search_count.text(), "")
+
+    def test_with_no_fight_the_column_keeps_no_floor_for_the_hidden_bar(self):
+        """With no fight the tab bar is hidden, and the column is no wider
+        at least than its pages need; a fight brings the bar's floor back
+        (review of #207)."""
+        win = self._window()
+        # Labels wider than any page, so the bar's floor is the one that binds
+        win.fight_tabs.setTabText(0, "&Fight " + "x" * 120)
+        win.fight_views.place_search()
+        self._settle()
+        bar = win.fight_tabs.tabBar().sizeHint().width()
+        self.assertLess(win.fight_views.minimumSizeHint().width(), bar)
+        win._on_fight_completed(_entry_with_deaths())
+        self._settle()
+        self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), bar)
+
+    def test_the_graphs_legend_and_picker_take_their_room(self):
+        """The legend is its widest at 100% text and grows past a list view's
+        256 px at 150%, where it stayed at 256 and cut its rows' figures off;
+        the Show picker is as wide as its longest item at 100% and 200%,
+        where it was held to ten characters and cut its own items (the
+        fresh review of #207)."""
+        from gui import text_size
+        from gui.dps_graph import LEGEND_WIDTH
+        win = self._window(_entry_with_deaths())
+        win.graph_action.trigger()
+        panel = win.dps_panel
+        self._settle()
+        self.assertEqual(panel.legend.width(), LEGEND_WIDTH)
+        self.assertGreaterEqual(panel.mode.width(), panel.mode.sizeHint().width())
+        for pct in (150, 200):
+            win.set_text_size(pct)
+            self._settle()
+            with self.subTest(pct=pct):
+                self.assertGreater(panel.legend.width(), 256)
+                self.assertLessEqual(panel.legend.width(), text_size.scaled_px(LEGEND_WIDTH))
+                # As wide as its row allows, where its ten characters held it
+                # (the row is narrower than the longest item at 200% in the
+                # test runner's wide font)
+                self.assertLess(panel.mode.minimumSizeHint().width(), panel.mode.sizeHint().width())
+                self.assertGreater(panel.mode.width(), panel.mode.minimumSizeHint().width())
+
+    def test_the_graphs_floor_counts_only_on_its_tab(self):
+        """On the Fight tab the window's least width leaves the graph's floor
+        out, as it was before the graph was a tab; on the graph's tab the
+        column is at least the chart's floor and the legend's narrowest (the
+        fresh review of #207: the hidden graph held the window at 556 px on
+        every tab, against 286; Chris chose this)."""
+        from gui import text_size
+        from gui.dps_graph import LEGEND_LEAST
+        win = self._window(_entry_with_deaths())
+        self._settle()
+        floor = 360 + text_size.scaled_px(LEGEND_LEAST)
+        self.assertLess(win.fight_tabs.widget(0).minimumSizeHint().width(), floor)
+        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+        win.graph_action.trigger()
+        self._settle()
+        self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), floor)
+        win.fight_tabs.setCurrentIndex(0)
+        self._settle()
+        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""
@@ -510,7 +642,8 @@ class TestTheSearch(FightTabsTestCase):
         win.history_list.setFocus()
         _app.processEvents()
         for key, modifier in ((Qt.Key_F, Qt.ControlModifier), (Qt.Key_PageDown, Qt.ControlModifier),
-                              (Qt.Key_PageUp, Qt.ControlModifier), (Qt.Key_E, Qt.AltModifier)):
+                              (Qt.Key_PageUp, Qt.ControlModifier), (Qt.Key_E, Qt.AltModifier),
+                              (Qt.Key_G, Qt.AltModifier)):
             self._key(win, key, modifier)
             self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
             self.assertIsNot(QApplication.focusWidget(), win.search_field, key)
