@@ -481,6 +481,9 @@ class DpsGraphPanel(QWidget):
         self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.mode.setMinimumContentsLength(MODE_LEAST_CHARS)
         show.setBuddy(self.mode)
+        # Named for a screen reader as its label reads: Qt names a combo box
+        # by its buddy on Windows and by its current item on Linux
+        self.mode.setAccessibleName(SHOW_LABEL)
         for label, window in MODES:
             self.mode.addItem(label, window)
         self.mode.setCurrentIndex(DEFAULT_MODE)

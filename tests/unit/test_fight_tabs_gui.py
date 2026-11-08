@@ -251,11 +251,10 @@ class TestTheSearch(FightTabsTestCase):
         self.assertEqual(win.deaths_view.textCursor().position(), at)
 
     def test_the_search_keeps_the_focus_as_it_moves(self):
-        """Typing in the search, the column narrowed past what the corner
-        needs takes the field to its own row, and widened again back to
-        the corner: the focus stays in it, and typing goes on there. A new
-        text size moves it by the same step (FightViews.place_search);
-        review of #205. The widths come from the bar and the field, so the
+        """Typing in the search, a bigger text size takes the field from the
+        tab bar's corner to its own row, and a smaller one back: the focus
+        stays in it, and typing goes on there (review of #205). The column's
+        width is measured to hold the corner at 100% and not at 200%, so the
         test holds in any font."""
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
@@ -264,23 +263,28 @@ class TestTheSearch(FightTabsTestCase):
         bar = win.fight_tabs.tabBar()
         total = sum(win._splitter.sizes())
         margins = views.parentWidget().layout().contentsMargins()
-
-        def column(width):
-            right = width + margins.left() + margins.right()
-            win._splitter.setSizes([total - right, right])
-            self._settle()
-            self.assertEqual(views.width(), width)
-
-        need = bar.sizeHint().width() + field.least_width()
-        column(need + 40)
+        win.set_text_size(200)
+        self._settle()
+        need_200 = bar.sizeHint().width() + field.least_width()
+        least_200 = views.minimumSizeHint().width()
+        win.set_text_size(100)
+        self._settle()
+        width = max(bar.sizeHint().width() + field.least_width() + 20, least_200)
+        if width >= need_200:
+            self.skipTest("no column width holds the corner at 100% and not at 200% here")
+        right = width + margins.left() + margins.right()
+        win._splitter.setSizes([total - right, right])
+        self._settle()
         self.assertTrue(views.in_corner())
         field.setFocus()
         QTest.keyClicks(field, "Sharp")
-        column(need - 40)
+        win.set_text_size(200)
+        self._settle()
         self.assertFalse(views.in_corner())
         self.assertIs(QApplication.focusWidget(), field)
         QTest.keyClicks(QApplication.focusWidget(), "fang")
-        column(need + 40)
+        win.set_text_size(100)
+        self._settle()
         self.assertTrue(views.in_corner())
         self.assertIs(QApplication.focusWidget(), field)
         self.assertEqual(field.text(), "Sharpfang")
