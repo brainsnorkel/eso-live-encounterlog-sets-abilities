@@ -1625,6 +1625,10 @@ class MainWindow(QMainWindow):
         self._deaths_dirty = True
         self._fight_entry = None
         self._search_places.clear()
+        # Nor is the last fight's deaths kept on the hidden Deaths page, its
+        # names as they were drawn, Hide names or not
+        self.deaths_view.set_tooltips({})
+        self.deaths_view.setHtml("")
         self.timeline_strip.set_timeline(None)
         self.fight_view.setHtml(
             f"<div style='color:{muted_color(self._dark)};padding:16px'>"

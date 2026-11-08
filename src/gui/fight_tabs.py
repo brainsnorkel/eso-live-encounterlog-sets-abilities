@@ -144,18 +144,24 @@ class SearchField(QLineEdit):
 
     def _lay_out_count(self) -> None:
         """The count before the clear button, and the typed text kept clear
-        of it by the field's right text margin."""
+        of it by the field's right text margin: the widest count's while
+        any count shows, set only when that changes. A new text margin lays
+        the field out again, and in the tab bar's corner the tab widget
+        with it, which repainted its pages, the buff timeline strip among
+        them, at every key typed: 46 ms a key on a 22-minute fight, against
+        1.2 ms before (the fresh review of PR #205)."""
         label = self.count_label
+        gap = self._gap()
+        margin = self.fontMetrics().horizontalAdvance(WIDEST_COUNT) + gap if label.text() else 0
+        if self.textMargins().right() != margin:
+            self.setTextMargins(0, 0, margin, 0)
         if not label.text():
-            self.setTextMargins(0, 0, 0, 0)
             return
         label.adjustSize()
-        gap = self._gap()
         # Qt's clear button, a tool button child at the field's right end
         button = self.findChild(QToolButton)
         right = (button.geometry().left() if button is not None and button.width() > 0
                  else self.contentsRect().right())
-        self.setTextMargins(0, 0, label.width() + gap, 0)
         label.move(max(0, right - gap - label.width()), (self.height() - label.height()) // 2)
 
 
@@ -188,6 +194,10 @@ class FightViews(QWidget):
         self.search_field = SearchField()
         self._row.addWidget(self.search_field)
         self._shown = True
+        # The tab widget's own Ctrl+Tab and Ctrl+Shift+Tab, from a page,
+        # change the tab with the bar hidden too: without a fight, the first
+        # tab is put back (the fresh review of PR #205)
+        self.tabs.currentChanged.connect(self._keep_first_tab)
 
     def add_tab(self, page, label: str) -> int:
         """Add a tab, the search placed again for the bar's new width."""
@@ -207,6 +217,10 @@ class FightViews(QWidget):
             self.tabs.setCurrentIndex(0)
         self.tabs.tabBar().setVisible(self._shown)
         self.place_search()
+
+    def _keep_first_tab(self, index: int) -> None:
+        if not self._shown and index != 0:
+            self.tabs.setCurrentIndex(0)
 
     def in_corner(self) -> bool:
         return self.tabs.cornerWidget(Qt.TopRightCorner) is self.search_field

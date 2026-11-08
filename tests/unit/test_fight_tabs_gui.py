@@ -344,6 +344,60 @@ class TestTheSearch(FightTabsTestCase):
         self._settle()
         self.assertTrue(views.in_corner())
 
+    def test_typing_in_the_search_does_not_lay_the_tabs_out_again(self):
+        """Each key typed in the search changes its count, not the field's
+        text margin, so the tab widget is not laid out again, which
+        repainted its pages, the buff timeline strip among them, at every
+        key: 46 ms a key on a 22-minute fight, against 1.2 ms in v0.35.0
+        (the fresh review of #205). The count appearing lays the field out
+        once."""
+        from PySide6.QtCore import QEvent, QObject
+        from PySide6.QtTest import QTest
+
+        class Layouts(QObject):
+            def __init__(self):
+                super().__init__()
+                self.count = 0
+
+            def eventFilter(self, _watched, event):
+                if event.type() == QEvent.LayoutRequest:
+                    self.count += 1
+                return False
+
+        win = self._window(_entry_with_deaths())
+        layouts = Layouts()
+        win.fight_tabs.installEventFilter(layouts)
+        win.search_field.setFocus()
+        QTest.keyClick(win.search_field, "S")
+        _app.processEvents()
+        self.assertTrue(win.search_count.text())
+        layouts.count = 0
+        for key in "harpfang":
+            QTest.keyClick(win.search_field, key)
+            _app.processEvents()
+        self.assertEqual(layouts.count, 0)
+
+    def test_ctrl_tab_with_no_fight_stays_on_the_fight_tab(self):
+        """With no fight shown (a Settings replay's page), Ctrl+Tab and
+        Ctrl+Shift+Tab from the page keep the Fight tab, and the Deaths page
+        drawn before holds nothing: the tab widget's own keys showed the
+        last fight's deaths there, its names unmasked under Hide names (the
+        fresh review of #205)."""
+        from PySide6.QtCore import Qt
+        win = self._window(_entry_with_deaths())
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        self.assertIn("@passerby", win.deaths_view.toPlainText())
+        win._on_monitoring_restarting()  # a Settings Save: the list cleared, the replay's page
+        self.assertIsNone(win.history_list.current_entry())
+        win.hide_names_action.setChecked(True)
+        win.fight_view.setFocus()
+        _app.processEvents()
+        for key, modifier in ((Qt.Key_Tab, Qt.ControlModifier),
+                              (Qt.Key_Backtab, Qt.ControlModifier | Qt.ShiftModifier)):
+            self._key(win, key, modifier)
+            self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
+        self.assertNotIn("@passerby", win.deaths_view.toPlainText())
+
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
         Ctrl+PgDn, Ctrl+PgUp and Alt+E do nothing. A fight brings them back."""
