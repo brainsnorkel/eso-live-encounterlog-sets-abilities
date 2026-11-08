@@ -151,7 +151,9 @@ ISSUES_LEAD = f"{ISSUES_TITLE}:"
 PULLS_LEAD = "Pulls:"
 FIRST_DEATHS_LEAD = "First deaths:"
 KILLERS_LEAD = "Killers:"
-MOST_DEAD_LEAD = "Most time dead:"
+# Of the pulls, where the players' table counts every fight: the page
+# said both without saying so (the fresh review of PR #208)
+MOST_DEAD_LEAD = "Most time dead in the pulls:"
 MOST_DEAD_MIN_MS = 1000  # the least time dead the longest dead line names
 TRASH_LEAD = "Trash:"
 MISFORTUNES_LEAD = "Misfortunes:"
