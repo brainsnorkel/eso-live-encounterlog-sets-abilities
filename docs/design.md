@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2845](../src/esolog_tail.py#L2845)*
+*[src/esolog_tail.py:2855](../src/esolog_tail.py#L2855)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -40,7 +40,7 @@ The game ends and restarts combat in the middle of a fight, most often when the 
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1924](../src/esolog_tail.py#L1924)*
+*[src/esolog_tail.py:1927](../src/esolog_tail.py#L1927)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1939](../src/esolog_tail.py#L1939)*
+*[src/esolog_tail.py:1942](../src/esolog_tail.py#L1942)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
+*[src/esolog_tail.py:1981](../src/esolog_tail.py#L1981)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -205,7 +205,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4766](../src/esolog_tail.py#L4766)*
+*[src/esolog_tail.py:4775](../src/esolog_tail.py#L4775)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -2507,7 +2507,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3968](../src/esolog_tail.py#L3968)*
+*[src/esolog_tail.py:3979](../src/esolog_tail.py#L3979)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3247,7 +3247,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1469](../src/gui/main_window.py#L1469)*
+*[src/gui/main_window.py:1493](../src/gui/main_window.py#L1493)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -3333,10 +3333,11 @@ drawing. The page reads, from the top:
   the previous session's log: "any", since mostly there are none.
 - **Result**: a completed veteran trial's or arena's result, as the result
   row writes it (trial_result), with the fight pane's Score banner links,
-  which act on the fight with the result whichever fight is on screen.
-  Nothing for a dungeon or a failed run: only a veteran run that succeeds
-  writes END_TRIAL. #194's split files are to go under it, a line of their
-  own.
+  which act on the fight with the result whichever fight is on screen;
+  under it the split logs of the instance's sessions, as the result strip
+  lists them (gui.fight_render.split_lines_html, #194). A dungeon or a
+  failed run has no result, only a veteran run that succeeds writes
+  END_TRIAL, and its strip holds the split logs alone.
 - **Bosses**: a row for each boss's pulls in a row (pull_outcome.runs),
   one pull included: the pulls, the result, the kill's time and boss dps,
   and the deaths over all its pulls. The result is the run row's words
@@ -3609,6 +3610,101 @@ read whole into memory: an archive can hold a log of more than a gigabyte.
 The size reported for progress is the member's own, since the zip's is
 about a sixteenth of it. A zip is recognised by its content, not its name.
 
+## Split files for an instance: from a fight to its session's split
+
+### src/session_splits.py
+
+*[src/session_splits.py:1](../src/session_splits.py#L1)*
+
+The split files behind an instance (issue #194): for each logging session
+a block of the fight list holds (fight_blocks), the files in the split
+folder that hold it, for the Instance tab's links and the result strip's,
+so a run can be handed to a log tool without a search through a folder of
+hundreds of splits. No Qt.
+
+By the session's stamp. The engine keeps on each fight the stamp its
+session's split is named by (FightHistoryEntry.session_stamp): the
+session's BEGIN_LOG time to the second, ``YYMMDDHHMMSS`` in local time,
+from the one function the splitter names its files with
+(split_retention.session_stamp). It is set as the fight is built, before
+the fight is sent, and carried onto a fight the game cut in two with its
+other slots. So a fight finds its file by name. A guess from the fights'
+own clock times could pick a neighbouring session, since a session starts
+before its first fight and can run on into the next instance. The zone in
+the file's name is never compared: the splitter names a session after the
+zone of its first fight, and of 633 fights replayed from 34 of Chris's
+splits (2026-11-09), 39 were in another zone than their file's name, all
+in two files (Lucent Citadel fights in a ``…-Maw-of-Lorkhaj-vet`` split,
+The Cauldron in a ``…-Volenfell-vet`` one).
+
+Per stamp, in order. A block can span several sessions (a new BEGIN_LOG
+mid-run: a relog, a crash, the log turned off and on; by issue #196's
+survey 36 of the 366 blocks in that folder span 2 to 5 splits), and one
+session can hold several blocks (two dungeons in one sitting). So
+splits_for takes the stamps of a block's fights, one per fight, and gives
+one SessionSplits per stamp, in the order the fights first carry it.
+
+Several files for one session. A session has one split now: the ``-N``
+files are copies the splitter wrote before 0.19.0 (issue #85), and since
+then a file gets a suffix only when the file of its name begins with
+another session's lines (a second session in the same second). In that
+folder 10 sessions still have more than one file, 32 files of which 30
+are suffixed, once the byte-identical copies went to the Recycle Bin, and
+each of the 22 smaller ones is a byte prefix of its session's largest: a
+copy cut short when an earlier run stopped mid-session. In 2 of the 10
+the largest is a ``-N`` file, so the plain name would offer a cut copy.
+The files therefore come largest first, a zipped split (issue #86) by the
+size of the log inside it; at equal sizes the plain log before a zip, the
+split folder before its keep folder, and the plain name before ``-1``
+before ``-2``. SessionSplits.best is the first, and the rest stay listed.
+The fight history's backfill reads such a session the same way round,
+its longest log last (fight_index).
+
+Where. The split folder's own files (split_retention.scan_splits: the
+splitter's names only, plain or zipped, never ``-temp.log``) and those of
+its keep folder, where split retention never zips or deletes, so a split
+moved there to keep it is still found. No other subfolder is entered.
+
+Missing or not known. A stamp no file carries is missing: splitting was
+off for that session or wrote to another folder, or the file was moved,
+deleted, or sent to the Recycle Bin by split retention. A fight with no
+stamp ('') is from a session whose BEGIN_LOG the engine never saw (the app
+attached to a session that began beyond its 2 GB lookback, or a reviewed
+log opens mid-session): it is not known, and nothing is looked for.
+
+The clock. The stamp is local wall-clock time, by this machine's time zone
+with that zone's rules for the instant, so daylight saving shifts
+nothing: in Chris's folder each of the 408 splits holds one session, its
+BEGIN_LOG the first line, and the stamp worked out from that line is the
+file's own in all 408, 250 at UTC+10 and 158 at UTC+11. A split written
+under another time zone (the machine's was changed, or the folder came
+from another machine) carries a name this machine would not give the same
+BEGIN_LOG, so its session shows as missing. The hour repeated as daylight
+saving ends gives two instants one stamp, so two sessions begun an hour
+apart in it would each be offered both files; no session in that folder
+began before 7 a.m. A session that runs past midnight keeps the day it
+began; none in that folder did (the latest ended at 23:46).
+
+### split_lines_html
+
+*[src/gui/fight_render.py:196](../src/gui/fight_render.py#L196)*
+
+Design: the split logs beside a run (issue #194). The result strip
+of the fight that completed a run, and the Instance tab under its
+result, list the split logs that hold the run's logging sessions
+(session_splits), so a run can be handed to a log tool: a line each
+from *files*, a list of (label, path or None, note). A file shows with
+two links, open folder, which opens its folder with the file selected,
+and copy path, which puts its full path on the clipboard; they carry its
+place in *files*, never the path (#191), and the window keeps the list
+it drew the page with. A note says why there is no file: split logs
+off (the default), the session's file missing, the session not known.
+Under Hide names (*hide_paths*) a file shows by its name alone, since
+its folder names the Windows user; the copy is still the full path, as
+it goes to a file dialog, not a post. A review lists the reviewed file
+instead. The lines name whole logging sessions, the safe unit to join
+logs by (#195).
+
 ## The GUI and the engine thread
 
 ### src/gui/engine_worker.py
@@ -3640,7 +3736,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1120](../src/gui/main_window.py#L1120)*
+*[src/gui/main_window.py:1145](../src/gui/main_window.py#L1145)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3694,13 +3790,13 @@ it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:2485](../src/gui/main_window.py#L2485)*
+*[src/gui/main_window.py:2606](../src/gui/main_window.py#L2606)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:964](../src/gui/main_window.py#L964)*
+*[src/gui/main_window.py:989](../src/gui/main_window.py#L989)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -3731,13 +3827,13 @@ list meanwhile would lose its items.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:156](../src/gui/fight_view.py#L156)*
+*[src/gui/fight_view.py:159](../src/gui/fight_view.py#L159)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:342](../src/gui/fight_view.py#L342)*
+*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -4271,7 +4367,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:726](../src/gui/fight_view.py#L726)*
+*[src/gui/fight_view.py:729](../src/gui/fight_view.py#L729)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -4359,7 +4455,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:589](../src/gui/fight_view.py#L589)*
+*[src/gui/fight_view.py:592](../src/gui/fight_view.py#L592)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
