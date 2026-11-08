@@ -27,6 +27,24 @@ option swaps in seven measured to stay apart for the dichromacies, with a
 cycle of four strokes), text in the pane's own text colours and
 never in a series colour, and the end value of each line labelled when a
 panel shows four or fewer.
+
+Design: The graph as a fight tab (issue #196). The graph is the main
+window's DPS graph tab, beside Fight and Deaths, on the fight the list has
+selected, where it was a window that kept the fight it was opened for. The
+toolbar's DPS graph and the header's group dps figure open the tab. A tab
+widget is as wide as its widest page: the chart's 360 px floor beside a
+legend fixed at its 230 px (scaled with the text) widened the column to 729
+px at 150% text and 844 px at 200%, cutting the fight list from 347 px to
+231 px on every tab (probed). So the legend takes what the chart's floor
+leaves, from its 230 px down to 100 px (scaled), each name elided there
+and whole in its hover. The legend is named Lines drawn, and the Show
+label is the mode's buddy, for a screen reader. The legend's ticks are
+kept by the player's handle where there is one, else by the unit id for
+that fight alone, a companion by its name, which is its owner's handle
+and Companion (gui.fight_render): unit ids change in every zone, so ticks
+kept by them never carried to the next instance. The mode carries across
+fights, and the boss switch between boss fights; a fight without boss
+damage hides and clears it.
 """
 
 import math
@@ -36,8 +54,8 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QToolTip, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSizePolicy,
+    QToolTip, QVBoxLayout, QWidget,
 )
 
 from damage_stats import running_dps, smoothed_dps
@@ -82,7 +100,11 @@ DIRECT_LABEL_MAX = 4  # lines labelled with their end value, per panel
 MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM = 60, 70, 10, 28
 PANEL_GAP = 22
 GROUP_PANEL_SHARE = 0.36  # of the plot height, when both panels show
-LEGEND_WIDTH = 230
+LEGEND_WIDTH = 230  # the legend's widest, at 100% text
+LEGEND_LEAST = 100  # its narrowest, beside the chart's floor (see the module notes)
+LEGEND_NAME = "Lines drawn"
+SHOW_LABEL = "Show"
+MODE_LEAST_CHARS = 10  # the mode's least width, in characters
 
 
 def series_color(index: int, dark: bool, colorblind: bool = False) -> QColor:
@@ -143,7 +165,7 @@ class Curve:
 
 
 class DpsGraph(QWidget):
-    """The chart itself; the dialog around it builds the curves."""
+    """The chart itself; the panel around it builds the curves."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -391,24 +413,33 @@ def _curve_points(series, window: dict, mode_window: int, duration_s: float):
     return running_dps(series or [], window.get("first_s"), window.get("last_s"), duration_s)
 
 
-class DpsGraphDialog(QDialog):
-    """The graph window: the chart, a legend of checkboxes, the mode and
-    the boss switch. Modeless like the other windows; it keeps the fight it
-    was opened for (redrawn when that fight changes in place, issue #196),
-    and its mode and legend choices from one fight to the next within a
-    session."""
+def legend_key(p: dict) -> str:
+    """The key a player's legend tick is kept by: their handle, or a
+    companion's name, which is its owner's handle and Companion; else the
+    unit id, for that fight alone (see the module notes)."""
+    name = _join(p.get("name", ""))
+    if name.startswith("@"):
+        return name
+    return str(p.get("unit_id", ""))
+
+
+class DpsGraphPanel(QWidget):
+    """The DPS graph tab: the chart, a legend of checkboxes, the mode and
+    the boss switch, for the fight the main window gives it; the mode and
+    the legend's ticks carry from one fight to the next within a session
+    (see the module notes)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("DPS over time")
-        self.resize(1040, 640)
-        self._shown = None  # (entry, dark) on display
+        self._shown = None  # (entry, dark, names) on display
         # The colour-blind series set and strokes (Settings → Display)
         self.colorblind = False
         self._checked: Dict[str, bool] = {}  # legend choices by key, kept across fights
         self._players: List[Tuple[str, str, int]] = []  # (unit id, name, rank)
+        self._keys: Dict[str, str] = {}  # unit id -> its legend key, for the fight shown
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 4, 0, 0)
         self.header = QLabel("")
         self.header.setWordWrap(True)
         layout.addWidget(self.header)
@@ -417,26 +448,50 @@ class DpsGraphDialog(QDialog):
         self.graph.setAccessibleName("DPS over time")
         middle.addWidget(self.graph, 1)
         self.legend = QListWidget()
-        self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
+        self.legend.setAccessibleName(LEGEND_NAME)
+        self.legend.setTextElideMode(Qt.ElideRight)
+        self.legend.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self._size_legend()
         self.legend.itemChanged.connect(self._on_legend_changed)
         middle.addWidget(self.legend)
         layout.addLayout(middle, 1)
+        # The mode and the boss switch on rows of their own, so the chart's
+        # floor and the legend's narrowest set the tab's least width, not a
+        # row of both controls (wider than those at 200% text)
         bottom = QHBoxLayout()
-        bottom.addWidget(QLabel("Show"))
+        show = QLabel(SHOW_LABEL)
+        bottom.addWidget(show)
         self.mode = QComboBox()
+        # As narrow as about ten characters, its list showing each whole:
+        # the widest item set the tab's least width (see the module notes)
+        self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.mode.setMinimumContentsLength(MODE_LEAST_CHARS)
+        show.setBuddy(self.mode)
         for label, window in MODES:
             self.mode.addItem(label, window)
         self.mode.setCurrentIndex(DEFAULT_MODE)
         self.mode.currentIndexChanged.connect(self._rerender)
         bottom.addWidget(self.mode)
+        bottom.addStretch(1)
+        layout.addLayout(bottom)
         self.boss_only = QCheckBox(BOSS_ONLY_LABEL)
         self.boss_only.toggled.connect(self._rerender)
-        bottom.addWidget(self.boss_only)
-        bottom.addStretch(1)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(self.close)
-        bottom.addWidget(buttons)
-        layout.addLayout(bottom)
+        layout.addWidget(self.boss_only)
+
+    def sizeHint(self):
+        """No wider than the tab needs: the chart's floor and the legend's
+        narrowest. A tab widget asks for its widest page's width, and the
+        chart's 760 px took the window's first split from the fight list
+        (121 px of 1080, against 348 px before the tab)."""
+        hint = super().sizeHint()
+        hint.setWidth(self.minimumSizeHint().width())
+        return hint
+
+    def _size_legend(self) -> None:
+        """The legend's widest and narrowest at the text size in force
+        (see the module notes)."""
+        self.legend.setMinimumWidth(scaled_px(LEGEND_LEAST))
+        self.legend.setMaximumWidth(scaled_px(LEGEND_WIDTH))
 
     # ---- showing a fight ----
 
@@ -450,8 +505,6 @@ class DpsGraphDialog(QDialog):
         *names* is the Hide names mask (gui.name_mask) for the legend and
         the hover."""
         self._shown = (entry, dark, names)
-        name = entry.boss_name or entry.zone_name or "fight"
-        self.setWindowTitle(f"DPS over time – {name}")
         facts = [entry.boss_name or "", entry.zone_name or "",
                  str(entry.timestamp or ""), f"{_fmt_duration(entry.duration_s)} fight"]
         dps_time = float(getattr(entry, "dps_time_s", 0) or 0)
@@ -476,8 +529,10 @@ class DpsGraphDialog(QDialog):
         text_color = self.palette().color(QPalette.Text)
         boss_fight = float(getattr(entry, "group_boss_dps", 0) or 0) > 0
         self._players = []
+        self._keys = {}
         group = QListWidgetItem(_line_icon(text_color), self._legend_label(
             GROUP, entry.group_boss_dps, entry.group_dps, boss_fight))
+        group.setToolTip(group.text())
         group.setData(Qt.UserRole, GROUP)
         group.setFlags(group.flags() | Qt.ItemIsUserCheckable)
         group.setCheckState(Qt.Checked if self._checked.get(GROUP, True) else Qt.Unchecked)
@@ -488,14 +543,18 @@ class DpsGraphDialog(QDialog):
             # Hide names mask, so a hidden player reads as blocks there too
             name = names.text(_join(p.get("name", ""))) or unit_id
             self._players.append((unit_id, name, rank))
+            self._keys[unit_id] = legend_key(p)
             item = QListWidgetItem(_line_icon(series_color(rank, dark, self.colorblind),
                                               series_style(rank, self.colorblind)),
                                    self._legend_label(name, p.get("boss_dps"), p.get("dps"),
                                                       boss_fight))
+            # Elided in a narrow legend, whole in the hover
+            item.setToolTip(item.text())
             item.setData(Qt.UserRole, unit_id)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             default = rank < MAX_HUES
-            item.setCheckState(Qt.Checked if self._checked.get(unit_id, default) else Qt.Unchecked)
+            ticked = self._checked.get(self._keys[unit_id], default)
+            item.setCheckState(Qt.Checked if ticked else Qt.Unchecked)
             self.legend.addItem(item)
         self.legend.blockSignals(False)
 
@@ -507,7 +566,8 @@ class DpsGraphDialog(QDialog):
         return f"{name}   {figure}"
 
     def _on_legend_changed(self, item) -> None:
-        self._checked[str(item.data(Qt.UserRole))] = item.checkState() == Qt.Checked
+        unit_id = str(item.data(Qt.UserRole))
+        self._checked[self._keys.get(unit_id, unit_id)] = item.checkState() == Qt.Checked
         self._rerender()
 
     def checked_keys(self) -> List[str]:
@@ -551,8 +611,20 @@ class DpsGraphDialog(QDialog):
     def changeEvent(self, event):
         # A new text size: the legend's names are wider, so is its column
         if event.type() == QEvent.FontChange:
-            self.legend.setFixedWidth(scaled_px(LEGEND_WIDTH))
+            self._size_legend()
         super().changeEvent(event)
+
+    def clear(self) -> None:
+        """Show no fight: the page with no fight (the main window's), whose
+        tab is hidden, keeps no names from the last."""
+        self._shown = None
+        self.header.setText("")
+        self.legend.blockSignals(True)
+        self.legend.clear()
+        self.legend.blockSignals(False)
+        self._players = []
+        self._keys = {}
+        self.graph.set_curves([], 0.0)
 
     def set_colorblind(self, on: bool) -> None:
         """Switch the series set; a graph on display is redrawn with it,
@@ -566,10 +638,11 @@ class DpsGraphDialog(QDialog):
                 self.show_graph(entry, dark, names=names)
 
     def refresh(self, dark: bool, names=None) -> None:
-        """Re-render for a theme switch (the series colours follow it) or
-        a flip of the Hide names switch (*names*, the new mask; None keeps
-        the one shown), the legend keeping its place."""
-        if self._shown is not None and self.isVisible():
+        """Re-render the fight shown, changed in place or for a theme
+        switch (the series colours follow it) or a flip of the Hide names
+        switch (*names*, the new mask; None keeps the one shown), the
+        legend keeping its place."""
+        if self._shown is not None:
             entry, _dark, shown = self._shown
             with self._keeping_legend_place():
                 self.show_graph(entry, dark, names=shown if names is None else names)
@@ -609,16 +682,3 @@ class DpsGraphDialog(QDialog):
         self.legend.verticalScrollBar().setValue(scroll)
         if moved is not None and seen:
             self.legend.scrollToItem(moved)
-
-    def entry_updated(self, entry, dark: bool, names=None) -> None:
-        """The fight *entry* changed in place (MainWindow._fight_changed,
-        issue #196): redrawn when it is the fight on display, with *names*,
-        the Hide names mask made afresh for it (None keeps the one shown).
-        Nothing while the window is hidden or on another fight."""
-        if entry is self.entry:
-            self.refresh(dark, names=names)
-
-    def views(self):
-        """No pages to give a new text size: the chart and its legend size
-        themselves on the font change (changeEvent)."""
-        return []

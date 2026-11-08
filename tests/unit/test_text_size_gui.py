@@ -256,14 +256,16 @@ class TestPixels(TextSizeTestCase):
         self.assertAlmostEqual(strip._label_font().pointSizeF(), (self._base_pt() - 2) * 1.5)
 
     def test_the_graph_legend_widens(self):
-        from gui.dps_graph import LEGEND_WIDTH
+        """The legend's widest and narrowest follow the text size; between
+        them it takes what the chart leaves (issue #196)."""
+        from gui.dps_graph import LEGEND_LEAST, LEGEND_WIDTH
         win = self._window()
         win._show_graph()
-        graph = win._graph_dialog
-        self.assertEqual(graph.legend.width(), LEGEND_WIDTH)
+        graph = win.dps_panel
+        self.assertEqual((graph.legend.minimumWidth(), graph.legend.maximumWidth()),
+                         (LEGEND_LEAST, LEGEND_WIDTH))
         win.set_text_size(150)
-        self.assertEqual(graph.legend.maximumWidth(), 345)
-        graph.close()
+        self.assertEqual((graph.legend.minimumWidth(), graph.legend.maximumWidth()), (150, 345))
 
     def test_the_bundled_icons_are_64_px(self):
         from PySide6.QtGui import QImage

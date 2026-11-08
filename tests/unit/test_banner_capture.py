@@ -560,12 +560,12 @@ class BannerInTheGuiTests(unittest.TestCase):
 
     def test_a_banner_the_burst_reports_reaches_the_windows_on_its_fight(self):
         """The burst saves the banner after the fight was listed: the pane
-        takes its links, and every window open on that fight is told, as
+        takes its links, and the DPS graph tab on screen is drawn again, as
         for any change to a listed fight (MainWindow._fight_changed, issue
         #196)."""
         from types import SimpleNamespace
 
-        from gui.dps_graph import DpsGraphDialog
+        from gui.dps_graph import DpsGraphPanel
         from gui.fight_render import BANNER_HREF
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
@@ -584,13 +584,13 @@ class BannerInTheGuiTests(unittest.TestCase):
                 banner = folder / "Banners" / target.file_name
                 banner.parent.mkdir()
                 banner.write_bytes(b"png")
-                with patch.object(DpsGraphDialog, "entry_updated", autospec=True) as told:
+                with patch.object(DpsGraphPanel, "refresh", autospec=True) as told:
                     win._on_banner_finished(banner, "Score banner saved")
                 self.assertEqual(entry.banner_path, banner)
                 self.assertIn(f"{BANNER_HREF}open", win.fight_view.toHtml())
                 self.assertEqual(told.call_count, 1)
-                self.assertIs(told.call_args.args[0], win._graph_dialog)
-                self.assertIs(told.call_args.args[1], entry)
+                self.assertIs(told.call_args.args[0], win.dps_panel)
+                self.assertIs(win.dps_panel.entry, entry)
             finally:
                 win.close()
 

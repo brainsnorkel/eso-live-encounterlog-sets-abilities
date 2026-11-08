@@ -128,14 +128,19 @@ class TestPaintedWidgets(AccessibilityTestCase):
         self.assertEqual(lines[1], "Lucent Echoes:0% group, expected but not up")
 
     def test_the_graph_reads_its_lines(self):
-        from gui.dps_graph import DpsGraphDialog
+        from gui.dps_graph import DpsGraphPanel
         from tests.unit.test_dps_graph import _entry
-        dialog = DpsGraphDialog()
+        dialog = DpsGraphPanel()
         self.addCleanup(dialog.deleteLater)
         dialog.show_graph(_entry(3), False)
         from PySide6.QtGui import QAccessible
         iface = QAccessible.queryAccessibleInterface(dialog.graph)
         self.assertEqual(iface.text(QAccessible.Name), "DPS over time")
+        # The legend and the mode are named too (issue #196): the mode by its
+        # Show label, its buddy
+        for widget, name in ((dialog.legend, "Lines drawn"), (dialog.mode, "Show")):
+            self.assertEqual(QAccessible.queryAccessibleInterface(widget).text(QAccessible.Name),
+                             name)
         text = _described(dialog.graph)
         names = [c.name for c in dialog.graph.curves]
         self.assertTrue(names)

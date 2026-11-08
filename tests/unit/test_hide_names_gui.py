@@ -286,8 +286,9 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_open_windows_follow_a_flip(self):
-        """The player window and the graph follow a flip of the switch: the
-        window's title, picker and page on screen at once (issue #196)."""
+        """The player window and the DPS graph tab follow a flip of the
+        switch: the window's title, picker and page on screen at once
+        (issue #196)."""
         from PySide6.QtCore import QUrl
 
         from gui.player_window import BUILD_TAB, DAMAGE_TAB, DEATHS_TAB
@@ -300,7 +301,7 @@ class TestTheWindows(HideNamesTestCase):
             self.assertEqual(window.windowTitle(), "Build – @friend (Friend Char)")
             self.assertIn("@friend", window.picker.currentText())
             win.graph_action.trigger()
-            graph = win._graph_dialog
+            graph = win.dps_panel
             self.assertTrue(graph.legend.item(2).text().startswith("@friend"))
 
             win.hide_names_action.setChecked(True)
@@ -424,7 +425,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.graph_action.trigger()
-            hover = win._graph_dialog.graph.tooltip_html(3)
+            hover = win.dps_panel.graph.tooltip_html(3)
             self.assertIn("@me", hover)
             self.assertIn(FRIEND, hover)
             self.assertNotIn("@friend", hover)
