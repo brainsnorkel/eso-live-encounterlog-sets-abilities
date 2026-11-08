@@ -140,6 +140,48 @@ class TestScanByStamp(unittest.TestCase):
             self.assertEqual(len(split_retention.scan_splits(folder)), 3)
 
 
+class TestEarlierSplit(unittest.TestCase):
+    """The split of the session before a list's first, for a run the list
+    begins inside (the fresh review of PR #210)."""
+
+    def test_the_session_just_before_of_the_same_instance(self):
+        from session_splits import earlier_split
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            _log(folder, "260830120000-Sunspire-vet.log", 10)
+            cut = _log(folder, "260830134913-Sunspire-vet.log", 10)
+            whole = _log(folder, "260830134913-Sunspire-vet-1.log", 30)
+            _log(folder, "260830142039-Sunspire-vet.log", 5)
+            found = earlier_split("260830142039", "Sunspire", True, folder)
+            self.assertEqual(found.path, whole)
+            self.assertNotEqual(found.path, cut)
+
+    def test_another_instance_an_older_one_or_none_is_not_offered(self):
+        from session_splits import earlier_split
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True, folder))
+            _log(folder, "260830134913-Fungal-Grotto-I-vet.log", 10)  # veteran, another zone
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True, folder))
+            _log(folder, "260830140000-Sunspire.log", 10)  # normal, not veteran
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True, folder))
+            self.assertIsNone(earlier_split("", "Sunspire", True, folder))
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True, None))
+            # Hours older: another night's run
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True,
+                                            Path(tmp) / "nowhere"))
+            folder2 = folder / "two"
+            _log(folder2, "260830100000-Sunspire-vet.log", 10)
+            self.assertIsNone(earlier_split("260830142039", "Sunspire", True, folder2))
+
+    def test_a_zone_name_with_dashes_and_the_keep_folder(self):
+        from session_splits import earlier_split
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            kept = _log(folder / split_retention.KEEP_FOLDER, "261015183000-Kyne's-Aegis-vet.log", 10)
+            self.assertEqual(earlier_split("261015191452", "Kyne's Aegis", True, folder).path, kept)
+
+
 class TestSplitsFor(unittest.TestCase):
 
     def setUp(self):

@@ -27,7 +27,7 @@ from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from app_startup import engine_settings
 from data_staleness import status_text, status_tooltip
-from fight_blocks import fight_key
+from fight_blocks import difficulty_of, fight_key
 from fight_index import (
     FightIndex,
     comparison,
@@ -50,8 +50,8 @@ from gui.engine_worker import EngineWorker
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
 from gui.fight_render import (
-    ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE, SPLIT_UNKNOWN_NOTE,
-    SPLITS_OFF_NOTE,
+    EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
+    SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
@@ -74,7 +74,7 @@ from pen_crit import armour_row
 from pull_outcome import runs
 import recent_activity
 from recycle_bin import TRASH_NAME
-from session_splits import splits_for
+from session_splits import earlier_split, splits_for
 import review_load
 from session_recap import DISCORD_LIMIT, recap_text
 import split_retention
@@ -1048,7 +1048,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setVisible(False)
             deleted = " — original deleted" if event.original_deleted else ""
             self.statusBar().showMessage(
-                f"Archived to {event.archive_path}{deleted}", 15000)
+                f"Archived to {self._shown_path(event.archive_path)}{deleted}", 15000)
             if event.original_deleted and event.archive_path:
                 self._archive_that_deleted_log = Path(event.archive_path)
             # The pane names the newest archive while no fight is on it
@@ -2185,16 +2185,30 @@ class MainWindow(QMainWindow):
         offered; with none found and split logs off, one line says where to
         turn them on. A split folder that cannot be read says so, where its
         sessions would read as missing. Under a review, the reviewed
-        file."""
+        file.
+
+        A list that begins inside a run, as after the app's start or a
+        Settings replay, which read the log's latest session alone, holds
+        only the run's later fights: the split of the session before, of the
+        same instance by its name, comes first, as the earlier split
+        (session_splits.earlier_split). The folder is found from the log
+        known (_known_log), never by a search for the log, which listed the
+        Logs folders at each drawing (the fresh review of PR #210)."""
         if self._review_fights is not None:
             return [(REVIEWED_LABEL, Path(self._review_path), "")] if self._review_path else []
-        folder = self._split_folder()
+        folder = self._split_folder(self._known_log())
         readable = folder is not None and folder.is_dir()
         sessions = splits_for((getattr(fight, "session_stamp", "") for fight in fights),
                               folder if readable else None)
-        if not self.config.get("split.enabled", False) and not any(s.best for s in sessions):
+        earlier = None
+        if readable and fights and self._fights and fights[0] is self._fights[0]:
+            first = fights[0]
+            earlier = earlier_split(getattr(first, "session_stamp", ""), first.zone_name,
+                                    difficulty_of(first) == "VETERAN", folder)
+        if (not self.config.get("split.enabled", False) and earlier is None
+                and not any(s.best for s in sessions)):
             return [(SPLIT_LABEL, None, SPLITS_OFF_NOTE)]
-        files = []
+        files = [(EARLIER_LABEL, earlier.path, "")] if earlier is not None else []
         for session in sessions:
             if session.best is not None:
                 files.append((SPLIT_LABEL, session.best.path, ""))
@@ -2539,7 +2553,7 @@ class MainWindow(QMainWindow):
             if target:
                 try:
                     shutil.copyfile(path, target)
-                    self.statusBar().showMessage(f"Saved {target}", 5000)
+                    self.statusBar().showMessage(f"Saved {self._shown_path(target)}", 5000)
                 except OSError as exc:
                     self.statusBar().showMessage(f"Could not save the banner: {exc}", 8000)
         elif action == "copy":

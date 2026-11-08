@@ -146,6 +146,8 @@ BANNER_HREF = "esolog:banner/"  # + open, save or copy: the run's score banner (
 SPLIT_HREF = "esolog:split/"
 SPLIT_ACTIONS = ("open", "copy")
 SPLIT_LABEL = "Split log"
+# The split of a run's session before the list's first (session_splits.earlier_split)
+EARLIER_LABEL = "Earlier split log"
 REVIEWED_LABEL = "Reviewed log"
 # Why a run has no split log to link (MainWindow._split_files)
 SPLITS_OFF_NOTE = "split logs are off: Settings → Files and splits"
@@ -155,6 +157,8 @@ SPLIT_UNKNOWN_NOTE = "not known: the session began before the app read the log"
 SPLIT_OPEN_TIP = "Open the split log's folder, the file selected"
 SPLIT_COPY_TIP = ("Copy the split log's full path, for a log tool's upload dialog: the whole "
                   "path even with Hide names on")
+SPLIT_EARLIER_TIP = ("The run may have begun in this earlier session, which the list does not "
+                     "hold: the app reads only the log's latest session")
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
 # + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
 # penetration and critical damage over the fight (pen_crit); a click opens
@@ -224,10 +228,11 @@ def split_lines_html(files, theme, hide_paths: bool = False) -> list:
 def split_tooltips(files) -> dict:
     """Hover text for the split logs' links of *files* (split_lines_html)."""
     tips = {}
-    for place, (_label, path, _note) in enumerate(files or []):
+    for place, (label, path, _note) in enumerate(files or []):
         if path is not None:
-            tips[f"{SPLIT_HREF}{place}/open"] = SPLIT_OPEN_TIP
-            tips[f"{SPLIT_HREF}{place}/copy"] = SPLIT_COPY_TIP
+            why = f"<br>{SPLIT_EARLIER_TIP}" if label == EARLIER_LABEL else ""
+            tips[f"{SPLIT_HREF}{place}/open"] = SPLIT_OPEN_TIP + why
+            tips[f"{SPLIT_HREF}{place}/copy"] = SPLIT_COPY_TIP + why
     return tips
 
 

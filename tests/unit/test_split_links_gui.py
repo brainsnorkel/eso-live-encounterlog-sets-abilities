@@ -136,6 +136,56 @@ class TestTheLinks(SplitLinksTestCase):
         self.assertEqual(calls, [("program", "explorer"), ("arguments", f'/select,"{self.kynes}"'),
                                  ("detached",)])
 
+    def test_a_run_the_list_begins_inside_offers_its_earlier_split(self):
+        """The list begins inside the run (the app started, or Settings
+        replayed the log, after a relog): the split of the session before,
+        of the same instance, comes first on the strip and the Instance
+        tab; a run the list does not begin with has none (the fresh review
+        of PR #210: the strip offered 1 of the run's 16 fights)."""
+        earlier = self.splits / "261015183000-Kyne's-Aegis-vet.log"
+        earlier.write_text("the run's first session\n", encoding="utf-8")
+        fights = _stamped(_session())
+        win = self._split_window(*fights)
+        win.history_list.select_entry(fights[3])
+        text = win.fight_view.toPlainText()
+        self.assertLess(text.index(f"Earlier split log {earlier}"), text.index(f"Split log {self.kynes}"))
+        self.assertIn("earlier session", win.fight_view._tooltips["esolog:split/0/open"])
+        self._click(win, HEADER)
+        self.assertIn(f"Earlier split log {earlier}", win.instance_view.toPlainText())
+        from tests.unit.test_pull_outcome_gui import _entry
+        before = _entry("Ruined Atronach")
+        before.zone_name, before.zone_id = "Craglorn", "888"
+        win = self._split_window(before, *_stamped(_session()))
+        self._click(win, HEADER + 2)  # the Kyne's Aegis header, under Craglorn's
+        self.assertNotIn("Earlier split log", win.instance_view.toPlainText())
+
+    def test_the_split_folder_is_found_without_a_search_for_the_log(self):
+        """No log path set (the default): the folder comes from the log the
+        engine monitors, where every drawing searched the Logs folders for
+        the log (the fresh review of PR #210)."""
+        import split_retention
+        win = self._split_window(*_stamped(_session()))
+        win.config.set("log_path", "")
+        win._log_path = str(self.root / "Encounter.log")
+        searches = []
+        real = split_retention.resolve_log
+        with mock.patch.object(split_retention, "resolve_log",
+                               side_effect=lambda value: searches.append(value) or real(value)):
+            self._click(win, HEADER)
+        self.assertIn(f"Split log {self.kynes}", win.instance_view.toPlainText())
+        self.assertEqual(searches, [])
+
+    def test_the_archive_message_names_the_zip_alone_under_hide_names(self):
+        from types import SimpleNamespace
+        win = self._split_window()
+        win.hide_names_action.setChecked(True)
+        archive = self.root / "Archive" / "Encounter-20261109-120000.zip"
+        win._on_archive_event(SimpleNamespace(kind="completed", archive_path=str(archive),
+                                              original_deleted=False))
+        message = win.statusBar().currentMessage()
+        self.assertIn(archive.name, message)
+        self.assertNotIn(str(archive.parent), message)
+
     def test_a_file_gone_says_so(self):
         win = self._split_window(*_stamped(_session()))
         self._click(win, HEADER)

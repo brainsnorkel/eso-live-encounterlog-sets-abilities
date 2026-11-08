@@ -72,12 +72,18 @@ began; none in that folder did (the latest ended at 23:46).
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from split_retention import KEEP_FOLDER, SplitFile, scan_splits, zipped_log_size
 
 # The copy number the splitter added to a name already taken (issue #85)
 _COPY = re.compile(r"-(\d+)\.log(?:\.zip)?$")
+_STAMP = "%y%m%d%H%M%S"
+# How long before a list's first session an earlier split of its instance
+# is looked for: a relog's new session comes minutes later (a Sunspire
+# run, 2026-08-30: 31 minutes), and a trial runs an hour or two
+EARLIER_WITHIN_S = 3 * 3600
 
 
 @dataclass(frozen=True)
@@ -119,6 +125,46 @@ def splits_for(stamps: Iterable[str], split_dir: Path | str | None) -> list[Sess
             for split in scan_splits(where, wanted):
                 found.setdefault(split.stamp, []).append((place, split))
     return [SessionSplits(stamp, _whole_first(found.get(stamp, []))) for stamp in order]
+
+
+def earlier_split(stamp: str, zone: str, vet: bool, split_dir: Path | str | None) -> SplitFile | None:
+    """The whole split of the session just before *stamp* in *split_dir*
+    and its keep folder, when its name gives the same zone and difficulty
+    and it began within EARLIER_WITHIN_S before *stamp*; else None.
+
+    For a fight list that begins inside a run. The app reads the log's
+    latest logging session alone, at its start and at a Settings replay,
+    so a run begun in an earlier session (a relog, a crash) lists only its
+    later fights, and its split links only the later session's: of the 408
+    splits in the maintainer's folder, 31 begin inside a trial already in
+    progress (the fresh review of PR #210). The session before is the one
+    to offer when its file's name says the same instance. The splitter
+    names a file after its session's first fight's zone, so an earlier
+    session that began elsewhere is not offered, nor one hours older."""
+    if not stamp or split_dir is None:
+        return None
+    try:
+        began = datetime.strptime(stamp, _STAMP)  # noqa: DTZ007
+    except ValueError:
+        return None
+    folder = Path(split_dir)
+    earlier = [(place, split) for place, where in enumerate((folder, folder / KEEP_FOLDER))
+               for split in scan_splits(where) if split.stamp < stamp]
+    if not earlier:
+        return None
+    last = max(split.stamp for _place, split in earlier)
+    if (began - datetime.strptime(last, _STAMP)).total_seconds() > EARLIER_WITHIN_S:  # noqa: DTZ007
+        return None
+    best = _whole_first([(place, split) for place, split in earlier if split.stamp == last])[0]
+    if best.vet != bool(vet) or _zone_key(best.zone) != _zone_key(zone):
+        return None
+    return best
+
+
+def _zone_key(zone) -> str:
+    # The splitter writes a zone's spaces as dashes, and parse_split_name
+    # reads every dash back as a space
+    return str(zone or "").replace("-", " ").casefold()
 
 
 def _whole_first(files: list[tuple[int, SplitFile]]) -> tuple[SplitFile, ...]:
