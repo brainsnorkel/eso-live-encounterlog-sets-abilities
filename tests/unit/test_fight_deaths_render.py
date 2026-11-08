@@ -125,6 +125,18 @@ class TestFightDeathsPage(unittest.TestCase):
         self.assertIn("Killers: Tremor from Sharpfang ×2 · Slap from Sharpfang · a fall or lava; "
                       "75% by Sharpfang", text)
 
+    def test_the_bosses_share_only_when_they_killed_someone(self):
+        """Adds and a fall did all the killing: the killers line says
+        nothing of the bosses, rather than '0% by Sharpfang' (review of
+        #205)."""
+        entry = _entry()
+        for recap in entry.death_recaps:
+            if recap["killer"]:
+                recap["killer"] = "Sharpfang's Hound"
+        text = _text(self._render(entry))
+        self.assertIn("Killers: Tremor from Sharpfang's Hound ×2", text)
+        self.assertNotIn("% by", text)
+
     def test_a_player_the_table_does_not_list_is_there_without_a_role(self):
         page = self._render(_entry())
         passerby = _cells(page)[3]

@@ -41,7 +41,7 @@ from collections import Counter
 from gui.death_render import _THEMES, ICON_PX, _icon_html, recap_href
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
-from pull_outcome import ANON, WIPE, at_clock, clock
+from pull_outcome import ANON, WIPE, at_clock, clock, dead_ms_of
 
 # The page of a fight in which no one died, and of one in which only
 # companions did
@@ -86,7 +86,7 @@ def _dead_ms(entry, recap, unit_id, n, of, at_end):
     that is not known (see the module)."""
     carries = bool((getattr(entry, "pull", None) or {}).get("continues"))
     if of == 1 and not carries:
-        return int((getattr(entry, "time_dead", None) or {}).get(unit_id, 0) or 0)
+        return dead_ms_of(entry, unit_id)
     if n == of and at_end and unit_id in at_end:
         end_ms = float(getattr(entry, "duration_s", 0) or 0) * 1000
         return max(0, round(end_ms - int(recap.get("time_ms") or 0)))
@@ -207,8 +207,9 @@ def _killers_html(entry, deaths, theme: dict, names, base_pt: float, e) -> str:
         items.append(text + (f" ×{count}" if count > 1 else ""))
     line = f"<span style='color:{muted}'>{KILLERS_LEAD}</span> " + " · ".join(items)
     bosses = [str(b) for b in (getattr(entry, "pull", None) or {}).get("bosses") or []]
-    if bosses:
-        by_boss = sum(count for (_ability, killer), count in counts.items() if killer in bosses)
+    by_boss = sum(count for (_ability, killer), count in counts.items() if killer in bosses)
+    # Said only when the bosses killed someone, as the run's summary does
+    if by_boss:
         who = " and ".join(bosses) if len(bosses) <= 2 else "the bosses"
         line += (f"<span style='color:{muted}'>; {round(100 * by_boss / len(deaths))}% "
                  f"by {e(who)}</span>")
@@ -218,7 +219,6 @@ def _killers_html(entry, deaths, theme: dict, names, base_pt: float, e) -> str:
 def _time_dead_html(entry, deaths, theme: dict, names, base_pt: float, e) -> str:
     """'Time dead: @x 1:32 (30%) · @y 27s (9%)': everyone who died, longest
     first, with the share of the fight."""
-    dead = getattr(entry, "time_dead", None) or {}
     duration = float(getattr(entry, "duration_s", 0) or 0)
     muted = theme["muted"]
     rows = {str(p.get("unit_id", "")): p for p in getattr(entry, "players", None) or []}
@@ -226,8 +226,8 @@ def _time_dead_html(entry, deaths, theme: dict, names, base_pt: float, e) -> str
     for recap, unit_id, _n, _of in deaths:
         who.setdefault(unit_id, str(recap.get("name") or "unknown"))
     items = []
-    for unit_id, name in sorted(who.items(), key=lambda item: -int(dead.get(item[0], 0) or 0)):
-        ms = int(dead.get(unit_id, 0) or 0)
+    for unit_id, name in sorted(who.items(), key=lambda item: -dead_ms_of(entry, item[0])):
+        ms = dead_ms_of(entry, unit_id)
         share = (f" <span style='color:{muted}'>({min(100, round(100 * ms / 1000 / duration))}%)"
                  f"</span>" if duration > 0 else "")
         who_html = (names.html(name, theme["text"], base_pt)

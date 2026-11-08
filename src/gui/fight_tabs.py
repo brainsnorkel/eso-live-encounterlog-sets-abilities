@@ -19,7 +19,7 @@ field, at its right end, before the clear button: beside the field, as it
 was, it clipped the tab labels at 190-200% text (probed with the window's
 own text). The field takes the width the bar leaves, at most about forty
 characters (260 px at 100% in Segoe UI). When the bar leaves less than the
-widest count ('999 matches') and about six characters, at a large text
+widest count ('999+ matches') and about six characters, at a large text
 size in a narrow column or in a wide font (the labels of the four tabs
 planned need 424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
 takes a row of its own above the tabs. It is placed again as the column's
@@ -53,13 +53,17 @@ SEARCH_PLACEHOLDER = "Find (Ctrl+F)"
 SEARCH_NAME = "Search this tab"
 SEARCH_HINTS = ("Enter goes to the next match and Esc clears the search; ability icons "
                 "match by their names.")
-WIDEST_COUNT = "999 matches"
+MOST_COUNTED = 999  # a count past it reads '999+ matches'
+WIDEST_COUNT = f"{MOST_COUNTED}+ matches"
 LEAST_CHARS = 6  # the room the field keeps for the search's text beside the widest count
 MOST_CHARS = 40  # the widest the field goes in the corner: 260 px at 100% in Segoe UI
 
 
 def count_text(matches: int) -> str:
-    """The search's count: '1 match', '12 matches'."""
+    """The search's count: '1 match', '12 matches', and '999+ matches'
+    past that, the widest the field keeps room for."""
+    if matches > MOST_COUNTED:
+        return WIDEST_COUNT
     return f"{matches} match{'es' if matches != 1 else ''}"
 
 
@@ -152,7 +156,7 @@ class SearchField(QLineEdit):
         right = (button.geometry().left() if button is not None and button.width() > 0
                  else self.contentsRect().right())
         self.setTextMargins(0, 0, label.width() + gap, 0)
-        label.move(right - gap - label.width(), (self.height() - label.height()) // 2)
+        label.move(max(0, right - gap - label.width()), (self.height() - label.height()) // 2)
 
 
 class FightViews(QWidget):
@@ -213,6 +217,9 @@ class FightViews(QWidget):
         row (see the module notes)."""
         field = self.search_field
         room = self.width() - self.tabs.tabBar().sizeHint().width()
+        # A new parent takes the focus from the field: it is given back, so
+        # typing goes on through a new text size or a resize
+        had_focus = field is self.window().focusWidget()
         moved = False
         if room >= field.least_width():
             field.set_hint_width(min(room, field.most_width()))
@@ -229,6 +236,8 @@ class FightViews(QWidget):
         # A new parent hides a widget; the field shows with the bar
         field.setVisible(self._shown)
         if moved:
+            if had_focus and self._shown:
+                field.setFocus()
             self.search_placed.emit()
 
     def resizeEvent(self, event) -> None:

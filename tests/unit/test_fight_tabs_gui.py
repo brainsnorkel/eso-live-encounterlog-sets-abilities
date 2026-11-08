@@ -177,6 +177,92 @@ class TestTheTabs(FightTabsTestCase):
 
 class TestTheSearch(FightTabsTestCase):
 
+    def _search(self, win, text, steps=0):
+        """Search *text* on the tab on screen and press Enter *steps*
+        times; the start of the match the cursor is then at."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win.search_field.setText(text)
+        for _ in range(steps):
+            QTest.keyClick(win.search_field, Qt.Key_Return)
+        _app.processEvents()
+        return win._search_view().textCursor().position()
+
+    def test_the_count_stops_at_999_plus(self):
+        """The field keeps room for '999+ matches', the widest count it
+        shows (review of #205)."""
+        from gui.fight_tabs import WIDEST_COUNT, count_text
+        self.assertEqual([count_text(n) for n in (0, 1, 2, 999, 1000, 12345)],
+                         ["0 matches", "1 match", "2 matches", "999 matches",
+                          "999+ matches", "999+ matches"])
+        self.assertEqual(WIDEST_COUNT, "999+ matches")
+
+    def test_the_search_goes_on_where_it_was_on_a_page_drawn_while_hidden(self):
+        """Review of #205. On Deaths at the third match, the Fight tab
+        shown and Hide names flipped, which draws the fight again: back on
+        Deaths, the cursor is at the third match. On Fight at a later
+        match, Deaths shown and a pen/crit Save made: back on Fight, still
+        that match. With Deaths on screen a new fight comes: back on Fight,
+        its first match."""
+        win = self._window(_entry_with_deaths())
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        at = self._search(win, "Sharpfang", steps=2)
+        starts = [match.selectionStart() for match in win._search_matches()]
+        self.assertGreaterEqual(len(starts), 3)
+        self.assertEqual(at, starts[2])
+        win.fight_tabs.setCurrentIndex(0)
+        win.hide_names_action.setChecked(True)
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        self.assertEqual(win.deaths_view.textCursor().position(),
+                         [match.selectionStart() for match in win._search_matches()][2])
+
+        win.fight_tabs.setCurrentIndex(0)
+        at = self._search(win, "Sharpfang", steps=1)
+        self.assertNotEqual(at, win._search_matches()[0].selectionStart())
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        win._apply_pen_crit_settings()
+        win.fight_tabs.setCurrentIndex(0)
+        self.assertEqual(win.fight_view.textCursor().position(), at)
+
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        win._on_fight_completed(_entry_with_deaths())
+        win.fight_tabs.setCurrentIndex(0)
+        self.assertEqual(win.fight_view.textCursor().position(),
+                         win._search_matches()[0].selectionStart())
+
+    def test_a_pen_crit_save_keeps_the_search_on_deaths(self):
+        """A pen/crit Save with Deaths on screen draws the fight again in
+        place: the Deaths page's cursor stays at its match (review of
+        #205)."""
+        win = self._window(_entry_with_deaths())
+        win.fight_tabs.setCurrentIndex(0)
+        self._search(win, "Sharpfang", steps=3)  # the Fight page's cursor moves on
+        win.fight_tabs.setCurrentWidget(win.deaths_view)
+        at = self._search(win, "Sharpfang", steps=1)
+        win._apply_pen_crit_settings()
+        self.assertEqual(win.deaths_view.textCursor().position(), at)
+
+    def test_the_search_keeps_the_focus_as_it_moves(self):
+        """Typing in the search, a new text size moves it from the corner
+        to its own row: the focus stays in it, and typing goes on there
+        (review of #205)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        win = self._window(_entry_with_deaths())
+        total = sum(win._splitter.sizes())
+        win._splitter.setSizes([total - 520, 520])
+        self._settle()
+        self.assertTrue(win.fight_views.in_corner())
+        win.search_field.setFocus()
+        QTest.keyClicks(win.search_field, "Sharp")
+        win.set_text_size(200)
+        self._settle()
+        self.assertFalse(win.fight_views.in_corner())
+        self.assertIs(QApplication.focusWidget(), win.search_field)
+        QTest.keyClicks(QApplication.focusWidget(), "fang")
+        self.assertEqual(win.search_field.text(), "Sharpfang")
+
     def test_the_search_works_on_the_tab_on_screen(self):
         """Ctrl+F on Deaths puts the cursor in the search, which counts the
         Deaths page's matches; on Fight, the Fight page's. Ctrl+C on Deaths
