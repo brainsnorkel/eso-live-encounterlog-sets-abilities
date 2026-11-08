@@ -469,7 +469,11 @@ class TestTheSearch(FightTabsTestCase):
         self.assertIn("Deaths 3 Deaths tab", win.fight_view.accessible_text())
         image = glyph_image(DEATHS_GLYPH, "#1a73e8", 13)
         self.assertIsNotNone(image)
-        self.assertTrue(any(image.pixelColor(x, y).alpha() for x in range(13) for y in range(13)))
+        # Drawn, and in the colour asked for whatever font drew the skull
+        inked = [image.pixelColor(x, y) for x in range(13) for y in range(13)
+                 if image.pixelColor(x, y).alpha() == 255]
+        self.assertTrue(inked)
+        self.assertTrue(all(c.name() == "#1a73e8" for c in inked))
 
     def test_the_tabs_cost_the_windows_least_height_no_more_than_their_bar(self):
         """The window's least height with a fight shown is no more than its

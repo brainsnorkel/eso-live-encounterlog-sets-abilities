@@ -127,13 +127,18 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
     elif kind == ISSUES_GLYPH:
         _draw_issues(painter, color, size, dpr)
     elif kind == DEATHS_GLYPH:
-        # The death chip's skull, as the application's font draws it (its
-        # fallback finds the glyph), after the header's Deaths N (#206)
+        # The death chip's skull after the header's Deaths N (#206), in the
+        # link colour: drawn in a symbol font where there is one, then
+        # filled with the colour, since the font fallback otherwise finds a
+        # colour emoji font (Segoe UI Emoji), which ignores the pen
         font = QFont()
+        font.setFamilies(['Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols2', font.family()])
         font.setPixelSize(max(1, round(px * 0.95)))
         painter.setFont(font)
         painter.setPen(color)
         painter.drawText(QRectF(0, 0, px, px), Qt.AlignCenter, SKULL)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(QRectF(0, 0, px, px), color)
     else:
         # A breakdown: three bars, the longest on top, as the damage
         # window ranks abilities
