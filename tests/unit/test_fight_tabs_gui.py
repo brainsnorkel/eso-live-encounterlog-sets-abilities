@@ -390,6 +390,8 @@ class TestTheSearch(FightTabsTestCase):
         fresh review of #205)."""
         from PySide6.QtCore import Qt
         win = self._window(_entry_with_deaths())
+        win.graph_action.trigger()  # the graph drawn, its legend naming the players
+        self.assertGreater(win.dps_panel.legend.count(), 0)
         win.fight_tabs.setCurrentWidget(win.deaths_view)
         self.assertIn("@passerby", win.deaths_view.toPlainText())
         win._on_monitoring_restarting()  # a Settings Save: the list cleared, the replay's page
