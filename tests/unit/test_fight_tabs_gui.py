@@ -470,10 +470,16 @@ class TestTheSearch(FightTabsTestCase):
         image = glyph_image(DEATHS_GLYPH, "#1a73e8", 13)
         self.assertIsNotNone(image)
         # Drawn, and in the colour asked for whatever font drew the skull
+        # (DejaVu Sans's at 13 px is never wholly opaque, so half will do;
+        # a colour emoji font's skull is grey and pink)
+        from PySide6.QtGui import QColor
+        want = QColor("#1a73e8")
         inked = [image.pixelColor(x, y) for x in range(13) for y in range(13)
-                 if image.pixelColor(x, y).alpha() == 255]
+                 if image.pixelColor(x, y).alpha() >= 128]
         self.assertTrue(inked)
-        self.assertTrue(all(c.name() == "#1a73e8" for c in inked))
+        for colour in inked:
+            self.assertLessEqual(max(abs(colour.red() - want.red()), abs(colour.green() - want.green()),
+                                     abs(colour.blue() - want.blue())), 3, colour.name())
 
     def test_the_tabs_cost_the_windows_least_height_no_more_than_their_bar(self):
         """The window's least height with a fight shown is no more than its
