@@ -48,7 +48,7 @@ from gui.death_render import FIGHT_DEATHS_HREF, RECAP_HREF, recap_from_href, uni
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
     damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
-    pen_crit_unit_from_href, taken_unit_from_href,
+    pen_crit_unit_from_href, split_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
@@ -122,6 +122,9 @@ class FightView(QTextBrowser):
     # (issue #196)
     recap_requested = Signal(str, int)
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
+    # A split log listed beside a run's result: its place in the list the
+    # page was drawn with, and 'open' or 'copy' (issue #194)
+    split_requested = Signal(int, str)
     # The empty pane's links (gui.activity_render, issue #191): 'show' or
     # 'hide' the recent activity; a file's place in it to open for review
     activity_requested = Signal(str)
@@ -763,6 +766,10 @@ class FightView(QTextBrowser):
             return
         if url.toString().startswith(BANNER_HREF):
             self.banner_requested.emit(url.toString()[len(BANNER_HREF):])
+            return
+        split = split_from_href(url.toString())
+        if split is not None:
+            self.split_requested.emit(*split)
             return
         action = activity_action_from_href(url.toString())
         if action is not None:

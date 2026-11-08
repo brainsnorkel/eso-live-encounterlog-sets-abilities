@@ -20,10 +20,11 @@ drawing. The page reads, from the top:
   the previous session's log: "any", since mostly there are none.
 - **Result**: a completed veteran trial's or arena's result, as the result
   row writes it (trial_result), with the fight pane's Score banner links,
-  which act on the fight with the result whichever fight is on screen.
-  Nothing for a dungeon or a failed run: only a veteran run that succeeds
-  writes END_TRIAL. #194's split files are to go under it, a line of their
-  own.
+  which act on the fight with the result whichever fight is on screen;
+  under it the split logs of the instance's sessions, as the result strip
+  lists them (gui.fight_render.split_lines_html, #194). A dungeon or a
+  failed run has no result, only a veteran run that succeeds writes
+  END_TRIAL, and its strip holds the split logs alone.
 - **Bosses**: a row for each boss's pulls in a row (pull_outcome.runs),
   one pull included: the pulls, the result, the kill's time and boss dps,
   and the deaths over all its pulls. The result is the run row's words
@@ -109,6 +110,7 @@ from gui.fight_render import (
     MISFORTUNE_HREF,
     _banner_links,
     _join,
+    split_lines_html,
     _theme,
     misfortunes_tooltips,
 )
@@ -420,14 +422,15 @@ def _heading_html(block, theme: dict, e, base_pt: float, opens_list: bool) -> st
     return "".join(parts)
 
 
-def _result_html(block, theme: dict, e) -> str:
-    """The run's result in a strip framed like the fight pane's, its lines
-    one under another; '' for a block without one."""
+def _result_html(block, theme: dict, e, split_files=None, hide_paths=False) -> str:
+    """The run's result in a strip framed like the fight pane's, the split
+    logs' lines under it; '' for a block with neither."""
     fight = next((f for f in reversed(block) if getattr(f, "trial_result", None)), None)
-    if fight is None:
+    lines = ([f"<b>{e(result_text(fight.trial_result))}</b>{_banner_links(fight, theme)}"]
+             if fight is not None else [])
+    lines += split_lines_html(split_files, theme, hide_paths)
+    if not lines:
         return ""
-    lines = [f"<b>{e(result_text(fight.trial_result))}</b>{_banner_links(fight, theme)}"]
-    # #194's split files are to go here, a line of their own
     return (f"<table cellpadding='5' cellspacing='0' width='99%' "
             f"style='border-style:solid;border-width:1px;border-color:{theme['frame_border']};"
             f"border-collapse:collapse;background-color:{theme['frame_bg']};margin-top:6px'>"
@@ -651,7 +654,8 @@ def _players_html(players, index_of, shown, theme: dict, names, base_pt: float, 
 
 def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=None,
                          base_pt: float = 9.0, names=None, text_color: str | None = None,
-                         opens_list: bool = False, fight_index=None) -> str:
+                         opens_list: bool = False, fight_index=None, split_files=None,
+                         hide_paths: bool = False) -> str:
     """The instance *block* (fight_blocks.blocks: one instance's fights, in
     order) as HTML for the Instance tab (see the module).
 
@@ -665,7 +669,10 @@ def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=
     fight list, so its fights may go back before the log session the app
     read (see the module). fight_index: the fight history
     (fight_index.FightIndex) the best earlier kills come from; None for
-    none. The hover texts are instance_tooltips()."""
+    none. split_files: the split logs of the instance's sessions, under its
+    result (gui.fight_render.split_lines_html), and hide_paths, Hide names
+    on, so they show by their names alone. The hover texts are
+    instance_tooltips(), with split_tooltips() for the split logs."""
     theme = dict(_theme(dark))
     if text_color:
         theme["text"] = text_color
@@ -679,7 +686,7 @@ def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=
     block_pulls = pulls(block)
     return "".join((
         _heading_html(block, theme, e, base_pt, opens_list),
-        _result_html(block, theme, e),
+        _result_html(block, theme, e, split_files, hide_paths),
         _bosses_html(block_runs, index_of, theme, e, fight_index),
         _ended_html(block_pulls, theme, names, base_pt, e),
         _trash_html(block, theme, e),
