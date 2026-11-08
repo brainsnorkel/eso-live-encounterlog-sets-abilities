@@ -116,9 +116,8 @@ def splits_for(stamps: Iterable[str], split_dir: Path | str | None) -> list[Sess
     if split_dir is not None and wanted:
         folder = Path(split_dir)
         for place, where in enumerate((folder, folder / KEEP_FOLDER)):
-            for split in scan_splits(where):
-                if split.stamp in wanted:
-                    found.setdefault(split.stamp, []).append((place, split))
+            for split in scan_splits(where, wanted):
+                found.setdefault(split.stamp, []).append((place, split))
     return [SessionSplits(stamp, _whole_first(found.get(stamp, []))) for stamp in order]
 
 

@@ -4,14 +4,13 @@ settings, manual archive, and the freshness status bar.
 """
 
 import base64
-import subprocess
 import sys
 import weakref
 from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
-    QByteArray, QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot,
+    QByteArray, QCoreApplication, QEvent, QObject, QProcess, Qt, QThread, QTimer, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QKeySequence, QPalette,
@@ -51,7 +50,8 @@ from gui.engine_worker import EngineWorker
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
 from gui.fight_render import (
-    ISSUES_CUE, REVIEWED_LABEL, SPLIT_LABEL, SPLIT_MISSING_NOTE, SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
+    ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE, SPLIT_UNKNOWN_NOTE,
+    SPLITS_OFF_NOTE,
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
@@ -133,10 +133,15 @@ def _encode_state(state: QByteArray) -> str:
 
 def reveal_file(path: Path) -> None:
     """Show *path* in its folder: on Windows, Explorer with the file
-    selected, since a split folder holds hundreds of files (issue #194);
-    elsewhere the folder."""
+    selected, since a split folder holds hundreds of files (issue #194),
+    started detached, so nothing is left to wait for; elsewhere the
+    folder."""
     if sys.platform == "win32":
-        subprocess.Popen(f'explorer /select,"{path}"')  # noqa: S602, S607
+        explorer = QProcess()
+        explorer.setProgram("explorer")
+        # One argument as Explorer reads it, the path quoted inside it
+        explorer.setNativeArguments(f'/select,"{path}"')
+        explorer.startDetached()
     else:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
@@ -1275,7 +1280,7 @@ class MainWindow(QMainWindow):
                 self._attach_banner(entry)
                 if getattr(entry, "banner_path", None):
                     self._fight_changed(entry)
-        self.statusBar().showMessage(f"Monitoring {path}", 8000)
+        self.statusBar().showMessage(f"Monitoring {self._shown_path(path)}", 8000)
         self._end_replay()
         # Never over a review's fight, which stays on the pane
         if not self._fights and self._review_fights is None:
@@ -1296,7 +1301,7 @@ class MainWindow(QMainWindow):
         self._review_path = path
         self.statusBar().showMessage(
             f"Loaded {len(fights)} fight{'s' if len(fights) != 1 else ''} "
-            f"from {path}", 8000)
+            f"from {self._shown_path(path)}", 8000)
         self.banner.setText(self._review_banner_text())
         self.banner.setVisible(True)
         self.back_to_live_action.setVisible(True)
@@ -1551,9 +1556,10 @@ class MainWindow(QMainWindow):
         tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
-        # The split logs of the run this fight completed, on its result
-        # strip (issue #194)
-        split_files = self._split_files([entry]) if getattr(entry, "trial_result", None) else []
+        # The split logs of the run this fight completed, every session of
+        # it, on its result strip (issue #194)
+        split_files = (self._split_files(self.history_list.block_of(entry) or [entry])
+                       if getattr(entry, "trial_result", None) else [])
         self._fight_split_files = split_files
         tooltips.update(split_tooltips(split_files))
         if self._detailed:
@@ -2170,26 +2176,36 @@ class MainWindow(QMainWindow):
         self._copy_recap(block, "Instance")
 
     def _split_files(self, fights) -> list:
-        """The split logs behind *fights* (an instance's, or the fight with a
-        run's result), as gui.fight_render.split_lines_html lists them: a
-        (label, path or None, note) for each logging session of theirs, in
-        order (session_splits, issue #194), the whole session's file first;
-        under a review, the reviewed file; with split logs off, the line
-        that says where to turn them on."""
+        """The split logs behind *fights* (an instance's, or the run a fight
+        with a result completed), as gui.fight_render.split_lines_html
+        lists them: a (label, path or None, note) for each logging session
+        of theirs, in order (session_splits, issue #194), the whole
+        session's file first. The files are looked for whatever the setting
+        says now, so splits written before split logs went off are still
+        offered; with none found and split logs off, one line says where to
+        turn them on. A split folder that cannot be read says so, where its
+        sessions would read as missing. Under a review, the reviewed
+        file."""
         if self._review_fights is not None:
             return [(REVIEWED_LABEL, Path(self._review_path), "")] if self._review_path else []
-        if not self.config.get("split.enabled", False):
+        folder = self._split_folder()
+        readable = folder is not None and folder.is_dir()
+        sessions = splits_for((getattr(fight, "session_stamp", "") for fight in fights),
+                              folder if readable else None)
+        if not self.config.get("split.enabled", False) and not any(s.best for s in sessions):
             return [(SPLIT_LABEL, None, SPLITS_OFF_NOTE)]
         files = []
-        for session in splits_for((getattr(fight, "session_stamp", "") for fight in fights),
-                                  self._split_folder()):
+        for session in sessions:
             if session.best is not None:
                 files.append((SPLIT_LABEL, session.best.path, ""))
-            elif session.missing:
-                began = datetime.strptime(session.stamp, "%y%m%d%H%M%S")  # noqa: DTZ007
-                files.append((SPLIT_LABEL, None, SPLIT_MISSING_NOTE.format(time=f"{began:%H:%M}")))
-            else:
+            elif not session.known:
                 files.append((SPLIT_LABEL, None, SPLIT_UNKNOWN_NOTE))
+            elif not readable:
+                files.append((SPLIT_LABEL, None, SPLIT_FOLDER_NOTE))
+            else:
+                began = datetime.strptime(session.stamp, "%y%m%d%H%M%S")  # noqa: DTZ007
+                files.append((SPLIT_LABEL, None,
+                              SPLIT_MISSING_NOTE.format(time=f"{began:%Y-%m-%d %H:%M}")))
         return files
 
     @Slot(int, str)
@@ -2292,12 +2308,15 @@ class MainWindow(QMainWindow):
         self.config.save()
         self._refresh_names()
 
-    def _review_banner_text(self) -> str:
-        """The review banner's line: under Hide names the file's name alone,
+    def _shown_path(self, path) -> str:
+        """*path* as the window shows it: under Hide names its name alone,
         since its folder names the Windows user (issue #194)."""
-        path = Path(self._review_path or "")
-        shown = path.name if self._hide_names else str(path)
-        return f"Reviewing {shown} — live monitoring continues in the background"
+        return Path(path).name if self._hide_names else str(path)
+
+    def _review_banner_text(self) -> str:
+        """The review banner's line, the file as _shown_path shows it."""
+        return (f"Reviewing {self._shown_path(self._review_path or '')} — live monitoring "
+                f"continues in the background")
 
     def _refresh_names(self):
         """Redraw everything that shows a player name with the current
@@ -2610,7 +2629,7 @@ class MainWindow(QMainWindow):
                     members, 0, False)
                 if not ok:
                     return
-        self.statusBar().showMessage(f"Loading {path}…")
+        self.statusBar().showMessage(f"Loading {self._shown_path(path)}…")
         self.request_review.emit(path, member)
 
     def _exit_review(self):

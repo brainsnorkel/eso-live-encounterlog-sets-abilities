@@ -135,12 +135,17 @@ def parse_split_name(name: str):
     return stamp, rest.replace("-", " "), vet, zipped
 
 
-def scan_splits(split_dir: Path) -> list[SplitFile]:
-    """The splitter's files directly in *split_dir* (never a subfolder)."""
+def scan_splits(split_dir: Path, stamps=None) -> list[SplitFile]:
+    """The splitter's files directly in *split_dir* (never a subfolder);
+    with *stamps*, only those sessions' files, the rest passed over by
+    their names' first twelve characters before anything else is read
+    (session_splits, at each drawing of a page)."""
     found = []
     try:
         with os.scandir(split_dir) as it:
             for entry in it:
+                if stamps is not None and entry.name[:12] not in stamps:
+                    continue
                 parsed = parse_split_name(entry.name)
                 if parsed is None:
                     continue

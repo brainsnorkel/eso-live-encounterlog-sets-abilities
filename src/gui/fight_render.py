@@ -150,6 +150,7 @@ REVIEWED_LABEL = "Reviewed log"
 # Why a run has no split log to link (MainWindow._split_files)
 SPLITS_OFF_NOTE = "split logs are off: Settings → Files and splits"
 SPLIT_MISSING_NOTE = "the session begun {time} is not in the split folder"
+SPLIT_FOLDER_NOTE = "the split folder cannot be read: Settings → Files and splits"
 SPLIT_UNKNOWN_NOTE = "not known: the session began before the app read the log"
 SPLIT_OPEN_TIP = "Open the split log's folder, the file selected"
 SPLIT_COPY_TIP = ("Copy the split log's full path, for a log tool's upload dialog: the whole "

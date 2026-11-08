@@ -124,6 +124,22 @@ def _zip(folder: Path, name: str, size: int) -> Path:
     return path
 
 
+class TestScanByStamp(unittest.TestCase):
+
+    def test_other_sessions_files_are_passed_over_by_name(self):
+        """With the stamps wanted, the scan reads only their files (the
+        review of PR #210: every drawing read the whole folder)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            _log(folder, "261104200512-Sunspire-vet.log", 10)
+            _log(folder, "261104210000-Sunspire-vet.log", 10)
+            _zip(folder, "261104200512-Sunspire-vet-1.log.zip", 5)
+            found = split_retention.scan_splits(folder, {"261104200512"})
+            self.assertEqual(sorted(f.path.name for f in found),
+                             ["261104200512-Sunspire-vet-1.log.zip", "261104200512-Sunspire-vet.log"])
+            self.assertEqual(len(split_retention.scan_splits(folder)), 3)
+
+
 class TestSplitsFor(unittest.TestCase):
 
     def setUp(self):

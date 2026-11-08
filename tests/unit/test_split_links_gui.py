@@ -8,6 +8,7 @@ each say so; a block over two sessions lists both; a review lists the
 reviewed file, and its banner names the file alone under Hide names."""
 
 import os
+import sys
 import unittest
 from unittest import mock
 
@@ -97,6 +98,44 @@ class TestTheLinks(SplitLinksTestCase):
         win.history_list.select_entry(fights[1])
         self.assertNotIn("Split log", win.fight_view.toPlainText())
 
+    def test_the_result_strip_lists_every_session_of_the_run(self):
+        """A run over two sessions: the strip of the fight that completed it
+        lists both, as the Instance tab does, where it listed only its own
+        fight's (the review of PR #210)."""
+        fights = _stamped(_session())
+        later = self.splits / "261015201400-Kyne's-Aegis-vet.log"
+        later.write_text("the next session\n", encoding="utf-8")
+        for fight in fights[2:4]:
+            fight.session_stamp = "261015201400"
+        win = self._split_window(*fights)
+        win.history_list.select_entry(fights[3])
+        text = win.fight_view.toPlainText()
+        self.assertLess(text.index(str(self.kynes)), text.index(str(later)))
+
+    @unittest.skipUnless(sys.platform == "win32", "Explorer is Windows'")
+    def test_open_folder_starts_explorer_detached_with_the_file_selected(self):
+        """Started detached, so no process handle is left to wait for (the
+        review of PR #210); the call itself is stood in for, as it opens a
+        window."""
+        calls = []
+
+        class Explorer:
+            def setProgram(self, program):
+                calls.append(("program", program))
+
+            def setNativeArguments(self, arguments):
+                calls.append(("arguments", arguments))
+
+            def startDetached(self):
+                calls.append(("detached",))
+                return True
+
+        from gui import main_window
+        with mock.patch.object(main_window, "QProcess", Explorer):
+            main_window.reveal_file(self.kynes)
+        self.assertEqual(calls, [("program", "explorer"), ("arguments", f'/select,"{self.kynes}"'),
+                                 ("detached",)])
+
     def test_a_file_gone_says_so(self):
         win = self._split_window(*_stamped(_session()))
         self._click(win, HEADER)
@@ -111,12 +150,30 @@ class TestTheLinks(SplitLinksTestCase):
 class TestNoFile(SplitLinksTestCase):
 
     def test_split_logs_off(self):
-        """The default: a line says where to turn them on, with no links."""
-        win = self._split_window(*_stamped(_session()), enabled=False)
+        """The default, with no split of these sessions in the folder: a
+        line says where to turn them on, with no links."""
+        win = self._split_window(*_stamped(_session(), "261020200000"), enabled=False)
         self._click(win, HEADER)
         self.assertIn("Split log: split logs are off: Settings → Files and splits",
                       win.instance_view.toPlainText())
         self.assertEqual(self._split_hrefs(win.instance_view), [])
+
+    def test_splits_written_before_they_went_off_are_offered(self):
+        """Split logs off now, the session's split still in the folder: it
+        is offered, as the setting says nothing of the splits written
+        before (the review of PR #210)."""
+        win = self._split_window(*_stamped(_session()), enabled=False)
+        self._click(win, HEADER)
+        self.assertIn(f"Split log {self.kynes} (open folder)", win.instance_view.toPlainText())
+
+    def test_a_split_folder_that_cannot_be_read_says_so(self):
+        """Where every session would read as missing (the review of PR
+        #210)."""
+        win = self._split_window(*_stamped(_session()))
+        win.config.set("split.dir", str(self.root / "nowhere"))
+        self._click(win, HEADER)
+        self.assertIn("Split log: the split folder cannot be read", win.instance_view.toPlainText())
+        self.assertNotIn("not in the split folder", win.instance_view.toPlainText())
 
     def test_missing_and_not_known(self):
         """A session no file holds, and fights from a session whose
@@ -129,7 +186,8 @@ class TestNoFile(SplitLinksTestCase):
         self._click(win, HEADER)
         text = win.instance_view.toPlainText()
         unknown = text.index("Split log: not known: the session began before the app read the log")
-        missing = text.index("Split log: the session begun 20:14 is not in the split folder")
+        missing = text.index("Split log: the session begun 2026-10-15 20:14 is not in the split "
+                             "folder")
         self.assertLess(unknown, missing)
         self.assertEqual(self._split_hrefs(win.instance_view), [])
 
@@ -171,6 +229,18 @@ class TestReview(SplitLinksTestCase):
         self.assertIn(reviewed.name, win.banner.text())
         self.assertNotIn(str(self.splits), win.banner.text())
 
+    def test_the_status_bar_names_the_file_alone_under_hide_names(self):
+        """Loading and loaded name the reviewed file as the banner does (the
+        review of PR #210: the status bar still printed the whole path)."""
+        reviewed = self.splits / "261020200000-Sunspire-vet.log"
+        reviewed.write_text("reviewed\n", encoding="utf-8")
+        win = self._split_window()
+        win.hide_names_action.setChecked(True)
+        win._on_review_loaded(str(reviewed), _stamped(_session()))
+        message = win.statusBar().currentMessage()
+        self.assertIn(reviewed.name, message)
+        self.assertNotIn(str(self.splits), message)
+
 
 class TestRendering(unittest.TestCase):
     """The lines and their links, without a window."""
@@ -179,7 +249,12 @@ class TestRendering(unittest.TestCase):
     def test_the_lines_the_hrefs_and_their_hovers(self):
         from pathlib import Path
 
-        from gui.fight_render import _theme, split_from_href, split_lines_html, split_tooltips
+        from gui.fight_render import (
+            _theme,
+            split_from_href,
+            split_lines_html,
+            split_tooltips,
+        )
         files = [("Split log", Path("D:/splits/a.log"), ""), ("Split log", None, "a note")]
         lines = split_lines_html(files, _theme(False))
         self.assertIn("esolog:split/0/open", lines[0])
