@@ -12,6 +12,7 @@ with the boss at half health throughout.
 
 import unittest
 
+import split_retention
 from effect_rules import EffectTracker, parse_rules  # noqa: E402
 from engine_events import RecordingListener  # noqa: E402
 from esolog_tail import (  # noqa: E402
@@ -161,6 +162,20 @@ class TestFightCutInTwo(unittest.TestCase):
         events = engine.events()
         self.assertEqual([kind for kind, _entry in events], ['fight_completed', 'fight_updated'])
         self.assertIs(events[1][1], fight)
+
+    def test_the_session_stamp_survives_the_cut(self):
+        """The stamp the session's split is named by (issue #194) is on the
+        entry sent for the first part and still on it once the second
+        part has brought it up to date."""
+        stamp = split_retention.session_stamp(EPOCH)
+        engine = Engine().feed(FIRST_PART)
+        fight = engine.fights[0]
+        self.assertEqual(fight.session_stamp, stamp)
+        engine.feed(SECOND_PART)
+        self.assertIs(engine.fights[0], fight)
+        self.assertEqual([kind for kind, _entry in engine.events()],
+                         ['fight_completed', 'fight_updated'])
+        self.assertEqual(fight.session_stamp, stamp)
 
     def test_the_opener_survives_the_cut(self):
         """The first part's opener stands; the hit between the two lines

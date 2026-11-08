@@ -14,7 +14,8 @@ class FightHistoryEntry:
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
-                 'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version']
+                 'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
+                 'session_stamp']
 
     def __init__(self):
         self.timestamp = ""
@@ -120,6 +121,11 @@ class FightHistoryEntry:
         # The game version that wrote the fight's session ('eso.live.12.1',
         # BEGIN_LOG), for the fight history (fight_index); '' when unknown
         self.game_version = ""
+        # The session's BEGIN_LOG time as the splitter names the session's
+        # file ('261104200512', split_retention.session_stamp), by which the
+        # Instance tab finds the fight's split (session_splits, issue #194);
+        # '' when no BEGIN_LOG was seen
+        self.session_stamp = ""
 
 
 class FightHistory:

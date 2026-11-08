@@ -94,6 +94,7 @@ row's role and class; the plain-text copy ends with the same lines.
 
 import html
 import zlib
+from pathlib import PurePath
 from typing import List, Optional, Tuple
 
 from ability_icons import slugify
@@ -139,6 +140,25 @@ BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
 BANNER_HREF = "esolog:banner/"  # + open, save or copy: the run's score banner (issue #167)
+# + <n>/open or <n>/copy: the n-th split log listed beside a run's result,
+# its folder opened at the file or its full path copied (issue #194); the
+# place in the list the page was drawn with, never the path (#191)
+SPLIT_HREF = "esolog:split/"
+SPLIT_ACTIONS = ("open", "copy")
+SPLIT_LABEL = "Split log"
+# The split of a run's session before the list's first (session_splits.earlier_split)
+EARLIER_LABEL = "Earlier split log"
+REVIEWED_LABEL = "Reviewed log"
+# Why a run has no split log to link (MainWindow._split_files)
+SPLITS_OFF_NOTE = "split logs are off: Settings → Files and splits"
+SPLIT_MISSING_NOTE = "the session begun {time} is not in the split folder"
+SPLIT_FOLDER_NOTE = "the split folder cannot be read: Settings → Files and splits"
+SPLIT_UNKNOWN_NOTE = "not known: the session began before the app read the log"
+SPLIT_OPEN_TIP = "Open the split log's folder, the file selected"
+SPLIT_COPY_TIP = ("Copy the split log's full path, for a log tool's upload dialog: the whole "
+                  "path even with Hide names on")
+SPLIT_EARLIER_TIP = ("The run may have begun in this earlier session, which the list does not "
+                     "hold: the app reads only the log's latest session")
 ISSUES_HREF = "esolog:issues/"  # + the player's unit id: the cue of possible build issues
 # + the player's unit id: the row's 'p:18199 cd:121%' token, their effective
 # penetration and critical damage over the fight (pen_crit); a click opens
@@ -162,6 +182,60 @@ def _banner_links(entry, theme) -> str:
     return (f" &nbsp;·&nbsp; <a href='{BANNER_HREF}open' style='color:{link}'>Score banner</a>"
             f" <a href='{BANNER_HREF}save' style='color:{link};text-decoration:none'>(save as…)</a>"
             f" <a href='{BANNER_HREF}copy' style='color:{link};text-decoration:none'>(copy)</a>")
+def split_from_href(href: str):
+    """(place in the list, 'open' or 'copy') when *href* is a split log's
+    link, else None."""
+    if not href or not href.startswith(SPLIT_HREF):
+        return None
+    place, _slash, action = href[len(SPLIT_HREF):].partition("/")
+    if not (place.isascii() and place.isdigit()) or action not in SPLIT_ACTIONS:
+        return None
+    return int(place), action
+
+
+def split_lines_html(files, theme, hide_paths: bool = False) -> list:
+    """Design: the split logs beside a run (issue #194). The result strip
+    of the fight that completed a run, and the Instance tab under its
+    result, list the split logs that hold the run's logging sessions
+    (session_splits), so a run can be handed to a log tool: a line each
+    from *files*, a list of (label, path or None, note). A file shows with
+    two links, open folder, which opens its folder with the file selected,
+    and copy path, which puts its full path on the clipboard; they carry its
+    place in *files*, never the path (#191), and the window keeps the list
+    it drew the page with. A note says why there is no file: split logs
+    off (the default), the session's file missing, the session not known.
+    Under Hide names (*hide_paths*) a file shows by its name alone, since
+    its folder names the Windows user; the copy is still the full path, as
+    it goes to a file dialog, not a post. A review lists the reviewed file
+    instead. The lines name whole logging sessions, the safe unit to join
+    logs by (#195)."""
+    link, muted = theme["link"], theme["muted"]
+    lines = []
+    for place, (label, path, note) in enumerate(files or []):
+        if path is None:
+            lines.append(f"{html.escape(label)}: <span style='color:{muted}'>{html.escape(note)}</span>")
+            continue
+        shown = PurePath(path).name if hide_paths else str(path)
+        lines.append(
+            f"{html.escape(label)} {html.escape(shown)}"
+            f" <a href='{SPLIT_HREF}{place}/open' style='color:{link};text-decoration:none'>"
+            f"(open folder)</a>"
+            f" <a href='{SPLIT_HREF}{place}/copy' style='color:{link};text-decoration:none'>"
+            f"(copy path)</a>")
+    return lines
+
+
+def split_tooltips(files) -> dict:
+    """Hover text for the split logs' links of *files* (split_lines_html)."""
+    tips = {}
+    for place, (label, path, _note) in enumerate(files or []):
+        if path is not None:
+            why = f"<br>{SPLIT_EARLIER_TIP}" if label == EARLIER_LABEL else ""
+            tips[f"{SPLIT_HREF}{place}/open"] = SPLIT_OPEN_TIP + why
+            tips[f"{SPLIT_HREF}{place}/copy"] = SPLIT_COPY_TIP + why
+    return tips
+
+
 SECOND_MASTERY_CUE = "?"
 SECOND_MASTERY_TITLE = "Second Class Mastery not seen"
 NEVER_LOGGED_NOTE = "never shows in the log"
@@ -1184,8 +1258,13 @@ def render_html(entry, detailed: bool, dark: bool = False,
                 icons=None, links=None, set_links=None,
                 base_pt: float = 9.0, script_links=None,
                 text_color: Optional[str] = None, pen_crit_options=None,
-                names=None, line_px: int = 0, history: str = "") -> str:
+                names=None, line_px: int = 0, history: str = "",
+                split_files=None, hide_paths: bool = False) -> str:
     """Render one fight as HTML for a QTextBrowser.
+
+    split_files: the split logs of the run a fight completed, listed on its
+    result strip (split_lines_html, issue #194); hide_paths: Hide names is
+    on, so they show by their names alone.
 
     history: the line that sets the pull against the earlier kills of its
     boss from the fight history (fight_index.comparison_text, issue #170),
@@ -1264,7 +1343,9 @@ def render_html(entry, detailed: bool, dark: bool = False,
             f"style='border-style:solid;border-width:1px;"
             f"border-color:{theme['frame_border']};border-collapse:collapse;"
             f"background-color:{theme['frame_bg']};margin-bottom:6px'>"
-            f"<tr><td><b>{e(result_text(result))}</b>{_banner_links(entry, theme)}</td></tr></table>")
+            f"<tr><td><b>{e(result_text(result))}</b>{_banner_links(entry, theme)}"
+            f"{''.join('<br>' + line for line in split_lines_html(split_files, theme, hide_paths))}"
+            f"</td></tr></table>")
     # Not an <h3>: Qt would scale the nested stats by the heading's size
     # adjustment on top of their point size
     parts += [

@@ -109,6 +109,15 @@ class SplitFile:
         return now - self.reference > weeks * WEEK_SECONDS
 
 
+def session_stamp(unix_ms: int) -> str:
+    """The stamp the splitter names a session's files with: the session's
+    BEGIN_LOG time (the line's Unix milliseconds) in this machine's local
+    time, to the second. The splitter, the engine's session_stamp on each
+    fight and the checks for a session's split all call this one function,
+    so a fight's stamp is its split's name by construction."""
+    return datetime.fromtimestamp(unix_ms / 1000).strftime(_STAMP_FORMAT)
+
+
 def parse_split_name(name: str):
     """(stamp, zone, vet, zipped) for a splitter file name, else None."""
     match = _NAME.match(name)
@@ -126,12 +135,17 @@ def parse_split_name(name: str):
     return stamp, rest.replace("-", " "), vet, zipped
 
 
-def scan_splits(split_dir: Path) -> list[SplitFile]:
-    """The splitter's files directly in *split_dir* (never a subfolder)."""
+def scan_splits(split_dir: Path, stamps=None) -> list[SplitFile]:
+    """The splitter's files directly in *split_dir* (never a subfolder);
+    with *stamps*, only those sessions' files, the rest passed over by
+    their names' first twelve characters before anything else is read
+    (session_splits, at each drawing of a page)."""
     found = []
     try:
         with os.scandir(split_dir) as it:
             for entry in it:
+                if stamps is not None and entry.name[:12] not in stamps:
+                    continue
                 parsed = parse_split_name(entry.name)
                 if parsed is None:
                     continue
@@ -276,7 +290,7 @@ def latest_session_stamp(log_path: Path | None) -> str | None:
             parts = f.readline().decode("utf-8", errors="ignore").split(",")
         if len(parts) < 3 or parts[1] != "BEGIN_LOG":
             return None
-        return datetime.fromtimestamp(int(parts[2]) / 1000).strftime(_STAMP_FORMAT)
+        return session_stamp(int(parts[2]))
     except (OSError, ValueError):
         return None
 

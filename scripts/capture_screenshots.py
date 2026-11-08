@@ -6,7 +6,8 @@ drawn offscreen over a log file.
 
 The log is read, never written: the run uses a scratch config of its own
 (split files and archiving off, no update check), so the user's settings are
-untouched. The default log is the two-fight fixture the tests use; a
+untouched. --split-dir turns split files on into a scratch folder that holds
+a copy of the log, for the split log's line on the Instance tab. The default log is the two-fight fixture the tests use; a
 veteran trial split log from the app's split folder makes the pictures the
 guide expects (twelve players, a death, taunts). Output goes to
 docs/screencaps/ (--out to change), overwriting the same file names each
@@ -68,6 +69,10 @@ def main():
                         help="the app's text size in percent, 80 to 200 (Settings → Display)")
     parser.add_argument("--colorblind-graph", action="store_true",
                         help="the DPS graph's colour-blind colours and strokes (Settings → Display)")
+    parser.add_argument("--split-dir", default="",
+                        help="split logs on, into this folder: the Instance tab lists the run's "
+                             "split log when the folder holds a copy of the log. Never the real "
+                             "split folder: attaching writes a session's missing split")
     parser.add_argument("--dark", action="store_true",
                         help="the dark theme (the Windows 11 style's dark palette, set by hand)")
     args = parser.parse_args()
@@ -110,7 +115,7 @@ def main():
     config_path = Path(scratch.name) / "config.json"
     config_path.write_text(json.dumps({
         "log_path": str(log),
-        "split": {"enabled": False},
+        "split": {"enabled": bool(args.split_dir), "dir": args.split_dir},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
         "update": {"check_enabled": False},
         "display": {"text_scale": args.text_size, "colorblind_graph": args.colorblind_graph},

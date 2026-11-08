@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
-    QByteArray, QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal, Slot,
+    QByteArray, QCoreApplication, QEvent, QObject, QProcess, Qt, QThread, QTimer, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QAction, QColor, QDesktopServices, QFont, QFontMetrics, QGuiApplication, QKeySequence, QPalette,
@@ -27,7 +27,7 @@ from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from app_startup import engine_settings
 from data_staleness import status_text, status_tooltip
-from fight_blocks import fight_key
+from fight_blocks import difficulty_of, fight_key
 from fight_index import (
     FightIndex,
     comparison,
@@ -50,10 +50,12 @@ from gui.engine_worker import EngineWorker
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
 from gui.fight_render import (
-    ISSUES_CUE, anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
+    SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
+    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
-    render_plain_text, taken_tooltips,
+    render_plain_text, split_tooltips, taken_tooltips,
 )
 from gui.fight_tabs import FightViews, count_text
 from gui.fight_view import FightView, set_reduce_motion
@@ -72,6 +74,7 @@ from pen_crit import armour_row
 from pull_outcome import runs
 import recent_activity
 from recycle_bin import TRASH_NAME
+from session_splits import earlier_split, splits_for
 import review_load
 from session_recap import DISCORD_LIMIT, recap_text
 import split_retention
@@ -126,6 +129,21 @@ def state_style(state: str, dark: bool) -> str:
 def _encode_state(state: QByteArray) -> str:
     """Qt state blob -> JSON-safe text for the config file."""
     return base64.b64encode(bytes(state)).decode("ascii")
+
+
+def reveal_file(path: Path) -> None:
+    """Show *path* in its folder: on Windows, Explorer with the file
+    selected, since a split folder holds hundreds of files (issue #194),
+    started detached, so nothing is left to wait for; elsewhere the
+    folder."""
+    if sys.platform == "win32":
+        explorer = QProcess()
+        explorer.setProgram("explorer")
+        # One argument as Explorer reads it, the path quoted inside it
+        explorer.setNativeArguments(f'/select,"{path}"')
+        explorer.startDetached()
+    else:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
 
 def _decode_state(text) -> "QByteArray | None":
@@ -225,6 +243,11 @@ class MainWindow(QMainWindow):
         self._instance_block = []
         self._instance_links = {}
         self._instance_dirty = True
+        # The split logs listed on the Fight page's result strip and on the
+        # Instance page, as each was drawn: their links carry a place in
+        # these lists, never a path (issue #194)
+        self._fight_split_files = []
+        self._instance_split_files = []
         # Theme-aware text colors: pick per the actual window background
         self._dark = self.palette().color(self.backgroundRole()).lightness() < 128
         # The Hide names switch (issue #72, gui.name_mask): every player
@@ -450,6 +473,7 @@ class MainWindow(QMainWindow):
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
         self.fight_view.banner_requested.connect(self._show_banner)
+        self.fight_view.split_requested.connect(self._fight_split)
         self.fight_view.fight_deaths_requested.connect(self._show_fight_deaths)
         # The empty pane's Recent activity link and the files under it
         self.fight_view.activity_requested.connect(self._on_activity_requested)
@@ -484,6 +508,7 @@ class MainWindow(QMainWindow):
         self.instance_view.player_requested.connect(self._open_instance_player)
         self.instance_view.instance_copy_requested.connect(self._copy_instance)
         self.instance_view.banner_requested.connect(self._instance_banner)
+        self.instance_view.split_requested.connect(self._instance_split)
         self.fight_views.add_tab(self.instance_view, "&Instance")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)
         self.fight_views.search_placed.connect(self._set_tab_order)
@@ -1023,7 +1048,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setVisible(False)
             deleted = " — original deleted" if event.original_deleted else ""
             self.statusBar().showMessage(
-                f"Archived to {event.archive_path}{deleted}", 15000)
+                f"Archived to {self._shown_path(event.archive_path)}{deleted}", 15000)
             if event.original_deleted and event.archive_path:
                 self._archive_that_deleted_log = Path(event.archive_path)
             # The pane names the newest archive while no fight is on it
@@ -1255,7 +1280,7 @@ class MainWindow(QMainWindow):
                 self._attach_banner(entry)
                 if getattr(entry, "banner_path", None):
                     self._fight_changed(entry)
-        self.statusBar().showMessage(f"Monitoring {path}", 8000)
+        self.statusBar().showMessage(f"Monitoring {self._shown_path(path)}", 8000)
         self._end_replay()
         # Never over a review's fight, which stays on the pane
         if not self._fights and self._review_fights is None:
@@ -1276,9 +1301,8 @@ class MainWindow(QMainWindow):
         self._review_path = path
         self.statusBar().showMessage(
             f"Loaded {len(fights)} fight{'s' if len(fights) != 1 else ''} "
-            f"from {path}", 8000)
-        self.banner.setText(f"Reviewing {path} — live monitoring continues in "
-                            f"the background")
+            f"from {self._shown_path(path)}", 8000)
+        self.banner.setText(self._review_banner_text())
         self.banner.setVisible(True)
         self.back_to_live_action.setVisible(True)
         self._reload_list(fights)
@@ -1532,6 +1556,12 @@ class MainWindow(QMainWindow):
         tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
+        # The split logs of the run this fight completed, every session of
+        # it, on its result strip (issue #194)
+        split_files = (self._split_files(self.history_list.block_of(entry) or [entry])
+                       if getattr(entry, "trial_result", None) else [])
+        self._fight_split_files = split_files
+        tooltips.update(split_tooltips(split_files))
         if self._detailed:
             tooltips.update(anchor_tooltips(
                 entry, links=esohub_ability_url, set_links=esohub_set_url,
@@ -1559,7 +1589,8 @@ class MainWindow(QMainWindow):
                                             pen_crit_options=pen_crit_options,
                                             names=names,
                                             line_px=QFontMetrics(self.fight_view.font()).height(),
-                                            history=history))
+                                            history=history, split_files=split_files,
+                                            hide_paths=self._hide_names))
         if self._search_off_on_graph():
             # The graph on screen: no search there
             if others:
@@ -1691,6 +1722,8 @@ class MainWindow(QMainWindow):
         self._instance_block = []
         self._instance_links = {}
         self._instance_dirty = True
+        self._fight_split_files = []
+        self._instance_split_files = []
         # Nor is the last fight's deaths or instance kept on the hidden
         # pages, their names as they were drawn, Hide names or not
         for view in (self.deaths_view, self.instance_view):
@@ -2045,13 +2078,18 @@ class MainWindow(QMainWindow):
         # The live list's first instance may have begun before the log's
         # latest logging session, the one the app reads at its start
         opens_list = self._review_fights is None and bool(fights) and block[0] is fights[0]
+        split_files = self._split_files(block)
+        tips = instance_tooltips(block, index_of, shown=entry, names=names)
+        tips.update(split_tooltips(split_files))
         view.set_link_hover_color(link_color(self._dark))
-        view.set_tooltips(instance_tooltips(block, index_of, shown=entry, names=names))
+        view.set_tooltips(tips)
         view.setHtml(render_instance_html(
             block, index_of, shown=entry, dark=self._dark, icons=view.icons,
             base_pt=view.font().pointSizeF(), names=names,
             text_color=view.palette().color(QPalette.Text).name(),
-            opens_list=opens_list, fight_index=self.fight_index))
+            opens_list=opens_list, fight_index=self.fight_index, split_files=split_files,
+            hide_paths=self._hide_names))
+        self._instance_split_files = split_files
         self._instance_block = block
         self._instance_links = {places[id(fight)]: fight for fight in block if id(fight) in places}
         self._instance_dirty = False
@@ -2137,6 +2175,77 @@ class MainWindow(QMainWindow):
             return
         self._copy_recap(block, "Instance")
 
+    def _split_files(self, fights) -> list:
+        """The split logs behind *fights* (an instance's, or the run a fight
+        with a result completed), as gui.fight_render.split_lines_html
+        lists them: a (label, path or None, note) for each logging session
+        of theirs, in order (session_splits, issue #194), the whole
+        session's file first. The files are looked for whatever the setting
+        says now, so splits written before split logs went off are still
+        offered; with none found and split logs off, one line says where to
+        turn them on. A split folder that cannot be read says so, where its
+        sessions would read as missing. Under a review, the reviewed
+        file.
+
+        A list that begins inside a run, as after the app's start or a
+        Settings replay, which read the log's latest session alone, holds
+        only the run's later fights: the split of the session before, of the
+        same instance by its name, comes first, as the earlier split
+        (session_splits.earlier_split). The folder is found from the log
+        known (_known_log), never by a search for the log, which listed the
+        Logs folders at each drawing (the fresh review of PR #210)."""
+        if self._review_fights is not None:
+            return [(REVIEWED_LABEL, Path(self._review_path), "")] if self._review_path else []
+        folder = self._split_folder(self._known_log())
+        readable = folder is not None and folder.is_dir()
+        sessions = splits_for((getattr(fight, "session_stamp", "") for fight in fights),
+                              folder if readable else None)
+        earlier = None
+        if readable and fights and self._fights and fights[0] is self._fights[0]:
+            first = fights[0]
+            earlier = earlier_split(getattr(first, "session_stamp", ""), first.zone_name,
+                                    difficulty_of(first) == "VETERAN", folder)
+        if (not self.config.get("split.enabled", False) and earlier is None
+                and not any(s.best for s in sessions)):
+            return [(SPLIT_LABEL, None, SPLITS_OFF_NOTE)]
+        files = [(EARLIER_LABEL, earlier.path, "")] if earlier is not None else []
+        for session in sessions:
+            if session.best is not None:
+                files.append((SPLIT_LABEL, session.best.path, ""))
+            elif not session.known:
+                files.append((SPLIT_LABEL, None, SPLIT_UNKNOWN_NOTE))
+            elif not readable:
+                files.append((SPLIT_LABEL, None, SPLIT_FOLDER_NOTE))
+            else:
+                began = datetime.strptime(session.stamp, "%y%m%d%H%M%S")  # noqa: DTZ007
+                files.append((SPLIT_LABEL, None,
+                              SPLIT_MISSING_NOTE.format(time=f"{began:%Y-%m-%d %H:%M}")))
+        return files
+
+    @Slot(int, str)
+    def _fight_split(self, place, action):
+        """A split log's link on the Fight page's result strip."""
+        self._split_action(self._fight_split_files, place, action)
+
+    @Slot(int, str)
+    def _instance_split(self, place, action):
+        """A split log's link on the Instance page."""
+        self._split_action(self._instance_split_files, place, action)
+
+    def _split_action(self, files, place, action):
+        """Open the folder of the *place*-th split log of *files* with the
+        file selected, or copy its full path, Hide names or not: it is for
+        a file dialog, not a post (issue #194)."""
+        path = files[place][1] if 0 <= place < len(files) else None
+        if path is None or not Path(path).is_file():
+            self.statusBar().showMessage("That log is not there now", 5000)
+            return
+        if action == "copy":
+            QGuiApplication.clipboard().setText(str(path))
+            self.statusBar().showMessage("Log's path copied", 4000)
+        else:
+            reveal_file(Path(path))
+
     @Slot(str)
     def _instance_banner(self, action):
         """The Instance page's banner links: the banner of the instance's
@@ -2213,11 +2322,23 @@ class MainWindow(QMainWindow):
         self.config.save()
         self._refresh_names()
 
+    def _shown_path(self, path) -> str:
+        """*path* as the window shows it: under Hide names its name alone,
+        since its folder names the Windows user (issue #194)."""
+        return Path(path).name if self._hide_names else str(path)
+
+    def _review_banner_text(self) -> str:
+        """The review banner's line, the file as _shown_path shows it."""
+        return (f"Reviewing {self._shown_path(self._review_path or '')} — live monitoring "
+                f"continues in the background")
+
     def _refresh_names(self):
         """Redraw everything that shows a player name with the current
         mask: the pane and the strip through _show_fight, and each open
         window with a mask for the fight it holds, which may not be the
-        one on screen."""
+        one on screen; and the review banner, which names a folder."""
+        if self._review_path:
+            self.banner.setText(self._review_banner_text())
         if self.history_list.current_entry() is not None:
             # Redrawn in place: the reader is looking at this page, about
             # to take the picture, so it stays where it was scrolled to
@@ -2432,7 +2553,7 @@ class MainWindow(QMainWindow):
             if target:
                 try:
                     shutil.copyfile(path, target)
-                    self.statusBar().showMessage(f"Saved {target}", 5000)
+                    self.statusBar().showMessage(f"Saved {self._shown_path(target)}", 5000)
                 except OSError as exc:
                     self.statusBar().showMessage(f"Could not save the banner: {exc}", 8000)
         elif action == "copy":
@@ -2522,7 +2643,7 @@ class MainWindow(QMainWindow):
                     members, 0, False)
                 if not ok:
                     return
-        self.statusBar().showMessage(f"Loading {path}…")
+        self.statusBar().showMessage(f"Loading {self._shown_path(path)}…")
         self.request_review.emit(path, member)
 
     def _exit_review(self):

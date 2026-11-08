@@ -187,6 +187,10 @@ TOPICS = [
         "src/recycle_bin.py",
         "src/log_open.py",
     ]),
+    ("Split files for an instance: from a fight to its session's split", [
+        "src/session_splits.py",
+        "src/gui/fight_render.py:split_lines_html",
+    ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",
