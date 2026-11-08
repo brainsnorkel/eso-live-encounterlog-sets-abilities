@@ -1114,6 +1114,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # The game version on the session's BEGIN_LOG line, for each
         # fight's entry (fight_index)
         self.game_version: str = ""
+        # The session's stamp, as the splitter names its file, for each
+        # fight's entry (session_splits, issue #194): '' until a BEGIN_LOG
+        self.session_stamp: str = ""
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -2144,6 +2147,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # ("eso.live.12.1"), on each of its fights for the fight history
         # (fight_index, issue #170)
         self.game_version = entry.fields[4] if len(entry.fields) > 4 else ""
+        # The stamp the splitter names this session's file with, from the
+        # same milliseconds by the same function, on each of its fights so
+        # the Instance tab can find their split (session_splits, issue #194)
+        try:
+            self.session_stamp = split_retention.session_stamp(entry.timestamp)
+        except (OverflowError, OSError, ValueError):
+            self.session_stamp = ""
         # Relative-ms offsets restart with each BEGIN_LOG session (the
         # entry's timestamp is the Unix time: the line's own is its first
         # field)
@@ -3562,6 +3572,7 @@ class ESOLogAnalyzer(ListenerMixin):
 
         entry.trial_result = enc.trial_result
         entry.game_version = self.game_version
+        entry.session_stamp = self.session_stamp
 
         # Kill or wipe, the boss's health as it ended, and each player's
         # time dead (pull_outcome, issues #168 and #169). Players carried
@@ -4188,10 +4199,9 @@ class LogSplitter:
             
         # Create temporary filename based on BEGIN_LOG timestamp
         timestamp = self.pending_begin_log.timestamp
-        dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
         
-        # Format: YYMMDDHHMMSS-temp.log
-        time_str = dt.strftime("%y%m%d%H%M%S")
+        # Format: YYMMDDHHMMSS-temp.log, the session's stamp
+        time_str = split_retention.session_stamp(timestamp)
         temp_filename = f"{time_str}-temp.log"
         self.temp_file_path = self.split_dir / temp_filename
         
@@ -4240,10 +4250,10 @@ class LogSplitter:
         
         # Create final filename based on BEGIN_LOG timestamp and combat zone
         timestamp = self.pending_begin_log.timestamp
-        dt = datetime.fromtimestamp(timestamp / 1000)  # Convert from milliseconds
         
-        # Format: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log
-        time_str = dt.strftime("%y%m%d%H%M%S")
+        # Format: YYMMDDHHMMSS-{Zone-Name with dashes}{-vet or blank}.log,
+        # the session's stamp first
+        time_str = split_retention.session_stamp(timestamp)
         
         difficulty_suffix = "-vet" if self.current_difficulty.upper() == "VETERAN" else ""
         zone_suffix = self.current_zone.replace(" ", "-") if self.current_zone else "Unknown-Zone"
@@ -4753,8 +4763,7 @@ class LogFileMonitor:
             parts = line.split(',')
             if len(parts) < 3 or parts[1] != 'BEGIN_LOG':
                 return False
-            stamp = datetime.fromtimestamp(
-                int(parts[2]) / 1000).strftime('%y%m%d%H%M%S')
+            stamp = split_retention.session_stamp(int(parts[2]))
             # A zipped split (issue #86) is the session's split too: missing
             # it here would write the session out again at every start
             split_dir = Path(self.log_splitter.split_dir)

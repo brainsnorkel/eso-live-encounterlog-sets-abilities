@@ -1,7 +1,7 @@
 """The review's engine side (issue #107): the outline of a log's sessions,
 the recent sessions offered for a large log, and a replay that starts at a
 session's BEGIN_LOG giving that session's fights as a whole-file replay
-does."""
+does, each with its session's stamp (issue #194)."""
 
 import tempfile
 import threading
@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 import review_load
+import split_retention
 from app_config import AppConfig
 from app_startup import build_analyzer
 
@@ -79,6 +80,24 @@ class TestReviewLoad(unittest.TestCase):
         self.assertEqual(outline.begin_log(1), 0)
         self.assertEqual(_key(self._replay(headless, outline.begin_log(1))),
                          _key(self.fixture_fights))
+
+    def test_each_sessions_fights_carry_its_stamp(self):
+        """A review builds its fights through the same engine, so each
+        carries the stamp its session's split is named by (issue #194): a
+        replay from a session's BEGIN_LOG too, and nothing for a session
+        whose BEGIN_LOG the log does not hold."""
+        first, second = (split_retention.session_stamp(ms) for ms in (1755729685851, 1755816085851))
+        count = len(self.fixture_fights)
+        self.assertEqual([f.session_stamp for f in self._replay(self.log)],
+                         [first] * count + [second] * count)
+        self.assertEqual([f.session_stamp for f in self._replay(self.log, from_begin_log=1)],
+                         [second] * count)
+        text = FIXTURE.read_text(encoding='utf-8')
+        headless = self.dir / 'headless.log'
+        headless.write_text(''.join(line for line in text.splitlines(keepends=True)
+                                    if ',BEGIN_LOG,' not in line) + text, encoding='utf-8')
+        self.assertEqual([f.session_stamp for f in self._replay(headless)],
+                         [''] * count + [first] * count)
 
     def test_cancel_stops_the_replay(self):
         cancel = threading.Event()
