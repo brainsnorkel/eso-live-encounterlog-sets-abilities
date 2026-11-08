@@ -99,7 +99,7 @@ from typing import List, Optional, Tuple
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
 from fight_opener import PlayerName, opener_parts
-from gui.death_render import death_chip_html, deaths_by_unit
+from gui.death_render import FIGHT_DEATHS_HREF, SKULL, death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
@@ -636,6 +636,19 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
             f"{extra}</td></tr>")
     return (f"<p style='margin:6px 0 2px 0'><b>{ISSUES_TITLE}</b></p>"
             f"<table cellpadding='2' cellspacing='0'>{''.join(rows)}</table>")
+
+
+def _deaths_link(entry, theme: dict) -> str:
+    """The header's Deaths N. With a death, a link to the fight's Deaths
+    tab (issue #196), keeping the look of plain text as the group dps
+    figure does, a skull in the link colour inside it saying it is one;
+    the &nbsp; keeps the skull on its line when the header wraps."""
+    deaths = int(getattr(entry, "deaths", 0) or 0)
+    if not deaths:
+        return f"Deaths {deaths}"
+    muted, link = theme["muted"], theme["link"]
+    return (f'<a href="{FIGHT_DEATHS_HREF}" style="text-decoration:none;color:{muted}">'
+            f"Deaths {deaths}&nbsp;<span style='color:{link}'>{SKULL}</span></a>")
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -1236,7 +1249,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
-             f" · Deaths {entry.deaths}")
+             f" · {_deaths_link(entry, theme)}")
     # The fight that completed a trial: the run's result in a strip across
     # the top, framed like a build card (trial_result)
     result = getattr(entry, "trial_result", None)
