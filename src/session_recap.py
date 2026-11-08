@@ -48,9 +48,10 @@ TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DISCORD_LIMIT = 2000  # characters in one Discord message
 
 
-def _start(entry):
+def start(entry):
     """The fight's start as the list shows it: local wall-clock time, with
-    no zone to name."""
+    no zone to name; None for a fight fought before the log gave the time.
+    The Instance tab reads it too (gui.instance_render)."""
     try:
         return datetime.strptime(str(entry.timestamp), TIME_FORMAT)  # noqa: DTZ007
     except (TypeError, ValueError):
@@ -62,13 +63,13 @@ def span(fights) -> str:
     end, from the first and the last fights with a clock (one fought
     before the log gave the time reads 'Unknown Time'); '' with none. The
     Instance tab's heading uses it too (gui.instance_render)."""
-    timed = [(start, fight) for fight in fights if (start := _start(fight)) is not None]
+    timed = [(began, fight) for fight in fights if (began := start(fight)) is not None]
     if not timed:
         return ""
-    start, (last, last_fight) = timed[0][0], timed[-1]
+    first, (last, last_fight) = timed[0][0], timed[-1]
     end = last + timedelta(seconds=float(last_fight.duration_s or 0))
-    end_text = end.strftime("%H:%M") if end.date() == start.date() else end.strftime("%Y-%m-%d %H:%M")
-    return f"{start.strftime('%Y-%m-%d %H:%M')} to {end_text}"
+    end_text = end.strftime("%H:%M") if end.date() == first.date() else end.strftime("%Y-%m-%d %H:%M")
+    return f"{first.strftime('%Y-%m-%d %H:%M')} to {end_text}"
 
 
 def kill_figures(pull_fights) -> tuple[float, float, bool]:
@@ -145,6 +146,19 @@ def _flagged_players(fights) -> int:
     return len(flagged)
 
 
+def trash_text(fights) -> str:
+    """'14 fights, 9:30, 3 deaths': the fights of *fights* that are no
+    pull, their time and their deaths; '' with none. The Instance tab
+    writes the same (gui.instance_render)."""
+    trash = [f for f in fights if not getattr(f, "pull", None)]
+    if not trash:
+        return ""
+    deaths = sum(int(f.deaths or 0) for f in trash)
+    text = (f"{len(trash)} fight{'s' if len(trash) != 1 else ''}, "
+            f"{clock(sum(float(f.duration_s or 0) for f in trash))}")
+    return text + (f", {_deaths(deaths)}" if deaths else "")
+
+
 def _block_lines(fights, names) -> list:
     heading = [header_text(fights[0])]
     when = span(fights)
@@ -156,12 +170,9 @@ def _block_lines(fights, names) -> list:
     lines = [" · ".join(heading)]
     for run in runs(fights):
         lines += _run_lines(run, names)
-    trash = [f for f in fights if not getattr(f, "pull", None)]
+    trash = trash_text(fights)
     if trash:
-        deaths = sum(int(f.deaths or 0) for f in trash)
-        line = f"Trash: {len(trash)} fight{'s' if len(trash) != 1 else ''}, " \
-               f"{clock(sum(float(f.duration_s or 0) for f in trash))}"
-        lines.append(line + (f", {_deaths(deaths)}" if deaths else ""))
+        lines.append(f"Trash: {trash}")
     flagged = _flagged_players(fights)
     if flagged:
         lines.append(f"ⓘ {flagged} player{'s' if flagged != 1 else ''} with possible build issues")

@@ -6,7 +6,6 @@ settings, manual archive, and the freshness status bar.
 import base64
 import sys
 import weakref
-from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 
@@ -1578,14 +1577,13 @@ class MainWindow(QMainWindow):
                 self._instance_dirty = True
             else:
                 self._deaths_dirty = True
-            same = self._page_state(page, entry)[1]
-            if same and search_from is None:
-                # Another fight of the instance on screen: the search goes
-                # on from its place, as the page keeps its own
-                search_from = self._search_place(page.textCursor().position())
-            with ExitStack() as kept:
-                if same:
-                    kept.enter_context(page.keeping_place())
+            if self._page_state(page, entry)[1]:
+                if search_from is None:
+                    # Another fight of the instance on screen: the search
+                    # goes on from its place, as the page keeps its own
+                    search_from = self._search_place(page.textCursor().position())
+                self._draw_in_place(page, entry, search_from)
+            else:
                 self._draw_page(page, entry)
                 self._apply_search(search_from=search_from)
             return
@@ -1943,12 +1941,7 @@ class MainWindow(QMainWindow):
                 place = (self._search_place(searched.textCursor().position())
                          if same_search else None)
                 searched.give_link_back()
-                with searched.keeping_place():
-                    self._draw_page(searched, entry)
-                    if place is not None:
-                        self._apply_search(search_from=place)
-                if place is None:
-                    self._apply_search()  # a search typed meanwhile: its first match
+                self._draw_in_place(searched, entry, place)
             else:
                 self._draw_page(searched, entry)
                 self._apply_search()  # a new fight or instance: its first match
@@ -2013,6 +2006,21 @@ class MainWindow(QMainWindow):
         else:
             self._draw_instance(entry)
 
+    def _draw_in_place(self, view, entry, search_from=None):
+        """The Deaths or Instance page *view* drawn again for *entry* where
+        the reader had it (FightView.keeping_place), the search going on
+        from its place among the matches (*search_from*, _search_place); or,
+        with None, a search typed while the page was hidden, from its first
+        match, found after the page is put back, which would otherwise take
+        the page from it. The one way a page is drawn in place: a fight, a
+        tab chosen, a pull or a change in the instance on screen."""
+        with view.keeping_place():
+            self._draw_page(view, entry)
+            if search_from is not None:
+                self._apply_search(search_from=search_from)
+        if search_from is None:
+            self._apply_search()
+
     def _same_instance(self, entry) -> bool:
         """Whether *entry* is in the instance the Instance page shows: the
         block of the list that the same fight opens."""
@@ -2060,10 +2068,7 @@ class MainWindow(QMainWindow):
         if self.fight_tabs.currentWidget() is not view:
             self._instance_dirty = True
             return
-        place = self._search_place(view.textCursor().position())
-        with view.keeping_place():
-            self._draw_instance(shown)
-            self._apply_search(search_from=place)
+        self._draw_in_place(view, shown, self._search_place(view.textCursor().position()))
 
     def _open_instance_from_list(self, row):
         """A click on a header, run or result row of the list: the Instance
@@ -2114,12 +2119,14 @@ class MainWindow(QMainWindow):
             self.history_list.select_entry(entry)
 
     def _open_instance_player(self, index, unit_id):
-        """A name on the Instance page: the player window on Build, on the
-        fight the link names (the one on screen when they were in it, else
-        their last of the instance, gui.instance_render)."""
+        """A name on the Instance page: the player window on the fight the
+        link names (gui.instance_render), on Build; on Deaths for a player
+        with no row in it, who only died there, as the pane's Also died
+        opens them."""
         entry = self._instance_fight(index)
         if entry is not None:
-            self._open_player(unit_id, BUILD_TAB, entry=entry)
+            tab = BUILD_TAB if player_for(entry, unit_id) is not None else DEATHS_TAB
+            self._open_player(unit_id, tab, entry=entry)
 
     def _copy_instance(self):
         """Copy this instance, on the Instance page: its fights as a recap,

@@ -44,20 +44,23 @@ drawing. The page reads, from the top:
   was a link, only that letter stayed marked as an anchor, all
   FightView's hover cue and Tab key then took for the link (probed on
   PySide6 6.12.0).
-- **What ended the pulls**: the run row's hover (pull_outcome.run_details)
-  widened to every pull of the instance: the first death of each pull,
-  the killers and the share the bosses dealt, and the longest dead, a
-  second or more (a solo player's fight ends as they die, which would read
-  "0s"), the TOP of each and an ellipsis when there are more. A killer is
-  named after the ability when it is not one of the instance's bosses.
-- **Trash**, as the copy counts it, and a solo dungeon's Misfortunes once:
-  the run's, the same at every pull (misfortunes.py).
+- **What ended the pulls**: the run row's hover widened to every pull of
+  the instance, counted once for both (pull_outcome.what_ended): the
+  first death of each pull, the killers and the share the bosses dealt,
+  and the longest dead, a second or more (a solo player's fight ends as
+  they die, which would read "0s"), the TOP of each and an ellipsis when
+  there are more. A killer is named after the ability when it is not one
+  of the instance's bosses.
+- **Trash**, in the copy's words (session_recap.trash_text), and a solo
+  dungeon's Misfortunes once: the run's, the same at every pull
+  (misfortunes.py).
 - **Players**: everyone of the instance but the companions, each once,
   told by handle across its fights, a player the log gives no name
-  ("anon") by role and class, which is all that tells two of them apart
-  from one fight to the next. Role and class are the ones most of their
-  fights read, the latest winning a tie: the role is the engine's guess
-  per fight, and a healer can read as a damage dealer on trash. Pulls
+  ("anon") by unit id and class, as the run row's hover tells them apart:
+  the class keeps apart two that took one unit id in two logging sessions
+  of the instance. Not by role, which the engine guesses fight by fight (a
+  healer can read as a damage dealer on trash): role and class are the
+  ones most of their fights read, the latest winning a tie. Pulls
   counts the pulls they were in; deaths and time dead count every fight,
   trash too, as each death in a trial costs vitality, so a player's time
   dead can exceed the longest dead line's, which counts the pulls. A
@@ -68,8 +71,10 @@ drawing. The page reads, from the top:
   trial's table 1,522 px tall, 688 with the line (measured; the line
   costs 30-85 px at 100%). A player who died with no row of their own
   (the pane's Also died) is listed with no role. Each name is a link to
-  that player's window on Build, on the fight on screen when they were in
-  it, else their last fight of the instance, and its hover names that
+  that player's window on Build, on the fight on screen when they have a
+  row in it, else their last fight of the instance with one; a player who
+  never had a row (their build never reached the log) opens on Deaths, at
+  their last death, as the pane's Also died does. The hover names that
   fight ("@x in Nahviintaas, pull 13").
 
 The tables keep their words whole up to 200% text (measured over real
@@ -95,7 +100,6 @@ sorted(), never in place.
 
 import html
 from collections import Counter
-from datetime import datetime
 
 import session_recap
 from fight_blocks import header_text
@@ -117,8 +121,9 @@ from pull_outcome import (
     outcome_text,
     pulls,
     run_name,
-    run_summary,
+    run_outcome_parts,
     runs,
+    what_ended,
 )
 from trial_result import result_text
 
@@ -171,6 +176,7 @@ FIT = "1"
 ROLE_ORDER = {"T": 0, "H": 1, "D": 2}
 FIGHT_TIP = "Click to show this fight on the Fight tab"
 PLAYER_TIP = "Click for their build in that fight"
+DEATH_TIP = "Click for their death in that fight"  # a player who never had a row
 COPY_TIP = ("Copy this instance as text for Discord: its bosses, what ended the pulls, the "
             "trash and the result, as Copy session (Ctrl+Shift+C) writes each instance")
 
@@ -227,16 +233,6 @@ def _lower_first(text: str) -> str:
     return text[:1].lower() + text[1:]
 
 
-def _start(fight):
-    """The fight's start as the list shows it, local time; None for one
-    fought before the log gave the time."""
-    try:
-        return datetime.strptime(str(getattr(fight, "timestamp", "") or ""),  # noqa: DTZ007
-                                 session_recap.TIME_FORMAT)
-    except (TypeError, ValueError):
-        return None
-
-
 def _deaths_of(fights) -> int:
     return sum(int(getattr(fight, "deaths", 0) or 0) for fight in fights)
 
@@ -261,7 +257,7 @@ def _fight_label(fight, places) -> str:
         run, number, part, parts = place
         label = f"{run_name(run)}, pull {number}"
         return label + (f", part {part} of {parts}" if parts > 1 else "")
-    start = _start(fight)
+    start = session_recap.start(fight)
     boss = str(getattr(fight, "boss_name", "") or "")
     if boss:
         return f"{boss} (trash, {start:%H:%M})" if start else f"{boss} (trash)"
@@ -270,16 +266,15 @@ def _fight_label(fight, places) -> str:
 
 def _run_result(run, fight_index) -> str:
     """'killed on pull 3, 41s between pulls', 'best 43%, 8 wipes at 80 to
-    90%, 43s between pulls' (the run row's summary after its count), or
-    for one pull its verdict, 'kill' or 'wipe 62%'; then the best earlier
-    kill with this roster when the fight history has one."""
+    90%, 43s between pulls' (the run row's summary after its count,
+    pull_outcome.run_outcome_parts), or for one pull its verdict, 'kill' or
+    'wipe 62%'; then the best earlier kill with this roster when the fight
+    history has one."""
     final = getattr(run[-1][-1], "pull", None) or {}
     if len(run) == 1:
         text = "kill" if final.get("outcome") == KILL else _lower_first(outcome_text(final))
     else:
-        summary = run_summary(run)
-        head = f"{run_name(run)}: {len(run)} pulls"
-        text = summary[len(head):].lstrip(", ") if summary.startswith(head) else summary
+        text = ", ".join(run_outcome_parts(run))
     parts = [text] if text else []
     best = run_best_kill(fight_index, run)
     if best:
@@ -287,12 +282,11 @@ def _run_result(run, fight_index) -> str:
     return ", ".join(parts)
 
 
-def _player_key(name: str, row) -> tuple:
+def _player_key(name: str, unit_id: str, cls: str) -> tuple:
     """Who a row or a death is across the block's fights: the handle, or an
-    anon's role and class (see the module)."""
+    anon's unit id and class (see the module)."""
     if name == ANON:
-        row = row or {}
-        return (ANON, str(row.get("role") or ""), _join(row.get("class_abbr", "")))
+        return (ANON, unit_id, cls)
     return (name,)
 
 
@@ -309,9 +303,13 @@ def _most(values: list) -> str:
 def _players(block, block_pulls) -> list:
     """The block's players in the table's order (see the module), each a
     dict: name, role, class, pulls (how many), deaths, dead_ms, issues
-    ({finding's key: (latest title, fights)}) and seen ([(fight, unit id)],
-    in block order)."""
+    ({finding's key: (latest title, fights)}) and seen ([(fight, unit id,
+    whether they have a row in it)], in block order)."""
     pull_of = {id(fight): number for number, pull in enumerate(block_pulls) for fight in pull}
+    # An anon's class by unit id, for a death of theirs with no row
+    classes = {str(p.get("unit_id", "")): _join(p.get("class_abbr", ""))
+               for fight in block for p in getattr(fight, "players", None) or []
+               if not p.get("companion") and _join(p.get("name", "")) == ANON}
     found = {}
 
     def note(key, name):
@@ -320,8 +318,8 @@ def _players(block, block_pulls) -> list:
                           "dead_ms": 0, "issues": {}, "seen": []}
         return found[key]
 
-    def was_in(player, fight, unit_id, died, time_dead):
-        player["seen"].append((fight, unit_id))
+    def was_in(player, fight, unit_id, row, died, time_dead):
+        player["seen"].append((fight, unit_id, row))
         player["deaths"] += died.get(unit_id, 0)
         player["dead_ms"] += int(time_dead.get(unit_id, 0) or 0)
         if id(fight) in pull_of:
@@ -337,14 +335,14 @@ def _players(block, block_pulls) -> list:
                 continue
             unit_id = str(p.get("unit_id", ""))
             name = _join(p.get("name", ""))
-            player = note(_player_key(name, p), name)
-            listed.add(unit_id)
             role, cls = str(p.get("role") or ""), _join(p.get("class_abbr", ""))
+            player = note(_player_key(name, unit_id, cls), name)
+            listed.add(unit_id)
             if role:
                 player["roles"].append(role)
             if cls:
                 player["classes"].append(cls)
-            was_in(player, fight, unit_id, died, time_dead)
+            was_in(player, fight, unit_id, True, died, time_dead)
             for finding in p.get("build_issues") or []:
                 key = tuple(str(finding.get(part) or "") for part in ("rule", "set", "skill", "star"))
                 _title, fights = player["issues"].get(key, ("", 0))
@@ -356,7 +354,8 @@ def _players(block, block_pulls) -> list:
                 continue
             listed.add(unit_id)
             name = str(recap.get("name") or "unknown")
-            was_in(note(_player_key(name, None), name), fight, unit_id, died, time_dead)
+            was_in(note(_player_key(name, unit_id, classes.get(unit_id, "")), name),
+                   fight, unit_id, False, died, time_dead)
     out = []
     for player in found.values():
         out.append({"name": player["name"], "role": _most(player["roles"]),
@@ -368,15 +367,18 @@ def _players(block, block_pulls) -> list:
 
 
 def _link_place(player, index_of, shown):
-    """(place, unit id, fight) of the fight a player's name opens: the one
-    on screen when they were in it, else their last of the block, each
-    only when index_of places it; None when it places none."""
-    seen = player["seen"]
-    order = [pair for pair in reversed(seen) if pair[0] is shown] + list(reversed(seen))
-    for fight, unit_id in order:
+    """(place, unit id, fight, whether they have a row in it) of the fight
+    a player's name opens: of the fights they have a row in, the one on
+    screen, else their last; for a player who never had one, their last
+    death, which the window opens on Deaths (see the module). Each only
+    when index_of places it; None when it places none."""
+    seen = list(reversed(player["seen"]))
+    rows = [each for each in seen if each[2]]
+    order = [each for each in rows if each[0] is shown] + rows + [each for each in seen if not each[2]]
+    for fight, unit_id, row in order:
         place = index_of(fight)
         if place is not None:
-            return place, unit_id, fight
+            return place, unit_id, fight, row
     return None
 
 
@@ -412,7 +414,7 @@ def _heading_html(block, theme: dict, e, base_pt: float, opens_list: bool) -> st
               f"{e(header_text(block[0]))}</span>&nbsp;&nbsp; "
               f"<span style='color:{muted}'>{e(' · '.join(facts))} · </span>{copy}</p>")]
     if opens_list:
-        start = next((at for at in map(_start, block) if at is not None), None)
+        start = next((at for at in map(session_recap.start, block) if at is not None), None)
         note = LISTED_FROM.format(time=f"{start:%H:%M}") if start else LISTED_EARLIER
         parts.append(f"<p style='margin:0;color:{muted}'>{e(note)}</p>")
     return "".join(parts)
@@ -519,94 +521,55 @@ def _counted_html(counter: Counter, item_html) -> str:
 
 def _ended_html(block_pulls, theme: dict, names, base_pt: float, e) -> str:
     """First deaths, killers and the longest dead over every pull of the
-    block (see the module); '' when nobody died in a pull."""
+    block, as the run row's hover counts them for a run
+    (pull_outcome.what_ended); '' when nobody died in a pull."""
+    ended = what_ended(block_pulls)
+    if not ended["total"]:
+        return ""
     muted, text = theme["muted"], theme["text"]
-    bosses = []  # in the order the pulls name them
-    for pull in block_pulls:
-        for fight in pull:
-            for boss in (getattr(fight, "pull", None) or {}).get("bosses") or []:
-                if str(boss) not in bosses:
-                    bosses.append(str(boss))
-
-    def death_key(recap):
-        killer = str(recap.get("killer") or "")
-        return str(recap.get("ability") or "unknown"), ("" if killer in bosses else killer)
 
     def death_html(key):
         ability, killer = key
         out = f"<b>{e(ability)}</b>"
         return out + (f" ({names.html(killer, text, base_pt)})" if killer else "")
 
-    firsts, killers, dead = Counter(), Counter(), Counter()
-    who, by_boss, total = {}, 0, 0
-    for pull in block_pulls:
-        # The pull's first death: in its first fight with one, the earliest
-        for fight in pull:
-            recaps = getattr(fight, "death_recaps", None) or []
-            if recaps:
-                firsts[death_key(min(recaps, key=lambda r: int(r.get("time_ms") or 0)))] += 1
-                break
-        for fight in pull:
-            recaps = getattr(fight, "death_recaps", None) or []
-            for recap in recaps:
-                killers[death_key(recap)] += 1
-                total += 1
-                if str(recap.get("killer") or "") in bosses:
-                    by_boss += 1
-            # The time dead of those who died in it, told apart as the
-            # players' table tells them
-            died = {str(r.get("unit_id", "")): str(r.get("name") or "") for r in recaps}
-            rows = {str(p.get("unit_id", "")): p for p in getattr(fight, "players", None) or []}
-            for unit_id, ms in (getattr(fight, "time_dead", None) or {}).items():
-                name = died.get(str(unit_id))
-                if name and int(ms or 0) > 0:
-                    row = rows.get(str(unit_id))
-                    key = _player_key(name, row)
-                    dead[key] += int(ms)
-                    who[key] = {"name": name, "role": str((row or {}).get("role") or ""),
-                                "class": _join((row or {}).get("class_abbr", ""))}
-    if not total:
-        return ""
-
     def lead(words, margin):
         return f"<p style='margin:{margin}'><span style='color:{muted}'>{words}</span> "
 
-    killers_line = _counted_html(killers, death_html)
-    if by_boss:
+    killers_line = _counted_html(ended["killers"], death_html)
+    if ended["by_boss"]:
+        bosses = [str(boss) for boss in ended["bosses"]]
         named = " and ".join(bosses) if len(bosses) <= 2 else "the bosses"
-        killers_line += (f"<span style='color:{muted}'>; {round(100 * by_boss / total)}% "
-                         f"by {e(named)}</span>")
+        killers_line += (f"<span style='color:{muted}'>; "
+                         f"{round(100 * ended['by_boss'] / ended['total'])}% by {e(named)}</span>")
 
-    def dead_html(key):
-        player = who[key]
-        out = names.html(player["name"], text, base_pt)
-        if player["name"] == ANON:
-            out += (f" <span style='color:{muted}'>"
-                    f"({e(player['role'] or '?')}, {e(player['class'] or '?')})</span>")
+    def dead_html(ident):
+        name, row = ended["who"][ident]
+        out = names.html(name, text, base_pt)
+        if name == ANON:
+            row = row or {}
+            out += (f" <span style='color:{muted}'>({e(str(row.get('role') or '?'))}, "
+                    f"{e(_join(row.get('class_abbr', '')) or '?')})</span>")
         return out
 
-    parts = [lead(FIRST_DEATHS_LEAD, "8px 0 0 0") + _counted_html(firsts, death_html) + "</p>",
-             lead(KILLERS_LEAD, "2px 0 0 0") + killers_line + "</p>"]
+    parts = [lead(FIRST_DEATHS_LEAD, "8px 0 0 0") + _counted_html(ended["firsts"], death_html)
+             + "</p>", lead(KILLERS_LEAD, "2px 0 0 0") + killers_line + "</p>"]
     # Under a second dead is no one's longest: a solo player's fight ends
     # as they die, which reads '0s'
-    longest = [(key, ms) for key, ms in dead.most_common(TOP) if ms >= MOST_DEAD_MIN_MS]
+    longest = [(ident, ms) for ident, ms in ended["dead"].most_common(TOP)
+               if ms >= MOST_DEAD_MIN_MS]
     if longest:
-        items = [f"{dead_html(key)} {e(clock(ms / 1000))}" for key, ms in longest]
+        items = [f"{dead_html(ident)} {e(clock(ms / 1000))}" for ident, ms in longest]
         parts.append(lead(MOST_DEAD_LEAD, "2px 0 0 0") + " · ".join(items) + "</p>")
     return "".join(parts)
 
 
 def _trash_html(block, theme: dict, e) -> str:
-    """'Trash: 12 fights, 8:20, 3 deaths', as the copy counts it; '' with
-    none."""
-    trash = [fight for fight in block if not getattr(fight, "pull", None)]
-    if not trash:
+    """'Trash: 12 fights, 8:20, 3 deaths', in the copy's words
+    (session_recap.trash_text); '' with none."""
+    text = session_recap.trash_text(block)
+    if not text:
         return ""
-    text = (f"{_plural(len(trash), 'fight')}, "
-            f"{clock(sum(float(getattr(f, 'duration_s', 0) or 0) for f in trash))}")
-    deaths = _deaths_of(trash)
-    if deaths:
-        text += f", {_plural(deaths, 'death')}"
     return (f"<p style='margin:8px 0 0 0'><span style='color:{theme['muted']}'>{TRASH_LEAD}</span> "
             f"{e(text)}</p>")
 
@@ -731,7 +694,7 @@ def _pull_tip(run, number: int, pull, e) -> str:
     title = run_name(run)
     facts = [outcome_text(pull[-1].pull, title),
              clock(sum(float(getattr(f, "duration_s", 0) or 0) for f in pull))]
-    start = _start(pull[0])
+    start = session_recap.start(pull[0])
     if start:
         facts.append(f"{start:%H:%M:%S}")
     deaths = _deaths_of(pull)
@@ -767,12 +730,13 @@ def instance_tooltips(block, index_of, shown=None, names=None) -> dict[str, str]
         link = _link_place(player, index_of, shown)
         if link is None:
             continue
-        place, unit_id, fight = link
+        place, unit_id, fight, row = link
         line = f"<b>{e(names.text(_who_text(player)))}</b> in {e(_fight_label(fight, places))}"
         if fight is shown:
             line += " (the fight on screen)"
+        tip = PLAYER_TIP if row else DEATH_TIP
         tips[player_href(place, unit_id)] = (f"{line}<br>"
-                                             f"<span style='font-size:85%'>{PLAYER_TIP}</span>")
+                                             f"<span style='font-size:85%'>{tip}</span>")
     tips[INSTANCE_COPY_HREF] = e(COPY_TIP)
     fight = _misfortunes_fight(block)
     if fight is not None:

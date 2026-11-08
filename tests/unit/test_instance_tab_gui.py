@@ -230,6 +230,46 @@ class TestRowsOpenTheInstance(InstanceTabTestCase):
         self._click(win, HEADER)
         self.assertEqual(opened, [HEADER])
 
+    def test_a_double_click_opens_the_instance_once(self):
+        """Qt makes a double-click's second press of it on an inert row:
+        it opens nothing more (the review of PR #208)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self._window(*_session())
+        opened = []
+        win.history_list.instance_requested.connect(opened.append)
+        viewport, pos = win.history_list.viewport(), self._rect(win, HEADER).center()
+        # What the platform sends: a click, then the double-click and its
+        # release (QTest.mouseDClick sends the double-click alone)
+        QTest.mouseClick(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        QTest.mouseDClick(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        self._settle()
+        self.assertEqual(opened, [HEADER])
+
+    def test_the_hand_follows_rows_that_move_under_the_pointer(self):
+        """The list scrolled under a pointer that did not move: the hand
+        goes with the inert row (the review of PR #208)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QCursor
+
+        from gui.fight_list import FightList
+        lst = FightList()
+        self.addCleanup(lst.deleteLater)
+        lst.set_fights(_session())
+        row_height = lst.visualItemRect(lst.item(0)).height()
+        lst.resize(300, 3 * row_height + 2 * lst.frameWidth())
+        lst.show()
+        _app.processEvents()
+        bar = lst.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        QCursor.setPos(lst.viewport().mapToGlobal(lst.visualItemRect(lst.item(HEADER)).center()))
+        lst._recheck_hand()
+        self.assertEqual(lst.viewport().cursor().shape(), Qt.PointingHandCursor)
+        bar.setValue(1)  # Yandir's row under the pointer now
+        _app.processEvents()
+        self.assertNotEqual(lst.viewport().cursor().shape(), Qt.PointingHandCursor)
+
     def test_the_rows_show_a_click_opens_the_instance(self):
         """The pointing hand over a header, run or result row, none over a
         fight; the hover line on each, after a run row's own text; and the
@@ -318,6 +358,27 @@ class TestLinks(InstanceTabTestCase):
         self.assertEqual(window.unit_id, '3')
         self.assertEqual(window.current_tab(), BUILD_TAB)
         self.assertIs(win.history_list.current_entry(), fights[3])  # the list stays
+
+    def test_a_player_who_only_died_opens_on_deaths(self):
+        """A player who died in a pull with no row of their own (the pane's
+        Also died) opens on the Deaths tab of that fight, where Build would
+        be empty (the review of PR #208)."""
+        from gui.instance_render import player_from_href
+        from gui.player_window import DEATHS_TAB
+        from tests.unit.test_pull_outcome_gui import _recap
+        fights = _session()
+        fights[2].death_recaps = [_recap('9', '@ghost', 20_000)]
+        fights[2].deaths = 1
+        win = self._window(*fights)
+        self._click(win, HEADER)
+        href = next(href for href in self._links(win)
+                    if (player_from_href(href) or (None, None))[1] == '9')
+        self.assertEqual(player_from_href(href)[0], 2)
+        self._activate(win, href)
+        window = win._player_window
+        self.assertIs(window.entry, fights[2])
+        self.assertEqual(window.unit_id, '9')
+        self.assertEqual(window.current_tab(), DEATHS_TAB)
 
     def test_a_link_whose_fight_left_the_list_says_so(self):
         from gui.instance_render import fight_from_href

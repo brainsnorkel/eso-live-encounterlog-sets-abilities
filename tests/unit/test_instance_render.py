@@ -347,7 +347,7 @@ class TestSections(unittest.TestCase):
 
     def test_the_players(self):
         """Every player once, a companion not: by handle across the
-        fights, an anon by role and class; the role most of their fights
+        fights, an anon by unit id and class; the role most of their fights
         read; the pulls they were in; deaths and time dead over every
         fight, the trash's too; each build issue once in its latest words,
         with how many of their fights it was found in, on a line under the
@@ -365,16 +365,28 @@ class TestSections(unittest.TestCase):
             ["@passerby", "", "", "1", "1", "1:05"],
         ])
 
-    def test_two_anons_of_one_role_and_class_are_one(self):
-        """All the log gives to tell them apart across fights is their role
-        and class."""
+    def test_anons_are_told_apart_by_unit_id_and_class(self):
+        """Two anons of one role and class are two players, in the table
+        and in the longest dead, as the run row's hover tells them apart;
+        one the engine guesses a healer on the trash stays one player, with
+        the role most of their fights read (the review of PR #208: keyed by
+        role and class, the first two were one and the last two)."""
+        from pull_outcome import run_details, runs
         night = _night()
         for fight in night:
             for p in fight.players:
                 if p["unit_id"] == "12":
                     p["class_abbr"] = "Sorc"
-        names = [row[0] for row in _table(self._render(night), "Player")[1:]]
-        self.assertEqual(names.count("anon"), 1)
+        night[0].players[3]["role"] = "H"  # anon 11, on the trash
+        night[1].death_recaps.append(_recap("12", "anon", 45000, "Frost Breath", "Lokkestiiz"))
+        night[1].time_dead["12"] = 75000
+        rows = [row for row in _table(self._render(night), "Player")[1:] if row[0] == "anon"]
+        self.assertEqual([row[:3] for row in rows], [["anon", "D", "Sorc"], ["anon", "D", "Sorc"]])
+        text = _text(self._render(night))
+        self.assertIn("Most time dead: anon (D, Sorc) 1:20 · anon (D, Sorc) 1:15 · @me 1:13", text)
+        run = runs(night)[0]
+        self.assertIn("Most time dead: anon (D, Sorc) 1:20, anon (D, Sorc) 1:15, @me 1:10",
+                      run_details(run))
 
     def test_the_tables_keep_their_words_whole_at_large_text(self):
         """Measured at 200% text on real splits: no heading breaks inside a
@@ -527,6 +539,28 @@ class TestLinks(unittest.TestCase):
                          "@tank in Lokkestiiz, pull 2 (the fight on screen)")
         self.assertEqual(_text(tips["esolog:player/3/77"]).split(" Click")[0],
                          "@passerby in Lokkestiiz, pull 1")
+
+    def test_a_name_opens_a_fight_they_have_a_row_in(self):
+        """A player who died in the fight on screen with no row of their own
+        there opens their last fight with a row, on Build; one who never had
+        a row opens their death, which the window shows on Deaths, and the
+        hover says which (the review of PR #208: the name opened Build on a
+        fight with no row for them, an empty page)."""
+        from gui.instance_render import DEATH_TIP, PLAYER_TIP, instance_tooltips, render_instance_html
+        night = _night()
+        final = night[-1]
+        final.players = [p for p in final.players if p["name"] != "@heal"]
+        final.death_recaps = final.death_recaps + [_recap("3", "@heal", 100000, "Time Shift",
+                                                          "Nahviintaas")]
+        final.deaths = len(final.death_recaps)
+        fights, index_of = _listed(night)
+        links = _hrefs(render_instance_html(night, index_of, shown=final), "esolog:player/")
+        heal = f"esolog:player/{fights.index(night[3])}/3"  # Yolnahkriin, their last row
+        self.assertIn(heal, links)
+        self.assertNotIn(f"esolog:player/{fights.index(final)}/3", links)
+        tips = instance_tooltips(night, index_of, shown=final)
+        self.assertIn(PLAYER_TIP, tips[heal])
+        self.assertIn(DEATH_TIP, tips["esolog:player/3/77"])  # @passerby, no row anywhere
 
     def test_else_their_last_fight_of_the_instance(self):
         """With no fight on screen, or one outside the instance, each name

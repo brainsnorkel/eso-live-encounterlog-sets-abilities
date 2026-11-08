@@ -67,15 +67,17 @@ current row is always a fight and every caller of current_entry() still
 gets one. Qt 6.12 sends itemClicked for an inert row, but does not
 promise to, so the list tells the click itself: the row the left button
 went down on, and its release on that same row (mouseReleaseEvent); a
-drag to another row, or another button, opens nothing. The rows show
-they can be clicked with the pointing hand and the hover line
-INSTANCE_CUE, which a run row's hover text ends with, and a screen
-reader hears INSTANCE_DESCRIPTION as their description, after a run
-row's own.
+drag to another row, or another button, opens nothing, nor does a
+double-click's second press, which Qt makes of it on an inert row. The
+rows show they can be clicked with the pointing hand, set again as rows
+move under a pointer that does not (a scroll, a fight coming in), and
+the hover line INSTANCE_CUE, which a run row's hover text ends with; a
+screen reader hears INSTANCE_DESCRIPTION as their description, after a
+run row's own.
 """
 
 from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPalette
+from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QListWidget,
@@ -177,6 +179,9 @@ class FightList(QListWidget):
         self._pressed = None
         self._hand = False
         self.viewport().setMouseTracking(True)
+        self.verticalScrollBar().valueChanged.connect(self._recheck_hand)
+        self.model().rowsInserted.connect(self._recheck_hand)
+        self.model().rowsRemoved.connect(self._recheck_hand)
         self._last_entry = None  # the newest fight, for the next one's block
         self._block = -1
         # Each block's fight rows and run rows, so a block's run rows are
@@ -437,16 +442,32 @@ class FightList(QListWidget):
                 and self._inert_at(event.position().toPoint()) is pressed):
             self.instance_requested.emit(self.row(pressed))
 
-    def mouseMoveEvent(self, event):
-        # The pointing hand over an inert row, which a click opens
-        hand = self._inert_at(event.position().toPoint()) is not None
+    def mouseDoubleClickEvent(self, event):
+        # Qt makes a double-click on an inert row a second press, whose
+        # release would open the instance again: the click before it has
+        if self._inert_at(event.position().toPoint()) is not None:
+            self._pressed = None
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _set_hand(self, pos):
+        """The pointing hand while the pointer, at *pos* in the viewport, is
+        over an inert row, which a click opens."""
+        hand = self._inert_at(pos) is not None
         if hand != self._hand:
             self._hand = hand
             if hand:
                 self.viewport().setCursor(Qt.PointingHandCursor)
             else:
                 self.viewport().unsetCursor()
+
+    def mouseMoveEvent(self, event):
+        self._set_hand(event.position().toPoint())
         super().mouseMoveEvent(event)
+
+    def _recheck_hand(self, *_):
+        # The rows moved under a pointer that did not
+        self._set_hand(self.viewport().mapFromGlobal(QCursor.pos()))
 
     def focusInEvent(self, event):
         """Taking the focus never makes a fight current. Qt makes the first
