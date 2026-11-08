@@ -292,7 +292,8 @@ class TestSections(unittest.TestCase):
         self.assertIn("First deaths: Frost Breath · Bite (Fire Atronach) · Time Shift Killers:", text)
         self.assertIn("Killers: Frost Breath ×2 · Storm Fury · Bite (Fire Atronach) · …; "
                       "80% by the bosses", text)
-        self.assertIn("Most time dead: anon (D, Sorc) 1:20 · @me 1:13 · @passerby 1:05", text)
+        self.assertIn("Most time dead in the pulls: anon (D, Sorc) 1:20 · @me 1:13 · "
+                      "@passerby 1:05", text)
         self.assertNotIn("Slam", text)
 
     def test_the_bosses_named_when_one_or_two(self):
@@ -383,7 +384,8 @@ class TestSections(unittest.TestCase):
         rows = [row for row in _table(self._render(night), "Player")[1:] if row[0] == "anon"]
         self.assertEqual([row[:3] for row in rows], [["anon", "D", "Sorc"], ["anon", "D", "Sorc"]])
         text = _text(self._render(night))
-        self.assertIn("Most time dead: anon (D, Sorc) 1:20 · anon (D, Sorc) 1:15 · @me 1:13", text)
+        self.assertIn("Most time dead in the pulls: anon (D, Sorc) 1:20 · anon (D, Sorc) 1:15 · "
+                      "@me 1:13", text)
         run = runs(night)[0]
         self.assertIn("Most time dead: anon (D, Sorc) 1:20, anon (D, Sorc) 1:15, @me 1:10",
                       run_details(run))
@@ -546,7 +548,12 @@ class TestLinks(unittest.TestCase):
         a row opens their death, which the window shows on Deaths, and the
         hover says which (the review of PR #208: the name opened Build on a
         fight with no row for them, an empty page)."""
-        from gui.instance_render import DEATH_TIP, PLAYER_TIP, instance_tooltips, render_instance_html
+        from gui.instance_render import (
+            DEATH_TIP,
+            PLAYER_TIP,
+            instance_tooltips,
+            render_instance_html,
+        )
         night = _night()
         final = night[-1]
         final.players = [p for p in final.players if p["name"] != "@heal"]

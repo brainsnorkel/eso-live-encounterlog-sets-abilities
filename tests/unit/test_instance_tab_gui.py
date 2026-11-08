@@ -247,6 +247,53 @@ class TestRowsOpenTheInstance(InstanceTabTestCase):
         self._settle()
         self.assertEqual(opened, [HEADER])
 
+    def test_a_double_click_on_a_header_selects_nothing_under_it(self):
+        """The first click selects the instance's last fight and scrolls the
+        list; the double-click's second press, on whatever fight came under
+        the pointer, selected it (the fresh review of PR #208)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from tests.unit.test_pull_outcome_gui import _entry
+        trash = [_entry(f"Half-Giant Raider {i}") for i in range(30)]
+        other = _entry("Sunspire Guard")
+        other.zone_name, other.zone_id = "Sunspire", "1121"
+        win = self._window(*trash, other)
+        lst = win.history_list
+        lst.setMaximumHeight(6 * self._rect(win, 0).height() + 2 * lst.frameWidth())
+        self._settle()
+        lst.scrollToTop()
+        self._settle()
+        opened = []
+        lst.instance_requested.connect(opened.append)
+        viewport, pos = lst.viewport(), self._rect(win, HEADER).center()
+        QTest.mouseClick(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        self._settle()
+        self.assertIs(lst.current_entry(), trash[-1])
+        self.assertGreater(lst.verticalScrollBar().value(), 0)  # a fight is under the pointer
+        self.assertIsNot(lst.itemAt(pos).data(Qt.UserRole), None)
+        QTest.mouseDClick(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, pos)
+        self._settle()
+        self.assertIs(lst.current_entry(), trash[-1])
+        self.assertEqual(opened, [HEADER])
+
+    def test_filling_the_list_checks_the_hand_once(self):
+        """Rows added in a batch check the hand once, after the batch: once
+        per row, each look-up laid the whole list out again, and a 915-fight
+        review took 15.7 s to list against 0.14 (the fresh review of PR
+        #208)."""
+        from gui.fight_list import FightList
+        lst = FightList()
+        self.addCleanup(lst.deleteLater)
+        lst.resize(300, 200)
+        lst.show()
+        checks = []
+        lst._set_hand = checks.append
+        lst.set_fights(_session() * 20)
+        _app.processEvents()
+        self.assertEqual(len(checks), 1)
+
     def test_the_hand_follows_rows_that_move_under_the_pointer(self):
         """The list scrolled under a pointer that did not move: the hand
         goes with the inert row (the review of PR #208)."""
