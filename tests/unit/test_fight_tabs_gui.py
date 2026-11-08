@@ -236,9 +236,12 @@ class TestTheSearch(FightTabsTestCase):
         #205)."""
         win = self._window(_entry_with_deaths())
         win.fight_tabs.setCurrentIndex(0)
-        self._search(win, "Sharpfang", steps=3)  # the Fight page's cursor moves on
+        # The Fight page's cursor at its first match, the header's boss: read
+        # against the Deaths page's matches, it is before them all
+        self.assertEqual(self._search(win, "Sharpfang"), 0)
         win.fight_tabs.setCurrentWidget(win.deaths_view)
         at = self._search(win, "Sharpfang", steps=1)
+        self.assertGreater(at, 0)
         win._apply_pen_crit_settings()
         self.assertEqual(win.deaths_view.textCursor().position(), at)
 
