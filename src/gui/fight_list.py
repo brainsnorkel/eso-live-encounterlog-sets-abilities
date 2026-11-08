@@ -59,9 +59,22 @@ dead, names through the Hide names switch. Each new or updated fight
 redoes its block's run rows (_refresh_runs) from the block's own rows,
 so a run row moves down as the run grows and a refresh never walks the
 whole list.
+
+The instance (issue #196): a click on a header, run or result row opens
+the window's Instance tab on that row's block (instance_requested,
+instance_of), a run row's at that boss. The rows stay inert, so the
+current row is always a fight and every caller of current_entry() still
+gets one. Qt 6.12 sends itemClicked for an inert row, but does not
+promise to, so the list tells the click itself: the row the left button
+went down on, and its release on that same row (mouseReleaseEvent); a
+drag to another row, or another button, opens nothing. The rows show
+they can be clicked with the pointing hand and the hover line
+INSTANCE_CUE, which a run row's hover text ends with, and a screen
+reader hears INSTANCE_DESCRIPTION as their description, after a run
+row's own.
 """
 
-from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -100,6 +113,11 @@ BAND_MIX = 0.07
 
 # Pixels either side of the (i) that still count as over it
 MARK_SLACK = 3
+
+# A header, run or result row's hover line, and what a screen reader hears
+# for it: a click on one opens the Instance tab (issue #196)
+INSTANCE_CUE = "Click for the instance (Alt+I)"
+INSTANCE_DESCRIPTION = "Alt+I opens the instance"
 
 def run_text(run, index=None) -> str:
     """A run row's line: the run's summary, and the best earlier kill of
@@ -145,9 +163,20 @@ def band_color(base: QColor, text: QColor) -> QColor:
 class FightList(QListWidget):
     """The history list: header, fight and result rows (see the module)."""
 
+    # A click on a header, run or result row: its row, whose instance the
+    # window shows (instance_of, issue #196)
+    instance_requested = Signal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAccessibleName("Fights")
+        # The inert row a button last went down on, for the left button's
+        # release; and whether the pointer shows the hand over one (see the
+        # module), for which the viewport follows the pointer with no button
+        # down
+        self._pressed = None
+        self._hand = False
+        self.viewport().setMouseTracking(True)
         self._last_entry = None  # the newest fight, for the next one's block
         self._block = -1
         # Each block's fight rows and run rows, so a block's run rows are
@@ -238,6 +267,7 @@ class FightList(QListWidget):
             item.setData(Qt.AccessibleDescriptionRole, issues_description(entry))
         else:
             item.setFlags(Qt.NoItemFlags)
+            item.setData(Qt.AccessibleDescriptionRole, INSTANCE_DESCRIPTION)
         self._style(item)
         if at is None:
             self.addItem(item)
@@ -271,7 +301,8 @@ class FightList(QListWidget):
             item = self._add_row(RUN, run_text(run, self.history_index), at=self.row(last) + 1,
                                  block=block)
             item.setData(RUN_ROLE, run)
-            item.setData(Qt.AccessibleDescriptionRole, run_description(run))
+            item.setData(Qt.AccessibleDescriptionRole,
+                         f"{run_description(run)}. {INSTANCE_DESCRIPTION}")
             made.append(item)
         if made:
             self._block_runs[block] = made
@@ -322,6 +353,36 @@ class FightList(QListWidget):
         row = self.currentRow()
         return rows.index(row) if row in rows else -1
 
+    def block_of(self, entry) -> list:
+        """The fights of *entry*'s block, in order; [] when it is not
+        listed."""
+        row = self.row_of(entry)
+        if row is None:
+            return []
+        items = self._block_items.get(self.item(row).data(BLOCK_ROLE)) or []
+        return [item.data(ENTRY_ROLE) for item in items]
+
+    def instance_of(self, row, shown=None):
+        """What a click on the header, run or result row *row* opens on the
+        Instance tab (issue #196), as (the fight to select, the run to open
+        the page at); the run is None for the page's top, and the whole is
+        None for a fight row or no row. The fight on screen, *shown*, stays
+        when it is in the row's block, or for a run row in its run; else it
+        is the block's last fight, which a result row's fight is (a block
+        ends at a completed run), or the run's last pull."""
+        item = self.item(row) if row is not None and row >= 0 else None
+        if item is None or item.data(KIND_ROLE) == FIGHT:
+            return None
+        if item.data(KIND_ROLE) == RUN:
+            run = item.data(RUN_ROLE)
+            fights = [fight for pull in run for fight in pull]
+            return (shown if any(fight is shown for fight in fights) else fights[-1]), run
+        fights = [each.data(ENTRY_ROLE)
+                  for each in self._block_items.get(item.data(BLOCK_ROLE)) or []]
+        if not fights:
+            return None
+        return (shown if any(fight is shown for fight in fights) else fights[-1]), None
+
     # ---- keys ----
 
     def moveCursor(self, action, modifiers):
@@ -354,6 +415,38 @@ class FightList(QListWidget):
                     return self.model().index(near, 0)
                 near += step
         return self.currentIndex()
+
+    # ---- the instance (issue #196) ----
+
+    def _inert_at(self, pos):
+        """The header, run or result row at *pos* in the viewport, or None."""
+        item = self.itemAt(pos)
+        return item if item is not None and item.data(KIND_ROLE) != FIGHT else None
+
+    def mousePressEvent(self, event):
+        # The inert row the button went down on, for its release
+        self._pressed = self._inert_at(event.position().toPoint())
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """The left button let go over the inert row it went down on: that
+        row's instance (see the module)."""
+        pressed, self._pressed = self._pressed, None
+        super().mouseReleaseEvent(event)
+        if (pressed is not None and event.button() == Qt.LeftButton
+                and self._inert_at(event.position().toPoint()) is pressed):
+            self.instance_requested.emit(self.row(pressed))
+
+    def mouseMoveEvent(self, event):
+        # The pointing hand over an inert row, which a click opens
+        hand = self._inert_at(event.position().toPoint()) is not None
+        if hand != self._hand:
+            self._hand = hand
+            if hand:
+                self.viewport().setCursor(Qt.PointingHandCursor)
+            else:
+                self.viewport().unsetCursor()
+        super().mouseMoveEvent(event)
 
     def focusInEvent(self, event):
         """Taking the focus never makes a fight current. Qt makes the first
@@ -393,8 +486,10 @@ class FightList(QListWidget):
                      option.fontMetrics.horizontalAdvance(ISSUES_LIST_CUE), option.rect.height())
 
     def viewportEvent(self, event):
-        """The (i)'s hover text over a fight row's mark, nothing anywhere
-        else: the rows carry no tooltip of their own (see the module)."""
+        """The (i)'s hover text over a fight row's mark, a run row's over
+        the row, and INSTANCE_CUE over a header or result row; nothing
+        anywhere else: the rows carry no tooltip of their own (see the
+        module)."""
         if event.type() != QEvent.ToolTip:
             return super().viewportEvent(event)
         pos = event.pos()
@@ -408,9 +503,12 @@ class FightList(QListWidget):
             text = fight_issues_tooltip(entry, NameMask.for_entry(entry, self.hide_names))
         elif item is not None and item.data(KIND_ROLE) == RUN:
             # A run row: its summary, the first deaths, the killers and
-            # who spent longest dead (pull_outcome)
+            # who spent longest dead (pull_outcome), and what a click opens
             band = self.visualItemRect(item)
-            text = run_tooltip(item.data(RUN_ROLE), self.hide_names)
+            text = f"{run_tooltip(item.data(RUN_ROLE), self.hide_names)}\n{INSTANCE_CUE}"
+        elif item is not None and item.data(KIND_ROLE) != FIGHT:
+            band = self.visualItemRect(item)  # a header or result row
+            text = INSTANCE_CUE
         self.current_tooltip = text
         if text:
             QToolTip.showText(event.globalPos(), text, self.viewport(), band)
