@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.39.0] - 2026-11-09
+
+### Changed
+- **A fight counts the hits that open it** (#162): the group's first hits often land a moment before the game puts you in combat, and their damage was in no fight's figures, except in a zone's first fight. Every hit from the ten seconds before a fight's start now counts in it, damage over time included, unless the last fight had hit the same enemy or the enemy died before the start. A combat of under a second, which the game sometimes enters for a moment as a boss appears, takes none of them: they are left to the next fight. The hits keep their own times: the dps time starts at the first of them, the DPS graph puts them in its first second, and the damage window says how long before the pull a player's first hit landed. The fight's time is unchanged. Over 395 split logs, 44% of fights change: the group's DPS reads a median 1.1% lower, since its dps time grows by a median half a second, and a player whose only hit came before the start now has a DPS. Combat Metrics counts your own hits before the start too.
+
+### Fixed
+- **A Roaring Opportunist that never fires is no longer hidden by War Machine or Master Architect** (#79): the build-issue rule counted Major Slayer 93109 as Roaring Opportunist's, but the wearers of those two sets write it too; it now counts Roaring Opportunist's own 135923, which came with 93109 in every session of 395 split logs.
+
 ## [0.38.0] - 2026-11-09
 
 ### Added

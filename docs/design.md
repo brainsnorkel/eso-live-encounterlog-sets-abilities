@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2855](../src/esolog_tail.py#L2855)*
+*[src/esolog_tail.py:2991](../src/esolog_tail.py#L2991)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
+*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1927](../src/esolog_tail.py#L1927)*
+*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one (see COMBAT_RESUME_MS): it follows
@@ -49,7 +49,7 @@ fight ended is still alive.
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1942](../src/esolog_tail.py#L1942)*
+*[src/esolog_tail.py:1993](../src/esolog_tail.py#L1993)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +57,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:82](../src/esolog_tail.py#L82)*
+*[src/esolog_tail.py:83](../src/esolog_tail.py#L83)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +65,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:1981](../src/esolog_tail.py#L1981)*
+*[src/esolog_tail.py:2117](../src/esolog_tail.py#L2117)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -103,10 +103,116 @@ fight. Replayed with this rule, that was the only change to the
 entries of the fights still listed. The 10 s before the line count
 because the group's first hits often land before it: a survey of
 combat events found 30 fights that met an enemy only there, none
-with damage of its own (the hits went to the fight before, issue
-#162). A cast counts as the opener's does: five of the survey's
-empty fights stay listed for a monster's cast at a player or a
-player's at a boss, acts the opener names.
+with damage of its own (the hits went to the fight before; since
+issue #162 a fight counts its hits from those 10 s, see
+waiting_hits). A cast counts as the opener's does: five
+of the survey's empty fights stay listed for a monster's cast at a
+player or a player's at a boss, acts the opener names.
+
+## Fight boundaries: the hits before the line
+
+### src/waiting_hits.py
+
+*[src/waiting_hits.py:1](../src/waiting_hits.py#L1)*
+
+The group's hits between fights, waiting for the next fight's line (engine
+side, no Qt). Issue #162, part 1.
+
+Design: The hits before the line. A fight runs from the logging player's
+BEGIN_COMBAT to their END_COMBAT, and the group's first hits often land
+before the line (see fight_opener). Before this rule such a hit fell on the
+encounter END_COMBAT had closed and published, which nothing builds again
+unless the fight carries on (the engine's COMBAT_RESUME_MS), and
+BEGIN_COMBAT opened a new encounter without it: it was counted in no
+fight. Two fights had them, a zone's first, whose encounter is the zone's
+own and takes every hit from the zone's start, and a fight the game cut in
+two, which reopens its encounter with the hits between the two lines.
+Replayed through 0.38.0 and through this rule, 395 split logs (8,765
+fights, January to October 2026) count such hits in 3,831 fights (43.7%),
+a median 0.04% of the fight's damage (p90 1.3%): the group's dps time
+grows by a median 0.5 s (p90 1.5 s) and its dps falls by a median 1.1%
+(p10 9.1%, beyond 5% in 915 fights), since the time grows more than the
+damage; 4,399 player rows move, a median 2.2% either way (p90 12.9%), the
+logging player's in 686 fights, and 22 rows had damage only before the
+line. Combat Metrics counts the logging player's direct hits before the
+line too.
+
+At the line the engine cannot know which enemies the fight will hit. It
+counts every hit from the opener's moments, the last OPENER_WINDOW_MS,
+unless the fight that ended had hit the same enemy (those hits are the
+group fighting on, issue #162's part 2) or the enemy died or left before
+the line (fight_opener.gone_before, as the opener drops it, so the line and
+the figures agree). A DoT tick counts like every other damage result. The
+hits keep their own times: the dps time, the damage window ("first hit 0.4
+s before the pull"), boss dps, the kinds, the breakdowns, the penetration
+figures' weighting and every row take them, and a player whose only damage
+came before the line has a row's dps; the fight's clock (duration_s) stays
+BEGIN_COMBAT to END_COMBAT. The DPS graph puts a second before the fight's
+start in its second 0 (damage_stats.per_second), and its running figure
+runs from the first hit, so it ends on the fight's dps. A fight that takes
+hits has met an enemy, and is listed. An enemy hit only before the line is
+one of the fight's, as in a zone's first fight: in the replay the name
+shown (the most damaged enemy) changed in 37 fights, 32 of them without a
+boss, a pull's bosses in 20 (3 fights gained a pull, all "Left"), the
+uptime line's per-enemy items in 23, and a tank's damage-share finding on
+12 rows; no fight was added, lost or published at another time. Fight by
+fight, the replay took what a survey of the hits between fights predicts:
+in 3,758 fights the hits on the new fight's enemies exactly, in 83 those
+and the hits on enemies of neither fight still alive at the line, and in
+13 the hits on a new pack after a combat that met no enemy, which the
+survey did not follow; the other 12 are blips and the fights after them
+(80.6 M in all, 0.06% of the damage).
+
+Blips. A fight shorter than the engine's BLIP_MS (1 s) from BEGIN_COMBAT
+to END_COMBAT is a blip: the game puts the logging player in combat for
+some milliseconds, often as a boss appears (Volenfell's Guardian, four
+times in four seconds; Halls of Fabrication's Committee), and the fight is
+listed when it met an enemy. A blip takes none of the hits from before its
+line. They wait for the next line, where only its last OPENER_WINDOW_MS
+count, and the ended fight is still the last one that took hits, whose
+enemies they leave out: a blip's own few hits are no reason to leave one
+out. Of 48 blips in the 29 logs with one listed, 19 had hits of their own,
+on some of the next fight's enemies in 5 and of the fight before's in 4,
+never on the fight before's alone. Taking the hits, 30 of the 46 listed
+blips had damage they did not deal, 17 a boss's, 18 read as a pull of a
+boss the group left ("Left"), and the fight after a blip lost its first
+hits; now none does, the 18 blips with damage of their own keeping it.
+The next line takes back little of their 3.0 M: most of it came more than
+10 s before the next fight (a Dreadsail Keelcutter's 649 k, 28 s before),
+and counts in no fight, as before.
+
+A combat with no enemy in it (held back, the engine's _note_enemy_met) is
+no fight either: it takes no hits and leaves the waiting ones as they
+are, the last listed fight still the ended one, so the group finishing
+that fight's enemies after a broken Brimstone Orb is not the next fight's
+opening. Should it be listed after all, it settles then, as any fight.
+In the replay no such hit came up: the 13 fights that open after a combat
+with no enemy took hits on new enemies only (in Sanity's Edge the next
+pack's Wamasus, units 602 to 626, where the fight before had fought unit
+333).
+
+Where the hits wait: here, one ledger for the analyzer (WaitingHits), told
+of each fight boundary as the opener's memory is. Each hit after
+END_COMBAT still goes on the closed encounter as it comes, since a fight
+the game cut in two reopens that encounter with them, its cast watchers
+and all; the ledger keeps a copy, at most the last 10 s, read as the
+closed encounter read it (the kinds once, for both): the engine's record
+of its enemy, so a unit id handed out again is not the ended fight's
+enemy; whose it is (CombatEncounter.hitter_of), so a player back on a new
+unit id, re-keyed at the line, keeps their hits and a pet removed before
+the line (a Blastbones blows up and goes) is its owner's; and its kinds.
+The line takes the copies, the hitters still on the new fight's list, and
+puts their casts back in the kinds index it has just emptied, so a cast
+that strikes another unit after the line is area on both sides (in the
+replay 1.0 M of 75 G moved from single to area, in 59 fights, and 7.9 M of
+area damage was read by its cast rather than by the ability's session).
+END_COMBAT counts them by the same code as any hit, before the entry is
+built, once the fight's length shows it is no blip: nothing reads a
+fight's damage before then. Then the waiting starts again, and the ended
+fight's enemies are the records it hit. A fight carried on keeps the
+copies dealt before its END_COMBAT (a blip's, waiting on) and drops the
+later ones, which are on its encounter; a held combat listed late does the
+same, its entry having the later ones.
 
 ## The fight's opener
 
@@ -128,13 +234,16 @@ it when the logging player's client enters combat, and a group member's hit
 usually lands a moment earlier: a player hit or taunt came before the line
 in 4,243 fights (48.1%), a median 14 ms early, and the opener itself landed
 before the line in 4,080 of 7,204 player-first fights. Such a hit fell on
-the previous, finalized encounter and was lost to the new one, except in a
+the previous, finalized encounter, and the new one never saw it except in a
 zone's first fight, so the star marked someone other than the opener in
 1,385 of 7,176 player-first fights (19.3%; 32.6% in trials). The recorder
 therefore reads a bounded memory of the moments before the line: the
 settled acts of the last OPENER_WINDOW_MS (10 s) after the previous
-END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move; the
-fight time and every figure stay BEGIN_COMBAT to END_COMBAT.
+END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move: the
+fight time stays BEGIN_COMBAT to END_COMBAT. Since issue #162 the figures
+read the same moments: the group's hits in them count in the fight at their
+own times, unless the fight before had hit the same enemy, or the enemy
+died or left before the line (waiting_hits).
 
 A millisecond is judged whole. Acts are buffered until the log moves past
 their millisecond, since fan-out casts, shield-absorb pairs and taunt ties
@@ -190,10 +299,11 @@ HOSTILE with owner 0.
 
 The memory's edge. A candidate whose enemy died or left before the line is
 dropped (a hit's or cast's target, a monster act's source): it belonged to
-the last pack. An opener within EDGE_AFTER_START_MS of the line that started
-the memory, or in the window's oldest second, may not be the first act at
-all, so the line drops "first" and the time there: "@tank was already
-fighting Yokeda Kai (Goading Throw) when the fight began".
+the last pack, and the fight's figures leave its hits out too. An opener
+within EDGE_AFTER_START_MS of the line that started the memory, or in the
+window's oldest second, may not be the first act at all, so the line drops
+"first" and the time there: "@tank was already fighting Yokeda Kai
+(Goading Throw) when the fight began".
 
 Times. The line's first act gets ", 2.0 s into the fight" or ", 4.4 s
 before the fight's start" only from TIME_SHOWN_MS away from the line, so a
@@ -205,7 +315,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4775](../src/esolog_tail.py#L4775)*
+*[src/esolog_tail.py:4911](../src/esolog_tail.py#L4911)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -248,7 +358,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:364](../src/esolog_tail.py#L364)*
+*[src/esolog_tail.py:369](../src/esolog_tail.py#L369)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -1692,8 +1802,13 @@ rule, player-fights / distinct characters in that survey:
   ever sourced by the player in any fight of the session; one fire clears
   the finding for the session. In those logs Alkosh wearers sourced Roar
   of Alkosh as 76667 and 75751, Roaring Opportunist wearers Major Slayer as
-  93109 and 135923 (the other Major Slayer ids, 93120, 93442 and 177886,
-  came from other sets). The one wearer who never fired Alkosh never used a
+  93109 and 135923. Only 135923 counts: War Machine and Master Architect
+  wearers write 93109 too (48 of 53 and 76 of 84 sessions without Roaring
+  Opportunist, 395 split logs of 2026-10-31), so either would hide a
+  Roaring Opportunist that never fires, while in Roaring Opportunist
+  sessions the two ids came together (both in 152 of 159, neither in the
+  other 7). The other Major Slayer ids, 93120, 93442 and 177886, come from
+  other sets. The one wearer who never fired Alkosh never used a
   synergy through a whole Halls of Fabrication run, 240 s fight included.
 - **Huntsman's Warmask that never fires** (issue #47, the same session
   rule, the mythic's one piece being the set): its Mark of Hircine
@@ -1888,7 +2003,7 @@ the weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:1094](../src/build_issues.py#L1094)*
+*[src/build_issues.py:1099](../src/build_issues.py#L1099)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, a second copy of a group buff set or a
@@ -1900,7 +2015,7 @@ instead of counting twice. reset() at BEGIN_LOG.
 
 ### GroupBuffCredit
 
-*[src/build_issues.py:820](../src/build_issues.py#L820)*
+*[src/build_issues.py:825](../src/build_issues.py#L825)*
 
 Whose copy of a group buff set's buff each player had, over time
 (issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
@@ -2149,7 +2264,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:932](../src/esolog_tail.py#L932)*
+*[src/esolog_tail.py:962](../src/esolog_tail.py#L962)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2190,13 +2305,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:97](../src/esolog_tail.py#L97)*
+*[src/esolog_tail.py:102](../src/esolog_tail.py#L102)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:414](../src/esolog_tail.py#L414)*
+*[src/esolog_tail.py:419](../src/esolog_tail.py#L419)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2280,7 +2395,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
+*[src/esolog_tail.py:119](../src/esolog_tail.py#L119)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2288,7 +2403,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:137](../src/esolog_tail.py#L137)*
+*[src/esolog_tail.py:142](../src/esolog_tail.py#L142)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2367,14 +2482,19 @@ player's own dps by a median 5.8% (p90 41%) and their boss dps by a median
 9.7% (p90 75%): the group's first hit comes a median 0.5 s after
 BEGIN_COMBAT and END_COMBAT a median 0.5 s (p90 6 s) after its last, and a
 player's own span is more than 10% shorter than the group's in 29% of
-player-fights (died, arrived late, stopped hitting). What the engine does
-not count stays negligible: hits on units the log never added 0.07% of all
-damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
-0.04%, in the 1.3 s after END_COMBAT 0.02%.
+player-fights (died, arrived late, stopped hitting). What the engine did
+not count was negligible in all: hits on units the log never added 0.07% of
+all damage, on non-hostile units 0.00%, in the two seconds before
+BEGIN_COMBAT 0.04%, in the 1.3 s after END_COMBAT 0.02%. It was not on
+single fights, though (issue #162): a group member's hit on the new fight's
+enemies came in the 10 s before BEGIN_COMBAT in 43.6% of 8,765 fights. So
+the group's hits from those 10 s now count, on any enemy the fight before
+never hit, at their own times, and a dps time can start before the fight
+does (waiting_hits). The hits after END_COMBAT still count in no fight.
 
 ### dps_time_s
 
-*[src/damage_stats.py:94](../src/damage_stats.py#L94)*
+*[src/damage_stats.py:99](../src/damage_stats.py#L99)*
 
 A dps time: the span in seconds, floored at a second like LibCombat.
 
@@ -2458,7 +2578,7 @@ it was in the window.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:646](../src/esolog_tail.py#L646)*
+*[src/esolog_tail.py:658](../src/esolog_tail.py#L658)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2481,7 +2601,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:792](../src/esolog_tail.py#L792)*
+*[src/esolog_tail.py:804](../src/esolog_tail.py#L804)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2496,7 +2616,13 @@ the spans the dps figures divide by, and the breakdowns. With its
 also keeps the kinds of the damage (damage_kinds): the area rule
 reads the cast, the session and the player-skill table, and a hit
 counted single is moved to area should its cast strike a second
-unit later.
+unit later. *area*, an (area?, rule) the cast index gave already,
+stands in for the index, with no watcher, and *link*, whose the hit
+is (player, companion row key or None, a pet's?) as this returned
+it, for the encounter's own reading: a hit from before the fight's
+line, counted at END_COMBAT (waiting_hits). Returns (the kinds'
+(area?, rule), that link) as the hit was credited, None for a hit
+credited to nobody.
 
 A companion's damage is its own row's (companions.py), keyed by
 the companion's row key, with its kinds like a player's; with
@@ -2507,7 +2633,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:3979](../src/esolog_tail.py#L3979)*
+*[src/esolog_tail.py:4115](../src/esolog_tail.py#L4115)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
