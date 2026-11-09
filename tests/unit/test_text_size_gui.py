@@ -193,14 +193,15 @@ class TestShortcuts(TextSizeTestCase):
         from PySide6.QtTest import QTest
         win = self._window()
         win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
-        build = win._build_dialog
+        from gui.player_window import BUILD_TAB
+        build = win._player_window
         build.activateWindow()
         self.assertTrue(QTest.qWaitForWindowActive(build, 2000))
-        html = build.view.toHtml()
+        html = build.view(BUILD_TAB).toHtml()
         self._press(build, "Ctrl+=")
         self.assertEqual(self._saved(), 110)
-        self.assertAlmostEqual(build.view.font().pointSizeF(), self._base_pt() * 1.1)
-        self.assertNotEqual(build.view.toHtml(), html)  # re-rendered at the new size
+        self.assertAlmostEqual(build.view(BUILD_TAB).font().pointSizeF(), self._base_pt() * 1.1)
+        self.assertNotEqual(build.view(BUILD_TAB).toHtml(), html)  # re-rendered at the new size
 
     def test_a_wheel_zoom_gives_way_to_the_setting(self):
         win = self._window()
@@ -210,6 +211,20 @@ class TestShortcuts(TextSizeTestCase):
         self.assertAlmostEqual(win.fight_view.font().pointSizeF(), self._base_pt())
         self._press(win.history_list, "Ctrl+=")
         self.assertAlmostEqual(win.fight_view.font().pointSizeF(), self._base_pt() * 1.1)
+
+    def test_a_wheel_zoom_in_an_open_window_gives_way_too(self):
+        """The pages of the windows open beside the main one take the
+        setting as the pane does: their views are in the list it goes
+        through (MainWindow._windows, issue #196)."""
+        from PySide6.QtCore import QUrl
+        win = self._window()
+        win.fight_view.anchorClicked.emit(QUrl("esolog:build/1"))
+        from gui.player_window import BUILD_TAB
+        view = win._player_window.view(BUILD_TAB)
+        view.zoomIn(4)
+        self.assertGreater(view.font().pointSizeF(), self._base_pt())
+        self._press(win.history_list, "Ctrl+=")
+        self.assertAlmostEqual(view.font().pointSizeF(), self._base_pt() * 1.1)
 
 
 class TestPixels(TextSizeTestCase):
@@ -241,14 +256,16 @@ class TestPixels(TextSizeTestCase):
         self.assertAlmostEqual(strip._label_font().pointSizeF(), (self._base_pt() - 2) * 1.5)
 
     def test_the_graph_legend_widens(self):
-        from gui.dps_graph import LEGEND_WIDTH
+        """The legend's widest and narrowest follow the text size; between
+        them it takes what the chart leaves (issue #196)."""
+        from gui.dps_graph import LEGEND_LEAST, LEGEND_WIDTH
         win = self._window()
         win._show_graph()
-        graph = win._graph_dialog
-        self.assertEqual(graph.legend.width(), LEGEND_WIDTH)
+        graph = win.dps_panel
+        self.assertEqual((graph.legend.minimumWidth(), graph.legend.maximumWidth()),
+                         (LEGEND_LEAST, LEGEND_WIDTH))
         win.set_text_size(150)
-        self.assertEqual(graph.legend.maximumWidth(), 345)
-        graph.close()
+        self.assertEqual((graph.legend.minimumWidth(), graph.legend.maximumWidth()), (150, 345))
 
     def test_the_bundled_icons_are_64_px(self):
         from PySide6.QtGui import QImage
@@ -259,6 +276,92 @@ class TestPixels(TextSizeTestCase):
         for path in paths:
             image = QImage(str(path))
             self.assertEqual((image.width(), image.height()), (64, 64), path.name)
+
+
+class TestTheLinkReachedWithTab(TextSizeTestCase):
+
+    def test_a_new_size_keeps_the_link_where_it_was_on_the_screen(self):
+        """Tabbed to a link at the foot of the pane, the reader makes the
+        text bigger: the link keeps Tab's focus where it was on the screen,
+        so Enter opens one they can see (issue #199). The page grew under
+        the bar's old position, which put the link out of sight."""
+        from copy import deepcopy
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self._window()
+        group = _entry()
+        one = group.players[0]
+        group.players = [dict(deepcopy(one), unit_id=str(n), name=f"@player{n}",
+                              character=f"Char {n}", is_local=n == 1) for n in range(1, 9)]
+        win._on_fight_completed(group)
+        win.history_list.select_fight(-1)
+        view = win.fight_view
+        view.setMaximumHeight(160)  # short enough to scroll on every platform
+        _app.processEvents()
+        bar = view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        view.setFocus()
+        for _ in range(40):
+            QTest.keyClick(view, Qt.Key_Tab)
+            if bar.value() > 0:
+                break
+        else:
+            self.fail('no link below the pane\'s first screen')
+        link = view.textCursor().selectedText()
+        top = view.link_top()
+        self.assertIsNotNone(top)
+        win.set_text_size(150)
+        _app.processEvents()
+        self.assertEqual(view.textCursor().selectedText(), link)
+        self.assertIsNotNone(view.link_top())
+        # Higher up by its line's growth at most, so all of it shows
+        self.assertLessEqual(abs(view.link_top() - top), view.cursorRect().height())
+
+    def test_a_link_at_the_panes_foot_stays_whole_as_the_window_grows(self):
+        """Tab leaves each link it scrolls to at the pane's foot. A bigger
+        size grows the toolbar, the strip, the search row and the status
+        bar, and the pane gives them that height after the redraw: the link
+        goes back once the window is laid out at the new size, so the whole
+        of its line stays in the pane (review of PR #200). Where the window
+        does not shrink the pane, its line stays whole too."""
+        from copy import deepcopy
+
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+        win = self._window()
+        win.resize(900, 560)
+        group = _entry()
+        one = group.players[0]
+        # Long enough to scroll in a window that does not shrink
+        group.players = [dict(deepcopy(one), unit_id=str(n), name=f"@player{n}",
+                              character=f"Char {n}", is_local=n == 1) for n in range(1, 17)]
+        win._on_fight_completed(group)
+        win.history_list.select_fight(-1)
+        _app.processEvents()
+        view = win.fight_view
+        bar = view.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+
+        def line():
+            cursor = view.textCursor()
+            start = QTextCursor(cursor)
+            start.setPosition(cursor.selectionStart())
+            return view.cursorRect(start)
+        view.setFocus()
+        for _ in range(200):
+            QTest.keyClick(view, Qt.Key_Tab)
+            if bar.value() > 0 and line().bottom() >= view.viewport().height() - 4:
+                break
+        else:
+            self.fail("Tab left no link at the pane's foot")
+        link = view.textCursor().selectedText()
+        win.set_text_size(200)
+        QTest.qWait(600)  # the hold over, as the reader sees it
+        self.assertEqual(view.textCursor().selectedText(), link)
+        self.assertGreaterEqual(line().top(), 0)
+        self.assertLess(line().bottom(), view.viewport().height())
 
 
 class TestSettings(TextSizeTestCase):

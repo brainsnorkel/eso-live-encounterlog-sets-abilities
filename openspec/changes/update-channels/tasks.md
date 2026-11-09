@@ -23,6 +23,6 @@
 
 ## 3. Rollout checks
 
-- [ ] 3.1 First beta tag: `/releases/latest` still the Stable release; the home page's Stable buttons unchanged and its Beta link the beta; the maintainer's app offered it; a scratch Stable config offered nothing. 0.27.0 (2026-10-31, run 41122306408): latest still v0.26.0, the buttons 0.26.0 with "beta 0.27.0" under them, `check_for_update('0.26.0')` offered 0.27.0 on Beta and nothing on Stable; the maintainer's own app still to be seen
+- [x] 3.1 First beta tag: `/releases/latest` still the Stable release; the home page's Stable buttons unchanged and its Beta link the beta; the maintainer's app offered it; a scratch Stable config offered nothing. 0.27.0 (2026-10-31, run 41122306408): latest still v0.26.0, the buttons 0.26.0 with "beta 0.27.0" under them, `check_for_update('0.26.0')` offered 0.27.0 on Beta and nothing on Stable; the maintainer's own app on Beta offered it the same day
 - [ ] 3.2 First promotion: the flag flipped and latest set; the Pages run the script started deployed the new buttons; a scratch Stable config offered the release with the combined notes
 - [ ] 3.3 First demotion, whenever one is needed: `gh release edit --draft` on a published release worked, the release vanished from both channels and the home page, and the previous Stable release is latest

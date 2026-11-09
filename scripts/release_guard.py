@@ -43,7 +43,8 @@ _VERSION_LINE_RE = re.compile(r"""^__version__\s*=\s*["']([^"']+)["']""", re.MUL
 
 
 def _git(args, cwd) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", check=False)
 
 
 def version_at(commit: str, cwd=None) -> str:

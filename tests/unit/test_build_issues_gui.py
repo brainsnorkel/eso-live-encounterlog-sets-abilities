@@ -67,7 +67,9 @@ class IssuesGuiTestCase(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _window(self, entry):
+    def _window(self, entry, show=False):
+        from PySide6.QtTest import QTest
+
         from app_config import AppConfig
         from gui.main_window import MainWindow
         config = AppConfig(path=self.root / 'config.json')
@@ -75,6 +77,13 @@ class IssuesGuiTestCase(unittest.TestCase):
         win = MainWindow(config)
         win.worker_thread.quit()
         win.worker_thread.wait(3000)
+        if show:
+            win.show()
+            win.activateWindow()
+            self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
+            # Flush the worker's queued startup signals (its "waiting for
+            # log" placeholder would replace the fight drawn below)
+            _app.processEvents()
         win._on_fight_completed(entry)
         win.history_list.select_fight(0)
         return win
@@ -82,6 +91,19 @@ class IssuesGuiTestCase(unittest.TestCase):
     def _popups(self):
         from gui.build_issues_popup import BuildIssuesPopup
         return [w for w in _app.topLevelWidgets() if isinstance(w, BuildIssuesPopup)]
+
+
+def _focused_link(view) -> str:
+    """The href of the link Tab has moved to in *view* (the text cursor
+    selects it), '' when none has the focus."""
+    from PySide6.QtGui import QTextCursor
+    cursor = view.textCursor()
+    if not cursor.hasSelection():
+        return ''
+    first = QTextCursor(cursor)
+    first.setPosition(cursor.selectionStart())
+    first.movePosition(QTextCursor.NextCharacter)
+    return first.charFormat().anchorHref()
 
 
 class TestCue(IssuesGuiTestCase):
@@ -109,13 +131,6 @@ class TestCue(IssuesGuiTestCase):
         # The glyph follows the pane's font size
         self.assertIn('glyph:issues?color=166ad8&amp;px=21',
                       render_html(entry, detailed=False, base_pt=12.0))
-
-    def test_the_cue_follows_the_first_damage_star(self):
-        from gui.fight_render import render_html
-        entry = _entry()
-        entry.first_damage_dealer = '2'
-        html = render_html(entry, detailed=False)
-        self.assertIn('>@dualwield</a> <b>*</b>&nbsp;<a href="esolog:issues/2"', html)
 
     def test_a_hidden_name_does_not_take_the_cue_in(self):
         from gui.fight_render import render_html
@@ -336,6 +351,62 @@ class TestPopup(IssuesGuiTestCase):
         finally:
             win.close()
 
+    def test_enter_on_the_focused_mark_opens_the_popup_under_it(self):
+        """Tab to a player's (i) and press Enter: the popup opens just under
+        the mark, where a click opens it at the pointer, which from the
+        keyboard may be anywhere (issue #196)."""
+        from unittest import mock
+
+        from PySide6.QtCore import QPoint, Qt, QUrl
+        from PySide6.QtGui import QCursor, QTextCursor
+        from PySide6.QtTest import QTest
+
+        from gui import build_issues_popup
+        # Where each popup was asked to open, its top-left corner: the
+        # offscreen platform shows a window placed before it is shown 2 px
+        # off, for the frame it gives a window that is not frameless
+        asked = []
+        place = build_issues_popup.place_popup
+        win = self._window(_entry(), show=True)
+        try:
+            pointer = QPoint(20, 20)
+            QCursor.setPos(pointer)
+            view = win.fight_view
+            view.setFocus()
+            for _ in range(200):
+                if _focused_link(view) == 'esolog:issues/2':
+                    break
+                QTest.keyClick(view, Qt.Key_Tab)
+            self.assertEqual(_focused_link(view), 'esolog:issues/2')
+            cursor = view.textCursor()
+            start, end = QTextCursor(cursor), QTextCursor(cursor)
+            start.setPosition(cursor.selectionStart())
+            end.setPosition(cursor.selectionEnd())
+            mark = view.cursorRect(start).united(view.cursorRect(end))
+            under = view.viewport().mapToGlobal(QPoint(mark.left(), mark.bottom() + 1))
+            self.assertNotEqual(under, pointer)
+
+            with mock.patch.object(build_issues_popup, 'place_popup',
+                                   lambda frame, pos: (asked.append(QPoint(pos)), place(frame, pos))):
+                QTest.keyClick(view, Qt.Key_Return)
+                _app.processEvents()
+                self.assertEqual(asked, [under])
+                popups = self._popups()
+                self.assertEqual(len(popups), 1)
+                self.assertTrue(popups[0].isVisible())
+                QTest.keyClick(popups[0], Qt.Key_Escape)
+                _app.processEvents()
+                self.assertEqual(self._popups(), [])
+
+                # A click on the mark still opens it at the pointer
+                view.anchorClicked.emit(QUrl('esolog:issues/2'))
+                _app.processEvents()
+                self.assertEqual(asked, [under, pointer])
+            for popup in self._popups():
+                popup.close()
+        finally:
+            win.close()
+
     def test_no_popup_for_a_player_without_findings_or_unknown(self):
         win = self._window(_entry())
         try:
@@ -380,10 +451,11 @@ class TestBuildWindow(IssuesGuiTestCase):
         from gui.fight_render import ISSUES_TITLE
         win = self._window(_entry())
         try:
+            from gui.player_window import BUILD_TAB
             win._show_build('2')
-            self.assertIn(ISSUES_TITLE, win._build_dialog.view.toPlainText())
+            self.assertIn(ISSUES_TITLE, win._player_window.view(BUILD_TAB).toPlainText())
             win._show_build('1')
-            self.assertNotIn(ISSUES_TITLE, win._build_dialog.view.toPlainText())
+            self.assertNotIn(ISSUES_TITLE, win._player_window.view(BUILD_TAB).toPlainText())
         finally:
             win.close()
 

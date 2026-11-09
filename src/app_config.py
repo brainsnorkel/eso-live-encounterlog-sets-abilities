@@ -44,6 +44,9 @@ DEFAULTS = {
     },
     "history": {
         "load_recent_mb": 0,    # 0 -> attach at end; N -> parse trailing N MB
+        # The status bar's one hint that the fight history (fight_index,
+        # issue #170) can be built from the split logs has been shown
+        "backfill_offered": False,
     },
     "tracking": {
         "rules": DEFAULT_RULES,  # tracked effects, one rule per line (effect_rules)
@@ -71,6 +74,13 @@ DEFAULTS = {
     "privacy": {
         "hide_names": False,
     },
+    # The trial completion banner grabbed from the screen after END_TRIAL
+    # (banner_capture, issue #167), Windows only: off until switched on
+    # (Chris, 2026-11-01); the folder, None -> <log folder>\Banners
+    "banner": {
+        "enabled": False,
+        "dir": None,
+    },
     # A companion has its own row under its owner (companions.py); this
     # also counts its damage and healing as the owner's (off: Combat
     # Metrics never does)
@@ -78,9 +88,10 @@ DEFAULTS = {
         "accrue_to_owner": False,
     },
     # The death recap window: seconds of damage and healing kept before
-    # each death (death_recap, issue #95), 5 to 10
+    # each death (death_recap, issues #95 and #133), 1 to 10; 3 for a new
+    # install, while a stored 5 from an older version is kept
     "death_recap": {
-        "window_s": 5,
+        "window_s": 3,
     },
     # The app-wide text size, a percentage of the system font (gui.text_size,
     # issue #77): 80 to 200, set in Settings or with Ctrl+=, Ctrl+- and Ctrl+0

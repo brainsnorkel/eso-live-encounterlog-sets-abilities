@@ -55,7 +55,7 @@ def _entry(boss, zone='Sunspire', zone_id='1121', difficulty='VETERAN', result=N
 class TestBlockRule(unittest.TestCase):
 
     def test_where_a_block_starts(self):
-        from gui.fight_list import starts_block
+        from fight_blocks import starts_block
         first = _entry('Lokkestiiz')
         self.assertTrue(starts_block(None, first))
         # A wipe and a walk back in: same zone and difficulty, no result
@@ -67,15 +67,42 @@ class TestBlockRule(unittest.TestCase):
 
     def test_the_zone_id_tells_zones_of_one_name_apart(self):
         # A solo dungeon has its group dungeon's name
-        from gui.fight_list import starts_block
+        from fight_blocks import starts_block
         self.assertTrue(starts_block(_entry('a', 'March of Sacrifices', '1055', 'NORMAL'),
                                      _entry('b', 'March of Sacrifices', '1592', 'NORMAL')))
 
     def test_header_text(self):
-        from gui.fight_list import header_text
+        from fight_blocks import header_text
         self.assertEqual(header_text(_entry('a')), 'Sunspire · Veteran')
         self.assertEqual(header_text(_entry('a', difficulty='NORMAL')), 'Sunspire · Normal')
         self.assertEqual(header_text(_entry('a', 'Craglorn', '888', 'NONE')), 'Craglorn')
+
+    def test_a_fight_read_again_has_the_same_key(self):
+        # Issue #196: a Settings replay builds new entries for the same
+        # fights, with other figures
+        from types import SimpleNamespace
+
+        from fight_blocks import fight_key
+        first, again = _entry('Lokkestiiz'), _entry('Lokkestiiz', result=RESULT)
+        again.group_dps, again.deaths, again.players = 1.0, 3, []
+        self.assertEqual(fight_key(first), ('2026-10-21 21:50:00', '1121', 0))
+        self.assertEqual(fight_key(first), fight_key(again))
+        # The boss is no part of it: a fight the game cut in two can come
+        # back under another one
+        self.assertEqual(fight_key(first), fight_key(_entry('Yolnahkriin')))
+        # Another start or zone is another fight
+        later = _entry('Lokkestiiz')
+        later.timestamp = '2026-10-21 21:58:12'
+        for other in (later, _entry('Lokkestiiz', 'March of Sacrifices', '1055', 'NORMAL')):
+            self.assertNotEqual(fight_key(first), fight_key(other))
+        # Two fights begun in one second are told apart by how many of the
+        # fights before them share the start: the other zone's does not
+        elsewhere = _entry('Lokkestiiz', 'March of Sacrifices', '1055', 'NORMAL')
+        self.assertEqual(fight_key(again, [first, elsewhere]), ('2026-10-21 21:50:00', '1121', 1))
+        # An entry from before the zone id was kept
+        old = SimpleNamespace(timestamp='2026-10-21 21:50:00', boss_name='Lokkestiiz',
+                              zone_name='Sunspire')
+        self.assertEqual(fight_key(old), ('2026-10-21 21:50:00', '', 0))
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -177,6 +204,26 @@ class TestFightList(unittest.TestCase):
         QTest.keyClick(self.list, Qt.Key_End)
         self.assertEqual(self.list.current_fight_index(), 3)
 
+    def test_the_keys_with_no_fight_current(self):
+        # Issue #196: a Settings replay leaves no fight current until its
+        # fights are in, and Qt then starts every key at the first. End,
+        # the page keys and the keys that move up go to the newest
+        from PySide6.QtCore import QModelIndex, Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QAbstractItemView
+        self.list.show()
+        for key, expected in ((Qt.Key_End, 3), (Qt.Key_PageDown, 3), (Qt.Key_Up, 3),
+                              (Qt.Key_PageUp, 3), (Qt.Key_Home, 0), (Qt.Key_Down, 0)):
+            self.list.setCurrentIndex(QModelIndex())
+            QTest.keyClick(self.list, key)
+            self.assertEqual(self.list.current_fight_index(), expected, key.name)
+        # Shift+Tab and Tab, with tab key navigation on
+        self.list.setCurrentIndex(QModelIndex())
+        for action, expected in ((QAbstractItemView.MovePrevious, 3),
+                                 (QAbstractItemView.MoveNext, 0)):
+            row = self.list.moveCursor(action, Qt.NoModifier).row()
+            self.assertIs(self.list.entry_at(row), self.fights[expected], action.name)
+
     def test_a_result_that_came_after_its_fight(self):
         from gui.fight_list import FightList
         listed = FightList()
@@ -232,6 +279,21 @@ class TestWindow(unittest.TestCase):
         self.assertIn('Vitality 35/36', QGuiApplication.clipboard().text())
         self.win.history_list.select_fight(0)
         self.assertNotIn('Vitality', self.win.fight_view.toPlainText())
+
+    def test_copy_session_copies_the_list_as_a_recap(self):
+        from PySide6.QtGui import QGuiApplication
+        self.win._copy_session()
+        self.assertEqual(self.win.statusBar().currentMessage(), "No fights to copy")
+        self.win._on_fight_completed(_entry('Lokkestiiz'))
+        self.win._on_fight_completed(_entry('Nahviintaas', result=RESULT))
+        self.win._copy_session()
+        text = QGuiApplication.clipboard().text()
+        self.assertTrue(text.startswith('Sunspire · Veteran · 2026-10-21 21:50 to 21:51'))
+        self.assertIn('Trash: 2 fights, 3:20', text)
+        self.assertIn('Vitality 35/36', text)
+        self.assertTrue(self.win.statusBar().currentMessage().startswith(
+            'Session recap copied to clipboard, '))
+        self.assertEqual(self.win.copy_session_action.shortcut().toString(), 'Ctrl+Shift+C')
 
     def test_a_late_result_redraws_the_fight_on_screen(self):
         final = _entry('Nahviintaas')

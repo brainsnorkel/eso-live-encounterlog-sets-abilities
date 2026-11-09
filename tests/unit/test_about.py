@@ -59,13 +59,23 @@ class TestAbout(unittest.TestCase):
                       html)
         self.assertIn('the dps time', html)
 
+    def test_credits_name_both_logging_addons(self):
+        from gui.about import about_html
+        html = about_html('0.28.0')
+        self.assertIn("<a href='https://www.esoui.com/downloads/info2332-EasyStalking-"
+                      "Encounterlog.html'>Easy Stalking - Encounterlog</a>", html)
+        self.assertIn("<a href='https://github.com/brainsnorkel/AlwaysLogging'>"
+                      "Always Logging</a>", html)
+
     def test_readme_credits_mirror_the_dialog(self):
         readme = (Path(__file__).resolve().parents[2] / 'README.md').read_text(encoding='utf-8')
         credits = readme[readme.index('## Credits'):]
         for url in ('https://www.esoui.com/downloads/info1360-CombatMetrics.html',
                     'https://github.com/Solinur/LibCombat',
                     'https://github.com/Solinur/CombatMetrics',
-                    'https://eso-hub.com', 'https://github.com/Baertram/LibSets'):
+                    'https://eso-hub.com', 'https://github.com/Baertram/LibSets',
+                    'https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html',
+                    'https://github.com/brainsnorkel/AlwaysLogging'):
             self.assertIn(url, credits)
 
     def test_toolbar_has_about_action(self):

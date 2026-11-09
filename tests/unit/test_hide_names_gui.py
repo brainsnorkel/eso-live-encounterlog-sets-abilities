@@ -286,45 +286,49 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_open_windows_follow_a_flip(self):
+        """The player window and the DPS graph tab follow a flip of the
+        switch: the window's title, picker and page on screen at once
+        (issue #196)."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import BUILD_TAB, DAMAGE_TAB, DEATHS_TAB
         win = self._window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
-            self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
-            win.fight_view.anchorClicked.emit(QUrl("esolog:damage/2"))
-            damage = win._damage_dialog
-            self.assertEqual(damage.windowTitle(), "Damage – @friend")
-            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
-            recap = win._death_dialog
-            self.assertEqual(recap.windowTitle(), "Death recap – @me")
-            self.assertIn("@friend", recap.view.toPlainText())
+            window = win._player_window
+            self.assertEqual(window.windowTitle(), "Build – @friend (Friend Char)")
+            self.assertIn("@friend", window.picker.currentText())
             win.graph_action.trigger()
-            graph = win._graph_dialog
+            graph = win.dps_panel
             self.assertTrue(graph.legend.item(2).text().startswith("@friend"))
 
             win.hide_names_action.setChecked(True)
-            self.assertEqual(build.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
-            self.assertIn("mask:", build.view.toHtml())
-            self.assertNotIn("@friend", build.view.toPlainText())
-            self.assertEqual(damage.windowTitle(), f"Damage – {FRIEND}")
-            self.assertIn("mask:", damage.view.toHtml())
+            self.assertEqual(window.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
+            self.assertIn(FRIEND, window.picker.currentText())
+            names = [window.picker.itemText(i) for i in range(window.picker.count())]
+            self.assertFalse(any("@friend" in name for name in names), names)
+            self.assertNotIn("@friend", window.view(BUILD_TAB).toPlainText())
+            win.fight_view.anchorClicked.emit(QUrl("esolog:damage/2"))
+            self.assertEqual(window.windowTitle(), f"Damage – {FRIEND}")
+            self.assertNotIn("@friend", window.view(DAMAGE_TAB).toPlainText())
             # The logging player's own recap keeps their name; the heal
             # from the friend is hidden, the killing enemy is not
-            self.assertEqual(recap.windowTitle(), "Death recap – @me")
-            recap_text = recap.view.toPlainText()
-            self.assertIn("@me", recap_text)
+            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
+            self.assertEqual(window.windowTitle(), "Death recap – @me")
+            recap = window.view(DEATHS_TAB)
+            recap_text = recap.toPlainText()
             self.assertNotIn("@friend", recap_text)
             self.assertIn("Sharpfang", recap_text)
-            self.assertIn("mask:", recap.view.toHtml())
+            self.assertIn("mask:", recap.toHtml())
             self.assertTrue(graph.legend.item(1).text().startswith("@me"))
             self.assertTrue(graph.legend.item(2).text().startswith(FRIEND))
             self.assertTrue(graph.legend.item(3).text().startswith(BLOCK * 12))
 
+            win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
             win.hide_names_action.setChecked(False)
-            self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
+            self.assertEqual(window.windowTitle(), "Build – @friend (Friend Char)")
             self.assertTrue(graph.legend.item(2).text().startswith("@friend"))
         finally:
             win.close()
@@ -336,7 +340,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             build.hide()
             win.hide_names_action.setChecked(True)
             self.assertEqual(build.windowTitle(), "Build – @friend (Friend Char)")
@@ -382,7 +386,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(second)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             win.history_list.select_fight(1)
             win.hide_names_action.setChecked(True)
             pane = win.fight_view.toPlainText()
@@ -421,7 +425,7 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.graph_action.trigger()
-            hover = win._graph_dialog.graph.tooltip_html(3)
+            hover = win.dps_panel.graph.tooltip_html(3)
             self.assertIn("@me", hover)
             self.assertIn(FRIEND, hover)
             self.assertNotIn("@friend", hover)
@@ -440,13 +444,47 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/2"))
-            recap = win._death_dialog
+            from gui.player_window import DEATHS_TAB
+            recap = win._player_window
             self.assertEqual(recap.windowTitle(), f"Death recap – {FRIEND}")
-            text = recap.view.toPlainText()
+            self.assertIn(FRIEND, recap.picker.currentText())
+            text = recap.view(DEATHS_TAB).toPlainText()
             self.assertNotIn("@friend", text)
             self.assertIn("@me", text)  # the logging player's heal
             self.assertIn("Sharpfang", text)
-            self.assertIn("mask:", recap.view.toHtml())
+        finally:
+            win.close()
+
+    def test_a_window_redrawn_for_its_fight_hides_a_player_the_fight_gained(self):
+        """The game cut the fight in two, and a player without a handle who
+        joined in the second part healed @me before the death. The recap
+        window open on the fight redraws with a mask made from the whole
+        fight, so that player is hidden too (issue #196); the mask the
+        window had knew only the first part's players."""
+        from PySide6.QtCore import QUrl
+        win = self._window(hide=True)
+        try:
+            entry = _entry()
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl("esolog:deaths/1"))
+            from gui.player_window import DEATHS_TAB
+            page = win._player_window.view(DEATHS_TAB)
+            self.assertEqual(page.toPlainText().count("Radiating Regeneration"), 1)
+            # The whole fight's players and recaps, as the engine copies them
+            # onto the entry the window holds
+            entry.players = entry.players + [_player("4", "Late Comer", "Late Comer")]
+            entry.death_recaps = [dict(entry.death_recaps[0],
+                                       events=[_heal_row("Late Comer"), _heal_row("@friend")]),
+                                  entry.death_recaps[1]]
+            win._on_fight_updated(entry)
+            _app.processEvents()  # the window draws a burst of updates once
+            text = page.toPlainText()
+            self.assertEqual(text.count("Radiating Regeneration"), 2)
+            self.assertNotIn("Late Comer", text)
+            self.assertNotIn("@friend", text)
+            # The window's title names the player, the logging one, unhidden
+            self.assertEqual(win._player_window.windowTitle(), "Death recap – @me")
         finally:
             win.close()
 
@@ -457,11 +495,12 @@ class TestTheWindows(HideNamesTestCase):
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            from gui.player_window import BUILD_TAB
+            build = win._player_window
             build.refresh(True)
             self.assertEqual(build.windowTitle(), f"Build – {FRIEND} ({FRIEND_CHAR})")
-            self.assertIn("mask:", build.view.toHtml())
-            self.assertIn("#9aa0a6", build.view.toHtml())  # the dark theme's muted colour
+            self.assertIn(FRIEND, build.picker.currentText())
+            self.assertIn("#9aa0a6", build.view(BUILD_TAB).toHtml())  # the dark theme's muted colour
         finally:
             win.close()
 
@@ -482,7 +521,7 @@ class TestTheWindows(HideNamesTestCase):
             self.assertNotIn("@friend", win.fight_view.toPlainText())
             # From the build window too (the action's context is the application)
             win.fight_view.anchorClicked.emit(QUrl("esolog:build/2"))
-            build = win._build_dialog
+            build = win._player_window
             build.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(build, 2000))
             QTest.keyClick(build, Qt.Key_H, Qt.ControlModifier)
@@ -492,9 +531,15 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_the_pane_stays_where_it_was_scrolled(self):
+        """The fight's page, scrolled half way down, is redrawn by the
+        switch where the reader had it (FightView.keeping_place)."""
         win = self._window()
         try:
             win.show()
+            # Flush the worker's queued startup signals: its "waiting for
+            # log" page would replace the fight drawn below, and the page
+            # scrolled would be that one
+            _app.processEvents()
             # A long page in a short pane, whatever the platform's fonts and
             # window geometry make of the layout
             win.fight_view.setFixedHeight(120)
@@ -508,14 +553,47 @@ class TestTheWindows(HideNamesTestCase):
             # got there on its own)
             view.document().documentLayout().documentSize()
             _app.processEvents()
+            self.assertIn("@friend", view.toPlainText())
             bar = view.verticalScrollBar()
-            if bar.maximum() <= 0:
-                self.skipTest("the pane did not overflow on this platform")
+            self.assertGreater(bar.maximum(), 0)
             bar.setValue(bar.maximum() // 2)
             kept = bar.value()
             self.assertGreater(kept, 0)
             win.hide_names_action.setChecked(True)
             view.document().documentLayout().documentSize()
+            _app.processEvents()
+            self.assertNotIn("@friend", view.toPlainText())
+            self.assertEqual(bar.value(), kept)
+        finally:
+            win.close()
+
+    def test_the_pane_redrawn_again_before_the_step_keeps_its_place(self):
+        """The switch flipped and flipped back in the same pass, the bar
+        moved between, before the step after layout has run: the pane comes
+        back where the reader had it, the step's place, not where the bar
+        was meanwhile (FightView.keeping_place, issue #196)."""
+        win = self._window()
+        try:
+            win.show()
+            # Flush the worker's queued startup signals (its "waiting for
+            # log" page would replace the fight drawn below)
+            _app.processEvents()
+            win.fight_view.setFixedHeight(120)
+            entry = _entry()
+            entry.players = entry.players * 20
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            view = win.fight_view
+            view.document().documentLayout().documentSize()  # as above
+            _app.processEvents()
+            self.assertIn("@me", view.toPlainText())
+            bar = view.verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            win.hide_names_action.setChecked(True)
+            bar.setValue(0)
+            win.hide_names_action.setChecked(False)
             _app.processEvents()
             self.assertEqual(bar.value(), kept)
         finally:

@@ -239,51 +239,59 @@ class TestDamageWindow(DamageWindowTestCase):
         return win
 
     def test_click_on_the_dps_figure_opens_the_players_window(self):
+        """The dps figure opens the player window's Damage done tab, where
+        the damage window was (issue #196)."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import DAMAGE_TAB
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
-            self.assertIsNone(win._damage_dialog)
+            self.assertIsNone(win._player_window)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
-            dialog = win._damage_dialog
+            dialog = win._player_window
             self.assertTrue(dialog.isVisible())
+            self.assertEqual(dialog.current_tab(), DAMAGE_TAB)
             self.assertEqual(dialog.windowTitle(), 'Damage – @tester')
-            text = dialog.view.toPlainText()
+            page = dialog.view(DAMAGE_TAB)
+            text = page.toPlainText()
             for expected in ('Biting Jabs', 'Volatile Familiar (pet)', 'Wall of Elements',
                              'Ravenous Hound', 'Targets'):
                 self.assertIn(expected, text)
             # The boss switch shows, and narrows the window to the bosses
             self.assertTrue(dialog.boss_only.isVisibleTo(dialog))
             dialog.boss_only.setChecked(True)
-            text = dialog.view.toPlainText()
+            text = page.toPlainText()
             self.assertIn('damage to the bosses', text)
             self.assertNotIn('Wall of Elements', text)
 
             # Another player's figure reuses the window; without boss damage
             # the switch goes away and is off
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/2'))
-            self.assertIs(win._damage_dialog, dialog)
+            self.assertIs(win._player_window, dialog)
             self.assertEqual(dialog.windowTitle(), 'Damage – @friend')
             self.assertFalse(dialog.boss_only.isVisibleTo(dialog))
             self.assertFalse(dialog.boss_only.isChecked())
-            self.assertIn('No damage record', dialog.view.toPlainText())
+            self.assertIn('No damage record', page.toPlainText())
         finally:
             win.close()
 
     def test_window_from_the_engines_own_record(self):
         """End to end through the engine: the shared session's one fight."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import DAMAGE_TAB
         win = self._main_window()
         try:
             entry = fights()[0]
             win._on_fight_completed(entry)
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
-            dialog = win._damage_dialog
+            dialog = win._player_window
             self.assertEqual(dialog.windowTitle(), 'Damage – @brainsnorkel')
-            text = dialog.view.toPlainText()
+            text = dialog.view(DAMAGE_TAB).toPlainText()
             # One hit of 90,000: its own value per second, all of it Damage
             # Ability on the Test Boss, which is not flagged as a boss
             self.assertIn('90,000 damage in 1.0s dps time', text)
@@ -296,16 +304,19 @@ class TestDamageWindow(DamageWindowTestCase):
 
     def test_open_window_follows_a_theme_switch(self):
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import DAMAGE_TAB
         win = self._main_window()
         try:
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:damage/1'))
-            dialog = win._damage_dialog
-            before = dialog.view.toHtml()
+            dialog = win._player_window
+            page = dialog.view(DAMAGE_TAB)
+            before = page.toHtml()
             dialog.refresh(not win._dark)
-            self.assertNotEqual(dialog.view.toHtml(), before)
-            self.assertIn('Biting Jabs', dialog.view.toPlainText())
+            self.assertNotEqual(page.toHtml(), before)
+            self.assertIn('Biting Jabs', page.toPlainText())
         finally:
             win.close()
 

@@ -107,7 +107,10 @@ class TestPetDamage(unittest.TestCase):
 
     def test_the_pets_hit_can_open_the_fight(self):
         analyzer = _run([PET] + FIGHT_START + [PET_HIT, PLAYER_HIT] + FIGHT_END)
-        self.assertEqual(analyzer.fight_history.fights[0].first_damage_dealer, '1')
+        opener = analyzer.fight_history.fights[0].opener
+        # Credited to its owner, and named with the pet (fight_opener)
+        self.assertEqual((opener['unit_id'], opener['via'], opener['owner_id']), ('1', 'pet', '1'))
+        self.assertEqual((opener['name'], opener['pet']), ('@brainsnorkel', 'Blighted Blastbones'))
 
     def test_a_pet_from_before_the_pull_is_still_the_players_in_the_next_fight(self):
         later = 30000 + COMBAT_RESUME_MS + 60000

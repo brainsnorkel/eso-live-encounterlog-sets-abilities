@@ -13,6 +13,7 @@ from engine_events import RecordingListener
 from esolog_tail import ESOLogAnalyzer, FightHistory
 from trial_result import (
     TRIAL_NAMES,
+    VITALITY_MAX,
     duration_text,
     from_end_trial,
     result_text,
@@ -21,6 +22,9 @@ from trial_result import (
 
 SUNSPIRE = ['12', '1351407', 'T', '253117', '35000']
 DRAGONSTAR = ['4', '3754390', 'T', '33475', '14000']
+# The two solo arenas Chris cleared on 2026-11-01 (issue #183)
+VATESHRAN = ['14', '1805625', 'T', '262915', '14000']
+MAELSTROM = ['6', '2649500', 'T', '557196', '11000']
 
 
 class TestFromEndTrial(unittest.TestCase):
@@ -32,11 +36,24 @@ class TestFromEndTrial(unittest.TestCase):
             'score': 253117, 'vitality': 35, 'vitality_max': 36})
         self.assertEqual(result_text(result), '✓ Sunspire vet · Vitality 35/36 · 253,117 · 22:31')
 
-    def test_an_arena_has_no_maximum(self):
+    def test_an_arena_has_its_own_maximum(self):
         result = from_end_trial(DRAGONSTAR, 'Dragonstar Arena', 'VETERAN')
-        self.assertIsNone(result['vitality_max'])
+        self.assertEqual(result['vitality_max'], 24)
         self.assertEqual(result_text(result),
-                         '✓ Dragonstar Arena vet · Vitality 14 · 33,475 · 1:02:34')
+                         '✓ Dragonstar Arena vet · Vitality 14/24 · 33,475 · 1:02:34')
+        self.assertEqual(result_text(from_end_trial(VATESHRAN, 'Vateshran Hollows', 'VETERAN')),
+                         '✓ Vateshran Hollows vet · Vitality 14/15 · 262,915 · 30:06')
+        self.assertEqual(result_text(from_end_trial(MAELSTROM, 'Maelstrom Arena', 'VETERAN')),
+                         '✓ Maelstrom Arena vet · Vitality 11/15 · 557,196 · 44:10')
+
+    def test_the_maximum_by_id(self):
+        expected = {4: 24, 6: 15, 11: 24, 14: 15, 3: 36, 12: 36, 19: 36}
+        for trial_id, maximum in expected.items():
+            fields = [str(trial_id), '1000', 'T', '1', '0']
+            self.assertEqual(from_end_trial(fields, None, 'VETERAN')['vitality_max'], maximum, trial_id)
+        # Every named raid has one; an id the client does not name has none
+        self.assertEqual(set(VITALITY_MAX), set(TRIAL_NAMES))
+        self.assertIsNone(from_end_trial(['99', '1000', 'T', '1', '0'], None, 'VETERAN')['vitality_max'])
 
     def test_a_normal_trial_has_none_either(self):
         # Never seen in the logs, so not claimed
@@ -69,11 +86,20 @@ class TestFromEndTrial(unittest.TestCase):
         # The ids as the logs write them, not the old table's guesses
         self.assertEqual((TRIAL_NAMES[12], TRIAL_NAMES[16], TRIAL_NAMES[2]),
                          ('Sunspire', 'Dreadsail Reef', 'Aetherian Archive'))
+        # and as the client's table 111863941 names the ones never logged
+        self.assertEqual((trial_name(3), trial_name(6), trial_name(14)),
+                         ('Sanctum Ophidia', 'Maelstrom Arena', 'Vateshran Hollows'))
+        self.assertEqual(from_end_trial(MAELSTROM, None, 'VETERAN')['name'], 'Maelstrom Arena')
 
-    def test_the_timer_cuts_seconds(self):
-        self.assertEqual(duration_text(1351999), '22:31')
-        self.assertEqual(duration_text(59999), '0:59')
-        self.assertEqual(duration_text(3600000), '1:00:00')
+    def test_the_timer_rounds_as_the_banner_does(self):
+        # The two banners seen: 1,351,407 ms showed 22:31, 2,649,500 showed 44:10
+        self.assertEqual(duration_text(1351407), '22:31')
+        self.assertEqual(duration_text(2649500), '44:10')
+        self.assertEqual(duration_text(1805625), '30:06')
+        self.assertEqual(duration_text(2649499), '44:09')
+        self.assertEqual(duration_text(59999), '1:00')
+        self.assertEqual(duration_text(3599500), '1:00:00')
+        self.assertEqual(duration_text(-5), '0:00')
 
 
 EPOCH = 1792579000000

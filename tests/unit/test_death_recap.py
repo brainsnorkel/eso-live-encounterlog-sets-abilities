@@ -10,12 +10,15 @@ absorbed, and the last player's death written after END_COMBAT.
 import unittest
 
 from death_recap import (  # noqa: E402
-    KILLING_BLOW_GRACE_MS, RECAP_WINDOW_MS, DeathRecapRecorder,
+    KILLING_BLOW_GRACE_MS, DeathRecapRecorder,
 )
 from engine_events import RecordingListener  # noqa: E402
 from esolog_tail import LATE_DEATH_GRACE_MS, ESOLogAnalyzer, FightHistory  # noqa: E402
 
 EPOCH = 1755729685851
+# The window these fixtures were written for (the default of issue #95; it
+# is 3 seconds since #133, which test_death_recap_window covers)
+FIVE_S_MS = 5000
 
 BOSS = "70,287485/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
 NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
@@ -48,6 +51,7 @@ BASE = [
 def _run(lines):
     analyzer = ESOLogAnalyzer()
     analyzer.fight_history = FightHistory()
+    analyzer.death_recap_recorder.window_ms = FIVE_S_MS
     listener = RecordingListener()
     analyzer.add_listener(listener)
     for line in BASE + lines:
@@ -243,9 +247,11 @@ class TestDeathLoggedAfterEndCombat(unittest.TestCase):
     def test_death_well_after_combat_is_not_part_of_the_fight(self):
         analyzer, listener = _run([
             '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
             '20000,END_COMBAT',
             _event(20000 + LATE_DEATH_GRACE_MS + 1, 'DIED', 0, NO_UNIT, _player(1, 0)),
             '100000,BEGIN_COMBAT',
+            _event(110000, 'DAMAGE', 719, BOSS, _player(2, 19281)),
             '130000,END_COMBAT',
         ])
         first, second = analyzer.fight_history.fights
@@ -254,13 +260,106 @@ class TestDeathLoggedAfterEndCombat(unittest.TestCase):
         self.assertEqual(listener.of_kind('fight_updated'), [])
 
 
+def _fall(ts, target):
+    """A fall into lava or off the map, as the log writes it (issue #184):
+    no source, ability or cast, the dying unit as the target."""
+    return f"{ts},COMBAT_EVENT,KILLED_BY_SUBZONE,GENERIC,0,0,0,0,0,{NO_UNIT},{target}"
+
+
+class TestFallDeaths(unittest.TestCase):
+    """A fall is one KILLED_BY_SUBZONE line, with no DIED (issue #184)."""
+
+    def test_a_fall_in_a_fight_is_a_death_to_a_fall_or_lava(self):
+        from death_recap import FALL_CAUSE, FALL_DEATH
+        from pull_outcome import first_death_text
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            # A hit of ability 0, as the fall's own id: still not the killer
+            _event(16000, 'DAMAGE', 3000, BOSS, _player(1, 17000), ability=0),
+            _fall(17000, _player(1, 0)),
+            '17026,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        self.assertEqual(analyzer.zone_deaths, 1)
+        recap = fight.death_recaps[0]
+        self.assertEqual((recap['name'], recap['time_ms'], recap['max_health']),
+                         ('@brainsnorkel', 7000, 20000))
+        self.assertEqual((recap['killer'], recap['ability'], recap['ability_id'],
+                          recap['icon'], recap['cause']),
+                         ('', FALL_DEATH, '0', '', FALL_CAUSE))
+        # The boss's hit stays in the window and is not taken for the killer
+        self.assertEqual([(r['source'], r['amount']) for r in recap['events']],
+                         [('Test Boss', 3000)])
+        self.assertIn('1', fight.time_dead)
+        self.assertEqual(first_death_text(fight),
+                         f'First death: @brainsnorkel to {FALL_DEATH} at 0:07 · 1 death')
+
+    def test_any_other_death_has_no_cause(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DIED', 0, BOSS, _player(1, 0)),
+            '70000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].death_recaps[0]['cause'], '')
+
+    def test_a_fall_just_after_end_combat_joins_the_fight(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
+            '20000,END_COMBAT',
+            _fall(20026, _player(1, 0)),
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_a_fall_outside_a_fight_belongs_to_no_fight(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 719, BOSS, _player(1, 19281)),
+            '20000,END_COMBAT',
+            _fall(50000, _player(1, 0)),
+            '100000,BEGIN_COMBAT',
+            _event(110000, 'DAMAGE', 719, BOSS, _player(2, 19281)),
+            '130000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        self.assertEqual((first.deaths, first.death_recaps), (0, []))
+        self.assertEqual((second.deaths, second.death_recaps), (0, []))
+
+    def test_a_fall_before_the_pull_then_seen_alive_leaves_no_time_dead(self):
+        """The 17 falls outside a fight in the logs: the player's own lines
+        (a regeneration tick) show them up again before the next pull."""
+        analyzer, _ = _run([
+            _fall(5000, _player(1, 0)),
+            _event(15000, 'POWER_ENERGIZE', 200, _player(1, 20000)),
+            '30000,BEGIN_COMBAT',
+            _event(35000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            '60000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.death_recaps), (0, []))
+        self.assertEqual(fight.time_dead, {})
+
+    def test_an_enemys_fall_is_not_its_death(self):
+        """None is in the logs, and one would read as the group's kill."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, _player(1, 20000), BOSS),
+            _fall(15000, BOSS),
+            '70000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.death_recaps), (0, []))
+        self.assertIsNone(analyzer.current_encounter.enemies['70'].died_at)
+
+
 class TestRecorder(unittest.TestCase):
     """DeathRecapRecorder on its own: the window and the killing-blow grace."""
 
     def setUp(self):
         self.recorder = DeathRecapRecorder(
             lambda unit_id: {'70': 'Boss'}.get(unit_id, ''),
-            lambda ability_id: (f'Ability {ability_id}', ''))
+            lambda ability_id: (f'Ability {ability_id}', ''), window_ms=FIVE_S_MS)
 
     @staticmethod
     def _fields(result, hit, health, overflow=0, cast=900):
@@ -274,7 +373,7 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual([r['offset_ms'] for r in recap['events']],
                          [-4500, -3500, -2500, -1500, -500])
         self.assertEqual(recap['events'][0]['offset_ms'], 7000 - 11500)
-        self.assertGreaterEqual(recap['events'][0]['offset_ms'], -RECAP_WINDOW_MS)
+        self.assertGreaterEqual(recap['events'][0]['offset_ms'], -FIVE_S_MS)
 
     def test_hits_after_the_grace_are_on_the_corpse(self):
         recap = self.recorder.note_death('1', 20000, self._fields('DIED', 0, 0))

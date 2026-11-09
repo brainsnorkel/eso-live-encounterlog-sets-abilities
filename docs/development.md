@@ -46,9 +46,9 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `version.py` | The version number. The only place it is defined. |
 | `gui/engine_worker.py` | Runs the engine on a `QThread` and turns listener callbacks into Qt signals. |
 | `gui/update_poller.py`, `gui/update_popup.py` | The 15-minute release check and the installer download on their own thread; the ⓘ popup with the release notes. |
-| `gui/main_window.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window and its dialogs, the example tracked-effect rules picker among them. |
-| `gui/fight_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/death_render.py` | HTML and plain text for a fight, a build, a player's damage and a death recap. They take fight data and return strings, so they are tested without a window. |
-| `gui/build_dialog.py`, `gui/damage_dialog.py`, `gui/death_recap_dialog.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py` | The build, damage and death recap windows, the dps over time graph, the buff timeline strip, the icon cache, and the small glyphs drawn after the dps figures to show they can be clicked. |
+| `gui/main_window.py`, `gui/fight_tabs.py`, `gui/fight_view.py`, `gui/settings_dialog.py`, `gui/examples_dialog.py`, `gui/about.py` | The main window, its fight's tabs and the search in their corner, and its dialogs, the example tracked-effect rules picker among them. |
+| `gui/fight_render.py`, `gui/fight_deaths_render.py`, `gui/instance_render.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/taken_render.py`, `gui/death_render.py` | HTML and plain text for a fight, every death of a fight, an instance, a build, a player's damage, their damage taken and a death recap, each in parts for the player window's tabs. They take fight data and return strings, so they are tested without a window. |
+| `gui/player_window.py`, `gui/dps_graph.py`, `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py` | A player's window, a tab for each of their pages; the DPS graph tab, the buff timeline strip, the icon cache, and the small glyphs drawn after the dps figures to show they can be clicked. |
 
 ## Running from source
 
@@ -105,6 +105,12 @@ On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs 
 
 ## Refreshing game data after an ESO patch
 
+First see what the update broke. `scripts/check_data_staleness.py` reads a folder of logs (the app's split folder by default, `--dir` for another; about three minutes for 11 GB with `--workers 12`) and reports, game version by game version, the set ids, armor and weapon ids, bar icons and ESO-Hub set links the logs name and the bundle does not know, the sessions in which the app's status line would speak, and every id the app depends on (tracked effects, the build-issue rules, class passives and masteries, werewolf, companion, Fatecarver and cast ids) that appeared on the previous game version and in no session of the newest: a candidate for an id the game renumbered. Food is only hinted at there (effects with a food-style icon on a player with no listed food), as in `generate_food_buffs.py --check-log`. It changes nothing.
+
+```cmd
+python scripts\check_data_staleness.py --workers 12
+```
+
 The app bundles nine data sets that go stale when the game changes. Each has a script in `scripts/` that rebuilds it:
 
 ```cmd
@@ -158,12 +164,22 @@ python scripts\generate_ability_targets.py
 :: (network access; or --from a reply of theirs already saved)
 python scripts\generate_set_offense.py
 
-:: The hidden abilities set bonuses fire, by ability id, with their set, from
-:: UESP's mined skills (network access, about 5 MB; or --from a saved reply)
-python scripts\generate_set_procs.py
+:: The set behind a Major or Minor buff (Roaring Opportunist's Major Slayer),
+:: by the buff's ability id, from your split logs and the bonus text above (no
+:: network; the app's split folder, or --dir; about two minutes for 36 GB).
+:: Review the table it prints before committing data/sets/set_buffs.json
+python scripts\generate_set_buffs.py
 ```
 
 The scripts that ask UESP send one trimmed request each; please do not run them in a loop.
+
+Last, stamp the bundle with the game version it now matches. `data/version.json` holds that version, the date and each table's own date; the app compares the version with the one every logging session's `BEGIN_LOG` line names and shows an amber line in the status bar when the log is newer, and About lists the dates. The unit tests run `--check`, so a refreshed table whose stamp was forgotten fails them.
+
+```cmd
+:: The version as the client's log writes it, or --log <a log written today>
+:: to read it from that log's BEGIN_LOG line
+python scripts\stamp_data_version.py --game-version eso.live.12.2
+```
 
 After a patch, `python scripts\generate_food_buffs.py --check-log <path to Encounter.log>` lists food-style effects in a recent log that the bundled table does not know yet, so a new food is noticed before it reads as "no food" in the build window.
 

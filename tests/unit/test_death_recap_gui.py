@@ -120,7 +120,9 @@ class TestDeathButtonInFightView(DeathRecapGuiTestCase):
     def test_hover_summarises_each_death(self):
         from gui.death_render import death_tooltips
         tips = death_tooltips(_entry_with_deaths())
-        self.assertEqual(set(tips), {'esolog:deaths/1', 'esolog:deaths/77'})
+        # Each player's chip, and the header's Deaths N (issue #196)
+        self.assertEqual(set(tips), {'esolog:deaths/1', 'esolog:deaths/77', 'esolog:fightdeaths/'})
+        self.assertIn('on the Deaths tab', tips['esolog:fightdeaths/'])
         tip = tips['esolog:deaths/1']
         self.assertIn('@tester: 2 deaths', tip)
         self.assertIn('0:54', tip)
@@ -423,6 +425,19 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         entry.death_recaps[1]['window_ms'] = 10000   # @passerby, nothing logged
         self.assertIn('in the 10 seconds before this death', self._html(entry, unit_id='77'))
 
+    def test_a_one_second_window_says_second(self):
+        # The shortest window, from Settings at 1 (issue #133)
+        entry = _entry_with_kinds()
+        for recap in entry.death_recaps:
+            recap['window_ms'] = 1000
+        html = self._html(entry)
+        self.assertIn('in the 1 second before each death', html)
+        self.assertIn('damage in the last 1 second', html)
+        self.assertNotIn('1 seconds', html)
+        entry = _entry_with_deaths()
+        entry.death_recaps[1]['window_ms'] = 1000   # @passerby, nothing logged
+        self.assertIn('in the 1 second before this death', self._html(entry, unit_id='77'))
+
     def test_sides_link_to_their_stars_with_hover_text(self):
         from damage_kinds import stars_for
         from gui.death_render import kind_tooltips
@@ -461,19 +476,30 @@ class TestKindsInTheWindow(DeathRecapGuiTestCase):
         self.assertIn('&lt;b&gt;Mael&lt;/b&gt;', self._html(entry))
 
     def test_the_window_serves_the_star_hover_text(self):
+        """The player window's Deaths tab serves the star links' hover text,
+        and ends with the line to the Damage taken tab, which holds the
+        whole fight, where the recap window ended with a block of it
+        (decision 4, issue #196)."""
+        from PySide6.QtCore import QUrl
+
         from damage_kinds import stars_for
-        from gui.death_recap_dialog import DeathRecapDialog
-        dialog = DeathRecapDialog(icons=self._cache())
+        from gui.death_render import FIGHT_BLOCK_TITLE, FIGHT_LINK_LEAD, FIGHT_LINK_TEXT
+        from gui.player_window import DEATHS_TAB, TAKEN_TAB, PlayerWindow
+        window = PlayerWindow(icons=self._cache())
         try:
-            dialog.show_recap(_entry_with_kinds(), '1', dark=False)
+            window.open(_entry_with_kinds(), '1', DEATHS_TAB, dark=False)
+            view = window.view(DEATHS_TAB)
             url = stars_for('taken', 'dot')[0]['url']
-            self.assertIn('Enduring Resolve', dialog.view._tooltips.get(url, ''))
-            text = dialog.view.toPlainText()
-            self.assertIn('Damage taken this fight', text)
-            self.assertIn('11,015', text)
+            self.assertIn('Enduring Resolve', view._tooltips.get(url, ''))
+            text = view.toPlainText()
+            self.assertNotIn(FIGHT_BLOCK_TITLE, text)
+            self.assertTrue(text.rstrip().endswith(f'{FIGHT_LINK_LEAD} {FIGHT_LINK_TEXT}'))
+            view.anchorClicked.emit(QUrl('esolog:taken/1'))
+            self.assertEqual(window.current_tab(), TAKEN_TAB)
+            self.assertIn('310,000 damage taken', window.view(TAKEN_TAB).toPlainText())
         finally:
-            dialog.close()
-            dialog.deleteLater()
+            window.close()
+            window.deleteLater()
 
 
 class TestRecapWindow(DeathRecapGuiTestCase):
@@ -491,28 +517,62 @@ class TestRecapWindow(DeathRecapGuiTestCase):
         return win
 
     def test_button_click_opens_the_players_recap(self):
+        """The skull opens the player window's Deaths tab, where the recap
+        window was (issue #196)."""
         from PySide6.QtCore import QUrl
+
+        from gui.player_window import DEATHS_TAB
         win = self._window()
         try:
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.select_fight(0)
             self.assertIn('☠', win.fight_view.toPlainText())
-            self.assertIsNone(win._death_dialog)
+            self.assertIsNone(win._player_window)
 
             win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
-            dialog = win._death_dialog
+            dialog = win._player_window
             self.assertTrue(dialog.isVisible())
+            self.assertEqual(dialog.current_tab(), DEATHS_TAB)
             self.assertIn('@tester', dialog.windowTitle())
-            text = dialog.view.toPlainText()
+            page = dialog.view(DEATHS_TAB)
+            text = page.toPlainText()
             for expected in ('Death 1 of 2', 'Death 2 of 2', 'Swinging Cleave',
                              'Sharpfang', 'Bone Shield', 'overkill'):
                 self.assertIn(expected, text)
 
             # Another player's button reuses the window
             win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/77'))
-            self.assertIs(win._death_dialog, dialog)
+            self.assertIs(win._player_window, dialog)
             self.assertIn('@passerby', dialog.windowTitle())
-            self.assertIn('Death 1 of 1', dialog.view.toPlainText())
+            self.assertIn('Death 1 of 1', page.toPlainText())
+        finally:
+            win.close()
+
+    def test_a_recap_redrawn_twice_before_the_step_keeps_its_place(self):
+        """The recap window redrawn, its bar moved before the step after
+        layout has run, and redrawn again, two fight updates in the same
+        pass say: it comes back where the reader had it, the step's place,
+        not where the bar was meanwhile (FightView.keeping_place, issue
+        #196)."""
+        from PySide6.QtCore import QUrl
+        win = self._window()
+        try:
+            win._on_fight_completed(_entry_with_deaths())
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
+            from gui.player_window import DEATHS_TAB
+            dialog = win._player_window
+            dialog.view(DEATHS_TAB).setMaximumHeight(120)
+            _app.processEvents()
+            bar = dialog.view(DEATHS_TAB).verticalScrollBar()
+            self.assertGreater(bar.maximum(), 0)
+            kept = bar.maximum() // 2
+            bar.setValue(kept)
+            dialog.refresh(False)
+            bar.setValue(0)
+            dialog.refresh(False)
+            _app.processEvents()
+            self.assertEqual(bar.value(), kept)
         finally:
             win.close()
 
@@ -531,17 +591,20 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.select_fight(0)
             view = win.fight_view
-            found = view.document().find('☠')
-            self.assertFalse(found.isNull())
+            # The player's chip, not the header's Deaths N, which has a
+            # skull too (issue #196)
+            found = view._text_anchor_cursor('esolog:deaths/1')
+            self.assertIsNotNone(found)
             inside = QTextCursor(view.document())
-            inside.setPosition(found.selectionStart() + 3)
+            inside.setPosition(found.selectionStart() + 1)
             self.assertEqual(inside.charFormat().anchorHref(), 'esolog:deaths/1')
             point = view.cursorRect(inside).center() + QPoint(2, 0)
             QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, point)
             _app.processEvents()
-            self.assertIsNotNone(win._death_dialog)
-            self.assertTrue(win._death_dialog.isVisible())
-            self.assertIn('Death 1 of 2', win._death_dialog.view.toPlainText())
+            from gui.player_window import DEATHS_TAB
+            self.assertIsNotNone(win._player_window)
+            self.assertTrue(win._player_window.isVisible())
+            self.assertIn('Death 1 of 2', win._player_window.view(DEATHS_TAB).toPlainText())
         finally:
             win.close()
 
@@ -625,8 +688,9 @@ class TestRecapWindow(DeathRecapGuiTestCase):
             win._on_fight_completed(_entry_with_deaths())
             win.history_list.select_fight(0)
             win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
-            dialog = win._death_dialog
-            self.assertIn(_THEMES[False]['damage'], dialog.view.toHtml())
+            from gui.player_window import DEATHS_TAB
+            page = win._player_window.view(DEATHS_TAB)
+            self.assertIn(_THEMES[False]['damage'], page.toHtml())
 
             palette = QPalette()
             for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
@@ -634,8 +698,8 @@ class TestRecapWindow(DeathRecapGuiTestCase):
                 palette.setColor(group, QPalette.WindowText, QColor('#eeeeee'))
             win.setPalette(palette)
             win._on_theme_maybe_changed()
-            self.assertIn(_THEMES[True]['damage'], dialog.view.toHtml())
-            self.assertNotIn(_THEMES[False]['damage'], dialog.view.toHtml())
+            self.assertIn(_THEMES[True]['damage'], page.toHtml())
+            self.assertNotIn(_THEMES[False]['damage'], page.toHtml())
         finally:
             win.close()
 
@@ -644,6 +708,7 @@ EPOCH_MS = 1755729685851
 _BOSS = "70,287485/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
 _NO_UNIT = "0,0/0,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
 _DEAD_PLAYER = "1,0/20000,26657/26657,13021/13021,500/500,1000/1000,0,0.2,0.5,5.5"
+_LIVE_PLAYER = "1,15000/20000,26657/26657,13021/13021,500/500,1000/1000,0,0.2,0.5,5.5"
 
 
 @unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
@@ -698,6 +763,70 @@ class TestLiveTail(DeathRecapGuiTestCase):
                              [(719, 1224)])
         finally:
             worker.stop()
+
+    def test_a_death_after_end_combat_redraws_an_open_recap_of_that_fight(self):
+        """The player died in the fight, was raised, and died again as the
+        wipe ended: the second DIED is written after END_COMBAT, in a later
+        poll. The recap window already open on that fight redraws with it
+        (issue #196); it went on showing one death."""
+        from PySide6.QtCore import QUrl
+
+        from app_config import AppConfig
+        from gui.engine_worker import EngineWorker
+        from gui.icon_cache import IconCache
+        from gui.main_window import MainWindow
+        self.log = self.icons_root / 'Encounter.log'
+        config = AppConfig(path=self.icons_root / 'config.json')
+        config.set('log_path', str(self.log))
+        config.set('update.check_enabled', False)
+        self._append([f'5,BEGIN_LOG,{EPOCH_MS},15,"NA Megaserver","en","eso.live.11.1"'])
+        win = MainWindow(config)
+        win.worker_thread.quit()
+        win.worker_thread.wait(3000)
+        win.fight_view.icons = IconCache(self.icons_root)
+        _app.processEvents()  # the window's own worker's startup signals
+        # The engine tailing the log, connected to the window as the
+        # window's own worker is
+        worker = EngineWorker(config)
+        worker.fight_completed.connect(win._on_fight_completed)
+        worker.fight_updated.connect(win._on_fight_updated)
+        worker.start()
+        try:
+            self._append([
+                '1000,ZONE_CHANGED,1301,"Coral Aerie",VETERAN',
+                '2000,UNIT_ADDED,1,PLAYER,T,1,0,F,117,7,"Beam Hal","@brainsnorkel",17085246191555785013,50,3084,0,PLAYER_ALLY,T',
+                '2500,UNIT_ADDED,70,MONSTER,F,0,105634,F,0,0,"Test Boss","",0,50,160,0,HOSTILE,F',
+                '2600,ABILITY_INFO,12437,"Toppling Blow","/esoui/art/icons/death_recap_test.dds",F,T',
+                '10000,BEGIN_COMBAT',
+                f'14900,COMBAT_EVENT,DAMAGE,PHYSICAL,1,900,300,800,12437,{_BOSS},{_DEAD_PLAYER}',
+                f'15000,COMBAT_EVENT,DIED,PHYSICAL,0,0,0,801,12437,{_NO_UNIT},{_DEAD_PLAYER}',
+                f'17000,COMBAT_EVENT,DAMAGE,PHYSICAL,1,1000,0,850,12437,{_BOSS},{_LIVE_PLAYER}',
+                f'19900,COMBAT_EVENT,DAMAGE,PHYSICAL,1,719,1224,900,12437,{_BOSS},{_DEAD_PLAYER}',
+                '20000,END_COMBAT',
+            ])
+            worker._poll()
+            _app.processEvents()
+            entry = win.history_list.current_entry()
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.deaths, 1)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:deaths/1'))
+            from gui.player_window import DEATHS_TAB
+            recap = win._player_window
+            self.assertIs(recap.entry, entry)
+            self.assertIn('Death 1 of 1', recap.view(DEATHS_TAB).toPlainText())
+
+            self._append([f'20085,COMBAT_EVENT,DIED,PHYSICAL,0,0,0,901,12437,{_NO_UNIT},{_DEAD_PLAYER}'])
+            worker._poll()
+            _app.processEvents()
+            self.assertEqual(entry.deaths, 2)
+            self.assertIs(win.history_list.current_entry(), entry)
+            text = recap.view(DEATHS_TAB).toPlainText()
+            self.assertIn('Death 2 of 2', text)
+            self.assertNotIn('Death 1 of 1', text)
+            self.assertIn('Death recap – @brainsnorkel', recap.windowTitle())
+        finally:
+            worker.stop()
+            win.close()
 
 
 def _entry_no_deaths():

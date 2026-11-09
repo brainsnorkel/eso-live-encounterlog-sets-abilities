@@ -87,10 +87,17 @@ def apply(pct) -> int:
 
 
 def fixed_font():
-    """The system's fixed-pitch font at the text size in force, for the
-    rule editor and the examples list."""
-    from PySide6.QtGui import QFontDatabase
+    """The fixed-pitch font at the text size in force, for the rule editor
+    and the examples list: Consolas where it is installed, else the
+    system's fixed font. Qt's fixed font is Courier New on the Windows
+    desktop and, offscreen, Agency FB, which is why the guide's rules
+    looked condensed (issue #187)."""
+    from PySide6.QtGui import QFont, QFontDatabase, QFontInfo
     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+    # QFontInfo resolves the one family; QFontDatabase.families() would
+    # enumerate every installed font on each open of Settings
+    if QFontInfo(QFont("Consolas")).family() == "Consolas":
+        font.setFamily("Consolas")
     font.setPointSizeF(font.pointSizeF() * _pct / 100.0)
     return font
 

@@ -216,9 +216,9 @@ class TestColourblindGraphOption(unittest.TestCase):
             COLORBLIND_SERIES_COLORS,
             DASH_CYCLE,
             SERIES_COLORS,
-            DpsGraphDialog,
+            DpsGraphPanel,
         )
-        dialog = DpsGraphDialog()
+        dialog = DpsGraphPanel()
         self.addCleanup(dialog.deleteLater)
         dialog.show_graph(self._entry(), False)
         curves = {c.key: c for c in dialog.graph._curves}
@@ -245,8 +245,7 @@ class TestColourblindGraphOption(unittest.TestCase):
         win._on_fight_completed(self._entry(3))
         win.history_list.select_fight(0)
         win._show_graph()
-        self.assertTrue(win._graph_dialog.colorblind)
-        win._graph_dialog.close()
+        self.assertTrue(win.dps_panel.colorblind)
 
 
 if __name__ == "__main__":

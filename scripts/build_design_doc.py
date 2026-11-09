@@ -36,6 +36,12 @@ TOPICS = [
         "src/esolog_tail.py:ESOLogAnalyzer._resume_last_fight",
         "src/esolog_tail.py#A death just after END_COMBAT",
     ]),
+    ("Fight boundaries: combat with no enemy", [
+        "src/esolog_tail.py:ESOLogAnalyzer._note_enemy_met",
+    ]),
+    ("The fight's opener", [
+        "src/fight_opener.py",
+    ]),
     ("Starting mid-session", [
         "src/esolog_tail.py:LogFileMonitor._load_latest_session",
     ]),
@@ -81,6 +87,14 @@ TOPICS = [
         "scripts/generate_gear_data.py",
         "scripts/check_client_names.py",
     ]),
+    ("Set buffs: which set a Major or Minor buff came from", [
+        "scripts/generate_set_buffs.py",
+    ]),
+    ("Game data against the game's version: the staleness check", [
+        "src/data_staleness.py",
+        "scripts/stamp_data_version.py",
+        "scripts/check_data_staleness.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
@@ -95,6 +109,7 @@ TOPICS = [
     ("Possible build issues: what the log proves about a build", [
         "src/build_issues.py",
         "src/build_issues.py:BuildIssueTracker",
+        "src/build_issues.py:GroupBuffCredit",
         "scripts/generate_weapon_skill_lines.py",
     ]),
     ("Tracked effects: the uptime line as rules anyone can paste", [
@@ -133,6 +148,16 @@ TOPICS = [
         "src/trial_result.py",
         "src/gui/fight_list.py",
     ]),
+    ("Kill or wipe, time dead, and a boss's pulls in a row", [
+        "src/pull_outcome.py",
+    ]),
+    ("The session recap: the fight list as text for Discord", [
+        "src/session_recap.py",
+        "src/fight_blocks.py",
+    ]),
+    ("Fight history across sessions: the index of boss fights", [
+        "src/fight_index.py",
+    ]),
     ("Death recaps", [
         "src/death_recap.py",
     ]),
@@ -141,6 +166,15 @@ TOPICS = [
     ]),
     ("The damage taken window: by source and by healer, over the whole fight", [
         "src/gui/taken_render.py",
+    ]),
+    ("The player window: one window, a tab for each link", [
+        "src/gui/player_window.py",
+    ]),
+    ("The fight's tabs: Fight, Deaths and Instance", [
+        "src/gui/fight_tabs.py",
+        "src/gui/main_window.py:MainWindow._show_fight",
+        "src/gui/fight_deaths_render.py",
+        "src/gui/instance_render.py",
     ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
@@ -153,14 +187,25 @@ TOPICS = [
         "src/recycle_bin.py",
         "src/log_open.py",
     ]),
+    ("Split files for an instance: from a fight to its session's split", [
+        "src/session_splits.py",
+        "src/gui/fight_render.py:split_lines_html",
+    ]),
     ("The GUI and the engine thread", [
         "src/gui/engine_worker.py",
         "src/gui/main_window.py:MainWindow._on_monitoring_restarting",
         "src/gui/main_window.py#Qt objects are freed on the UI thread",
+        "src/gui/main_window.py:MainWindow._fight_changed",
+        "src/gui/fight_view.py#Steps after the page is laid out",
+        "src/gui/fight_view.py:FightView.keeping_place",
     ]),
     ("Reviews: a thread of their own, and where a large log is cut", [
         "src/review_load.py",
         "src/gui/review_runner.py",
+    ]),
+    ("Before the first fight: the archive line and recent activity", [
+        "src/recent_activity.py",
+        "src/gui/activity_render.py",
     ]),
     ("Updates: the schedule, the conditional request and the button", [
         "src/update_check.py",
@@ -187,6 +232,11 @@ TOPICS = [
     ]),
     ("The text size", [
         "src/gui/text_size.py",
+    ]),
+    ("The trial score banner", [
+        "src/banner_capture.py",
+        "src/desktop_duplication.py",
+        "src/gui/banner_burst.py",
     ]),
 ]
 

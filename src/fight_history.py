@@ -10,11 +10,12 @@ cursor-navigable collection of those summaries.
 class FightHistoryEntry:
     """Compact summary of a completed fight for frontend display."""
     __slots__ = ['timestamp', 'zone_name', 'is_vet', 'duration_s', 'group_dps',
-                 'group_boss_dps', 'deaths', 'players', 'buff_summary', 'first_damage_dealer',
+                 'group_boss_dps', 'deaths', 'players', 'buff_summary', 'opener', 'monster_first',
                  'trial_result', 'ended_at', 'boss_name', 'buff_timeline',
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
-                 'zone_id', 'difficulty']
+                 'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
+                 'session_stamp']
 
     def __init__(self):
         self.timestamp = ""
@@ -31,7 +32,7 @@ class FightHistoryEntry:
         # the group to its last, and the same for the hits on the bosses
         self.dps_time_s = 0.0
         self.boss_dps_time_s = 0.0
-        # The group's damage per second of the fight for the graph window
+        # The group's damage per second of the fight for the DPS graph
         # (damage_stats.FightDamage.series): {'all', 'boss', 'window',
         # 'boss_window'}; None on an entry built without it
         self.damage_series = None
@@ -56,11 +57,29 @@ class FightHistoryEntry:
         # and dies in the fight's other data
         self.player_names = []
         self.buff_summary = ""
-        self.first_damage_dealer = None
+        # Who opened the fight and with what (fight_opener.opener_records):
+        # kind ('hit' or 'taunt'), unit_id (the row the act is the player's
+        # on), via ('player', 'pet' or 'companion'), owner_id, name (the
+        # player's display name, the owner's for a pet or companion), pet,
+        # ability, ability_id, skill and skill_id (the pressed skill, when
+        # its name differs), target, target_id, time_ms (from BEGIN_COMBAT,
+        # negative before it) and edge (at the memory's edge: nobody can be
+        # called first). None when nobody hit or taunted an enemy
+        self.opener = None
+        # A monster's act on a player-side unit before any hit or taunt:
+        # unit_id, name, action, action_id, target_kind ('player', 'pet' or
+        # 'companion'), target_id (the player's or owner's record id),
+        # target_row, target_name, target_pet, in_flight (a player's cast at
+        # a living enemy already begun: the actor's fields as above with
+        # skill and skill_id, or None), time_ms and edge. None otherwise
+        self.monster_first = None
         # The run's result when this fight completed a trial or an arena:
         # trial_id, name, is_vet, duration_ms, score, vitality, vitality_max
         # (see trial_result.from_end_trial); None for any other fight
         self.trial_result = None
+        # The run's score banner saved from the screen (banner_capture,
+        # issue #167): a Path, set by the GUI when captured or found
+        self.banner_path = None
         self.boss_name = ""
         # EXPERIMENTAL: {'duration_ms', 'effects': {name: [interval, ...]}}
         # or None when the buff-timeline experiment is off (the default)
@@ -87,6 +106,26 @@ class FightHistoryEntry:
         # player carried them (misfortunes.py); [] for a run without any,
         # None outside a solo dungeon and on an entry built without them
         self.misfortunes = None
+        # Kill or wipe (pull_outcome.pull_record): boss, bosses, outcome
+        # ('kill', 'wipe', 'left' or 'unseen'), health_start and
+        # health_left (the boss's %, None when no line carried it),
+        # health ({boss: [start, left]}), boss_died, players, dead_at_end
+        # (record ids), local_dead_at_end, start_s and end_s (Unix
+        # seconds, None without the log's start), zone and continues (it
+        # carries on the last pull). None in a fight without a named boss
+        # the players damaged
+        self.pull = None
+        # Each player's time dead in the fight: unit id -> milliseconds,
+        # for a player who was down at some point (pull_outcome.TimeDead)
+        self.time_dead = {}
+        # The game version that wrote the fight's session ('eso.live.12.1',
+        # BEGIN_LOG), for the fight history (fight_index); '' when unknown
+        self.game_version = ""
+        # The session's BEGIN_LOG time as the splitter names the session's
+        # file ('261104200512', split_retention.session_stamp), by which the
+        # Instance tab finds the fight's split (session_splits, issue #194);
+        # '' when no BEGIN_LOG was seen
+        self.session_stamp = ""
 
 
 class FightHistory:

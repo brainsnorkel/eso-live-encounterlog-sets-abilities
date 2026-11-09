@@ -2,6 +2,139 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.38.0] - 2026-11-09
+
+### Added
+- **A run's split log, a click away** (#194): the result strip of the fight that completed a trial or an arena, and the Instance tab, list the split logs that hold the run, each with *open folder*, which opens its folder with the file selected, and *copy path*, which puts its full path on the clipboard for a log site's upload dialog. A run over more than one logging session lists each session's file, the earlier one too when the app started, or Settings replayed the log, partway through the run. With Hide names on, only the file's name shows, there, in the review banner and in the status bar, since a full path names your Windows user. With split logs off, as a fresh install has them, and no split of the run in the folder, the line says where to turn them on.
+
+## [0.37.0] - 2026-11-09
+
+### Added
+- **Each instance on a tab of its own** (#196): the Instance tab (Alt+I), beside Fight, Deaths and the DPS graph, sums up the trial, arena or dungeon run the fight on screen belongs to, its group in the fight list: when it was fought, its fights and players and the game version; the run's result with its score banner; each boss's pulls, how they ended, the kill's time and boss dps, the deaths and the best earlier kill with this roster, each pull a link to that fight; what ended the pulls; the trash; and every player's pulls, deaths, time dead and possible build issues, each name opening that player's window. **Copy this instance** copies it as Copy session writes each instance. Click a header, pull or result line in the fight list to open the tab on that instance, a pull line's at that boss.
+
+## [0.36.0] - 2026-11-09
+
+### Added
+- **Every death of a fight on its own tab** (#196): the main window's right side is now tabs on the fight selected in the list: Fight, Deaths and the DPS graph. Deaths lists the fight's deaths in the order they came, each with the player, what killed them and from whom, and how long they stayed dead, then the killers with the bosses' share, each player's time dead and the companions' deaths. Click a name for that death on the player's Deaths tab. The header's `Deaths N` opens the tab, Alt+F and Alt+E pick the Fight and Deaths tabs, and Ctrl+PgDn and Ctrl+PgUp step through the tabs from anywhere in the window. The tab you choose stays as you pick other fights and as new ones come in.
+
+### Changed
+- **The DPS graph is a tab beside the fight** (#196): the graph that opened in a window of its own is now the main window's DPS graph tab (Alt+G), beside Fight and Deaths, on the fight selected in the list; the header's group dps figure and the toolbar's DPS graph open it. Its legend narrows with the window, a name cut short showing whole in its hover, and the lines you tick are kept by the player's handle, so they carry into the next instance, where the game numbers the players afresh.
+- **The search sits in the tab bar's corner and searches the tab on screen** (#196): `Find (Ctrl+F)` is at the right of the tabs, so the fight keeps the height the search's own row took, and the count of matches is inside the field. At a large text size in a narrow window it takes a row of its own above the tabs.
+
+## [0.35.0] - 2026-11-07
+
+### Added
+- **A player picker in the player's window** (#196): step through the fight's players without going back to the fight pane, with ◀ and ▶ or Ctrl+Up and Ctrl+Down, on the same tab. The picker lists each player with role, class and deaths, a companion under its owner, and last anyone who died in the fight without a row of their own.
+- **The fight on its own line, with Show in list** (#196): a player's window names the fight it shows (`Lord Falgravn · Kyne's Aegis VET · Wipe 86% · 1:30 · 2026-10-15 19:30:07`), and Show in list selects that fight in the fight list.
+- **Keys for a player's window** (#196): Alt+B, D, P, R, T, H and E open its tabs, Ctrl+PgDn and Ctrl+PgUp step through them, Alt+O switches Boss targets only on Damage done, and Esc closes the window; Enter never does. It opens with the cursor in its page, and for a screen reader each page has a name and its text begins with the fight.
+- **A player's window keeps its size and place** (#196) from one start of the app to the next, no larger than nine tenths of the screen and never too narrow for its tabs at the text size in use.
+
+### Changed
+- **One window for a player, a tab for each link** (#196): the build, damage, damage taken and death recap windows are now one window with seven tabs: Build, Damage done, Pen and crit, Resources, Damage taken, Healing received and Deaths. Each link on a player's row opens it at its own tab: the name (and the `?` after a lone mastery) at Build, the DPS figure at Damage done, the `p:… cd:…` token at Pen and crit, the shield at Damage taken, the skull at Deaths. It still keeps the fight it was opened for, and a link from one tab to another changes tab in the same window. The build page is three tabs, so each mostly fits without scrolling; the kinds of damage dealt moved to Damage done, beside the damage they sort, and a death's page ends with a link to Damage taken where it repeated the whole fight's damage taken.
+- **Saving new penetration and crit assumptions redraws at once** (#196): the fight pane's `p:… cd:…` figures and an open Pen and crit tab take the Champion Point stars and the cap you saved straight away, each keeping its place, where they waited for the next build window.
+- **A Settings save that replays the session keeps a player's window up to date** (#196): the window goes on to the replayed copy of its fight, at the same player and tab, where it kept the fight as it was before the Save. If the replay no longer has that fight, the window keeps it and says so.
+
+### Fixed
+- **The link you reached with Tab stays in sight** (#199): after a new text size, Hide names or an update that ranks the players anew, the link you had reached with Tab kept its focus but could be scrolled out of sight, so Enter opened a link you could not see. A link you could see now stays where it was on the screen, and the page moves under it.
+- **Tab and the search are not undone by a redraw** (#199): moving with Tab, or with Enter in the search, just after the fight was redrawn could be taken back by a second redraw within half a second.
+- **The fight you are reading stays when Encounter.log goes away** (#199): when the log went away mid-session (Archive now deleting the original, say), the waiting page replaced the fight you were reading, and stayed after the log came back. The fight now stays, and the status bar says the log is missing.
+
+## [0.34.1] - 2026-11-06
+
+### Fixed
+- **Saving Settings comes back to the fight you were reading** (#196): with an older fight selected, a save that replays the session (one that changes the log path, the split files, the tracked effects, the companion accrual or the death recap window) left no fight selected, and the pane's links did nothing until you picked one again. The list now selects that fight again as the replay brings it back, or the newest when it is gone, and until then the pane says the session is being replayed.
+- **A review stays on the pane through a Settings replay** (#196): with a review open, a save whose replay found no fight in the live log, or no log at all, drew the Monitoring or Waiting page over the fight under review.
+- **Back to live with no log waits for it** (#196): leaving a review while Encounter.log was missing and no fight was listed said `Back to live monitoring`, though there was no log to monitor. The pane now says it is waiting for the log, with where it is expected, or that the app archived and deleted it.
+- **The status bar goes on saying the app archived the log** (#196): once the app had archived and deleted Encounter.log, a review or a fight on the pane turned the bar to `No log file` in red. It now reads `Waiting for Encounter.log (archived …)` in the plain colour until there is a log again.
+- **Open windows keep up with their fight** (#196): a build, damage, damage taken, death recap or DPS graph window went on showing its fight as it first arrived. It now redraws when that fight changes: a death the game writes just after combat ends (the last player standing in a wipe), or a fight the game had cut in two, often as you accept a resurrection, that has now really ended. The window stays where you had scrolled it, and so does the fight pane, which went back to its top; with Hide names on, a player who joined in the fight's second part is hidden there too.
+- **Redraws keep your place** (#196): the fight pane and the windows beside it, drawn again for a change to their fight, a switch between light and dark, Hide names or a new text size, keep the link you had reached with Tab, where the next Tab went back to the page's first link, and the pane's search keeps its place among the matches, where it went back to the first. A build window scrolled to its end stays there, where it could come back a few lines short; a switch between light and dark keeps the pane where you had scrolled it, where it went back to its top; and the DPS graph's legend keeps its line and scroll when Settings switches the graph to its colour-blind colours.
+- **Enter on a player's ⓘ opens its popup under it** (#196): Tab to the ⓘ on the fight pane and press Enter, and the possible build issues open just under the ⓘ, where they opened at the mouse pointer, wherever that was.
+
+## [0.34.0] - 2026-11-03
+
+### Added
+- **The pane says what the app is doing before the first fight** (#191): while the fight list is empty it reads `Monitoring Encounter.log`, and under that when `Encounter.log` was last archived, with the archive's name, size and the time its log ends. When the log is not there because the app archived it at this start and deleted it (*Delete Encounter.log after a verified archive*), the pane says `archived at …, verified and deleted, as set in Settings` in place of a bare `Waiting for Encounter.log`, and the status bar reads `Waiting for Encounter.log (archived …)` in the plain colour instead of `No log file` in red. **Recent activity** under those lines is a table of the five newest archives and the five newest split logs, each with its date, name, size and a note, under headings that count every file in the folder and their size; click a file to open it for review, as **Open log for review…** would, and click the link to fold the table away. The page is redrawn when an archive completes, and goes when the first fight is listed
+
+## [0.33.0] - 2026-11-02
+
+### Changed
+- **Death recaps keep 3 seconds by default, and Settings goes from 1 to 10** (#133): 3 seconds covers the fall from half health in most deaths with a shorter table, and 1 second shows only the killing blow and the hits just before it. A new install starts at 3; a window already saved in your settings, usually 5, is kept, so change it in Settings → Death recaps if you want the shorter one
+- **Settings on six pages** (#187): General (the log, starting with Windows, updates), Fights (death recaps, companions, penetration and crit), Tracked effects (the rules editor, given the page's height), History (the fight history and the score banner), Display (text size, colours, motion, names) and Files and splits (split logs, archiving), in a tab bar above Save and Cancel. One column of thirteen groups was 2,139 px tall, of which a 1080p screen showed 43%. The dialog opens at the size of its tallest page, whole on a 1366×768 screen at 100% text size and on 1080p at 200%, and reopens on the page it was last closed on until the app is closed. Every group keeps its title, so the guide's "Settings → …" references still hold; the guide shows one picture per page.
+- **Saving with a tracked-effect rule that will not parse asks first** (#187): the dialog turns to the Tracked effects page, puts the cursor in the editor and says how many lines will be skipped, with Save and Go back. Before, the only sign was a status line under the editor, which on another page is out of sight.
+- **Settings: a Save replays the session only when a setting the engine reads changed** (#187): the log path, the split files, the tracked effects, the companion accrual or the death recap window. Every other setting applies at once, at the next build window, at the next retention run or at the next start, and the fights listed stay; the status bar says which happened.
+- **Settings fields at their own size** (#187): a spin box or a drop-down no longer stretches to the dialog's width; only the path fields and the text size slider do. Under the Windows 11 style at a large text size a spin box used to cut its unit off ("10 secon").
+- **Settings text** (#187): shorter help under the tracked effects and the penetration and crit assumptions, with the facts in the labels; the group titles lose their parentheses, and *Automatic log archiving* says it is checked when the app starts; the same "Saving a change here replays the session" under each of the six settings it applies to; the split retention preview in the normal text colour, and only while it has something to say; the rules editor and the examples list in Consolas where it is installed.
+
+### Fixed
+- **Settings' pages take no focus** (#187): Ctrl+Tab and a click on a tab land on the page's first control, where the old scrolling column was itself the first, invisible, tab stop.
+- **Settings for the keyboard and screen readers** (#187): Tab leaves the tracked-effects editor instead of inserting a tab character, so Examples… and Save can be reached from it; the zip and Recycle Bin weeks, the text size slider, the rules editor, the Force of Nature figure, the path fields and the Browse… buttons are announced by their own names rather than their group's; each help paragraph is read with its control; the Encounter.log delete warning starts with "Warning:" rather than relying on its colour.
+
+## [0.32.0] - 2026-11-01
+
+### Added
+- **`banner.log`** (#183): each capture writes what it saw beside the settings file: when the run ended and was read, the outcome, and a line per grab with the lines of text that hold a digit. It keeps the last 50 captures and holds no pictures.
+
+### Changed
+- **Arena results show their vitality maximum** (#183): `Vitality 11/15` in Maelstrom Arena and Vateshran Hollows and `14/24` in Dragonstar Arena and Blackrose Prison, where the row used to show the points alone. Maelstrom Arena, Vateshran Hollows and Sanctum Ophidia are named when the zone is unknown.
+- **The trial timer rounds to the second as the game's banner does** (#183): a run of 44:09.5 reads `44:10`, as the banner shows it, in the result row, the strip, the session recap and the copied text.
+- **The score banner capture waits long enough for an arena's banner and keeps it whole** (#183): it grabs until 45 seconds after the run ended (at least 15 seconds), since an arena's banner can come 25 seconds late. Once the score is read it takes two more grabs and keeps the one with the most of the banner drawn. The crop is centred on the screen, so the revives count is no longer cut off.
+
+## [0.31.1] - 2026-11-01
+
+### Fixed
+- **A fall into lava or off a ledge counts as a death** (#184): the log writes it as `KILLED_BY_SUBZONE` with no killer, and the app missed it, so the fight showed no death, no recap and no time dead, and a solo pull that ended in a fall read as left rather than a wipe. The recap now says the player was killed by *a fall or lava*. Pulls already in the fight history keep their old reading until it is rebuilt from the split logs (Settings → Fight history)
+- **Combat with no enemy in it is no longer listed as a fight**: breaking a Brimstone Orb in Vateshran Hollows to cross the lava, running past a neutral trap or a falling hazard, or simply being held in combat added fights with no damage in them to the list. A fight now needs a hit, cast or attack between the group and an enemy in it or in the ten seconds before it began, or a player's death in it or as it ended.
+
+## [0.31.0] - 2026-11-01
+
+### Added
+- **Kill or wipe on every boss fight** (#168): the fight list and the fight's header say how each pull ended, `Kill`, `Wipe 62%` with the boss's health left, `Left 84%` for a reset, or `Lost sight 31%` when your own death ended the fight for the log, with `group went on` once a later pull is of another boss. A kill is read from the boss's death, its health or the trial's end, never from how many players died, so a messy kill stays a kill and an ending the log did not see is never called a wipe. A pull the game cut in two when you were revived reads `Cut` and counts once. **Copy fight** adds the word to its first line
+- **A boss's pulls in a row** (#168): under two or more pulls of one boss, a line sums them up, `Lord Falgravn: 13 pulls, best 48%, 9 wipes at 80 to 90%, 48s between pulls`, or `killed on pull 13`; twin bosses such as Lylanar and Turlassil count as one
+- **What ended the pull** (#169): a line under the fight names the first death, what killed them and when, how many died, and on a wipe how long the pull went on after it. Hovering a boss's pulls in a row in the fight list adds the first death of each pull, the killers over every death with the share the boss dealt itself, and the three players who spent longest dead
+- **Time dead** (#169): the ☠ hover says how long the player spent dead, from each death until they were back up or the fight ended, and the row adds `dead 1:32` when it was a tenth of the fight or more; **Copy fight** adds it to the player's line. **Hide names** hides the names in all of these
+- **Your fight history** (#170): every boss fight is kept across sessions, kill or not, in `fights.jsonl` beside the settings, so a pull reads against your group's earlier kills of the boss: `Your Lord Falgravn kills: median 441.2k over 28, best 953.4k; with 8+ of this roster on 12.1: median 470.6k over 10. This pull: 512.3k` under the fight's header. A player's name hover adds their boss DPS in their last three kills of the boss, and a boss's pulls in a row end with the best earlier kill with this roster. **Settings → Fight history → Build from split logs** reads your split logs into it in the background, and carries on where it stopped after a Cancel. **Hide names** hides the handles in all of it
+- **Copy session** (#171): a toolbar button and Ctrl+Shift+C put the whole fight list on the clipboard as a short recap for Discord, one paragraph per instance: each boss's pulls with the kill or the best pull, and what ended them (first deaths, killers, who was longest dead), the trash as a count and a time, how many players had a possible build issue, and the trial's result. The status bar says how long the copy is, since a Discord message holds 2,000 characters. **Hide names** hides the names in it
+- **A second copy of a group buff set, or of a Champion Point star, that added next to nothing** (#172): two new possible build issues. One flags a player whose copy of a group buff set (Spell Power Cure, Pearlescent Ward, Lucent Echoes, Master Architect, Powerful Assault and the like) the log credited with less than 2% of the other players' time in every fight of a minute or more of the session that another wearer was in, while the other copy did reach the group: a player has such a buff from one wearer at a time. The other flags a second Enlivening Overflow whose procs were under 30% of an even share of the holders' (15% with two holders), or a second From the Brink that never procced while the other did: both stars' cooldown per player is shared by everyone who slots them. The user guide's new *Group effects and a second source* says which group effects a second source can add to and which it cannot, with the numbers behind it
+- **The status bar says when the game data is behind the game** (#173): an amber line on the right, `Game 12.2, data built for 12.1: 3 unknown sets, 2 icons missing`, when the log was written by a newer game version than the app's bundled data, or names sets, armor or weapons, skill icons or set pages the data does not know. Hover it for the ids and names. It is not shown while the data is current, and About lists the game version the data was built for and the date of each table
+
+## [0.30.0] - 2026-11-01
+
+### Added
+- **The trial score banner, captured from the screen** (#167, Windows only, off by default): with *Capture the trial completion banner* on in Settings, the fifteen seconds after a trial's END_TRIAL are grabbed once a second, the first grab on which Windows' own text recognition reads the run's final score is cropped to the banner and saved as a PNG (`Sunspire Veteran 253117 2026-11-01 2131.png` in `<log folder>\Banners`, or a folder of your choice), and the fight's result row and pane link to it, with *save as* and *copy*. Nothing is kept when the score is not seen on screen. An HDR desktop is read through Desktop Duplication and converted to sRGB by the display's SDR white level, so the picture is not washed-out.
+
+## [0.29.0] - 2026-11-01
+
+### Changed
+- **A companion is named after its owner** everywhere in the app (#145): `@handle's Companion`, or `anon's Companion` for an owner the log gives no handle (every anonymous player's companion alike), your own companion included, instead of the name the log gave it. An anonymous player named on joining the group names their companion from then on. With **Hide names** on, only the owner's part is hidden, so your companion stays readable and another player's reads `@▒▒▒▒'s Companion`. The companion window's title is its name, and its `of <owner>` is gone
+- **Who opened the fight, in a line under the table** (#159): the `*` after a player's name is gone. The line names who hit or taunted an enemy first, with which skill or effect and on which enemy, and counts the hits that land a moment before your own combat starts. When a monster went for someone before anyone hit or taunted an enemy, the line says so and still names who hit first. **Hide names** hides the handles in it, and **Copy fight** adds it
+
+### Fixed
+- **A companion gave away an anonymous player's handle** (#145): the game writes another member's companion into the log as `@handle's Companion`, also for a player it lists with neither name nor handle (`anon` in the app), so the companion's row read `↳ @handle's Companion` straight under an `anon` row, and the handle showed in the timeline strip, the penetration casters and death recaps too. In the split logs of January to October 2026, 199 handles reached the log only this way, over 117 logs; Hide names already masked them. The companion window's title also skipped Hide names
+
+## [0.28.1] - 2026-10-31
+
+### Changed
+- **Always Logging, or Easy Stalking, to keep encounter logging on** (#156): the README, the user guide, the home page and the "Waiting for Encounter.log" message now offer two addons, one or the other but not both: [Always Logging](https://github.com/brainsnorkel/AlwaysLogging), which logs everywhere and is installed from GitHub (it is not on ESOUI or in Minion), and Easy Stalking, which logs only the content you choose. Both are thanked under About
+
+### Fixed
+- **A log path with `&` or `<` in it shows as written in "Waiting for Encounter.log"** (#156), instead of being read as markup
+
+## [0.28.0] - 2026-10-31
+
+### Added
+- For the maintainer (#134): `scripts/release.py` makes the release commit (the version, the changelog section gathered from `changelog.d/` fragments, the design notes rebuilt) and, once its pull request is merged, tags it, pushes the tag and checks the beta it publishes. Changes now add a fragment in `changelog.d/` instead of editing `CHANGELOG.md`, and a check on every pull request asks for one (or the `no-changelog` label). `docs/design.md` is rebuilt in the release commit only, and the release job refuses a tag whose design notes lag the code
+- **Hover a fight's `ⓘ` in the fight list to see who has a possible build issue** (#147): each flagged player, with the class text from their row and the title of each finding, without selecting the fight. The rest of the row shows nothing on hover, as before. Names follow **Hide names**, and a screen reader hears the mark as how many players have a finding.
+- **A `?` after a single Class Mastery** (#149): a character can take two, and the log often shows one late or never. `Templar: Devout Guardian, ?` on the fight pane; hover the `?` for the class's other masteries, the likeliest first for the player's role (counted over a month of trial logs, Bastion of Light last as the log never names it), or click it for the build. The build window's mastery line and the plain-text copy say the same in words
+
+### Changed
+- **The possible-build-issues `ⓘ` is easier to spot** (#140): on the fight pane it now sits right after the player's name, beside the `*` of the first damage, instead of after the class text, and it is drawn bold with a faint glow in the link colour. Rows keep their height. The fight list, the popup and the build window keep the plain `ⓘ`
+- **The build window's Damage dealt section moves above Resources** (#143): under the gear grid the window now reads Damage dealt, Penetration and Critical damage as one block about what the player did with the build, with Resources, the tallest section, last. Each cap section's *Effective* line, the figure that counts, sits in a framed row with a bar at its left edge, and the Damage dealt and Resources headings get the rule the other headings have
+
+### Fixed
+- The *damage taken and healing received* link in the build window, and the death recap's link to the same window, open the fight that window shows (#143). They opened the fight selected in the list, which moves on to each new pull while the app follows the live log
+- **Necromancers' Cycle Unending shows beside the class** (#149): its effect comes from the Necromancer's pets, which the app did not credit to them, so most Necromancers showed Nothing Wasted alone
+- **A mastery found later in a session fills in that session's earlier fights** (#149), so the fights of one session show the same masteries
+
 ## [0.27.0] - 2026-10-31
 
 ### Added

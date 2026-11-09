@@ -74,7 +74,7 @@ class TestWorkerTeardown(unittest.TestCase):
         # engine emits within a millisecond of starting on a fast runner
         # (seen on the Linux runner once the window built more before it)
         def started():
-            return win._last_placeholder.startswith("Waiting for Encounter.log")
+            return win._empty_reason == "waiting"  # the slot drew the waiting page (#191)
 
         self.assertTrue(self._pump_until(started), "the engine thread never started")
 

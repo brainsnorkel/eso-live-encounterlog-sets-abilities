@@ -231,7 +231,7 @@ footer nav a { margin-right: 18px; }
   {{beta_line}}
 
   <figure class="shot">
-    <img src="img/main-window.png" alt="The main window: the fight history on the left; on the right the buff and debuff timeline, the fight header, and one row per player with their ability bars as icons and their gear sets" width="1400" height="880">
+    <img src="img/main-window.png" alt="The main window: the fight history on the left; on the right the fight on its Fight and Deaths tabs, the search beside them, with the buff and debuff timeline, the fight header, and one row per player with their ability bars as icons and their gear sets" width="1400" height="880">
     <figcaption>A veteran Kyne's Aegis fight as the app shows it: the session's fights on the left; the buff timeline, the fight header and a row per player on the right, ranked by boss damage, each with both ability bars, the sets they wore, and their penetration and critical damage.</figcaption>
   </figure>
 </section>
@@ -242,7 +242,7 @@ footer nav a { margin-right: 18px; }
   <div class="cards">
 
     <article class="card">
-      <div class="pic"><img src="img/build-window.png" alt="The build window: gear slot by slot, both bars, mundus, food and passives" loading="lazy"></div>
+      <div class="pic"><img src="img/build-window.png" alt="A player's window on its Build tab: gear slot by slot, both bars, mundus, food and passives" loading="lazy"></div>
       <div class="body">
         <h3>Builds at a glance</h3>
         <p>Both ability bars as the game's icons, scribed skills with their scripts, every set with its piece count. Click a name for the gear slot by slot: set, trait, enchant, quality, mundus stone, food and Class Mastery passives.</p>
@@ -258,7 +258,7 @@ footer nav a { margin-right: 18px; }
     </article>
 
     <article class="card">
-      <div class="pic"><img src="img/dps-graph.png" alt="Each player's DPS across the fight as a line graph" loading="lazy"></div>
+      <div class="pic"><img src="img/dps-graph.png" alt="The DPS graph tab: each player's DPS across the fight as a line graph, beside the fight list" loading="lazy"></div>
       <div class="body">
         <h3>DPS over time</h3>
         <p>Click the group's DPS for a graph of everyone's dps across the fight, so a bad pull or a lost burn window is seen, not guessed at.</p>
@@ -269,12 +269,12 @@ footer nav a { margin-right: 18px; }
       <div class="pic"><img src="img/death-recap.png" alt="A death recap: the hits and heals in the last seconds before a death" loading="lazy"></div>
       <div class="body">
         <h3>Death recaps</h3>
-        <p>A ☠ on a player's row opens the last five seconds before each death (up to ten in Settings): every hit and heal with its source, the health left after it, and whether it was blocked, dodged or shielded.</p>
+        <p>A ☠ on a player's row opens the last three seconds before each death (one to ten in Settings): every hit and heal with its source, the health left after it, and whether it was blocked, dodged or shielded.</p>
       </div>
     </article>
 
     <article class="card">
-      <div class="pic"><img src="img/taken-window.png" alt="The damage taken window: the figures, the kinds of damage, damage by source and healing by healer over a whole fight" loading="lazy"></div>
+      <div class="pic"><img src="img/taken-window.png" alt="A player's Damage taken tab: the figures, the kinds of damage and damage by source over a whole fight" loading="lazy"></div>
       <div class="body">
         <h3>Damage taken, for any player</h3>
         <p>A shield after every name opens the whole fight for that player, died or not: damage taken per second of the fight, what shields absorbed, how many direct hits were blocked, then every unit that hurt them with its abilities (bosses first, adds of one name as one row) and every healer with theirs, overheal as a share. Built for tanks; works for anyone.</p>
@@ -290,7 +290,7 @@ footer nav a { margin-right: 18px; }
     </article>
 
     <article class="card">
-      <div class="pic"><img src="img/build-pen-crit.png" alt="The penetration and critical damage sections of the build window" loading="lazy"></div>
+      <div class="pic"><img src="img/build-pen-crit.png" alt="A player's Pen and crit tab: penetration and critical damage against the caps" loading="lazy"></div>
       <div class="body">
         <h3>Penetration and crit against the caps</h3>
         <p>Where each player's penetration and critical damage come from: passives, mundus, sets at their piece counts, weapons, and the debuffs the group put on the boss, summed against the caps at full uptime and as the fight actually went.</p>
@@ -306,7 +306,7 @@ footer nav a { margin-right: 18px; }
     </article>
 
     <article class="card">
-      <div class="pic"><img src="img/search.png" alt="Search within a fight: matching text and ability icons highlighted" loading="lazy"></div>
+      <div class="pic"><img src="img/search.png" alt="Search within a fight: matching text and ability icons highlighted, and the count of matches in the field" loading="lazy"></div>
       <div class="body">
         <h3>Search and copy</h3>
         <p>Ctrl+F finds a player, a set or an ability within the fight, icons included. Copy any fight as plain text for Discord, and hover an icon or click a set name for its ESO-Hub page.</p>
@@ -329,7 +329,7 @@ footer nav a { margin-right: 18px; }
   <ol class="steps">
     <li>
       <h3>Turn on encounter logging in ESO</h3>
-      <p>The game writes <code>Encounter.log</code> only while logging is on, and it is off by default. The <a href="https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html">Easy Stalking - Encounterlog</a> addon turns it on for you by content type; by hand, type <code>/encounterlog</code> in chat before a run.</p>
+      <p>The game writes <code>Encounter.log</code> only while logging is on, and it is off by default. An addon turns it on for you, one or the other but not both: <a href="https://github.com/brainsnorkel/AlwaysLogging">Always Logging</a> logs everywhere (from GitHub, not on ESOUI or in Minion), <a href="https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html">Easy Stalking - Encounterlog</a> by content type. By hand, type <code>/encounterlog</code> in chat before a run.</p>
     </li>
     <li>
       <h3>Install ESO Log Tail</h3>
@@ -351,7 +351,7 @@ footer nav a { margin-right: 18px; }
       <a href="https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities">Source</a>
     </nav>
     <p>ESO Log Tail is an unofficial fan tool, not affiliated with or endorsed by ZeniMax. The Elder Scrolls Online and its artwork, including the ability icons the app shows, are © ZeniMax Online Studios. The app is released under the <a href="https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/LICENSE">MIT License</a>.</p>
-    <p>With thanks to <a href="https://eso-hub.com">ESO-Hub</a>, whose skill and set pages the app links to; <a href="https://www.esoui.com/downloads/info1360-CombatMetrics.html">Combat Metrics</a> by Solinur, the reference for its dps figures; <a href="https://github.com/Baertram/LibSets">LibSets</a> and <a href="https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html">LibFoodDrinkBuff</a>; <a href="https://en.uesp.net/wiki/Online:Online">UESP</a> and its EsoExtractData; <a href="https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html">Easy Stalking</a>; <a href="https://github.com/sheumais/logs">ESO Log Tool</a>; and the PenCrit Calc, skinnycheeks.gg and Hyperioxes calculators behind the penetration and crit figures. The full credits are in the README and under About in the app.</p>
+    <p>With thanks to <a href="https://eso-hub.com">ESO-Hub</a>, whose skill and set pages the app links to; <a href="https://www.esoui.com/downloads/info1360-CombatMetrics.html">Combat Metrics</a> by Solinur, the reference for its dps figures; <a href="https://github.com/Baertram/LibSets">LibSets</a> and <a href="https://www.esoui.com/downloads/info1902-LibFoodDrinkBuff.html">LibFoodDrinkBuff</a>; <a href="https://en.uesp.net/wiki/Online:Online">UESP</a> and its EsoExtractData; <a href="https://www.esoui.com/downloads/info2332-EasyStalking-Encounterlog.html">Easy Stalking</a> and <a href="https://github.com/brainsnorkel/AlwaysLogging">Always Logging</a>; <a href="https://github.com/sheumais/logs">ESO Log Tool</a>; and the PenCrit Calc, skinnycheeks.gg and Hyperioxes calculators behind the penetration and crit figures. The full credits are in the README and under About in the app.</p>
   </div>
 </footer>
 

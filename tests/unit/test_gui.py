@@ -156,12 +156,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         self.assertNotIn('—', line)
         self.assertLess(line.index('gdps'), line.index('Coral Aerie'))
         self.assertLess(line.index('Coral Aerie'), line.index('2025'))
-        # First-damage dealer gets a star in both renderings
+        # Who opened the fight: a line under the table in both renderings
+        # (issue #159), no star; the first hit is exactly 1,000 ms in, so
+        # no time, and the line follows the pane's text size
         html_marked = render_html(entry, detailed=False)
-        # (the name itself is a link to the player's build window)
-        self.assertIn('@brainsnorkel</a> <b>*</b>', html_marked)
-        self.assertIn('first damage', html_marked)
-        self.assertIn('@brainsnorkel *', render_plain_text(entry))
+        self.assertNotIn('<b>*</b>', html_marked)
+        self.assertIn('>@brainsnorkel hit Test Boss first: Damage Ability</p>', html_marked)
+        self.assertNotIn('font-size:85%', html_marked)
+        plain = render_plain_text(entry)
+        self.assertNotIn('@brainsnorkel *', plain)
+        self.assertTrue(plain.endswith('\n@brainsnorkel hit Test Boss first: Damage Ability'))
         html_out = render_html(entry, detailed=True)
         self.assertIn('@brainsnorkel', html_out)
         self.assertIn('Tide-Born Wildstalker', html_out)
@@ -237,6 +241,18 @@ class TestMainWindowStates(GuiTestCase):
             self.assertEqual(win.freshness_label.text(), 'No log file')
             self.assertEqual(win.freshness_label.styleSheet(),
                              state_style('none', win._dark))
+        finally:
+            win.close()
+
+    def test_waiting_placeholder_escapes_the_path_and_names_both_addons(self):
+        win = self._window()
+        try:
+            win._on_waiting_for_log(r'C:\Users\R&D <x>\Encounter.log')
+            text = win._last_placeholder
+            self.assertIn(r'<code>C:\Users\R&amp;D &lt;x&gt;\Encounter.log</code>', text)
+            self.assertIn('Always Logging (from GitHub', text)
+            self.assertIn('Easy Stalking (ESOUI or Minion)', text)
+            self.assertIn('not both', text)
         finally:
             win.close()
 
@@ -372,6 +388,102 @@ class TestMainWindowStates(GuiTestCase):
                 win._goto_next_match()
             self.assertLessEqual(win.fight_view.textCursor().position(),
                                  matches[-1].selectionStart())
+        finally:
+            win.close()
+
+    def test_a_redraw_in_place_keeps_the_searchs_match(self):
+        """Enter has taken the search to its fourth match when the fight on
+        screen changes in place: the cursor stays on that match, and the
+        next Enter goes on to the fifth (issue #196). The redraw took it
+        back to the first."""
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.search_field.setText('a')
+            starts = [m.selectionStart() for m in win._search_matches()]
+            self.assertGreater(len(starts), 4)
+            for _ in range(3):
+                win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._on_fight_updated(entry)
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[4])
+        finally:
+            win.close()
+
+    def test_a_redraw_in_place_keeps_the_searchs_match_by_its_number(self):
+        """The game had cut the fight on screen in two: its verdict goes
+        from 'Wipe 62%' to 'Cut 62%' (pull_outcome.mark_context), a
+        character shorter, above every match. The cursor stays on the
+        reader's match, the fourth, and the next Enter goes on to the fifth
+        (issue #196); kept by its offset, the cursor went on to the fifth."""
+        from pull_outcome import WIPE
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            entry.pull = {'boss': entry.boss_name, 'outcome': WIPE, 'health_left': 62.0}
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            self.assertIn('Wipe 62%', win.fight_view.toPlainText())
+            win.search_field.setText('a')
+            for _ in range(3):
+                win._goto_next_match()
+            entry.pull['cut'] = True  # as mark_context writes it
+            win._on_fight_updated(entry)
+            self.assertIn('Cut 62%', win.fight_view.toPlainText())
+            starts = [m.selectionStart() for m in win._search_matches()]
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[4])
+        finally:
+            win.close()
+
+    def test_a_redraw_in_place_goes_on_from_between_two_matches(self):
+        """A click has left the cursor between the search's third and
+        fourth matches when the fight on screen changes in place: the next
+        Enter still goes to the fourth (issue #196). Kept by its offset,
+        the cursor went on to the fourth, and the next Enter to the
+        fifth."""
+        from PySide6.QtGui import QTextCursor
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.search_field.setText('a')
+            starts = [m.selectionStart() for m in win._search_matches()]
+            between = (starts[2] + starts[3]) // 2
+            self.assertLess(starts[2], between)
+            cursor = QTextCursor(win.fight_view.document())
+            cursor.setPosition(between)
+            win.fight_view.setTextCursor(cursor)
+            win._on_fight_updated(entry)
+            win._goto_next_match()
+            self.assertEqual(win.fight_view.textCursor().position(), starts[3])
+        finally:
+            win.close()
+
+    def test_the_search_ends_the_hold_on_a_redrawn_page(self):
+        """A redraw holds the reader's place while Qt lays the page out.
+        Typing a search, or Enter in it, moves the page to a match, which
+        the bar does not report: the hold ends there (issue #199), so the
+        next change of the page's range leaves the page at the match."""
+        win = self._window()
+        try:
+            entry = self._reviewed()['fights'][0]
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            view = win.fight_view
+            view.restore_scroll(10 ** 6)  # held, out of the page's reach
+            self.assertTrue(view._hold.isActive())
+            win.search_field.setText('a')
+            self.assertFalse(view._hold.isActive())
+            view.restore_scroll(10 ** 6)
+            win._goto_next_match()
+            self.assertFalse(view._hold.isActive())
         finally:
             win.close()
 

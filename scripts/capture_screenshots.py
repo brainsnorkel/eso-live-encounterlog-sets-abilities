@@ -6,7 +6,8 @@ drawn offscreen over a log file.
 
 The log is read, never written: the run uses a scratch config of its own
 (split files and archiving off, no update check), so the user's settings are
-untouched. The default log is the two-fight fixture the tests use; a
+untouched. --split-dir turns split files on into a scratch folder that holds
+a copy of the log, for the split log's line on the Instance tab. The default log is the two-fight fixture the tests use; a
 veteran trial split log from the app's split folder makes the pictures the
 guide expects (twelve players, a death, taunts). Output goes to
 docs/screencaps/ (--out to change), overwriting the same file names each
@@ -15,17 +16,25 @@ time, so the pictures stay in step with the app:
     main-window.png                 detail view and timeline strip, a boss fight selected
     compact-view.png                Detail view off
     search.png                      a search in the fight
-    build-window.png                one player's build window
-    build-damage-dealt.png          the same window scrolled to its Damage dealt section
-    build-pen-crit.png              the same window scrolled to its penetration and crit sections
-    build-resources.png             the same window scrolled to its Resources section, the last
+    fight-deaths.png                the fight's Deaths tab, every death of the fight
+    instance.png                    the Instance tab: the instance the fight belongs to
+    build-window.png                the top damage dealer's player window, on its Build tab
+    build-pen-crit.png              the same window on its Pen and crit tab
+    build-resources.png             the same window on its Resources tab
     build-issues.png                the (i) popup of a player's possible build issues
     update-button.png               the toolbar with the Update button and its ⓘ (a crafted release)
     update-notes.png                the ⓘ popup with that release's notes
-    damage-window.png               one player's damage by ability and target
-    dps-graph.png                   the dps over time graph
-    death-recap.png                 one player's death recap
-    settings.png                    the Settings dialog
+    damage-window.png               the same window on its Damage done tab
+    taken-window.png                the fight's tank's Damage taken tab
+    healing-received.png            the same player's Healing received tab
+    dps-graph.png                   the DPS graph tab: the dps over time graph
+    death-recap.png                 the Deaths tab, the fullest recap of the fight shown
+    settings-general.png            the Settings dialog, one picture per page
+    settings-fights.png
+    settings-tracked-effects.png
+    settings-history.png
+    settings-display.png
+    settings-files-and-splits.png
     examples-dialog.png             the example tracking rules picker
     review-mode.png                 a log opened for review
 
@@ -60,6 +69,10 @@ def main():
                         help="the app's text size in percent, 80 to 200 (Settings → Display)")
     parser.add_argument("--colorblind-graph", action="store_true",
                         help="the DPS graph's colour-blind colours and strokes (Settings → Display)")
+    parser.add_argument("--split-dir", default="",
+                        help="split logs on, into this folder: the Instance tab lists the run's "
+                             "split log when the folder holds a copy of the log. Never the real "
+                             "split folder: attaching writes a session's missing split")
     parser.add_argument("--dark", action="store_true",
                         help="the dark theme (the Windows 11 style's dark palette, set by hand)")
     args = parser.parse_args()
@@ -102,7 +115,7 @@ def main():
     config_path = Path(scratch.name) / "config.json"
     config_path.write_text(json.dumps({
         "log_path": str(log),
-        "split": {"enabled": False},
+        "split": {"enabled": bool(args.split_dir), "dir": args.split_dir},
         "archive": {"delete_original": False, "size_threshold_mb": 1000000},
         "update": {"check_enabled": False},
         "display": {"text_scale": args.text_size, "colorblind_graph": args.colorblind_graph},
@@ -112,7 +125,6 @@ def main():
     # session; the fight list is complete only then (a long fight can take
     # seconds to replay, during which the list looks finished)
     started = {"flag": False}
-    problems = []  # pictures that need another fight, reported at the end
 
     def pump(seconds, until_started=False):
         t0 = time.time()
@@ -176,34 +188,47 @@ def main():
         win.search_field.clear()
         pump(0.5)
 
-    # Build window for the top damage dealer
+    # The fight's Deaths and Instance tabs (issue #196), then the Fight tab again
+    win.fight_tabs.setCurrentWidget(win.deaths_view)
+    pump(1)
+    save(win, "fight-deaths.png")
+    # The Instance tab, at its top
+    win.fight_tabs.setCurrentWidget(win.instance_view)
+    pump(1)
+    save(win, "instance.png")
+    win.fight_tabs.setCurrentIndex(0)
+    pump(0.5)
+
+    # The player window (issue #196) for the top damage dealer, one picture
+    # per tab, at its default size: on the offscreen platform's small
+    # virtual screen it would open capped at nine tenths of that screen
+    from gui.player_window import (
+        DEFAULT_SIZE,
+        HEALING_TAB,
+        PEN_CRIT_TAB,
+        RESOURCES_TAB,
+        TAB_KEYS,
+    )
+
+    def player_window(open_link, unit_id, name):
+        open_link(unit_id)
+        window = win._player_window
+        window.resize(*DEFAULT_SIZE)
+        pump(1.5)
+        save(window, name)
+        return window
+
+    def tab(window, key, name):
+        window.tabs.setCurrentIndex(TAB_KEYS.index(key))
+        pump(0.5)
+        save(window, name)
+
     players = sorted(fight.players, key=lambda p: -p.get("dps", 0))
     if players:
-        win._show_build(players[0]["unit_id"])
-        pump(1.5)
-        save(win._build_dialog, "build-window.png")
-        # Under the gear grid: Damage dealt, then the Penetration and
-        # Critical damage sections, then Resources last (issue #143); the
-        # Resources heading reaches the top of the view only when its
-        # section is taller than the view, as a trial player's is
-        from gui.build_render import DEALT_ANCHOR, PEN_CRIT_ANCHOR, RESOURCES_ANCHOR
-        win._build_dialog.view.scrollToAnchor(DEALT_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-damage-dealt.png")
-        win._build_dialog.view.scrollToAnchor(PEN_CRIT_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-pen-crit.png")
-        win._build_dialog.view.scrollToAnchor(RESOURCES_ANCHOR)
-        pump(0.5)
-        save(win._build_dialog, "build-resources.png")
-        bar = win._build_dialog.view.verticalScrollBar()
-        top = _anchor_top(win._build_dialog.view.document(), RESOURCES_ANCHOR)
-        if top is not None and bar.value() < int(top) - 1:
-            problems.append("build-resources.png opens on the window's end, not on the Resources "
-                            "heading: this player's Resources section is shorter than the window. "
-                            "Pick a trial fight (--boss) for the guide's picture.")
-        bar.setValue(0)
-        win._build_dialog.hide()
+        window = player_window(win._show_build, players[0]["unit_id"], "build-window.png")
+        tab(window, PEN_CRIT_TAB, "build-pen-crit.png")
+        tab(window, RESOURCES_TAB, "build-resources.png")
+        window.hide()
 
     # The (i) popup: the first player of the fight with a possible build issue
     flagged = next((p for p in fight.players if p.get("build_issues")), None)
@@ -249,56 +274,63 @@ def main():
     win._on_update_gone()
     pump(0.5)
 
-    # Damage window for the same player
+    # Damage done for the same player
     if players:
-        win._show_damage(players[0]["unit_id"])
-        pump(1.5)
-        save(win._damage_dialog, "damage-window.png")
-        win._damage_dialog.hide()
+        player_window(win._show_damage, players[0]["unit_id"], "damage-window.png").hide()
 
-    # Damage taken window for the fight's tank (the reader it is for), else
-    # the same player
+    # Damage taken and Healing received for the fight's tank (the reader
+    # they are for), else the same player
     if players:
         tank = next((p for p in players if p.get("role") == "T"), players[0])
-        win._show_taken(tank["unit_id"])
-        pump(1.5)
-        save(win._taken_dialog, "taken-window.png")
-        win._taken_dialog.hide()
+        window = player_window(win._show_taken, tank["unit_id"], "taken-window.png")
+        tab(window, HEALING_TAB, "healing-received.png")
+        window.hide()
 
-    # The dps over time graph of the fight
+    # The dps over time graph of the fight, the main window on its DPS graph
+    # tab (issue #196), then the Fight tab again
     win._show_graph()
     pump(1.5)
-    save(win._graph_dialog, "dps-graph.png")
-    win._graph_dialog.hide()
+    save(win, "dps-graph.png")
+    win.fight_tabs.setCurrentIndex(0)
+    pump(0.5)
 
-    # Death recap: the first fight with a death, its first death
-    dead = next(((f, r) for f in fights for r in f.death_recaps), None)
+    # The Deaths tab: in the fight shown, the death with the most hits and
+    # heals logged before it, for a full table; else the first fight with a
+    # death, its first death
+    recaps = sorted(fight.death_recaps, key=lambda r: -len(r.get("events") or []))
+    dead = ((fight, recaps[0]) if recaps
+            else next(((f, r) for f in fights for r in f.death_recaps), None))
     if dead is not None:
         f, recap = dead
         win.history_list.select_fight(fights.index(f))
         pump(1)
-        win._show_death_recap(recap["unit_id"])
-        pump(1.5)
-        save(win._death_dialog, "death-recap.png")
-        win._death_dialog.hide()
+        player_window(win._show_death_recap, recap["unit_id"], "death-recap.png").hide()
         win.history_list.select_fight(row)
         pump(1)
     else:
         print("  (no death in this log: death-recap.png not written)")
 
-    # Settings, and the example-rules picker it opens
-    dialog = SettingsDialog(win.config, win)
+    # Settings, and the example-rules picker it opens. The History page
+    # shows the fight history's line without its folder (a path names the
+    # machine's user, which the pictures keep out) and its button enabled
+    status = win.history_status().replace(str(win.fight_index.path), win.fight_index.path.name)
+    dialog = SettingsDialog(win.config, win, history_status=status,
+                            on_build_history=win.start_backfill)
     # The box only, not the config (no check runs): the guide shows the
     # update channel as a user with checks on sees it
     dialog.update_check.setChecked(True)
+    # The box only, again: the scratch config keeps archiving off with a
+    # threshold at the spin box's maximum, which is not what a user sees
+    dialog.threshold.setValue(1024)
     dialog.show()
-    # No window manager offscreen, and the dialog opens no taller than the
-    # 800 px virtual screen with the rest scrolling (0.18.0); the guide
-    # wants every group, so the window takes the scrolled content's own
-    # height plus the buttons and margins
-    dialog.resize(720 * max(100, args.text_size) // 100, dialog._scroll.widget().sizeHint().height() + 72)
     pump(1)
-    save(dialog, "settings.png")
+    # One picture per page, the dialog at its natural size (its tallest
+    # page's, 579 px at 100%, under the 800 px virtual screen's cap)
+    from gui.settings_dialog import PAGES
+    for index, name in enumerate(PAGES):
+        dialog.tabs.setCurrentIndex(index)
+        pump(0.3)
+        save(dialog, f"settings-{name.lower().replace(' ', '-')}.png")
     from effect_rules import parse_rules
     from gui.examples_dialog import ExamplesDialog
     present = [rule.name for rule in parse_rules(dialog.rules_edit.toPlainText())[0]]
@@ -322,25 +354,6 @@ def main():
     win.close()
     pump(1)
     scratch.cleanup()
-    if problems:
-        # The pictures are saved; say which one needs another fight
-        sys.exit("\n".join(problems))
-
-
-def _anchor_top(doc, name):
-    """The top of the block that carries the named anchor, as
-    QTextEdit.scrollToAnchor reads it, or None."""
-    block = doc.begin()
-    while block.isValid():
-        if name in block.charFormat().anchorNames():
-            return doc.documentLayout().blockBoundingRect(block).top()
-        it = block.begin()
-        while not it.atEnd():
-            if name in it.fragment().charFormat().anchorNames():
-                return doc.documentLayout().blockBoundingRect(block).top()
-            it += 1
-        block = block.next()
-    return None
 
 
 if __name__ == "__main__":

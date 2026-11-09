@@ -7,12 +7,13 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
-    QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget,
+    QScrollArea, QSlider, QSpinBox, QStyle, QStyleOptionSpinBox, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 import split_retention
@@ -27,46 +28,60 @@ from pen_crit import (
     FORCE_OF_NATURE_PER_EFFECT, PEN_CAP_INSTANCED, PEN_CAP_OVERLAND, SOLO_BOSS_ARMOUR,
 )
 
-PEN_CRIT_HELP = ("The build window's Penetration and Critical damage sections read everything "
-                 "else from the log. Champion Point stars that only change a stat are never "
-                 "logged, so tick the ones to assume; they show as assumed rows. Fighting "
-                 "Finesse is assumed in solo and small-group fights (up to four players), never "
-                 "in a group of five or more. Force of Nature's value is its per-effect figure "
-                 "times the status effects measured on the boss. The penetration cap is also "
-                 "the armour estimate behind the buff timeline's Armour row.")
-BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} in dungeons, trials and arenas, "
-           f"{SOLO_BOSS_ARMOUR:,} on a solo dungeon's bosses, {PEN_CAP_OVERLAND:,} overland")
+# The facts a paragraph used to carry sit in the labels of the controls
+# they describe (issue #187); the help says only what no label can
+PEN_CRIT_HELP = ("A player's Pen and crit tab reads everything else from the log. Champion "
+                 "Point stars that only change a stat are never logged, so tick the ones to "
+                 "assume; they show as assumed rows. The cap is also the armour estimate behind "
+                 "the timeline strip's Armour row.")
+BY_ZONE = (f"By zone: {PEN_CAP_INSTANCED:,} instanced, {SOLO_BOSS_ARMOUR:,} solo dungeon bosses, "
+           f"{PEN_CAP_OVERLAND:,} overland")
 CAP_CHOICES = (("auto", BY_ZONE),
                (str(PEN_CAP_INSTANCED), f"Always {PEN_CAP_INSTANCED:,}"),
                (str(PEN_CAP_OVERLAND), f"Always {PEN_CAP_OVERLAND:,}"))
 
-RULES_HELP = ("One rule per line: Name = ability ids on self | group | pets | boss | enemies, "
-              "then stacks for a stacking effect, each for the mean over the units "
-              "(the taunt's measure), or dots for Touch of Z'en's count. A rule shows when "
-              "its effect was up; add expected solo | small | large | all to show it at 0% "
-              "in those group sizes when it was not. Every row of the timeline strip is a rule here, the group "
-              "buffs and the taunt included: delete what you do not want, Examples… has them "
-              "back. In a fight without a boss, a boss rule measures the pack and says how many "
-              "mobs it reached. A line that starts with $ is a HyperTools tracker export. Copy "
-              "these lines to share them.")
+# The settings the engine reads when it is built or attached
+# (app_startup.engine_settings) end their help with this sentence: a Save
+# replays the session only when one of them changed (issue #187)
+REPLAYS = "Saving a change here replays the session."
+
+# The dialog's pages, in tab order (issue #187). Each group keeps its
+# title, so the guide's "Settings → Encounter log" still reads true; only
+# the page it sits on is new. When a change takes effect: General, the
+# log path replays and the rest apply at once; Fights, recaps and
+# companions replay, pen/crit at once; Tracked effects
+# replays; History and Display at once; Files and splits, the split files
+# replay, retention at its next run, archiving at the next start.
+PAGES = ("General", "Fights", "Tracked effects", "History", "Display", "Files and splits")
+
+RULES_HELP = ("Name = ability ids on self | group | pets | boss | enemies, then stacks, each or "
+              "dots; add expected solo | small | large | all. Every row of the timeline strip "
+              "is a rule here: delete what you do not want, Examples… has them back. " + REPLAYS)
 
 PRIVACY_HELP = ("For screenshots and sharing: every player but the one writing the log is "
                 "pixelated in the fight pane and the windows, and reads as blocks in hover "
                 "text, pop-ups and the copied fight. The same switch as the toolbar's Hide "
                 "names button.")
+HISTORY_HELP = ("Every boss fight is kept, kill or not, so a pull can be read against your "
+                "group's earlier kills of the boss and a player against their own. The file "
+                "is plain JSON Lines and holds the players' handles, as the logs do. Build "
+                "from split logs reads the split folder's logs through the app, newest first, "
+                "on the review thread: the status bar shows the progress, its Cancel stops it, "
+                "and the next build carries on where it stopped. About a minute per 600 MB.")
 COMPANION_HELP = ("A companion that is out has its own row under its owner. Off, the owner's "
                   "figures are their own, as in Combat Metrics; on, the owner's dps and share "
                   "include the companion's too, so the shares add up to more than 100%. "
-                  "Applies when Settings is saved, to the fights already listed.")
+                  + REPLAYS)
 # Issue #134
-CHANNEL_HELP = ("Beta gets every release as it is published. Stable gets a release once it "
+CHANNEL_HELP = ("An Update button appears at the right end of the toolbar when a newer "
+                "release exists. Beta gets every release as it is published. Stable gets a release once it "
                 "has been used in real fights for a while with nothing found. Moving from Beta "
                 "to Stable never takes you back a version: you keep the one you have until a "
                 "Stable release is newer.")
-RECAP_HELP = ("Each death's table and its summary in the death recap window cover this many "
-              "seconds before the death. Five is usually one mechanic; ten shows the lead-up. "
-              "Saving replays the session, so the fights already listed are rebuilt with the "
-              "new window.")
+RECAP_HELP = ("Each death's table and its summary on a player's Deaths tab cover this many "
+              "seconds before the death. One shows the killing blow; three covers most deaths "
+              "from half health; ten shows the lead-up. "
+              + REPLAYS)
 
 RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for review. Checked "
                   "at startup and daily; the newest session's split and the keep folder are "
@@ -76,20 +91,98 @@ RETENTION_HELP = ("Zipped splits keep their name plus .zip and still open for re
 SIZE_GUIDE = ("Sizing guide: a veteran trial run is typically 100–300 MB, "
               "a veteran dungeon roughly 25–75 MB. "
               "1024 MB (1 GB) ≈ five veteran trials.")
+# What the threshold is measured against and what an archive does
+# (log_archiver): the label says "surpasses", so the help says since when
+ARCHIVE_HELP = ("Checked when the app starts, against what the log has grown since the last "
+                "archive. An archive streams the whole Encounter.log into "
+                "Encounter-YYMMDDHHMMSS.zip in the archive folder, stamped from the log's newest "
+                "entry and verified before it is kept; the log itself is left as it is unless the "
+                "box below is ticked. A log the game has open is skipped until the next start, and "
+                "Archive now on the toolbar does the same at any moment. " + SIZE_GUIDE)
 
-DELETE_WARNING = ("Deletes Encounter.log after the archive is created and "
+# "Warning:" in the text, so the warning is not its orange alone (#77, #187)
+DELETE_WARNING = ("Warning: deletes Encounter.log after the archive is created and "
                   "verified. The data then exists only inside the zip.")
 
 
-class _PathRow(QHBoxLayout):
-    """Line edit + Browse button for a file or directory path."""
+def _form(group: QGroupBox) -> QFormLayout:
+    """A group's form with every field at its own size: only a field that
+    asks to grow (a path row's line edit, the text size slider) takes the
+    row's width. The Windows style's default grows every field, so a spin
+    box for a number of weeks was 459 px wide for a 122 px hint and read
+    as a text field with its arrows far from its label (issue #187)."""
+    form = QFormLayout(group)
+    form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+    return form
 
-    def __init__(self, value: str, directory: bool):
+
+class _SpinBox(QSpinBox):
+    """A spin box whose size hint fits its widest value and suffix. The
+    windows11 style's own hint does not at large text sizes: at 18 pt
+    (200%) it gives "10 seconds" a 98 px field for a 119 px text, so the
+    box at its hint showed "10 secon" (measured offscreen, issue #187;
+    Fusion and 9 pt fit). The style's edit-field rect at the hint size is
+    the field the box really gets, to the pixel, so the shortfall against
+    the widest text is added to the hint. Layouts ask for the hint on
+    every pass, so it is kept until the base hint, the font, the style,
+    the range or the affixes change (22 µs a pair of hints measured,
+    against 1 µs for the base class's cached one)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hint_key = None
+        self._hint = QSize()
+
+    def _widest(self) -> int:
+        fm = self.fontMetrics()
+        return max(fm.horizontalAdvance(self.prefix() + self.textFromValue(v) + self.suffix())
+                   for v in (self.minimum(), self.maximum()))
+
+    def _field_width(self, width: int, height: int) -> int:
+        option = QStyleOptionSpinBox()
+        self.initStyleOption(option)
+        option.rect = QRect(0, 0, width, height)
+        return self.style().subControlRect(
+            QStyle.CC_SpinBox, option, QStyle.SC_SpinBoxEditField, self).width()
+
+    def sizeHint(self):
+        base = super().sizeHint()
+        key = (base.width(), base.height(), self.font().key(), self.style().objectName(),
+               self.minimum(), self.maximum(), self.prefix(), self.suffix())
+        if key != self._hint_key:
+            hint = QSize(base)
+            # the line edit's own text margins, and a little slack
+            need = self._widest() + 6
+            field = self._field_width(base.width(), base.height())
+            if field < need:
+                hint.setWidth(base.width() + need - field)
+            self._hint_key, self._hint = key, hint
+        return QSize(self._hint)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+
+class _PathRow(QHBoxLayout):
+    """Line edit + Browse button for a file or directory path. *name* is
+    what a screen reader calls the edit ("Log file") and, as "Browse for
+    the log file", its button: a field added to a form as a layout gets no
+    buddy label, so Qt fell back to the group's title for the edit, and
+    every button was "Browse…". *blank* is what a blank field means
+    ("auto-detect"), the row label's parenthesis, which that label does
+    not announce either; it opens the edit's description (issue #187)."""
+
+    def __init__(self, value: str, directory: bool, name: str = "", blank: str = ""):
         super().__init__()
         self._directory = directory
         self.edit = QLineEdit(value or "")
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse)
+        if name:
+            self.edit.setAccessibleName(name)
+            browse.setAccessibleName(f"Browse for the {name[0].lower()}{name[1:]}")
+        if blank:
+            self.edit.setAccessibleDescription(f"Blank = {blank}.")
         self.addWidget(self.edit, 1)
         self.addWidget(browse)
 
@@ -125,50 +218,75 @@ COLORBLIND_HELP = ("The graph's player lines in a set of colours chosen to stay 
 
 
 class SettingsDialog(QDialog):
-    """Edits the AppConfig; caller saves and restarts monitoring on accept."""
+    """Edits the AppConfig; the caller saves and, when a setting the engine
+    reads changed (app_startup.engine_settings), restarts monitoring.
+    *history_status*: what the fight history holds and where;
+    *on_build_history*: starts reading the split logs into it (the
+    window's start_backfill), on the review thread, whatever the dialog
+    then saves or cancels (fight_index, issue #170). *open_page* names
+    the page to open on (one of PAGES); otherwise the dialog opens on
+    General the first time and, until the app is closed, on the page it
+    was last closed on (issue #187)."""
 
-    def __init__(self, config: AppConfig, parent=None):
+    # The page the dialog was last closed on this run: an index, never a
+    # widget, so nothing of a freed dialog is kept
+    _last_page = 0
+
+    def __init__(self, config: AppConfig, parent=None, history_status: str = "",
+                 on_build_history=None, open_page: str | None = None):
         super().__init__(parent)
         self.config = config
+        self._on_build_history = on_build_history
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(560)
-        # The groups scroll above fixed Save and Cancel buttons: the dialog
-        # is taller than a 1080p screen, and without room Qt squeezed the
-        # wrapped help labels until their lines overlapped
+        # Six pages in a tab bar above fixed Save and Cancel buttons (issue
+        # #187): one column of thirteen groups was 2,139 px tall at 100%,
+        # of which a 1080p screen showed 43%, with the groups a raider comes
+        # back to at the bottom. Every page is its own scroll area, so a
+        # screen that cannot fit the tallest page scrolls that page alone.
+        # All pages are built here, whichever shows: the split preview, the
+        # delete question and the history build read the log path and the
+        # split folder across pages
         outer = QVBoxLayout(self)
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.NoFrame)
-        # Sideways only when a large text size makes a line wider than the screen
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._scroll.setWidget(content)
-        outer.addWidget(self._scroll, 1)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+        self._pages: dict[str, QScrollArea] = {}  # the page's body is the area's widget
+        page = {name: self._page(name) for name in PAGES}
+        general, fights, tracked, history, display, files = (page[name] for name in PAGES)
 
         # Log file
         log_group = QGroupBox("Encounter log")
-        log_form = QFormLayout(log_group)
-        self.log_row = _PathRow(config.get("log_path") or "", directory=False)
+        log_form = _form(log_group)
+        self.log_row = _PathRow(config.get("log_path") or "", directory=False, name="Log file",
+                                blank="auto-detect")
         log_form.addRow("Log file (blank = auto-detect):", self.log_row)
-        layout.addWidget(log_group)
+        log_form.addRow(self._help(REPLAYS, self.log_row.edit))
+        general.addWidget(log_group)
 
         # Split files
         split_group = QGroupBox("Per-encounter split files")
-        split_form = QFormLayout(split_group)
+        split_form = _form(split_group)
         self.split_enabled = QCheckBox("Create a split log file for each encounter")
         self.split_enabled.setChecked(bool(config.get("split.enabled", False)))
-        self.split_dir = _PathRow(config.get("split.dir") or "", directory=True)
+        self.split_dir = _PathRow(config.get("split.dir") or "", directory=True,
+                                  name="Split folder", blank="log folder")
         split_form.addRow(self.split_enabled)
         split_form.addRow("Split folder (blank = log folder):", self.split_dir)
+        # Read downwards this line heads the zip and Recycle Bin rows too,
+        # which do not replay, so it says which two it covers
+        split_form.addRow(self._help(
+            "Saving a change to the split log or its folder replays the session; the "
+            "zipping and moving below do not.", self.split_enabled, self.split_dir.edit))
         # Retention (split_retention, issue #86): what a run would do now is
         # counted from the same selection the run makes
         zip_row = QHBoxLayout()
         self.zip_enabled = QCheckBox("Zip split logs older than")
         self.zip_enabled.setChecked(bool(config.get("split.zip_enabled", False)))
-        self.zip_weeks = QSpinBox()
+        self.zip_weeks = _SpinBox()
         self.zip_weeks.setRange(1, 52)
         self.zip_weeks.setSuffix(" weeks")
+        # A spin box beside a check box in a row has no buddy label: Qt
+        # announced it by the group's title (issue #187)
+        self.zip_weeks.setAccessibleName("Zip split logs older than, weeks")
         self.zip_weeks.setValue(int(config.get("split.zip_after_weeks", 4) or 4))
         zip_row.addWidget(self.zip_enabled)
         zip_row.addWidget(self.zip_weeks)
@@ -179,23 +297,24 @@ class SettingsDialog(QDialog):
         delete_row = QHBoxLayout()
         self.delete_enabled = QCheckBox(f"Move split logs to the {TRASH_NAME} when older than")
         self.delete_enabled.setChecked(bool(config.get("split.delete_enabled", False)))
-        self.delete_weeks = QSpinBox()
+        self.delete_weeks = _SpinBox()
         self.delete_weeks.setRange(1, 520)
         self.delete_weeks.setSuffix(" weeks")
+        self.delete_weeks.setAccessibleName(
+            f"Move split logs to the {TRASH_NAME} when older than, weeks")
         self.delete_weeks.setValue(int(config.get("split.delete_after_weeks", 52) or 52))
         delete_row.addWidget(self.delete_enabled)
         delete_row.addWidget(self.delete_weeks)
         delete_row.addStretch(1)
         split_form.addRow(delete_row)
+        # What a run would do now is a consequence, not help: the normal
+        # text colour, and no blank line while there is nothing to say
         self.retention_preview = QLabel("")
         self.retention_preview.setWordWrap(True)
-        self.retention_preview.setStyleSheet(self._small_style("muted"))
+        self.retention_preview.setStyleSheet(self._small_style("plain"))
         split_form.addRow(self.retention_preview)
-        retention_help = QLabel(RETENTION_HELP)
-        retention_help.setWordWrap(True)
-        retention_help.setStyleSheet(self._small_style("muted"))
-        split_form.addRow(retention_help)
-        layout.addWidget(split_group)
+        split_form.addRow(self._help(RETENTION_HELP, self.zip_enabled))
+        files.addWidget(split_group)
         self._splits = []
         self._initial_delete = (self.delete_enabled.isChecked(), self.delete_weeks.value(),
                                 self.retention_folder())
@@ -210,32 +329,27 @@ class SettingsDialog(QDialog):
             changed.connect(self._update_retention_preview)
 
         # Archive
-        archive_group = QGroupBox("Automatic log archiving (checked at app startup)")
-        archive_form = QFormLayout(archive_group)
-        self.threshold = QSpinBox()
+        archive_group = QGroupBox("Automatic log archiving")
+        archive_form = _form(archive_group)
+        self.threshold = _SpinBox()
         self.threshold.setRange(1, 1024 * 100)
         self.threshold.setSuffix(" MB")
         self.threshold.setValue(int(config.get("archive.size_threshold_mb", 1024) or 1024))
-        archive_form.addRow("Archive when the log grows by:", self.threshold)
-        guide = QLabel(SIZE_GUIDE)
-        guide.setWordWrap(True)
-        guide.setStyleSheet(self._small_style("muted"))
-        archive_form.addRow(guide)
-        self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True)
+        archive_form.addRow("Archive when the log surpasses:", self.threshold)
+        archive_form.addRow(self._help(ARCHIVE_HELP, self.threshold))
+        self.archive_dir = _PathRow(config.get("archive.dir") or "", directory=True,
+                                    name="Archive folder", blank="log folder")
         archive_form.addRow("Archive folder (blank = log folder):", self.archive_dir)
         self.delete_original = QCheckBox("Delete Encounter.log after a verified archive")
         self.delete_original.setChecked(bool(config.get("archive.delete_original", False)))
         archive_form.addRow(self.delete_original)
-        warning = QLabel(DELETE_WARNING)
-        warning.setWordWrap(True)
-        warning.setStyleSheet(self._small_style("warning"))
-        archive_form.addRow(warning)
-        layout.addWidget(archive_group)
+        archive_form.addRow(self._help(DELETE_WARNING, self.delete_original, role="warning"))
+        files.addWidget(archive_group)
 
         # Startup
         import autostart
         startup_group = QGroupBox("Startup")
-        startup_form = QFormLayout(startup_group)
+        startup_form = _form(startup_group)
         self.autostart = QCheckBox("Start ESO Log Tail when I sign in to Windows")
         self._autostart_available = autostart.autostart_command() is not None
         self._autostart_initial = autostart.is_enabled()
@@ -245,16 +359,16 @@ class SettingsDialog(QDialog):
             self.autostart.setToolTip(
                 "Available when running the installed app")
         startup_form.addRow(self.autostart)
-        layout.addWidget(startup_group)
+        general.addWidget(startup_group)
         # The login entry is a Windows Run key; nothing to offer elsewhere
         startup_group.setVisible(sys.platform == "win32")
 
         # Updates
         update_group = QGroupBox("Updates")
-        update_form = QFormLayout(update_group)
-        self.update_check = QCheckBox(
-            "Check GitHub for a newer release at startup and every 15 minutes, "
-            "and show an Update button in the toolbar")
+        update_form = _form(update_group)
+        # The toolbar button is in the help: this label set the dialog's
+        # width at 200% (issue #187)
+        self.update_check = QCheckBox("Check for a newer release at startup and every 15 minutes")
         self.update_check.setChecked(bool(config.get("update.check_enabled", True)))
         update_form.addRow(self.update_check)
         self.update_channel = QComboBox()
@@ -268,16 +382,13 @@ class SettingsDialog(QDialog):
         self.update_channel.setEnabled(self.update_check.isChecked())
         self.update_check.toggled.connect(self.update_channel.setEnabled)
         update_form.addRow("Channel:", self.update_channel)
-        channel_help = QLabel(CHANNEL_HELP)
-        channel_help.setWordWrap(True)
-        channel_help.setStyleSheet(self._small_style("muted"))
-        update_form.addRow(channel_help)
-        layout.addWidget(update_group)
+        update_form.addRow(self._help(CHANNEL_HELP, self.update_check, self.update_channel))
+        general.addWidget(update_group)
 
         # Display: the app-wide text size (issue #77, gui.text_size), applied
         # when Settings is saved
         display_group = QGroupBox("Display")
-        display_form = QFormLayout(display_group)
+        display_form = _form(display_group)
         size_row = QHBoxLayout()
         self.text_size = QSlider(Qt.Horizontal)
         self.text_size.setRange(text_size.MIN_PCT, text_size.MAX_PCT)
@@ -286,6 +397,7 @@ class SettingsDialog(QDialog):
         self.text_size.setTickInterval(text_size.STEP_PCT)
         self.text_size.setTickPosition(QSlider.TicksBelow)
         self.text_size_label = QLabel()
+        self.text_size.setAccessibleName("Text size")  # the row's label is not its buddy
         self.text_size.valueChanged.connect(self._snap_text_size)
         self.text_size.setValue(text_size.clamp(
             config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT)))
@@ -293,82 +405,111 @@ class SettingsDialog(QDialog):
         size_row.addWidget(self.text_size, 1)
         size_row.addWidget(self.text_size_label)
         display_form.addRow("Text size:", size_row)
-        text_size_help = QLabel(TEXT_SIZE_HELP)
-        text_size_help.setWordWrap(True)
-        text_size_help.setStyleSheet(self._small_style("muted"))
-        display_form.addRow(text_size_help)
+        display_form.addRow(self._help(TEXT_SIZE_HELP, self.text_size))
         self.colorblind_graph = QCheckBox(
             "Colour-blind colours and line styles in the DPS graph")
         self.colorblind_graph.setChecked(bool(config.get("display.colorblind_graph", False)))
         display_form.addRow(self.colorblind_graph)
-        colorblind_help = QLabel(COLORBLIND_HELP)
-        colorblind_help.setWordWrap(True)
-        colorblind_help.setStyleSheet(self._small_style("muted"))
-        display_form.addRow(colorblind_help)
+        display_form.addRow(self._help(COLORBLIND_HELP, self.colorblind_graph))
         self.reduce_motion = QCheckBox(
             "Reduce motion: the ring on a taunt skill's icon stays still instead of pulsing")
         self.reduce_motion.setChecked(bool(config.get("display.reduce_motion", False)))
         display_form.addRow(self.reduce_motion)
-        layout.addWidget(display_group)
+        display.addWidget(display_group)
 
         # Privacy: the Hide names switch (issue #72, gui.name_mask), the
         # same state as the toolbar button and Ctrl+H
         privacy_group = QGroupBox("Privacy")
-        privacy_form = QFormLayout(privacy_group)
+        privacy_form = _form(privacy_group)
         self.hide_names = QCheckBox(
             "Hide other players' handles and character names (Ctrl+H toggles it)")
         self.hide_names.setChecked(bool(config.get("privacy.hide_names", False)))
         privacy_form.addRow(self.hide_names)
-        privacy_help = QLabel(PRIVACY_HELP)
-        privacy_help.setWordWrap(True)
-        privacy_help.setStyleSheet(self._small_style("muted"))
-        privacy_form.addRow(privacy_help)
-        layout.addWidget(privacy_group)
+        privacy_form.addRow(self._help(PRIVACY_HELP, self.hide_names))
+        display.addWidget(privacy_group)
 
-        # Companions (issue #74, companions.py): each has its own row under
-        # its owner; this adds its figures to the owner's as well
-        companion_group = QGroupBox("Companions")
-        companion_form = QFormLayout(companion_group)
-        self.companion_accrual = QCheckBox(
-            "Count a companion's damage and healing as its owner's too")
-        self.companion_accrual.setChecked(bool(config.get("companions.accrue_to_owner", False)))
-        companion_form.addRow(self.companion_accrual)
-        companion_help = QLabel(COMPANION_HELP)
-        companion_help.setWordWrap(True)
-        companion_help.setStyleSheet(self._small_style("muted"))
-        companion_form.addRow(companion_help)
-        layout.addWidget(companion_group)
+        # The fight history across sessions (issue #170, fight_index): what
+        # it holds, and the backfill from the split logs
+        history_group = QGroupBox("Fight history")
+        history_box = QVBoxLayout(history_group)
+        self.history_status = QLabel(history_status or "")
+        self.history_status.setWordWrap(True)
+        self.history_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        history_box.addWidget(self.history_status)
+        history_row = QHBoxLayout()
+        self.build_history_button = QPushButton("Build from split logs")
+        self.build_history_button.setEnabled(on_build_history is not None)
+        self.build_history_button.clicked.connect(self._build_history)
+        history_row.addWidget(self.build_history_button)
+        history_row.addStretch(1)
+        history_box.addLayout(history_row)
+        history_box.addWidget(self._help(HISTORY_HELP, self.build_history_button))
+        history.addWidget(history_group)
+
+        # The trial score banner captured from the screen (banner_capture,
+        # issue #167): Windows only, so the group is not made elsewhere
+        if sys.platform == "win32":
+            banner_group = QGroupBox("Score banner")
+            banner_form = _form(banner_group)
+            self.banner_enabled = QCheckBox(
+                "Capture the trial completion banner from the screen when a trial or arena ends")
+            self.banner_enabled.setChecked(bool(config.get("banner.enabled", False)))
+            self.banner_dir = _PathRow(config.get("banner.dir") or "", directory=True,
+                                       name="Banner folder", blank="log folder\\Banners")
+            banner_form.addRow(self.banner_enabled)
+            banner_form.addRow("Banner folder (blank = log folder\\Banners):", self.banner_dir)
+            banner_form.addRow(self._help(
+                "Until 45 seconds after the log's END_TRIAL (at least 15) the screen is grabbed "
+                "once a second. Of the grabs on which Windows' text recognition reads the run's "
+                "final score, the one with the whole banner drawn is cropped to it and saved as "
+                "a PNG; nothing is kept otherwise. The game must be on screen, in borderless or "
+                "windowed mode. What each grab read is noted in banner.log beside the settings.",
+                self.banner_enabled))
+            history.addWidget(banner_group)
 
         # Death recaps (issue #95, death_recap): the seconds kept before
         # each death; the engine reads it when a save rebuilds it
         recap_group = QGroupBox("Death recaps")
-        recap_form = QFormLayout(recap_group)
-        self.recap_window = QSpinBox()
+        recap_form = _form(recap_group)
+        self.recap_window = _SpinBox()
         self.recap_window.setRange(MIN_WINDOW_S, MAX_WINDOW_S)
-        self.recap_window.setSuffix(" seconds")
         self.recap_window.setValue(
             recap_window_s(config.get("death_recap.window_s", DEFAULT_WINDOW_S)))
+        # "1 second", not "1 seconds" (issue #133)
+        self._recap_suffix(self.recap_window.value())
+        self.recap_window.valueChanged.connect(self._recap_suffix)
         recap_form.addRow("Window before each death:", self.recap_window)
-        recap_help = QLabel(RECAP_HELP)
-        recap_help.setWordWrap(True)
-        recap_help.setStyleSheet(self._small_style("muted"))
-        recap_form.addRow(recap_help)
-        layout.addWidget(recap_group)
+        recap_form.addRow(self._help(RECAP_HELP, self.recap_window))
+        fights.addWidget(recap_group)
+
+        # Companions (issue #74, companions.py): each has its own row under
+        # its owner; this adds its figures to the owner's as well
+        companion_group = QGroupBox("Companions")
+        companion_form = _form(companion_group)
+        self.companion_accrual = QCheckBox(
+            "Count a companion's damage and healing as its owner's too")
+        self.companion_accrual.setChecked(bool(config.get("companions.accrue_to_owner", False)))
+        companion_form.addRow(self.companion_accrual)
+        companion_form.addRow(self._help(COMPANION_HELP, self.companion_accrual))
+        fights.addWidget(companion_group)
 
         # Tracked effects: the rule text, with its parse result underneath;
-        # the timeline strip above each fight draws them
-        tracking_group = QGroupBox("Tracked effects (the timeline strip)")
-        tracking_layout = QVBoxLayout(tracking_group)
-        help_label = QLabel(RULES_HELP)
-        help_label.setWordWrap(True)
-        help_label.setStyleSheet(self._small_style("muted"))
-        tracking_layout.addWidget(help_label)
+        # the timeline strip above each fight draws them. The page is the
+        # group (no box), and the editor takes the page's whole height
         self.rules_edit = QPlainTextEdit()
+        self.rules_edit.setAccessibleName("Tracked effect rules")
         self.rules_edit.setFont(text_size.fixed_font())
         self.rules_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+        # Tab leaves the editor: inside it Tab inserted a tab character and
+        # kept the focus, so a keyboard user could never reach Examples…
+        # or Save from the rules; no rule needs one (parse_rules splits on
+        # whitespace), and Ctrl+Tab still moves on (issue #187)
+        self.rules_edit.setTabChangesFocus(True)
         self.rules_edit.setPlainText(config.get("tracking.rules", DEFAULT_RULES) or "")
+        self._initial_rules = self.rules_edit.toPlainText()
+        self._rule_errors: list = []  # from the last _check_rules
         self.rules_edit.setMinimumHeight(120)
-        tracking_layout.addWidget(self.rules_edit)
+        tracked.addWidget(self.rules_edit, 1)
         rules_row = QHBoxLayout()
         self.rules_status = QLabel("")
         self.rules_status.setWordWrap(True)
@@ -378,35 +519,32 @@ class SettingsDialog(QDialog):
             "Pick example rules to add to the box, or copy them to share")
         self.examples_button.clicked.connect(self._pick_examples)
         rules_row.addWidget(self.examples_button)
-        tracking_layout.addLayout(rules_row)
+        tracked.addLayout(rules_row)
+        tracked.addWidget(self._help(RULES_HELP, self.rules_edit))
         self.rules_edit.textChanged.connect(self._check_rules)
         self._check_rules()
-        layout.addWidget(tracking_group)
 
         # Penetration and critical damage: the Champion Point rows the build
         # window assumes, and the cap (pen_crit); read at render time, so no
         # restart is needed for them
-        pen_group = QGroupBox("Penetration and critical damage (the build window)")
-        pen_form = QFormLayout(pen_group)
-        pen_help = QLabel(PEN_CRIT_HELP)
-        pen_help.setWordWrap(True)
-        pen_help.setStyleSheet(self._small_style("muted"))
-        pen_form.addRow(pen_help)
+        pen_group = QGroupBox("Penetration and critical damage")
+        pen_form = _form(pen_group)
         self.assume_piercing = QCheckBox("Assume Piercing (700 penetration, a passive star)")
         self.assume_piercing.setChecked(bool(config.get("pen_crit.piercing", True)))
         pen_form.addRow(self.assume_piercing)
         self.assume_finesse = QCheckBox(
-            "Assume Fighting Finesse (8% critical damage) in solo and small-group fights")
+            "Assume Fighting Finesse (8% critical damage) in fights of up to four players")
         self.assume_finesse.setChecked(bool(config.get("pen_crit.fighting_finesse", True)))
         pen_form.addRow(self.assume_finesse)
         self.assume_backstabber = QCheckBox("Assume Backstabber (10% critical damage while flanking)")
         self.assume_backstabber.setChecked(bool(config.get("pen_crit.backstabber", False)))
         pen_form.addRow(self.assume_backstabber)
         fon_row = QHBoxLayout()
-        self.assume_force_of_nature = QCheckBox("Assume Force of Nature: per status effect on the target")
+        self.assume_force_of_nature = QCheckBox("Assume Force of Nature:")
         self.assume_force_of_nature.setChecked(bool(config.get("pen_crit.force_of_nature", False)))
         fon_row.addWidget(self.assume_force_of_nature)
-        self.force_of_nature_value = QSpinBox()
+        self.force_of_nature_value = _SpinBox()
+        self.force_of_nature_value.setAccessibleName("Force of Nature per status effect")
         self.force_of_nature_value.setRange(1, 5000)
         self.force_of_nature_value.setValue(
             int(config.get("pen_crit.force_of_nature_per_effect", FORCE_OF_NATURE_PER_EFFECT)
@@ -414,6 +552,7 @@ class SettingsDialog(QDialog):
         self.force_of_nature_value.setToolTip(
             "The tooltip's figure per unique status effect; Combat Metrics uses 660")
         fon_row.addWidget(self.force_of_nature_value)
+        fon_row.addWidget(QLabel("per status effect measured on the boss"))
         fon_row.addStretch(1)
         pen_form.addRow(fon_row)
         self.pen_cap = QComboBox()
@@ -423,31 +562,140 @@ class SettingsDialog(QDialog):
         index = next((i for i, (key, _label) in enumerate(CAP_CHOICES) if key == current), 0)
         self.pen_cap.setCurrentIndex(index)
         pen_form.addRow("Penetration cap:", self.pen_cap)
-        layout.addWidget(pen_group)
+        pen_form.addRow(self._help(PEN_CRIT_HELP, self.pen_cap))  # under its controls, as elsewhere
+        fights.addWidget(pen_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
-        self._fit_to_screen(content)
+        for name, scroll in self._pages.items():
+            if name != "Tracked effects":  # whose editor takes the height
+                scroll.widget().layout().addStretch(1)
+            self._align_labels(scroll.widget())
+        self._fit_to_screen(buttons)
+        self.tabs.setCurrentIndex(
+            PAGES.index(open_page) if open_page in PAGES else SettingsDialog._last_page)
+
+    def _page(self, name: str) -> QVBoxLayout:
+        """A page of the tab bar: a scroll area around a body whose layout
+        the groups go into. The area takes no focus, so Ctrl+Tab and a
+        click on a tab land on the page's first control rather than on an
+        invisible pane (the default StrongFocus landed on the pane, and
+        the old single area was the first wasted tab stop)."""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFocusPolicy(Qt.NoFocus)
+        # Sideways only when a large text size makes a line wider than the screen
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(body)
+        self.tabs.addTab(scroll, name)
+        self._pages[name] = scroll
+        return layout
+
+    def page_of(self, widget: QWidget) -> str:
+        """The name of the page *widget* sits on."""
+        for name, scroll in self._pages.items():
+            if scroll.isAncestorOf(widget):
+                return name
+        raise ValueError(f"{widget} is on no page")
+
+    def done(self, result: int) -> None:
+        SettingsDialog._last_page = self.tabs.currentIndex()
+        super().done(result)
+
+    def keyPressEvent(self, event) -> None:
+        """PageUp and PageDown scroll the page showing when the control
+        with the focus does not take them (a line edit, a check box): the
+        scroll areas take no focus, so this is the keyboard's way to a
+        capped page's help paragraphs, which sit between the controls and
+        are reached by no Tab (issue #187)."""
+        if event.key() in (Qt.Key_PageUp, Qt.Key_PageDown):
+            bar = self.tabs.currentWidget().verticalScrollBar()
+            step = bar.pageStep() if event.key() == Qt.Key_PageDown else -bar.pageStep()
+            bar.setValue(bar.value() + step)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _small_style(self, role: str) -> str:
         """The style of a helper line under a setting, a little smaller than
         the dialog's text and in points so it follows the text size: the
         theme's muted grey, or its warning orange (*role* 'warning'), both
         4.5:1 or more on either theme (#77; the fixed #888 and #d98a3d
-        measured 3.2 and 2.5 on the light one)."""
+        measured 3.2 and 2.5 on the light one); 'plain' is the small size
+        in the normal text colour, for a line that states a consequence."""
+        size = f"font-size: {text_size.small_pt()}pt;"
+        if role == "plain":
+            return size
         theme = _theme(self.palette().color(self.backgroundRole()).lightness() < 128)
         color = theme["vet"] if role == "warning" else theme["muted"]
-        return f"color: {color}; font-size: {text_size.small_pt()}pt;"
+        return f"color: {color}; {size}"
 
-    def _fit_to_screen(self, content: QWidget) -> None:
-        """Open tall enough to show every group where the screen allows,
-        and no taller than nine tenths of it; the rest scrolls."""
-        content.adjustSize()
-        width = max(self.minimumWidth(), content.sizeHint().width()
-                    + self._scroll.verticalScrollBar().sizeHint().width() + 24)
-        height = content.sizeHint().height() + 72  # the buttons and margins
+    def _help(self, text: str, *controls: QWidget, role: str = "muted") -> QLabel:
+        """A wrapped helper paragraph under *controls*, the settings it
+        explains, in the small muted style (or the warning one). The text
+        is also each control's accessible description, after whatever the
+        control already says of itself (a path field's "Blank = …"), so a
+        screen reader says it with the control rather than as a paragraph
+        on its own (issue #187)."""
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet(self._small_style(role))
+        for control in controls:
+            said = control.accessibleDescription()
+            control.setAccessibleDescription(f"{said} {text}" if said else text)
+        return label
+
+    @staticmethod
+    def _align_labels(body: QWidget) -> None:
+        """One field column per page: the labels of every form on the page
+        share the widest label's width, so the fields start at one x
+        (they started at 205 px in one group and 222 in the next)."""
+        labels = [form.itemAt(row, QFormLayout.LabelRole).widget()
+                  for form in body.findChildren(QFormLayout)
+                  for row in range(form.rowCount())
+                  if form.itemAt(row, QFormLayout.LabelRole) is not None]
+        labels = [label for label in labels if isinstance(label, QLabel)]
+        if len(labels) > 1:
+            widest = max(label.sizeHint().width() for label in labels)
+            for label in labels:
+                label.setMinimumWidth(widest)
+
+    def _fit_to_screen(self, buttons: QDialogButtonBox) -> None:
+        """Open at the natural size of the tallest and widest page plus the
+        tab bar, frame, margins and buttons, all measured at run time, and
+        no taller or wider than nine tenths of the screen; a capped page
+        scrolls on its own. The vertical scrollbar's width is reserved
+        whether or not a bar shows, so a bar appearing on a capped page
+        never re-wraps a label. A scroll area's own sizeHint is not its
+        content's, so the page bodies are measured directly; the tab
+        widget's chrome is its hint less its pages' hint. The minimum
+        width follows the tab bar (393 px at 100%, 648 at 200%): at 560 px
+        the 200% bar hid tabs behind scroll arrows."""
+        bodies = [scroll.widget() for scroll in self._pages.values()]
+        for body in bodies:
+            body.adjustSize()
+        widest = max(body.sizeHint().width() for body in bodies)
+        tallest = max(body.sizeHint().height() for body in bodies)
+        scroll = next(iter(self._pages.values()))
+        bar = scroll.verticalScrollBar().sizeHint().width()
+        # The chrome on each axis: the widest page sets the tab widget's
+        # width hint and the tallest its height hint, not the same page
+        hints = [s.sizeHint() for s in self._pages.values()]
+        chrome_w = self.tabs.sizeHint().width() - max(hint.width() for hint in hints)
+        chrome_h = self.tabs.sizeHint().height() - max(hint.height() for hint in hints)
+        margins = self.layout().contentsMargins()
+        spacing = self.layout().spacing()
+        width = widest + bar + chrome_w + margins.left() + margins.right()
+        height = (tallest + chrome_h + margins.top() + margins.bottom()
+                  + spacing + buttons.sizeHint().height())
+        self.setMinimumWidth(max(
+            560, self.tabs.tabBar().sizeHint().width() + margins.left() + margins.right()))
+        width = max(width, self.minimumWidth())
         screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is not None:
             height = min(height, int(screen.availableGeometry().height() * 0.9))
@@ -497,6 +745,7 @@ class SettingsDialog(QDialog):
                 f"Would zip {len(work.zip)} split {noun} "
                 f"({split_retention.format_bytes(split_retention.total_size(work.zip))}) now.")
         self.retention_preview.setText("\n".join(lines))
+        self.retention_preview.setVisible(bool(lines))
 
     def _delete_needs_asking(self) -> bool:
         """A change that deletes: turning it on, lowering M, or another folder."""
@@ -506,29 +755,77 @@ class SettingsDialog(QDialog):
         return (not was_on or self.delete_weeks.value() < was_weeks
                 or self.retention_folder() != was_folder)
 
+    def _ask(self, title: str, question: str, go_label: str, go_role, back_label: str = "Cancel",
+             informative: str = "", details: str = "") -> bool:
+        """A warning with one button that goes ahead and one, the default,
+        that does not; *details* sits under Show Details, so a long list
+        never makes the box taller than the screen. True when the user
+        chose to go ahead."""
+        box = QMessageBox(QMessageBox.Warning, title, question, QMessageBox.NoButton, self)
+        if informative:
+            box.setInformativeText(informative)
+        if details:
+            box.setDetailedText(details)
+        go = box.addButton(go_label, go_role)
+        back = box.addButton(back_label, QMessageBox.RejectRole)
+        box.setDefaultButton(back)
+        try:
+            box.exec()
+            return box.clickedButton() is go
+        finally:
+            box.deleteLater()  # on the UI thread, as the main window does
+
     def confirm_delete(self, summary: split_retention.DeleteSummary) -> bool:
         """Ask before saving a change that deletes; the full list is under
         Show Details."""
         question, details, names = split_retention.describe_deletion(summary, TRASH_NAME)
-        box = QMessageBox(QMessageBox.Warning, "Move old split logs", question,
-                          QMessageBox.NoButton, self)
-        box.setInformativeText(details)
-        box.setDetailedText(names)
-        move = box.addButton(f"Move to the {TRASH_NAME}", QMessageBox.DestructiveRole)
-        box.addButton(QMessageBox.Cancel)
-        box.setDefaultButton(QMessageBox.Cancel)
-        try:
-            box.exec()
-            return box.clickedButton() is move
-        finally:
-            box.deleteLater()  # on the UI thread, as the main window does
+        return self._ask("Move old split logs", question, f"Move to the {TRASH_NAME}",
+                         QMessageBox.DestructiveRole, informative=details, details=names)
+
+    def confirm_skipped_rules(self, errors) -> bool:
+        """Save with rule lines that will not parse: the "skipped" status
+        under the editor is the only sign, invisible from another page, so
+        the dialog turns to Tracked effects, focuses the editor and asks
+        (issue #187), the way the retention deletion asks. The lines are
+        under Show Details: a pasted chat log is dozens of them."""
+        self.tabs.setCurrentIndex(PAGES.index("Tracked effects"))
+        self.rules_edit.setFocus()
+        count = len(errors)
+        return self._ask("Tracked effects",
+                         f"{count} rule line{'s' if count != 1 else ''} will not parse and will "
+                         "be skipped. Save anyway?", "Save", QMessageBox.AcceptRole,
+                         back_label="Go back", details="\n".join(errors))
 
     def accept(self) -> None:
+        # Only rules edited this visit are asked about: a line an older
+        # version saved broken would otherwise pull every Save, from any
+        # page, to Tracked effects
+        page = self.tabs.currentIndex()
+        if self._rule_errors and self.rules_edit.toPlainText() != self._initial_rules:
+            if not self.confirm_skipped_rules(self._rule_errors):
+                return  # stay in Settings, on the rules
+            self.tabs.setCurrentIndex(page)  # the page memory keeps the page worked on
         if self._delete_needs_asking():
             doomed = self.retention_plan().delete
             if doomed and not self.confirm_delete(split_retention.summarize(doomed)):
                 return  # stay in Settings
         super().accept()
+
+    def _build_history(self) -> None:
+        """Start the backfill on the split folder these fields name (saved
+        or not); the dialog stays open, its Save or Cancel leaves the
+        backfill running, and a refusal is said here, not behind the
+        dialog."""
+        if self._on_build_history is None:
+            return
+        started, message = self._on_build_history(self.retention_folder())
+        self.history_status.setText(message)
+        if started:
+            self.build_history_button.setEnabled(False)
+            self.build_history_button.setText("Building: see the status bar")
+
+    def _recap_suffix(self, value: int) -> None:
+        self.recap_window.setSuffix(" second" if value == 1 else " seconds")
 
     def _snap_text_size(self, value: int) -> None:
         """Keep the slider on a step (a drag can stop between two) and
@@ -568,6 +865,7 @@ class SettingsDialog(QDialog):
     def _check_rules(self) -> None:
         """Say how many rules the text holds, and which lines will not parse."""
         rules, errors = parse_rules(self.rules_edit.toPlainText())
+        self._rule_errors = errors  # what a Save asks about
         count = f"{len(rules)} rule{'s' if len(rules) != 1 else ''}"
         if errors:
             self.rules_status.setStyleSheet(self._small_style("warning"))
@@ -592,6 +890,9 @@ class SettingsDialog(QDialog):
         self.config.set("update.check_enabled", self.update_check.isChecked())
         self.config.set("update.channel", self.update_channel.currentData())
         self.config.set("privacy.hide_names", self.hide_names.isChecked())
+        if hasattr(self, "banner_enabled"):  # the Windows-only group
+            self.config.set("banner.enabled", self.banner_enabled.isChecked())
+            self.config.set("banner.dir", self.banner_dir.value())
         self.config.set(text_size.CONFIG_KEY, self.text_size.value())
         self.config.set("display.colorblind_graph", self.colorblind_graph.isChecked())
         self.config.set("display.reduce_motion", self.reduce_motion.isChecked())

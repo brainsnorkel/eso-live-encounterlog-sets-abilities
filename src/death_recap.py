@@ -11,6 +11,19 @@ logs):
 
 - The dying unit's event is DIED, or KILLING_BLOW when the killer is a player
   (friendly fire, PvP). Its source and ability name the killer.
+- A fall into lava, off a ledge or out of the map is one KILLED_BY_SUBZONE
+  line and nothing else (issue #184): no DIED within ten seconds either side,
+  the source unit 0 with an empty state, ability and cast track 0, the dying
+  player in the target block at 0 health. Until #184 the engine did not
+  count it, so the death had no recap, no time dead and the pull read as if
+  nobody died. The recap names no killer, gives FALL_DEATH as what killed
+  and carries cause FALL_CAUSE. Only a player's counts: the logs hold none
+  on an enemy, and one there would read as the group's kill. Every one of the 18 in the maintainer's logs (2025-10 to 2026-11)
+  was the writer's own: 17 falls on Sunspire's Temple Grounds, all outside a
+  fight, and one into Rahdgarak's lava in Vateshran Hollows, 26 ms before
+  END_COMBAT. A FALLING line came before only that last one, and FALLING
+  lines carry whatever ability the player had (Bash, a fire or shock id),
+  so they make no recap row.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
@@ -30,13 +43,27 @@ seconds after the death still reads as area. Pure overheals (a heal line
 whose hit value is zero) are kept in the window for the recap's overheal
 sum but never become rows.
 
-The window is a setting (issue #95): 5 seconds by default, up to 10, read
-from the config when the engine is built (app_startup), so a Settings save,
-which rebuilds the engine and replays the session, rebuilds the fights
-already listed with the new window. Each recap records the window it was
-built with ('window_ms'), so a frontend names the right number of seconds
-for a fight recorded under another setting, and a recap from before the key
-existed reads as the old fixed five.
+The window is a setting (issue #95): 1 to 10 seconds, read from the config
+when the engine is built (app_startup), so a Settings save, which rebuilds
+the engine and replays the session, rebuilds the fights already listed with
+the new window. Each recap records the window it was built with
+('window_ms'), so a frontend names the right number of seconds for a fight
+recorded under another setting, and a recap from before the key existed
+reads as the old fixed five (LEGACY_WINDOW_MS).
+
+The default is 3 (issue #133, 5 before). Replaying 24 split logs of
+October 2026 (1,550 player deaths, mostly veteran trials) with a 10 second
+window and measuring each narrower one against it: the drop from half
+health to the death fits in 3 seconds for 71% of deaths (77% at 5, 41% at
+1), in a table of 5 rows at the median (7 at 5). What 3 gives up is the
+biggest hit of the last 10 seconds in 9% of deaths (6% at 5) and the last
+heal in 13% (9% at 5). 1 second is a "what killed me" view: three rows at
+the median, and in 28% of deaths nothing the Killed by line does not
+already say. No window came out empty, since the killing blow is logged up
+to KILLING_BLOW_GRACE_MS after the death. Only new installs get 3: the
+main window saves the whole merged config on close, so everyone on 0.20.0
+or later has a stored 5 that cannot be told from a chosen one, and it is
+kept.
 """
 
 from collections import deque
@@ -45,9 +72,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 from damage_kinds import area_of
 
 # Chronology kept before each death: the default, and what Settings allows
-DEFAULT_WINDOW_S = 5
-MIN_WINDOW_S, MAX_WINDOW_S = 5, 10
+DEFAULT_WINDOW_S = 3
+MIN_WINDOW_S, MAX_WINDOW_S = 1, 10
 RECAP_WINDOW_MS = DEFAULT_WINDOW_S * 1000
+LEGACY_WINDOW_MS = 5000  # the fixed window of a recap from before the setting
 
 # Events on the dead player this soon after the death event belong to it: the
 # killing blow and anything arriving in the same instant. Later hits are on
@@ -56,6 +84,19 @@ KILLING_BLOW_GRACE_MS = 100
 
 # A shield is folded into the hit it absorbed only when the two are this close
 SHIELD_PAIR_MS = 100
+
+# How the log writes a unit's death (the analyzer's death branch): DIED,
+# DIED_XP (an enemy's death that grants experience), KILLING_BLOW (a player
+# killed by a player) and a fall's KILLED_BY_SUBZONE (see the module docstring)
+SUBZONE_DEATH = "KILLED_BY_SUBZONE"
+DEATH_RESULTS = frozenset({"DIED", "DIED_XP", "KILLING_BLOW", SUBZONE_DEATH})
+# What killed, for a fall: the recap's ability text. It has to read in every
+# sentence that names a killer ('Killed by …', 'First death: @x to …',
+# 'Killers: … 2'), with no brackets, which those sentences use for the
+# killer after the ability ('Slap (Sharpfang)')
+FALL_DEATH = "a fall or lava"
+# The recap's 'cause' for a fall, the field code tests rather than the text
+FALL_CAUSE = "fall"
 
 # actionResult -> kind of recap row
 _KINDS: Dict[str, str] = {
@@ -184,8 +225,8 @@ class DeathRecapRecorder:
 
     def note_death(self, unit_id: str, timestamp_ms: int, fields: List[str]) -> dict:
         """Recap for the player *unit_id*, whose DIED/KILLING_BLOW event has
-        *fields*. The returned dict keeps filling for KILLING_BLOW_GRACE_MS as
-        the killing blow is logged.
+        *fields* (or KILLED_BY_SUBZONE, a fall). The returned dict keeps
+        filling for KILLING_BLOW_GRACE_MS as the killing blow is logged.
         """
         cutoff = timestamp_ms - self.window_ms
         events = [e for e in self._recent.pop(unit_id, ()) if e[0] >= cutoff]
@@ -193,12 +234,20 @@ class DeathRecapRecorder:
         source_id = fields[_SOURCE] if len(fields) > _SOURCE else "0"
         self_inflicted = len(fields) <= _TARGET or fields[_TARGET] == "*"
         health_at = _SOURCE_HEALTH if self_inflicted else _TARGET_HEALTH
-        ability, icon = self._resolve_ability(ability_id)
+        fall = bool(fields) and fields[0] == SUBZONE_DEATH
+        if fall:
+            # A fall names no killer and no ability (ids 0)
+            ability, icon = FALL_DEATH, ""
+        else:
+            ability, icon = self._resolve_ability(ability_id)
         recap = {
             "killer": self._resolve_unit(source_id),
             "ability": ability,
             "ability_id": ability_id,
             "icon": icon,
+            # Why the player died where the line says more than its killer:
+            # FALL_CAUSE for a fall, else empty
+            "cause": FALL_CAUSE if fall else "",
             "max_health": _health(fields[health_at])[1] if len(fields) > health_at else 0,
             "window_ms": self.window_ms,
             "overheal": 0,
@@ -215,9 +264,10 @@ class DeathRecapRecorder:
         rows = self._rows(events, died_ms)
         recap["overheal"] = sum(_int(event[3]) for event in events
                                 if event[1] in HEAL_RESULTS)
-        if not recap["killer"]:
+        if not recap["killer"] and recap.get("cause") != FALL_CAUSE:
             # A death event with no source unit (seen when the blow also ends
-            # the fight): the hit by the same ability names the killer
+            # the fight): the hit by the same ability names the killer. Not
+            # for a fall, which has no killer whatever hit the player before
             for row in reversed(rows):
                 if row["kind"] == "damage" and row["ability_id"] == recap["ability_id"]:
                     recap["killer"] = row["source"]

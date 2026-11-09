@@ -33,28 +33,32 @@ Reduce motion is on (set_reduce_motion).
 
 import weakref
 
+from contextlib import contextmanager
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QTimer, QUrl, QUrlQuery, Signal
+from PySide6.QtCore import QRect, Qt, QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
     QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument, QTextFormat,
 )
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
-from gui.death_render import unit_from_href
+from gui.activity_render import activity_action_from_href, review_index_from_href
+from gui.death_render import FIGHT_DEATHS_HREF, RECAP_HREF, recap_from_href, unit_from_href
 from gui.fight_render import (
-    BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
-    damage_unit_from_href, issues_unit_from_href, mastery_unit_from_href, pen_crit_unit_from_href,
-    taken_unit_from_href,
+    BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
+    damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
+    pen_crit_unit_from_href, split_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
 from gui.icon_cache import PULSE_STEPS, IconCache
+from gui.instance_render import INSTANCE_COPY_HREF, PLAYER_HREF, fight_from_href, player_from_href
 from gui.name_mask import MASK_SCHEME, mask_image, mask_request
 
 ICON_SCHEME = "icon"
 _RING_QUERY = "ring"  # icon:<stem>?ring=<rrggbb> asks for the icon ringed in that color
 PULSE_INTERVAL_MS = 150  # a glow cycle is PULSE_STEPS of these: about a breath
+HOLD_MS = 500  # how long a place put back is held while Qt lays the page out (see __init__)
 _ALT_PROPERTY = getattr(QTextFormat.Property, "ImageAltText", 0x5002)  # an <img>'s alt
 _reduce_motion = False  # Settings → Display → Reduce motion
 _views = weakref.WeakSet()  # every live view, for set_reduce_motion
@@ -107,9 +111,31 @@ class FightView(QTextBrowser):
     build_requested = Signal(str)  # unit id of the player whose name was clicked
     damage_requested = Signal(str)  # unit id of the player whose dps figure was clicked
     graph_requested = Signal()  # the header's group dps figure was clicked
+    fight_deaths_requested = Signal()  # the header's Deaths N: the fight's Deaths tab (issue #196)
     issues_requested = Signal(str)  # unit id of the player whose (i) was clicked
     pen_crit_requested = Signal(str)  # unit id of the player whose pen/crit token was clicked
     taken_requested = Signal(str)  # unit id of the player whose damage-taken shield was clicked
+    # unit id of the player whose healing received line was clicked, on their
+    # damage taken page (issue #196)
+    healing_requested = Signal(str)
+    # unit id and number from 1 of one death, in a list of a fight's deaths
+    # (issue #196)
+    recap_requested = Signal(str, int)
+    banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
+    # A split log listed beside a run's result: its place in the list the
+    # page was drawn with, and 'open' or 'copy' (issue #194)
+    split_requested = Signal(int, str)
+    # The empty pane's links (gui.activity_render, issue #191): 'show' or
+    # 'hide' the recent activity; a file's place in it to open for review
+    activity_requested = Signal(str)
+    review_requested = Signal(int)
+    # The Instance page's links (gui.instance_render, issue #196): a pull,
+    # by its place in the list the page was drawn from; a player, by the
+    # place of the fight to open them on and their unit id there; Copy this
+    # instance
+    fight_requested = Signal(int)
+    player_requested = Signal(int, str)
+    instance_copy_requested = Signal()
 
     def __init__(self, parent=None, icons: Optional[IconCache] = None,
                  open_external: Optional[Callable[[QUrl], bool]] = None):
@@ -130,8 +156,58 @@ class FightView(QTextBrowser):
         self._pulse = QTimer(self)
         self._pulse.setInterval(PULSE_INTERVAL_MS)
         self._pulse.timeout.connect(self._pulse_step)
+        # Design: Steps after the page is laid out. restore_scroll and
+        # open_at_anchor put the page where it should be now, and again in a
+        # step on the next pass of the event loop. Qt lays a page out in
+        # parts, the first in setHtml and the rest on its timer ticks after
+        # that step, and until it is done the bar's range is an estimate
+        # from the part laid out, short of the page's or past it. A scroll
+        # put back stops at the estimate, so a build window redrawn at or
+        # near its end landed up to 92 px short of where it was (97 of 940
+        # redraws of real build pages, issue #196). So the place is held for
+        # HOLD_MS: each change of the bar's range puts the page there again,
+        # until it gets there, and the reader moving the page, with the
+        # wheel, a key, the bar, Tab or the in-fight search, ends the hold at
+        # once, so the page is never taken back from under them
+        # (release_place). The step runs on a single-shot timer the
+        # view owns, connected to the view's own method: deleted with the
+        # view, the timer never fires at a dead one, and the connection
+        # keeps nothing alive. The forms used before,
+        # QTimer.singleShot(0, ...) with a bound method (restore_scroll) or
+        # with a lambda holding the window (the build window's anchor
+        # scroll), raised "Internal C++ object already deleted" when the
+        # view was deleted first, and kept the view's Python wrapper, and the
+        # lambda the window's too, alive until then;
+        # QTimer.singleShot(0, view, method) does not raise but keeps the
+        # method, and so the wrapper, alive (all probed on PySide6 6.12.0). A
+        # new page drops the step and the hold of the one it replaces. A
+        # redraw of the page while the step is to run or the place is held,
+        # a second fight update in the same pass say, puts the page where
+        # they were to put it, not where its bar is meanwhile (keeping_place).
+        self._kept_scroll = 0
+        self._kept_anchor = ""
+        self._kept_link_top: int | None = None  # where keep_link_at put the Tab link
+        self._own_step = False  # keeping_place's Tab step, not the reader's (_focus_link)
+        self._key_link: tuple[int, int] | None = None  # what Tab's step selected (_tab_link)
+        self._after_layout = QTimer(self)
+        self._after_layout.setSingleShot(True)
+        self._after_layout.setInterval(0)
+        self._after_layout.timeout.connect(self._apply_after_layout)
+        self._hold = QTimer(self)
+        self._hold.setSingleShot(True)
+        self._hold.setInterval(HOLD_MS)
+        self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+        self.verticalScrollBar().actionTriggered.connect(self._on_reader_scrolled)
+        # The link Enter is activating, on the screen, while its signal is
+        # handled (see keyPressEvent)
+        self._key_link_rect: QRect | None = None
+        # The link Tab had the focus on when the focus last left the page,
+        # which Qt drops (see focusOutEvent)
+        self._left_link = None
         _views.add(self)
-        # What a screen reader is given in place of the images (see above)
+        # What a screen reader is given in place of the images (see above),
+        # after a lead line of the window's (set_accessible_lead)
+        self._accessible_lead = ""
         self.textChanged.connect(self._update_accessible_text)
         # Never load a clicked link into the pane; anchorClicked still fires
         self.setOpenLinks(False)
@@ -168,6 +244,13 @@ class FightView(QTextBrowser):
         self._ring_urls = {}
         self._pulse_phase = 0
         self._pulse.stop()
+        # A scroll still to be put back belongs to the page being replaced,
+        # and so do the link Tab reached (keeping_place gives it back) and
+        # a link to give back (give_link_back)
+        self._after_layout.stop()
+        self._hold.stop()
+        self._key_link = None
+        self._left_link = None
         super().setHtml(text)
 
     def _apply_selections(self) -> None:
@@ -176,14 +259,304 @@ class FightView(QTextBrowser):
     def restore_scroll(self, value: int) -> None:
         """Put the vertical scroll back at *value* after a setHtml that
         redrew the page the reader was looking at (a flip of the Hide names
-        switch, a theme change): now, and again once the new document is
-        laid out."""
+        switch, a theme change, its fight changing in place): now, in the
+        step after layout, and at each change of the bar's range while the
+        place is held (see __init__)."""
+        self._kept_anchor = ""
+        self._kept_link_top = None
         self._kept_scroll = int(value)
         self.verticalScrollBar().setValue(self._kept_scroll)
-        QTimer.singleShot(0, self._apply_kept_scroll)
+        self._after_layout.start()
+        self._hold.start()
 
-    def _apply_kept_scroll(self) -> None:
-        self.verticalScrollBar().setValue(getattr(self, "_kept_scroll", 0))
+    def open_at_anchor(self, name: str) -> None:
+        """Scroll the page just set to the anchor *name* (an <a name> before
+        a heading, build_render.PEN_CRIT_ANCHOR say): now, in the step after
+        layout, and at each change of the bar's range while the place is
+        held (see __init__)."""
+        self._kept_anchor = str(name)
+        self._kept_link_top = None
+        self.scrollToAnchor(self._kept_anchor)
+        self._after_layout.start()
+        self._hold.start()
+
+    def release_place(self) -> None:
+        """The reader has moved the page: the scroll or anchor kept for the
+        last redraw is put back no more (see __init__). The wheel, a key or
+        the bar end it here on their own (_on_reader_scrolled); Tab
+        (focusNextPrevChild) and the in-fight search (MainWindow) move the
+        page in ways the bar does not report, so they call this too (issue
+        #199). Their move otherwise lasted only until a second redraw
+        within HOLD_MS, which took the page back to the place still held."""
+        self._after_layout.stop()
+        self._hold.stop()
+
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        # The reader's Tab or Shift+Tab, to the next link: their place from
+        # now on. keeping_place's own step to the link it gives the focus
+        # back to is not the reader's (_focus_link)
+        if not self._own_step:
+            self.release_place()
+        moved = super().focusNextPrevChild(forward)
+        # The link the step reached, or none when it left the page
+        cursor = self.textCursor()
+        self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
+                          if cursor.hasSelection() else None)
+        return moved
+
+    def mousePressEvent(self, event) -> None:
+        # A click is not Tab: the link it selects is no link Tab reached
+        # (_tab_link)
+        self._key_link = None
+        super().mousePressEvent(event)
+
+    def link_top(self) -> int | None:
+        """Where the link the reader reached with Tab is on the screen: the
+        top of its line, in the viewport's coordinates. None when no link
+        has Tab's focus, or the reader has it out of view."""
+        if self._tab_link() is None:
+            return None
+        rect = self.cursorRect(self._selection_start())
+        if rect.bottom() < 0 or rect.top() >= self.viewport().height():
+            return None
+        return rect.top()
+
+    def keep_link_at(self, top: int) -> None:
+        """Scroll the page so the link that has Tab's focus is at *top* on
+        the screen (a viewport y), the whole of its line in view, and hold
+        it there while Qt lays the page out (restore_scroll); nothing when
+        no link has Tab's focus. See keeping_place."""
+        if self._tab_link() is None:
+            return
+        rect = self.cursorRect(self._selection_start())
+        top = max(0, min(int(top), self.viewport().height() - rect.height()))
+        # The cursor rectangle is in the viewport, the bar's value the
+        # viewport's offset into the page
+        self.restore_scroll(max(0, rect.top() + self.verticalScrollBar().value() - top))
+        self._kept_link_top = top
+
+    def _selection_start(self) -> QTextCursor:
+        """A cursor at the start of the text cursor's selection."""
+        start = QTextCursor(self.textCursor())
+        start.setPosition(start.selectionStart())
+        return start
+
+    @contextmanager
+    def keeping_place(self):
+        """Redraw the page the reader is looking at inside the with block,
+        and put it back where it was: at the bar's position, or, while the
+        step after the last drawing is still to run or its place is held,
+        where they were to put it (its scroll or its anchor), since the bar
+        is not there yet (see __init__). The with block is given where the
+        text cursor was, for the in-fight search to find its place among its
+        matches before the page is drawn again (MainWindow._search_place).
+
+        A link the reader had reached with Tab has Tab's focus again, known
+        by its href and its place among the page's links with that href (an
+        ESO-Hub set link is on every player who wears the set, and a
+        player's own links move when the fight ranks them anew), or none
+        when the page no longer has it. Selecting it with setTextCursor
+        would paint it as selected text, in the palette's highlight, where
+        Tab draws a dotted frame round it; so Tab's own step is taken, which
+        frames it: from the link before it, selected as Tab selects it, or,
+        for the page's first link, from no selection, where Tab starts at
+        the page's start. Never from a selection of the character before
+        it: QTextCursor widens a selection that crosses into a table over
+        the whole table, and a bar's first ability begins a table's first
+        cell (the build card's in the pane, its bar's own in the build
+        window), so Tab's search went on from the table's end, to the next
+        link after it. The step is QTextBrowser.focusNextPrevChild, which
+        moves the focus on to the next widget when its search finds no
+        link, as it did then with none after the table. It cannot now: the
+        step is taken only for a link the page has, with the links reachable
+        from the keyboard, and from where that link is the next one the
+        search finds, since _links reads the page's links as the search does
+        (issue #196).
+
+        A link the reader could see stays where they saw it on the screen
+        (keep_link_at), and the page moves under it: a fight ranking its
+        player anew moves the link down the page, and Hide names moves it
+        too. Kept by the bar's position, the link was often scrolled out of
+        sight, its focus frame with it, and Enter opened a link the reader
+        could not see (issue #199). A new text size moves it before the page
+        is redrawn, so MainWindow.set_text_size notes it first. A link the
+        reader has scrolled out of view leaves the page at their scroll, as
+        does a page with no link reached."""
+        held = self._after_layout.isActive() or self._hold.isActive()
+        if held:
+            anchor, scroll = self._kept_anchor, self._kept_scroll
+        else:
+            anchor, scroll = "", self.verticalScrollBar().value()
+        link = self._tab_link()
+        if link is None:
+            top = None
+        elif held and self._kept_link_top is not None:
+            top = self._kept_link_top  # the bar is not there yet
+        else:
+            top = self.link_top()
+        yield self.textCursor().position()
+        if link is not None:
+            self._focus_link(*link)
+        # After the link, which Tab's step scrolls into view
+        if top is not None and self._tab_link() is not None:
+            self.keep_link_at(top)
+        elif anchor:
+            self.open_at_anchor(anchor)
+        else:
+            self.restore_scroll(scroll)
+
+    def _apply_after_layout(self) -> None:
+        """Put the page at its kept scroll or anchor; once it is there, the
+        bar's range having grown to let it, the hold ends (see __init__)."""
+        bar = self.verticalScrollBar()
+        if self._kept_anchor:
+            self.scrollToAnchor(self._kept_anchor)
+            # Hidden, the view only notes the anchor for its showEvent
+            there = self.isVisible() and bar.value() < bar.maximum()
+        else:
+            bar.setValue(self._kept_scroll)
+            there = bar.value() == self._kept_scroll
+        if there:
+            self._hold.stop()
+
+    def _on_range_changed(self, _minimum, _maximum) -> None:
+        # Qt has laid more of the page out (see __init__)
+        if self._hold.isActive():
+            self._apply_after_layout()
+
+    def _on_reader_scrolled(self, _action) -> None:
+        # The wheel, a key or the bar itself: the reader's place from now on
+        self.release_place()
+
+    def _links(self):
+        """(href, start, end) of each link on the page, in document order,
+        read as Tab's search reads them (QWidgetTextControl's
+        findNextPrevAnchor), so the two agree on the links Tab reaches: a
+        link starts at a fragment, text or image, that is an anchor with an
+        href, and runs on, within its paragraph, over the fragments that are
+        anchors to that href."""
+        block = self.document().begin()
+        while block.isValid():
+            run = None  # [href, start, end] of the link being read
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                fmt = fragment.charFormat()
+                end = fragment.position() + fragment.length()
+                if run is not None and fmt.isAnchor() and fmt.anchorHref() == run[0]:
+                    run[2] = end
+                else:
+                    if run is not None:
+                        yield tuple(run)
+                    # Tab's search starts a link at an anchor that has an
+                    # href, even an empty one; an <a name> alone has none
+                    run = ([fmt.anchorHref(), fragment.position(), end]
+                           if fmt.isAnchor() and fmt.hasProperty(QTextFormat.AnchorHref) else None)
+                it += 1
+            if run is not None:
+                yield tuple(run)
+            block = block.next()
+
+    def _tab_link(self):
+        """The link Tab has the focus on, as (href, its place among the
+        page's links with that href); None when no link is selected, or a
+        click selected it.
+
+        Qt selects a link clicked with the mouse as Tab selects one, framed
+        the same way, and the selection stays when the window the click
+        opens takes the focus. Taken for a link the reader reached with Tab,
+        a clicked name was kept where it was on the screen when the fight
+        ranked its players anew, and the pane scrolled down the page after
+        it, 815 px in the review's probe, where v0.34.1 stayed at the top
+        (issue #202). So only the selection Tab's own step made counts
+        (focusNextPrevChild), the reader's Tab and Shift+Tab or
+        keeping_place's, until a click or a new page."""
+        cursor = self.textCursor()
+        if not (cursor.hasSelection()
+                and self.textInteractionFlags() & Qt.LinksAccessibleByKeyboard):
+            return None
+        place = (cursor.selectionStart(), cursor.selectionEnd())
+        if place != self._key_link:
+            return None
+        seen = {}  # the links so far to each href
+        for href, start, end in self._links():
+            if (start, end) == place:
+                return href, seen.get(href, 0)
+            seen[href] = seen.get(href, 0) + 1
+        return None
+
+    def _focus_link(self, href: str, n: int) -> None:
+        """Give Tab's focus to the page's link *n* (from 0) of those to
+        *href*, as Tab gives it: Tab's step taken from the link before it,
+        selected over its run as Tab selects it, or, for the page's first
+        link, from no selection, where Tab starts at the page's start (see
+        keeping_place); nothing when the page has fewer."""
+        links = list(self._links())
+        places = [i for i, (link, _start, _end) in enumerate(links) if link == href]
+        if n >= len(places):
+            return
+        before = QTextCursor(self.document())
+        if places[n]:
+            _link, start, end = links[places[n] - 1]
+            before.setPosition(start)
+            before.setPosition(end, QTextCursor.KeepAnchor)
+        self.setTextCursor(before)
+        self._own_step = True
+        try:
+            self.focusNextPrevChild(True)
+        finally:
+            self._own_step = False
+
+    def focusOutEvent(self, event) -> None:
+        """Qt drops the link Tab has the focus on when the focus leaves the
+        page, unless it leaves for another window or a popup; so it does as
+        a tab widget hides the page. The link is kept here first, for the
+        page's window to give back when the tab is shown again
+        (give_link_back, issue #196)."""
+        if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
+            self._left_link = self._tab_link()
+        super().focusOutEvent(event)
+
+    def give_link_back(self) -> None:
+        """Give Tab's focus back to the link it had when the focus last left
+        the page, the page staying where it is, which Tab's step would
+        scroll to the link; nothing when there was none, when the page has
+        a selection again, or when it was drawn anew since (setHtml). A
+        redraw that keeps the page's place (keeping_place) keeps the link."""
+        link, self._left_link = self._left_link, None
+        if link is None or self.textCursor().hasSelection():
+            return
+        bar = self.verticalScrollBar()
+        scroll = bar.value()
+        self._focus_link(*link)
+        bar.setValue(scroll)
+
+    def keyPressEvent(self, event) -> None:
+        """Enter on a link the reader moved to with Tab activates it inside
+        this call: Qt emits anchorClicked from the key press. While that is
+        handled, keyboard_link_rect says where the link is, so what it opens
+        can open beside it rather than at the pointer, which may be anywhere
+        (issue #196)."""
+        cursor = self.textCursor()
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and cursor.hasSelection():
+            # The cursor at the link's start: its left edge, its line. The
+            # one at its end is on the next line when the link ends a
+            # wrapped line
+            start = QTextCursor(cursor)
+            start.setPosition(cursor.selectionStart())
+            rect = self.cursorRect(start)
+            self._key_link_rect = QRect(self.viewport().mapToGlobal(rect.topLeft()), rect.size())
+        try:
+            super().keyPressEvent(event)
+        finally:
+            self._key_link_rect = None
+
+    def keyboard_link_rect(self) -> QRect | None:
+        """Where the link Enter is activating starts, as a rectangle on the
+        screen (the text cursor's there: the link's left edge, the height of
+        its line), while the link's signal is handled; None when a click
+        activated it."""
+        return self._key_link_rect
 
     def _text_anchor_cursor(self, href: str) -> Optional[QTextCursor]:
         """A cursor selecting the text of the anchor that leads to *href*
@@ -235,7 +608,8 @@ class FightView(QTextBrowser):
         is the pointer on the anchor.
         """
         selections = []
-        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF)):
+        if href.startswith((BUILD_HREF, DAMAGE_HREF, GRAPH_HREF, MASTERY_HREF, RECAP_HREF,
+                            FIGHT_DEATHS_HREF, PLAYER_HREF)):
             cursor = self._text_anchor_cursor(href)
             if cursor is not None:
                 cue = QTextCharFormat()
@@ -305,10 +679,18 @@ class FightView(QTextBrowser):
                     return image
         return super().loadResource(resource_type, name)
 
+    def set_accessible_lead(self, text: str) -> None:
+        """A line a screen reader hears before the page (accessible_text):
+        the fight, on the player window's pages, whose header names it
+        outside the page (issue #196)."""
+        self._accessible_lead = str(text or "")
+        self._update_accessible_text()
+
     def accessible_text(self) -> str:
         """The page as a screen reader should hear it: its text, each
-        image replaced by its alt text, one line per paragraph or cell."""
-        lines = []
+        image replaced by its alt text, one line per paragraph or cell,
+        after the lead line when there is one (set_accessible_lead)."""
+        lines = [self._accessible_lead] if self._accessible_lead else []
         block = self.document().begin()
         while block.isValid():
             pieces = []
@@ -382,6 +764,32 @@ class FightView(QTextBrowser):
         if url.scheme() in ("http", "https"):
             self._open_external(url)
             return
+        if url.toString().startswith(BANNER_HREF):
+            self.banner_requested.emit(url.toString()[len(BANNER_HREF):])
+            return
+        split = split_from_href(url.toString())
+        if split is not None:
+            self.split_requested.emit(*split)
+            return
+        action = activity_action_from_href(url.toString())
+        if action is not None:
+            self.activity_requested.emit(action)
+            return
+        index = review_index_from_href(url.toString())
+        if index is not None:
+            self.review_requested.emit(index)
+            return
+        index = fight_from_href(url.toString())
+        if index is not None:
+            self.fight_requested.emit(index)
+            return
+        player = player_from_href(url.toString())
+        if player is not None:
+            self.player_requested.emit(*player)
+            return
+        if url.toString() == INSTANCE_COPY_HREF:
+            self.instance_copy_requested.emit()
+            return
         unit_id = build_unit_from_href(url.toString())
         if unit_id is None:
             unit_id = mastery_unit_from_href(url.toString())
@@ -395,6 +803,9 @@ class FightView(QTextBrowser):
         if url.toString() == GRAPH_HREF:
             self.graph_requested.emit()
             return
+        if url.toString() == FIGHT_DEATHS_HREF:
+            self.fight_deaths_requested.emit()
+            return
         unit_id = issues_unit_from_href(url.toString())
         if unit_id is not None:
             self.issues_requested.emit(unit_id)
@@ -406,6 +817,14 @@ class FightView(QTextBrowser):
         unit_id = taken_unit_from_href(url.toString())
         if unit_id is not None:
             self.taken_requested.emit(unit_id)
+            return
+        unit_id = healing_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.healing_requested.emit(unit_id)
+            return
+        death = recap_from_href(url.toString())
+        if death is not None:
+            self.recap_requested.emit(*death)
             return
         unit_id = unit_from_href(url.toString())
         if unit_id is not None:

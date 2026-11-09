@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -379,6 +380,23 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(promote.main(['v0.27.1', '--used-live', '--dry-run']), 1)
         with self.assertRaises(SystemExit):
             promote.main([])
+
+
+class GhTests(unittest.TestCase):
+
+    def test_replies_are_read_as_utf8(self):
+        # Read as the Windows code page, a ⓘ in a beta's notes came back as
+        # mojibake and went on into the Stable notes
+        run = subprocess.run
+        echo = ("import json, sys; sys.stdout.buffer.write("
+                "json.dumps(['\\u24d8', *sys.argv[1:]], ensure_ascii=False).encode('utf-8'))")
+
+        def fake(argv, **kwargs):
+            self.assertEqual(argv[0], 'gh')
+            return run([sys.executable, '-c', echo, *argv[1:]], **kwargs)
+        with patch.object(promote.subprocess, 'run', side_effect=fake):
+            self.assertEqual(json.loads(promote.gh('api', 'repos/o/r/releases')),
+                             ['ⓘ', 'api', 'repos/o/r/releases'])
 
 
 if __name__ == '__main__':
