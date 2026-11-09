@@ -50,6 +50,7 @@ import resources
 import split_retention
 import trial_result
 import werewolf
+from waiting_hits import GroupHit, WaitingHits
 
 
 class _PlainAnsi:
@@ -94,6 +95,10 @@ LATE_DEATH_GRACE_MS = 1000
 # the group hit in the fight's last seconds is still alive; none of the 51
 # pairs between half a second and three seconds apart was the same pull.
 COMBAT_RESUME_MS = 1000
+# A fight shorter than this, BEGIN_COMBAT to END_COMBAT, is a blip: it takes
+# none of the group's hits from before its line, which wait for the next
+# line (see waiting_hits)
+BLIP_MS = 1000
 # Design: Taunts. The game puts one Taunt debuff on a taunted enemy whatever
 # skill taunted, and writes a TAUNTED combat event that shares its cast
 # tracking id with that skill's own cast and hits, which is how the skill is
@@ -449,6 +454,7 @@ class EnemyInfo:
         # with owner 0, and is never a monster (fight_opener)
         self.was_owned: bool = False
 
+
 class CombatEncounter:
     """Represents a single combat encounter."""
 
@@ -471,6 +477,12 @@ class CombatEncounter:
         # When the hits happened (the spans the dps figures divide by) and
         # each player's breakdown by ability and target (damage_stats)
         self.damage = FightDamage()
+        # The group's hits from the moments before the line (waiting_hits):
+        # taken at BEGIN_COMBAT, counted at END_COMBAT unless the fight is a
+        # blip (see BLIP_MS); and the enemy records the fight's counted hits
+        # were on, by identity, which a later line leaves to it
+        self.hits_before_line: list = []
+        self.hit_enemies: set = set()
         # Each player's damage taken and healing received by kind, for the
         # death recap window's whole-fight block (damage_kinds.TakenTally)
         self.taken: Dict[str, TakenTally] = {}
@@ -793,7 +805,9 @@ class CombatEncounter:
                              timestamp: Optional[int] = None, result: str = 'DAMAGE',
                              ability_id: str = '', target_id: str = '',
                              accrue_companions: bool = False,
-                             damage_type: str = '', cast_id: str = '', cast_index=None):
+                             damage_type: str = '', cast_id: str = '', cast_index=None,
+                             area: tuple[bool, str] | None = None,
+                             link: tuple | None = None):
         """Credit damage dealt by *unit_id* to the player it belongs to:
         the player themself, or the owner of a pet (see
         track_pet_ownership). Damage from a unit that is neither is
@@ -807,25 +821,29 @@ class CombatEncounter:
         also keeps the kinds of the damage (damage_kinds): the area rule
         reads the cast, the session and the player-skill table, and a hit
         counted single is moved to area should its cast strike a second
-        unit later.
+        unit later. *area*, an (area?, rule) the cast index gave already,
+        stands in for the index, with no watcher, and *link*, whose the hit
+        is (player, companion row key or None, a pet's?) as this returned
+        it, for the encounter's own reading: a hit from before the fight's
+        line, counted at END_COMBAT (waiting_hits). Returns (the kinds'
+        (area?, rule), that link) as the hit was credited, None for a hit
+        credited to nobody.
 
         A companion's damage is its own row's (companions.py), keyed by
         the companion's row key, with its kinds like a player's; with
         *accrue_companions* (the setting companions.accrue_to_owner) it is
         its owner's as well."""
-        # Find the player this unit belongs to
-        player = self.find_player_by_unit_id(unit_id)
-        companion = None
-        if player is None and unit_id in self.pet_ownership:
-            # A pet's damage is its owner's
-            player = self.find_player_by_unit_id(self.pet_ownership[unit_id])
-            companion = self.companion_key(unit_id)
+        if link is not None:
+            player, companion, as_pet = link
+        else:
+            player, companion = self.hitter_of(unit_id)
+            as_pet = None
         if player is None and companion is None:
-            return
+            return None
         # The kinds of the hit (damage_kinds), the same for a player's own
         # hit, a pet's and a companion's
-        area = watch = cast_key = None
-        if timestamp is not None and cast_index is not None:
+        watch = cast_key = None
+        if timestamp is not None and area is None and cast_index is not None:
             is_area, rule, _targets = area_of(cast_index, unit_id, cast_id,
                                               str(ability_id), True)
             area = (is_area, rule)
@@ -840,12 +858,24 @@ class CombatEncounter:
                 self.damage.note(companion, timestamp, damage, result, str(ability_id),
                                  False, target_id, to_boss, damage_type, area, cast_key,
                                  watch, also=owner)
-            return
+            return area, (player, companion, False)
+        if as_pet is None:
+            as_pet = not player.has_unit_id(unit_id)
         self._credit_damage(player.unit_id, damage, to_boss)
         if timestamp is not None:
             self.damage.note(player.unit_id, timestamp, damage, result, str(ability_id),
-                             not player.has_unit_id(unit_id), target_id, to_boss,
-                             damage_type, area, cast_key, watch)
+                             as_pet, target_id, to_boss, damage_type, area, cast_key, watch)
+        return area, (player, companion, as_pet)
+
+    def hitter_of(self, unit_id: str) -> tuple[PlayerInfo | None, str | None]:
+        """Whose a unit's damage is: (the player, or a pet's or companion's
+        owner; the companion's row key, or None), (None, None) for a unit
+        that is neither."""
+        player = self.find_player_by_unit_id(unit_id)
+        if player is not None or unit_id not in self.pet_ownership:
+            return player, None
+        # A pet's damage is its owner's
+        return self.find_player_by_unit_id(self.pet_ownership[unit_id]), self.companion_key(unit_id)
 
     def _credit_damage(self, record_id: str, damage: int, to_boss: bool) -> None:
         self.player_damage[record_id] = self.player_damage.get(record_id, 0) + damage
@@ -1098,6 +1128,10 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry: Optional[FightHistoryEntry] = None
         self._enemy_last_hit: Dict[str, int] = {}
         self._engaged_at_end: FrozenSet[str] = frozenset()
+        # The group's hits waiting for the next fight's line, and the
+        # enemies of the last fight that took hits (waiting_hits, issue
+        # #162): told of each fight boundary, as the opener is
+        self.waiting_hits = WaitingHits()
         # When a line last passed between the group and an enemy, and the
         # combat that ended without one, with its start: not listed unless
         # a player dies as it ends (see _note_enemy_met)
@@ -1801,6 +1835,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
+            self.waiting_hits.reset()
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
@@ -1836,6 +1871,17 @@ class ESOLogAnalyzer(ListenerMixin):
             self._resume_last_fight()
             return
 
+        # A new encounter for this fight, or the one in hand: the zone's
+        # first, which took the hits before the line as they came, or a
+        # combat that never ended. Only a new one takes the waiting hits,
+        # read here, before the kinds index forgets their casts below
+        # (waiting_hits)
+        in_hand = self.current_encounter
+        opened = (in_hand is None or in_hand.finalized
+                  or bool(in_hand.combat_ended_at and in_hand.players))
+        taken = (self.waiting_hits.take(entry.timestamp, self.cast_index.targets_of)
+                 if opened else [])
+
         # Per-fight death counter starts fresh with each combat; so do the
         # fight's casts in the kinds index and the recorder's list of recaps
         self.fight_deaths = 0
@@ -1867,8 +1913,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 <= pull_outcome.CONTINUE_GAP_S * 1000):
             carried = self.current_encounter.time_dead.dead_at_end()
 
-        # Create a new encounter if we don't have one or if the previous one was finalized
-        if not self.current_encounter or self.current_encounter.finalized:
+        # Create a new encounter if we don't have one or if the previous one
+        # was finalized (just above, for one that ended unpublished)
+        if opened:
             # Create new encounter but preserve players and enemies from previous encounter in same zone
             old_players = {}
             old_enemies = {}
@@ -1919,7 +1966,11 @@ class ESOLogAnalyzer(ListenerMixin):
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
         self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
-        
+        # And the group's hits from those moments are the fight's, counted
+        # at END_COMBAT unless it is a blip (see BLIP_MS)
+        if opened:
+            self._open_hits_before_line(taken)
+
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: After BEGIN_COMBAT, players: {len(self.current_encounter.players)}{Style.RESET_ALL}")
@@ -1944,6 +1995,10 @@ class ESOLogAnalyzer(ListenerMixin):
         players are kept, and the entry frontends already have is brought up
         to date when the fight ends (see _publish_fight)."""
         enc = self.current_encounter
+        # The group's hits between the two lines went on this encounter as
+        # they came; the earlier ones a blip left wait on, and the ended
+        # fight stays (waiting_hits)
+        self.waiting_hits.carried_on(enc.combat_ended_at)
         enc.finalized = False
         enc.in_combat = True
         enc.combat_ended_at = None
@@ -1958,6 +2013,87 @@ class ESOLogAnalyzer(ListenerMixin):
         # before it (pull_outcome)
         enc.time_dead.resume()
         self._last_pull = self._prior_pull
+
+    def _credit_enemy_hit(self, enc: CombatEncounter, timestamp: int, result: str, value: int,
+                          source_id: str, target_id: str, enemy: EnemyInfo, ability_id: str,
+                          damage_type: str, cast_id: str,
+                          area: tuple[bool, str] | None = None, link: tuple | None = None):
+        """Count one hit of the group's on the hostile *enemy* in *enc*: the
+        enemy's damage, the group's and the bosses' totals, and the
+        hitter's record with the hit's time, result, ability, target and
+        kinds (CombatEncounter.add_damage_to_player), the kinds read from
+        the cast index, or *area* when the index was read earlier, and the
+        hitter by the encounter, or by *link* when it was read earlier.
+        Returns what add_damage_to_player read: (kinds, hitter), or None."""
+        enc.hit_enemies.add(enemy)
+        if target_id not in enc.enemy_damage:
+            enc.enemy_damage[target_id] = 0
+            # Add enemy's max health to total when first damaged
+            if enemy.max_health > 0:
+                enc.total_health_damaged += enemy.max_health
+        enc.enemy_damage[target_id] += value
+        # Update total group damage
+        enc.total_damage += value
+        if enemy.is_boss:
+            enc.boss_damage += value
+        # Track individual player damage, and the hit's time, result,
+        # ability and target for the dps time and breakdown
+        credited = enc.add_damage_to_player(
+            source_id, value, to_boss=enemy.is_boss, timestamp=timestamp, result=result,
+            ability_id=ability_id, target_id=target_id,
+            accrue_companions=self.companion_accrual, damage_type=damage_type,
+            cast_id=cast_id, cast_index=self.cast_index, area=area, link=link)
+        # Update the most damaged hostile monster
+        enc.update_most_damaged_hostile(target_id)
+        return credited
+
+    def _open_hits_before_line(self, taken: list[GroupHit]) -> None:
+        """At the line, the hits the fight took (WaitingHits.take) whose
+        hitter is on the new fight's list: a player who left before the
+        line is off it, and so are their hits and their pets'; a player
+        back on a new unit id is the same record, re-keyed. They are the
+        fight's, a meeting with an enemy that lists it, and count at its
+        END_COMBAT unless it is a blip (_settle_hits_before_line). Their
+        casts go back into the kinds index the line has just emptied, so a
+        cast that strikes another unit after the line is area on both
+        sides."""
+        enc = self.current_encounter
+        pending = []
+        for hit in taken:
+            player, companion, _as_pet = hit.hitter
+            if player is not None:
+                if enc.players.get(player.unit_id) is not player:
+                    continue
+            elif companion not in enc.companions:
+                continue
+            pending.append(hit)
+            if hit.result in CAST_RESULTS:
+                self.cast_index.note_hit(hit.source_id, hit.cast_id, hit.ability_id,
+                                         hit.target_id)
+        enc.hits_before_line = pending
+        if pending:
+            enc.met_enemy = True
+
+    def _settle_hits_before_line(self, enc: CombatEncounter) -> None:
+        """A listed fight of BLIP_MS or more, at its END_COMBAT or when a
+        held combat is listed late, counts the hits it took at its line,
+        before its entry is built, and the waiting starts again, a later
+        line leaving the enemy records it hit to it. A blip counts none and
+        changes nothing (waiting_hits)."""
+        if enc.end_time - enc.start_time < BLIP_MS:
+            return
+        hits, enc.hits_before_line = enc.hits_before_line, []
+        for hit in hits:
+            # A hit read single whose cast struck a second unit since the
+            # line is area, as a cast's watcher makes it in a fight
+            area = hit.area
+            if area == (False, 'none') and self.cast_index.targets_of(hit.source_id,
+                                                                       hit.cast_id) >= 2:
+                area = (True, 'cast')
+            self._credit_enemy_hit(enc, hit.timestamp, hit.result, hit.value, hit.source_id,
+                                   hit.target_id, hit.enemy, hit.ability_id, hit.damage_type,
+                                   hit.cast_id, area=area, link=hit.hitter)
+        self.waiting_hits.settled(enc.hit_enemies)
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -2017,10 +2153,11 @@ class ESOLogAnalyzer(ListenerMixin):
         entries of the fights still listed. The 10 s before the line count
         because the group's first hits often land before it: a survey of
         combat events found 30 fights that met an enemy only there, none
-        with damage of its own (the hits went to the fight before, issue
-        #162). A cast counts as the opener's does: five of the survey's
-        empty fights stay listed for a monster's cast at a player or a
-        player's at a boss, acts the opener names."""
+        with damage of its own (the hits went to the fight before; since
+        issue #162 a fight counts its hits from those 10 s, see
+        waiting_hits). A cast counts as the opener's does: five
+        of the survey's empty fights stay listed for a monster's cast at a
+        player or a player's at a boss, acts the opener names."""
         if target_id == '*':
             return
         enc = self.current_encounter
@@ -2058,6 +2195,11 @@ class ESOLogAnalyzer(ListenerMixin):
         # _handle_combat_event)
         enc.start_time = self._held_fight[1]
         self._held_fight = None
+        # Its entry is built from the encounter, which has every hit since
+        # it ended: the next line counts none of them again. Listed, it is a
+        # fight, and settles as one (waiting_hits)
+        self.waiting_hits.listed_late(enc.combat_ended_at)
+        self._settle_hits_before_line(enc)
         self._publish_fight(self.current_zone)
 
     def _trial_won_before_held(self, result: dict):
@@ -2106,10 +2248,15 @@ class ESOLogAnalyzer(ListenerMixin):
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
             if self.current_encounter.met_enemy or self.fight_deaths:
+                # The hits it took at its line count now, unless it was a
+                # blip, and a hit from here on waits for the next line
+                self._settle_hits_before_line(self.current_encounter)
                 self._publish_fight(self.current_zone)
             else:
                 # Combat with no enemy in it: held back, listed only should
-                # a player die as it ends (see _note_enemy_met)
+                # a player die as it ends (see _note_enemy_met). It is no
+                # fight to the waiting hits either: they wait on, the last
+                # listed fight still the ended one (waiting_hits)
                 self._held_fight = (self.current_encounter, self.current_encounter.start_time)
                 if self.current_encounter.trial_result is not None:
                     self._trial_won_before_held(self.current_encounter.trial_result)
@@ -2167,6 +2314,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
+        self.waiting_hits.reset()
         self._enemy_met_at = None
         self._held_fight = None
         self._listed_fight_entry = None
@@ -2692,41 +2840,29 @@ class ESOLogAnalyzer(ListenerMixin):
                             enemy = self.current_encounter.enemies[target_unit_id]
                             if enemy.is_hostile:
                                 # Check if source is a player or player's pet
-                                if (self.current_encounter.find_player_by_unit_id(source_unit_id) or 
+                                if (self.current_encounter.find_player_by_unit_id(source_unit_id) or
                                     source_unit_id in self.current_encounter.pet_ownership):
-                                    
-                                    if target_unit_id not in self.current_encounter.enemy_damage:
-                                        self.current_encounter.enemy_damage[target_unit_id] = 0
-                                        # Add enemy's max health to total when first damaged
-                                        if target_unit_id in self.current_encounter.enemies:
-                                            enemy = self.current_encounter.enemies[target_unit_id]
-                                            if enemy.max_health > 0:
-                                                self.current_encounter.total_health_damaged += enemy.max_health
-                                    self.current_encounter.enemy_damage[target_unit_id] += hit_value
-                                    # Update total group damage
-                                    self.current_encounter.total_damage += hit_value
-                                    if enemy.is_boss:
-                                        self.current_encounter.boss_damage += hit_value
-
-                                    # Track individual player damage, and
-                                    # the hit's time, result, ability and
-                                    # target for the dps time and breakdown;
-                                    # the cast index tells area from single
+                                    # The cast index tells area from single
                                     # target for the kinds (damage_kinds)
                                     if combat_event_type in CAST_RESULTS:
                                         self.cast_index.note_hit(
                                             source_unit_id, entry.fields[5], entry.fields[6],
                                             target_unit_id)
-                                    self.current_encounter.add_damage_to_player(
-                                        source_unit_id, hit_value, to_boss=enemy.is_boss,
-                                        timestamp=entry.timestamp, result=combat_event_type,
-                                        ability_id=entry.fields[6], target_id=target_unit_id,
-                                        accrue_companions=self.companion_accrual,
-                                        damage_type=entry.fields[1], cast_id=entry.fields[5],
-                                        cast_index=self.cast_index)
-                                    
-                                    # Update the most damaged hostile monster
-                                    self.current_encounter.update_most_damaged_hostile(target_unit_id)
+                                    enc = self.current_encounter
+                                    credited = self._credit_enemy_hit(
+                                        enc, entry.timestamp, combat_event_type, hit_value,
+                                        source_unit_id, target_unit_id, enemy,
+                                        entry.fields[6], entry.fields[1], entry.fields[5])
+                                    # Between fights the hit is also kept for
+                                    # the next fight's line, its kinds and
+                                    # hitter as the closed encounter read
+                                    # them (waiting_hits)
+                                    if enc.finalized and credited is not None:
+                                        self.waiting_hits.keep(GroupHit(
+                                            entry.timestamp, combat_event_type, hit_value,
+                                            source_unit_id, target_unit_id, enemy,
+                                            entry.fields[6], entry.fields[1], entry.fields[5],
+                                            *credited))
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
 
