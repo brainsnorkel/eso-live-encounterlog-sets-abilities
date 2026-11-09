@@ -98,6 +98,20 @@ def _offset_text(seconds) -> str:
     return f"{seconds:.1f} s"
 
 
+def _hits_text(first_s, last_s, fight_s: float) -> str:
+    """Where the first and last hits sat in the fight: 'first hit 1.0 s
+    after the pull, last hit 1:31 into the 1:40 fight'. A hit from the
+    moments before the fight's start counts in it (the engine's
+    _take_hits_before_line, issue #162) and reads as before the pull."""
+    first_s, last_s = float(first_s or 0), float(last_s or 0)
+    first = (f"first hit {_offset_text(-first_s)} before the pull" if first_s < 0
+             else f"first hit {_offset_text(first_s)} after the pull")
+    if last_s < 0:
+        return (f"{first}, last hit {_offset_text(-last_s)} before it, "
+                f"in the {_fmt_duration(fight_s)} fight")
+    return f"{first}, last hit {_offset_text(last_s)} into the {_fmt_duration(fight_s)} fight"
+
+
 def _summary_html(entry, p, damage: dict, boss_only: bool, theme, e) -> str:
     """'3.2M damage to the bosses in 1:30.2 dps time · 35.5k dps · 40.1% of
     the group's boss damage', then where the hits sat in the fight and the
@@ -114,9 +128,7 @@ def _summary_html(entry, p, damage: dict, boss_only: bool, theme, e) -> str:
     fight_s = float(getattr(entry, "duration_s", 0) or 0)
     details = []
     if window.get("first_s") is not None:
-        details.append(f"first hit {_offset_text(window['first_s'])} after the pull, "
-                       f"last hit {_offset_text(window['last_s'])} into the "
-                       f"{_fmt_duration(fight_s)} fight")
+        details.append(_hits_text(window["first_s"], window["last_s"], fight_s))
     if fight_s > 0 and total > 0:
         details.append(f"over the whole fight {_fmt_dps(total / fight_s)} dps")
     detail = (f"<br><span style='color:{muted}'>{' · '.join(details)}</span>"

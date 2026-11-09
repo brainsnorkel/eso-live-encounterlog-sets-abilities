@@ -70,10 +70,16 @@ player's own dps by a median 5.8% (p90 41%) and their boss dps by a median
 9.7% (p90 75%): the group's first hit comes a median 0.5 s after
 BEGIN_COMBAT and END_COMBAT a median 0.5 s (p90 6 s) after its last, and a
 player's own span is more than 10% shorter than the group's in 29% of
-player-fights (died, arrived late, stopped hitting). What the engine does
-not count stays negligible: hits on units the log never added 0.07% of all
-damage, on non-hostile units 0.00%, in the two seconds before BEGIN_COMBAT
-0.04%, in the 1.3 s after END_COMBAT 0.02%.
+player-fights (died, arrived late, stopped hitting). What the engine did
+not count was negligible in all: hits on units the log never added 0.07% of
+all damage, on non-hostile units 0.00%, in the two seconds before
+BEGIN_COMBAT 0.04%, in the 1.3 s after END_COMBAT 0.02%. It was not on
+single fights, though (issue #162): a group member's hit on the new fight's
+enemies came in the 10 s before BEGIN_COMBAT in 43.6% of 8,765 fights. So
+the group's hits from those 10 s now count, on any enemy the fight before
+never hit, at their own times, and a dps time can start before the fight
+does (ESOLogAnalyzer._take_hits_before_line). The hits after END_COMBAT
+still count in no fight.
 """
 
 from array import array

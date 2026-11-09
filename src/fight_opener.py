@@ -13,13 +13,16 @@ it when the logging player's client enters combat, and a group member's hit
 usually lands a moment earlier: a player hit or taunt came before the line
 in 4,243 fights (48.1%), a median 14 ms early, and the opener itself landed
 before the line in 4,080 of 7,204 player-first fights. Such a hit fell on
-the previous, finalized encounter and was lost to the new one, except in a
+the previous, finalized encounter, and the new one never saw it except in a
 zone's first fight, so the star marked someone other than the opener in
 1,385 of 7,176 player-first fights (19.3%; 32.6% in trials). The recorder
 therefore reads a bounded memory of the moments before the line: the
 settled acts of the last OPENER_WINDOW_MS (10 s) after the previous
-END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move; the
-fight time and every figure stay BEGIN_COMBAT to END_COMBAT.
+END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move: the
+fight time stays BEGIN_COMBAT to END_COMBAT. Since issue #162 the figures
+read the same moments: the group's hits in them count in the fight at their
+own times, unless the fight before had hit the same enemy, or the enemy
+died or left before the line (ESOLogAnalyzer._take_hits_before_line).
 
 A millisecond is judged whole. Acts are buffered until the log moves past
 their millisecond, since fan-out casts, shield-absorb pairs and taunt ties
@@ -75,10 +78,11 @@ HOSTILE with owner 0.
 
 The memory's edge. A candidate whose enemy died or left before the line is
 dropped (a hit's or cast's target, a monster act's source): it belonged to
-the last pack. An opener within EDGE_AFTER_START_MS of the line that started
-the memory, or in the window's oldest second, may not be the first act at
-all, so the line drops "first" and the time there: "@tank was already
-fighting Yokeda Kai (Goading Throw) when the fight began".
+the last pack, and the fight's figures leave its hits out too. An opener
+within EDGE_AFTER_START_MS of the line that started the memory, or in the
+window's oldest second, may not be the first act at all, so the line drops
+"first" and the time there: "@tank was already fighting Yokeda Kai
+(Goading Throw) when the fight began".
 
 Times. The line's first act gets ", 2.0 s into the fight" or ", 4.4 s
 before the fight's start" only from TIME_SHOWN_MS away from the line, so a
@@ -180,9 +184,10 @@ class _Act:
         return self.enemy_id if self.side == "player" else self.target.unit_id
 
 
-def _gone_before(enemy, ts: int) -> bool:
+def gone_before(enemy, ts: int) -> bool:
     """Whether the engine's record of an enemy says it died or left before
-    *ts*."""
+    *ts*. The engine drops the hits before a fight's line on such an enemy
+    by the same test, so the line and the figures agree (issue #162)."""
     for attr in ("died_at", "removed_at"):
         at = getattr(enemy, attr, None)
         if at is not None and at < ts:
@@ -313,7 +318,7 @@ class OpenerRecorder:
         """A player-side BEGIN_CAST at a hostile. A cast at a dead target
         (0 health on its line, or died or left before the cast) never
         counts."""
-        if not self.listening or target_dead or _gone_before(enemy, ts):
+        if not self.listening or target_dead or gone_before(enemy, ts):
             return
         self._add(_Act(ts, "player", CAST, CAST, cast_id, ability_id, target_id, target_name,
                        enemy, actor=actor, skill_id=ability_id))
@@ -359,7 +364,7 @@ class OpenerRecorder:
         opening = FightOpening(start_ms, self._memory_start)
         horizon = start_ms - OPENER_WINDOW_MS
         for act in self._memory:
-            if act.ts < horizon or (self.drop_gone and _gone_before(act.enemy, start_ms)):
+            if act.ts < horizon or (self.drop_gone and gone_before(act.enemy, start_ms)):
                 continue
             opening.consider(act, self.margin_ms)
         self._memory.clear()

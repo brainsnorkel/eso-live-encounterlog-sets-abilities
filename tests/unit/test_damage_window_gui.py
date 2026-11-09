@@ -161,6 +161,22 @@ class TestDpsFigureInFightView(DamageWindowTestCase):
 
 class TestDamageWindowHtml(DamageWindowTestCase):
 
+    def test_a_first_hit_before_the_pull(self):
+        """A hit from the moments before the fight's start counts in it
+        (issue #162): the window says before the pull, not -0.4 s after."""
+        from gui.damage_render import render_damage_html
+        entry = _entry()
+        damage = _damage()
+        damage['window'] = _window(9600, 101000)
+        entry.players[0]['damage'] = damage
+        html = render_damage_html(entry, '1', icons=self._cache())
+        self.assertIn('first hit 0.4 s before the pull, last hit 1:31 into the 1:40 fight', html)
+        # Every hit before the pull
+        damage['window'] = _window(7000, 9600)
+        html = render_damage_html(entry, '1', icons=self._cache())
+        self.assertIn('first hit 3.0 s before the pull, last hit 0.4 s before it, '
+                      'in the 1:40 fight', html)
+
     def test_abilities_largest_first_with_their_figures(self):
         from gui.damage_render import render_damage_html
         html = render_damage_html(_entry(), '1', icons=self._cache())
