@@ -574,7 +574,11 @@ class TestTracker(unittest.TestCase):
         self.assertEqual(fired_proc_sets({'232', '496'}, {'76667', '1'}), {'232'})
         self.assertEqual(fired_proc_sets({'232', '496'}, {'135923'}), {'496'})
         self.assertEqual(fired_proc_sets({'232'}, []), set())
-        self.assertTrue({'76667', '75751', '93109', '135923', '252048'} <= PROC_EFFECT_IDS)
+        self.assertTrue({'76667', '75751', '135923', '252048'} <= PROC_EFFECT_IDS)
+        # War Machine and Master Architect write Major Slayer 93109 too, so it
+        # does not show a Roaring Opportunist firing
+        self.assertNotIn('93109', PROC_EFFECT_IDS)
+        self.assertEqual(fired_proc_sets({'496', '497'}, {'93109', '93442'}), set())
         self.assertEqual(set(PROC_SETS), {'232', '496', '497', '845'})
         # A mythic is the set at one piece (Huntsman's Warmask on the head)
         helmet = _body()
