@@ -22,7 +22,7 @@ END_COMBAT, ZONE_CHANGED or BEGIN_LOG. The fight's clock does not move: the
 fight time stays BEGIN_COMBAT to END_COMBAT. Since issue #162 the figures
 read the same moments: the group's hits in them count in the fight at their
 own times, unless the fight before had hit the same enemy, or the enemy
-died or left before the line (ESOLogAnalyzer._take_hits_before_line).
+died or left before the line (waiting_hits).
 
 A millisecond is judged whole. Acts are buffered until the log moves past
 their millisecond, since fan-out casts, shield-absorb pairs and taunt ties

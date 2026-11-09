@@ -101,8 +101,8 @@ def _offset_text(seconds) -> str:
 def _hits_text(first_s, last_s, fight_s: float) -> str:
     """Where the first and last hits sat in the fight: 'first hit 1.0 s
     after the pull, last hit 1:31 into the 1:40 fight'. A hit from the
-    moments before the fight's start counts in it (the engine's
-    _take_hits_before_line, issue #162) and reads as before the pull."""
+    moments before the fight's start counts in it (waiting_hits, issue
+    #162) and reads as before the pull."""
     first_s, last_s = float(first_s or 0), float(last_s or 0)
     first = (f"first hit {_offset_text(-first_s)} before the pull" if first_s < 0
              else f"first hit {_offset_text(first_s)} after the pull")

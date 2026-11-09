@@ -78,8 +78,7 @@ single fights, though (issue #162): a group member's hit on the new fight's
 enemies came in the 10 s before BEGIN_COMBAT in 43.6% of 8,765 fights. So
 the group's hits from those 10 s now count, on any enemy the fight before
 never hit, at their own times, and a dps time can start before the fight
-does (ESOLogAnalyzer._take_hits_before_line). The hits after END_COMBAT
-still count in no fight.
+does (waiting_hits). The hits after END_COMBAT still count in no fight.
 """
 
 from array import array

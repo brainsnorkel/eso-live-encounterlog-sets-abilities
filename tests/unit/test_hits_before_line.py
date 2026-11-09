@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The group's hits from the moments before a fight's BEGIN_COMBAT count in
-that fight (issue #162, part 1; ESOLogAnalyzer._take_hits_before_line):
+that fight (issue #162, part 1; waiting_hits):
 every damage result of the last 10 s since the last END_COMBAT, on an enemy
 the fight that ended never hit and that was alive at the line, at its own
 time. The fight's clock stays BEGIN_COMBAT to END_COMBAT.
@@ -10,10 +10,13 @@ the logging player's client enters combat (48.1% of 8,816 fights, #159).
 """
 
 import unittest
+from unittest import mock
 
+import esolog_tail
 from damage_stats import per_second, running_dps, smoothed_dps
 from engine_events import RecordingListener
-from esolog_tail import ESOLogAnalyzer, FightHistory
+from esolog_tail import EnemyInfo, ESOLogAnalyzer, FightHistory
+from waiting_hits import GroupHit, WaitingHits
 
 EPOCH = 1759600000000
 BOSS_HEALTH = 1000000
@@ -426,6 +429,222 @@ class TestBreakdowns(unittest.TestCase):
         entry = _fights(*boss_fight(hit(26000, 1, 30000, boss(870000))))[1]
         self.assertEqual(entry.pen_crit['damage'], 230000)
         self.assertEqual(row(entry, '@brainsnorkel')['pen_crit']['damage'], 30000)
+
+    def test_a_cast_across_the_line_is_area_on_both_sides(self):
+        """One cast strikes the boss 100 ms before the line and the add 200
+        ms after it: area on both sides, as a cast is in a fight."""
+        lines = [*TRASH_FIGHT,
+                 hit(27900, 2, 30000, boss(870000), cast=501),
+                 '28000,BEGIN_COMBAT', *builds(28001, 1, 2, 3),
+                 hit(28200, 2, 20000, add(30000), cast=501),
+                 hit(38000, 3, 100000, boss(770000), ability=SWING),
+                 '41000,END_COMBAT']
+        kinds = row(_fights(*lines)[1], '@templar')['damage']['kinds']
+        self.assertEqual((kinds['area'], kinds['single']), (50000, 0))
+        self.assertEqual(kinds['rules'].get('cast'), 50000)
+
+    def test_a_hit_between_the_lines_of_a_fight_carried_on_moves_to_area(self):
+        """The closed encounter keeps its cast watchers: a fight the game
+        cut in two is rebuilt from it, and a hit between the two lines whose
+        cast strikes a second unit after them is area, as in any fight."""
+        lines = [*fight(10000, 30031, hit(11000, 2, 100000, boss(900000)),
+                        hit(29000, 2, 300000, boss(600000))),
+                 hit(30040, 3, 50000, boss(550000), cast=777),
+                 '30067,BEGIN_COMBAT', *builds(30067, 1, 2, 3),
+                 hit(31000, 3, 20000, add(30000), cast=777),
+                 '50100,END_COMBAT']
+        fights = _fights(*lines)
+        self.assertEqual(len(fights), 1)
+        kinds = row(fights[0], '@third')['damage']['kinds']
+        self.assertEqual((kinds['area'], kinds['single']), (70000, 0))
+
+
+class TestFightBoundaries(unittest.TestCase):
+    """Each fight boundary leaves the waiting hits as the rule needs
+    (waiting_hits.WaitingHits)."""
+
+    def test_a_unit_id_handed_out_again_during_the_fight_before(self):
+        """The trash dies and its unit id goes to a mob of the next pack
+        before the trash fight ends: the next fight's opening hits on that
+        mob are its own, not the group fighting on. The ended fight's
+        enemies are the records it hit."""
+        lines = [*fight(10000, 20000,
+                        hit(11000, 2, 50000, trash(950000)),
+                        hit(15000, 3, 950000, trash(0)),
+                        died_xp(15001, 3, trash(0)),
+                        '16000,UNIT_REMOVED,71',
+                        f'17000,UNIT_ADDED,71,MONSTER,F,0,{ADD_HEALTH},F,0,0,"Reef Guardian","",0,50,160,0,HOSTILE,F'),
+                 hit(26000, 2, 40000, _unit(71, 10000, ADD_HEALTH)),
+                 *fight(28000, 41000, *BOSS_HITS)]
+        self.assertEqual(group_damage(_fights(*lines)[1]), 240000)
+
+    def test_a_blip_carried_on_into_a_blip(self):
+        """A blip the game cuts in two and carries on, under a second in
+        all, takes no hits either: they wait for the next line, and the
+        fight before stays the ended one."""
+        lines = [*TRASH_FIGHT,
+                 hit(26000, 1, 30000, boss(870000)),
+                 hit(26500, 2, 20000, trash(880000)),
+                 '27000,BEGIN_COMBAT', hit(27100, 2, 5000, boss(865000)), '27300,END_COMBAT',
+                 '27400,BEGIN_COMBAT', '27700,END_COMBAT',
+                 hit(28000, 3, 20000, trash(860000)),
+                 *fight(30000, 41000, hit(31000, 2, 100000, boss(765000)),
+                        hit(38000, 3, 100000, boss(665000)))]
+        fights = _fights(*lines)
+        self.assertEqual(len(fights), 3)
+        blip, entry = fights[1], fights[2]
+        self.assertAlmostEqual(blip.duration_s, 0.7)
+        self.assertEqual(group_damage(blip), 5000)
+        self.assertEqual(group_damage(entry), 230000)
+
+    def test_a_combat_with_no_enemy_leaves_the_ended_fight(self):
+        """A trap's combat between the fights is held back and never
+        listed: the group finishing the trash fight's enemy after it is
+        still the trash fight's, not the boss fight's opening."""
+        lines = [*TRASH_FIGHT, TRAP_ADDED,
+                 '22000,BEGIN_COMBAT', trap_hit(23000), '24000,END_COMBAT',
+                 hit(26000, 2, 40000, trash(860000)),
+                 *fight(28000, 41000, *BOSS_HITS)]
+        fights = _fights(*lines)
+        self.assertEqual(len(fights), 2)
+        self.assertEqual(group_damage(fights[1]), 200000)
+
+    def test_a_combat_with_no_enemy_listed_late_settles_then(self):
+        """Listed for a death just after it ended, the combat is a fight:
+        its entry has the boss hit since it ended, and the next line leaves
+        the boss to it."""
+        lines = [*TRASH_FIGHT, TRAP_ADDED,
+                 *fight(22000, 24000, trap_hit(23000)),
+                 hit(24300, 2, 30000, boss(870000)),
+                 f"24500,COMBAT_EVENT,DIED,PHYSICAL,1,0,0,2,9,{TRAP},{_player(1, 0)}",
+                 hit(26000, 3, 40000, boss(830000)),
+                 *fight(28000, 41000, *BOSS_HITS)]
+        _trash, held, entry = _fights(*lines)
+        self.assertEqual(group_damage(held), 30000)
+        self.assertEqual(group_damage(entry), 200000)
+
+    def test_a_fight_that_takes_hits_has_met_an_enemy(self):
+        """After a blip, a fight with no line of its own between the group
+        and an enemy takes the hits from before the blip: it met that enemy,
+        and is listed with them."""
+        lines = [*TRASH_FIGHT,
+                 hit(21000, 1, 30000, boss(870000)),
+                 '22000,BEGIN_COMBAT', '22300,END_COMBAT',
+                 '25000,BEGIN_COMBAT', *builds(25001, 1, 2, 3), '35000,END_COMBAT']
+        fights = _fights(*lines)
+        self.assertEqual(len(fights), 3)
+        self.assertEqual(group_damage(fights[2]), 30000)
+
+    def test_a_player_back_on_a_new_unit_keeps_their_hits(self):
+        """@third hits the boss from unit 3, drops and comes back on unit 40
+        before the line, which keys the record by 40 from there
+        (presence.py): the hit from unit 3 is still theirs, and their own,
+        not a pet's."""
+        back = ('26500,UNIT_ADDED,40,PLAYER,F,3,0,F,2,7,"Third Wheel","@third",1003,50,1800,0,'
+                'PLAYER_ALLY,T')
+        lines = [*TRASH_FIGHT, hit(26000, 3, 30000, boss(870000)), back,
+                 *fight(28000, 41000, hit(29000, 2, 100000, boss(770000)), players=(1, 2, 40))]
+        entry = _fights(*lines)[1]
+        self.assertEqual(group_damage(entry), 130000)
+        third = row(entry, '@third')
+        self.assertEqual((third['unit_id'], third['damage']['total']), ('40', 30000))
+        self.assertEqual([a['pet'] for a in third['damage']['abilities']], [False])
+
+    def test_the_kinds_are_read_once_between_fights(self):
+        """A hit between fights is read by the cast index once, for the
+        closed encounter, and kept as read."""
+        engine = Engine().feed(TRASH_FIGHT)
+        with mock.patch.object(esolog_tail, 'area_of', wraps=esolog_tail.area_of) as read:
+            engine.feed([hit(26000, 1, 30000, boss(870000))])
+        self.assertEqual(read.call_count, 1)
+
+    def test_only_a_new_encounter_takes_the_waiting_hits(self):
+        """The zone's first fight is the zone's own encounter, which took
+        its hits as they came: the waiting hits are not read for it."""
+        engine = Engine()
+        with mock.patch.object(engine.analyzer.waiting_hits, 'take',
+                               wraps=engine.analyzer.waiting_hits.take) as take:
+            engine.feed(fight(10000, 20000, hit(11000, 2, 50000, trash(950000))))
+            self.assertEqual(take.call_count, 0)
+            engine.feed(fight(28000, 41000, *BOSS_HITS))
+            self.assertEqual(take.call_count, 1)
+
+
+TRAP = _unit(81, 0, 0)
+TRAP_ADDED = '21000,UNIT_ADDED,81,MONSTER,F,0,56034,F,0,0,"Storm","",0,50,160,0,NPC_NEUTRAL,F'
+
+
+def trap_hit(ts, player=1):
+    """A neutral trap's hit on a player: no meeting with an enemy."""
+    return f"{ts},COMBAT_EVENT,DAMAGE,PHYSICAL,1,15000,0,1,9,{TRAP},{_player(player, 5000)}"
+
+
+def _hit_record(ts, target_id='70', enemy=None, area=(False, 'none'), cast='1'):
+    return GroupHit(ts, 'DAMAGE', 1000, '1', target_id, enemy or EnemyInfo(target_id, 'X', 'MONSTER'),
+                    '12345', 'PHYSICAL', cast, area, (None, None, False))
+
+
+class TestWaitingHits(unittest.TestCase):
+    """The ledger alone: what each boundary does to the waiting hits."""
+
+    def test_it_keeps_the_last_ten_seconds(self):
+        hits = WaitingHits()
+        for ts in (1000, 5000, 11000, 12000):
+            hits.keep(_hit_record(ts))
+        self.assertEqual([h.timestamp for h in hits.take(12000, lambda s, c: 1)],
+                         [5000, 11000, 12000])
+
+    def test_a_take_leaves_the_hits_waiting(self):
+        hits = WaitingHits()
+        hits.keep(_hit_record(5000))
+        self.assertEqual(len(hits.take(6000, lambda s, c: 1)), 1)
+        self.assertEqual(len(hits.take(7000, lambda s, c: 1)), 1)
+
+    def test_the_ended_fights_enemies_are_records(self):
+        hits = WaitingHits()
+        hit_one = EnemyInfo('55', 'Trash', 'MONSTER')
+        hits.settled({hit_one})
+        hits.keep(_hit_record(5000, '55', hit_one))
+        hits.keep(_hit_record(5500, '55', EnemyInfo('55', 'Next pack', 'MONSTER')))
+        self.assertEqual([h.timestamp for h in hits.take(6000, lambda s, c: 1)], [5500])
+
+    def test_a_dead_enemy_is_left_out(self):
+        hits = WaitingHits()
+        enemy = EnemyInfo('70', 'X', 'MONSTER')
+        enemy.died_at = 5200
+        hits.keep(_hit_record(5000, enemy=enemy))
+        self.assertEqual(hits.take(6000, lambda s, c: 1), [])
+
+    def test_the_area_read_at_a_line_stays_on_the_waiting_copy(self):
+        hits = WaitingHits()
+        hits.keep(_hit_record(5000, cast='9'))
+        self.assertEqual(hits.take(6000, lambda s, c: 2)[0].area, (True, 'cast'))
+        # The index is emptied at the line: a later line reads one target
+        self.assertEqual(hits.take(7000, lambda s, c: 1)[0].area, (True, 'cast'))
+
+    def test_settled_starts_the_waiting_again(self):
+        hits = WaitingHits()
+        hits.keep(_hit_record(5000))
+        hits.settled(set())
+        self.assertEqual(hits.take(6000, lambda s, c: 1), [])
+
+    def test_carried_on_and_listed_late_drop_the_hits_since(self):
+        for boundary in ('carried_on', 'listed_late'):
+            hits = WaitingHits()
+            ended = EnemyInfo('71', 'Trash', 'MONSTER')
+            hits.settled({ended})
+            hits.keep(_hit_record(5000))
+            hits.keep(_hit_record(6000))
+            getattr(hits, boundary)(6000)
+            self.assertEqual([h.timestamp for h in hits.take(7000, lambda s, c: 1)], [5000])
+            hits.keep(_hit_record(7500, '71', ended))
+            self.assertEqual([h.timestamp for h in hits.take(8000, lambda s, c: 1)], [5000])
+
+    def test_a_reset_forgets_all(self):
+        hits = WaitingHits()
+        hits.keep(_hit_record(5000))
+        hits.reset()
+        self.assertEqual(hits.take(6000, lambda s, c: 1), [])
 
 
 if __name__ == '__main__':

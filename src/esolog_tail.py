@@ -16,8 +16,8 @@ import io
 import json
 import re
 from pathlib import Path
-from collections import defaultdict, deque
-from typing import Dict, FrozenSet, List, NamedTuple, Optional, Tuple, Set
+from collections import defaultdict
+from typing import Dict, FrozenSet, List, Optional, Tuple, Set
 from datetime import datetime
 from gear_set_database import gear_set_db
 from fight_history import FightHistory, FightHistoryEntry
@@ -50,6 +50,7 @@ import resources
 import split_retention
 import trial_result
 import werewolf
+from waiting_hits import GroupHit, WaitingHits
 
 
 class _PlainAnsi:
@@ -96,7 +97,7 @@ LATE_DEATH_GRACE_MS = 1000
 COMBAT_RESUME_MS = 1000
 # A fight shorter than this, BEGIN_COMBAT to END_COMBAT, is a blip: it takes
 # none of the group's hits from before its line, which wait for the next
-# line (see ESOLogAnalyzer._take_hits_before_line)
+# line (see waiting_hits)
 BLIP_MS = 1000
 # Design: Taunts. The game puts one Taunt debuff on a taunted enemy whatever
 # skill taunted, and writes a TAUNTED combat event that shares its cast
@@ -454,27 +455,6 @@ class EnemyInfo:
         self.was_owned: bool = False
 
 
-class GroupHit(NamedTuple):
-    """One hit of the group's on a hostile, as the engine counts it
-    (ESOLogAnalyzer._credit_enemy_hit), kept between fights for the next
-    fight's line (ESOLogAnalyzer._take_hits_before_line)."""
-    timestamp: int
-    result: str
-    value: int
-    source_id: str
-    target_id: str
-    enemy: EnemyInfo  # the engine's record of the target as it was hit
-    ability_id: str
-    damage_type: str
-    cast_id: str
-    # The kinds' (area?, rule) as the cast index read the hit (damage_kinds)
-    area: tuple[bool, str]
-    # A pet's or companion's owner and the companion's row key as the
-    # encounter linked them at the hit, for a unit removed before the line
-    owner: PlayerInfo | None = None
-    companion: str | None = None
-
-
 class CombatEncounter:
     """Represents a single combat encounter."""
 
@@ -497,10 +477,12 @@ class CombatEncounter:
         # When the hits happened (the spans the dps figures divide by) and
         # each player's breakdown by ability and target (damage_stats)
         self.damage = FightDamage()
-        # The group's hits from the moments before the line, each with whose
-        # it is (hitter_of): taken at BEGIN_COMBAT, counted at END_COMBAT
-        # unless the fight is a blip (see BLIP_MS)
+        # The group's hits from the moments before the line (waiting_hits):
+        # taken at BEGIN_COMBAT, counted at END_COMBAT unless the fight is a
+        # blip (see BLIP_MS); and the enemy records the fight's counted hits
+        # were on, by identity, which a later line leaves to it
         self.hits_before_line: list = []
+        self.hit_enemies: set = set()
         # Each player's damage taken and healing received by kind, for the
         # death recap window's whole-fight block (damage_kinds.TakenTally)
         self.taken: Dict[str, TakenTally] = {}
@@ -825,7 +807,7 @@ class CombatEncounter:
                              accrue_companions: bool = False,
                              damage_type: str = '', cast_id: str = '', cast_index=None,
                              area: tuple[bool, str] | None = None,
-                             link: tuple[PlayerInfo | None, str | None] | None = None):
+                             link: tuple | None = None):
         """Credit damage dealt by *unit_id* to the player it belongs to:
         the player themself, or the owner of a pet (see
         track_pet_ownership). Damage from a unit that is neither is
@@ -840,19 +822,24 @@ class CombatEncounter:
         reads the cast, the session and the player-skill table, and a hit
         counted single is moved to area should its cast strike a second
         unit later. *area*, an (area?, rule) the cast index gave already,
-        stands in for the index, and *link*, whose the hit is as hitter_of
-        gave it, for the encounter's own reading: a hit from before the
-        fight's line, counted at END_COMBAT, whose cast the index forgot at
-        the line and whose hitter was read there
-        (ESOLogAnalyzer._take_hits_before_line).
+        stands in for the index, with no watcher, and *link*, whose the hit
+        is (player, companion row key or None, a pet's?) as this returned
+        it, for the encounter's own reading: a hit from before the fight's
+        line, counted at END_COMBAT (waiting_hits). Returns (the kinds'
+        (area?, rule), that link) as the hit was credited, None for a hit
+        credited to nobody.
 
         A companion's damage is its own row's (companions.py), keyed by
         the companion's row key, with its kinds like a player's; with
         *accrue_companions* (the setting companions.accrue_to_owner) it is
         its owner's as well."""
-        player, companion = link if link is not None else self.hitter_of(unit_id)
+        if link is not None:
+            player, companion, as_pet = link
+        else:
+            player, companion = self.hitter_of(unit_id)
+            as_pet = None
         if player is None and companion is None:
-            return
+            return None
         # The kinds of the hit (damage_kinds), the same for a player's own
         # hit, a pet's and a companion's
         watch = cast_key = None
@@ -871,12 +858,14 @@ class CombatEncounter:
                 self.damage.note(companion, timestamp, damage, result, str(ability_id),
                                  False, target_id, to_boss, damage_type, area, cast_key,
                                  watch, also=owner)
-            return
+            return area, (player, companion, False)
+        if as_pet is None:
+            as_pet = not player.has_unit_id(unit_id)
         self._credit_damage(player.unit_id, damage, to_boss)
         if timestamp is not None:
             self.damage.note(player.unit_id, timestamp, damage, result, str(ability_id),
-                             not player.has_unit_id(unit_id), target_id, to_boss,
-                             damage_type, area, cast_key, watch)
+                             as_pet, target_id, to_boss, damage_type, area, cast_key, watch)
+        return area, (player, companion, as_pet)
 
     def hitter_of(self, unit_id: str) -> tuple[PlayerInfo | None, str | None]:
         """Whose a unit's damage is: (the player, or a pet's or companion's
@@ -1139,12 +1128,10 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry: Optional[FightHistoryEntry] = None
         self._enemy_last_hit: Dict[str, int] = {}
         self._engaged_at_end: FrozenSet[str] = frozenset()
-        # The group's hits since the last END_COMBAT, the last
-        # fight_opener.OPENER_WINDOW_MS of them, and the enemies the fight
-        # that ended had hit, by unit id: the next fight's line counts some
-        # of those hits (see _take_hits_before_line, issue #162)
-        self._between_fights: deque = deque()
-        self._ended_fight_enemies: dict[str, EnemyInfo | None] = {}
+        # The group's hits waiting for the next fight's line, and the
+        # enemies of the last fight that took hits (waiting_hits, issue
+        # #162): told of each fight boundary, as the opener is
+        self.waiting_hits = WaitingHits()
         # When a line last passed between the group and an enemy, and the
         # combat that ended without one, with its start: not listed unless
         # a player dies as it ends (see _note_enemy_met)
@@ -1848,7 +1835,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
-            self._forget_hits_between_fights()
+            self.waiting_hits.reset()
             self.death_recap_recorder.reset()
             self.cast_index.reset()
             self.scribing.forget_players("unit:")
@@ -1884,10 +1871,16 @@ class ESOLogAnalyzer(ListenerMixin):
             self._resume_last_fight()
             return
 
-        # The group's hits in the moments before the line that this fight
-        # counts, read before the kinds index forgets their casts below
-        # (see _take_hits_before_line)
-        before_line = self._take_hits_before_line(entry.timestamp)
+        # A new encounter for this fight, or the one in hand: the zone's
+        # first, which took the hits before the line as they came, or a
+        # combat that never ended. Only a new one takes the waiting hits,
+        # read here, before the kinds index forgets their casts below
+        # (waiting_hits)
+        in_hand = self.current_encounter
+        opened = (in_hand is None or in_hand.finalized
+                  or bool(in_hand.combat_ended_at and in_hand.players))
+        taken = (self.waiting_hits.take(entry.timestamp, self.cast_index.targets_of)
+                 if opened else [])
 
         # Per-fight death counter starts fresh with each combat; so do the
         # fight's casts in the kinds index and the recorder's list of recaps
@@ -1920,8 +1913,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 <= pull_outcome.CONTINUE_GAP_S * 1000):
             carried = self.current_encounter.time_dead.dead_at_end()
 
-        # Create a new encounter if we don't have one or if the previous one was finalized
-        opened = not self.current_encounter or self.current_encounter.finalized
+        # Create a new encounter if we don't have one or if the previous one
+        # was finalized (just above, for one that ended unpublished)
         if opened:
             # Create new encounter but preserve players and enemies from previous encounter in same zone
             old_players = {}
@@ -1974,10 +1967,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # the fight's candidates (fight_opener)
         self.current_encounter.opening = self.opener.begin_combat(entry.timestamp)
         # And the group's hits from those moments are the fight's, counted
-        # at END_COMBAT unless it is a blip (see BLIP_MS); a reused
-        # encounter (the zone's first) took them as they came
+        # at END_COMBAT unless it is a blip (see BLIP_MS)
         if opened:
-            self.current_encounter.hits_before_line = self._hitters_before_line(before_line)
+            self._open_hits_before_line(taken)
 
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
@@ -2003,6 +1995,10 @@ class ESOLogAnalyzer(ListenerMixin):
         players are kept, and the entry frontends already have is brought up
         to date when the fight ends (see _publish_fight)."""
         enc = self.current_encounter
+        # The group's hits between the two lines went on this encounter as
+        # they came; the earlier ones a blip left wait on, and the ended
+        # fight stays (waiting_hits)
+        self.waiting_hits.carried_on(enc.combat_ended_at)
         enc.finalized = False
         enc.in_combat = True
         enc.combat_ended_at = None
@@ -2011,9 +2007,6 @@ class ESOLogAnalyzer(ListenerMixin):
         # (see _handle_combat_event)
         enc.start_time = self._last_fight_start
         self._resumed_fight_entry = self._last_fight_entry
-        # The group's hits between the two lines went on this encounter as
-        # they came: none waits for a line (see _take_hits_before_line)
-        self._forget_hits_between_fights()
         # The opener stands; what came between the two lines is dropped
         self.opener.resume()
         # The dead stay dead, and the pull is judged again against the one
@@ -2024,14 +2017,15 @@ class ESOLogAnalyzer(ListenerMixin):
     def _credit_enemy_hit(self, enc: CombatEncounter, timestamp: int, result: str, value: int,
                           source_id: str, target_id: str, enemy: EnemyInfo, ability_id: str,
                           damage_type: str, cast_id: str,
-                          area: tuple[bool, str] | None = None,
-                          link: tuple[PlayerInfo | None, str | None] | None = None) -> None:
+                          area: tuple[bool, str] | None = None, link: tuple | None = None):
         """Count one hit of the group's on the hostile *enemy* in *enc*: the
         enemy's damage, the group's and the bosses' totals, and the
         hitter's record with the hit's time, result, ability, target and
         kinds (CombatEncounter.add_damage_to_player), the kinds read from
         the cast index, or *area* when the index was read earlier, and the
-        hitter by the encounter, or by *link* when it was read earlier."""
+        hitter by the encounter, or by *link* when it was read earlier.
+        Returns what add_damage_to_player read: (kinds, hitter), or None."""
+        enc.hit_enemies.add(enemy)
         if target_id not in enc.enemy_damage:
             enc.enemy_damage[target_id] = 0
             # Add enemy's max health to total when first damaged
@@ -2044,179 +2038,62 @@ class ESOLogAnalyzer(ListenerMixin):
             enc.boss_damage += value
         # Track individual player damage, and the hit's time, result,
         # ability and target for the dps time and breakdown
-        enc.add_damage_to_player(
+        credited = enc.add_damage_to_player(
             source_id, value, to_boss=enemy.is_boss, timestamp=timestamp, result=result,
             ability_id=ability_id, target_id=target_id,
             accrue_companions=self.companion_accrual, damage_type=damage_type,
             cast_id=cast_id, cast_index=self.cast_index, area=area, link=link)
         # Update the most damaged hostile monster
         enc.update_most_damaged_hostile(target_id)
+        return credited
 
-    def _keep_hit_between_fights(self, hit: GroupHit) -> None:
-        """Keep a hit the group dealt after END_COMBAT for the next line:
-        the last fight_opener.OPENER_WINDOW_MS of them, the most a line
-        counts (see _take_hits_before_line)."""
-        hits = self._between_fights
-        hits.append(hit)
-        horizon = hit.timestamp - fight_opener.OPENER_WINDOW_MS
-        while hits[0].timestamp < horizon:
-            hits.popleft()
-
-    def _forget_hits_between_fights(self) -> None:
-        """No hit waits for a line any more: END_COMBAT starts a new wait,
-        a fight carried on has the hits on its encounter, and a zone change
-        or a new log session hands unit ids out afresh."""
-        self._between_fights.clear()
-        self._ended_fight_enemies = {}
-
-    def _take_hits_before_line(self, start_ms: int) -> list[GroupHit]:
-        """The waiting hits the fight whose BEGIN_COMBAT is at *start_ms*
-        takes, each with its kinds as the cast index reads them at the
-        line. They wait on till its END_COMBAT tells whether it was a blip
-        (_settle_hits_before_line).
-
-        Design: The hits before the line (issue #162, part 1). A fight runs
-        from the logging player's BEGIN_COMBAT to their END_COMBAT, and the
-        group's first hits often land before the line (see fight_opener).
-        Before this rule such a hit fell on the encounter END_COMBAT had
-        closed and published, which nothing builds again unless the fight
-        carries on (COMBAT_RESUME_MS), and BEGIN_COMBAT opened a new
-        encounter without it: it was counted in no fight. Two fights had
-        them, a zone's first, whose encounter is the zone's own and takes
-        every hit from the zone's start, and a fight the game cut in two,
-        which reopens its encounter with the hits between the two lines.
-        Replayed through 0.38.0 and through this rule, 395 split logs
-        (8,765 fights, January to October 2026) count such hits in 3,831
-        fights (43.7%), a median 0.04% of the fight's damage (p90 1.3%):
-        the group's dps time grows by a median 0.5 s (p90 1.5 s) and its
-        dps falls by a median 1.1% (p10 9.1%, beyond 5% in 915 fights),
-        since the time grows more than the damage; 4,399 player rows move,
-        a median 2.2% either way (p90 12.9%), the logging player's in 686
-        fights, and 22 rows had damage only before the line. Combat Metrics
-        counts the logging player's direct hits before the line too.
-
-        At the line the engine cannot know which enemies the fight will
-        hit. It counts every hit from the opener's moments, the last
-        OPENER_WINDOW_MS since the last END_COMBAT, unless the fight that
-        ended had hit the same enemy (those hits are the group fighting
-        on, issue #162's part 2) or the enemy died or left before the line
-        (fight_opener.gone_before, as the opener drops it, so the line and
-        the figures agree). A DoT tick counts like every other damage
-        result. The hits keep their own times: the dps time, the damage
-        window ("first hit 0.4 s before the pull"), boss dps, the kinds,
-        the breakdowns, the penetration figures' weighting and every row
-        take them, and a player whose only damage came before the line has
-        a row's dps; the fight's clock (duration_s) stays BEGIN_COMBAT to
-        END_COMBAT. The DPS graph puts a second before the fight's start in
-        its second 0 (damage_stats.per_second), and its running figure runs
-        from the first hit, so it ends on the fight's dps. An enemy hit only
-        before the line is one of the fight's, as in a zone's first fight:
-        in the replay the name shown (the most damaged enemy) changed in 37
-        fights, 32 of them without a boss, a pull's bosses in 20 (3 fights
-        gained a pull, all "Left"), the uptime line's per-enemy items in
-        23, and a tank's damage-share finding on 12 rows. No fight was
-        added, lost or published at another time. Fight
-        by fight, the replay took what a survey of the hits between fights
-        predicts: in 3,758 fights the hits on the new fight's enemies
-        exactly, in 83 those and the hits on enemies of neither fight still
-        alive at the line, and in 13 the hits after a combat that met no
-        enemy, which the survey did not follow; the other 12 are blips and
-        the fights after them (80.6 M in all, 0.06% of the damage).
-
-        Blips. A fight shorter than BLIP_MS (1 s) from BEGIN_COMBAT to
-        END_COMBAT is a blip: the game puts the logging player in combat
-        for some milliseconds, often as a boss appears (Volenfell's
-        Guardian, four times in four seconds; Halls of Fabrication's
-        Committee), and the fight is listed when it met an enemy. A blip
-        takes none of the hits from before its line. They wait for the
-        next line, where only its last OPENER_WINDOW_MS count, and the
-        ended fight is still the last one of BLIP_MS or more, whose
-        enemies they leave out: a blip's own few hits are no reason to
-        leave one out. Of 48 blips in the 29 logs with one listed, 19 had
-        hits of their own, on some of the next fight's enemies in 5 and of
-        the fight before's in 4, never on the fight before's alone. Taking
-        the hits, 30 of the 46 listed blips had damage they did not deal,
-        17 a boss's, 18 read as a pull of a boss the group left ("Left"),
-        and the fight after a blip lost its first hits; now none does, the
-        18 blips with damage of their own keeping it. The next line took
-        back little of the 3.0 M: most of it came more than 10 s before the
-        next fight (a Dreadsail Keelcutter's 649 k, 28 s before), and counts
-        in no fight, as before.
-
-        Where the hits wait. Each still goes on the closed encounter as it
-        comes, as before, since a fight the game cut in two reopens that
-        encounter with them; the analyzer keeps a copy beside it, at most
-        the last 10 s (_keep_hit_between_fights). The line takes the copies
-        it counts, each with its hitter read from the new fight's list of
-        players (_hitters_before_line), so a hit is keyed as the fight keys
-        its hitter, and END_COMBAT counts them by the same code as any hit
-        (_credit_enemy_hit), before the entry is built, once the fight's
-        length shows it is no blip (_settle_hits_before_line): nothing
-        reads a fight's damage before then. Then the copies are done with.
-        They go too where an encounter keeps the hits itself: a fight
-        carried on, a held combat listed late (_list_held_fight), and a
-        zone's first encounter, which the line reuses and which keeps its
-        hits from before the line even as a blip. A copy holds the engine's
-        record of its enemy, so a unit id handed out again is not the ended
-        fight's enemy; its kinds as the cast index read them, since the
-        index forgets the casts at each line (a hit read single whose cast
-        struck a second unit by a line is area, as a cast's watcher makes
-        it in a fight); and a pet's owner, since a pet removed before the
-        line loses its link (a Blastbones blows up and goes) while its hit
-        stays its owner's.
-        """
-        horizon = start_ms - fight_opener.OPENER_WINDOW_MS
-        ended = self._ended_fight_enemies
-        waiting: deque = deque()
-        taken = []
-        for hit in self._between_fights:
-            # Kept on the waiting copy too, for the next line should this
-            # fight be a blip: the cast index forgets the casts at each line
-            if (hit.area == (False, 'none')
-                    and self.cast_index.targets_of(hit.source_id, hit.cast_id) >= 2):
-                hit = hit._replace(area=(True, 'cast'))
-            waiting.append(hit)
-            if not (hit.timestamp < horizon or ended.get(hit.target_id) is hit.enemy
-                    or fight_opener.gone_before(hit.enemy, start_ms)):
-                taken.append(hit)
-        self._between_fights = waiting
-        return taken
-
-    def _hitters_before_line(self, hits: list[GroupHit]) -> list[tuple]:
-        """*hits* (_take_hits_before_line), each with whose it is in the
-        fight the line has just opened (CombatEncounter.hitter_of), read
-        from the new fight's list: a player who left before the line is
-        off the list, and so are their hits and their pets'. A pet or
-        companion removed since its hit (a Blastbones blows up and goes) is
-        its owner's as the encounter linked it then, the owner on the list."""
+    def _open_hits_before_line(self, taken: list[GroupHit]) -> None:
+        """At the line, the hits the fight took (WaitingHits.take) whose
+        hitter is on the new fight's list: a player who left before the
+        line is off it, and so are their hits and their pets'; a player
+        back on a new unit id is the same record, re-keyed. They are the
+        fight's, a meeting with an enemy that lists it, and count at its
+        END_COMBAT unless it is a blip (_settle_hits_before_line). Their
+        casts go back into the kinds index the line has just emptied, so a
+        cast that strikes another unit after the line is area on both
+        sides."""
         enc = self.current_encounter
-        out = []
-        for hit in hits:
-            player, companion = enc.hitter_of(hit.source_id)
-            if player is None and companion is None:
-                player, companion = hit.owner, hit.companion
-                if player is None or enc.players.get(player.unit_id) is not player:
+        pending = []
+        for hit in taken:
+            player, companion, _as_pet = hit.hitter
+            if player is not None:
+                if enc.players.get(player.unit_id) is not player:
                     continue
-            out.append((hit, (player, companion)))
-        return out
+            elif companion not in enc.companions:
+                continue
+            pending.append(hit)
+            if hit.result in CAST_RESULTS:
+                self.cast_index.note_hit(hit.source_id, hit.cast_id, hit.ability_id,
+                                         hit.target_id)
+        enc.hits_before_line = pending
+        if pending:
+            enc.met_enemy = True
 
     def _settle_hits_before_line(self, enc: CombatEncounter) -> None:
-        """END_COMBAT of *enc*: a fight of BLIP_MS or more counts the hits
-        it took at its line, before its entry is built, and the hits kept
-        till now are done with: a later line counts from here and leaves
-        this fight's enemies to it. A blip counts none and changes nothing:
-        the hits wait on for the next line, beside the fight before it."""
+        """A listed fight of BLIP_MS or more, at its END_COMBAT or when a
+        held combat is listed late, counts the hits it took at its line,
+        before its entry is built, and the waiting starts again, a later
+        line leaving the enemy records it hit to it. A blip counts none and
+        changes nothing (waiting_hits)."""
         if enc.end_time - enc.start_time < BLIP_MS:
             return
         hits, enc.hits_before_line = enc.hits_before_line, []
-        for hit, link in hits:
+        for hit in hits:
+            # A hit read single whose cast struck a second unit since the
+            # line is area, as a cast's watcher makes it in a fight
+            area = hit.area
+            if area == (False, 'none') and self.cast_index.targets_of(hit.source_id,
+                                                                       hit.cast_id) >= 2:
+                area = (True, 'cast')
             self._credit_enemy_hit(enc, hit.timestamp, hit.result, hit.value, hit.source_id,
                                    hit.target_id, hit.enemy, hit.ability_id, hit.damage_type,
-                                   hit.cast_id, area=hit.area, link=link)
-        self._forget_hits_between_fights()
-        # The enemies this fight hit, each as the record it had
-        self._ended_fight_enemies = {unit_id: enc.enemies.get(unit_id)
-                                     for unit_id in enc.damage.target_buckets}
+                                   hit.cast_id, area=area, link=hit.hitter)
+        self.waiting_hits.settled(enc.hit_enemies)
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -2278,7 +2155,7 @@ class ESOLogAnalyzer(ListenerMixin):
         combat events found 30 fights that met an enemy only there, none
         with damage of its own (the hits went to the fight before; since
         issue #162 a fight counts its hits from those 10 s, see
-        _take_hits_before_line). A cast counts as the opener's does: five
+        waiting_hits). A cast counts as the opener's does: five
         of the survey's empty fights stay listed for a monster's cast at a
         player or a player's at a boss, acts the opener names."""
         if target_id == '*':
@@ -2319,10 +2196,10 @@ class ESOLogAnalyzer(ListenerMixin):
         enc.start_time = self._held_fight[1]
         self._held_fight = None
         # Its entry is built from the encounter, which has every hit since
-        # it ended: the next fight's line counts none of them again (a
-        # blip's hits from before its line still wait, see BLIP_MS)
-        self._between_fights = deque(hit for hit in self._between_fights
-                                     if hit.timestamp < enc.combat_ended_at)
+        # it ended: the next line counts none of them again. Listed, it is a
+        # fight, and settles as one (waiting_hits)
+        self.waiting_hits.listed_late(enc.combat_ended_at)
+        self._settle_hits_before_line(enc)
         self._publish_fight(self.current_zone)
 
     def _trial_won_before_held(self, result: dict):
@@ -2370,15 +2247,16 @@ class ESOLogAnalyzer(ListenerMixin):
             self.current_encounter.time_dead.end(entry.timestamp)
             # Immediately display summary and finalize encounter
             self.current_encounter.finalized = True
-            # The hits it took at its line count now, unless it was a blip,
-            # and a hit from here on waits for the next line (see
-            # _take_hits_before_line)
-            self._settle_hits_before_line(self.current_encounter)
             if self.current_encounter.met_enemy or self.fight_deaths:
+                # The hits it took at its line count now, unless it was a
+                # blip, and a hit from here on waits for the next line
+                self._settle_hits_before_line(self.current_encounter)
                 self._publish_fight(self.current_zone)
             else:
                 # Combat with no enemy in it: held back, listed only should
-                # a player die as it ends (see _note_enemy_met)
+                # a player die as it ends (see _note_enemy_met). It is no
+                # fight to the waiting hits either: they wait on, the last
+                # listed fight still the ended one (waiting_hits)
                 self._held_fight = (self.current_encounter, self.current_encounter.start_time)
                 if self.current_encounter.trial_result is not None:
                     self._trial_won_before_held(self.current_encounter.trial_result)
@@ -2436,7 +2314,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
         self._engaged_at_end = frozenset()
-        self._forget_hits_between_fights()
+        self.waiting_hits.reset()
         self._enemy_met_at = None
         self._held_fight = None
         self._listed_fight_entry = None
@@ -2971,26 +2849,20 @@ class ESOLogAnalyzer(ListenerMixin):
                                             source_unit_id, entry.fields[5], entry.fields[6],
                                             target_unit_id)
                                     enc = self.current_encounter
-                                    self._credit_enemy_hit(
+                                    credited = self._credit_enemy_hit(
                                         enc, entry.timestamp, combat_event_type, hit_value,
                                         source_unit_id, target_unit_id, enemy,
                                         entry.fields[6], entry.fields[1], entry.fields[5])
                                     # Between fights the hit is also kept for
-                                    # the next fight's line, with its kinds
-                                    # as read now (see _take_hits_before_line)
-                                    if enc.finalized:
-                                        is_area, rule, _targets = area_of(
-                                            self.cast_index, source_unit_id, entry.fields[5],
-                                            entry.fields[6], True)
-                                        owner_id = enc.pet_ownership.get(source_unit_id)
-                                        self._keep_hit_between_fights(GroupHit(
+                                    # the next fight's line, its kinds and
+                                    # hitter as the closed encounter read
+                                    # them (waiting_hits)
+                                    if enc.finalized and credited is not None:
+                                        self.waiting_hits.keep(GroupHit(
                                             entry.timestamp, combat_event_type, hit_value,
                                             source_unit_id, target_unit_id, enemy,
                                             entry.fields[6], entry.fields[1], entry.fields[5],
-                                            (is_area, rule),
-                                            enc.find_player_by_unit_id(owner_id)
-                                            if owner_id is not None else None,
-                                            enc.companion_key(source_unit_id)))
+                                            *credited))
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
 
