@@ -533,7 +533,7 @@ class TestFightListHoverText(unittest.TestCase):
         first['skill_lines'] = ['Herald of the Tome']
         text = fight_issues_tooltip(entry)
         self.assertLess(text.index('@brainsnorkel'), text.index('@dualwield'))
-        self.assertIn('@brainsnorkel · Warden +Herald of the Tome', text)
+        self.assertIn('@brainsnorkel · Warden +Herald of the Tome', text)
         self.assertIn('Two &lt;Poison&gt; glyphs', text)
 
     def test_hide_names_leaves_the_text_form_of_the_mask(self):
