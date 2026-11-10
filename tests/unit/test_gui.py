@@ -175,8 +175,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         # Detail view lists ALL equipment: misc pieces below 5 pieces included
         import html as html_mod
         player1 = entry.players[0]
-        for count, set_name in player1.get('all_sets', []):
-            self.assertIn(html_mod.escape(f'{count}x {set_name}'), html_out)
+        # One entry per set: the fixture's three perfected and two normal
+        # pieces of Bahsei's Mania are one (issue #215)
+        from gui.fight_render import set_entries, set_entry_text
+        entries = set_entries(player1)
+        self.assertEqual(len(entries), len(player1['all_sets']) - 1)
+        for item in entries:
+            self.assertIn(set_entry_text(item), render_plain_text(entry))
+            if 'perfected' not in item:
+                self.assertIn(html_mod.escape(set_entry_text(item)), html_out)
+        self.assertIn('5x Bahsei&#x27;s Mania&nbsp;(3&nbsp;perfected)', html_out)
         misc = [s for s in player1.get('all_sets', []) if s[0] < 5]
         self.assertTrue(misc, 'fixture should include sub-5pc pieces')
         text_out = render_plain_text(entry)

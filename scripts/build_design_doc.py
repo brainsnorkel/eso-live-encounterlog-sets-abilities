@@ -85,6 +85,11 @@ TOPICS = [
         "scripts/generate_weapon_types.py",
         "scripts/generate_armor_weights.py",
     ]),
+    ("Perfected and normal pieces of one set", [
+        "src/player_build.py:family_counts",
+        "src/pen_crit.py:table_sets_worn",
+        "src/gui/fight_render.py:set_entries",
+    ]),
     ("Set names", [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",

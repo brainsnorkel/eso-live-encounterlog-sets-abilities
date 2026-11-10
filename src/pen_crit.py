@@ -202,6 +202,7 @@ from player_build import (
     _load_json,
     armor_weight,
     is_two_handed,
+    perfected_pairs,
     piece_counts,
     trait_label,
     weapon_type,
@@ -414,6 +415,42 @@ def set_offense_table() -> dict[str, dict]:
     return _bundled_offense()
 
 
+def table_sets_worn(gear: dict[str, list[str]], table: dict[str, dict],
+                    pairs: dict[str, str] | None = None):
+    """[(set id, its table entry, [pieces on the front bar, on the back])]
+    for the worn sets the offense table lists, in set id order.
+
+    A set's perfected and normal pieces count together towards the lines
+    the two versions share (player_build.family_counts has the measure). So
+    when both versions are worn and the table lists both, the lines are
+    read once, from the normal version's entry, at the two counts added per
+    bar: two perfected and two normal pieces of Ansuul's Torment give its
+    four-piece penetration. A perfected version the table lists alone has
+    only its own extra line there (an arena weapon's two-piece penetration),
+    which needs its count in perfected pieces, so it keeps them
+    (tests/unit/test_pen_crit.py holds the table to that shape). *pairs* is
+    {perfected id: normal id}, the bundled set data's by default."""
+    pairs = perfected_pairs() if pairs is None else pairs
+    perfected_of = {normal: perfected for perfected, normal in pairs.items()}
+    counts = piece_counts(gear)
+    out = []
+    for set_id, pieces in sorted(counts.items(),
+                                 key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0):
+        entry = table.get(str(set_id))
+        if not entry:
+            continue
+        twin = pairs.get(set_id) or perfected_of.get(set_id)
+        if twin in counts and str(twin) in table:
+            if set_id in pairs:
+                continue  # read under the normal version's id
+            other = counts[twin]
+            pieces = [pieces[FRONT] + other[FRONT],
+                      None if pieces[BACK] is None and other[BACK] is None
+                      else (pieces[BACK] or 0) + (other[BACK] or 0)]
+        out.append((set_id, entry, pieces))
+    return out
+
+
 def _divines(gear: dict[str, list[str]]) -> int:
     return sum(1 for slot in ARMOR_SLOTS
                if len(gear.get(slot) or []) > 4 and str(gear[slot][4]) == "ARMOR_DIVINES")
@@ -559,11 +596,7 @@ def player_rows(gear: dict[str, list[str]], effect_ids: Iterable[str],
                          _pair(value) if stat == "crit" else None, note))
 
     # Sets at their worn piece counts, per bar
-    counts = piece_counts(gear)
-    for set_id, pieces in sorted(counts.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0):
-        entry = table.get(str(set_id))
-        if not entry:
-            continue
+    for _set_id, entry, pieces in table_sets_worn(gear, table):
         front_n = pieces[FRONT] or 0
         back_n = pieces[BACK] if pieces[BACK] is not None else front_n
         for bonus in entry.get("bonuses") or []:
@@ -662,12 +695,8 @@ def caster_source(gear: dict[str, list[str]], debuff: str,
             return glyphs[0]["label"], glyphs[0]["value"]
         return "", None
     table = set_offense_table() if set_table is None else set_table
-    counts = piece_counts(gear or {})
     wanted = "Elemental Weakness" if debuff.endswith("Weakness") else debuff
-    for set_id, pieces in counts.items():
-        entry = table.get(str(set_id))
-        if not entry:
-            continue
+    for _set_id, entry, pieces in table_sets_worn(gear or {}, table):
         worn = max(pieces[FRONT] or 0, pieces[BACK] or 0)
         for bonus in entry.get("bonuses") or []:
             if wanted in (bonus.get("provides") or []) and worn >= int(bonus.get("pieces") or 0):

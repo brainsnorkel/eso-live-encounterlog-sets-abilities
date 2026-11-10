@@ -536,6 +536,73 @@ class TestPieceCounts(unittest.TestCase):
         self.assertFalse(analyzer._is_two_handed_weapon(['MAIN_HAND'], {}))
 
 
+class TestPerfectedAndNormalTogether(unittest.TestCase):
+    """Issue #215: a set's perfected and normal pieces count together."""
+
+    PAIRS = {'9': '1'}  # set 9 is the perfected version of set 1
+
+    def test_every_perfected_set_is_named_after_its_normal_version(self):
+        from gear_set_data import SET_ID_TO_NAME, SET_NAME_TO_ID
+        from player_build import normal_set_name, perfected_pairs
+        perfected = {str(i): n for i, n in SET_ID_TO_NAME.items() if 'Perfected' in n}
+        self.assertGreaterEqual(len(perfected), 62)
+        for name in perfected.values():
+            self.assertTrue(name.startswith('Perfected '), name)
+            self.assertIn(normal_set_name(name), SET_NAME_TO_ID, name)
+        pairs = perfected_pairs()
+        self.assertEqual(set(pairs), set(perfected))
+        self.assertEqual(pairs['772'], '767')  # Slivers of the Null Arca
+
+    def test_the_normal_name(self):
+        from player_build import is_perfected_set, normal_set_name
+        self.assertEqual(normal_set_name('Perfected Slivers of the Null Arca'),
+                         'Slivers of the Null Arca')
+        self.assertEqual(normal_set_name('Slivers of the Null Arca'), 'Slivers of the Null Arca')
+        self.assertEqual(normal_set_name('Perfectedness'), 'Perfectedness')
+        self.assertEqual(normal_set_name(None), '')
+        self.assertTrue(is_perfected_set('Perfected Whorl of the Depths'))
+        self.assertFalse(is_perfected_set('Whorl of the Depths'))
+
+    def test_both_versions_are_one_entry_under_the_normal_id(self):
+        from player_build import family_counts
+        gear = gear_of(item('HEAD', '9'), item('CHEST', '9'), item('HAND', '1'),
+                       item('WAIST', '1'), item('LEGS', '1'),
+                       item('MAIN_HAND', '2'), item('BACKUP_MAIN', '3'))
+        self.assertEqual(piece_counts(gear),
+                         {'9': [2, 2], '1': [3, 3], '2': [2, 0], '3': [0, 2]})
+        self.assertEqual(family_counts(gear, self.PAIRS),
+                         {'1': [5, 5], '2': [2, 0], '3': [0, 2]})
+
+    def test_the_two_counts_are_added_bar_by_bar(self):
+        from player_build import family_counts
+        # Three normal body pieces, two perfected daggers on the front bar
+        gear = gear_of(item('HEAD', '1'), item('CHEST', '1'), item('HAND', '1'),
+                       item('MAIN_HAND', '9', item_id='7'), item('OFF_HAND', '9', item_id='7'),
+                       item('BACKUP_MAIN', '2'))
+        self.assertEqual(family_counts(gear, self.PAIRS), {'1': [5, 3], '2': [0, 2]})
+
+    def test_one_bar_stays_one_bar(self):
+        from player_build import family_counts
+        gear = gear_of(item('HEAD', '9'), item('CHEST', '1'), item('MAIN_HAND', '1'))
+        self.assertEqual(family_counts(gear, self.PAIRS), {'1': [4, None]})
+
+    def test_one_version_keeps_its_own_id(self):
+        from player_build import family_counts
+        gear = gear_of(item('HEAD', '9'), item('CHEST', '9'), item('HAND', '2'))
+        self.assertEqual(family_counts(gear, self.PAIRS), {'9': [2, None], '2': [1, None]})
+        self.assertEqual(family_counts({}, self.PAIRS), {})
+
+    def test_the_gear_rows_of_both_versions_show_the_pair(self):
+        # Slivers of the Null Arca: 772 perfected, 767 normal
+        gear = gear_of(item('HEAD', '772'), item('CHEST', '772'), item('HAND', '767'),
+                       item('WAIST', '767'), item('LEGS', '767'), item('FEET', '5'))
+        got = rows(gear)
+        for slot in ('HEAD', 'CHEST', 'HAND', 'WAIST', 'LEGS'):
+            self.assertEqual(got[slot]['pieces'], [5, None], slot)
+        self.assertEqual(got['FEET']['pieces'], [1, None])
+        self.assertEqual(got['HEAD']['set_id'], '772')  # each row keeps its own set
+
+
 class TestParserAcceptsEmptyEffectLists(unittest.TestCase):
 
     LINE = ('100,PLAYER_INFO,7,[],[],[[HEAD,95044,T,16,ARMOR_DIVINES,LEGENDARY,270,MAGICKA,'
