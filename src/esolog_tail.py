@@ -533,10 +533,6 @@ class CombatEncounter:
         # Proc-set effects by the unit that sourced them this fight, for the
         # build-issue rule on a set that never fires (build_issues)
         self.proc_effects: Dict[str, Set[str]] = defaultdict(set)
-        # The set-buff ids each unit was the source of this fight: a set's
-        # own id of a Major or Minor buff, which says where a caster's share
-        # of the buff came from (set_text, issue #79)
-        self.set_buffs_given: Dict[str, Set[str]] = defaultdict(set)
         # Champion Point star procs this fight: star name -> {holder's
         # record id: procs}, for the rule on a second holder (build_issues)
         self.star_procs: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -923,10 +919,6 @@ class CombatEncounter:
         """A proc set's effect was sourced by a unit this fight (build_issues)."""
         self.proc_effects[source_unit_id].add(ability_id)
 
-    def note_set_buff(self, source_unit_id: str, ability_id: str):
-        """A set's own id of a buff was sourced by a unit this fight (set_text)."""
-        self.set_buffs_given[source_unit_id].add(ability_id)
-
     def note_star_proc(self, star: str, source_unit_id: str):
         """A Champion Point star of *source_unit_id*'s procced on a player
         this fight: one GAINED of its effect per player it helped
@@ -1101,9 +1093,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Whose copy of a group buff set's buff each player had, for the
         # rule on a second copy (build_issues.GroupBuffCredit)
         self.group_buff_credit = GroupBuffCredit()
-        # The sets' own ids of the Major and Minor buffs they give, whose
-        # casters each fight notes (set_text, issue #79)
-        self._set_buff_ids = set_text.buff_ids()
+        # Who had a set's own id of a Major or Minor buff up, and when:
+        # the set behind a caster's share of the buff's row (set_text,
+        # issue #79)
+        self.set_buff_recorder = set_text.SetBuffRecorder()
         # What the log names that the bundled game data does not know, and
         # the session's game version against the data's (data_staleness,
         # issue #173): sent to the listeners as it changes
@@ -1272,6 +1265,7 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.group_buff_credit.forget_unit(entry.fields[0], entry.timestamp)
+                self.set_buff_recorder.forget_unit(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     # A player who left: off the list from the next fight
                     # (presence.py)
@@ -1841,6 +1835,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self.effect_tracker.zone_changed(entry.timestamp)
             self.pen_crit_tracker.zone_changed(entry.timestamp)
             self.group_buff_credit.zone_changed(entry.timestamp)
+            self.set_buff_recorder.zone_changed(entry.timestamp)
             self._dummy_seen = False
             self._enemy_last_hit.clear()
             self._engaged_at_end = frozenset()
@@ -2315,6 +2310,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # field)
         self.opener.reset(casts.line_time(entry.original_line), new_session=True)
         self.buff_timeline_recorder.reset()
+        self.set_buff_recorder.reset()
         self.effect_tracker.reset()
         self.pen_crit_tracker.reset()
         self.death_recap_recorder.reset()
@@ -2819,6 +2815,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     # write FADED for a corpse's (see effect_rules)
                     self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
                     self.pen_crit_tracker.forget_unit(dying_unit_id, entry.timestamp)
+                    self.set_buff_recorder.forget_unit(dying_unit_id, entry.timestamp)
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -3091,12 +3088,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.current_encounter.note_proc(
                     self.current_encounter.record_id(source_unit_id), ability_id)
 
-            # A set's own id of a Major or Minor buff, sourced by its
-            # wearer: the set behind their share of the buff's row (set_text)
-            if (effect_type == "GAINED" and ability_id in self._set_buff_ids
-                    and extracted is not None and self.current_encounter):
-                self.current_encounter.note_set_buff(
-                    self.current_encounter.record_id(source_unit_id), ability_id)
+            # A set's own id of a Major or Minor buff, with its caster: the
+            # set behind their share of the buff's row (set_text)
+            if extracted is not None:
+                self.set_buff_recorder.record(effect_type, ability_id, source_unit_id,
+                                              target_unit_id, entry.timestamp)
 
             # A group buff set's buff, credited to one wearer per player at
             # a time, and a Champion Point star's proc: the build-issue
@@ -3472,6 +3468,12 @@ class ESOLogAnalyzer(ListenerMixin):
             # Not before the end: this fight's intervals are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.buff_timeline_recorder.prune_before(enc.start_time)
+        # The sets' own buff ids each player had up on anyone in the fight,
+        # under the player's record (set_text); pruned as the timeline is
+        set_buffs_given: dict[str, set[str]] = defaultdict(set)
+        for unit_id, ids in self.set_buff_recorder.given_in(enc.start_time, enc.end_time).items():
+            set_buffs_given[enc.record_id(unit_id)] |= ids
+        self.set_buff_recorder.prune_before(enc.start_time)
 
         # Boss name: prefer most damaged hostile, fall back to highest health
         if enc.most_damaged_hostile and enc.most_damaged_hostile.name:
@@ -3583,10 +3585,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 'class_lines': player.get_class_skill_lines(),
                 # The Class Mastery passives: listed, or seen firing
                 'masteries': player.masteries(),
-                # The sets' own buff ids the player gave this fight, for the
-                # 'from <set>' beside a caster in a strip row's summary
-                # (set_text.sets_behind); [] for most players
-                'set_buffs': sorted(enc.set_buffs_given.get(player.unit_id, ()), key=int),
+                # The sets' own buff ids the player had up on anyone in the
+                # fight, for the 'from <set>' beside a caster in a strip
+                # row's summary (set_text.sets_behind); [] for most players
+                'set_buffs': sorted(set_buffs_given.get(player.unit_id, ()), key=int),
                 'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
                 'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
                 'front_bar_slots': [dict(s) for s in player.front_bar_slots],

@@ -119,6 +119,53 @@ class TestActiveLines(unittest.TestCase):
                             perfected)
 
 
+class TestSetBuffRecorder(unittest.TestCase):
+    """Who had a set's own buff id up, and when (review of #220)."""
+
+    def _recorder(self):
+        return set_text.SetBuffRecorder(ids={"66902", "135923"})
+
+    def test_a_buff_counts_in_every_window_it_was_up_in(self):
+        rec = self._recorder()
+        rec.record("GAINED", "66902", "7", "8", 1000)
+        rec.record("FADED", "66902", "7", "8", 5000)
+        self.assertEqual(rec.given_in(4000, 9000), {"7": {"66902"}})
+        self.assertEqual(rec.given_in(0, 1000), {"7": {"66902"}})
+        self.assertEqual(rec.given_in(6000, 9000), {})
+        self.assertEqual(rec.given_in(0, 900), {})
+
+    def test_an_open_buff_runs_on(self):
+        rec = self._recorder()
+        rec.record("UPDATED", "135923", "7", "*", 1000)  # never seen gained
+        self.assertEqual(rec.given_in(50000, 60000), {"7": {"135923"}})
+        rec.forget_unit("*", 2000)                       # the receiver is gone
+        self.assertEqual(rec.given_in(50000, 60000), {})
+        self.assertEqual(rec.given_in(1500, 1600), {"7": {"135923"}})
+
+    def test_every_caster_of_a_shared_buff_and_no_unknown_one(self):
+        rec = self._recorder()
+        rec.record("GAINED", "66902", "7", "8", 1000)
+        rec.record("UPDATED", "66902", "9", "8", 2000)   # another wearer refreshes it
+        rec.record("FADED", "66902", "0", "8", 3000)
+        self.assertEqual(rec.given_in(0, 9000), {"7": {"66902"}, "9": {"66902"}})
+        rec.record("GAINED", "66902", "0", "10", 4000)   # no caster named
+        rec.record("FADED", "66902", "0", "10", 5000)
+        self.assertEqual(rec.given_in(3500, 9000), {})
+
+    def test_other_ids_a_zone_change_pruning_and_a_reset(self):
+        rec = self._recorder()
+        rec.record("GAINED", "93109", "7", "8", 1000)    # the buff's own id, not the set's
+        self.assertEqual(rec.given_in(0, 9000), {})
+        rec.record("GAINED", "66902", "7", "8", 1000)
+        rec.zone_changed(2000)
+        self.assertEqual(rec.given_in(3000, 9000), {})
+        rec.prune_before(2500)
+        self.assertEqual(rec.given_in(0, 9000), {})
+        rec.record("GAINED", "66902", "7", "8", 10000)
+        rec.reset()
+        self.assertEqual(rec.given_in(0, 99000), {})
+
+
 class TestSetsBehind(unittest.TestCase):
 
     def test_the_sets_whose_id_of_the_rows_buff_a_caster_gave(self):

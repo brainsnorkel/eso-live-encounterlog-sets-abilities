@@ -49,23 +49,6 @@ class TestSummarise(unittest.TestCase):
         self.assertEqual(summarise([], 0)["uptime_pct"], 0)
 
 
-class TestSetsBehindACaster(unittest.TestCase):
-    """Issue #79: a caster's line names the set their share came from."""
-
-    def test_a_caster_with_a_set_has_it_on_their_line(self):
-        s = summarise([_iv(0, 30, "@a", "@tank"), _iv(20, 50, "@b", "@tank")], 100_000,
-                      sets={"@a": ["Spell Power Cure"], "@b": [], "@gone": ["Olorime"]})
-        self.assertEqual(s["sources"], [
-            {"name": "@a", "uptime_pct": 30, "sole_pct": 20, "spans": 1,
-             "sets": ["Spell Power Cure"]},
-            {"name": "@b", "uptime_pct": 30, "sole_pct": 20, "spans": 1}])
-
-    def test_without_sets_the_lines_are_as_they_were(self):
-        s = summarise([_iv(0, 30, "@a", "@tank")], 100_000, sets=None)
-        self.assertEqual(s["sources"], [{"name": "@a", "uptime_pct": 30, "sole_pct": 30,
-                                         "spans": 1}])
-
-
 class TestMatrix(unittest.TestCase):
 
     def test_only_with_several_casters_and_receivers(self):

@@ -71,6 +71,20 @@ class TestTimelineStrip(unittest.TestCase):
         self.strip.set_timeline(_sample_timeline())
         self.assertNotIn("· from", self.strip.summary_html("Major Force"))
 
+    def test_rows_sharing_a_name_join_their_ids(self):
+        """Review of #220: a member back on another character has two rows
+        with one handle, and the log's unnamed players are all 'anon'; the
+        strip joins their intervals by name, so their ids are joined too."""
+        from gui.timeline_strip import given_by_caster
+        players = [{"name": "@back", "set_buffs": ["66902"]},
+                   {"name": "@back", "set_buffs": ["154830"]},
+                   {"name": "anon", "set_buffs": []},
+                   {"name": "anon", "set_buffs": ["135923"]},
+                   {"name": "@none"}]
+        self.assertEqual(given_by_caster(players),
+                         {"@back": ["66902", "154830"], "anon": ["135923"]})
+        self.assertEqual(given_by_caster(None), {})
+
     def test_hide_names_leaves_the_set_as_it_is(self):
         from gui.name_mask import NameMask
         mask = NameMask(active=True)

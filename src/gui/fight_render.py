@@ -1329,11 +1329,13 @@ def set_hovers(p) -> dict:
     versions has two names, and two links): {'fragment', 'split', 'lines'}.
 
     'lines' are the set's bonus lines the player has (set_text.active_lines):
-    those at or below the pieces active on their better bar, counted from
-    the entry's gear rows as the checks count them (player_build), a set
-    worn in both versions at the two counts added and its perfected line at
-    the perfected pieces of that bar. A fight saved before the entries had
-    gear rows falls back to the gear line's own counts. 'split' is '5
+    those at or below the pieces active on their better bar, which the
+    entry's gear rows carry as the Pcs column shows them (a set worn in both
+    versions at the two counts added, player_build.family_counts), and its
+    perfected line at the perfected pieces of that bar, counted from the
+    rows (piece_counts). With the two bars level, the better bar is the one
+    with more perfected pieces. An entry without gear rows falls back to
+    the gear line's own counts. 'split' is '5
     pieces: 2 perfected, 3 normal' for a set worn in both versions.
 
     'fragment' goes on the link's address: the pane keeps one hover per
@@ -1342,19 +1344,23 @@ def set_hovers(p) -> dict:
     scribed skill's does for its scripts. ESO-Hub ignores it, and the same
     address is built for the gear line, the Build tab's gear rows and a
     finding's set link, so all three show the same hover (issue #79)."""
-    counts = piece_counts(gear_of_rows(p.get("gear"))) if p.get("gear") else {}
+    rows = p.get("gear") or []
+    active = {str(row.get("set")): row["pieces"] for row in rows if row.get("pieces")}
+    own = None  # each version's own pieces, counted only for a set worn in both
     out = {}
     for item in set_entries(p):
         mixed = "perfected" in item
         names = [item["name"]] + ([item["perfected_name"]] if mixed else [])
         ids = [str(gear_set_db.get_set_id_by_name(name) or "") for name in names]
-        worn = [counts[i] for i in ids if i in counts]
-        if worn:
-            front = sum(c[0] for c in worn)
-            back = sum(c[1] or 0 for c in worn)
-            bar = 0 if front >= back else 1
-            pieces = max(front, back)
-            perfected = (counts.get(ids[1]) or [0, None])[bar] or 0 if mixed else None
+        bars = next((active[name] for name in names if name in active), None)
+        if bars:
+            front, back = bars[0] or 0, bars[1] or 0
+            pieces, perfected = max(front, back), None
+            if mixed:
+                own = piece_counts(gear_of_rows(rows)) if own is None else own
+                theirs = own.get(ids[1]) or [0, None]
+                bar = 0 if (front, theirs[0] or 0) >= (back, theirs[1] or 0) else 1
+                perfected = theirs[bar] or 0
         else:
             pieces = item["count"]
             perfected = item["perfected"] if mixed else None

@@ -442,6 +442,30 @@ class TestPopup(IssuesGuiTestCase):
         finally:
             popup.close()
 
+    def test_tab_in_the_popup_shows_a_set_links_text(self):
+        """Review of #220: the popup opens from the keyboard and Tab moves
+        between its links, so a set's hover text has to come from Tab too."""
+        from gui.build_issues_popup import BuildIssuesPopup
+        from gui.fight_render import issues_html, set_tooltips
+        player = {'all_sets': [(3, 'Deadly Strike')], 'build_issues': [
+            {'rule': 'x', 'title': 'A finding', 'detail': 'Why.', 'set': 'Deadly Strike',
+             'skill': 'Elemental Drain'}]}
+        pages = {'Deadly Strike': 'https://eso-hub.com/en/sets/deadly-strike'}.get
+        skills = {'Elemental Drain': 'https://eso-hub.com/en/skills/x'}.get
+        popup = BuildIssuesPopup(issues_html(player, set_links=pages, links=skills),
+                                 tooltips=set_tooltips(player, pages))
+        try:
+            popup.show()
+            popup.label.setFocus()
+            _app.processEvents()
+            popup.label.focusNextPrevChild(True)
+            self.assertEqual(popup.label.selectedText(), 'Deadly Strike on ESO-Hub')
+            self.assertIn('<b>Deadly Strike</b><br>(2) ', popup.current_tooltip)
+            popup.label.focusNextPrevChild(True)   # the skill's link: no text
+            self.assertEqual(popup.current_tooltip, '')
+        finally:
+            popup.close()
+
     def test_popup_stays_on_screen(self):
         from PySide6.QtCore import QPoint
 

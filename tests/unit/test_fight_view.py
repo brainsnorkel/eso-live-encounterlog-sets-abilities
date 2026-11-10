@@ -306,6 +306,23 @@ class TestBarRendering(FightViewTestCase):
         self.assertEqual(hover['fragment'], 'pieces-5-1-on-6-5')
         self.assertIn((5, 'Adds 129 Weapon and Spell Damage'), hover['lines'])
 
+    def test_two_level_bars_read_the_one_with_more_perfected_pieces(self):
+        """Review of #220: four perfected Roaring Opportunist on the body, a
+        normal one-hander on one bar and a perfected one on the other. Both
+        bars have five; the bar with five perfected has the perfected line,
+        whichever bar it is."""
+        from gear_set_data import SET_NAME_TO_ID
+        from gui.fight_render import set_hovers
+        normal = str(SET_NAME_TO_ID['Roaring Opportunist'])
+        perfected = str(SET_NAME_TO_ID['Perfected Roaring Opportunist'])
+        body = {slot: (perfected, '1') for slot in ('HEAD', 'CHEST', 'HAND', 'WAIST')}
+        for front, back in ((normal, perfected), (perfected, normal)):
+            player = self._wearer({**body, 'MAIN_HAND': (front, '5'), 'OFF_HAND': ('0', '6'),
+                                   'BACKUP_MAIN': (back, '5'), 'BACKUP_OFF': ('0', '6')})
+            hover = set_hovers(player)['Roaring Opportunist']
+            self.assertTrue(hover['fragment'].endswith('-on-5-5'), (front, back, hover))
+            self.assertEqual(sum(1 for n, _t in hover['lines'] if n == 5), 2)
+
     def test_a_set_without_bundled_text_keeps_its_plain_link(self):
         from gui.fight_render import anchor_tooltips, render_html, set_hovers
         entry = _entry_with_bars()
@@ -1172,12 +1189,16 @@ class TestHoverTextFromTheKeyboard(FightViewTestCase):
     """Issue #79: Tab onto a link shows the link's hover text, which only
     the mouse could bring up."""
 
+    @staticmethod
+    def _page():
+        return ('<p>x <a href="https://eso-hub.com/en/sets/a#pieces-on-5">Set A</a> y '
+                '<a href="esolog:build/1">@player</a> z '
+                '<a href="https://eso-hub.com/en/sets/b">Set B</a></p>')
+
     def _view(self):
         from gui.fight_view import FightView
         view = FightView()
-        view.setHtml('<p>x <a href="https://eso-hub.com/en/sets/a#pieces-on-5">Set A</a> y '
-                     '<a href="esolog:build/1">@player</a> z '
-                     '<a href="https://eso-hub.com/en/sets/b">Set B</a></p>')
+        view.setHtml(self._page())
         view.set_tooltips({'https://eso-hub.com/en/sets/a#pieces-on-5': 'TIP A',
                            'https://eso-hub.com/en/sets/b': 'TIP B'})
         view.resize(400, 200)
@@ -1197,6 +1218,42 @@ class TestHoverTextFromTheKeyboard(FightViewTestCase):
             self.assertEqual(view.current_tooltip, 'TIP B')
             view.focusNextPrevChild(False)  # Shift+Tab, back to the one without
             self.assertEqual(view.current_tooltip, '')
+        finally:
+            view.close()
+
+    def test_the_text_goes_when_the_page_changes_or_scrolls_or_the_focus_leaves(self):
+        """Review of #220: Qt keeps a tooltip up through key presses, so the
+        text Tab brought up would stay over a page that moved under it."""
+        from PySide6.QtWidgets import QAbstractSlider
+        view = self._view()
+        try:
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP A')
+            view.setHtml('<p>another page</p>')
+            self.assertEqual(view.current_tooltip, '')
+            view.setHtml(self._page())
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP A')
+            view.verticalScrollBar().actionTriggered.emit(QAbstractSlider.SliderPageStepAdd)
+            self.assertEqual(view.current_tooltip, '')
+            view.focusNextPrevChild(True)
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP B')
+            view.clearFocus()
+            self.assertEqual(view.current_tooltip, '')
+        finally:
+            view.close()
+
+    def test_a_mouse_hover_is_left_to_qt(self):
+        """Only the text Tab brought up is taken down here: a hovered link's
+        text is Qt's to take down."""
+        from PySide6.QtCore import QUrl
+        view = self._view()
+        try:
+            view.highlighted.emit(QUrl('https://eso-hub.com/en/sets/b'))
+            self.assertEqual(view.current_tooltip, 'TIP B')
+            view.setHtml(self._page())
+            self.assertEqual(view.current_tooltip, 'TIP B')
         finally:
             view.close()
 

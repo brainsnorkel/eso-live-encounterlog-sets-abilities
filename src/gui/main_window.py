@@ -67,7 +67,7 @@ from gui.player_window import (
 )
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
-from gui.timeline_strip import TimelineStrip, strip_timeline
+from gui.timeline_strip import TimelineStrip, given_by_caster, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members, log_size
@@ -1535,10 +1535,8 @@ class MainWindow(QMainWindow):
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
             armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names,
-            # The sets' own buff ids each player gave, by the name the
-            # strip's intervals know a caster by (set_text, issue #79)
-            given={str(p.get('name')): p['set_buffs'] for p in entry.players
-                   if p.get('set_buffs')})
+            # The sets' own buff ids each player had up (set_text, issue #79)
+            given=given_by_caster(entry.players))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each

@@ -173,6 +173,19 @@ MATRIX_MAX_TARGETS = 12
 CLICK_HINT = "<br><i>Click for who applied it and who had it</i>"
 
 
+def given_by_caster(players) -> dict:
+    """caster -> the set-buff ids they had up in the fight, from a fight
+    entry's players ('set_buffs'), by the name the strip's intervals know a
+    caster by. Two rows can share a name (a member back on another
+    character, players the log does not name), and the strip joins them as
+    one caster, so their ids are joined too."""
+    given = {}
+    for p in players or ():
+        if p.get("set_buffs"):
+            given.setdefault(str(p.get("name")), set()).update(p["set_buffs"])
+    return {caster: sorted(ids, key=int) for caster, ids in given.items()}
+
+
 def _tick_step_ms(duration_ms: int) -> int:
     if duration_ms <= 2 * 60_000:
         return 10_000
@@ -636,10 +649,7 @@ class TimelineStrip(QWidget):
         intervals = self._intervals(effect)
         duration = self._timeline["duration_ms"]
         stacks = bool(info.get("stacks_max"))
-        # The set behind each caster's share, for a row named after a buff
-        # a set gives under an id of its own (set_text, issue #79)
-        behind = {caster: sets_behind(effect, ids) for caster, ids in self._given.items()}
-        summary = summarise(intervals, duration, stacks=stacks, sets=behind)
+        summary = summarise(intervals, duration, stacks=stacks)
         scope = info.get("scope", "")
         head = [f"<b>{escape(self._full_label(effect, info))}</b>"
                 + (f" ({escape(scope)})" if scope else ""),
@@ -665,14 +675,18 @@ class TimelineStrip(QWidget):
                 rows.append(f"<tr><td><i>+{len(lines) - SUMMARY_LIST_LIMIT} more</i></td></tr>")
             return "<table cellspacing=0 cellpadding=1>" + "".join(rows) + "</table>"
 
-        # 'from <set>' after a caster's figures: plain text, for the pop-up
-        # opens no links, and the set is a link on the caster's gear line
-        with_sets = any(line.get("sets") for line in summary["sources"])
+        # 'from <set>' after a caster's figures, for a row named after a
+        # buff a set gives under an id of its own (set_text, issue #79):
+        # plain text, for the pop-up opens no links, and the set is a link
+        # on the caster's gear line
+        behind = {line["name"]: sets_behind(effect, self._given.get(line["name"], ()))
+                  for line in summary["sources"]}
+        with_sets = any(behind.values())
 
         def applied(line):
             cells = [f"{line['uptime_pct']}%", f"{line['sole_pct']}%", line["spans"]]
             if with_sets:
-                sets = line.get("sets")
+                sets = behind.get(line["name"])
                 cells.append(FROM_SETS.format(sets=escape(" / ".join(sets))) if sets else "")
             return cells
 
