@@ -102,13 +102,20 @@ def _hits_text(first_s, last_s, fight_s: float) -> str:
     """Where the first and last hits sat in the fight: 'first hit 1.0 s
     after the pull, last hit 1:31 into the 1:40 fight'. A hit from the
     moments before the fight's start counts in it (waiting_hits, issue
-    #162) and reads as before the pull."""
+    #162) and reads as before the pull; one of the group fighting on after
+    its end counts too, and reads as after the fight ended ('just after'
+    under a twentieth of a second, which a tenth would show as 0.0 s)."""
     first_s, last_s = float(first_s or 0), float(last_s or 0)
+    fight_s = float(fight_s or 0)
     first = (f"first hit {_offset_text(-first_s)} before the pull" if first_s < 0
              else f"first hit {_offset_text(first_s)} after the pull")
     if last_s < 0:
         return (f"{first}, last hit {_offset_text(-last_s)} before it, "
                 f"in the {_fmt_duration(fight_s)} fight")
+    if 0 < fight_s < last_s:
+        after = last_s - fight_s
+        when = "just" if after < 0.05 else _offset_text(after)
+        return f"{first}, last hit {when} after the {_fmt_duration(fight_s)} fight ended"
     return f"{first}, last hit {_offset_text(last_s)} into the {_fmt_duration(fight_s)} fight"
 
 

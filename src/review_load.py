@@ -151,4 +151,6 @@ def replay_log(analyzer, path: Path, member: str | None = None,
             entry = analyzer.log_parser.parse_line(line)
             if entry is not None:
                 analyzer.process_log_entry(entry)
+    # A fight the group was still fighting on as the log ended
+    analyzer.finish()
     return shown, list(analyzer.fight_history.fights)
