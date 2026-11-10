@@ -200,6 +200,13 @@ class TestBarRendering(FightViewTestCase):
             self.assertIn(f'<b>{name}</b><br>5 pieces: 3 perfected, 2 normal<br>', tips[href])
             self.assertIn('Click to open on ESO-Hub', tips[href])
             self.assertNotIn('#pieces', tips[href])  # the address as the browser shows it
+        # The Build tab's gear rows and a finding's set link carry the plain
+        # addresses and read these tips: both keep a hover, without the split
+        for href, name in (('https://eso-hub.com/en/sets/p-slivers',
+                            'Perfected Slivers of the Null Arca'),
+                           ('https://eso-hub.com/en/sets/slivers', 'Slivers of the Null Arca')):
+            self.assertIn(f'<b>{name}</b><br><span', tips[href])
+            self.assertIn('Click to open on ESO-Hub', tips[href])
         # A set in one version reads as it did, with no fragment
         self.assertIn('2x <a href="https://eso-hub.com/en/sets/aeries-cry"', html)
         self.assertNotIn('pieces', tips['https://eso-hub.com/en/sets/aeries-cry'])
@@ -224,6 +231,14 @@ class TestBarRendering(FightViewTestCase):
                       tips['https://eso-hub.com/en/sets/slivers#pieces-3-2'])
         self.assertIn('5 pieces: 1 perfected, 4 normal',
                       tips['https://eso-hub.com/en/sets/slivers#pieces-1-4'])
+
+    def test_the_two_lines_under_the_bars_are_one_size(self):
+        from gui import fight_render
+        entry = _entry_with_bars()
+        entry.players[0]['all_sets'] = [(5, 'Deadly Strike')]
+        html = fight_render.render_html(entry, detailed=True, base_pt=10.0)
+        self.assertEqual(fight_render.UNDER_BARS_SCALE, 0.85)
+        self.assertIn("<span style='font-size:8.50pt'>5x Deadly Strike</span>", html)
 
     def test_a_joined_pair_moves_up_to_where_its_total_puts_it(self):
         from gui.fight_render import set_entries

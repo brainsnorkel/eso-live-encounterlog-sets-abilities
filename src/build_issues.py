@@ -275,6 +275,7 @@ from player_build import (
     family_counts,
     food_buff,
     food_table,
+    perfected_pairs,
     piece_counts,
     weapon_type,
     weapon_type_label,
@@ -752,6 +753,16 @@ def _has_restoration_staff(gear: Dict[str, List[str]],
     return any(len(gear.get(main_slot, ())) > 1
                and weapon_type(gear[main_slot][1], types) == "restoration_staff"
                for _bar, main_slot, _off_slot in BARS)
+
+
+def _proc_family(set_id) -> str:
+    """The id a proc set's session record is kept under: the normal
+    version's, whichever version is worn. worn_proc_sets names the set by
+    what is worn (five perfected pieces are the perfected id, four with a
+    normal one the normal id), so a record kept by that id would start
+    again when a player swaps one piece, and a set that fired in the first
+    fight would read as never firing in the second."""
+    return perfected_pairs().get(str(set_id), str(set_id))
 
 
 def worn_proc_sets(gear: Dict[str, List[str]]) -> Set[str]:
@@ -1281,13 +1292,13 @@ class BuildIssueTracker:
         them that *fired* (the player sourced the set's effect)."""
         fired = set(fired)
         for set_id in worn:
-            records = self._fights.setdefault((player_key, str(set_id)), {})
+            records = self._fights.setdefault((player_key, _proc_family(set_id)), {})
             records[int(fight_start_ms)] = (float(duration_s) >= LONG_FIGHT_S, set_id in fired)
 
     def long_fights(self, player_key: str, set_id: str) -> Tuple[int, bool]:
         """(fights of a minute or more the set was worn in, whether it ever
-        fired) this session."""
-        records = self._fights.get((player_key, str(set_id)), {})
+        fired) this session, in either version of the set (_proc_family)."""
+        records = self._fights.get((player_key, _proc_family(set_id)), {})
         return (sum(1 for long, _fired in records.values() if long),
                 any(fired for _long, fired in records.values()))
 

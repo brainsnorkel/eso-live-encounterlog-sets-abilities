@@ -140,10 +140,10 @@ SCRIPTS_UNKNOWN = "scripts not in log"
 # A set worn in both versions, on the gear line and in its hover (#215)
 SET_PERFECTED_PART = "{perfected} perfected"
 SET_SPLIT = "{count} pieces: {perfected} perfected, {normal} normal"
-# The gear line under the build card, as a share of the pane's text size:
-# the scribed-skill line's, above it (#215; it was 0.75, the smallest text
-# in the app)
-GEAR_LINE_SCALE = 0.85
+# The two lines under a player's bars, the scribed skills and the gear, as
+# a share of the pane's text size (#215: the gear line was 0.75, the
+# smallest text in the app)
+UNDER_BARS_SCALE = 0.85
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
@@ -1134,8 +1134,11 @@ def _link_note(href: str, e) -> str:
             f"Click to open on ESO-Hub<br>{e(href.split('#', 1)[0])}</span>")
 
 
-def _link_tip(name: str, href: str, e) -> str:
-    return f"<b>{e(name)}</b>{_link_note(href, e)}"
+def _link_tip(name: str, href: str, e, note: str = "") -> str:
+    """Hover text of a link to an ESO-Hub page: the name, a *note* under it
+    when there is one, and where the link leads."""
+    extra = f"<br>{e(note)}" if note else ""
+    return f"<b>{e(name)}</b>{extra}{_link_note(href, e)}"
 
 
 def _scribed_tip(slot: dict, href: str, e) -> str:
@@ -1227,10 +1230,19 @@ def set_entries(p) -> List[dict]:
     ties staying as they came (issue #215).
 
     The entry reads '5x Slivers of the Null Arca (2 perfected)': the total
-    first, since the first thing asked of a gear line is whether the set is
-    complete, and it is the shortest of the forms tried, the one that kept a
-    four-set line on one line of a 560 px pane. The name opens the normal
-    version's ESO-Hub page and '2 perfected' the perfected one's."""
+    first, since the first thing asked of a gear line is how much of the
+    set is there, and it is the shortest of the forms tried, the one that
+    kept a four-set line on one line of a 560 px pane. The name opens the
+    normal version's ESO-Hub page and '2 perfected' the perfected one's.
+
+    The counts are the engine's, as the line has always had them: every
+    piece worn, the weapons of both bars among them. So a set with a
+    weapon on each bar reads one or two above what either bar has active,
+    which the Build tab's Pcs column gives per bar. Over 411 split logs
+    that is 88 of the 242 builds wearing a set in both versions and 747 of
+    the 19,952 wearing one; the line reads five or more where neither bar
+    has five in 1 and 12 of them (issue #219 asks which count the line
+    should show)."""
     merged, order = {}, []
     for count, name, _flag in _set_items(p):
         key = normal_set_name(name)
@@ -1300,11 +1312,18 @@ def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dic
                                      f"{_link_note(url, e)}")
         if set_links:
             for item in set_entries(p):
+                mixed = "perfected" in item
                 for name, href in _set_hrefs(item, set_links):
                     if href and href not in tips:
-                        split = (f"<br>{e(set_split_text(item))}"
-                                 if "perfected" in item else "")
-                        tips[href] = f"<b>{e(name)}</b>{split}{_link_note(href, e)}"
+                        tips[href] = _link_tip(name, href, e,
+                                               set_split_text(item) if mixed else "")
+                    # The Build tab's gear rows and a finding's set link
+                    # carry the page's plain address, and read these same
+                    # tips (player_window): they keep the name and the
+                    # target, as for a set worn in one version
+                    plain = href.split("#", 1)[0] if href else None
+                    if mixed and plain and plain not in tips:
+                        tips[plain] = _link_tip(name, plain, e)
     return tips
 
 
@@ -1589,10 +1608,10 @@ def render_html(entry, detailed: bool, dark: bool = False,
             # Under the bars: what each scribed skill was scribed with
             scribed = _scribed_html(p, icons, links, script_links, e, detail_color)
             if scribed:
-                lines.append(f"<span style='font-size:{base_pt * 0.85:.2f}pt'>"
+                lines.append(f"<span style='font-size:{base_pt * UNDER_BARS_SCALE:.2f}pt'>"
                              f"{scribed}</span>")
             # The bars sit in a framed build card; the gear list follows it in
-            # a smaller font (GEAR_LINE_SCALE). padding-top:0 pulls the card up under the
+            # a smaller font (UNDER_BARS_SCALE). padding-top:0 pulls the card up under the
             # player's name row
             card = ""
             if lines:
@@ -1607,7 +1626,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
             # the 5pc/mythic summary used elsewhere. Set names link to their
             # ESO-Hub pages
             sets = _sets_html(p, set_links, e, detail_color)
-            gear = (f"<span style='font-size:{base_pt * GEAR_LINE_SCALE:.2f}pt'>"
+            gear = (f"<span style='font-size:{base_pt * UNDER_BARS_SCALE:.2f}pt'>"
                     f"{sets}</span>"
                     if sets else "")
             detail = (f"<tr><td></td><td colspan='5' "

@@ -428,6 +428,28 @@ class TestPerfectedAndNormalTogether(unittest.TestCase):
         self.assertEqual(self._one_bar(gear),
                          ['Perfected Lucent Echoes is complete only on the front bar (5/3 pieces)'])
 
+    def test_a_swapped_piece_keeps_the_proc_sets_session_record(self):
+        """Five perfected pieces are the perfected id and four with a normal
+        one the normal id: the session's record is one, so a set that fired
+        before the swap has fired."""
+        tracker = build_issues.BuildIssueTracker()
+        tracker.note_fight('@x', 1000, 90.0, {'497'}, {'497'})   # fired, all perfected
+        tracker.note_fight('@x', 200000, 90.0, {'496'}, set())   # one ring swapped: silent
+        self.assertEqual(tracker.long_fights('@x', '496'), (2, True))
+        self.assertEqual(tracker.long_fights('@x', '497'), (2, True))
+        self.assertEqual(tracker.findings('@x', {'496'}), [])
+        # Never fired in either version: both fights count, under the worn name
+        tracker.note_fight('@y', 1000, 90.0, {'497'}, set())
+        tracker.note_fight('@y', 200000, 90.0, {'496'}, set())
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'496'})],
+                         ['Roaring Opportunist never fired in 2 fights of a minute or more'])
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'497'})],
+                         ['Perfected Roaring Opportunist never fired in 2 fights of a minute '
+                          'or more'])
+        # A set with one version keeps its own record
+        tracker.note_fight('@y', 1000, 90.0, {'232'}, {'232'})
+        self.assertEqual(tracker.long_fights('@y', '232'), (1, True))
+
     def test_a_proc_set_in_both_versions_is_worn(self):
         gear = _body('mmmmmmm', set_id='0')
         for slot in ARMOR[:3]:

@@ -201,6 +201,7 @@ from player_build import (
     OFF_HAND_OF,
     _load_json,
     armor_weight,
+    family_counts,
     is_two_handed,
     perfected_pairs,
     piece_counts,
@@ -431,24 +432,15 @@ def table_sets_worn(gear: dict[str, list[str]], table: dict[str, dict],
     (tests/unit/test_pen_crit.py holds the table to that shape). *pairs* is
     {perfected id: normal id}, the bundled set data's by default."""
     pairs = perfected_pairs() if pairs is None else pairs
-    perfected_of = {normal: perfected for perfected, normal in pairs.items()}
-    counts = piece_counts(gear)
-    out = []
-    for set_id, pieces in sorted(counts.items(),
-                                 key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0):
-        entry = table.get(str(set_id))
-        if not entry:
-            continue
-        twin = pairs.get(set_id) or perfected_of.get(set_id)
-        if twin in counts and str(twin) in table:
-            if set_id in pairs:
-                continue  # read under the normal version's id
-            other = counts[twin]
-            pieces = [pieces[FRONT] + other[FRONT],
-                      None if pieces[BACK] is None and other[BACK] is None
-                      else (pieces[BACK] or 0) + (other[BACK] or 0)]
-        out.append((set_id, entry, pieces))
-    return out
+    # family_counts over the pairs the table lists on both sides: a
+    # perfected set listed alone is no pair here, and keeps its own count
+    listed = {perfected: normal for perfected, normal in pairs.items()
+              if perfected in table and normal in table}
+    counts = family_counts(gear, listed)
+    return [(set_id, table[set_id], pieces)
+            for set_id, pieces in sorted(counts.items(),
+                                         key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0)
+            if table.get(set_id)]
 
 
 def _divines(gear: dict[str, list[str]]) -> int:
