@@ -3067,7 +3067,12 @@ class ESOLogAnalyzer(ListenerMixin):
         self.fight_deaths += 1
 
         late_entry = self._late_death_fight_entry(entry.timestamp)
-        fight_start = (self._last_fight_start if late_entry is not None
+        # Later, while the group may still fight on: the fight's should
+        # combat begin again and carry it on (waiting_hits), which keeps its
+        # time dead; else the next fight's line drops it, as before
+        between = (late_entry is None and self.current_encounter.finalized
+                   and self._last_fight_entry is not None and self.waiting_hits.fighting_on)
+        fight_start = (self._last_fight_start if late_entry is not None or between
                        else self.current_encounter.start_time)
         recap = self.death_recap_recorder.note_death(
             dying_unit_id, entry.timestamp, entry.fields)
@@ -3084,7 +3089,7 @@ class ESOLogAnalyzer(ListenerMixin):
             pull_outcome.note_late_death(late_entry.pull, player.unit_id, bool(player.is_local))
             self.current_encounter.time_dead.late_death(player.unit_id, entry.timestamp)
             self._notify('on_fight_updated', late_entry)
-        elif not self.current_encounter.finalized:
+        elif between or not self.current_encounter.finalized:
             self.current_encounter.time_dead.died(player.unit_id, entry.timestamp)
 
     def _late_death_fight_entry(self, timestamp_ms: int) -> Optional[FightHistoryEntry]:

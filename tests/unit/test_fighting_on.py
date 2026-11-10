@@ -385,6 +385,35 @@ class TestJoined(unittest.TestCase):
                  *fight(24000, 30000, hit(25000, 2, 10000, _unit(71, 0, 50000)))]
         self.assertEqual(len(Engine().feed(lines).fights), 2)
 
+    def test_a_death_between_the_lines(self):
+        """The review of #217: @third dies 3 s after END_COMBAT while the
+        group fights on, and stays down; carried on, the pull counts them
+        dead at its end (a wipe, two of three), dead from their death, and
+        the recap at its time into the fight."""
+        lines = self._parts(hit(22000, 2, 100000, boss(700000)), player_died(23000, 3),
+                            hit(25000, 2, 100000, boss(600000)))
+        lines[-1:-1] = [player_died(35000, 2)]
+        (entry,) = Engine().feed(lines).fights
+        self.assertEqual(entry.deaths, 2)
+        self.assertEqual(sorted(entry.pull['dead_at_end']), ['2', '3'])
+        self.assertEqual(entry.pull['outcome'], 'wipe')
+        self.assertEqual(entry.time_dead.get('3'), 17000)
+        self.assertEqual([recap['time_ms'] for recap in entry.death_recaps], [13000, 25000])
+
+    def test_a_player_up_again_between_the_lines(self):
+        """Dead as the fight ended and up again 3 s later, before the
+        group's combat carries the fight on: dead until then, not from the
+        fight's end to their next line in it."""
+        lines = [*fight(10000, 20000, hit(11000, 2, 100000, boss(900000)),
+                        hit(19000, 3, 100000, boss(800000)), player_died(19500, 3)),
+                 hit(22000, 2, 100000, boss(700000)), heal(23000, 1, 3, 9000),
+                 hit(25000, 2, 100000, boss(600000)),
+                 '27000,BEGIN_COMBAT', *builds(27001, 1, 2, 3),
+                 hit(30000, 3, 100000, boss(500000)), '40000,END_COMBAT']
+        (entry,) = Engine().feed(lines).fights
+        self.assertEqual(entry.time_dead.get('3'), 3500)
+        self.assertEqual(entry.pull['dead_at_end'], [])
+
     def test_an_enemy_dead_by_the_line(self):
         engine = Engine().feed(self._parts(hit(22000, 2, 100000, boss(700000)),
                                            hit(25000, 3, 700000, boss(0)),

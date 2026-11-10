@@ -67,7 +67,10 @@ health above 0 closes it, at least
 REVIVE_MIN_MS after the death, since the lines of the killing blow carry
 the corpse's 0. END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
-two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+two (COMBAT_RESUME_MS), or carried on while the group fought on
+(waiting_hits), reopens them, but for a player up again between the
+lines, dead until then; a death between the lines is the fight's too
+should it carry on. A span starts at the fight's start
 at the earliest: a player who fell before the pull is dead from it, not
 from the fall. Deaths the log never saw (the others' after the logging
 player released) are missing from the counts, so time dead, read from
@@ -232,6 +235,16 @@ class TimeDead:
         began = self.carried.pop(key, None)
         if began is not None:
             self.carried_ms[key] = self.carried_ms.get(key, 0) + max(0, timestamp_ms - began)
+        # Dead as the fight ended and up again before it carries on (the
+        # group fighting on, waiting_hits): dead until now, not reopened
+        # by resume
+        if self._paused_carried.pop(key, None) is not None:
+            self.carried_ms[key] = (self.carried_ms.get(key, 0)
+                                    + max(0, timestamp_ms - self._ended))
+        paused = self._paused.get(key)
+        if paused is not None and timestamp_ms - paused[1] >= REVIVE_MIN_MS:
+            del self._paused[key]
+            self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - self._ended)
         span = self.since.get(key)
         if span is None or timestamp_ms - span[1] < REVIVE_MIN_MS:
             return
@@ -239,11 +252,13 @@ class TimeDead:
         self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - span[0])
 
     def watching(self) -> bool:
-        """Whether any player is down (a line with their health matters)."""
-        return bool(self.since or self.carried)
+        """Whether any player is down (a line with their health matters),
+        the fight's dead at its end included, should it carry on."""
+        return bool(self.since or self.carried or self._paused or self._paused_carried)
 
     def watches(self, key: str) -> bool:
-        return key in self.since or key in self.carried
+        return (key in self.since or key in self.carried or key in self._paused
+                or key in self._paused_carried)
 
     def end(self, timestamp_ms: int) -> None:
         """END_COMBAT: close every span; those were dead at the end."""
@@ -266,8 +281,10 @@ class TimeDead:
         self._paused.setdefault(key, (timestamp_ms, timestamp_ms))
 
     def resume(self) -> None:
-        """The fight carries on (COMBAT_RESUME_MS): reopen, from the end,
-        the spans the end closed."""
+        """The fight carries on (COMBAT_RESUME_MS, or the group fighting
+        on): reopen, from the end, the spans the end closed, but for the
+        players up again since (alive). A death since is in since already
+        (the engine's died, between the lines)."""
         for key, (_start, death) in self._paused.items():
             self.since[key] = (self._ended, death)
         for key, began in self._paused_carried.items():
