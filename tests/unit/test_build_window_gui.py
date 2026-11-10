@@ -466,8 +466,8 @@ class TestBuildRender(BuildGuiTestCase):
         html = self._html(self._with(skill_lines=['Animal Companions', 'Herald of the Tome'],
                                      class_lines=['Animal Companions', 'Green Balance',
                                                   "Winter's Embrace"]))
-        self.assertIn('+Herald', html)
-        self.assertNotIn('Animal/Herald', html)
+        self.assertIn('+Herald of the Tome', html)
+        self.assertNotIn('Animal Companions', html)
         stock = self._html(self._with(skill_lines=['Animal Companions'],
                                       class_lines=['Animal Companions']))
         self.assertNotIn('Animal', stock)

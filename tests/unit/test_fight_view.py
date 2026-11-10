@@ -170,23 +170,27 @@ class TestBarRendering(FightViewTestCase):
         # A stock Nightblade: the class abbreviation says it all
         self.assertNotIn('Assassination/Shadow/Siphoning', html)
         self.assertNotIn('Assassination / Shadow', html)  # and never inside the card
-        # Subclassed: only the borrowed line appears beside the class, its
-        # first word after a plus sign
+        # Subclassed: only the borrowed line appears beside the class, by its
+        # full name after a plus sign
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Herald of the Tome']
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links)
         name_row = html[html.index('@tester'):html.index('<td align=')]
         self.assertIn("NB</span> <span style='color:", name_row)
-        self.assertIn('+Herald</span>', name_row)
+        self.assertIn('+Herald of the Tome</span>', name_row)
         self.assertNotIn('Assassination', name_row)
         self.assertEqual(html.count('+Herald'), 1)
-        # Compact view carries it too, and the plain copy keeps full names
-        self.assertIn('+Herald', render_html(entry, detailed=False))
+        # Compact view and the plain copy carry it the same way
+        self.assertIn('+Herald of the Tome', render_html(entry, detailed=False))
         from gui.fight_render import render_plain_text
         self.assertIn('+Herald of the Tome', render_plain_text(entry))
         self.assertNotIn('Assassination/Shadow', render_plain_text(entry))
-        # Two borrowed lines, each with its own plus sign
+        # Two borrowed lines, each with its own plus sign; an apostrophe in
+        # a name is kept, and escaped in the HTML
         entry.players[0]['skill_lines'] = ['Assassination', 'Animal Companions', 'Herald of the Tome']
-        self.assertIn('+Animal +Herald', render_html(entry, detailed=False))
+        self.assertIn('+Animal Companions +Herald of the Tome', render_html(entry, detailed=False))
+        entry.players[0]['skill_lines'] = ['Assassination', "Dawn's Wrath", 'Shadow']
+        self.assertIn('+Dawn&#x27;s Wrath</span>', render_html(entry, detailed=False))
+        self.assertIn("+Dawn's Wrath", render_plain_text(entry))
         # Class Mastery passives: a pure-class build names them after the
         # class, with a colon ("NB: An Eye for Exploitation, Above and Beyond")
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Siphoning']
@@ -199,7 +203,7 @@ class TestBarRendering(FightViewTestCase):
         # A subclassed build cannot have one; the borrowed lines win the place
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Herald of the Tome']
         self.assertIn('NB</span>', render_html(entry, detailed=False))
-        self.assertIn('+Herald', render_html(entry, detailed=False))
+        self.assertIn('+Herald of the Tome', render_html(entry, detailed=False))
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Siphoning']
         entry.players[0]['masteries'] = []
         self.assertNotIn('NB:', render_html(entry, detailed=False))
@@ -207,7 +211,7 @@ class TestBarRendering(FightViewTestCase):
         # Unknown class: every line is shown rather than hidden
         entry.players[0]['class_lines'] = []
         entry.players[0]['skill_lines'] = ["Dawn's Wrath", 'Bone Tyrant']
-        self.assertIn('Dawn/Bone', render_html(entry, detailed=False))
+        self.assertIn('Dawn&#x27;s Wrath/Bone Tyrant', render_html(entry, detailed=False))
 
     def test_a_lone_mastery_is_followed_by_a_question_mark(self):
         """Issue #149: one Class Mastery shown means a second is likely."""

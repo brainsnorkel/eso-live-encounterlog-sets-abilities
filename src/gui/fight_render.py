@@ -576,7 +576,7 @@ def mastery_tooltips(entry) -> dict:
 def fight_issues_tooltip(entry, names=None) -> str:
     """Hover text for the fight list's (i) (issue #147): each player of the
     fight with a possible build issue, in the fight pane's row order, by
-    name and the class text their row shows ('NB +Herald'), with the
+    name and the class text their row shows ('NB +Herald of the Tome'), with the
     findings' titles under it; then where the rules are. '' for a fight
     without one. *names*: the Hide names mask (gui.name_mask), whose text
     form is all a tooltip can show."""
@@ -903,13 +903,6 @@ def _resources_html(p) -> str:
     return " · ".join(parts)
 
 
-def _short_line(name) -> str:
-    """'Herald of the Tome' -> 'Herald', "Dawn's Wrath" -> 'Dawn'."""
-    words = str(name).split()
-    first = words[0] if words else str(name)
-    return first[:-2] if first.endswith("'s") else first
-
-
 def _borrowed_lines(p) -> Tuple[List[str], bool]:
     """(the skill lines to show, whether they are borrowed): the lines
     outside the player's own class, or every line when the class is unknown.
@@ -923,12 +916,14 @@ def _borrowed_lines(p) -> Tuple[List[str], bool]:
     return [line for line in lines if line not in class_lines], True
 
 
-def _subclass_text(p, short: bool = True) -> str:
-    """'+Herald +Animal' for a build that borrows Herald of the Tome and
-    Animal Companions from other classes (full names with short=False);
-    'Dawn/Bone' for a player whose class is unknown; '' for a stock build."""
+def _subclass_text(p) -> str:
+    """'+Herald of the Tome +Animal Companions' for a build that borrows
+    those lines from other classes; "Dawn's Wrath/Bone Tyrant" for a player
+    whose class is unknown; '' for a stock build. Each line keeps its full
+    name: a first word alone ('Dark', 'Green', 'Living') did not say which
+    line it was."""
     lines, borrowed = _borrowed_lines(p)
-    names = [_short_line(line) if short else str(line) for line in lines]
+    names = [str(line) for line in lines]
     if borrowed:
         return " ".join(f"+{name}" for name in names)
     return "/".join(names)
@@ -1415,7 +1410,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
                               f"{f' ×{died}' if died > 1 else ''}</span>")
         class_abbr = e(_join(p.get("class_abbr", "")))
         # Beside the class: the lines a build borrows from another class
-        # ("NB +Herald"), or a pure-class build's Class Mastery passives
+        # ("NB +Herald of the Tome"), or a pure-class build's Class Mastery passives
         # ("NB: An Eye for Exploitation, Above and Beyond"); nothing for a
         # stock build without them. One mastery alone is followed by a
         # muted '?' whose hover gives the likely second (issue #149)
@@ -1637,7 +1632,7 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
                      + (f" · {ult}" if ult else "") + (f" · {dead}" if dead else "")
                      + (f" · {note}" if note else ""))
-        skill_lines = _subclass_text(p, short=False)
+        skill_lines = _subclass_text(p)
         if skill_lines:
             lines.append(f"      {skill_lines}")
         masteries = _mastery_text(p)
