@@ -382,6 +382,83 @@ class TestMinorSlayer(unittest.TestCase):
         self.assertEqual(_findings({}, players=12, veteran=True), [])
 
 
+class TestPerfectedAndNormalTogether(unittest.TestCase):
+    """Issue #215: the checks count a set's perfected and normal pieces
+    together, as the game does (player_build.family_counts)."""
+
+    def test_minor_slayer_from_two_perfected_pieces_and_a_normal_one(self):
+        judged = {'players': 12, 'veteran': True}
+        gear = TestMinorSlayer._deadly(None)
+        gear['HAND'][6] = gear['WAIST'][6] = '590'  # Perfected Sul-Xan's Torment
+        self.assertEqual(_rules(_findings(gear, **judged)), ['no-minor-slayer'])
+        gear['LEGS'][6] = '586'  # and one normal piece: three of the set
+        self.assertEqual(_findings(gear, **judged), [])
+        self.assertEqual(build_issues.slayer_sets(gear), {'586'})
+
+    def _lucent(self):
+        # Three normal body pieces of Lucent Echoes (768), nothing else of it
+        gear = _body('mmmmmmm', set_id='0')
+        for slot in ARMOR[:3]:
+            gear[slot] = _item(slot, 'm', set_id='768')
+        gear['MAIN_HAND'] = _weapon('MAIN_HAND')
+        gear['OFF_HAND'] = _weapon('OFF_HAND', enchant='POISONED_WEAPON')
+        gear['BACKUP_MAIN'] = _weapon('BACKUP_MAIN', 'bow')
+        return gear
+
+    def _one_bar(self, gear):
+        return [f['title'] for f in _findings(gear, role='H') if f['rule'] == 'set-on-one-bar']
+
+    def test_a_group_set_the_perfected_weapons_complete_on_one_bar(self):
+        gear = self._lucent()
+        self.assertEqual(self._one_bar(gear), [])  # three pieces: not the set
+        gear['MAIN_HAND'][6] = gear['OFF_HAND'][6] = '771'  # Perfected Lucent Echoes daggers
+        self.assertEqual(self._one_bar(gear),
+                         ['Lucent Echoes is complete only on the front bar (5/3 pieces)'])
+
+    def test_a_group_set_the_perfected_rings_complete_on_both_bars(self):
+        gear = self._lucent()
+        gear['RING1'][6] = gear['RING2'][6] = '771'
+        self.assertEqual(self._one_bar(gear), [])
+
+    def test_a_group_set_in_one_version_reads_as_before(self):
+        gear = self._lucent()
+        for slot in ARMOR[:3]:
+            gear[slot][6] = '771'
+        gear['MAIN_HAND'][6] = gear['OFF_HAND'][6] = '771'
+        self.assertEqual(self._one_bar(gear),
+                         ['Perfected Lucent Echoes is complete only on the front bar (5/3 pieces)'])
+
+    def test_a_swapped_piece_keeps_the_proc_sets_session_record(self):
+        """Five perfected pieces are the perfected id and four with a normal
+        one the normal id: the session's record is one, so a set that fired
+        before the swap has fired."""
+        tracker = build_issues.BuildIssueTracker()
+        tracker.note_fight('@x', 1000, 90.0, {'497'}, {'497'})   # fired, all perfected
+        tracker.note_fight('@x', 200000, 90.0, {'496'}, set())   # one ring swapped: silent
+        self.assertEqual(tracker.long_fights('@x', '496'), (2, True))
+        self.assertEqual(tracker.long_fights('@x', '497'), (2, True))
+        self.assertEqual(tracker.findings('@x', {'496'}), [])
+        # Never fired in either version: both fights count, under the worn name
+        tracker.note_fight('@y', 1000, 90.0, {'497'}, set())
+        tracker.note_fight('@y', 200000, 90.0, {'496'}, set())
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'496'})],
+                         ['Roaring Opportunist never fired in 2 fights of a minute or more'])
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'497'})],
+                         ['Perfected Roaring Opportunist never fired in 2 fights of a minute '
+                          'or more'])
+        # A set with one version keeps its own record
+        tracker.note_fight('@y', 1000, 90.0, {'232'}, {'232'})
+        self.assertEqual(tracker.long_fights('@y', '232'), (1, True))
+
+    def test_a_proc_set_in_both_versions_is_worn(self):
+        gear = _body('mmmmmmm', set_id='0')
+        for slot in ARMOR[:3]:
+            gear[slot] = _item(slot, 'm', set_id='496')  # Roaring Opportunist
+        self.assertEqual(worn_proc_sets(gear), set())
+        gear['RING1'][6] = gear['RING2'][6] = '497'  # and two perfected rings
+        self.assertEqual(worn_proc_sets(gear), {'496'})
+
+
 class TestTankWithoutTaunt(unittest.TestCase):
     """A tank with no taunt or pull: the role, tank gear, a small share of
     the damage and no healer sign, and nothing on the bars that holds a

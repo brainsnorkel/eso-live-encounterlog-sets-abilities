@@ -152,7 +152,7 @@ class TestBarRendering(FightViewTestCase):
         self.assertNotIn('<a href="esolog:set', html)
         self.assertIn('5x <a href="https://eso-hub.com/en/sets/perfected-arms-of-relequen"', html)
         self.assertNotIn('<i>', html)               # set list is not italic
-        self.assertIn("<span style='font-size:6.75pt'>5x", html)  # 25% below the 9pt base
+        self.assertIn("<span style='font-size:7.65pt'>5x", html)  # 0.85 of the 9pt base
         tips = anchor_tooltips(entry, links=_links, set_links=set_links)
         self.assertIn('Deadly Strike', tips['https://eso-hub.com/en/sets/deadly-strike'])
         self.assertIn('eso-hub.com', tips['https://eso-hub.com/en/sets/deadly-strike'])
@@ -161,6 +161,96 @@ class TestBarRendering(FightViewTestCase):
                       render_html(entry, detailed=True))
         self.assertIn('5x Deadly Strike, 2x Unknown Set, 5x Arms of Relequen',
                       render_plain_text(entry))
+
+    def test_a_set_worn_in_both_versions_is_one_gear_entry(self):
+        """Issue #215: perfected and normal pieces as one entry, placed by
+        the total, each part a link to its own page, the split in both
+        hovers and in the copied text."""
+        from gui.fight_render import (anchor_tooltips, render_html, render_plain_text,
+                                      set_entries)
+        entry = _entry_with_bars()
+        player = entry.players[0]
+        player['all_sets'] = [(5, 'Perfected Whorl of the Depths'),
+                              (3, 'Perfected Slivers of the Null Arca'), (2, "Aerie's Cry"),
+                              (2, 'Slivers of the Null Arca'), (1, 'Oakensoul Ring')]
+        pages = {'Perfected Slivers of the Null Arca': 'https://eso-hub.com/en/sets/p-slivers',
+                 'Slivers of the Null Arca': 'https://eso-hub.com/en/sets/slivers',
+                 "Aerie's Cry": 'https://eso-hub.com/en/sets/aeries-cry'}
+        self.assertEqual(set_entries(player), [
+            {'count': 5, 'name': 'Perfected Whorl of the Depths'},
+            {'count': 5, 'name': 'Slivers of the Null Arca', 'perfected': 3,
+             'perfected_name': 'Perfected Slivers of the Null Arca'},
+            {'count': 2, 'name': "Aerie's Cry"}, {'count': 1, 'name': 'Oakensoul Ring'}])
+        text = ("5x Perfected Whorl of the Depths, 5x Slivers of the Null Arca (3 perfected), "
+                "2x Aerie's Cry, 1x Oakensoul Ring")
+        self.assertIn(text, render_plain_text(entry))
+        html = render_html(entry, detailed=True, icons=self._cache(), links=_links,
+                           set_links=pages.get)
+        self.assertIn('5x <a href="https://eso-hub.com/en/sets/slivers#pieces-3-2" '
+                      'style="text-decoration:none;color:#3c4043">Slivers of the Null Arca</a>'
+                      '&nbsp;(<a href="https://eso-hub.com/en/sets/p-slivers#pieces-3-2" '
+                      'style="text-decoration:none;color:#3c4043">3&nbsp;perfected</a>)',
+                      html)
+        self.assertEqual(html.count('Slivers of the Null Arca'), 1)
+        tips = anchor_tooltips(entry, links=_links, set_links=pages.get)
+        for href, name in (('https://eso-hub.com/en/sets/p-slivers#pieces-3-2',
+                            'Perfected Slivers of the Null Arca'),
+                           ('https://eso-hub.com/en/sets/slivers#pieces-3-2',
+                            'Slivers of the Null Arca')):
+            self.assertIn(f'<b>{name}</b><br>5 pieces: 3 perfected, 2 normal<br>', tips[href])
+            self.assertIn('Click to open on ESO-Hub', tips[href])
+            self.assertNotIn('#pieces', tips[href])  # the address as the browser shows it
+        # The Build tab's gear rows and a finding's set link carry the plain
+        # addresses and read these tips: both keep a hover, without the split
+        for href, name in (('https://eso-hub.com/en/sets/p-slivers',
+                            'Perfected Slivers of the Null Arca'),
+                           ('https://eso-hub.com/en/sets/slivers', 'Slivers of the Null Arca')):
+            self.assertIn(f'<b>{name}</b><br><span', tips[href])
+            self.assertIn('Click to open on ESO-Hub', tips[href])
+        # A set in one version reads as it did, with no fragment
+        self.assertIn('2x <a href="https://eso-hub.com/en/sets/aeries-cry"', html)
+        self.assertNotIn('pieces', tips['https://eso-hub.com/en/sets/aeries-cry'])
+        # Without a set map the entry is plain text
+        self.assertIn('5x Slivers of the Null Arca&nbsp;(3&nbsp;perfected)',
+                      render_html(entry, detailed=True))
+
+    def test_two_players_with_one_set_split_differently_keep_their_own_hover(self):
+        from gui.fight_render import anchor_tooltips
+        import copy
+        entry = _entry_with_bars()
+        entry.players[0]['all_sets'] = [(3, 'Perfected Slivers of the Null Arca'),
+                                        (2, 'Slivers of the Null Arca')]
+        other = copy.deepcopy(entry.players[0])
+        other['all_sets'] = [(4, 'Slivers of the Null Arca'),
+                             (1, 'Perfected Slivers of the Null Arca')]
+        entry.players.append(other)
+        pages = {'Perfected Slivers of the Null Arca': 'https://eso-hub.com/en/sets/p-slivers',
+                 'Slivers of the Null Arca': 'https://eso-hub.com/en/sets/slivers'}
+        tips = anchor_tooltips(entry, set_links=pages.get)
+        self.assertIn('5 pieces: 3 perfected, 2 normal',
+                      tips['https://eso-hub.com/en/sets/slivers#pieces-3-2'])
+        self.assertIn('5 pieces: 1 perfected, 4 normal',
+                      tips['https://eso-hub.com/en/sets/slivers#pieces-1-4'])
+
+    def test_the_two_lines_under_the_bars_are_one_size(self):
+        from gui import fight_render
+        entry = _entry_with_bars()
+        entry.players[0]['all_sets'] = [(5, 'Deadly Strike')]
+        html = fight_render.render_html(entry, detailed=True, base_pt=10.0)
+        self.assertEqual(fight_render.UNDER_BARS_SCALE, 0.85)
+        self.assertIn("<span style='font-size:8.50pt'>5x Deadly Strike</span>", html)
+
+    def test_a_joined_pair_moves_up_to_where_its_total_puts_it(self):
+        from gui.fight_render import set_entries
+        player = {'all_sets': [(4, 'Order\'s Wrath'), (3, 'Perfected Bahsei\'s Mania'),
+                               (3, 'Bahsei\'s Mania'), (1, 'Kjalnar\'s Nightmare')]}
+        self.assertEqual([(item['count'], item['name']) for item in set_entries(player)],
+                         [(6, "Bahsei's Mania"), (4, "Order's Wrath"),
+                          (1, "Kjalnar's Nightmare")])
+        # The compact triples of an entry without all_sets read the same way
+        self.assertEqual(set_entries({'sets': [(5, 'Deadly Strike', False)]}),
+                         [{'count': 5, 'name': 'Deadly Strike'}])
+        self.assertEqual(set_entries({'all_sets': 'as text'}), [])
 
     def test_name_row_bolds_major_resource_and_shows_subclass_lines(self):
         from gui.fight_render import render_html

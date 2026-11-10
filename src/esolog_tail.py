@@ -37,7 +37,8 @@ from build_issues import (
     structural_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
-from player_build import build_fields, food_ids, has_restoration_staff, is_mythic_set, is_two_handed, race_name
+from player_build import (build_fields, food_ids, has_restoration_staff, is_mythic_set,
+                          is_two_handed, normal_set_name, race_name)
 from misfortunes import run_misfortunes
 from presence import present_share
 import casts
@@ -169,13 +170,9 @@ def has_five_piece_bonus(set_name: str) -> bool:
     """Check if a set has a 5-piece bonus using the gear set database."""
     from gear_set_data import SET_INFO
 
-    # Remove "Perfected " prefix for lookup
-    clean_name = set_name
-    if clean_name.startswith('Perfected '):
-        clean_name = clean_name[10:]
-
-    # Look up set type from the pre-generated database
-    info = SET_INFO.get(clean_name) or SET_INFO.get(set_name)
+    # The set type from the pre-generated database, a perfected set looked
+    # up as its normal version
+    info = SET_INFO.get(normal_set_name(set_name)) or SET_INFO.get(set_name)
     if info:
         return info.get('set_type', '') not in NO_FIVE_PIECE_SET_TYPES
 
