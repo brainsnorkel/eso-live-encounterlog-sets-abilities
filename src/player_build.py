@@ -418,6 +418,20 @@ def is_perfected_set(set_name: str) -> bool:
     return str(set_name or "").startswith(PERFECTED_PREFIX)
 
 
+def gear_of_rows(rows: Iterable[dict]) -> Dict[str, List[str]]:
+    """A gear dict for piece_counts and family_counts from a fight entry's
+    gear rows (gear_rows): each item with its slot, id, trait and set id in
+    their places of the log's item, which is all the counting reads. For a
+    reader that has the entry and not the log's own gear list."""
+    gear = {}
+    for row in rows or ():
+        slot = str(row.get("slot") or "")
+        if slot and slot not in POISON_SLOTS:
+            gear[slot] = [slot, str(row.get("item_id") or ""), "", "",
+                          str(row.get("trait") or ""), "", str(row.get("set_id") or "0")]
+    return gear
+
+
 def piece_counts(gear: Dict[str, List[str]]) -> Dict[str, List[Optional[int]]]:
     """set id -> [pieces active on the front bar, on the back bar].
 

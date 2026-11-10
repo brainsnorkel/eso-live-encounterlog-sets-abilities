@@ -785,6 +785,21 @@ class TestEngine(unittest.TestCase):
     def _players(self, entry):
         return {p['name']: p for p in entry.players}
 
+    def test_a_player_has_the_set_buff_ids_they_gave(self):
+        """Issue #79: the sets' own ids of the buffs a player was the source
+        of in the fight (set_text), for the 'from <set>' in a strip row's
+        summary. Spell Power Cure's Major Courage is 66902; 76667 is a proc
+        id the set-buff table does not hold."""
+        fight = _fight(10000, 30000, alkosh_fires=True)
+        fight[-1:-1] = [_gained(14000, 2, '66902'), _gained(15000, 2, '66902'),
+                        _gained(16000, 2, '135923')]
+        entries = _fights(_session(fight, _fight(40000, 60000)))
+        players = self._players(entries[0])
+        self.assertEqual(players['@alkosh']['set_buffs'], ['66902', '135923'])
+        self.assertEqual(players['@nirn']['set_buffs'], [])
+        # Per fight: the next one starts empty
+        self.assertEqual(self._players(entries[1])['@alkosh']['set_buffs'], [])
+
     def test_every_player_gets_the_key_and_the_structural_findings(self):
         entries = _fights(_session(_fight(10000, 30000)))
         self.assertEqual(len(entries), 1)

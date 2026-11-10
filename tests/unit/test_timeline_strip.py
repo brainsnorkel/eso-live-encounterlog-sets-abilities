@@ -52,6 +52,33 @@ class TestTimelineStrip(unittest.TestCase):
     def tearDown(self):
         self.strip.deleteLater()
 
+    def test_a_casters_set_is_named_in_the_rows_summary(self):
+        """Issue #79: 'from <set>' beside a caster who gave the row's buff
+        from a set: the set's own id of that buff, which they were the
+        source of in the fight (set_text.sets_behind)."""
+        # Saxhleel Champion's Major Force 154830, Spell Power Cure's Major
+        # Courage 66902: only the first is this row's buff
+        self.strip.set_timeline(_sample_timeline(),
+                                given={"@caster": ["154830", "66902"], "@nobody": ["154830"]})
+        html = self.strip.summary_html("Major Force")
+        self.assertIn("<td>@caster</td>", html)
+        self.assertIn("· from Saxhleel Champion", html)
+        self.assertEqual(html.count("· from"), 1)
+        self.assertNotIn("Spell Power Cure", html)
+        self.assertNotIn("<a ", html)  # the pop-up opens no links
+        # A row that is no buff of the table, and a fight with nothing given
+        self.assertNotIn("· from", self.strip.summary_html("Major Vulnerability"))
+        self.strip.set_timeline(_sample_timeline())
+        self.assertNotIn("· from", self.strip.summary_html("Major Force"))
+
+    def test_hide_names_leaves_the_set_as_it_is(self):
+        from gui.name_mask import NameMask
+        mask = NameMask(active=True)
+        self.strip.set_timeline(_sample_timeline(), names=mask, given={"@caster": ["154830"]})
+        html = self.strip.summary_html("Major Force")
+        self.assertNotIn("@caster", html)
+        self.assertIn("· from Saxhleel Champion", html)
+
     def test_hidden_without_data(self):
         self.assertFalse(self.strip.isVisibleTo(self.strip.parentWidget()
                                                 or self.strip))

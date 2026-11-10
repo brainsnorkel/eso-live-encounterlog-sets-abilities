@@ -8,11 +8,13 @@ and the build window shows the same HTML under its header.
 Like the timeline strip's SummaryPopup it is a Qt.Popup frame: it closes on
 a click elsewhere or Esc and deletes itself when closed, and nothing keeps
 a reference to it, Qt owning it through its parent. The ESO-Hub links in
-it open in the system browser.
+it open in the system browser, and a set's link shows on hover the lines
+of the set the player has (fight_render.set_tooltips, issue #79).
 """
 
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QToolTip, QVBoxLayout
 
 POPUP_WIDTH = 460  # wide enough for a rule's sentence or two per line
 
@@ -37,8 +39,11 @@ def place_popup(frame, pos: QPoint) -> None:
 
 class BuildIssuesPopup(QFrame):
 
-    def __init__(self, html: str, parent=None):
+    def __init__(self, html: str, parent=None, tooltips=None):
+        """*tooltips*: hover text per link address, as the fight pane's."""
         super().__init__(parent, Qt.Popup)
+        self._tooltips = dict(tooltips or {})
+        self.current_tooltip = ""  # the hover text last shown, for tests
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFrameShape(QFrame.StyledPanel)
         layout = QVBoxLayout(self)
@@ -49,7 +54,16 @@ class BuildIssuesPopup(QFrame):
         self.label.setFixedWidth(POPUP_WIDTH)
         self.label.setOpenExternalLinks(True)
         self.label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.label.linkHovered.connect(self._on_link_hovered)
         layout.addWidget(self.label)
+
+    def _on_link_hovered(self, link: str) -> None:
+        text = self._tooltips.get(link) if link else None
+        self.current_tooltip = text or ""
+        if text:
+            QToolTip.showText(QCursor.pos(), text, self.label)
+        else:
+            QToolTip.hideText()
 
     def show_at(self, pos: QPoint) -> None:
         """Show with the top-left corner at *pos* (the pointer), kept on

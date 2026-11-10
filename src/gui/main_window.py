@@ -53,6 +53,7 @@ from gui.fight_render import (
     EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
     SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    set_tooltips,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
     render_plain_text, split_tooltips, taken_tooltips,
@@ -1533,7 +1534,11 @@ class MainWindow(QMainWindow):
         names = self._names_for(entry)
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
-            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names)
+            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names,
+            # The sets' own buff ids each player gave, by the name the
+            # strip's intervals know a caster by (set_text, issue #79)
+            given={str(p.get('name')): p['set_buffs'] for p in entry.players
+                   if p.get('set_buffs')})
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
@@ -1695,7 +1700,8 @@ class MainWindow(QMainWindow):
         text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
-            popup = BuildIssuesPopup(text, self)
+            popup = BuildIssuesPopup(text, self, tooltips=set_tooltips(
+                player_for(entry, unit_id), esohub_set_url))
             link = self.fight_view.keyboard_link_rect()
             if link is not None:
                 popup.show_under(link)

@@ -302,7 +302,29 @@ class FightView(QTextBrowser):
         cursor = self.textCursor()
         self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
                           if cursor.hasSelection() else None)
+        if not self._own_step:
+            self._show_key_tip()
         return moved
+
+    def _show_key_tip(self) -> None:
+        """Design: Hover text from the keyboard. A link's hover text was the
+        mouse's alone: Qt reports a hovered link (highlighted) and nothing
+        for one Tab moves to, so a set's bonus lines, an ability's name
+        behind its icon or a death's cause could not be read without a
+        pointer. The reader's own Tab or Shift+Tab now shows the text of the
+        link it lands on, just under the link's line, where the pointer may
+        be anywhere; a link without text, or leaving the page, takes the
+        last one away. Not the step keeping_place takes to give a link its
+        focus back after a redraw: the page redraws on every live fight
+        update, and the text would come back each time (issue #79)."""
+        link = self._tab_link()
+        text = self._tooltips.get(link[0]) if link else None
+        self.current_tooltip = text or ""
+        if text:
+            rect = self.cursorRect(self._selection_start())
+            QToolTip.showText(self.viewport().mapToGlobal(rect.bottomLeft()), text, self)
+        else:
+            QToolTip.hideText()
 
     def mousePressEvent(self, event) -> None:
         # A click is not Tab: the link it selects is no link Tab reached

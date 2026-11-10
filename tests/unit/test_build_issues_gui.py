@@ -342,6 +342,14 @@ class TestPopup(IssuesGuiTestCase):
             self.assertIn(ISSUES_TITLE, text)
             for finding in FINDINGS:
                 self.assertIn(finding['title'].replace("'", '&#x27;'), text)
+            # Hovering a finding's set link shows the set's hover text, as
+            # the fight pane does (issue #79); leaving it takes it away
+            from ability_icons import esohub_set_url
+            popup.label.linkHovered.emit(esohub_set_url('Roar of Alkosh'))
+            self.assertIn('<b>Roar of Alkosh</b>', popup.current_tooltip)
+            self.assertIn('Click to open on ESO-Hub', popup.current_tooltip)
+            popup.label.linkHovered.emit('')
+            self.assertEqual(popup.current_tooltip, '')
             # Esc closes it, and Qt deletes it
             from PySide6.QtCore import Qt
             from PySide6.QtTest import QTest
@@ -416,6 +424,23 @@ class TestPopup(IssuesGuiTestCase):
             self.assertEqual(self._popups(), [])
         finally:
             win.close()
+
+    def test_a_worn_sets_link_shows_the_lines_the_player_has(self):
+        from gui.build_issues_popup import BuildIssuesPopup
+        from gui.fight_render import issues_html, set_tooltips
+        player = {'all_sets': [(3, 'Deadly Strike')], 'build_issues': [
+            {'rule': 'x', 'title': 'A finding', 'detail': 'Why.', 'set': 'Deadly Strike'}]}
+        pages = {'Deadly Strike': 'https://eso-hub.com/en/sets/deadly-strike'}.get
+        popup = BuildIssuesPopup(issues_html(player, set_links=pages),
+                                 tooltips=set_tooltips(player, pages))
+        try:
+            popup.label.linkHovered.emit('https://eso-hub.com/en/sets/deadly-strike#pieces-on-3')
+            self.assertIn('<b>Deadly Strike</b><br>(2) ', popup.current_tooltip)
+            self.assertIn('<br>(3) ', popup.current_tooltip)
+            self.assertNotIn('(5) ', popup.current_tooltip)
+            self.assertIn('Set text: UESP', popup.current_tooltip)
+        finally:
+            popup.close()
 
     def test_popup_stays_on_screen(self):
         from PySide6.QtCore import QPoint

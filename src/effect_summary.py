@@ -21,6 +21,11 @@ and the casters' lines each union back to the headline:
 
 An interval without a caster (an old saved fight, or a proc the log writes
 without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
+
+A caster's line can name the set their share of a buff came from (*sets*,
+issue #79): the row's own intervals carry the buff's id whatever gave it,
+so the set is read from the set's own id the caster was the source of in
+the fight (set_text has the measure).
 """
 
 from typing import Dict, List, Optional
@@ -63,10 +68,13 @@ def source_of(interval: dict) -> str:
 
 
 def summarise(intervals: List[dict], duration_ms: int,
-              stacks: bool = False) -> Dict[str, object]:
+              stacks: bool = False,
+              sets: Optional[Dict[str, List[str]]] = None) -> Dict[str, object]:
     """{'uptime_pct', 'sources': [...], 'targets': [...]} for one row.
 
-    sources: {'name', 'uptime_pct', 'sole_pct', 'spans'}, longest first.
+    sources: {'name', 'uptime_pct', 'sole_pct', 'spans'}, longest first,
+    with 'sets', the sets behind the caster's share, when *sets* (caster ->
+    set names for this row's buff) names any.
     targets: {'name', 'uptime_pct', 'spans'}, longest first, and for a
     stacking rule (*stacks*) 'max_stacks' and 'at_max_pct', the share of
     the fight the unit spent at its own peak."""
@@ -84,10 +92,13 @@ def summarise(intervals: List[dict], duration_ms: int,
     for name, own in by_source.items():
         others = [pair for other, ivs in by_source.items() if other != name
                   for pair in pairs(ivs)]
-        sources.append({"name": name,
-                        "uptime_pct": _pct(_union_ms(pairs(own)), duration_ms),
-                        "sole_pct": _pct(_sole_ms(pairs(own), others), duration_ms),
-                        "spans": len(own)})
+        line = {"name": name,
+                "uptime_pct": _pct(_union_ms(pairs(own)), duration_ms),
+                "sole_pct": _pct(_sole_ms(pairs(own), others), duration_ms),
+                "spans": len(own)}
+        if sets and sets.get(name):
+            line["sets"] = list(sets[name])
+        sources.append(line)
     targets = []
     for name, own in by_target.items():
         line = {"name": name,

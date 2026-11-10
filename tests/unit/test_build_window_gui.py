@@ -571,7 +571,7 @@ class TestBuildRender(BuildGuiTestCase):
         cells = [cell.split('>', 1)[1] for cell in row.split('<td')[2:]]
         self.assertEqual(len(cells), len(COLUMNS) - 1)
         self.assertEqual(cells[0], 'Medium</td>')
-        self.assertTrue(cells[1].startswith(f'<a href="{SET_URLS["Slimecraw"]}"'))
+        self.assertTrue(cells[1].startswith(f'<a href="{SET_URLS["Slimecraw"]}#pieces-on-1"'))
         self.assertEqual(cells[2], '1</td>')                      # pieces
         self.assertEqual(cells[3], f"<span style='color:{gold}'>Legendary</span></td>")
         self.assertEqual(cells[4], 'Divines</td>')
@@ -744,11 +744,18 @@ class TestBuildRender(BuildGuiTestCase):
         from gui.fight_render import anchor_tooltips
         entry = _entry()
         url = SET_URLS['Perfected Whorl of the Depths']
-        self.assertIn(f'<a href="{url}" style="text-decoration:none;color:#202124">'
+        # The row's link is the player's own, as on their gear line: five
+        # active pieces, so the hover has every line of the set (issue #79)
+        self.assertIn(f'<a href="{url}#pieces-on-5" style="text-decoration:none;color:#202124">'
                       f'Perfected Whorl of the Depths</a>', self._html(entry))
-        tip = anchor_tooltips(entry, set_links=SET_URLS.get)[url]
-        self.assertIn('<b>Perfected Whorl of the Depths</b>', tip)
-        self.assertIn(url, tip)
+        tips = anchor_tooltips(entry, set_links=SET_URLS.get)
+        tip = tips[url + '#pieces-on-5']
+        self.assertIn('<b>Perfected Whorl of the Depths</b><br>(2) ', tip)
+        self.assertEqual(tip.count('<br>(5) '), 2)  # the set's line and the perfected one
+        self.assertIn('Click to open on ESO-Hub · Set text: UESP', tip)
+        # The plain address keeps the name and the target
+        self.assertIn('<b>Perfected Whorl of the Depths</b>', tips[url])
+        self.assertIn(url, tips[url])
 
     def test_set_without_a_page_is_plain_text(self):
         row = _row_of(self._html(), 'Chest')
@@ -1251,10 +1258,11 @@ class TestBuildWindow(BuildGuiTestCase):
             view = win._player_window.view(BUILD_TAB)
             view.highlighted.emit(QUrl('esolog:ability/12345'))
             self.assertIn('Damage Ability', view.current_tooltip)
-            url = esohub_set_url('Slimecraw')
+            url = esohub_set_url('Slimecraw') + '#pieces-on-1'
             self.assertIn(f'href="{url}"', view.toHtml())
             view.highlighted.emit(QUrl(url))
             self.assertIn('Slimecraw', view.current_tooltip)
+            self.assertIn('(1) Adds 657 Critical Chance', view.current_tooltip)  # issue #79
             self.assertIn('Click to open on ESO-Hub', view.current_tooltip)
         finally:
             win.close()
