@@ -145,6 +145,26 @@ class TestGraphWidget(unittest.TestCase):
         graph.hover_second = 4
         graph.grab()  # the crosshair and markers paint without error
 
+    def test_the_fights_end_marked_when_the_group_fought_on(self):
+        """The group fought on after the fight's end (issue #162, part 2):
+        the chart runs to the last hit, the fight's end marked."""
+        from PySide6.QtGui import QColor
+        from gui.dps_graph import Curve, DpsGraph
+        graph = DpsGraph()
+        graph.resize(800, 400)
+        player = Curve('1', '@player1', QColor('#2a78d6'), smoothed_dps(SERIES, 1, 14.0))
+        graph.set_curves([player], 14.0, fight_end_s=10.0)
+        self.assertEqual(graph._fight_end_s, 10.0)
+        self.assertEqual(graph.second_at(graph._plot_rect().right()), 14)
+        self.assertIn('the fight ended at', graph.accessibleDescription())
+        graph.grab()  # the dashed line and its label paint without error
+        # A fight that ends the chart has no mark
+        graph.set_curves([player], 10.0, fight_end_s=10.0)
+        self.assertIsNone(graph._fight_end_s)
+        self.assertNotIn('the fight ended at', graph.accessibleDescription())
+        graph.set_curves([player], 10.0)
+        self.assertIsNone(graph._fight_end_s)
+
     def test_empty_graph_says_so(self):
         from gui.dps_graph import DpsGraph
         graph = DpsGraph()
@@ -632,6 +652,28 @@ class TestGraphTab(unittest.TestCase):
             group = next(c for c in dialog.graph.curves if c.key == 'Group')
             self.assertEqual(group.points[-1][0], entry.duration_s)
             dialog.graph.grab()
+        finally:
+            win.close()
+
+    def test_a_fight_the_group_fought_on_after(self):
+        """The engine's entry of a fight the group fought on after (issue
+        #162, part 2): the chart runs to the group's last hit, 3 s past the
+        10 s fight, and marks the fight's end."""
+        from PySide6.QtCore import QUrl
+        from tests.unit.test_fighting_on import FOUGHT_ON, LATER_BOSS
+        from tests.unit.test_hits_before_line import TRASH_FIGHT, Engine
+        entry = Engine().feed([*TRASH_FIGHT, *FOUGHT_ON, *LATER_BOSS]).fights[0]
+        win = self._main_window()
+        try:
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
+            graph = win.dps_panel.graph
+            self.assertAlmostEqual(graph._duration_s, 13.0)
+            self.assertAlmostEqual(graph._fight_end_s, 10.0)
+            group = next(c for c in graph.curves if c.key == 'Group')
+            self.assertAlmostEqual(group.points[-1][0], 13.0)
+            graph.grab()
         finally:
             win.close()
 
