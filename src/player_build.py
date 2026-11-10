@@ -402,6 +402,22 @@ def _set_id(item: List[str]) -> str:
     return "" if set_id in ("0", "", "nan") else set_id
 
 
+PERFECTED_PREFIX = "Perfected "
+
+
+def normal_set_name(set_name: str) -> str:
+    """The normal version's name of a perfected set ('Perfected Slivers of
+    the Null Arca' gives 'Slivers of the Null Arca'); any other name as it
+    is. Every perfected set in the set data is named after its normal
+    version this way (tests/unit/test_player_build.py holds the data to
+    that), so the pair needs no table."""
+    return str(set_name or "").removeprefix(PERFECTED_PREFIX)
+
+
+def is_perfected_set(set_name: str) -> bool:
+    return str(set_name or "").startswith(PERFECTED_PREFIX)
+
+
 def piece_counts(gear: Dict[str, List[str]]) -> Dict[str, List[Optional[int]]]:
     """set id -> [pieces active on the front bar, on the back bar].
 
@@ -423,6 +439,62 @@ def piece_counts(gear: Dict[str, List[str]]) -> Dict[str, List[Optional[int]]]:
     return {set_id: [body[set_id] + front[set_id],
                      body[set_id] + back[set_id] if has_back_bar else None]
             for set_id in set(body) | set(front) | set(back)}
+
+
+@lru_cache(maxsize=1)
+def perfected_pairs() -> Dict[str, str]:
+    """{perfected set id: its normal version's id}, paired by name over
+    the bundled set data (normal_set_name)."""
+    from gear_set_database import gear_set_db
+    pairs = {}
+    for set_id, name in gear_set_db.set_id_to_name.items():
+        if is_perfected_set(name):
+            normal = gear_set_db.get_set_id_by_name(normal_set_name(name))
+            if normal:
+                pairs[str(set_id)] = str(normal)
+    return pairs
+
+
+def family_counts(gear: Dict[str, List[str]],
+                  pairs: Optional[Dict[str, str]] = None) -> Dict[str, List[Optional[int]]]:
+    """Design: Perfected and normal pieces count together. A trial or
+    arena set comes in two versions with two set ids, and the game counts
+    their pieces together towards the set's bonuses: two perfected and
+    three normal pieces of Slivers of the Null Arca are five pieces of it.
+    Only the perfected version's own extra line needs its count in
+    perfected pieces alone.
+
+    Measured on 411 split logs (issue #215), over the 15 sets someone wore
+    in both versions, by whether the wearer was the source of an effect of
+    the set's in that session:
+    - five pieces only with both versions counted: 158 of 162 sessions;
+    - five pieces of one version: 3,537 of 3,594;
+    - below five with both counted: 1 of 62.
+    The four without the effect wore Mora Scribe's Thesis (3 of its 6;
+    one version alone shows it in 19 of 29) and Claw of Yolnahkriin (its
+    one session; the buff needs a taunt). Minor Slayer, the three-piece
+    line, was on all 28 PLAYER_INFO lines of the one session that reached
+    three only together, and on none of the 209 lines below three.
+
+    So: set id -> [pieces active on the front bar, on the back bar], as
+    piece_counts gives them, but a set worn in both versions is one entry,
+    under the normal version's id, with the two counts added per bar. A set
+    worn in one version keeps that version's id, so a caller's table has to
+    list both ids, as SLAYER_SETS and GROUP_SETS do. What needs perfected
+    pieces alone reads piece_counts. *pairs* is {perfected id: normal id},
+    the bundled set data's by default (perfected_pairs).
+    """
+    pairs = perfected_pairs() if pairs is None else pairs
+    counts = piece_counts(gear)
+    out = dict(counts)
+    for perfected, normal in pairs.items():
+        if perfected in counts and normal in counts:
+            (front, back), (other_front, other_back) = counts[perfected], counts[normal]
+            del out[perfected]
+            out[normal] = [front + other_front,
+                           None if back is None and other_back is None
+                           else (back or 0) + (other_back or 0)]
+    return out
 
 
 def _default_set_name(set_id: str) -> Optional[str]:
@@ -457,7 +529,7 @@ def gear_rows(gear: Dict[str, List[str]],
     'item_id', 'set_id', 'set' (the LibSets name, 'Set#<id>' for an unknown
     id, '' for an item of no set), 'mythic', 'quality', 'trait', 'enchant'
     and 'enchant_quality' as logged, 'cp', 'level', 'pieces' (see
-    piece_counts; None for an item of no set), 'weight' (see armor_weight;
+    family_counts; None for an item of no set), 'weight' (see armor_weight;
     '' for anything but armor) and 'weapon_type' (see weapon_type; '' for
     anything but a weapon or shield). A poison has 'name' and no trait or
     enchant. The lookups default to the bundled set data, poison table,
@@ -465,7 +537,9 @@ def gear_rows(gear: Dict[str, List[str]],
     """
     set_name_of = set_name_of or _default_set_name
     is_mythic = is_mythic or is_mythic_set
-    counts = piece_counts(gear)
+    # A set worn in both versions shows the pair's count on every row of
+    # either (family_counts), as the game counts them
+    counts, pairs = family_counts(gear), perfected_pairs()
     rows = []
     for slot in SLOT_ORDER:
         item = gear.get(slot)
@@ -486,7 +560,7 @@ def gear_rows(gear: Dict[str, List[str]],
                 name = set_name_of(set_id)
                 row.update(set_id=set_id, set=name or f"Set#{set_id}",
                            mythic=bool(name and is_mythic(name)),
-                           pieces=counts.get(set_id))
+                           pieces=counts.get(set_id) or counts.get(pairs.get(set_id)))
             row.update(trait=str(item[4]), enchant=str(item[7]))
             if enchant_label(item[7]):
                 row["enchant_quality"] = str(item[10])
