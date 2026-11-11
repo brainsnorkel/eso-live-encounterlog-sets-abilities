@@ -278,9 +278,9 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         self.assertIn('Damage and healing in the', render_death_recap_html(entry, '1'))
         entry.death_recaps[0]['casts'] = [
             {'offset_ms': -2000, 'ability_id': '2', 'ability': 'Crystal Fragments',
-             'icon': 'death_recap_test', 'kind': ''},
+             'icon': 'death_recap_test', 'extra': ''},
             {'offset_ms': -600, 'ability_id': '3', 'ability': 'Light Attack (Lightning)',
-             'icon': '', 'kind': 'light'},
+             'icon': '', 'extra': 'light'},
         ]
         html = render_death_recap_html(entry, '1', icons=self._cache())
         self.assertIn("Damage, healing and the player's own casts in the", html)
@@ -295,12 +295,19 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         # The cast's icon beside the killer line's and the two rows'
         self.assertEqual(one.count('<img src="icon:death_recap_test"'), 4)
 
+    def test_every_extra_kind_has_its_label(self):
+        """A kind added to casts.EXTRA_KINDS needs its word in the recap's
+        Result column too."""
+        import casts
+        from gui.death_render import CAST_KIND_LABELS
+        self.assertEqual(set(CAST_KIND_LABELS), {kind for kind, _ids in casts.EXTRA_KINDS})
+
     def test_casts_with_no_hit_or_heal_still_make_a_table(self):
         from gui.death_render import render_death_recap_html
         entry = _entry_with_deaths()
         entry.death_recaps[1]['casts'] = [
             {'offset_ms': -1000, 'ability_id': '2', 'ability': 'Crystal Fragments',
-             'icon': '', 'kind': ''}]
+             'icon': '', 'extra': ''}]
         html = render_death_recap_html(entry, '77')
         self.assertIn('>Crystal Fragments<', html)
         self.assertIn('<table', html)

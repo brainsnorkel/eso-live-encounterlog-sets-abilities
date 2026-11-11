@@ -211,12 +211,95 @@ class TestCastsInTheRecap(unittest.TestCase):
         recap = analyzer.fight_history.fights[0].death_recaps[0]
         self.assertEqual(recap['casts'], [
             {'offset_ms': -4000, 'ability_id': '18350', 'ability': 'Light Attack (Lightning)',
-             'icon': 'x', 'kind': 'light'},
+             'icon': 'x', 'extra': 'light'},
             {'offset_ms': -2500, 'ability_id': '40079', 'ability': 'Radiating Regeneration',
-             'icon': 'ability_restorationstaff_002b', 'kind': ''},
+             'icon': 'ability_restorationstaff_002b', 'extra': ''},
         ])
         # The hits and heals are as before
         self.assertEqual([r['result'] for r in recap['events']], ['DAMAGE'])
+
+    def test_read_again_as_the_fight_is_built(self):
+        """A proc found only after the death, and a cast the log writes in
+        the death's millisecond after the death line: the casts read again
+        when the fight's entry is built see both."""
+        meridias_favor = 117119
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _press(18200, 1, meridias_favor, 5), f"18200,END_CAST,COMPLETED,5,{meridias_favor}",
+            _event(20000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _press(20000, 1, 40079, 6, health=0),
+            _event(20001, 'DAMAGE', 15000, BOSS, _player(1, 0), overflow=3000, cast=901),
+            # The proc's second tick, after the death
+            _press(21000, 1, meridias_favor, 5), f"21000,END_CAST,COMPLETED,5,{meridias_favor}",
+            '70000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual([(c['offset_ms'], c['ability_id']) for c in recap['casts']],
+                         [(0, '40079')])
+
+    def test_casts_of_one_millisecond_keep_the_logs_order(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _press(17000, 1, 40079, 7),
+            _press(17000, 1, 18350, 8),
+            _event(20000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _event(20001, 'DAMAGE', 15000, BOSS, _player(1, 0), overflow=3000, cast=901),
+            '70000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual([c['ability_id'] for c in recap['casts']], ['40079', '18350'])
+
+    def test_a_cast_before_the_pull_stays_when_the_fight_is_built_again(self):
+        """A death just after the pull reaches back before it. A fight the
+        game cuts in two is built twice, and the first build forgets the
+        casts begun before the pull: the second keeps those read as the
+        death was counted."""
+        boss = "72,{h}/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
+        lines = ['2600,UNIT_ADDED,72,MONSTER,F,0,105636,T,0,0,"Big Boss","",0,50,160,0,HOSTILE,F',
+                 _press(9000, 1, 40079, 1),                # before the pull
+                 '10000,BEGIN_COMBAT']
+        health = 280000
+        hits = []
+        # The group fights on between the lines, which carries the fight on
+        for ts in list(range(11000, 29000, 1000)) + list(range(30000, 60000, 1000)):
+            hits.append(_event(ts, 'DAMAGE', 1000, _player(2, 20000), boss.format(h=health)))
+            health -= 1000
+        hits += [_event(10500, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+                 _event(10501, 'DAMAGE', 15000, BOSS, _player(1, 0), overflow=3000, cast=901)]
+        hits.sort(key=lambda line: int(line.split(',')[0]))
+        lines += [h for h in hits if int(h.split(',')[0]) < 29000] + ['29000,END_COMBAT']
+        lines += [h for h in hits if 29000 < int(h.split(',')[0]) < 40500] + ['40500,BEGIN_COMBAT']
+        lines += [h for h in hits if int(h.split(',')[0]) > 40500] + ['60000,END_COMBAT']
+        analyzer, _ = _run(lines)
+        fight, = analyzer.fight_history.fights
+        self.assertEqual([(c['offset_ms'], c['ability_id'])
+                          for c in fight.death_recaps[0]['casts']], [(-1500, '40079')])
+
+    def test_a_death_logged_after_end_combat(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _press(69500, 1, 40079, 1),
+            _event(69800, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            '70000,END_COMBAT',
+            _event(70000 + LATE_DEATH_GRACE_MS // 2, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual([c['ability_id'] for c in recap['casts']], ['40079'])
+
+    def test_a_death_read_from_health_reaching_zero(self):
+        """Issue #221: counted a while after the first 0, its casts are
+        those up to that 0."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _press(15000, 1, 40079, 1),
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=17000, cast=901),
+            _tick(17200),
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual([(c['offset_ms'], c['ability_id']) for c in recap['casts']],
+                         [(-1000, '40079')])
 
 
 class TestKillingBlowDeaths(unittest.TestCase):

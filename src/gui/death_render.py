@@ -81,7 +81,8 @@ FIGHT_LINK_TEXT = "Damage taken tab"
 SKULL = "☠"
 ICON_PX = 20  # ability icon edge in the recap table
 # The dying player's own casts among the table's rows (issue #214): the
-# Result column's word, and the kind of an extra after it (casts.kind_of)
+# Result column's word, and the kind of an extra after it (casts.kind_of,
+# the cast's 'extra'; casts.EXTRA_KINDS's kinds, which a test holds it to)
 CAST_LABEL = "Cast"
 CAST_KIND_LABELS = {"light": "light attack", "heavy": "heavy attack", "bash": "bash",
                     "swap": "weapon swap", "dodge": "dodge", "synergy": "synergy",
@@ -752,24 +753,17 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         final = row.get("kind") == "damage" and not row.get("health")
         tr = f"<tr bgcolor='{theme['final_bg']}'>" if final else "<tr>"
         bold = "font-weight:bold;" if final else ""
-        icon = _icon_html(row, icons)
-        # A row without an icon is padded out to the height of one with
-        pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
         # The source, a player's handle for a heal, through the Hide names
         # mask (gui.name_mask); an enemy's name passes as it is
         source = str(row.get("source") or "")
-        cells = (
-            (" align='right'", f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
-            (" align='right'", "", _health_html(row, theme)),
-            (f" width='{scaled_px(ICON_PX)}'", "", icon),
-            (" width='20%'", bold, e(str(row.get("ability", "")))),
-            ("", bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
-            (" align='right'", bold, _amount_html(row, theme)),
-            ("", "", _result_html(row, theme, e)),
-        )
-        parts.append(tr + "".join(
-            f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
-            for attrs, style, content in cells) + "</tr>")
+        parts.append(_table_row_html(tr, _icon_html(row, icons), (
+            (f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
+            ("", _health_html(row, theme)),
+            (bold, e(str(row.get("ability", "")))),
+            (bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
+            (bold, _amount_html(row, theme)),
+            ("", _result_html(row, theme, e)),
+        )))
     parts.append("</table>")
     # The window's summary, under the table it sums (issue #95)
     parts.append(_death_kinds_html(recap, rows, theme, e, base_pt) if rows else no_events)
@@ -782,21 +776,30 @@ def _cast_row_html(cast: dict, theme: dict, icons, e) -> str:
     the Result column; no health, source or amount, which belong to what
     the player was dealt."""
     muted = theme["muted"]
-    icon = _icon_html(cast, icons)
+    extra = CAST_KIND_LABELS.get(str(cast.get("extra") or ""))
+    result = CAST_LABEL + (f" · {extra}" if extra else "")
+    return _table_row_html("<tr>", _icon_html(cast, icons), (
+        (f"color:{muted};", _offset_text(cast.get("offset_ms", 0))),
+        ("", ""),
+        ("", e(str(cast.get("ability", "")))),
+        (f"color:{muted};", "–"),
+        ("", ""),
+        (f"color:{muted};", e(result)),
+    ))
+
+
+def _table_row_html(tr: str, icon: str, cells: tuple) -> str:
+    """One row of the recap table, opened by *tr*: *cells* are (style,
+    content) for Time, Health, Ability, Source, Amount and Result, and
+    *icon* fills the icon column between Health and Ability. A row with no
+    icon is padded out to the height of one with."""
     pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
-    kind = CAST_KIND_LABELS.get(str(cast.get("kind") or ""))
-    result = CAST_LABEL + (f" · {kind}" if kind else "")
-    cells = (
-        (" align='right'", f"color:{muted};", _offset_text(cast.get("offset_ms", 0))),
-        (" align='right'", "", ""),
-        (f" width='{scaled_px(ICON_PX)}'", "", icon),
-        (" width='20%'", "", e(str(cast.get("ability", "")))),
-        ("", f"color:{muted};", "–"),
-        (" align='right'", "", ""),
-        ("", f"color:{muted};", e(result)),
-    )
-    return "<tr>" + "".join(f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
-                            for attrs, style, content in cells) + "</tr>"
+    time_cell, health, ability, source, amount, result = cells
+    columns = ((" align='right'", time_cell), (" align='right'", health),
+               (f" width='{scaled_px(ICON_PX)}'", ("", icon)), (" width='20%'", ability),
+               ("", source), (" align='right'", amount), ("", result))
+    return tr + "".join(f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
+                        for attrs, (style, content) in columns) + "</tr>"
 
 
 def _fight_link_html(unit_id, theme: dict, e, base_pt: float) -> str:
