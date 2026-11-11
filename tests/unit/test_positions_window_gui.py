@@ -1591,5 +1591,25 @@ class TestTheLineUnderTheCanvas(unittest.TestCase):
         self.assertEqual(_counted([]), [])
 
 
+
+@unittest.skipUnless(HAVE_QT, "PySide6 not installed")
+class TestADeathPastTheRange(PositionsTestCase):
+
+    def test_next_death_goes_no_further_than_a_death_shown_at_the_end(self):
+        """A death counted past the range's end (one read from health 0
+        settled at the next fight) is shown at the range's end; Next from
+        there goes no further and Previous goes back (the review of PR
+        #224)."""
+        entry = copy.copy(self.entry)
+        late = dict(self.entry.death_recaps[-1], unit_id=HEALER,
+                    time_ms=END + 5000 - entry.locator.start_ms)
+        entry.death_recaps = list(self.entry.death_recaps) + [late]
+        window = self._window(entry, t=TANK_DEATH, unit=TANK)
+        window.next_death.click()
+        self.assertEqual((window.moment(), window.selected()), (END + 1000, HEALER))
+        self.assertFalse(window.next_death.isEnabled())
+        window.previous_death.click()
+        self.assertEqual((window.moment(), window.selected()), (TANK_DEATH, TANK))
+
 if __name__ == "__main__":
     unittest.main()

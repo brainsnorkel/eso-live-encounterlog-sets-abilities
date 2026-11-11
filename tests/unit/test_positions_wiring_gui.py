@@ -1008,5 +1008,34 @@ class TestATheme(WiringTestCase):
             self.assertEqual(ink(), colors(dark)["ink"].name(), dark)
 
 
+
+@unittest.skipUnless(HAVE_QT, "PySide6 not installed")
+class TestTheReadWaitedFor(WiringTestCase):
+    """The review of PR #224: the read asked for is cleared only by an
+    answer, and an earlier review's fights are kept one by one."""
+
+    def test_a_cancelled_read_leaves_the_newer_read_of_the_fight_waited_for(self):
+        """Fight A, then B, then A again: A's first read answers
+        'cancelled' while its second runs, and must not clear it."""
+        from fight_reread import RereadEvent
+        entry = self._fight()
+        win = self._window(entry)
+        win._reread_pending = entry.locator
+        win._on_reread_event(RereadEvent("cancelled", entry.locator))
+        self.assertIs(win._reread_pending, entry.locator)
+        win._on_reread_event(RereadEvent("missing", entry.locator, error="gone"))
+        self.assertIsNone(win._reread_pending)
+
+    def test_only_the_held_fight_of_an_earlier_review_is_kept(self):
+        split = self._split()
+        entry, extra = self._fight(split), self._fight(split)
+        win = self._window()
+        win._on_review_loaded(str(split), [entry, extra], source=(str(split), ""))
+        win.history_list.select_entry(entry)
+        win.show_moment(entry, entry.locator.start_ms, None)
+        win._exit_review()
+        self.assertEqual([fight for fight, _source in win._past_reviews], [entry])
+        self.assertEqual(win._reread_places(entry)[0].kind, "review")
+
 if __name__ == "__main__":
     unittest.main()

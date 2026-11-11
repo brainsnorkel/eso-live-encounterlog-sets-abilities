@@ -1359,3 +1359,19 @@ def test_the_roster_sweep_leaves_a_line_across_the_attach_point_to_the_tail(tmp_
     monitor._process_new_lines()
     assert [seen for seen in engine.seen if seen[0] == start] == [(start, line)]
     assert monitor.last_position == len(log.data)
+
+
+
+def test_ids_handed_out_again_in_a_zone_with_no_fight_are_not_all_kept(tmp_path):
+    """Hours in a city hand unit ids out again and again: the engine keeps
+    only the replaced units a fight could still need, so they do not pile
+    up (the review of PR #224)."""
+    from esolog_tail import REPLACED_UNITS_KEPT
+    lines = [begin_log(EPOCH), zone_changed(3, 1011, "A City", "NONE")]
+    lines += [monster_added(1000 + k * 100, 500, f"Citizen {k}", "5555", reaction="NPC_ALLY")
+              for k in range(3 * REPLACED_UNITS_KEPT)]
+    engine = review(write(tmp_path / "Encounter.log", Written(lines).data))
+    kept = engine._replaced_units
+    assert 0 < len(kept) <= REPLACED_UNITS_KEPT
+    newest = 1000 + (3 * REPLACED_UNITS_KEPT - 1) * 100
+    assert max(when for _unit, when in kept) == newest

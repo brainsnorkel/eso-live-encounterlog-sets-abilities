@@ -101,6 +101,10 @@ LATE_DEATH_GRACE_MS = 1000
 # its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS,
 # issue #162).
 COMBAT_RESUME_MS = 1000
+# Units whose id was handed out again, kept for the fights' unit tables
+# (fight_locator); past this many, those no fight could still need go
+# (ESOLogAnalyzer._prune_replaced_units)
+REPLACED_UNITS_KEPT = 256
 # A fight shorter than this, BEGIN_COMBAT to END_COMBAT, is a blip: it takes
 # none of the group's hits from before its line, which wait for the next
 # line (see waiting_hits)
@@ -1571,6 +1575,8 @@ class ESOLogAnalyzer(ListenerMixin):
                     replaced = self.current_encounter.enemies.get(unit_id)
                     if replaced is not None:
                         self._replaced_units.append((replaced, entry.timestamp))
+                        if len(self._replaced_units) > REPLACED_UNITS_KEPT:
+                            self._prune_replaced_units(entry.timestamp)
                     self.current_encounter.enemies[unit_id] = enemy
                     # A departed player's unit id handed to this unit: the
                     # player is gone, and the id is not theirs (presence.py)
@@ -2676,6 +2682,27 @@ class ESOLogAnalyzer(ListenerMixin):
                                fight_locator.MapFrame(fields[0], fields[1], fields[2])))
             if len(self._maps) > fight_locator.MAPS_KEPT:
                 del self._maps[0]
+
+    def _prune_replaced_units(self, now_ms: int) -> None:
+        """Keep of the units whose id was handed out again only those a
+        fight still to be built could need: replaced since LEAD_MS before
+        now (a fight to come), before the fight running, or before the
+        last one while it may yet go on (cut in two, the group fighting
+        on, a held combat listed late). Without it a zone with no fight,
+        a city or a house for hours, would keep every one."""
+        floor = now_ms - fight_locator.LEAD_MS
+        enc = self.current_encounter
+        if enc is not None and enc.in_combat:
+            floor = min(floor, enc.start_time - fight_locator.LEAD_MS)
+        if (self._last_fight_entry is not None and enc is not None
+                and enc.combat_ended_at is not None
+                and (self.waiting_hits.fighting_on
+                     or now_ms - enc.combat_ended_at <= COMBAT_RESUME_MS)):
+            floor = min(floor, self._last_fight_start - fight_locator.LEAD_MS)
+        if self._held_fight is not None:
+            floor = min(floor, self._held_fight[1] - fight_locator.LEAD_MS)
+        self._replaced_units = [(unit, when) for unit, when in self._replaced_units
+                                if when >= floor]
 
     def _fight_locator(self, enc: CombatEncounter) -> fight_locator.FightLocator:
         """Where the fight's lines are in the log and who its units are, for

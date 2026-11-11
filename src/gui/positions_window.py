@@ -1160,16 +1160,21 @@ class PositionsWindow(QDialog):
         """The death a step of *direction* goes to: from the death on
         screen (the moment's, its player selected) the one before or
         after it, deaths at one moment in turn; else the nearest before
-        or after the moment."""
-        deaths = self._roster.deaths
-        here = next((i for i, death in enumerate(deaths)
-                     if death[0] == self._t and death[1] == self._selected), None)
+        or after the moment. Each death is taken at the moment it is
+        shown at: one counted past the range's end (a death read from
+        health 0 settled at the next fight) is shown at the end, and is
+        still on screen there, not a death to go to again."""
+        span = self._span()
+        moments = [death[0] if span is None else max(span[0], min(span[3], death[0]))
+                   for death in self._roster.deaths]
+        here = next((i for i, (at, death) in enumerate(zip(moments, self._roster.deaths))
+                     if at == self._t and death[1] == self._selected), None)
         if here is not None:
             index = here + (1 if direction > 0 else -1)
-            return index if 0 <= index < len(deaths) else None
+            return index if 0 <= index < len(moments) else None
         if direction > 0:
-            return next((i for i, death in enumerate(deaths) if death[0] > self._t), None)
-        return next((i for i in range(len(deaths) - 1, -1, -1) if deaths[i][0] < self._t), None)
+            return next((i for i, at in enumerate(moments) if at > self._t), None)
+        return next((i for i in range(len(moments) - 1, -1, -1) if moments[i] < self._t), None)
 
     def _death_step(self, direction: int) -> None:
         index = self._death_index(direction)

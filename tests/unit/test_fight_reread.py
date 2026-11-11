@@ -1025,3 +1025,25 @@ def test_a_cancel_stops_a_zipped_read(tmp_path, fight):
     split_retention.zip_split(copy)
     with pytest.raises(fr.Cancelled):
         read(locator, Path(f"{copy}.zip"), hint=0, cancel=Looks(2))
+
+
+
+def test_a_unit_added_after_end_combat_is_not_the_rows(tmp_path):
+    """The table is frozen at END_COMBAT: a unit added in the tail on an id
+    a row names (an id handed out again) reads as an unknown unit, not as
+    that row's (the review of PR #224)."""
+    lines = opening() + [
+        monster(START - 500, 88, "Old Add"),
+        f"{START},BEGIN_COMBAT",
+        hit(START + 1000, st(2), foe(88, 900000)),
+        f"{END},END_COMBAT",
+        f"{END + 300},UNIT_REMOVED,88",
+        monster(END + 600, 88, "New Add"),
+        effect(END + 700, foe(88, 500000, x="0.9000")),
+    ]
+    _log, path, fights = split_of(tmp_path, lines)
+    states = read(fights[0].locator, path)
+    old = [track for track in states.tracks if track.unit is not None and "88" in track.ids]
+    new = [track for track in states.tracks if track.unit is None and track.ids == ("88",)]
+    assert len(old) == 1 and max(old[0].t) < END
+    assert len(new) == 1 and list(new[0].t) == [END + 700]

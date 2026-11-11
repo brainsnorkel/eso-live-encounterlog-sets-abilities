@@ -389,6 +389,7 @@ class _Extractor:
         self.frames = [locator.map_at_lead or UNKNOWN_MAP]
         self.builders: dict = {}
         self.unknown: dict = {}
+        self.tail_added: set = set()  # unit ids added after END_COMBAT
 
     def feed(self, data: bytes) -> bool:
         """The whole lines in *data*; False once the range is over."""
@@ -396,6 +397,7 @@ class _Extractor:
             return False
         single, resolve, rows = self.table.single, self.table.row, self.rows
         builders, unknown, frame = self.builders, self.unknown, len(self.frames) - 1
+        tail_added = self.tail_added
         phase, first_ms, begin, end = self.phase, self.range_start_ms, self.begin, self.end
         start_ms, stop_after = self.locator.start_ms, self.locator.end_ms + TAIL_MS
         lines = data.splitlines()
@@ -405,11 +407,11 @@ class _Extractor:
             raw = parts[at + 1:at + 10]
             if uid == b"0" or (raw[0] == b"1/1" and raw[6] == _ZERO and raw[7] == _ZERO):
                 return
-            hit = single.get(uid)
+            hit = None if uid in tail_added else single.get(uid)
             if hit is not None and hit[0] <= t <= hit[1]:
                 index = hit[2]
             else:
-                index = resolve(uid, t)
+                index = None if uid in tail_added else resolve(uid, t)
                 if index is None:
                     index = unknown.get(uid)
                     if index is None:
@@ -471,6 +473,12 @@ class _Extractor:
             elif kind == b"END_COMBAT":
                 if phase == _FIGHT and head == end:
                     phase = _TAIL
+            elif kind == b"UNIT_ADDED":
+                # The table was frozen at END_COMBAT: a unit added in the
+                # tail is not in it, though its id may be one a row names
+                # (a unit id handed out again), so it reads as unknown
+                if phase == _TAIL and len(parts) > 2:
+                    tail_added.add(parts[2])
             elif kind == b"ZONE_CHANGED" and phase == _LEAD:
                 # The lead-in crossed into this zone: what came before it
                 # is the zone before's, whose unit ids start over here

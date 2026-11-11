@@ -202,8 +202,8 @@ class MainWindow(QMainWindow):
         # The reviewed file and its zip member ('' for its only one) as the
         # review read them, where _review_path is the label shown, for the
         # positions window to read a reviewed fight from (issue #214); and
-        # each earlier review's (fights, source) while a window still holds
-        # one of its fights (_keep_review_source)
+        # (fight, source) for each fight of an earlier review a window still
+        # holds (_keep_review_source)
         self._review_source = None
         self._past_reviews = []
         self._detailed = True
@@ -796,8 +796,13 @@ class MainWindow(QMainWindow):
     def _on_reread_event(self, event):
         """A read's answer, on this thread: to the positions window, which
         keeps only the one for the locator it waits for (a read superseded
-        by a newer request answers 'cancelled' with its old locator)."""
-        if event.locator is self._reread_pending:
+        by a newer request answers 'cancelled' with its old locator). Only
+        an answer clears the read asked for: a 'cancelled' read was
+        superseded by a newer request, perhaps for the same fight, which
+        is the one waited for now. Locators are matched by identity, as the
+        window takes its answers: a Settings replay's equal copy is read
+        once more rather than left waiting for an answer it would drop."""
+        if event.kind != "cancelled" and event.locator is self._reread_pending:
             self._reread_pending = None
         window = self._positions_window
         if window is not None:
@@ -2530,19 +2535,21 @@ class MainWindow(QMainWindow):
         return [entry for entry in held if entry is not None]
 
     def _prune_past_reviews(self) -> None:
-        """Forget each earlier review none of whose fights a window holds."""
+        """Forget each earlier review's fight no window holds any more."""
         held = self._held_entries()
-        self._past_reviews = [(fights, source) for fights, source in self._past_reviews
-                              if any(fight is entry for fight in fights for entry in held)]
+        self._past_reviews = [(fight, source) for fight, source in self._past_reviews
+                              if any(fight is entry for entry in held)]
 
     def _keep_review_source(self) -> None:
         """Before Back to live or another review replaces the review on
-        screen: keep its file while a window holds one of its fights, so a
+        screen: keep its file for each of its fights a window holds, so a
         Positions link there still reads that file (_reread_places), which
         may be outside the split and archive folders (a log someone sent,
-        a zip of several logs)."""
+        a zip of several logs). Only those fights are kept, not the
+        review's whole list, which would stay in memory with them."""
         if self._review_source is not None and self._review_fights:
-            self._past_reviews.append((self._review_fights, self._review_source))
+            self._past_reviews += [(entry, self._review_source) for entry in self._held_entries()
+                                   if any(entry is fight for fight in self._review_fights)]
         self._prune_past_reviews()
 
     def _reread_places(self, entry) -> list:
@@ -2557,11 +2564,14 @@ class MainWindow(QMainWindow):
         (_known_log)."""
         locator = entry.locator
         reviewed = member = None
-        reviews = [(self._review_fights or (), self._review_source)] + self._past_reviews
-        for fights, source in reviews:
-            if source is not None and any(fight is entry for fight in fights):
-                reviewed, member = source
-                break
+        if (self._review_source is not None
+                and any(fight is entry for fight in self._review_fights or ())):
+            reviewed, member = self._review_source
+        else:
+            for fight, source in self._past_reviews:
+                if fight is entry:
+                    reviewed, member = source
+                    break
         self._prune_past_reviews()
         log = self._known_log(search=False)
         split_dir = split_retention.split_folder(self.config.get("split.dir") or "", log)
