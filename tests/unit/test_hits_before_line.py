@@ -511,7 +511,8 @@ class TestFightBoundaries(unittest.TestCase):
 
     def test_a_combat_with_no_enemy_listed_late_settles_then(self):
         """Listed for a death just after it ended, the combat is a fight:
-        its entry has the boss hit since it ended, and the next line leaves
+        its entry has the boss hit since it ended, the group fighting on
+        the boss after it counts in it (part 2), and the next line leaves
         the boss to it."""
         lines = [*TRASH_FIGHT, TRAP_ADDED,
                  *fight(22000, 24000, trap_hit(23000)),
@@ -520,7 +521,7 @@ class TestFightBoundaries(unittest.TestCase):
                  hit(26000, 3, 40000, boss(830000)),
                  *fight(28000, 41000, *BOSS_HITS)]
         _trash, held, entry = _fights(*lines)
-        self.assertEqual(group_damage(held), 30000)
+        self.assertEqual(group_damage(held), 70000)
         self.assertEqual(group_damage(entry), 200000)
 
     def test_a_fight_that_takes_hits_has_met_an_enemy(self):
@@ -584,6 +585,40 @@ def _hit_record(ts, target_id='70', enemy=None, area=(False, 'none'), cast='1'):
                     '12345', 'PHYSICAL', cast, area, (None, None, False))
 
 
+class TestCallSitesGuarded(unittest.TestCase):
+    """The two guards against counting a hit twice, each failing when taken
+    out (issue #213, item 3)."""
+
+    def test_a_blip_carried_on_into_a_blip_with_a_hit_between_the_lines(self):
+        """The hit on the add between the two lines waited, and the blip
+        carried on takes it; the next fight must not count it again
+        (WaitingHits.carried_on in _resume_last_fight)."""
+        lines = [*TRASH_FIGHT,
+                 '27000,BEGIN_COMBAT', hit(27100, 2, 5000, boss(865000)), '27300,END_COMBAT',
+                 hit(27350, 3, 20000, add(30000)),
+                 '27400,BEGIN_COMBAT', '27700,END_COMBAT',
+                 *fight(30000, 41000, hit(31000, 2, 100000, boss(765000)),
+                        hit(38000, 3, 100000, boss(665000)))]
+        fights = Engine().feed(lines).fights
+        self.assertEqual(len(fights), 3)
+        self.assertEqual(group_damage(fights[1]), 25000)
+        self.assertEqual(group_damage(fights[2]), 200000)
+
+    def test_a_held_blip_listed_late_with_a_hit_after_it(self):
+        """A half-second combat with no enemy, listed for a trap death just
+        after it ended: its entry has the boss hit since its end, which the
+        next fight must not count again (WaitingHits.listed_late)."""
+        lines = [*TRASH_FIGHT, TRAP_ADDED,
+                 '22000,BEGIN_COMBAT', trap_hit(22100), '22500,END_COMBAT',
+                 hit(22600, 2, 30000, boss(870000)),
+                 f"22800,COMBAT_EVENT,DIED,PHYSICAL,1,0,0,2,9,{TRAP},{_player(1, 0)}",
+                 *fight(28000, 41000, *BOSS_HITS)]
+        fights = Engine().feed(lines).fights
+        self.assertEqual(len(fights), 3)
+        self.assertEqual(group_damage(fights[1]), 30000)
+        self.assertEqual(group_damage(fights[2]), 200000)
+
+
 class TestWaitingHits(unittest.TestCase):
     """The ledger alone: what each boundary does to the waiting hits."""
 
@@ -603,7 +638,7 @@ class TestWaitingHits(unittest.TestCase):
     def test_the_ended_fights_enemies_are_records(self):
         hits = WaitingHits()
         hit_one = EnemyInfo('55', 'Trash', 'MONSTER')
-        hits.settled({hit_one})
+        hits.settled({hit_one}, 4000)
         hits.keep(_hit_record(5000, '55', hit_one))
         hits.keep(_hit_record(5500, '55', EnemyInfo('55', 'Next pack', 'MONSTER')))
         self.assertEqual([h.timestamp for h in hits.take(6000, lambda s, c: 1)], [5500])
@@ -625,17 +660,20 @@ class TestWaitingHits(unittest.TestCase):
     def test_settled_starts_the_waiting_again(self):
         hits = WaitingHits()
         hits.keep(_hit_record(5000))
-        hits.settled(set())
+        hits.settled(set(), 4000)
         self.assertEqual(hits.take(6000, lambda s, c: 1), [])
 
-    def test_carried_on_and_listed_late_drop_the_hits_since(self):
+    def test_carried_on_and_listed_late_take_the_hits_since(self):
         for boundary in ('carried_on', 'listed_late'):
             hits = WaitingHits()
             ended = EnemyInfo('71', 'Trash', 'MONSTER')
-            hits.settled({ended})
+            hits.settled({ended}, 4000)
             hits.keep(_hit_record(5000))
             hits.keep(_hit_record(6000))
-            getattr(hits, boundary)(6000)
+            since = getattr(hits, boundary)(6000)
+            # A fight carried on counts the hits since, its own now
+            if boundary == 'carried_on':
+                self.assertEqual([h.timestamp for h in since], [6000])
             self.assertEqual([h.timestamp for h in hits.take(7000, lambda s, c: 1)], [5000])
             hits.keep(_hit_record(7500, '71', ended))
             self.assertEqual([h.timestamp for h in hits.take(8000, lambda s, c: 1)], [5000])

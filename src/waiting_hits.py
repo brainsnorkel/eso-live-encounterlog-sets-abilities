@@ -1,6 +1,7 @@
 """
-The group's hits between fights, waiting for the next fight's line (engine
-side, no Qt). Issue #162, part 1.
+The group's hits between fights: waiting for the next fight's line, or the
+group fighting on after the fight that ended (engine side, no Qt). Issue
+#162, parts 1 and 2.
 
 Design: The hits before the line. A fight runs from the logging player's
 BEGIN_COMBAT to their END_COMBAT, and the group's first hits often land
@@ -75,28 +76,92 @@ with no enemy took hits on new enemies only (in Sanity's Edge the next
 pack's Wamasus, units 602 to 626, where the fight before had fought unit
 333).
 
+The group fighting on (part 2). END_COMBAT is the logging player's line as
+well: when they die, or step out of combat while the rest of the group
+fights on, the group's hits after it went on the closed encounter, which
+nothing built again, and counted in no fight. In the survey's 395 split
+logs, 235 fights had such hits on their own enemies before the next line,
+119.5 M of damage: a fifth or more of the fight's in 25, and in a Hel Ra
+Citadel boss fight 16.4 M of its 48.2 M, the group fighting on for 64.7 s
+and three of them dying as they did. From a listed fight's END_COMBAT (a
+blip settles nothing, so none of its), a hit of the group's on an enemy
+record the fight hit is the group fighting on while it comes within
+FIGHT_ON_MS of END_COMBAT or of the last such hit: the fight's encounter
+counts it as a hit in it, at its own time, DoT ticks too. The 3 s are the
+survey's knee: a pause between two such hits was under 0.7 s in 99% of
+them, and 3 s takes 99.4% of their damage where 15 s would add 0.3%.
+
+Once the group has stopped, at the first log line past the wait (read at
+the line's own time, which the parser does not give every event), at the
+next fight's line, at a zone change or a new session, or at the log's end
+(ESOLogAnalyzer.finish, which a replay calls), the fight is built again,
+and the entry frontends hold takes what those hits decide
+(take_damage_figures): the dps and its time, the graph's series, each
+row's damage figures and the rows' order, the name shown (its most
+damaged enemy), the penetration figures and the pull, read again against
+the pull before it and with the boss as the group left it. The rest stays
+as END_COMBAT left it, though the encounter has gone on gathering: the
+deaths after LATE_DEATH_GRACE_MS, healing, damage taken, a player who came
+after, the build findings (a tank's share of the damage among them), the
+recaps, and the fight's time, which is the log's (the maintainer's
+decision 6). That build has no side effect (the builder's *again*): a
+tracker pruned then would forget the casts under way, and in a replay the
+next fight counted a cast written over its line twice, in 12 rows.
+
+Replayed through 0.39.0 and through this rule (411 split logs, 9,309
+fights), 186 fights take hits fought on without being carried on: 80.6 M,
+a median 0.81% of the fight's damage (p90 13.0%, over a fifth in 18).
+Their group dps moves a median +0.12%, lower in 61 and higher in 124,
+since a long mop-up after a kill lowers it: in a Hel Ra Citadel Yokeda
+Rok'dun kill the group fought the adds on for 104 s after the 118 s fight,
+and its dps reads 321k, not 500k, the boss dps unchanged, since it divides
+by the hits on the bosses. No pull's verdict changes in them, and nothing
+but the damage figures moves.
+
+A boss fight carried on (decision 5's b). Combat beginning again later
+than COMBAT_RESUME_MS after END_COMBAT carries the fight on, however long
+after, when the fight had boss damage, the group has fought on since
+without a pause of FIGHT_ON_MS, and an enemy it was hitting as the fight
+ended (the engine's _engaged_at_end, the same record, alive) took one of
+its hits since END_COMBAT within FIGHT_ON_MS of the line: one fight from
+its first line to its last, the deaths, healing and other hits between
+the lines its own, as a fight the game cut in two. Without the boss rule
+the replay carried 51 fights on, trash among them: in four Hel Ra Citadel
+runs the gargoyles the group was still finishing headed the Yokeda kill
+(a 107 s kill read as a 205 s fight), and the maintainer chose boss pulls
+only (2026-11-11). With it, 39 fights are 15 boss pulls again, 8 of them
+Lord Falgravn's in Kyne's Aegis, which the logging player's deaths had cut
+into as many as six parts (Lieutenant Njordal, added friendly, fights on
+its floors), the others the Yokeda twins, Ansuul, Z'Maja and an overland
+Dread Harvester; their pulls, Left or Lost sight on each cut part, now
+read 10 kills and 5 wipes.
+
 Where the hits wait: here, one ledger for the analyzer (WaitingHits), told
-of each fight boundary as the opener's memory is. Each hit after
-END_COMBAT still goes on the closed encounter as it comes, since a fight
-the game cut in two reopens that encounter with them, its cast watchers
-and all; the ledger keeps a copy, at most the last 10 s, read as the
-closed encounter read it (the kinds once, for both): the engine's record
-of its enemy, so a unit id handed out again is not the ended fight's
-enemy; whose it is (CombatEncounter.hitter_of), so a player back on a new
-unit id, re-keyed at the line, keeps their hits and a pet removed before
-the line (a Blastbones blows up and goes) is its owner's; and its kinds.
-The line takes the copies, the hitters still on the new fight's list, and
-puts their casts back in the kinds index it has just emptied, so a cast
-that strikes another unit after the line is area on both sides (in the
-replay 1.0 M of 75 G moved from single to area, in 59 fights, and 7.9 M of
-area damage was read by its cast rather than by the ability's session).
-END_COMBAT counts them by the same code as any hit, before the entry is
-built, once the fight's length shows it is no blip: nothing reads a
-fight's damage before then. Then the waiting starts again, and the ended
-fight's enemies are the records it hit. A fight carried on keeps the
-copies dealt before its END_COMBAT (a blip's, waiting on) and drops the
-later ones, which are on its encounter; a held combat listed late does the
-same, its entry having the later ones.
+of each fight boundary as the opener's memory is. After a listed fight's
+END_COMBAT a hit that is not the group fighting on waits here alone, never
+on the closed encounter, whose entry is built again with the hits fought
+on: read as that encounter would have credited it (CombatEncounter.
+read_hit, the kinds once): the engine's record of its enemy, so a unit id
+handed out again is not the ended fight's enemy; whose it is
+(CombatEncounter.hitter_of), so a player back on a new unit id, re-keyed
+at the line, keeps their hits and a pet removed before the line (a
+Blastbones blows up and goes) is its owner's; and its kinds. The ledger
+keeps the last 10 s of them, and every one since END_COMBAT while the
+group may still fight on: a fight carried on takes those back
+(carried_on) and counts them by the same code as any hit, its earlier
+copies (a blip's) waiting on. The line takes the copies, the hitters
+still on the new fight's list, and puts their casts back in the kinds
+index it has just emptied, so a cast that strikes another unit after the
+line is area on both sides (in the part 1 replay 1.0 M of 75 G moved from
+single to area, in 59 fights, and 7.9 M of area damage was read by its
+cast rather than by the ability's session). END_COMBAT counts them by the
+same code as any hit, before the entry is built, once the fight's length
+shows it is no blip: nothing reads a fight's damage before then. Then the
+waiting starts again, the ended fight's enemies are the records it hit,
+and the group may fight on them. A combat held for want of an enemy has
+no entry: its encounter takes each hit as it comes and a copy waits, and
+listed late it drops the copies since its END_COMBAT, its entry having
+them.
 """
 
 from __future__ import annotations
@@ -109,6 +174,16 @@ import fight_opener
 
 if TYPE_CHECKING:
     from esolog_tail import EnemyInfo, PlayerInfo
+    from fight_history import FightHistoryEntry
+
+# The group has stopped fighting on once this long passed without a hit on
+# the ended fight's enemies (see the module notes)
+FIGHT_ON_MS = 3000
+# What the group fighting on changes in a fight's entry: the slots its
+# damage decides, and the keys of each row's (see the module notes)
+FOUGHT_ON_SLOTS = ('group_dps', 'group_boss_dps', 'dps_time_s', 'boss_dps_time_s',
+                   'damage_series', 'boss_name', 'pen_crit', 'pull')
+ROW_DAMAGE_KEYS = ('dps', 'boss_dps', 'dmg_pct', 'boss_pct', 'damage', 'pen_crit')
 
 
 class GroupHit(NamedTuple):
@@ -136,19 +211,63 @@ class WaitingHits:
     OPENER_WINDOW_MS of them, and the enemies that fight hit: what a
     fight's line takes (see the module notes). The engine owns one and
     tells it each fight boundary; a combat held for want of an enemy, or a
-    blip, is none."""
+    blip, is none. From that fight's END_COMBAT it also tells the group
+    fighting on its enemies (issue #162, part 2) until it stops."""
 
     def __init__(self):
         self._hits: deque[GroupHit] = deque()
         self._ended: frozenset = frozenset()  # EnemyInfo records, by identity
+        # The group fighting on: the ended fight's END_COMBAT and the last
+        # hit on its enemies since (None when it has stopped), and how many
+        # hits the fight took
+        self._ended_ms: int | None = None
+        self._last_on: int | None = None
+        self._fought = 0
+
+    @property
+    def fighting_on(self) -> bool:
+        """Whether the group may still be fighting on the ended fight's
+        enemies (not stopped yet)."""
+        return self._last_on is not None
 
     def keep(self, hit: GroupHit) -> None:
-        """A hit dealt after END_COMBAT, counted on the closed encounter."""
+        """A hit dealt after END_COMBAT that is not the group fighting on.
+        While it may be, every hit since END_COMBAT is kept: a fight that
+        turns out to carry on takes them all (carried_on)."""
         hits = self._hits
         hits.append(hit)
         horizon = hit.timestamp - fight_opener.OPENER_WINDOW_MS
+        if self._ended_ms is not None:
+            horizon = min(horizon, self._ended_ms)
         while hits[0].timestamp < horizon:
             hits.popleft()
+
+    def fought_on(self, enemy: EnemyInfo, timestamp: int) -> bool:
+        """A hit of the group's on *enemy* at *timestamp*, after END_COMBAT:
+        whether it is the group fighting on, which the ended fight counts
+        (on its encounter, as a hit in it): an enemy that fight hit, within
+        FIGHT_ON_MS of its END_COMBAT or of the last such hit."""
+        last = self._last_on
+        if last is None or enemy not in self._ended or timestamp - last > FIGHT_ON_MS:
+            return False
+        self._last_on = max(last, timestamp)
+        self._fought += 1
+        return True
+
+    def due(self, now_ms: int) -> bool:
+        """Whether the group has stopped fighting on by *now_ms*, a log
+        line's time: FIGHT_ON_MS without a hit on the ended fight's
+        enemies."""
+        return self._last_on is not None and now_ms - self._last_on > FIGHT_ON_MS
+
+    def stop(self) -> bool:
+        """The group has stopped fighting on, or combat began again, or the
+        zone or the session changed: whether the ended fight took hits since
+        its END_COMBAT, which its entry then counts."""
+        fought = self._last_on is not None and self._fought > 0
+        self._ended_ms = self._last_on = None
+        self._fought = 0
+        return fought
 
     def take(self, start_ms: int, targets_of: Callable[[str, str], int]) -> list[GroupHit]:
         """The hits the fight whose BEGIN_COMBAT is at *start_ms* takes:
@@ -172,18 +291,27 @@ class WaitingHits:
         self._hits = waiting
         return taken
 
-    def settled(self, hit_enemies: Iterable[EnemyInfo]) -> None:
-        """A listed fight of BLIP_MS or more ended and took its hits: the
-        waiting starts again, and a later line leaves the enemies it hit
-        (*hit_enemies*, the records) to it."""
+    def settled(self, hit_enemies: Iterable[EnemyInfo], ended_ms: int) -> None:
+        """A listed fight of BLIP_MS or more ended at *ended_ms* and took its
+        hits: the waiting starts again, a later line leaves the enemies it
+        hit (*hit_enemies*, the records) to it, and the group may fight on
+        them."""
         self._hits.clear()
         self._ended = frozenset(hit_enemies)
+        self._ended_ms = self._last_on = ended_ms
+        self._fought = 0
 
-    def carried_on(self, ended_ms: int) -> None:
+    def carried_on(self, ended_ms: int) -> list[GroupHit]:
         """The fight that ended at *ended_ms* carries on (the engine's
-        COMBAT_RESUME_MS): the hits since are on its encounter. The earlier
-        ones, a blip's, wait on, and the ended fight stays."""
+        COMBAT_RESUME_MS and FIGHT_ON_MS): the hits since that waited here
+        are its own now, returned for its encounter, which has the group
+        fighting on already. The earlier ones, a blip's, wait on, and the
+        ended fight stays."""
+        since = [hit for hit in self._hits if hit.timestamp >= ended_ms]
         self._drop_since(ended_ms)
+        self._ended_ms = self._last_on = None
+        self._fought = 0
+        return since
 
     def listed_late(self, ended_ms: int) -> None:
         """A combat held for want of an enemy, ended at *ended_ms*, is
@@ -195,6 +323,32 @@ class WaitingHits:
         """A zone change or a new log session: unit ids start over."""
         self._hits.clear()
         self._ended = frozenset()
+        self._ended_ms = self._last_on = None
+        self._fought = 0
 
     def _drop_since(self, ended_ms: int) -> None:
         self._hits = deque(hit for hit in self._hits if hit.timestamp < ended_ms)
+
+
+def take_damage_figures(entry: FightHistoryEntry, rebuilt: FightHistoryEntry) -> None:
+    """The group fought on after the fight's END_COMBAT: the entry frontends
+    hold takes from *rebuilt*, the fight built again with those hits, the
+    figures its damage decides (FOUGHT_ON_SLOTS, each row's ROW_DAMAGE_KEYS
+    and the rows' order) and keeps the rest as END_COMBAT left it. A row
+    only *rebuilt* has, a player who came after the fight, is left out.
+    The rows stay the same dicts, a key written at a time, since the
+    engine holds them for a mastery found later in the session and the
+    frontends read them without a lock; the list is a new one."""
+    for slot in FOUGHT_ON_SLOTS:
+        setattr(entry, slot, getattr(rebuilt, slot))
+    rows = {row.get('unit_id'): row for row in entry.players}
+    players = []
+    for new in rebuilt.players:
+        row = rows.pop(new.get('unit_id'), None)
+        if row is None:
+            continue
+        for key in ROW_DAMAGE_KEYS:
+            if key in new:
+                row[key] = new[key]
+        players.append(row)
+    entry.players = players + list(rows.values())

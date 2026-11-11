@@ -39,7 +39,7 @@ TOPICS = [
     ("Fight boundaries: combat with no enemy", [
         "src/esolog_tail.py:ESOLogAnalyzer._note_enemy_met",
     ]),
-    ("Fight boundaries: the hits before the line", [
+    ("Fight boundaries: the hits before the line and the group fighting on", [
         "src/waiting_hits.py",
     ]),
     ("The fight's opener", [

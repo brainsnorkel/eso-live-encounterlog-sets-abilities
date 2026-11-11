@@ -50,6 +50,11 @@ boss fights; a fight without boss damage hides and clears it. The chart's
 time axis takes a wider step than the timeline strip's for a long fight
 when its labels would run together: the chart is narrower in the tab than
 it was in the window.
+
+The group fighting on after the fight's END_COMBAT counts in the fight
+(waiting_hits, issue #162): the chart then runs to the group's last hit,
+a dashed line where the fight ended, so that damage keeps its own seconds
+instead of piling into the fight's last.
 """
 
 import math
@@ -102,6 +107,7 @@ MODES = (("Average over 1 s", 1), ("Average over 5 s", 5), ("Average over 10 s",
 DEFAULT_MODE = 1  # Combat Metrics' five-second window
 BOSS_ONLY_LABEL = "Boss targets only"
 NO_DAMAGE = "No damage in this fight"
+FIGHT_ENDED = "fight ended"  # the dashed line, when the group fought on after it
 LINE_WIDTH = 2.0
 GROUP_LINE_WIDTH = 3.0
 MARKER_RADIUS = 4.0
@@ -201,15 +207,22 @@ class DpsGraph(QWidget):
         self._curves: List[Curve] = []
         self._panels: List[int] = []  # the panels with a curve, top first
         self._duration_s = 0.0
+        self._fight_end_s: Optional[float] = None
         self._y_top: Dict[int, float] = {}
         self._y_step: Dict[int, float] = {}
         self.hover_second: Optional[int] = None
 
     # ---- data ----
 
-    def set_curves(self, curves: List[Curve], duration_s: float) -> None:
+    def set_curves(self, curves: List[Curve], duration_s: float,
+                   fight_end_s: Optional[float] = None) -> None:
+        """The *curves* over *duration_s*, the chart's length; *fight_end_s*,
+        the fight's end when it comes before that (the group fought on), is
+        marked."""
         self._curves = [c for c in curves if c.points]
         self._duration_s = max(float(duration_s or 0), 0.0)
+        self._fight_end_s = (float(fight_end_s) if fight_end_s is not None
+                             and 0 < fight_end_s < self._duration_s else None)
         self._panels = sorted({c.panel for c in self._curves})
         self._y_top, self._y_step = {}, {}
         for panel in self._panels:
@@ -221,8 +234,12 @@ class DpsGraph(QWidget):
         self.hover_second = None
         # What a screen reader hears for the painted chart (issue #77): the
         # lines drawn, each with its dps at the end of the fight
-        self.setAccessibleDescription("; ".join(
-            f"{c.name} {_fmt_dps(c.points[-1][1])} at the end" for c in self._curves))
+        description = "; ".join(
+            f"{c.name} {_fmt_dps(c.points[-1][1])} at the end" for c in self._curves)
+        if self._fight_end_s is not None:
+            description += (f"; the fight ended at {_fmt_duration(self._fight_end_s)}, "
+                            f"the group fought on to {_fmt_duration(self._duration_s)}")
+        self.setAccessibleDescription(description)
         self.update()
 
     @property
@@ -307,6 +324,14 @@ class DpsGraph(QWidget):
             painter.drawText(QRectF(x - 30, plot.bottom() + 4, 60, metrics.height()),
                              Qt.AlignHCenter | Qt.AlignTop, _fmt_tick(ms))
             ms += step_ms
+        # The fight's end, when the group fought on after it
+        if self._fight_end_s is not None:
+            x = self._x_for(self._fight_end_s)
+            painter.setPen(QPen(dim, 1, Qt.DashLine))
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            painter.setPen(dim)
+            painter.drawText(QRectF(x + 4, plot.top(), plot.right() - x - 4, metrics.height()),
+                             Qt.AlignLeft | Qt.AlignTop, FIGHT_ENDED)
 
         for panel in self._panels:
             self._paint_panel(painter, panel, text, surface, dim, grid, metrics)
@@ -693,12 +718,15 @@ class DpsGraphPanel(QWidget):
         if self._shown is None:
             return
         entry, dark, _names = self._shown
-        duration = float(entry.duration_s or 0)
+        fight_s = float(entry.duration_s or 0)
         mode_window = int(self.mode.currentData() or 0)
         boss = self.boss_only.isChecked()
         checked = set(self.checked_keys())
         curves: List[Curve] = []
         series = getattr(entry, "damage_series", None) or {}
+        # The group's last hit after the fight's end (the group fought on):
+        # the chart runs to it
+        duration = max(fight_s, float((series.get("window") or {}).get("last_s") or 0))
         if GROUP in checked and series:
             points = _curve_points(series.get("boss" if boss else "all"),
                                    series.get("boss_window" if boss else "window"),
@@ -716,7 +744,7 @@ class DpsGraphPanel(QWidget):
                                    mode_window, duration)
             curves.append(Curve(unit_id, name, series_color(rank, dark, self.colorblind), points,
                                 LINE_WIDTH, series_style(rank, self.colorblind), PLAYER_PANEL))
-        self.graph.set_curves(curves, duration)
+        self.graph.set_curves(curves, duration, fight_end_s=fight_s)
 
     def changeEvent(self, event):
         # A new text size: the legend's names are wider, so is its column

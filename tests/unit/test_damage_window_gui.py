@@ -177,6 +177,26 @@ class TestDamageWindowHtml(DamageWindowTestCase):
         self.assertIn('first hit 3.0 s before the pull, last hit 0.4 s before it, '
                       'in the 1:40 fight', html)
 
+    def test_a_last_hit_after_the_fight_ended(self):
+        """The group fighting on after the fight's end counts in it (issue
+        #162, part 2): the window says after the fight ended."""
+        from gui.damage_render import render_damage_html
+        entry = _entry()
+        damage = _damage()
+        damage['window'] = _window(11000, 115200)
+        entry.players[0]['damage'] = damage
+        html = render_damage_html(entry, '1', icons=self._cache())
+        self.assertIn('first hit 1.0 s after the pull, last hit 5.2 s after the 1:40 fight '
+                      'ended', html)
+        # A hit a moment after it, which a tenth of a second shows as 0.0
+        damage['window'] = _window(11000, 110020)
+        html = render_damage_html(entry, '1', icons=self._cache())
+        self.assertIn('last hit just after the 1:40 fight ended', html)
+        # On the fight's last millisecond, into it
+        damage['window'] = _window(11000, 110000)
+        html = render_damage_html(entry, '1', icons=self._cache())
+        self.assertIn('last hit 1:40 into the 1:40 fight', html)
+
     def test_abilities_largest_first_with_their_figures(self):
         from gui.damage_render import render_damage_html
         html = render_damage_html(_entry(), '1', icons=self._cache())
