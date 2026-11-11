@@ -248,5 +248,122 @@ class TestColourblindGraphOption(unittest.TestCase):
         self.assertTrue(win.dps_panel.colorblind)
 
 
+def _over(color: str, alpha: float, surface: str) -> str:
+    """*color* at *alpha* composited over *surface*, as opaque hex (the
+    contrast measure takes opaque colours only)."""
+    fg = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+    bg = [int(surface[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(alpha * f + (1 - alpha) * b):02x}" for f, b in zip(fg, bg))
+
+
+@unittest.skipUnless(HAVE_QT, "PySide6 not installed")
+class TestPositionsWindowColours(unittest.TestCase):
+    """The positions window (issue #214): every mark of its canvas, boss
+    bars and scrub bar at 3:1 against the surface it is drawn on, every
+    text at 4.5:1, numbers on their own fill; the health ring's 13% track
+    and the 6% grid are decorative and left out."""
+
+    def assert_ratio(self, where, color, surface, floor):
+        ratio = contrast(_hex(color), surface)
+        self.assertGreaterEqual(ratio, floor, f"{where} {_hex(color)} on {surface}: {ratio:.2f}")
+
+    def test_the_canvas_marks_on_base(self):
+        from gui import positions_canvas as pc
+        for dark in (LIGHT, DARK):
+            base = BACKGROUNDS[dark][1]  # the canvas fills Base
+            colours = pc.colors(dark, base)
+            for key in ("ink", "muted", "shield", "damage", "hostile", "boss"):
+                self.assert_ratio(f"canvas {key}", colours[key], base, NON_TEXT)
+            for color in colours["health"]:
+                self.assert_ratio("health ring", color, base, NON_TEXT)
+            # The nose: the ink at NOSE_ALPHA over Base
+            self.assert_ratio("nose", _over(colours["ink"].name(), pc.NOSE_ALPHA, base), base,
+                              NON_TEXT)
+
+    def test_the_canvas_texts(self):
+        from gui import positions_canvas as pc
+        for dark in (LIGHT, DARK):
+            base = BACKGROUNDS[dark][1]
+            colours = pc.colors(dark, base)
+            # A number in the Base colour on a player's inked body
+            self.assert_ratio("number on its body", base, colours["ink"].name(), TEXT)
+            # A dead or stale player's number in ink, a lost one's muted, on
+            # the hollow body (Base); the boss's name; the notes and the
+            # selected unit's label
+            for key in ("ink", "muted", "boss"):
+                self.assert_ratio(f"canvas text {key}", colours[key], base, TEXT)
+
+    def test_the_boss_bars_and_the_scrub_bar(self):
+        from gui import positions_canvas as pc
+        for dark in (LIGHT, DARK):
+            window, base = BACKGROUNDS[dark]
+            colours = pc.colors(dark, base)
+            # A boss bar's fill on its track (the ink at TRACK_ALPHA over the
+            # window), its words in ink or muted on the window
+            track = _over(colours["ink"].name(), pc.TRACK_ALPHA, window)
+            for color in colours["health"]:
+                self.assert_ratio("boss bar fill", color, track, NON_TEXT)
+            for key in ("ink", "muted"):
+                self.assert_ratio(f"boss bar text {key}", colours[key], window, TEXT)
+            # The scrub bar: its band's edge and its focus mark on the
+            # window; the hatch, the deaths' crosses, the map changes and
+            # the moment's line on the band (Base)
+            self.assert_ratio("band edge", colours["muted"], window, NON_TEXT)
+            self.assert_ratio("focus mark", colours["ink"], window, NON_TEXT)
+            for key in ("muted", "damage", "ink"):
+                self.assert_ratio(f"band {key}", colours[key], base, NON_TEXT)
+            # The ticks' labels
+            self.assert_ratio("tick label", colours["muted"], window, TEXT)
+
+    def test_the_table_icons(self):
+        """The table's pictures of the units: the ink, the boss's colour,
+        drawn on the table's Base."""
+        _ensure_app()
+        from gui import positions_canvas as pc
+        for dark in (LIGHT, DARK):
+            base = BACKGROUNDS[dark][1]
+            for mark in (pc.MARK_PLAYER, pc.MARK_BOSS, pc.MARK_LOOSE):
+                image = pc.marker_icon(mark, "T", 24, dark)
+                middle = image.pixelColor(12, 12) if mark != pc.MARK_LOOSE else None
+                if middle is not None:
+                    self.assertEqual(middle.alpha(), 255)
+                    self.assert_ratio(f"icon {mark}", middle.name(), base, NON_TEXT)
+
+    def test_the_table_icons_on_a_selected_row(self):
+        """A selected row's picture is drawn in the table's highlighted
+        text (the review's finding 15): in the ink, the dark theme's light
+        blue highlight (Windows 11's #4cc2ff) left it at 1.3:1. Against the
+        highlight, in both of Windows 11's pairs."""
+        _ensure_app()
+        from gui import positions_canvas as pc
+        for dark, highlight, text in ((DARK, "#4cc2ff", "#000000"), (LIGHT, "#0067c0", "#ffffff")):
+            for mark in (pc.MARK_PLAYER, pc.MARK_BOSS):
+                image = pc.marker_icon(mark, "T", 24, dark, ink=text)
+                middle = image.pixelColor(12, 12)
+                self.assertEqual(middle.alpha(), 255)
+                self.assert_ratio(f"selected icon {mark}", middle.name(), highlight, NON_TEXT)
+
+    def test_the_canvas_reads_its_theme_from_its_palette(self):
+        _ensure_app()
+        from PySide6.QtGui import QColor, QPalette
+
+        from gui import positions_canvas as pc
+        canvas = pc.PositionsCanvas()
+        self.addCleanup(canvas.deleteLater)
+        for window_hex, dark in (("#f3f3f3", False), ("#1e1e1e", True)):
+            palette = QPalette()
+            for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+                palette.setColor(group, QPalette.Window, QColor(window_hex))
+            canvas.setPalette(palette)  # a live theme switch
+            self.assertEqual(canvas.hostile_color().name(), pc.HOSTILE_COLORS[dark])
+            self.assertEqual(canvas.boss_color().name(), pc.BOSS_COLORS[dark])
+            self.assertEqual(canvas.ink().name(), _theme_text(dark))
+
+
+def _theme_text(dark):
+    from gui.fight_render import _theme
+    return _theme(dark)["text"]
+
+
 if __name__ == "__main__":
     unittest.main()

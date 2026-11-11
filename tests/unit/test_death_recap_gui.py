@@ -839,6 +839,74 @@ class TestLiveTail(DeathRecapGuiTestCase):
             win.close()
 
 
+def _located(entry):
+    """*entry* with a locator whose session is known, as the engine gives
+    a fight since issue #214 (fight_locator)."""
+    from fight_locator import FightLocator
+    entry.locator = FightLocator(
+        session_stamp='', session_epoch_ms=1_790_000_000_000, session_offset=0, zone_offset=0,
+        begin_offset=0, end_offset=0, start_ms=20_000, end_ms=120_000, map_at_lead=None,
+        units=())
+    return entry
+
+
+class TestPositionsLinks(DeathRecapGuiTestCase):
+    """Issue #214: each death's heading ends in a link to where everyone
+    stood at that moment, for a fight whose lines can be read again."""
+
+    def test_each_heading_ends_in_its_positions_link(self):
+        """After the heading's facts, in the pane's link colour: the
+        death's moment, the player; none for a fight without a locator or
+        whose session is not known."""
+        import re
+
+        from gui.death_render import positions_href, render_death_recap_html
+        from gui.fight_render import link_color
+        for dark in (False, True):
+            html = render_death_recap_html(_located(_entry_with_deaths()), '1', dark=dark)
+            headings = re.findall(r"<p[^>]*><a name='death-\d+'></a>.*?</p>", html)
+            self.assertEqual(len(headings), 2)
+            for heading, ms in zip(headings, (54000, 95000)):
+                self.assertIn(f'href="{positions_href("1", ms)}"', heading)
+                self.assertTrue(heading.endswith(f'color:{link_color(dark)}">Positions</a></p>'),
+                                heading)
+        unknown = _located(_entry_with_deaths())
+        unknown.locator = unknown.locator._replace(session_epoch_ms=None)
+        for entry in (_entry_with_deaths(), unknown):
+            self.assertNotIn('esolog:positions', render_death_recap_html(entry, '1'))
+
+    def test_the_hover_names_the_moment_and_no_one(self):
+        from gui.death_render import death_positions_tooltips, positions_href
+        tips = death_positions_tooltips(_located(_entry_with_deaths()))
+        self.assertEqual(sorted(tips), sorted([positions_href('1', 54000),
+                                               positions_href('77', 61000),
+                                               positions_href('1', 95000)]))
+        self.assertIn('Positions at 0:54', tips[positions_href('1', 54000)])
+        self.assertTrue(all('@' not in tip for tip in tips.values()))
+        self.assertEqual(death_positions_tooltips(_entry_with_deaths()), {})
+
+    def test_the_player_window_hands_the_link_on_with_its_fight(self):
+        """The link leaves the player window: it is handed on, with the
+        window's fight, for the main window's positions window; the player
+        window stays on its tab."""
+        from PySide6.QtCore import QUrl
+
+        from gui.death_render import positions_href
+        from gui.player_window import DEATHS_TAB, PlayerWindow
+        entry = _located(_entry_with_deaths())
+        window = PlayerWindow(icons=self._cache())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)
+        asked = []
+        window.positions_requested.connect(lambda *args: asked.append(args))
+        window.open(entry, '1', DEATHS_TAB, dark=False)
+        page = window.view(DEATHS_TAB)
+        self.assertIn('Positions at 1:35', page._tooltips[positions_href('1', 95000)])
+        page.anchorClicked.emit(QUrl(positions_href('1', 95000)))
+        self.assertEqual(asked, [(entry, '1', 95000)])
+        self.assertEqual((window.current_tab(), window.unit_id), (DEATHS_TAB, '1'))
+
+
 def _entry_no_deaths():
     from fight_history import FightHistoryEntry
     entry = FightHistoryEntry()

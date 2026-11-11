@@ -61,6 +61,16 @@ RECAP_HREF = "esolog:recap/"
 # window's Deaths tab (issue #196)
 FIGHT_DEATHS_HREF = "esolog:fightdeaths/"
 FIGHT_DEATHS_TIP = "Click for every death of the fight, on the Deaths tab (Alt+E)"
+# + the key of the unit to select ('' for none), '/' and a moment in ms into
+# the fight: the positions window at that moment (issue #214). A moment,
+# not a death's number as RECAP_HREF carries: a death the game writes late
+# is put in time order and numbers the later ones afresh, and the rows of
+# other kinds to come (the fight's events) link a moment too
+POSITIONS_HREF = "esolog:positions/"
+# The fight header's Positions: the window at the fight's first death, that
+# player selected, else at its start (fight_moment)
+FIGHT_POSITIONS_HREF = "esolog:positions/fight"
+POSITIONS_LABEL = "Positions"
 # + the death's number from 1: the <a name> each death's recap begins with,
 # where a link to that death scrolls to
 DEATH_ANCHOR = "death-"
@@ -179,6 +189,83 @@ def recap_from_href(href: str) -> tuple[str, int] | None:
 def death_anchor(number: int) -> str:
     """The <a name> death *number*'s recap begins with."""
     return f"{DEATH_ANCHOR}{int(number)}"
+
+
+def positions_known(entry) -> bool:
+    """Whether the fight *entry*'s lines can be looked for on disk again
+    (fight_locator, issue #214): it has a locator and the locator knows its
+    session, whose BEGIN_LOG the reader finds the fight from. A fight with
+    neither (one from before the locator, or from a log whose session start
+    the engine never read) gets no Positions link anywhere: a link that
+    could only say it found nothing is not drawn."""
+    locator = getattr(entry, "locator", None)
+    return locator is not None and getattr(locator, "session_epoch_ms", None) is not None
+
+
+def positions_href(unit_key, ms) -> str:
+    """The link to the moment *ms* (ms into the fight, from its
+    BEGIN_COMBAT) in the positions window, the unit *unit_key* selected (a
+    player's or companion's row 'unit_id', which is its FightUnit.key;
+    None or '' for none)."""
+    return f"{POSITIONS_HREF}{unit_key or ''}/{int(ms)}"
+
+
+def positions_from_href(href: str) -> tuple[str, int] | None:
+    """(unit key, '' for none; ms into the fight, negative in the lead-in)
+    when *href* is a link to a moment, else None, the header's
+    FIGHT_POSITIONS_HREF too. The unit key is read up to the last '/': a
+    player's key is digits and a companion's 'c<owner>-<monster>'."""
+    if not (href and href.startswith(POSITIONS_HREF)):
+        return None
+    unit_key, slash, ms = href[len(POSITIONS_HREF):].rpartition("/")
+    digits = ms.removeprefix("-")
+    if not slash or not (digits.isascii() and digits.isdigit()):
+        return None
+    return unit_key, int(ms)
+
+
+def fight_moment(entry) -> tuple[int, str | None]:
+    """Where the fight header's Positions opens (issue #214): (ms into the
+    fight, the unit to select). At the fight's first death, the player who
+    died selected, as the decision on the replay design's U8 has it: the
+    lead-in before the pull is an empty picture, and the first death is
+    what a reader of a wipe looks for first. With no death, the fight's
+    start, nobody selected. The first by time, the engine's order at the
+    same moment, as the Deaths tab lists them."""
+    recaps = getattr(entry, "death_recaps", None) or []
+    if not recaps:
+        return 0, None
+    _ms, _index, first = min((int(recap.get("time_ms") or 0), index, recap)
+                             for index, recap in enumerate(recaps))
+    return int(first.get("time_ms") or 0), str(first.get("unit_id", "")) or None
+
+
+def death_positions_tooltips(entry) -> dict[str, str]:
+    """Hover text per death's Positions link (the Deaths tab's rows and the
+    player window's recap headings: one href per death, the same on both);
+    {} for a fight with no Positions links (positions_known). It names no
+    player, so Hide names has nothing in it to hide."""
+    if not positions_known(entry):
+        return {}
+    tips = {}
+    for recap in getattr(entry, "death_recaps", None) or []:
+        ms = recap.get("time_ms") or 0
+        tips[positions_href(recap.get("unit_id", ""), ms)] = (
+            f"<b>Positions at {_clock(ms)}</b><br><span style='font-size:85%'>"
+            f"Click to see where everyone stood as this player died</span>")
+    return tips
+
+
+def fight_positions_tooltips(entry) -> dict[str, str]:
+    """The fight header's Positions hover: where it opens (fight_moment);
+    {} for a fight with no link. No player is named."""
+    if not positions_known(entry):
+        return {}
+    ms, unit_key = fight_moment(entry)
+    where = (f"at the first death, {_clock(ms)} into the fight" if unit_key is not None
+             else "as the fight began")
+    return {FIGHT_POSITIONS_HREF: (f"<b>Positions</b><br><span style='font-size:85%'>"
+                                   f"Click to see where everyone stood {where}</span>")}
 
 
 def deaths_by_unit(entry) -> Dict[str, List[dict]]:
@@ -587,7 +674,10 @@ def _icon_html(row: dict, icons) -> str:
 
 
 def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
-                names, base_pt: float) -> str:
+                names, base_pt: float, positions: str | None = None) -> str:
+    """One death: its heading, Killed by, its table and the kinds of its
+    window. *positions*: the link colour when the heading ends in the
+    death's Positions link (issue #214), None for no link."""
     muted = theme["muted"]
     max_health = recap.get("max_health") or 0
     facts = [f"{_clock(recap.get('time_ms', 0))} into the fight"]
@@ -603,11 +693,20 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
     icon = _icon_html(recap, icons)
     ability = e(str(recap.get("ability", "")))
     killed_by = f"{icon}&nbsp;{ability}" if icon else ability
+    # Where everyone stood as the player died, after the facts: the window
+    # at that moment, the player selected (issue #214). In the link colour,
+    # where the facts are muted, since a plain word gives no other sign of
+    # being a link
+    link = ""
+    if positions is not None:
+        href = positions_href(recap.get("unit_id", ""), recap.get("time_ms") or 0)
+        link = (f" <span style='color:{muted}'>·</span> <a href=\"{e(href, quote=True)}\" "
+                f"style=\"text-decoration:none;color:{positions}\">{POSITIONS_LABEL}</a>")
     parts = [
         # The anchor inside the paragraph, so it adds no line of its own
         f"<p style='margin:14px 0 2px 0'><a name='{death_anchor(index)}'></a>"
         f"<b>Death {index} of {total}</b>"
-        f" <span style='color:{muted}'>· {' · '.join(facts)}</span></p>",
+        f" <span style='color:{muted}'>· {' · '.join(facts)}</span>{link}</p>",
         f"<p style='margin:0 0 4px 0'>Killed by <b>{killed_by}</b>"
         + (f" <span style='color:{muted}'>from</span> {killer}" if killer else "")
         + "</p>",
@@ -689,13 +788,21 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     out the player's name and the fight; fight_block=False puts a line
     linking to the player's damage taken where the whole fight's block was,
     or nothing for a player the fight's table does not list.
-    Each death's recap begins with an <a name>, death_anchor(n).
+    Each death's recap begins with an <a name>, death_anchor(n), and its
+    heading ends in a Positions link for a fight whose lines can be read
+    again (positions_known, issue #214); its hover text is
+    death_positions_tooltips().
     """
     theme = dict(_THEMES[bool(dark)])
     if text_color:
         theme["text"] = text_color
     names = names or NO_MASK
     e = html.escape
+    positions = None
+    if positions_known(entry):
+        # fight_render imports this module, so its link colour is taken here
+        from gui.fight_render import link_color
+        positions = link_color(dark)
     deaths = deaths_by_unit(entry).get(str(unit_id), [])
     muted = theme["muted"]
     where = " · ".join(e(str(part)) for part in (
@@ -715,7 +822,8 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                  f"and healing in the {window_text(deaths[0])} before each death, oldest "
                  f"first. Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
-        parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt))
+        parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt,
+                                 positions))
     # The whole fight closes the window: the deaths are what it is opened
     # for (issue #95)
     if fight_block:

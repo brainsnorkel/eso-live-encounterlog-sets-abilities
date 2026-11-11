@@ -1,0 +1,2 @@
+### Fixed
+- **A log line the game is still writing is read once it is whole** (#214): the app now reads the log as bytes and leaves a half-written last line for its next read. Before, it read the two halves as two broken lines, which could lose a hit or, in a test, a whole fight. No such broken line turned up in 411 split logs, so this was rare. Starting in the middle of a session also no longer misses the session's first line when it falls on a 1 MB boundary of the search (about one start in a million)

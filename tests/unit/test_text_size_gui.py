@@ -422,5 +422,60 @@ class TestSettings(TextSizeTestCase):
         self.assertIn('width="29"', win.fight_view.toHtml())
 
 
+class TestPositionsWindowText(TextSizeTestCase):
+    """The positions window (issue #214) beside the main window: its
+    markers, its table's rows and columns follow the text size, never
+    shrinking below their 100% sizes, and the text size keys work from
+    it (they are the main window's, application-wide)."""
+
+    def _positions(self, win):
+        from fight_reread import RereadEvent
+        from gui.positions_window import PositionsWindow
+        from tests.unit.test_positions_window_gui import (
+            DEATH,
+            DPS,
+            session,
+            split_and_states,
+        )
+        _log, _path, fights, states = split_and_states(self.root, session())
+        entry = fights[0]
+        window = PositionsWindow(win)
+        window.open(entry, DEATH, DPS, dark=False, names=None)
+        window.reread_done(RereadEvent("loaded", entry.locator, states))
+        _app.processEvents()
+        return window
+
+    def test_markers_and_rows_grow_with_the_setting(self):
+        win = self._window()
+        window = self._positions(win)
+        radius, row, health = (window.canvas.radius(), window.table.rowHeight(0),
+                               window.table.columnWidth(3))
+        self.assertEqual(radius, 8)
+        win.set_text_size(150)
+        _app.processEvents()
+        self.assertEqual(window.canvas.radius(), 12)
+        self.assertGreater(window.table.rowHeight(0), row)
+        self.assertGreater(window.table.columnWidth(3), health)
+        self.assertEqual(window.views(), [])  # no FightView for set_text_size to walk
+
+    def test_80_percent_draws_markers_as_100(self):
+        win = self._window()
+        window = self._positions(win)
+        win.set_text_size(80)
+        _app.processEvents()
+        self.assertEqual(window.canvas.radius(), 8)
+        self.assertEqual(window.table.iconSize().width(), 12)
+
+    def test_the_keys_work_from_the_positions_window(self):
+        from PySide6.QtTest import QTest
+        win = self._window()
+        window = self._positions(win)
+        window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(window, 2000))
+        self._press(window, "Ctrl+=")
+        self.assertEqual(self._saved(), 110)
+        self.assertEqual(window.canvas.radius(), 9)  # 8 px at 110%
+
+
 if __name__ == "__main__":
     unittest.main()

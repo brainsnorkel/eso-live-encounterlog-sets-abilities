@@ -376,8 +376,17 @@ class ActionTests(unittest.TestCase):
 
     def test_the_command_line(self):
         self._github(latest=('v0.26.0',) * 2)
-        self.assertEqual(promote.main(['--candidates']), 0)
-        self.assertEqual(promote.main(['v0.27.1', '--used-live', '--dry-run']), 1)
+
+        class Fixed(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return NOW
+
+        # The command line reads the clock: held at NOW, as v0.27.1
+        # (published 9 November) stopped being young on 11 November
+        with patch.object(promote, 'datetime', Fixed):
+            self.assertEqual(promote.main(['--candidates']), 0)
+            self.assertEqual(promote.main(['v0.27.1', '--used-live', '--dry-run']), 1)
         with self.assertRaises(SystemExit):
             promote.main([])
 

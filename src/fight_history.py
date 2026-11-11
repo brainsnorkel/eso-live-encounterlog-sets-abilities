@@ -15,7 +15,7 @@ class FightHistoryEntry:
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
                  'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
-                 'session_stamp']
+                 'session_stamp', 'locator']
 
     def __init__(self):
         self.timestamp = ""
@@ -126,6 +126,11 @@ class FightHistoryEntry:
         # Instance tab finds the fight's split (session_splits, issue #194);
         # '' when no BEGIN_LOG was seen
         self.session_stamp = ""
+        # Where the fight's lines are in its log and who its units are, for
+        # a view that re-reads the fight from disk (fight_locator, issue
+        # #214): a FightLocator, immutable, replaced whole when a fight the
+        # game cut in two goes on; None on an entry built without it
+        self.locator = None
 
 
 class FightHistory:

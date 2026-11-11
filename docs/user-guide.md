@@ -64,7 +64,7 @@ When a fight completes a trial or an arena, a line under it gives the run's resu
 ### The fight
 
 - **Trial result**: on the fight that completed a trial or an arena, a strip across the top gives the run's result, the same line as in the fight list. **Copy fight** adds it under the first line.
-- **Header**: boss or mob name, then how the pull ended (`Wipe 62%`, as in the [fight list](#fight-history)), duration, group DPS, zone, start time, and player deaths: when anyone died, `Deaths 14` ends in a skull in the link colour, and opens the [Deaths tab](#every-death-of-a-fight). In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. The group DPS ends in a small graph line in the link colour: click it, or **DPS graph** on the toolbar, for the [DPS graph tab](#dps-over-time).
+- **Header**: boss or mob name, then how the pull ended (`Wipe 62%`, as in the [fight list](#fight-history)), duration, group DPS, zone, start time, and player deaths: when anyone died, `Deaths 14` ends in a skull in the link colour, and opens the [Deaths tab](#every-death-of-a-fight). In a fight with a boss the DPS reads `boss / total`: the damage dealt to the units the game flags as bosses, then all damage dealt. The duration is the fight time; when the group's dps time (first hit to last, what the DPS divides by) reads differently, it follows in brackets: `1:40 (dps time 1:32)`. The group DPS ends in a small graph line in the link colour: click it, or **DPS graph** on the toolbar, for the [DPS graph tab](#dps-over-time). **Positions**, at the end, shows where everyone stood at the fight's first death, or as it began, in the [positions window](#positions).
 - **Misfortunes**: in a solo dungeon (March of Sacrifices, Moon Hunter Keep), a line under the header names the Misfortunes the run was started with, `Misfortunes: Warm Welcome · Revoke of Respite · Alleviating Assault`, or reads `Misfortunes: none`; hover a name for what it does. **Copy fight** adds the same line. Other zones have no such line.
 - **Buff timeline**: above the header, the [strip](#the-buff-timeline) with one row per effect across the fight, buffs above and debuffs below. A fresh install tracks how much of the fight Major Courage, Major Force, Major Slayer, Powerful Assault, Lucent Echoes and Pearlescent Ward were on anyone in the group; `Taunt:97%`, how long each boss had a taunt on it; seven boss debuffs (Off-Balance, Touch of Z'en, Morag Tong, Minor Brittle, Major Brittle, Elemental Catalyst's weaknesses, Alkosh); and, commented out for an Arcanist to switch on, Crux, the mean and peak Crux you held. Each of these is a [tracked-effect rule](#tracked-effects) and has a row when its effect was up; the group buffs other than Powerful Assault also show at `0%`, in dark red bold, in a group of five or more when nobody had them, and the taunt in any group. In a fight without a boss the boss rules measure the pack and say how many of its mobs they reached: `Alkosh:45% on 7 of 12 mobs`. **Copy fight** puts the same items on one text line.
 - **One row per player**, ranked by damage to the bosses and then by all damage (in a fight without a boss, by all damage):
@@ -150,7 +150,7 @@ What a second player bringing the same group effect adds, as the 378 split logs 
 
 The **Deaths** tab (Alt+E) lists every death of the fight on one page; the header's `Deaths 14` opens it too. A line sums it up: `14 deaths of 9 players · first at 1:42 · the pull ended 1:12 after it · 6 dead at the end`, with the pull's end on a wipe, and who was dead at the end in a fight with a boss the group damaged. Under it, a table gives the deaths in the order they came: when, the role, the player, what killed them and from whom, and how long they stayed dead. The log keeps each player's time dead in all, not death by death, so a death has its own time only where that total gives it: a player's only death, or a last death that lasted to the end of the fight. Any other shows a dash, and so does an only death in a fight that carries on the last pull, whose total can hold time from the fight before. Each player's total is in the line below.
 
-Then come the killers, each ability with its source and how many it killed, `a fall or lava` among them, and the share the bosses dealt; everyone's time dead, longest first, with its share of the fight; and the companions' deaths, as a count, since the log keeps no recap of them. A player the table does not list (Also died, on the fight's rows) is there too. Click a name, or hover it for when and to what, for that death on the player's [Deaths](#deaths) tab. With [Hide names](#hiding-other-players-names) on, the other players' names are hidden here too.
+Then come the killers, each ability with its source and how many it killed, `a fall or lava` among them, and the share the bosses dealt; everyone's time dead, longest first, with its share of the fight; and the companions' deaths, as a count, since the log keeps no recap of them. A player the table does not list (Also died, on the fight's rows) is there too. Click a name, or hover it for when and to what, for that death on the player's [Deaths](#deaths) tab. Each row's time is a link, in the link colour: where everyone stood as that player died, in the [positions window](#positions). With [Hide names](#hiding-other-players-names) on, the other players' names are hidden here too.
 
 ![Every death of a fight, on the Deaths tab](screencaps/fight-deaths.png)
 
@@ -204,6 +204,18 @@ In a [player's window](#a-players-window):
 | Ctrl+PgDn, Ctrl+PgUp | The next or previous tab |
 | Ctrl+Down, Ctrl+Up | The next or previous player, on the same tab |
 | Alt+O | Boss targets only on or off, on Damage done |
+| Esc | Close the window |
+
+In the [positions window](#positions):
+
+| Key | Does |
+|---|---|
+| Ctrl+Left, Ctrl+Right | A second back or on; with Shift, a tenth |
+| Ctrl+PgUp, Ctrl+PgDn | The previous or next death |
+| Ctrl+Up, Ctrl+Down | The previous or next player or boss in the table |
+| Left, Right, Home, End, PgUp, PgDn | On the bar under the picture: a second back or on (a tenth with Shift), the start or the end, the previous or next death |
+| Enter | On a player's row: their player window |
+| Ctrl+C | Copy the moment in words |
 | Esc | Close the window |
 
 ## A player's window
@@ -299,7 +311,7 @@ A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deat
 
 ![The Deaths tab: the last seconds before a death](screencaps/death-recap.png)
 
-Each death names the killing ability and who used it (for a fall into lava or off a ledge, *a fall or lava*; for a death the log wrote no line for, the hit that left the player at 0, marked *read from health reaching 0*), lists the last seconds of damage and healing, oldest first (3 seconds by default, 1 to 10 in [Settings](#settings)), and sums those seconds by kind under the table. The line after the last death, **Over the whole fight: Damage taken tab**, opens [Damage taken](#damage-taken): everything that reached the player's health over the fight, summed the same way, with every ability, the units that did the damage and the healers.
+Each death names the killing ability and who used it (for a fall into lava or off a ledge, *a fall or lava*; for a death the log wrote no line for, the hit that left the player at 0, marked *read from health reaching 0*), lists the last seconds of damage and healing, oldest first (3 seconds by default, 1 to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Positions**, at the end of each death's heading, shows where everyone stood at that moment, in the [positions window](#positions). The line after the last death, **Over the whole fight: Damage taken tab**, opens [Damage taken](#damage-taken): everything that reached the player's health over the fight, summed the same way, with every ability, the units that did the damage and the healers.
 
 The kinds are the splits the Warfare champion point stars act on, each a two-colour bar with the amounts and percentages on either side:
 
@@ -316,6 +328,21 @@ The event table:
 - The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT, with the damage type after it (`Hit · fire`) and `area · hit N players` for an area hit. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
 
 Heals that were pure overheal are left out of the table and counted in the overheal figure. A death the game writes just after combat ends (the last player standing in a wipe) still counts and is added to that fight. A fight recorded by an older version says `Damage kinds were not recorded for this fight` where the summaries would be.
+
+## Positions
+
+The positions window shows where everyone stood at one moment of a fight, seen from above and held still. The time on each row of the [Deaths tab](#every-death-of-a-fight) opens it, and so does **Positions** on each death's heading on a player's [Deaths](#deaths) tab, at that death with the player selected; **Positions** at the end of the fight's header opens it at the first death, or as the fight began when no one died. One window serves every link, and it keeps its fight while the list moves on.
+
+To draw a fight, the app reads its lines from the log again, which takes a moment; the window says `Reading the fight's lines…` until then. It looks in the session's split log, the live log and the archives made since; for a fight from a [reviewed file](#reviewing-and-copying-fights), in that file first, even after **Back to live** while a window still shows the fight. When none of them holds the session any more, the window says `This fight's lines are no longer on disk`; with [split logs](#settings) on, each session's lines are kept in a file of their own. A fight from a log whose start the app never read (a reviewed file that begins partway through a session, say) has no **Positions** link.
+
+- **The picture**: each player in the fight table is a mark with a number in it, the place of their row in the table (companions are not counted). The shape is the role: a circle for DPS, a diamond for a healer, a square for a tank. The ring around a mark is their health, full when the ring is whole; a thin outer arc is a damage shield, and a small point shows which way they face. A boss is a hexagon with its name and health, and an add a small triangle pointing the way it faces. A mark is hollow with a cross when the unit is dead, dashed when the log has said nothing of it for over a second, and dotted after five. Players standing too close to tell apart share one box that lists each one's shape and number with a short bar of their health under it, without the ring or the facing point; a dashed line runs from the box to where they stand when it had to move aside. A unit outside the drawn area is held at the picture's edge, and a small grey arrow beside it points to where it really is, not the way it faces. An add stays drawn until the log has said nothing of it for 15 seconds, and is a cross for 2 seconds after its health reaches 0; after that it is not drawn, and nothing names it. Someone in another part of the zone or on another map is not drawn: the line under the picture names them. There is no map, only the places.
+- **The table** beside it lists the same players and bosses with their health, shield, magicka, stamina and ultimate, and how each one is: `alive`, `dead`, `last seen 3 s ago`, `not on this map`. At a [text size](#accessibility) above 150% it leaves out magicka and stamina and gives health as a share alone, to fit; **Ctrl+C** still copies them. A screen reader reads it. Click a mark or a row to select that unit; Enter or a double-click on a player's row opens their [player window](#a-players-window).
+- **Moving**: `−1 s` and `+1 s` step a second, or a tenth with Shift held; `◀ Death` and `Death ▶` go to the previous or next death; a click on the bar under them goes to any moment, the crosses on it being the deaths. Nothing plays by itself.
+- **Show** picks what else is drawn. Players, bosses and adds are drawn to begin with; pets, companions, units the log never announced (anchors, hazards) and other units are each a click away.
+- **Show in list** selects the fight in the fight list. **Ctrl+C** copies the moment in words, names hidden as [Hide names](#hiding-other-players-names) hides them.
+- **Closing**: Esc or the title bar's ×. The window keeps its size and place from one start of the app to the next.
+
+After a Settings save that replays the session, the window moves to the replayed copy of its fight. If the replay no longer has that fight, the window keeps it as it was and says so.
 
 ## DPS over time
 

@@ -50,8 +50,10 @@ The window has no Close or default button, so Enter never closes it; Esc
 and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
-the list by a signal, and its pages' links are its own tab switches. It
-stores no lambda on a child.
+the list by a signal, and its pages' links are its own tab switches, but
+for a death's Positions link (issue #214), the one way out of it, which it
+hands on by a signal too, with its fight: the positions window is the main
+window's. It stores no lambda on a child.
 """
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
@@ -82,6 +84,7 @@ from gui.damage_render import damage_title, render_damage_html
 from gui.death_render import (
     SKULL,
     death_anchor,
+    death_positions_tooltips,
     deaths_by_unit,
     kind_tooltips,
     render_death_recap_html,
@@ -184,6 +187,10 @@ class PlayerWindow(QDialog):
     # The fight the window shows, which its Show in list button asks the
     # main window to select
     show_in_list_requested = Signal(object)
+    # A death's Positions link on the Deaths tab (issue #214), which the
+    # main window opens the positions window at: the fight, the key of the
+    # unit to select ('' for none) and ms into the fight
+    positions_requested = Signal(object, str, int)
 
     def __init__(self, parent=None, icons=None, config=None):
         super().__init__(parent)
@@ -257,6 +264,9 @@ class PlayerWindow(QDialog):
             view.healing_requested.connect(self._to_healing)
             view.death_recap_requested.connect(self._to_deaths)
             view.recap_requested.connect(self._to_death)
+            # A moment of the fight leaves the window: the main window has
+            # the positions window (issue #214)
+            view.positions_requested.connect(self._to_positions)
             self._views[key] = view
             self.tabs.addTab(view, label)
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -503,7 +513,10 @@ class PlayerWindow(QDialog):
         muted = _theme(dark)["muted"]
         p = player_for(entry, unit_id)
         if tab == DEATHS_TAB:
-            return kind_tooltips(), self._deaths_page(p, view, base_pt, text_color, muted)
+            # The star links, and each death heading's Positions link
+            tooltips = kind_tooltips()
+            tooltips.update(death_positions_tooltips(entry))
+            return tooltips, self._deaths_page(p, view, base_pt, text_color, muted)
         if p is None:
             # A player the table does not list (Also died): no build reached
             # the log
@@ -609,6 +622,12 @@ class PlayerWindow(QDialog):
         if str(unit_id) == self._unit_id:
             self._drawn.pop(DEATHS_TAB, None)  # open at the death, not at its place
         self._go(DEATHS_TAB, unit_id)
+
+    def _to_positions(self, unit_key, ms):
+        """A death's Positions link: the main window opens the positions
+        window at that moment of the window's fight (issue #214)."""
+        if self._entry is not None:
+            self.positions_requested.emit(self._entry, str(unit_key), int(ms))
 
     def _switch_player(self, unit_id: str) -> None:
         self._unit_id = unit_id

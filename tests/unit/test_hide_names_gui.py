@@ -649,3 +649,108 @@ class TestCharacterName(HideNamesTestCase):
         self.assertNotIn("@friend", masked)
         self.assertRegex(masked, r'^@<img src="mask:[a-z_]+\?color=5f6368&amp;pt=7\.65&amp;b=0"')
         self.assertIn("via Infused Inferno Staff</span> 80%, @me 20%", masked)
+
+
+class TestPositionsWindowNames(HideNamesTestCase):
+    """The positions window (issue #214): its own mask, made from the one
+    the main window hands it and the locator's players; its table, hover,
+    label and copy through it; a flip, a theme switch, and Ctrl+H from
+    it."""
+
+    def _fight(self):
+        from tests.unit.test_positions_window_gui import session, split_and_states
+        _log, _path, fights, states = split_and_states(self.root, session())
+        return fights[0], states
+
+    def _positions(self, hide, parent=None):
+        from fight_reread import RereadEvent
+        from gui.name_mask import NameMask
+        from gui.positions_window import PositionsWindow
+        from tests.unit.test_positions_window_gui import DEATH, DPS
+        entry, states = self._fight()
+        window = PositionsWindow(parent)
+        if parent is None:
+            self.addCleanup(window.deleteLater)
+            self.addCleanup(window.close)
+        window.open(entry, DEATH, DPS, dark=False, names=NameMask.for_entry(entry, hide))
+        window.reread_done(RereadEvent("loaded", entry.locator, states))
+        return window
+
+    def _names_shown(self, window):
+        from gui.positions_window import NAME_COL
+        model = window.model
+        return [model.data(model.index(row, NAME_COL)) for row in range(model.rowCount())]
+
+    def test_the_table_title_and_copy_hide_every_other_player(self):
+        window = self._positions(hide=True)
+        shown = self._names_shown(window)
+        self.assertIn("@tester", shown)  # the player writing the log
+        self.assertIn("Test Boss", shown)  # an enemy, never hidden
+        for name in ("@dps", "@healer", "@stranger", "Lead Leaver"):
+            self.assertNotIn(name, shown)
+        self.assertIn("@" + BLOCK * 3, shown)
+        self.assertEqual(window.windowTitle(), "Positions – Test Boss")
+        text = window.moment_text()
+        for name in ("@dps", "@healer", "@stranger", "Lead Leaver", "Dps Char"):
+            self.assertNotIn(name, text)
+
+    def test_a_player_who_left_in_the_lead_in_is_hidden(self):
+        """The player with no handle left before the pull: the engine's
+        player_names never had them, the window's mask from the locator
+        does."""
+        from gui.name_mask import NameMask
+        window = self._positions(hide=True)
+        entry = window.entry
+        self.assertFalse(NameMask.for_entry(entry, True).hides("Lead Leaver"))
+        self.assertTrue(window.names().hides("Lead Leaver"))
+        self.assertNotIn("Lead Leaver", self._names_shown(window))
+
+    def test_the_selected_name_is_pixelated_on_the_canvas(self):
+        from unittest import mock
+
+        from gui import positions_canvas
+        from gui.name_mask import stand_in
+        window = self._positions(hide=True)
+        window.resize(1000, 640)
+        calls = []
+        real = positions_canvas.mask_image
+
+        def spy(word, *args, **kwargs):
+            calls.append(word)
+            return real(word, *args, **kwargs)
+        with mock.patch.object(positions_canvas, "mask_image", spy):
+            self.assertFalse(window.canvas.grab().isNull())
+        self.assertEqual(calls, [stand_in("@dps")])
+        self.assertNotIn("@dps", window.canvas.tooltip_text(
+            next(u for u in window.scene().units if u.key == "3")))
+
+    def test_a_flip_and_a_theme_switch(self):
+        from gui.name_mask import NameMask
+        window = self._positions(hide=False)
+        self.assertIn("@dps", self._names_shown(window))
+        window.refresh(False, names=NameMask.for_entry(window.entry, True))
+        self.assertNotIn("@dps", self._names_shown(window))
+        window.refresh(True)  # a theme switch keeps the mask
+        self.assertNotIn("@dps", self._names_shown(window))
+        window.refresh(True, names=NameMask.for_entry(window.entry, False))
+        self.assertIn("@dps", self._names_shown(window))
+
+    def test_ctrl_h_flips_the_switch_from_the_positions_window(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        win = self._window()
+        try:
+            # The main window's action is an application shortcut once its
+            # window has been shown, as in the app
+            win.show()
+            win.activateWindow()
+            self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
+            window = self._positions(hide=False, parent=win)
+            window.activateWindow()
+            self.assertTrue(QTest.qWaitForWindowActive(window, 2000))
+            QTest.keyClick(window, Qt.Key_H, Qt.ControlModifier)
+            self.assertTrue(win.hide_names_action.isChecked())
+            QTest.keyClick(window.table, Qt.Key_H, Qt.ControlModifier)
+            self.assertFalse(win.hide_names_action.isChecked())
+        finally:
+            win.close()
