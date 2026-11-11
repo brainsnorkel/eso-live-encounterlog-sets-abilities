@@ -1,6 +1,0 @@
-### Added
-- **A set's bonus lines on hover** (#79): hovering a set's name on a player's gear line, on the Build tab's gear rows or in a build-issue finding shows the lines of the set the player has, numbered by the pieces each needs: someone with three pieces sees the two- and three-piece lines, not the five-piece one. Pieces are counted on the player's better bar, a set worn perfected and normal counts both, and figures that scale with level show their value at the level cap (`Adds 657 Critical Chance`). The text is UESP's and comes with the app; the click still opens the set's ESO-Hub page
-- **The set behind a caster's share of a buff** (#79): the summary a click on an uptime row opens names the set after a caster's figures, `· from Spell Power Cure` or `· from Roaring Opportunist`, for the Major and Minor buffs of 24 sets. It is read from the set's own effect, which the game writes beside the buff, up at any moment of the fight, so it is per caster and fight
-
-### Fixed
-- **Hover text from the keyboard** (#79): a link Tab lands on now shows its hover text just under itself, in the fight's tabs, in a player's window and in the `ⓘ` popup; it goes when the page scrolls or changes. Until now an icon's ability name, a death's cause and every other hover in a page could only be read with the mouse

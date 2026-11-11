@@ -2,6 +2,33 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.40.0] - 2026-11-11
+
+### Added
+- **A set's bonus lines on hover** (#79): hovering a set's name on a player's gear line, on the Build tab's gear rows or in a build-issue finding shows the lines of the set the player has, numbered by the pieces each needs: someone with three pieces sees the two- and three-piece lines, not the five-piece one. Pieces are counted on the player's better bar, a set worn perfected and normal counts both, and figures that scale with level show their value at the level cap (`Adds 657 Critical Chance`). The text is UESP's and comes with the app; the click still opens the set's ESO-Hub page
+- **The set behind a caster's share of a buff** (#79): the summary a click on an uptime row opens names the set after a caster's figures, `· from Spell Power Cure` or `· from Roaring Opportunist`, for the Major and Minor buffs of 24 sets. It is read from the set's own effect, which the game writes beside the buff, up at any moment of the fight, so it is per caster and fight
+
+### Changed
+- **A fight counts the group fighting on after it ended for you** (#162): when you die, or drop out of combat while the rest of the group fights on, the game ends the fight for you, and the group's hits after that were counted in no fight. Their hits on the fight's enemies now count in it, at their own times, until 3 seconds pass without one, and the fight is then brought up to date. Its time, deaths, healing and damage taken stay as the game ended it. The dps time runs to the last hit, the damage window says how long after the fight ended a player's last hit landed, and the DPS graph runs on to that hit with a dashed line where the fight ended. In a boss fight, combat beginning again while the group is still hitting an enemy it was fighting carries the same fight on, however long after: a boss pull that your deaths had cut into parts is one fight again, ending in its kill or wipe. Over 411 split logs, 186 fights take such hits, a median 0.8% of their damage and over a fifth in 18, and 39 fights are 15 boss pulls again, 8 of them Lord Falgravn's, ending in 10 kills and 5 wipes where each part read Left or Lost sight. A long mop-up after a kill lowers the group's DPS; boss DPS is unchanged.
+- **A set worn partly perfected and partly normal is one entry on the gear line** (#215): `5x Slivers of the Null Arca (2 perfected)` in place of two entries that could sit far apart. The game counts the two versions together towards the set's bonuses, so the line now says what the player has. The name opens the normal version's ESO-Hub page and `2 perfected` the perfected one's, hovering either says `5 pieces: 2 perfected, 3 normal`, and Copy fight writes the same entry. Fights from before this version show it too
+- **The gear line under each build card is larger** (#215): 0.85 of the pane's text size, the size of the scribed-skill line above it, up from 0.75, which was the smallest text in the app
+- **A boss left all but dead is a kill while anyone in the group stands** (#221): under 0.01% of its health. Sanity's Edge's Archwizard Twelvane leaves his phase at 7 of 124 million health and writes no death line. Once the deaths below counted, his pull read as a wipe with exactly half the group dead. No other pull in 391 split logs ends that close to 0 without a kill
+
+### Fixed
+- **Build checks and penetration count a set's perfected and normal pieces together** (#215): the app counted the two versions as two sets, so a build with two perfected and three normal pieces had five pieces in the game and none complete in the app. Checked on 411 logs: of 162 player sessions that reached five pieces only with both versions counted, 158 show the set's own effect, as 3,537 of 3,594 sessions with five pieces of one version do. What changes for those players:
+  - a Lucent Echoes, Xoryn's Masterpiece or Pearlescent Ward the two versions complete on both bars is no longer called complete on one bar only, and one they complete on one bar only now is;
+  - a Roaring Opportunist worn in both versions is judged by the never-fires rule;
+  - three pieces of a trial set across both versions count as a Minor Slayer source;
+  - the Pen and crit tab reads a set's lines once at the two counts added (two perfected and two normal pieces of Ansuul's Torment give its four-piece penetration), while a perfected arena weapon's own two-piece line still needs both pieces perfected;
+  - the Build tab's Pcs column shows the pair's count on the rows of both versions
+- **Deaths the log writes no death line for are counted** (#221): about one player death in thirteen in fights has no `DIED` line in the log, nor a fall's `KILLED_BY_SUBZONE`. The player's health reads 0 and stays there until they are resurrected or release. The app counted none of these deaths, so they had no recap, no time dead and no part in the kill or wipe verdict. Now:
+  - A player at 0 health for a second with no death line in that time died, from the first 0. Every line that shows the player counts, not only hits: many of these players were out of your combat range or in another area, as in Cloudrest's portal or Sunspire.
+  - The killer is the hit that left the player at 0, or else the last hit within 3 seconds; with neither, *an unknown cause*. The recap says the death was *read from health reaching 0*.
+  - Over 391 split logs (8,932 fights), 1,327 deaths are added in 606 fights, the user guide's Yandir fight among them.
+  - 19 pulls that read Lost sight or Left now read Wipe. Each was followed by another pull of the same boss, or ended with every player dead
+- **Time dead no longer ends at a corpse's own healing** (#221): a dead player's healing and regeneration ticks write health on the corpse, and that ended their time dead about a second after the death. In 15 fights a player's time dead now runs 5 to 45 seconds longer, to their resurrection or release
+- **Hover text from the keyboard** (#79): a link Tab lands on now shows its hover text just under itself, in the fight's tabs, in a player's window and in the `ⓘ` popup; it goes when the page scrolls or changes. Until now an icon's ability name, a death's cause and every other hover in a page could only be read with the mouse
+
 ## [0.39.0] - 2026-11-09
 
 ### Changed

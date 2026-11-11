@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2991](../src/esolog_tail.py#L2991)*
+*[src/esolog_tail.py:3555](../src/esolog_tail.py#L3555)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,22 +34,25 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
+*[src/esolog_tail.py:91](../src/esolog_tail.py#L91)*
 
-The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
+The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull. Later than that, it continues a boss fight when the group has fought on its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS, issue #162).
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
+*[src/esolog_tail.py:2077](../src/esolog_tail.py#L2077)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
-just ended instead of starting one (see COMBAT_RESUME_MS): it follows
-the END_COMBAT closely, and an enemy the group was hitting when the
-fight ended is still alive.
+just ended instead of starting one: it follows the END_COMBAT
+closely and an enemy the group was hitting when the fight ended is
+still alive (see COMBAT_RESUME_MS), or, however long after, the
+fight had boss damage, the group has fought on since and is still
+hitting one, the same record, its last hit since END_COMBAT and
+within FIGHT_ON_MS (waiting_hits).
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1993](../src/esolog_tail.py#L1993)*
+*[src/esolog_tail.py:2108](../src/esolog_tail.py#L2108)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +60,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:83](../src/esolog_tail.py#L83)*
+*[src/esolog_tail.py:85](../src/esolog_tail.py#L85)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +68,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:2117](../src/esolog_tail.py#L2117)*
+*[src/esolog_tail.py:2305](../src/esolog_tail.py#L2305)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -109,14 +112,15 @@ waiting_hits). A cast counts as the opener's does: five
 of the survey's empty fights stay listed for a monster's cast at a
 player or a player's at a boss, acts the opener names.
 
-## Fight boundaries: the hits before the line
+## Fight boundaries: the hits before the line and the group fighting on
 
 ### src/waiting_hits.py
 
 *[src/waiting_hits.py:1](../src/waiting_hits.py#L1)*
 
-The group's hits between fights, waiting for the next fight's line (engine
-side, no Qt). Issue #162, part 1.
+The group's hits between fights: waiting for the next fight's line, or the
+group fighting on after the fight that ended (engine side, no Qt). Issue
+#162, parts 1 and 2.
 
 Design: The hits before the line. A fight runs from the logging player's
 BEGIN_COMBAT to their END_COMBAT, and the group's first hits often land
@@ -191,28 +195,92 @@ with no enemy took hits on new enemies only (in Sanity's Edge the next
 pack's Wamasus, units 602 to 626, where the fight before had fought unit
 333).
 
+The group fighting on (part 2). END_COMBAT is the logging player's line as
+well: when they die, or step out of combat while the rest of the group
+fights on, the group's hits after it went on the closed encounter, which
+nothing built again, and counted in no fight. In the survey's 395 split
+logs, 235 fights had such hits on their own enemies before the next line,
+119.5 M of damage: a fifth or more of the fight's in 25, and in a Hel Ra
+Citadel boss fight 16.4 M of its 48.2 M, the group fighting on for 64.7 s
+and three of them dying as they did. From a listed fight's END_COMBAT (a
+blip settles nothing, so none of its), a hit of the group's on an enemy
+record the fight hit is the group fighting on while it comes within
+FIGHT_ON_MS of END_COMBAT or of the last such hit: the fight's encounter
+counts it as a hit in it, at its own time, DoT ticks too. The 3 s are the
+survey's knee: a pause between two such hits was under 0.7 s in 99% of
+them, and 3 s takes 99.4% of their damage where 15 s would add 0.3%.
+
+Once the group has stopped, at the first log line past the wait (read at
+the line's own time, which the parser does not give every event), at the
+next fight's line, at a zone change or a new session, or at the log's end
+(ESOLogAnalyzer.finish, which a replay calls), the fight is built again,
+and the entry frontends hold takes what those hits decide
+(take_damage_figures): the dps and its time, the graph's series, each
+row's damage figures and the rows' order, the name shown (its most
+damaged enemy), the penetration figures and the pull, read again against
+the pull before it and with the boss as the group left it. The rest stays
+as END_COMBAT left it, though the encounter has gone on gathering: the
+deaths after LATE_DEATH_GRACE_MS, healing, damage taken, a player who came
+after, the build findings (a tank's share of the damage among them), the
+recaps, and the fight's time, which is the log's (the maintainer's
+decision 6). That build has no side effect (the builder's *again*): a
+tracker pruned then would forget the casts under way, and in a replay the
+next fight counted a cast written over its line twice, in 12 rows.
+
+Replayed through 0.39.0 and through this rule (411 split logs, 9,309
+fights), 186 fights take hits fought on without being carried on: 80.6 M,
+a median 0.81% of the fight's damage (p90 13.0%, over a fifth in 18).
+Their group dps moves a median +0.12%, lower in 61 and higher in 124,
+since a long mop-up after a kill lowers it: in a Hel Ra Citadel Yokeda
+Rok'dun kill the group fought the adds on for 104 s after the 118 s fight,
+and its dps reads 321k, not 500k, the boss dps unchanged, since it divides
+by the hits on the bosses. No pull's verdict changes in them, and nothing
+but the damage figures moves.
+
+A boss fight carried on (decision 5's b). Combat beginning again later
+than COMBAT_RESUME_MS after END_COMBAT carries the fight on, however long
+after, when the fight had boss damage, the group has fought on since
+without a pause of FIGHT_ON_MS, and an enemy it was hitting as the fight
+ended (the engine's _engaged_at_end, the same record, alive) took one of
+its hits since END_COMBAT within FIGHT_ON_MS of the line: one fight from
+its first line to its last, the deaths, healing and other hits between
+the lines its own, as a fight the game cut in two. Without the boss rule
+the replay carried 51 fights on, trash among them: in four Hel Ra Citadel
+runs the gargoyles the group was still finishing headed the Yokeda kill
+(a 107 s kill read as a 205 s fight), and the maintainer chose boss pulls
+only (2026-11-11). With it, 39 fights are 15 boss pulls again, 8 of them
+Lord Falgravn's in Kyne's Aegis, which the logging player's deaths had cut
+into as many as six parts (Lieutenant Njordal, added friendly, fights on
+its floors), the others the Yokeda twins, Ansuul, Z'Maja and an overland
+Dread Harvester; their pulls, Left or Lost sight on each cut part, now
+read 10 kills and 5 wipes.
+
 Where the hits wait: here, one ledger for the analyzer (WaitingHits), told
-of each fight boundary as the opener's memory is. Each hit after
-END_COMBAT still goes on the closed encounter as it comes, since a fight
-the game cut in two reopens that encounter with them, its cast watchers
-and all; the ledger keeps a copy, at most the last 10 s, read as the
-closed encounter read it (the kinds once, for both): the engine's record
-of its enemy, so a unit id handed out again is not the ended fight's
-enemy; whose it is (CombatEncounter.hitter_of), so a player back on a new
-unit id, re-keyed at the line, keeps their hits and a pet removed before
-the line (a Blastbones blows up and goes) is its owner's; and its kinds.
-The line takes the copies, the hitters still on the new fight's list, and
-puts their casts back in the kinds index it has just emptied, so a cast
-that strikes another unit after the line is area on both sides (in the
-replay 1.0 M of 75 G moved from single to area, in 59 fights, and 7.9 M of
-area damage was read by its cast rather than by the ability's session).
-END_COMBAT counts them by the same code as any hit, before the entry is
-built, once the fight's length shows it is no blip: nothing reads a
-fight's damage before then. Then the waiting starts again, and the ended
-fight's enemies are the records it hit. A fight carried on keeps the
-copies dealt before its END_COMBAT (a blip's, waiting on) and drops the
-later ones, which are on its encounter; a held combat listed late does the
-same, its entry having the later ones.
+of each fight boundary as the opener's memory is. After a listed fight's
+END_COMBAT a hit that is not the group fighting on waits here alone, never
+on the closed encounter, whose entry is built again with the hits fought
+on: read as that encounter would have credited it (CombatEncounter.
+read_hit, the kinds once): the engine's record of its enemy, so a unit id
+handed out again is not the ended fight's enemy; whose it is
+(CombatEncounter.hitter_of), so a player back on a new unit id, re-keyed
+at the line, keeps their hits and a pet removed before the line (a
+Blastbones blows up and goes) is its owner's; and its kinds. The ledger
+keeps the last 10 s of them, and every one since END_COMBAT while the
+group may still fight on: a fight carried on takes those back
+(carried_on) and counts them by the same code as any hit, its earlier
+copies (a blip's) waiting on. The line takes the copies, the hitters
+still on the new fight's list, and puts their casts back in the kinds
+index it has just emptied, so a cast that strikes another unit after the
+line is area on both sides (in the part 1 replay 1.0 M of 75 G moved from
+single to area, in 59 fights, and 7.9 M of area damage was read by its
+cast rather than by the ability's session). END_COMBAT counts them by the
+same code as any hit, before the entry is built, once the fight's length
+shows it is no blip: nothing reads a fight's damage before then. Then the
+waiting starts again, the ended fight's enemies are the records it hit,
+and the group may fight on them. A combat held for want of an enemy has
+no entry: its encounter takes each hit as it comes and a copy waits, and
+listed late it drops the copies since its END_COMBAT, its entry having
+them.
 
 ## The fight's opener
 
@@ -315,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4911](../src/esolog_tail.py#L4911)*
+*[src/esolog_tail.py:5513](../src/esolog_tail.py#L5513)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -358,7 +426,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:369](../src/esolog_tail.py#L369)*
+*[src/esolog_tail.py:370](../src/esolog_tail.py#L370)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -1107,6 +1175,87 @@ the game after this file was built shows no weight until it is regenerated.
 Run after an ESO update that adds gear (needs network access):
     python scripts/generate_armor_weights.py
 
+## Perfected and normal pieces of one set
+
+### family_counts
+
+*[src/player_build.py:472](../src/player_build.py#L472)*
+
+Design: Perfected and normal pieces count together. A trial or
+arena set comes in two versions with two set ids, and the game counts
+their pieces together towards the set's bonuses: two perfected and
+three normal pieces of Slivers of the Null Arca are five pieces of it.
+Only the perfected version's own extra line needs its count in
+perfected pieces alone.
+
+Measured on 411 split logs (issue #215), over the 15 sets someone wore
+in both versions, by whether the wearer was the source of an effect of
+the set's in that session:
+- five pieces only with both versions counted: 158 of 162 sessions;
+- five pieces of one version: 3,537 of 3,594;
+- below five with both counted: 1 of 62.
+The four without the effect wore Mora Scribe's Thesis (3 of its 6;
+one version alone shows it in 19 of 29) and Claw of Yolnahkriin (its
+one session; the buff needs a taunt). Minor Slayer, the three-piece
+line, was on all 28 PLAYER_INFO lines of the one session that reached
+three only together, and on none of the 209 lines below three.
+
+So: set id -> [pieces active on the front bar, on the back bar], as
+piece_counts gives them, but a set worn in both versions is one entry,
+under the normal version's id, with the two counts added per bar. A set
+worn in one version keeps that version's id, so a caller's table has to
+list both ids, as SLAYER_SETS and GROUP_SETS do. What needs perfected
+pieces alone reads piece_counts. *pairs* is {perfected id: normal id},
+the bundled set data's by default (perfected_pairs).
+
+### table_sets_worn
+
+*[src/pen_crit.py:419](../src/pen_crit.py#L419)*
+
+[(set id, its table entry, [pieces on the front bar, on the back])]
+for the worn sets the offense table lists, in set id order.
+
+A set's perfected and normal pieces count together towards the lines
+the two versions share (player_build.family_counts has the measure). So
+when both versions are worn and the table lists both, the lines are
+read once, from the normal version's entry, at the two counts added per
+bar: two perfected and two normal pieces of Ansuul's Torment give its
+four-piece penetration. A perfected version the table lists alone has
+only its own extra line there (an arena weapon's two-piece penetration),
+which needs its count in perfected pieces, so it keeps them
+(tests/unit/test_pen_crit.py holds the table to that shape). *pairs* is
+{perfected id: normal id}, the bundled set data's by default.
+
+### set_entries
+
+*[src/gui/fight_render.py:1228](../src/gui/fight_render.py#L1228)*
+
+Design: Perfected and normal pieces on the gear line. The log gives
+a perfected set and its normal version two set ids and two names, but
+the game counts their pieces together towards the set's bonuses (only
+the perfected version's own extra line needs five perfected pieces).
+So the gear line shows the pair as one entry, placed by the total:
+{'count', 'name'} for a set worn in one version, with 'perfected' (the
+perfected pieces among them) and 'perfected_name' added when both are
+worn, 'name' then being the normal version's. Entries keep the engine's
+order, most pieces first, a pair standing where its total puts it and
+ties staying as they came (issue #215).
+
+The entry reads '5x Slivers of the Null Arca (2 perfected)': the total
+first, since the first thing asked of a gear line is how much of the
+set is there, and it is the shortest of the forms tried, the one that
+kept a four-set line on one line of a 560 px pane. The name opens the
+normal version's ESO-Hub page and '2 perfected' the perfected one's.
+
+The counts are the engine's, as the line has always had them: every
+piece worn, the weapons of both bars among them. So a set with a
+weapon on each bar reads one or two above what either bar has active,
+which the Build tab's Pcs column gives per bar. Over 411 split logs
+that is 88 of the 242 builds wearing a set in both versions and 747 of
+the 19,952 wearing one; the line reads five or more where neither bar
+has five in 1 and 12 of them (issue #219 asks which count the line
+should show).
+
 ## Set names
 
 ### src/gear_set_database.py
@@ -1260,6 +1409,128 @@ Run after a patch, or when the logs hold more sets, then review the printed
 table before committing the file:
     python scripts/generate_set_buffs.py                    # the app's split folder
     python scripts/generate_set_buffs.py --dir D:/esologs/splits
+
+### sets_behind
+
+*[src/set_text.py:195](../src/set_text.py#L195)*
+
+The sets whose own id of the buff *buff_name* is among *given*, the
+set-buff ids a caster had up in a fight; in name order. [] for a row
+that is not named after a buff of the table.
+
+Design: The set behind a buff. A group buff from a set is written to the
+log twice: once under the buff's own id, the one the uptime strip's row
+follows (Major Courage 109966, Major Slayer 93109, Major Force 61747), and
+once under an id of the set's own (Spell Power Cure's 66902, Roaring
+Opportunist's 135923, Saxhleel Champion's 154830), from the same caster to
+the same receivers. In a Dreadsail Reef log both ids of each pair were
+gained the same number of times by the same casters on the same receivers
+(288, 56 and 122 times). So a row's own intervals cannot say which set a
+caster's share came from: they carry the buff's id whatever its source.
+What can is the set's own id: the engine notes, per fight, which of the
+ids in data/sets/set_buffs.json each player had up on anyone during it
+(SetBuffRecorder; the entry's player 'set_buffs'), and a row named after a
+buff reads its casters' sets from there (sets_behind). The label is per caster and fight:
+a caster who gave the buff from a set and by another means too reads
+"from <set>" for their whole share. The table (scripts/generate_set_buffs.py)
+knows 34 ids of 24 sets, those someone in the surveyed logs wore, and no id
+that several sets write.
+
+### SetBuffRecorder
+
+*[src/set_text.py:70](../src/set_text.py#L70)*
+
+Who had a set's own buff id up on anyone, and when, in raw log
+milliseconds: given_in() reads a fight's window out of it, as the buff
+timeline's recorder does for the strip's rows.
+
+A fight's casters are those with the id up during the fight, not those
+whose GAINED line fell inside it: a buff gained just before the pull
+and still up is the wearer's in that fight, as the row shows it, and a
+refresh (UPDATED) of a buff this recorder never saw gained counts too.
+An interval runs from the first GAINED or UPDATED of an id on a unit to
+its FADED, and is credited to every caster seen on it while it was up
+(two wearers refresh each other's buff, and FADED is not relied on to
+name the caster). The game writes no FADED for a unit that is removed
+or dies, and unit ids start afresh in a new zone, so forget_unit and
+zone_changed end the open intervals, as effect_rules' tracker does.
+
+## Set text in the hovers, and hover text from the keyboard
+
+### src/set_text.py
+
+*[src/set_text.py:1](../src/set_text.py#L1)*
+
+A set's bonus text, and the set behind a Major or Minor buff (issue #79).
+
+Design: Set text in the hovers. The game's client holds no set bonus text
+the app can read (it comes from the server through the add-on API), so the
+text is UESP's, bundled per set id in data/sets/bonuses_en.json by
+scripts/generate_set_offense.py (CC-BY-SA 2.5, credited in the README and
+the About box, and by a short line under each hover that shows it). A set
+link's click target stays the set's ESO-Hub page.
+
+What a hover shows is the lines the player has, not the set's whole text:
+the lines at or below the pieces active on their better bar. A set's whole
+text runs to 573 characters and one five-piece line to 496, and a player
+wearing three pieces has no use for the five-piece line. A set worn in both
+versions has the lines the two share at the two counts added, as the game
+counts them (player_build.family_counts), and the perfected version's own
+extra line only at its count in perfected pieces.
+
+Figures are shown at their top value: UESP writes a figure that scales with
+level as a range, "Adds 15-657 Critical Chance", low value first, and every
+one of the 1,970 ranges in the bundled text reads that way (18 of them
+percentages from 0, 12 plain figures from 0; none is a duration or a
+distance; tests/unit/test_set_text.py holds the file to it). A player at
+the level cap has the high value, so the text reads "Adds 657 Critical
+Chance". The bundled file keeps UESP's text as it came.
+
+### set_hovers
+
+*[src/gui/fight_render.py:1326](../src/gui/fight_render.py#L1326)*
+
+Design: A set link's hover. What each set link of one player
+carries, by the set's name as the link shows it (a set worn in both
+versions has two names, and two links): {'fragment', 'split', 'lines'}.
+
+'lines' are the set's bonus lines the player has (set_text.active_lines):
+those at or below the pieces active on their better bar, which the
+entry's gear rows carry as the Pcs column shows them (a set worn in both
+versions at the two counts added, player_build.family_counts), and its
+perfected line at the perfected pieces of that bar, counted from the
+rows (piece_counts). With the two bars level, the better bar is the one
+with more perfected pieces. An entry without gear rows falls back to
+the gear line's own counts. 'split' is '5
+pieces: 2 perfected, 3 normal' for a set worn in both versions.
+
+'fragment' goes on the link's address: the pane keeps one hover per
+address for the whole fight, and two players can wear one set at
+different counts, so the address says which hover is meant, as a
+scribed skill's does for its scripts. ESO-Hub ignores it, and the same
+address is built for the gear line, the Build tab's gear rows and a
+finding's set link, so all three show the same hover (issue #79).
+
+### FightView._show_key_tip
+
+*[src/gui/fight_view.py:311](../src/gui/fight_view.py#L311)*
+
+Design: Hover text from the keyboard. A link's hover text was the
+mouse's alone: Qt reports a hovered link (highlighted) and nothing
+for one Tab moves to, so a set's bonus lines, an ability's name
+behind its icon or a death's cause could not be read without a
+pointer. The reader's own Tab or Shift+Tab now shows the text of the
+link it lands on, just under the link's line, where the pointer may
+be anywhere; a link without text, or leaving the page, takes the
+last one away. Not the step keeping_place takes to give a link its
+focus back after a redraw: the page redraws on every live fight
+update, and the text would come back each time (issue #79).
+
+Qt takes a tooltip down on a mouse press, the wheel or a change of
+focus, but not on a key, so text shown for a key would stay over a
+page that scrolled or changed under it: it is taken down when the
+page is drawn anew, when the reader scrolls and when the focus
+leaves (_hide_key_tip).
 
 ## Game data against the game's version: the staleness check
 
@@ -1702,7 +1973,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:717](../src/gui/build_render.py#L717)*
+*[src/gui/build_render.py:722](../src/gui/build_render.py#L722)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1724,7 +1995,7 @@ an absence would draw the eye to nothing.
 
 ### _heading_html
 
-*[src/gui/build_render.py:549](../src/gui/build_render.py#L549)*
+*[src/gui/build_render.py:554](../src/gui/build_render.py#L554)*
 
 A section heading with its rule, as a one-cell table head: Qt rich
 text draws borders on table cells and never on a <p>, so the Damage
@@ -1836,9 +2107,10 @@ rule, player-fights / distinct characters in that survey:
   buff for the whole group that holds only while five pieces are active.
   The rule cannot be general: 38% of all five-piece wearings in the survey
   were one-bar, which is normal for proc sets and front-bar damage sets.
-  Piece counts per bar come from player_build.piece_counts (a two-hander
-  counts as two). A build without a back-bar weapon, or wearing Oakensoul
-  Ring, is not reported.
+  Piece counts per bar come from player_build.family_counts (a two-hander
+  counts as two, and a set's perfected and normal pieces count together,
+  as they do in the Minor Slayer and proc-set checks). A build without a
+  back-bar weapon, or wearing Oakensoul Ring, is not reported.
 - **A tank with no taunt or pull** (95 / 3 with the gates below; added the
   same day at the maintainer's request). The health pool alone is not a
   tank: of 3,154 health-dominant player-fights in the same logs, 762 had
@@ -2003,7 +2275,7 @@ the weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:1099](../src/build_issues.py#L1099)*
+*[src/build_issues.py:1117](../src/build_issues.py#L1117)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, a second copy of a group buff set or a
@@ -2015,7 +2287,7 @@ instead of counting twice. reset() at BEGIN_LOG.
 
 ### GroupBuffCredit
 
-*[src/build_issues.py:825](../src/build_issues.py#L825)*
+*[src/build_issues.py:841](../src/build_issues.py#L841)*
 
 Whose copy of a group buff set's buff each player had, over time
 (issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
@@ -2264,7 +2536,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:962](../src/esolog_tail.py#L962)*
+*[src/esolog_tail.py:1012](../src/esolog_tail.py#L1012)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2305,13 +2577,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:102](../src/esolog_tail.py#L102)*
+*[src/esolog_tail.py:107](../src/esolog_tail.py#L107)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:419](../src/esolog_tail.py#L419)*
+*[src/esolog_tail.py:420](../src/esolog_tail.py#L420)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2395,7 +2667,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:119](../src/esolog_tail.py#L119)*
+*[src/esolog_tail.py:124](../src/esolog_tail.py#L124)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2403,7 +2675,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:142](../src/esolog_tail.py#L142)*
+*[src/esolog_tail.py:147](../src/esolog_tail.py#L147)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2574,11 +2846,16 @@ time axis takes a wider step than the timeline strip's for a long fight
 when its labels would run together: the chart is narrower in the tab than
 it was in the window.
 
+The group fighting on after the fight's END_COMBAT counts in the fight
+(waiting_hits, issue #162): the chart then runs to the group's last hit,
+a dashed line where the fight ended, so that damage keeps its own seconds
+instead of piling into the fight's last.
+
 ## Pets: whose damage and healing they are
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:658](../src/esolog_tail.py#L658)*
+*[src/esolog_tail.py:694](../src/esolog_tail.py#L694)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2601,7 +2878,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:804](../src/esolog_tail.py#L804)*
+*[src/esolog_tail.py:840](../src/esolog_tail.py#L840)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2633,7 +2910,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:4115](../src/esolog_tail.py#L4115)*
+*[src/esolog_tail.py:4717](../src/esolog_tail.py#L4717)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2881,7 +3158,14 @@ shades, and a few seconds-long scripted starts.
   the group dead when the fight ended. That last test caught 5 fights
   whose death line never reached the log (Tremorscale at 0.2%, Eliam
   Merick at 0.1%): none was pulled again, and 4 were followed by the next
-  boss. A kill with half the group dead is still a kill: 174 fights.
+  boss. A kill with half the group dead is still a kill: 174 fights. A boss
+  left under NEAR_ZERO_KILL_PCT with one of the group standing died: once
+  the deaths the log writes no line for counted (issue #221), Sanity's
+  Edge's Archwizard Twelvane, who leaves his phase at 7 of 124 million
+  health and writes no death line, read as a wipe with exactly half the
+  group dead, the Chimera kill beginning 0.6 s later. Over the 391 split
+  logs no other pull ends that close to 0 without a kill. With every
+  player dead it stays a wipe, however close.
 - **Wipe**: not a kill, and at least half the fight's players were dead
   when it ended, not revived before END_COMBAT. "Half the group died at
   some point" is the wrong test: in a long fight with resurrections every
@@ -2908,12 +3192,20 @@ Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
 read as kills, and the next pull of the pair shows the group still at it.
 
 Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
-issue #184) opens a span; the next line that carries their state with
-health above 0 closes it, at least
-REVIVE_MIN_MS after the death, since the lines of the killing blow carry
-the corpse's 0. END_COMBAT closes any span still open, and those still
+issue #184) opens a span, and so does a death the log wrote no such line
+for: the player's state reading health 0 for ZERO_HEALTH_HOLD_MS with no
+death line (issue #221, see death_recap), the span from the first 0. The
+next combat line that carries their state with health above 0 closes it,
+at least REVIVE_MIN_MS after the death, since the lines of the killing blow
+carry the corpse's 0. A corpse's own states close none: its healing ticks
+write health with magicka and stamina at 0, and its regeneration tick
+writes health equal to its own regeneration, which later lines repeat for
+seconds (#221, esolog_tail's _note_zero_state). END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
-two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+two (COMBAT_RESUME_MS), or carried on while the group fought on
+(waiting_hits), reopens them, but for a player up again between the
+lines, dead until then; a death between the lines is the fight's too
+should it carry on. A span starts at the fight's start
 at the earliest: a player who fell before the pull is dead from it, not
 from the fall. Deaths the log never saw (the others' after the logging
 player released) are missing from the counts, so time dead, read from
@@ -3094,6 +3386,25 @@ logs):
   END_COMBAT. A FALLING line came before only that last one, and FALLING
   lines carry whatever ability the player had (Bash, a fire or shock id),
   so they make no recap row.
+- Some player deaths have no death line at all (issue #221): 1,366 of the
+  17,976 deaths in fights in the maintainer's 391 split logs (7.6%), from
+  7.1% in dungeons to 8.0% in arenas. The player's state reads health 0,
+  they stay down, and they come back by a resurrection or a release. The
+  engine counts such a death when the player's state, on any line that
+  carries it, reads 0 for pull_outcome.ZERO_HEALTH_HOLD_MS and no death
+  line names the player meanwhile (esolog_tail's _note_zero_state); one up
+  again sooner was no death. It is timed at the first 0. Its killer and
+  ability are the hit that left the player at 0: the line that first
+  showed the 0, or one logged up to KILLING_BLOW_GRACE_MS after it
+  (blow_fields), else the last hit on the player at or before it,
+  KILLER_WINDOW_MS back at most (last_hit_fields; often a hit of 0 with
+  the overkill in the overflow), else NO_HIT_DEATH. The recap carries
+  cause HEALTH_CAUSE so a frontend can say the death was read from health.
+  A death line up to pull_outcome.ZERO_LINE_SAME_MS after it, the player
+  not seen up between, is the same death written late, and keeps that
+  recap. Each player's history is kept that hold longer than the window,
+  so the corpse's hits and heals in the hold cut neither the recap's
+  window nor the killer's.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
@@ -3373,7 +3684,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1493](../src/gui/main_window.py#L1493)*
+*[src/gui/main_window.py:1494](../src/gui/main_window.py#L1494)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -3600,7 +3911,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:220](../src/gui/timeline_strip.py#L220)*
+*[src/gui/timeline_strip.py:236](../src/gui/timeline_strip.py#L236)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -3813,7 +4124,7 @@ began; none in that folder did (the latest ended at 23:46).
 
 ### split_lines_html
 
-*[src/gui/fight_render.py:196](../src/gui/fight_render.py#L196)*
+*[src/gui/fight_render.py:206](../src/gui/fight_render.py#L206)*
 
 Design: the split logs beside a run (issue #194). The result strip
 of the fight that completed a run, and the Instance tab under its
@@ -3862,7 +4173,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1145](../src/gui/main_window.py#L1145)*
+*[src/gui/main_window.py:1146](../src/gui/main_window.py#L1146)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3916,13 +4227,13 @@ it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:2606](../src/gui/main_window.py#L2606)*
+*[src/gui/main_window.py:2610](../src/gui/main_window.py#L2610)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:989](../src/gui/main_window.py#L989)*
+*[src/gui/main_window.py:990](../src/gui/main_window.py#L990)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -3953,13 +4264,13 @@ list meanwhile would lose its items.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:159](../src/gui/fight_view.py#L159)*
+*[src/gui/fight_view.py:160](../src/gui/fight_view.py#L160)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
+*[src/gui/fight_view.py:384](../src/gui/fight_view.py#L384)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -4493,7 +4804,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:729](../src/gui/fight_view.py#L729)*
+*[src/gui/fight_view.py:770](../src/gui/fight_view.py#L770)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -4581,7 +4892,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:592](../src/gui/fight_view.py#L592)*
+*[src/gui/fight_view.py:633](../src/gui/fight_view.py#L633)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
