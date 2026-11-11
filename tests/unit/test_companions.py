@@ -419,6 +419,20 @@ class TestCompanionCasts(unittest.TestCase):
     def test_its_healing_to_others(self):
         self.assertEqual((self.row['healing'], self.fight.players[2]['healing']), (5000, 3000))
 
+    def test_a_bar_skill_written_again_on_its_track_stays_counted(self):
+        """#226: a skill written again on its track after END_CAST is taken
+        for a proc, but one on the companion's bar stays counted."""
+        fight = _run([OWN] + FIGHT_START + [
+            _cast(13000, _companion(23), BEAM),
+            f"13000,END_CAST,COMPLETED,13000,{BEAM}",
+            _cast(14000, _companion(23), BEAM, track=13000),
+            f"14000,END_CAST,COMPLETED,13000,{BEAM}",
+            _cast(16000, _companion(23), BEAM),
+            PLAYER_HIT, COMPANION_HIT,
+        ] + FIGHT_END).fight_history.fights[0]
+        row = fight.players[1]
+        self.assertEqual((row['casts']['total'], row['front_bar_slots'][0]['casts']), (2, 2))
+
     def test_no_ultimate_cast_is_an_empty_list(self):
         fight = _run([OWN] + FIGHT_START + [PLAYER_HIT, COMPANION_HIT] + FIGHT_END
                      ).fight_history.fights[0]
