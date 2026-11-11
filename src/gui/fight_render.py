@@ -97,14 +97,16 @@ import zlib
 from pathlib import PurePath
 from typing import List, Optional, Tuple
 
+import set_text
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
 from fight_opener import PlayerName, opener_parts
+from gear_set_database import gear_set_db
 from gui.death_render import FIGHT_DEATHS_HREF, death_chip_html, deaths_by_unit
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
-from player_build import normal_set_name
+from player_build import gear_of_rows, normal_set_name, piece_counts
 from pull_outcome import (
     clock,
     dead_row_text,
@@ -700,12 +702,18 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
         return ""
     theme = _theme(dark)
     e = html.escape
+    hovers = set_hovers(p) if set_links else {}
     rows = []
     for finding in findings:
         extras = []
         for key, lookup in (("set", set_links), ("skill", links)):
             name = str(finding.get(key) or "")
-            url = lookup(name) if lookup and name else None
+            if key == "set":
+                # The set's link as the player's gear line has it, so its
+                # hover has the lines they have (set_hovers, issue #79)
+                url = set_href(name, set_links, hovers) if name else None
+            else:
+                url = lookup(name) if lookup and name else None
             if url:
                 extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
                               f'{e(name)} on ESO-Hub</a>')
@@ -1310,37 +1318,113 @@ def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dic
                     if url and url not in tips:
                         tips[url] = (f"<b>{e(str(script))}</b><br>{kind} script"
                                      f"{_link_note(url, e)}")
-        if set_links:
-            for item in set_entries(p):
-                mixed = "perfected" in item
-                for name, href in _set_hrefs(item, set_links):
-                    if href and href not in tips:
-                        tips[href] = _link_tip(name, href, e,
-                                               set_split_text(item) if mixed else "")
-                    # The Build tab's gear rows and a finding's set link
-                    # carry the page's plain address, and read these same
-                    # tips (player_window): they keep the name and the
-                    # target, as for a set worn in one version
-                    plain = href.split("#", 1)[0] if href else None
-                    if mixed and plain and plain not in tips:
-                        tips[plain] = _link_tip(name, plain, e)
+        for href, tip in set_tooltips(p, set_links).items():
+            tips.setdefault(href, tip)
     return tips
 
 
-def _set_hrefs(item: dict, set_links) -> List[Tuple[str, Optional[str]]]:
-    """[(set name, its ESO-Hub href or None)] for one gear-line entry: one
-    pair, or the normal version's and the perfected one's for a set worn in
-    both. Those two carry a fragment with the piece split, so their hover
-    can state it: one tooltip belongs to one href, and two players can wear
-    the same set split differently."""
-    if "perfected" not in item:
-        return [(item["name"], set_links(item["name"]) if set_links else None)]
-    split = f"#pieces-{item['perfected']}-{item['count'] - item['perfected']}"
-    out = []
-    for name in (item["name"], item["perfected_name"]):
-        url = set_links(name) if set_links else None
-        out.append((name, url + split if url else None))
+def set_hovers(p) -> dict:
+    """Design: A set link's hover. What each set link of one player
+    carries, by the set's name as the link shows it (a set worn in both
+    versions has two names, and two links): {'fragment', 'split', 'lines'}.
+
+    'lines' are the set's bonus lines the player has (set_text.active_lines):
+    those at or below the pieces active on their better bar, which the
+    entry's gear rows carry as the Pcs column shows them (a set worn in both
+    versions at the two counts added, player_build.family_counts), and its
+    perfected line at the perfected pieces of that bar, counted from the
+    rows (piece_counts). With the two bars level, the better bar is the one
+    with more perfected pieces. An entry without gear rows falls back to
+    the gear line's own counts. 'split' is '5
+    pieces: 2 perfected, 3 normal' for a set worn in both versions.
+
+    'fragment' goes on the link's address: the pane keeps one hover per
+    address for the whole fight, and two players can wear one set at
+    different counts, so the address says which hover is meant, as a
+    scribed skill's does for its scripts. ESO-Hub ignores it, and the same
+    address is built for the gear line, the Build tab's gear rows and a
+    finding's set link, so all three show the same hover (issue #79)."""
+    rows = p.get("gear") or []
+    active = {str(row.get("set")): row["pieces"] for row in rows if row.get("pieces")}
+    own = None  # each version's own pieces, counted only for a set worn in both
+    out = {}
+    for item in set_entries(p):
+        mixed = "perfected" in item
+        names = [item["name"]] + ([item["perfected_name"]] if mixed else [])
+        ids = [str(gear_set_db.get_set_id_by_name(name) or "") for name in names]
+        bars = next((active[name] for name in names if name in active), None)
+        if bars:
+            front, back = bars[0] or 0, bars[1] or 0
+            pieces, perfected = max(front, back), None
+            if mixed:
+                own = piece_counts(gear_of_rows(rows)) if own is None else own
+                theirs = own.get(ids[1]) or [0, None]
+                bar = 0 if (front, theirs[0] or 0) >= (back, theirs[1] or 0) else 1
+                perfected = theirs[bar] or 0
+        else:
+            pieces = item["count"]
+            perfected = item["perfected"] if mixed else None
+        # The perfected version's text has every line of the pair
+        text_id = ids[-1]
+        lines = set_text.active_lines(text_id, pieces, perfected) if text_id else []
+        fragment = ""
+        if mixed:
+            fragment = f"pieces-{item['perfected']}-{item['count'] - item['perfected']}"
+        if text_id and set_text.has_text(text_id):
+            fragment = f"{fragment or 'pieces'}-on-{pieces}" + (f"-{perfected}" if mixed else "")
+        for name in names:
+            out[name] = {"fragment": fragment, "lines": lines,
+                         "split": set_split_text(item) if mixed else ""}
     return out
+
+
+def set_href(name: str, set_links, hovers: dict) -> Optional[str]:
+    """The address of a set link for one player: the set's ESO-Hub page,
+    with the fragment that picks the player's hover (set_hovers); the plain
+    page for a set the player does not wear, None for a set without a page."""
+    url = set_links(name) if set_links and name else None
+    fragment = (hovers.get(name) or {}).get("fragment")
+    return f"{url}#{fragment}" if url and fragment else url
+
+
+def _set_tip(name: str, href: str, e, hover: dict) -> str:
+    """Hover text of a set link: the name, the split of a set worn in both
+    versions, the bonus lines the player has, and where the click leads
+    with whose text it is. A set with no line to show reads as any link."""
+    if not hover.get("lines"):
+        return _link_tip(name, href, e, hover.get("split") or "")
+    rows = [f"<b>{e(name)}</b>"]
+    if hover.get("split"):
+        rows.append(e(hover["split"]))
+    rows.extend(f"({pieces}) {e(text)}" for pieces, text in hover["lines"])
+    rows.append(f"<span style='font-size:85%'>Click to open on ESO-Hub"
+                f" · {e(set_text.CREDIT)}</span>")
+    return "<br>".join(rows)
+
+
+def set_tooltips(p, set_links) -> dict:
+    """{address: hover text} of one player's set links: each set at the
+    address their gear line, their Build tab's gear rows and their findings
+    use (set_href), and its plain address with the name and the target,
+    for a link drawn without the player (a finding on a set they do not
+    wear links the plain page too)."""
+    if not set_links:
+        return {}
+    e = html.escape
+    tips = {}
+    hovers = set_hovers(p)
+    for name, hover in hovers.items():
+        href = set_href(name, set_links, hovers)
+        if href:
+            tips.setdefault(href, _set_tip(name, href, e, hover))
+            plain = href.split("#", 1)[0]
+            tips.setdefault(plain, _link_tip(name, plain, e))
+    for finding in p.get("build_issues") or []:
+        name = str(finding.get("set") or "")
+        plain = set_links(name) if name else None
+        if plain:
+            tips.setdefault(plain, _link_tip(name, plain, e))
+    return tips
 
 
 def _sets_html(p, set_links, e, color: str) -> str:
@@ -1357,18 +1441,19 @@ def _sets_html(p, set_links, e, color: str) -> str:
         return (f'<a href="{e(url, quote=True)}" '
                 f'style="text-decoration:none;color:{color}">{label}</a>')
 
+    hovers = set_hovers(p) if set_links else {}
     chunks = []
     for item in items:
-        hrefs = _set_hrefs(item, set_links)
+        name_href = set_href(item["name"], set_links, hovers)
         if "perfected" not in item:
-            chunks.append(f"{item['count']}x {linked(e(item['name']), hrefs[0][1])}")
+            chunks.append(f"{item['count']}x {linked(e(item['name']), name_href)}")
             continue
         # '5x Name (2 perfected)': the name opens the normal version's
         # page, the bracket the perfected one's. The name may wrap between
         # its words; the bracket never parts from it, nor breaks inside
         part = SET_PERFECTED_PART.format(perfected=item["perfected"]).replace(" ", "&nbsp;")
-        chunks.append(f"{item['count']}x {linked(e(item['name']), hrefs[0][1])}"
-                      f"&nbsp;({linked(part, hrefs[1][1])})")
+        chunks.append(f"{item['count']}x {linked(e(item['name']), name_href)}&nbsp;"
+                      f"({linked(part, set_href(item['perfected_name'], set_links, hovers))})")
     return ", ".join(chunks)
 
 

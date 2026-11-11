@@ -603,6 +603,32 @@ class TestPerfectedAndNormalTogether(unittest.TestCase):
         self.assertEqual(got['HEAD']['set_id'], '772')  # each row keeps its own set
 
 
+class TestGearOfRows(unittest.TestCase):
+    """Issue #79: a reader with the fight entry counts pieces from its gear
+    rows as the engine counted them from the log's gear."""
+
+    def test_the_rows_count_as_the_gear_they_came_from(self):
+        from player_build import family_counts, gear_of_rows
+        body = [item(slot, '1') for slot in ('HEAD', 'CHEST', 'HAND')]
+        gears = [
+            gear_of(*body, item('MAIN_HAND', '1'), item('BACKUP_MAIN', '2')),  # two two-handers
+            gear_of(*body, item('MAIN_HAND', '1', item_id='5'), item('OFF_HAND', '1', item_id='5'),
+                    item('BACKUP_MAIN', '2')),                                # dual wield
+            gear_of(*body, item('MAIN_HAND', '1', item_id='5'),
+                    item('OFF_HAND', '2', item_id='6', trait='ARMOR_STURDY')),  # sword and shield
+            gear_of(*body, item('MAIN_HAND', '1'),
+                    item('OFF_HAND', '0', item_id='0')),                       # an empty off hand
+            gear_of(item('HEAD', '772'), item('CHEST', '767'), item('NECK', '767'),
+                    item('POISON', '0', item_id='76827')),                     # both versions
+            {},
+        ]
+        for gear in gears:
+            rebuilt = gear_of_rows(rows(gear).values())
+            self.assertEqual(piece_counts(rebuilt), piece_counts(gear), gear)
+            self.assertEqual(family_counts(rebuilt), family_counts(gear), gear)
+        self.assertEqual(gear_of_rows(None), {})
+
+
 class TestParserAcceptsEmptyEffectLists(unittest.TestCase):
 
     LINE = ('100,PLAYER_INFO,7,[],[],[[HEAD,95044,T,16,ARMOR_DIVINES,LEGENDARY,270,MAGICKA,'

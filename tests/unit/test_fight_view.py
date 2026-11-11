@@ -146,16 +146,24 @@ class TestBarRendering(FightViewTestCase):
         set_links = lambda n: {'Deadly Strike': 'https://eso-hub.com/en/sets/deadly-strike',  # noqa: E731
                                'Arms of Relequen': 'https://eso-hub.com/en/sets/perfected-arms-of-relequen'}.get(n)
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links, set_links=set_links)
-        self.assertIn('5x <a href="https://eso-hub.com/en/sets/deadly-strike"', html)
+        # A set with bundled text carries the piece count on its address,
+        # which picks the hover with the lines the player has (issue #79)
+        self.assertIn('5x <a href="https://eso-hub.com/en/sets/deadly-strike#pieces-on-5"', html)
         self.assertIn('>Deadly Strike</a>', html)
         self.assertIn('2x Unknown Set', html)       # no page known: plain text
         self.assertNotIn('<a href="esolog:set', html)
-        self.assertIn('5x <a href="https://eso-hub.com/en/sets/perfected-arms-of-relequen"', html)
+        self.assertIn('5x <a href="https://eso-hub.com/en/sets/perfected-arms-of-relequen'
+                      '#pieces-on-5"', html)
         self.assertNotIn('<i>', html)               # set list is not italic
         self.assertIn("<span style='font-size:7.65pt'>5x", html)  # 0.85 of the 9pt base
         tips = anchor_tooltips(entry, links=_links, set_links=set_links)
         self.assertIn('Deadly Strike', tips['https://eso-hub.com/en/sets/deadly-strike'])
         self.assertIn('eso-hub.com', tips['https://eso-hub.com/en/sets/deadly-strike'])
+        tip = tips['https://eso-hub.com/en/sets/deadly-strike#pieces-on-5']
+        self.assertTrue(tip.startswith('<b>Deadly Strike</b><br>(2) Adds '))
+        self.assertNotRegex(tip, r'\d-\d')  # figures at their top value, no ranges
+        self.assertIn('<br>(5) ', tip)
+        self.assertTrue(tip.endswith("Click to open on ESO-Hub · Set text: UESP</span>"))
         # Without a set map the list is plain, and the clipboard copy never links
         self.assertIn('5x Deadly Strike, 2x Unknown Set, 5x Arms of Relequen',
                       render_html(entry, detailed=True))
@@ -186,20 +194,24 @@ class TestBarRendering(FightViewTestCase):
         self.assertIn(text, render_plain_text(entry))
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links,
                            set_links=pages.get)
-        self.assertIn('5x <a href="https://eso-hub.com/en/sets/slivers#pieces-3-2" '
+        self.assertIn('5x <a href="https://eso-hub.com/en/sets/slivers#pieces-3-2-on-5-3" '
                       'style="text-decoration:none;color:#3c4043">Slivers of the Null Arca</a>'
-                      '&nbsp;(<a href="https://eso-hub.com/en/sets/p-slivers#pieces-3-2" '
+                      '&nbsp;(<a href="https://eso-hub.com/en/sets/p-slivers#pieces-3-2-on-5-3" '
                       'style="text-decoration:none;color:#3c4043">3&nbsp;perfected</a>)',
                       html)
         self.assertEqual(html.count('Slivers of the Null Arca'), 1)
         tips = anchor_tooltips(entry, links=_links, set_links=pages.get)
-        for href, name in (('https://eso-hub.com/en/sets/p-slivers#pieces-3-2',
+        for href, name in (('https://eso-hub.com/en/sets/p-slivers#pieces-3-2-on-5-3',
                             'Perfected Slivers of the Null Arca'),
-                           ('https://eso-hub.com/en/sets/slivers#pieces-3-2',
+                           ('https://eso-hub.com/en/sets/slivers#pieces-3-2-on-5-3',
                             'Slivers of the Null Arca')):
             self.assertIn(f'<b>{name}</b><br>5 pieces: 3 perfected, 2 normal<br>', tips[href])
             self.assertIn('Click to open on ESO-Hub', tips[href])
-            self.assertNotIn('#pieces', tips[href])  # the address as the browser shows it
+            # The lines of five pieces, without the perfected set's own line,
+            # which needs five perfected pieces
+            self.assertIn('<br>(5) Dealing Critical Damage gives you a stack of Sliver', tips[href])
+            self.assertNotIn('Weapon and Spell Damage<br>', tips[href])
+            self.assertTrue(tips[href].endswith('· Set text: UESP</span>'))
         # The Build tab's gear rows and a finding's set link carry the plain
         # addresses and read these tips: both keep a hover, without the split
         for href, name in (('https://eso-hub.com/en/sets/p-slivers',
@@ -208,7 +220,7 @@ class TestBarRendering(FightViewTestCase):
             self.assertIn(f'<b>{name}</b><br><span', tips[href])
             self.assertIn('Click to open on ESO-Hub', tips[href])
         # A set in one version reads as it did, with no fragment
-        self.assertIn('2x <a href="https://eso-hub.com/en/sets/aeries-cry"', html)
+        self.assertIn('2x <a href="https://eso-hub.com/en/sets/aeries-cry#pieces-on-2"', html)
         self.assertNotIn('pieces', tips['https://eso-hub.com/en/sets/aeries-cry'])
         # Without a set map the entry is plain text
         self.assertIn('5x Slivers of the Null Arca&nbsp;(3&nbsp;perfected)',
@@ -228,9 +240,123 @@ class TestBarRendering(FightViewTestCase):
                  'Slivers of the Null Arca': 'https://eso-hub.com/en/sets/slivers'}
         tips = anchor_tooltips(entry, set_links=pages.get)
         self.assertIn('5 pieces: 3 perfected, 2 normal',
-                      tips['https://eso-hub.com/en/sets/slivers#pieces-3-2'])
+                      tips['https://eso-hub.com/en/sets/slivers#pieces-3-2-on-5-3'])
         self.assertIn('5 pieces: 1 perfected, 4 normal',
-                      tips['https://eso-hub.com/en/sets/slivers#pieces-1-4'])
+                      tips['https://eso-hub.com/en/sets/slivers#pieces-1-4-on-5-1'])
+
+    def _wearer(self, gear):
+        """A player dict with the gear rows and the gear line's counts the
+        engine gives for *gear* (slot -> set id, item id)."""
+        from player_build import gear_rows, is_two_handed
+        from gear_set_data import SET_ID_TO_NAME
+        full = {slot: [slot, item_id, 'T', '16', 'ARMOR_DIVINES', 'LEGENDARY', set_id,
+                       'MAGICKA', 'T', '16', 'LEGENDARY'] for slot, (set_id, item_id) in gear.items()}
+        worn = {}
+        for slot, item in full.items():
+            if item[6] == '0':
+                continue  # a weapon of no set
+            pieces = 2 if slot in ('MAIN_HAND', 'BACKUP_MAIN') and is_two_handed(
+                slot, item[1], full) else 1
+            name = SET_ID_TO_NAME[item[6]]
+            worn[name] = worn.get(name, 0) + pieces
+        return {'gear': gear_rows(full),
+                'all_sets': sorted(((n, name) for name, n in worn.items()), reverse=True)}
+
+    def test_a_hover_has_the_lines_of_the_better_bar(self):
+        """Issue #79: the lines a player has are those of the pieces active
+        on a bar, not of every piece worn. Deadly Strike is set 127."""
+        from gear_set_data import SET_NAME_TO_ID
+        from gui.fight_render import set_hovers
+        deadly = str(SET_NAME_TO_ID['Deadly Strike'])
+        body = {slot: (deadly, '1') for slot in ('HEAD', 'CHEST', 'HAND')}
+        # Three body pieces and a two-hander on the front bar: five there
+        front = self._wearer({**body, 'MAIN_HAND': (deadly, '7'), 'BACKUP_MAIN': ('0', '8')})
+        hover = set_hovers(front)['Deadly Strike']
+        self.assertEqual(hover['fragment'], 'pieces-on-5')
+        self.assertEqual([n for n, _t in hover['lines']], [2, 3, 4, 5])
+        # Three body pieces and a one-hander on each bar: five worn, four on
+        # either bar, and no five-piece line
+        each = self._wearer({**body, 'MAIN_HAND': (deadly, '7'), 'OFF_HAND': ('0', '9'),
+                             'BACKUP_MAIN': (deadly, '7'), 'BACKUP_OFF': ('0', '9')})
+        self.assertEqual(each['all_sets'], [(5, 'Deadly Strike')])
+        hover = set_hovers(each)['Deadly Strike']
+        self.assertEqual(hover['fragment'], 'pieces-on-4')
+        self.assertEqual([n for n, _t in hover['lines']], [2, 3, 4])
+        self.assertEqual(hover['split'], '')
+
+    def test_a_set_in_both_versions_has_its_perfected_line_by_the_bars_perfected_pieces(self):
+        from gui.fight_render import set_hovers
+        normal = {slot: ('767', '1') for slot in ('HEAD', 'CHEST', 'HAND')}  # Slivers
+        # Two perfected daggers on the front bar: five there, two perfected
+        mixed = self._wearer({**normal, 'MAIN_HAND': ('772', '5'), 'OFF_HAND': ('772', '5'),
+                              'BACKUP_MAIN': ('0', '8')})
+        hovers = set_hovers(mixed)
+        self.assertEqual(set(hovers), {'Slivers of the Null Arca',
+                                       'Perfected Slivers of the Null Arca'})
+        for hover in hovers.values():
+            self.assertEqual(hover['fragment'], 'pieces-2-3-on-5-2')
+            self.assertEqual(hover['split'], '5 pieces: 2 perfected, 3 normal')
+            self.assertEqual([n for n, _t in hover['lines']], [2, 3, 4, 5])
+            self.assertNotIn((5, 'Adds 129 Weapon and Spell Damage'), hover['lines'])
+        # Five perfected pieces and one normal ring: the perfected line too
+        whole = self._wearer({**{slot: ('772', '1') for slot in
+                                 ('HEAD', 'CHEST', 'HAND', 'WAIST', 'LEGS')},
+                              'RING1': ('767', '2')})
+        hover = set_hovers(whole)['Slivers of the Null Arca']
+        self.assertEqual(hover['fragment'], 'pieces-5-1-on-6-5')
+        self.assertIn((5, 'Adds 129 Weapon and Spell Damage'), hover['lines'])
+
+    def test_two_level_bars_read_the_one_with_more_perfected_pieces(self):
+        """Review of #220: four perfected Roaring Opportunist on the body, a
+        normal one-hander on one bar and a perfected one on the other. Both
+        bars have five; the bar with five perfected has the perfected line,
+        whichever bar it is."""
+        from gear_set_data import SET_NAME_TO_ID
+        from gui.fight_render import set_hovers
+        normal = str(SET_NAME_TO_ID['Roaring Opportunist'])
+        perfected = str(SET_NAME_TO_ID['Perfected Roaring Opportunist'])
+        body = {slot: (perfected, '1') for slot in ('HEAD', 'CHEST', 'HAND', 'WAIST')}
+        for front, back in ((normal, perfected), (perfected, normal)):
+            player = self._wearer({**body, 'MAIN_HAND': (front, '5'), 'OFF_HAND': ('0', '6'),
+                                   'BACKUP_MAIN': (back, '5'), 'BACKUP_OFF': ('0', '6')})
+            hover = set_hovers(player)['Roaring Opportunist']
+            self.assertTrue(hover['fragment'].endswith('-on-5-5'), (front, back, hover))
+            self.assertEqual(sum(1 for n, _t in hover['lines'] if n == 5), 2)
+
+    def test_a_set_without_bundled_text_keeps_its_plain_link(self):
+        from gui.fight_render import anchor_tooltips, render_html, set_hovers
+        entry = _entry_with_bars()
+        entry.players[0]['all_sets'] = [(5, 'A Set Too New'), (1, 'Slimecraw')]
+        self.assertEqual(set_hovers(entry.players[0])['A Set Too New'],
+                         {'fragment': '', 'lines': [], 'split': ''})
+        pages = {'A Set Too New': 'https://eso-hub.com/en/sets/new',
+                 'Slimecraw': 'https://eso-hub.com/en/sets/slimecraw'}
+        html = render_html(entry, detailed=True, set_links=pages.get)
+        self.assertIn('5x <a href="https://eso-hub.com/en/sets/new" ', html)
+        tips = anchor_tooltips(entry, set_links=pages.get)
+        self.assertEqual(tips['https://eso-hub.com/en/sets/new'],
+                         "<b>A Set Too New</b><br><span style='font-size:85%'>"
+                         "Click to open on ESO-Hub<br>https://eso-hub.com/en/sets/new</span>")
+        self.assertIn('(1) Adds 657 Critical Chance',
+                      tips['https://eso-hub.com/en/sets/slimecraw#pieces-on-1'])
+
+    def test_a_findings_set_link_is_the_players_own(self):
+        """Issue #79: the link of a finding that names a set opens the same
+        hover as the set on the player's gear line; a set they do not wear
+        links its plain page."""
+        from gui.fight_render import issues_html, set_tooltips
+        player = {'all_sets': [(5, 'Deadly Strike')], 'build_issues': [
+            {'rule': 'x', 'title': 'A finding', 'detail': 'Why.', 'set': 'Deadly Strike'},
+            {'rule': 'y', 'title': 'Another', 'detail': 'Why.', 'set': 'Roar of Alkosh'}]}
+        pages = {'Deadly Strike': 'https://eso-hub.com/en/sets/deadly-strike',
+                 'Roar of Alkosh': 'https://eso-hub.com/en/sets/roar-of-alkosh'}
+        html = issues_html(player, set_links=pages.get)
+        self.assertIn('<a href="https://eso-hub.com/en/sets/deadly-strike#pieces-on-5"', html)
+        self.assertIn('<a href="https://eso-hub.com/en/sets/roar-of-alkosh"', html)
+        tips = set_tooltips(player, pages.get)
+        self.assertIn('<br>(5) ', tips['https://eso-hub.com/en/sets/deadly-strike#pieces-on-5'])
+        self.assertIn('<b>Roar of Alkosh</b>', tips['https://eso-hub.com/en/sets/roar-of-alkosh'])
+        self.assertEqual(set_tooltips(player, None), {})
 
     def test_the_two_lines_under_the_bars_are_one_size(self):
         from gui import fight_render
@@ -1057,6 +1183,90 @@ class TestALinkReachedWithTab(FightViewTestCase):
         self._redraw(self.PAGE.replace("<p><a href='esolog:build/1'>",
                                        "<p>new words <a href='esolog:build/1'>"))
         self.assertEqual(self._selected(), 'a set')
+
+
+class TestHoverTextFromTheKeyboard(FightViewTestCase):
+    """Issue #79: Tab onto a link shows the link's hover text, which only
+    the mouse could bring up."""
+
+    @staticmethod
+    def _page():
+        return ('<p>x <a href="https://eso-hub.com/en/sets/a#pieces-on-5">Set A</a> y '
+                '<a href="esolog:build/1">@player</a> z '
+                '<a href="https://eso-hub.com/en/sets/b">Set B</a></p>')
+
+    def _view(self):
+        from gui.fight_view import FightView
+        view = FightView()
+        view.setHtml(self._page())
+        view.set_tooltips({'https://eso-hub.com/en/sets/a#pieces-on-5': 'TIP A',
+                           'https://eso-hub.com/en/sets/b': 'TIP B'})
+        view.resize(400, 200)
+        view.show()
+        view.setFocus()
+        _app.processEvents()
+        return view
+
+    def test_tab_shows_the_text_of_the_link_it_lands_on(self):
+        view = self._view()
+        try:
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP A')
+            view.focusNextPrevChild(True)   # a link without hover text
+            self.assertEqual(view.current_tooltip, '')
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP B')
+            view.focusNextPrevChild(False)  # Shift+Tab, back to the one without
+            self.assertEqual(view.current_tooltip, '')
+        finally:
+            view.close()
+
+    def test_the_text_goes_when_the_page_changes_or_scrolls_or_the_focus_leaves(self):
+        """Review of #220: Qt keeps a tooltip up through key presses, so the
+        text Tab brought up would stay over a page that moved under it."""
+        from PySide6.QtWidgets import QAbstractSlider
+        view = self._view()
+        try:
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP A')
+            view.setHtml('<p>another page</p>')
+            self.assertEqual(view.current_tooltip, '')
+            view.setHtml(self._page())
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP A')
+            view.verticalScrollBar().actionTriggered.emit(QAbstractSlider.SliderPageStepAdd)
+            self.assertEqual(view.current_tooltip, '')
+            view.focusNextPrevChild(True)
+            view.focusNextPrevChild(True)
+            self.assertEqual(view.current_tooltip, 'TIP B')
+            view.clearFocus()
+            self.assertEqual(view.current_tooltip, '')
+        finally:
+            view.close()
+
+    def test_a_mouse_hover_is_left_to_qt(self):
+        """Only the text Tab brought up is taken down here: a hovered link's
+        text is Qt's to take down."""
+        from PySide6.QtCore import QUrl
+        view = self._view()
+        try:
+            view.highlighted.emit(QUrl('https://eso-hub.com/en/sets/b'))
+            self.assertEqual(view.current_tooltip, 'TIP B')
+            view.setHtml(self._page())
+            self.assertEqual(view.current_tooltip, 'TIP B')
+        finally:
+            view.close()
+
+    def test_a_redraw_that_gives_the_link_its_focus_back_shows_nothing(self):
+        view = self._view()
+        try:
+            view.focusNextPrevChild(True)
+            view.current_tooltip = ''
+            with view.keeping_place():
+                view.setHtml(view.toHtml())
+            self.assertEqual(view.current_tooltip, '')
+        finally:
+            view.close()
 
 
 class TestSearchFindsAbilityIcons(FightViewTestCase):

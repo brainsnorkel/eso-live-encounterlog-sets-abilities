@@ -72,6 +72,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
 from effect_rules import DOTS_CAP
 from effect_summary import matrix, summarise
+from set_text import sets_behind
 from gui.name_mask import NO_MASK
 from gui.text_size import scale as text_scale, scaled_px
 
@@ -161,6 +162,8 @@ MARGIN = 4
 DEBUFF_SCOPES = {"boss", "enemies", "mobs"}
 DIVIDER_GAP = 5
 
+# After a caster's figures in the pop-up: the set their share came from
+FROM_SETS = "· from {sets}"
 # The pop-up lists at most this many casters or receivers, then "+N more"
 # (a pack's mobs can run to dozens); a caster x receiver grid is added when
 # both sides are this small
@@ -168,6 +171,19 @@ SUMMARY_LIST_LIMIT = 12
 MATRIX_MAX_SOURCES = 4
 MATRIX_MAX_TARGETS = 12
 CLICK_HINT = "<br><i>Click for who applied it and who had it</i>"
+
+
+def given_by_caster(players) -> dict:
+    """caster -> the set-buff ids they had up in the fight, from a fight
+    entry's players ('set_buffs'), by the name the strip's intervals know a
+    caster by. Two rows can share a name (a member back on another
+    character, players the log does not name), and the strip joins them as
+    one caster, so their ids are joined too."""
+    given = {}
+    for p in players or ():
+        if p.get("set_buffs"):
+            given.setdefault(str(p.get("name")), set()).update(p["set_buffs"])
+    return {caster: sorted(ids, key=int) for caster, ids in given.items()}
 
 
 def _tick_step_ms(duration_ms: int) -> int:
@@ -264,6 +280,7 @@ class TimelineStrip(QWidget):
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
         self._divider = None  # index of the first debuff row below buff rows, or None
         self._names = NO_MASK  # the Hide names mask for the hover and the pop-ups
+        self._given = {}       # caster -> the set-buff ids they gave (set_timeline)
         self.setVisible(False)
         self.setCursor(Qt.PointingHandCursor)
         # A painted widget is an empty one to a screen reader: its rows are
@@ -272,14 +289,19 @@ class TimelineStrip(QWidget):
 
     # ---- data ----
 
-    def set_timeline(self, timeline, tracked=None, armour=None, names=None) -> None:
+    def set_timeline(self, timeline, tracked=None, armour=None, names=None,
+                     given=None) -> None:
         """timeline: {'duration_ms', 'effects': {...}} or None to hide.
+        given: caster -> the set-buff ids they were the source of in the
+        fight (the entry's player 'set_buffs'), for the 'from <set>' beside
+        a caster in a row's summary (set_text.sets_behind).
         tracked: the fight's tracked effects (FightHistoryEntry.tracked),
         rows after the built-in ones; a rule that never occurred has none.
         armour: the Armour row (pen_crit.armour_row), last of all, or None.
         names: the Hide names mask (gui.name_mask) for the casters and
         receivers the hover and the click pop-up name."""
         self._names = names or NO_MASK
+        self._given = {str(caster): list(ids) for caster, ids in (given or {}).items() if ids}
         valid = bool(timeline and timeline.get("duration_ms", 0) > 0
                      and (timeline.get("effects") or tracked))
         self._timeline = timeline if valid else None
@@ -653,8 +675,23 @@ class TimelineStrip(QWidget):
                 rows.append(f"<tr><td><i>+{len(lines) - SUMMARY_LIST_LIMIT} more</i></td></tr>")
             return "<table cellspacing=0 cellpadding=1>" + "".join(rows) + "</table>"
 
-        sections = [table("Applied by", ["uptime", "alone", "spans"], summary["sources"],
-                          lambda l: [f"{l['uptime_pct']}%", f"{l['sole_pct']}%", l["spans"]])]
+        # 'from <set>' after a caster's figures, for a row named after a
+        # buff a set gives under an id of its own (set_text, issue #79):
+        # plain text, for the pop-up opens no links, and the set is a link
+        # on the caster's gear line
+        behind = {line["name"]: sets_behind(effect, self._given.get(line["name"], ()))
+                  for line in summary["sources"]}
+        with_sets = any(behind.values())
+
+        def applied(line):
+            cells = [f"{line['uptime_pct']}%", f"{line['sole_pct']}%", line["spans"]]
+            if with_sets:
+                sets = behind.get(line["name"])
+                cells.append(FROM_SETS.format(sets=escape(" / ".join(sets))) if sets else "")
+            return cells
+
+        sections = [table("Applied by", ["uptime", "alone", "spans"] + [""] * with_sets,
+                          summary["sources"], applied)]
         if stacks:
             sections.append(table("On", ["uptime", "peak", "at peak", "spans"], summary["targets"],
                                   lambda l: [f"{l['uptime_pct']}%", f"×{l['max_stacks']}",

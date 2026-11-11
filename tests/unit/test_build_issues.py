@@ -785,6 +785,52 @@ class TestEngine(unittest.TestCase):
     def _players(self, entry):
         return {p['name']: p for p in entry.players}
 
+    def _set_buffs(self, *fights):
+        return [{name: p['set_buffs'] for name, p in self._players(entry).items()}
+                for entry in _fights(_session(*fights))]
+
+    def test_a_player_has_the_set_buff_ids_they_had_up(self):
+        """Issue #79: the sets' own ids of the buffs a player had up on
+        anyone in the fight (set_text.SetBuffRecorder), for the 'from <set>'
+        in a strip row's summary. Spell Power Cure's Major Courage is 66902,
+        Roaring Opportunist's Major Slayer 135923; 76667 is a proc id the
+        set-buff table does not hold."""
+        fight = _fight(10000, 30000, alkosh_fires=True)
+        fight[-1:-1] = [_self_effect(14000, 2, 'GAINED', '66902'),
+                        _self_effect(15000, 2, 'FADED', '66902'),
+                        _self_effect(16000, 2, 'GAINED', '135923'),
+                        _self_effect(17000, 2, 'FADED', '135923')]
+        first, second = self._set_buffs(fight, _fight(40000, 60000))
+        self.assertEqual(first['@alkosh'], ['66902', '135923'])
+        self.assertEqual(first['@nirn'], [])
+        # Faded in the first fight: none in the next
+        self.assertEqual(second['@alkosh'], [])
+
+    def test_a_buff_gained_before_the_pull_and_still_up_counts(self):
+        """Review of #220: Roaring Opportunist's Major Slayer procs at the
+        end of one pack and is still up through the next pull; the row
+        shows the wearer, so the set is theirs too."""
+        gap = [_self_effect(35000, 2, 'GAINED', '135923'),
+               _self_effect(45000, 2, 'FADED', '135923')]
+        _first, second = self._set_buffs(_fight(10000, 30000), gap + _fight(40000, 60000))
+        self.assertEqual(second['@alkosh'], ['135923'])
+
+    def test_a_buff_only_refreshed_in_the_fight_counts(self):
+        fight = _fight(10000, 30000)
+        fight[-1:-1] = [_self_effect(15000, 2, 'UPDATED', '66902'),
+                        _self_effect(16000, 2, 'FADED', '66902')]
+        (first,) = self._set_buffs(fight)
+        self.assertEqual(first['@alkosh'], ['66902'])
+
+    def test_a_buff_that_faded_before_the_zones_first_pull_does_not(self):
+        """Review of #220: the zone's first encounter is made at the zone
+        change; a set buff from the entrance, gone before the pull, is not
+        the fight's."""
+        early = [_self_effect(5000, 2, 'GAINED', '66902'),
+                 _self_effect(6000, 2, 'FADED', '66902')]
+        (first,) = self._set_buffs(early + _fight(10000, 30000))
+        self.assertEqual(first['@alkosh'], [])
+
     def test_every_player_gets_the_key_and_the_structural_findings(self):
         entries = _fights(_session(_fight(10000, 30000)))
         self.assertEqual(len(entries), 1)

@@ -52,6 +52,47 @@ class TestTimelineStrip(unittest.TestCase):
     def tearDown(self):
         self.strip.deleteLater()
 
+    def test_a_casters_set_is_named_in_the_rows_summary(self):
+        """Issue #79: 'from <set>' beside a caster who gave the row's buff
+        from a set: the set's own id of that buff, which they were the
+        source of in the fight (set_text.sets_behind)."""
+        # Saxhleel Champion's Major Force 154830, Spell Power Cure's Major
+        # Courage 66902: only the first is this row's buff
+        self.strip.set_timeline(_sample_timeline(),
+                                given={"@caster": ["154830", "66902"], "@nobody": ["154830"]})
+        html = self.strip.summary_html("Major Force")
+        self.assertIn("<td>@caster</td>", html)
+        self.assertIn("· from Saxhleel Champion", html)
+        self.assertEqual(html.count("· from"), 1)
+        self.assertNotIn("Spell Power Cure", html)
+        self.assertNotIn("<a ", html)  # the pop-up opens no links
+        # A row that is no buff of the table, and a fight with nothing given
+        self.assertNotIn("· from", self.strip.summary_html("Major Vulnerability"))
+        self.strip.set_timeline(_sample_timeline())
+        self.assertNotIn("· from", self.strip.summary_html("Major Force"))
+
+    def test_rows_sharing_a_name_join_their_ids(self):
+        """Review of #220: a member back on another character has two rows
+        with one handle, and the log's unnamed players are all 'anon'; the
+        strip joins their intervals by name, so their ids are joined too."""
+        from gui.timeline_strip import given_by_caster
+        players = [{"name": "@back", "set_buffs": ["66902"]},
+                   {"name": "@back", "set_buffs": ["154830"]},
+                   {"name": "anon", "set_buffs": []},
+                   {"name": "anon", "set_buffs": ["135923"]},
+                   {"name": "@none"}]
+        self.assertEqual(given_by_caster(players),
+                         {"@back": ["66902", "154830"], "anon": ["135923"]})
+        self.assertEqual(given_by_caster(None), {})
+
+    def test_hide_names_leaves_the_set_as_it_is(self):
+        from gui.name_mask import NameMask
+        mask = NameMask(active=True)
+        self.strip.set_timeline(_sample_timeline(), names=mask, given={"@caster": ["154830"]})
+        html = self.strip.summary_html("Major Force")
+        self.assertNotIn("@caster", html)
+        self.assertIn("· from Saxhleel Champion", html)
+
     def test_hidden_without_data(self):
         self.assertFalse(self.strip.isVisibleTo(self.strip.parentWidget()
                                                 or self.strip))

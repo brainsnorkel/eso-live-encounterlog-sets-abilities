@@ -53,6 +53,7 @@ from gui.fight_render import (
     EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
     SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    set_tooltips,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
     render_plain_text, split_tooltips, taken_tooltips,
@@ -66,7 +67,7 @@ from gui.player_window import (
 )
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
-from gui.timeline_strip import TimelineStrip, strip_timeline
+from gui.timeline_strip import TimelineStrip, given_by_caster, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members, log_size
@@ -1533,7 +1534,9 @@ class MainWindow(QMainWindow):
         names = self._names_for(entry)
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
-            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names)
+            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names,
+            # The sets' own buff ids each player had up (set_text, issue #79)
+            given=given_by_caster(entry.players))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
@@ -1695,7 +1698,8 @@ class MainWindow(QMainWindow):
         text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
-            popup = BuildIssuesPopup(text, self)
+            popup = BuildIssuesPopup(text, self, tooltips=set_tooltips(
+                player_for(entry, unit_id), esohub_set_url))
             link = self.fight_view.keyboard_link_rect()
             if link is not None:
                 popup.show_under(link)

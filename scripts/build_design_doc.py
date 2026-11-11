@@ -97,6 +97,13 @@ TOPICS = [
     ]),
     ("Set buffs: which set a Major or Minor buff came from", [
         "scripts/generate_set_buffs.py",
+        "src/set_text.py:sets_behind",
+        "src/set_text.py:SetBuffRecorder",
+    ]),
+    ("Set text in the hovers, and hover text from the keyboard", [
+        "src/set_text.py",
+        "src/gui/fight_render.py:set_hovers",
+        "src/gui/fight_view.py:FightView._show_key_tip",
     ]),
     ("Game data against the game's version: the staleness check", [
         "src/data_staleness.py",

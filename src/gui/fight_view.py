@@ -145,6 +145,7 @@ class FightView(QTextBrowser):
         self._tooltips: Dict[str, str] = {}
         self._anchor_names: Dict[str, str] = {}
         self.current_tooltip = ""  # text shown for the hovered anchor, "" when none
+        self._key_tip = False  # the text on show is a link's that Tab reached
         self.hovered_build_link = ""  # href of the name carrying the hover cue
         self._search_selections: List[QTextEdit.ExtraSelection] = []
         self._hover_selections: List[QTextEdit.ExtraSelection] = []
@@ -235,6 +236,7 @@ class FightView(QTextBrowser):
         self._apply_selections()
 
     def setHtml(self, text: str) -> None:
+        self._hide_key_tip()  # its link is going with the page
         # Selections point into the document being replaced
         self._search_selections = []
         self._hover_selections = []
@@ -302,12 +304,49 @@ class FightView(QTextBrowser):
         cursor = self.textCursor()
         self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
                           if cursor.hasSelection() else None)
+        if not self._own_step:
+            self._show_key_tip()
         return moved
+
+    def _show_key_tip(self) -> None:
+        """Design: Hover text from the keyboard. A link's hover text was the
+        mouse's alone: Qt reports a hovered link (highlighted) and nothing
+        for one Tab moves to, so a set's bonus lines, an ability's name
+        behind its icon or a death's cause could not be read without a
+        pointer. The reader's own Tab or Shift+Tab now shows the text of the
+        link it lands on, just under the link's line, where the pointer may
+        be anywhere; a link without text, or leaving the page, takes the
+        last one away. Not the step keeping_place takes to give a link its
+        focus back after a redraw: the page redraws on every live fight
+        update, and the text would come back each time (issue #79).
+
+        Qt takes a tooltip down on a mouse press, the wheel or a change of
+        focus, but not on a key, so text shown for a key would stay over a
+        page that scrolled or changed under it: it is taken down when the
+        page is drawn anew, when the reader scrolls and when the focus
+        leaves (_hide_key_tip)."""
+        link = self._tab_link()
+        text = self._tooltips.get(link[0]) if link else None
+        self.current_tooltip = text or ""
+        self._key_tip = bool(text)
+        if text:
+            rect = self.cursorRect(self._selection_start())
+            QToolTip.showText(self.viewport().mapToGlobal(rect.bottomLeft()), text, self)
+        else:
+            QToolTip.hideText()
+
+    def _hide_key_tip(self) -> None:
+        """Take down the hover text Tab brought up, if it is still up."""
+        if self._key_tip:
+            self._key_tip = False
+            self.current_tooltip = ""
+            QToolTip.hideText()
 
     def mousePressEvent(self, event) -> None:
         # A click is not Tab: the link it selects is no link Tab reached
         # (_tab_link)
         self._key_link = None
+        self._hide_key_tip()
         super().mousePressEvent(event)
 
     def link_top(self) -> int | None:
@@ -427,6 +466,7 @@ class FightView(QTextBrowser):
     def _on_reader_scrolled(self, _action) -> None:
         # The wheel, a key or the bar itself: the reader's place from now on
         self.release_place()
+        self._hide_key_tip()  # its link has moved from under it
 
     def _links(self):
         """(href, start, end) of each link on the page, in document order,
@@ -515,6 +555,7 @@ class FightView(QTextBrowser):
         (give_link_back, issue #196)."""
         if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
             self._left_link = self._tab_link()
+        self._hide_key_tip()
         super().focusOutEvent(event)
 
     def give_link_back(self) -> None:
