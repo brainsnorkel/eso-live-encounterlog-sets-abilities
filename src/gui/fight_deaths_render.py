@@ -30,6 +30,23 @@ and their total is in the time dead line. Who was dead at the end is kept
 only with a pull (a fight with a named boss the players damaged): the page
 of a fight without one says nothing of the end.
 
+Where everyone stood (issue #214). In a fight whose lines the app can read
+again (death_render.positions_known: the engine gave it a locator, with
+its session known) each row's time is a link to the positions window at
+that death's moment, the player who died selected; its hover says
+'Positions at 0:54'. The link carries the moment, never the death's
+number, which a death the game writes late shifts. It is in the link
+colour, as a time gives no other sign of being a link. It takes no room of
+its own: a column of its own, after Dead for, took the room the 22% shares
+of Player and From are laid out in, so at 150% and 200% text the killer's
+name broke, at 200% in a 1600x900 window a letter a line ('Lieutenant
+Njordal' in 13 lines, the page 415 px high going to 703), and Killed by
+broke too; the table's least width, which the first test measured, never
+showed it, text being free to break anywhere. With the time as the link,
+From, Killed by and the page's height are as they are without it, at 150%
+and 200% in a 1366x768 window (test_positions_wiring_gui). A fight without
+a locator draws the time as plain muted text.
+
 Nothing here changes the entry: the engine's thread updates an entry in
 place while a page is drawn, so its lists are read with sorted() and
 copies, never sorted in place.
@@ -38,7 +55,15 @@ copies, never sorted in place.
 import html
 from collections import Counter
 
-from gui.death_render import _THEMES, ICON_PX, _icon_html, recap_href
+from gui.death_render import (
+    _THEMES,
+    ICON_PX,
+    _icon_html,
+    death_positions_tooltips,
+    positions_href,
+    positions_known,
+    recap_href,
+)
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 from pull_outcome import ANON, WIPE, at_clock, clock, dead_ms_of
@@ -136,6 +161,9 @@ def _table_html(entry, deaths, at_end, dark: bool, theme: dict, icons, names,
     rows = {str(p.get("unit_id", "")): p for p in getattr(entry, "players", None) or []}
     head = (f"style='color:{muted};border-bottom-style:solid;"
             f"border-bottom-width:1px;border-bottom-color:{theme['rule']}'")
+    # Each row's time a Positions link (see the module)
+    positions = positions_known(entry)
+    link_color = pane_theme(dark)["link"]
     # Fixed shares for the player and the source, as the recap's table has;
     # the short columns as wide as their text, never broken (#206); the
     # icon in a column of its own, and not 100% wide, for the reasons given
@@ -182,8 +210,13 @@ def _table_html(entry, deaths, at_end, dark: bool, theme: dict, icons, names,
         # break inside a word: at 150-200% text the table's fixed shares
         # broke 'Time', '1:03' and a long handle in two (#206)
         nowrap = "white-space:nowrap;"
+        when = e(at_clock(recap.get("time_ms")))
+        if positions:
+            href = positions_href(unit_id, recap.get("time_ms") or 0)
+            when = (f'<a href="{e(href, quote=True)}" style="text-decoration:none;'
+                    f'color:{link_color}">{when}</a>')
         cells = (
-            (" align='right'", f"color:{muted};{nowrap}", e(at_clock(recap.get("time_ms")))),
+            (" align='right'", f"color:{muted};{nowrap}", when),
             ("", nowrap, role_html),
             ("", nowrap, link),
             (f" width='{scaled_px(ICON_PX)}'", "", icon),
@@ -297,7 +330,9 @@ def render_fight_deaths_html(entry, dark: bool = False, icons=None, base_pt: flo
 
 def fight_deaths_tooltips(entry, names=None) -> dict[str, str]:
     """Hover text per name on the page: the death, when and to what, and
-    where the link goes; *names* is the Hide names mask."""
+    where the link goes; and per time that links to Positions, the moment
+    it opens at (death_render.death_positions_tooltips, issue #214), which
+    names no one. *names* is the Hide names mask."""
     names = names or NO_MASK
     e = html.escape
     tips = {}
@@ -315,4 +350,5 @@ def fight_deaths_tooltips(entry, names=None) -> dict[str, str]:
         lines.append("<span style='font-size:85%'>Click for this death's recap "
                      "on the player's Deaths tab</span>")
         tips[recap_href(unit_id, n)] = "<br>".join(lines)
+    tips.update(death_positions_tooltips(entry))
     return tips

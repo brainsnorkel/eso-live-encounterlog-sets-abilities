@@ -102,7 +102,14 @@ from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
 from fight_opener import PlayerName, opener_parts
 from gear_set_database import gear_set_db
-from gui.death_render import FIGHT_DEATHS_HREF, death_chip_html, deaths_by_unit
+from gui.death_render import (
+    FIGHT_DEATHS_HREF,
+    FIGHT_POSITIONS_HREF,
+    POSITIONS_LABEL,
+    death_chip_html,
+    deaths_by_unit,
+    positions_known,
+)
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
@@ -743,6 +750,21 @@ def _deaths_link(entry, theme: dict, px: int) -> str:
         return f"Deaths {deaths}"
     return (f'<a href="{FIGHT_DEATHS_HREF}" style="text-decoration:none;color:{theme["muted"]}">'
             f'Deaths {deaths}&nbsp;{glyph_html(DEATHS_GLYPH, theme["link"], px)}</a>')
+
+
+def _positions_link(entry, theme: dict) -> str:
+    """The header's Positions, after Deaths N (issue #214): where everyone
+    stood, in the positions window, at the fight's first death with that
+    player selected, else as the fight began (death_render.fight_moment).
+    Only for a fight whose lines can be read again (positions_known); a
+    fight with no death has it too, its start being a moment like any
+    other. A word in the link colour rather than a glyph: it is the only
+    plain word in the muted line that is a link, so the colour says so,
+    and a word needs no alt text for a screen reader."""
+    if not positions_known(entry):
+        return ""
+    return (f' · <a href="{FIGHT_POSITIONS_HREF}" style="text-decoration:none;'
+            f'color:{theme["link"]}">{POSITIONS_LABEL}</a>')
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -1535,7 +1557,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
-             f" · {_deaths_link(entry, theme, px)}")
+             f" · {_deaths_link(entry, theme, px)}{_positions_link(entry, theme)}")
     # The fight that completed a trial: the run's result in a strip across
     # the top, framed like a build card (trial_result)
     result = getattr(entry, "trial_result", None)

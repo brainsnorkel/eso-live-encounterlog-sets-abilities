@@ -218,6 +218,15 @@ TOPICS = [
         "src/review_load.py",
         "src/gui/review_runner.py",
     ]),
+    ("Re-reading one fight: where its lines are in the log", [
+        "src/fight_locator.py",
+        "src/fight_reread.py",
+    ]),
+    ("Positions at a paused moment", [
+        "src/gui/positions_window.py",
+        "src/gui/positions_canvas.py",
+        "src/gui/main_window.py:MainWindow.show_moment",
+    ]),
     ("Before the first fight: the archive line and recent activity", [
         "src/recent_activity.py",
         "src/gui/activity_render.py",

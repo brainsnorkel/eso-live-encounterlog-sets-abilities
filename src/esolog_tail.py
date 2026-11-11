@@ -44,6 +44,7 @@ from presence import present_share
 import casts
 import companions
 import fight_blocks
+import fight_locator
 import fight_opener
 import pen_crit
 import pull_outcome
@@ -489,6 +490,10 @@ class EnemyInfo:
         # It has had a player owner: a pet released at its end turns HOSTILE
         # with owner 0, and is never a monster (fight_opener)
         self.was_owned: bool = False
+        # The player who owned it last (PlayerInfo), kept after the owner
+        # field drops to 0 and after its UNIT_REMOVED, which the encounter's
+        # pet_ownership forgets: a fight's unit table (fight_locator)
+        self.owner_player = None
 
 
 class CombatEncounter:
@@ -564,6 +569,12 @@ class CombatEncounter:
         # dead, for the pull's verdict (pull_outcome, issues #168, #169)
         self.boss_health = pull_outcome.BossHealth()
         self.time_dead = pull_outcome.TimeDead()
+
+        # Where the fight's lines are (fight_locator): what was known as its
+        # BEGIN_COMBAT line passed (a FightStart, None for combat that had
+        # none), and its END_COMBAT line's offset in the file read
+        self.located: Optional[fight_locator.FightStart] = None
+        self.end_offset: Optional[int] = None
 
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
@@ -720,6 +731,7 @@ class CombatEncounter:
             unit = self.enemies.get(pet_unit_id)
             if unit is not None:
                 unit.was_owned = True
+                unit.owner_player = owner
         else:
             self.pet_ownership.pop(pet_unit_id, None)
             self.companion_units.pop(pet_unit_id, None)
@@ -1219,6 +1231,19 @@ class ESOLogAnalyzer(ListenerMixin):
         # The session's stamp, as the splitter names its file, for each
         # fight's entry (session_splits, issue #194): '' until a BEGIN_LOG
         self.session_stamp: str = ""
+        # Where the lines are (fight_locator, issue #214): the first byte of
+        # the line being processed in the file read, which the reader that
+        # feeds it sets (None when it says nothing: a test, a script); the
+        # session's BEGIN_LOG line's offset and Unix ms; the zone's
+        # ZONE_CHANGED line's offset; the zone's MAP_CHANGED lines, (line
+        # time, map); and the zone's units whose id was handed to a new
+        # unit, (record, when), for the fights' unit tables
+        self.line_offset: Optional[int] = None
+        self.session_offset: Optional[int] = None
+        self.session_epoch_ms: Optional[int] = None
+        self._zone_offset: Optional[int] = None
+        self._maps: List[Tuple[int, fight_locator.MapFrame]] = []
+        self._replaced_units: List[Tuple[EnemyInfo, int]] = []
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1378,6 +1403,8 @@ class ESOLogAnalyzer(ListenerMixin):
             self._handle_end_log_event(entry)
         elif entry.event_type == "HEALTH_REGEN":
             self._handle_health_regen(entry)
+        elif entry.event_type == "MAP_CHANGED":
+            self._handle_map_changed(entry)
         elif entry.event_type == "ENDLESS_DUNGEON_BEGIN":
             self._handle_endless_dungeon_begin(entry)
         elif entry.event_type == "ENDLESS_DUNGEON_STAGE_END":
@@ -1538,6 +1565,12 @@ class ESOLogAnalyzer(ListenerMixin):
                         # its owner is known (name_companions)
                         enemy.name = companions.shown_name(None)
 
+                    # A unit id handed out again: the unit it named stays in
+                    # the unit table of a fight whose range it was in
+                    # (fight_locator)
+                    replaced = self.current_encounter.enemies.get(unit_id)
+                    if replaced is not None:
+                        self._replaced_units.append((replaced, entry.timestamp))
                     self.current_encounter.enemies[unit_id] = enemy
                     # A departed player's unit id handed to this unit: the
                     # player is gone, and the id is not theirs (presence.py)
@@ -1909,6 +1942,11 @@ class ESOLogAnalyzer(ListenerMixin):
             self.fight_death_recaps = []
             # Unit ids start over: no player is followed at 0 health (#221)
             self._clear_zero_runs()
+            # A fight's lead-in never reaches back past this line, and the
+            # zone's maps and units are its own (fight_locator)
+            self._zone_offset = self.line_offset
+            self._maps = []
+            self._replaced_units = []
             self._last_fight_entry = None
             self._resumed_fight_entry = None
             self._enemy_met_at = None
@@ -2044,7 +2082,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 player.reset_resources()
 
         # Players who left are off the new fight's list; one who came back
-        # on a new unit id is keyed by it from here (presence.py)
+        # on a new unit id is keyed by it from here (presence.py). The unit
+        # ids they were known by before, for the fight's unit table, whose
+        # lead-in comes before this line (fight_locator)
+        roster = fight_locator.roster_ids(self.current_encounter.players.values())
         self.current_encounter.start_fight_roster()
         # The zone's first encounter is reused here and has counted every
         # star proc since the zone began: a fight counts its own (a fight
@@ -2061,6 +2102,17 @@ class ESOLogAnalyzer(ListenerMixin):
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        # Where the fight's lines begin, and the map as its lead-in begins
+        # (fight_locator); a fight the game cut in two returned above and
+        # keeps its first part's
+        lead_ms = entry.timestamp - fight_locator.LEAD_MS
+        if self._replaced_units:
+            self._replaced_units = [(unit, when) for unit, when in self._replaced_units
+                                    if when >= lead_ms]
+        self.current_encounter.located = fight_locator.FightStart(
+            self.line_offset, self.session_offset, self.session_epoch_ms, self.session_stamp,
+            self._zone_offset, fight_locator.map_before(self._maps, lead_ms), roster)
+        self.current_encounter.end_offset = None
         self.current_encounter.time_dead.begin(entry.timestamp, carried)
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
@@ -2439,6 +2491,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if self._waiting:
                 self._settle_zero_health(entry.timestamp)
             self.current_encounter.end_time = entry.timestamp
+            self.current_encounter.end_offset = self.line_offset  # fight_locator
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
             # Who was still dead as the fight ended (pull_outcome)
@@ -2502,6 +2555,14 @@ class ESOLogAnalyzer(ListenerMixin):
             self.session_stamp = split_retention.session_stamp(entry.timestamp)
         except (OverflowError, OSError, ValueError):
             self.session_stamp = ""
+        # Every offset of the session's fights counts from this line, which
+        # its Unix ms name exactly; the zone and its maps come after it
+        # (fight_locator)
+        self.session_offset = self.line_offset
+        self.session_epoch_ms = entry.timestamp if entry.timestamp > 0 else None
+        self._zone_offset = None
+        self._maps = []
+        self._replaced_units = []
         # Relative-ms offsets restart with each BEGIN_LOG session (the
         # entry's timestamp is the Unix time: the line's own is its first
         # field)
@@ -2603,6 +2664,34 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._trial_won_before_held(result)
         elif enc.in_combat:
             enc.trial_result = result
+
+    def _handle_map_changed(self, entry: ESOLogEntry):
+        """MAP_CHANGED: the map the log's coordinates are fractions of from
+        this line on. The zone's are kept, so a fight's locator can name the
+        map in force as its lead-in begins (fight_locator); the entry's
+        timestamp is the map id, the line's own time its first field."""
+        fields = entry.fields
+        if len(fields) >= 3:
+            self._maps.append((casts.line_time(entry.original_line),
+                               fight_locator.MapFrame(fields[0], fields[1], fields[2])))
+            if len(self._maps) > fight_locator.MAPS_KEPT:
+                del self._maps[0]
+
+    def _fight_locator(self, enc: CombatEncounter) -> fight_locator.FightLocator:
+        """Where the fight's lines are in the log and who its units are, for
+        a view that re-reads the fight (fight_locator)."""
+        start = enc.located
+        if start is None:
+            # Combat with no BEGIN_COMBAT line (a session that opens mid-fight)
+            start = fight_locator.FightStart(
+                None, self.session_offset, self.session_epoch_ms, self.session_stamp,
+                self._zone_offset,
+                fight_locator.map_before(self._maps, enc.start_time - fight_locator.LEAD_MS), ())
+        # An END_COMBAT in a session begun since is not in the fight's session
+        end_offset = enc.end_offset if start.session_epoch_ms == self.session_epoch_ms else None
+        units = fight_locator.unit_table(enc, enc.start_time, enc.end_time, start.roster,
+                                         self._replaced_units)
+        return fight_locator.locate(start, end_offset, enc.start_time, enc.end_time, units)
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
         """Handle END_LOG events."""
@@ -4330,6 +4419,13 @@ class ESOLogAnalyzer(ListenerMixin):
                                                  if key in present])
         entry.time_dead = enc.time_dead.totals(enc.end_time, carried=carries)
 
+        # Where the fight's lines are and who its units are, with the
+        # fight's own times, which every path that builds an entry has
+        # restored by now (fight_locator); the pass for the group fighting
+        # on keeps only its damage figures
+        if not again:
+            entry.locator = self._fight_locator(enc)
+
         return entry
 
     def _pull_record(self, enc: 'CombatEncounter', entry: FightHistoryEntry) -> Optional[dict]:
@@ -4706,8 +4802,11 @@ def find_session_start_offset(log_file: Path, end: int, lookback_bytes: int) -> 
             chunk = f.read(pos - start) + carry
             idx = chunk.rfind(b',BEGIN_LOG,')
             if idx != -1:
-                line_start = chunk.rfind(b'\n', 0, idx) + 1
-                return start + line_start
+                newline = chunk.rfind(b'\n', 0, idx)
+                if newline != -1 or start == 0:
+                    return start + newline + 1
+                # The line's time field is in the chunk before, which the
+                # carry brings the marker into
             carry = chunk[:64]
             scanned += pos - start
             pos = start
@@ -5441,6 +5540,12 @@ class LogFileMonitor:
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
         self._split_warning = None  # the split failure last reported
+        # Offsets in another file mean nothing in this one (fight_locator),
+        # nor does its session: both are this file's once its BEGIN_LOG is
+        # read, and a fight of a file whose BEGIN_LOG never is names none
+        analyzer.line_offset = None
+        analyzer.session_offset = None
+        analyzer.session_epoch_ms = None
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
@@ -5476,7 +5581,7 @@ class LogFileMonitor:
     # replay; markers include the delimiting commas so they only match the
     # event-type field (checked within the line's leading bytes).
     PREAMBLE_EVENT_MARKERS = (
-        b',BEGIN_LOG,', b',ZONE_CHANGED,', b',TRIAL_INIT,',
+        b',BEGIN_LOG,', b',ZONE_CHANGED,', b',MAP_CHANGED,', b',TRIAL_INIT,',
         b',UNIT_ADDED,', b',UNIT_CHANGED,', b',PLAYER_INFO,',
         b',ABILITY_INFO,',
     )
@@ -5541,7 +5646,9 @@ class LogFileMonitor:
             self.analyzer._notify(
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
-            self._process_range(start, end)
+            # The tail goes on after the last whole line read: one the game
+            # was writing at the size taken above is read once, whole
+            self.last_position = self._process_range(start, end)
             self._report_split_status()
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
@@ -5550,42 +5657,51 @@ class LogFileMonitor:
             except Exception:
                 pass
 
-    def _process_range(self, start: int, end: int):
-        """Stream lines in [start, end) through the normal processing path.
-        A range over REPLAY_PROGRESS_BYTES reports its progress (the
-        window's progress bar), about every 1%."""
+    def _process_range(self, start: int, end: int) -> int:
+        """Stream the whole lines that begin in [start, end) through the
+        normal processing path, each with its offset (fight_locator), and
+        return the offset after the last one: a line without its newline,
+        which the game is still writing, is left to the tail. A range over
+        REPLAY_PROGRESS_BYTES reports its progress (the window's progress
+        bar), about every 1%."""
         total = end - start
         report = total > self.REPLAY_PROGRESS_BYTES
         label = "Loading last session"
         step = max(1, total // 100)
-        done = last = 0
+        last = 0
+        position = start
         if report:
             self.analyzer._notify('on_parse_progress', label, 0, total)
         try:
             with open(self.log_file, 'rb') as f:
                 f.seek(start)
-                while f.tell() < end:
+                while position < end:
                     raw = f.readline()
-                    if not raw:
+                    if not raw.endswith(b'\n'):
                         break
-                    done += len(raw)
+                    done = position + len(raw) - start
                     if report and done - last >= step:
                         last = done
                         self.analyzer._notify('on_parse_progress', label, min(done, total), total)
                     line = raw.decode('utf-8', errors='ignore').strip()
                     if line:
-                        self._process_one_line(line)
+                        self._process_one_line(line, position)
+                    position += len(raw)
         finally:
             if self.log_splitter:
                 self.log_splitter.flush()
             if report:
                 self.analyzer._notify('on_parse_progress', label, total, total)
+        return position
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
 
         Best-effort: any failure leaves the monitor tailing normally, just
-        without pre-attach roster knowledge (the pre-fix behavior).
+        without pre-attach roster knowledge (the pre-fix behavior). The
+        tail goes on from the first line not whole before the attach point:
+        one the game was writing as the log was opened is read once, whole,
+        whatever it is (fight_locator).
         """
         try:
             end = self.last_position
@@ -5599,12 +5715,14 @@ class LogFileMonitor:
             processed = 0
             with open(self.log_file, 'rb') as f:
                 f.seek(start)
+                position = start
                 if start > 0 and not aligned:
-                    f.readline()  # sync to a line boundary
-                while f.tell() < end:
+                    position += len(f.readline())  # sync to a line boundary
+                while position < end:
                     raw = f.readline()
-                    if not raw:
-                        break
+                    if not raw.endswith(b'\n') or position + len(raw) > end:
+                        break  # being written at the attach: the tail's
+                    at, position = position, position + len(raw)
                     head = raw[:40]
                     if not any(marker in head
                                for marker in self.PREAMBLE_EVENT_MARKERS):
@@ -5612,8 +5730,13 @@ class LogFileMonitor:
                     line = raw.decode('utf-8', errors='ignore').strip()
                     entry = self.analyzer.log_parser.parse_line(line)
                     if entry is not None:
+                        # The session's BEGIN_LOG is among these lines
+                        # (fight_locator)
+                        self.analyzer.line_offset = at
                         self.analyzer.process_log_entry(entry)
                         processed += 1
+            self.analyzer.line_offset = None
+            self.last_position = position
             if processed and self.diagnostic:
                 _console(f"{Fore.CYAN}Session preamble: learned roster from "
                          f"{processed} events{Style.RESET_ALL}")
@@ -5734,6 +5857,8 @@ class LogFileMonitor:
                   f"from position {start_position}{Style.RESET_ALL}")
 
         line_count = 0
+        # Read as text, so with no offsets for the fights' locators
+        self.analyzer.line_offset = None
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             if start_position > 0:
                 f.seek(start_position)
@@ -5800,6 +5925,10 @@ class LogFileMonitor:
     def _process_new_lines(self, cancel_check=None):
         """Process new lines added to the log file.
 
+        The lines are read as bytes, each handed over with its offset in the
+        file (fight_locator), and a last line without its newline, which
+        the game is still writing, is left for the next poll to read whole.
+
         Args:
             cancel_check: Optional callable returning True to abort the processing
                 loop early (polled every 500 lines to keep 'q' responsive during
@@ -5819,42 +5948,47 @@ class LogFileMonitor:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
-        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(self.log_file, 'rb') as f:
             f.seek(self.last_position)
             new_lines = f.readlines()
-            new_end_position = f.tell()
+        if new_lines and not new_lines[-1].endswith(b'\n'):
+            new_lines.pop()  # still being written: read whole at the next poll
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
         CANCEL_POLL_INTERVAL = 500
-        for idx, line in enumerate(new_lines):
-            # Periodic cancel check during large catch-up batches
-            if cancel_check is not None and idx % CANCEL_POLL_INTERVAL == 0 and idx > 0:
-                if cancel_check():
-                    # Advance last_position by the bytes consumed so far so resume
-                    # doesn't re-process already-handled lines.
-                    self.last_position += sum(len(l) for l in new_lines[:idx])
-                    if self.log_splitter:
-                        self.log_splitter.flush()
-                    if self.diagnostic:
-                        timestamp = time.strftime("%H:%M:%S", time.localtime())
-                        _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
-                    return
-
-            line = line.strip()
-            if line:
-                self._process_one_line(line)
-
-        if self.log_splitter:
-            self.log_splitter.flush()
-        self.last_position = new_end_position
+        position = self.last_position
+        try:
+            for idx, raw in enumerate(new_lines):
+                # Periodic cancel check during large catch-up batches
+                if cancel_check is not None and idx % CANCEL_POLL_INTERVAL == 0 and idx > 0:
+                    if cancel_check():
+                        if self.diagnostic:
+                            timestamp = time.strftime("%H:%M:%S", time.localtime())
+                            _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
+                        return  # the next poll resumes at this line
+                # Past the line before the engine takes it: a line the engine
+                # raises on is passed once, and the lines before it are not
+                # read again, which would list their fight again and write
+                # them to the split twice
+                at, position = position, position + len(raw)
+                line = raw.decode('utf-8', errors='ignore').strip()
+                if line:
+                    self._process_one_line(line, at)
+        finally:
+            if self.log_splitter:
+                self.log_splitter.flush()
+            self.last_position = position
         if new_lines:
-            self._emit_log_status(new_end_position)
+            self._emit_log_status(position)
 
-    def _process_one_line(self, line: str):
-        """Parse one log line and run it through splitter and analyzer."""
+    def _process_one_line(self, line: str, offset: Optional[int] = None):
+        """Parse one log line and run it through splitter and analyzer.
+        *offset*: the line's first byte in the file, for the fights'
+        locators (fight_locator); None when the caller does not know it."""
+        self.analyzer.line_offset = offset
         entry = self.analyzer.log_parser.parse_line(line)
         offset_ms = parse_relative_ms(line)
         if offset_ms is not None:

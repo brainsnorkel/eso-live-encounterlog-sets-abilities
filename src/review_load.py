@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from log_open import open_log_text
+from log_open import open_log_bytes, open_log_text
 
 # A log above this size is outlined and the reader asked first
 LARGE_REVIEW_BYTES = 1 << 30
@@ -119,38 +119,40 @@ def replay_log(analyzer, path: Path, member: str | None = None,
                cancel: threading.Event | None = None) -> tuple[str, list]:
     """Run the log through *analyzer* from its *from_begin_log*-th BEGIN_LOG
     line, counted from 0 (-1: the whole log; Outline.begin_log gives it for
-    a session); (name to show, completed fights). Raises ReviewCancelled
-    when *cancel* is set."""
+    a session); (name to show, completed fights). The lines are read as
+    bytes, each handed over with its offset in the log, for the fights'
+    locators (fight_locator). Raises ReviewCancelled when *cancel* is
+    set."""
     skip_until = from_begin_log + 1  # BEGIN_LOG lines to have met
     met = 0
     analyzer.current_log_file = str(path)
-    with open_log_text(path, member) as (f, total, shown):
+    with open_log_bytes(path, member) as (f, total, shown):
         label = f"Parsing {Path(shown).name if member is None else shown}"
         step = max(1024 * 1024, total // PROGRESS_STEPS)
         done = last_emit = 0
         if progress:
             progress(label, 0, total)
-        for line in f:
-            # Char length approximates byte length for these logs;
-            # progress is clamped to total either way
-            done += len(line)
+        for raw in f:
+            at, done = done, done + len(raw)
             if done - last_emit >= step:
                 last_emit = done
                 _check(cancel)
                 if progress:
                     progress(label, min(done, total), total)
             if met < skip_until:
-                if ',BEGIN_LOG,' not in line[:40]:
+                if b',BEGIN_LOG,' not in raw[:40]:
                     continue
                 met += 1
                 if met < skip_until:
                     continue
-            line = line.strip()
+            line = raw.decode('utf-8', errors='ignore').strip()
             if not line:
                 continue
             entry = analyzer.log_parser.parse_line(line)
             if entry is not None:
+                analyzer.line_offset = at
                 analyzer.process_log_entry(entry)
+    analyzer.line_offset = None
     # A fight the group was still fighting on as the log ended
     analyzer.finish()
     return shown, list(analyzer.fight_history.fights)

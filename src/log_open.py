@@ -14,7 +14,11 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TextIO
+from typing import BinaryIO, TextIO
+
+# A zip member is read through a buffer this size: iterating the member's
+# own stream line by line is about 70% slower than reading it as text
+MEMBER_BUFFER = 1 << 20
 
 
 class NoLogInZip(ValueError):
@@ -51,6 +55,19 @@ def log_size(path: Path, member: str | None = None) -> int:
         return zf.getinfo(member).file_size
 
 
+def _member(zf: zipfile.ZipFile, path: Path, member: str | None) -> tuple[zipfile.ZipInfo, str]:
+    """The zip's log *member* (its only one when None) and the name to
+    show for it."""
+    members = log_members(path)
+    if member is None:
+        if len(members) != 1:
+            raise NoLogInZip(f"{path.name} holds no encounter log" if not members
+                             else f"{path.name} holds {len(members)} logs; choose one")
+        member = members[0]
+    label = str(path) if len(members) == 1 else f"{path} › {member}"
+    return zf.getinfo(member), label
+
+
 @contextmanager
 def open_log_text(path: Path, member: str | None = None
                   ) -> Iterator[tuple[TextIO, int, str]]:
@@ -65,13 +82,24 @@ def open_log_text(path: Path, member: str | None = None
             yield f, path.stat().st_size, str(path)
         return
     with zipfile.ZipFile(path) as zf:
-        members = log_members(path)
-        if member is None:
-            if len(members) != 1:
-                raise NoLogInZip(f"{path.name} holds no encounter log" if not members
-                                 else f"{path.name} holds {len(members)} logs; choose one")
-            member = members[0]
-        info = zf.getinfo(member)
-        label = str(path) if len(members) == 1 else f"{path} › {member}"
+        info, label = _member(zf, path, member)
         with zf.open(info) as raw, io.TextIOWrapper(raw, encoding="utf-8", errors="ignore") as f:
+            yield f, info.file_size, label
+
+
+@contextmanager
+def open_log_bytes(path: Path, member: str | None = None
+                   ) -> Iterator[tuple[BinaryIO, int, str]]:
+    """(byte stream, size in bytes, name to show) for a log or a zipped one,
+    as open_log_text, for a reader that counts each line's bytes: a zip's
+    member is a byte copy of its log, so its offsets are the log's own
+    (fight_locator)."""
+    path = Path(path)
+    if not is_zip(path):
+        with open(path, "rb") as f:
+            yield f, path.stat().st_size, str(path)
+        return
+    with zipfile.ZipFile(path) as zf:
+        info, label = _member(zf, path, member)
+        with zf.open(info) as raw, io.BufferedReader(raw, MEMBER_BUFFER) as f:
             yield f, info.file_size, label

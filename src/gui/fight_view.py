@@ -11,7 +11,9 @@ through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested, a click on a player's pen/crit token through
-pen_crit_requested.
+pen_crit_requested, a click on a death's Positions link through
+positions_requested (a moment of the fight, issue #214) and on the
+header's through fight_positions_requested.
 
 A player's name and dps figure look like plain text (the dps figures carry
 a small glyph that says they can be clicked, see gui.glyphs; the names do
@@ -44,7 +46,10 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.activity_render import activity_action_from_href, review_index_from_href
-from gui.death_render import FIGHT_DEATHS_HREF, RECAP_HREF, recap_from_href, unit_from_href
+from gui.death_render import (
+    FIGHT_DEATHS_HREF, FIGHT_POSITIONS_HREF, RECAP_HREF, positions_from_href, recap_from_href,
+    unit_from_href,
+)
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
     damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
@@ -121,6 +126,11 @@ class FightView(QTextBrowser):
     # unit id and number from 1 of one death, in a list of a fight's deaths
     # (issue #196)
     recap_requested = Signal(str, int)
+    # A moment of the fight in the positions window (issue #214): the key of
+    # the unit to select ('' for none) and ms into the fight; and the fight
+    # header's Positions, which opens at the fight's own moment
+    positions_requested = Signal(str, int)
+    fight_positions_requested = Signal()
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
     # A split log listed beside a run's result: its place in the list the
     # page was drawn with, and 'open' or 'copy' (issue #194)
@@ -862,6 +872,13 @@ class FightView(QTextBrowser):
         unit_id = healing_unit_from_href(url.toString())
         if unit_id is not None:
             self.healing_requested.emit(unit_id)
+            return
+        if url.toString() == FIGHT_POSITIONS_HREF:
+            self.fight_positions_requested.emit()
+            return
+        moment = positions_from_href(url.toString())
+        if moment is not None:
+            self.positions_requested.emit(*moment)
             return
         death = recap_from_href(url.toString())
         if death is not None:
