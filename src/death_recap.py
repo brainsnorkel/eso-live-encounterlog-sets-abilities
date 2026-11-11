@@ -176,6 +176,20 @@ def _health(value) -> Tuple[int, int]:
     return _int(current), _int(maximum)
 
 
+def _death_fields(event: tuple, unit_id: str) -> List[str]:
+    """A hit event as record() keeps it, laid out as the fields of a line
+    naming a death (result, ability, source, the player's state after it),
+    for a death the log wrote no line for (issue #221)."""
+    (_timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
+     health, damage_type, _player_source) = event
+    fields = [""] * (_TARGET_HEALTH + 1)
+    fields[0], fields[_DAMAGE_TYPE] = result, damage_type
+    fields[_HIT], fields[_OVERFLOW], fields[_CAST] = hit, overflow, cast_id
+    fields[_ABILITY], fields[_SOURCE] = ability_id, source_id
+    fields[_TARGET], fields[_TARGET_HEALTH] = unit_id, health
+    return fields
+
+
 def recap_window_s(value) -> int:
     """The recap window in seconds from a config value: an integer held
     to MIN_WINDOW_S..MAX_WINDOW_S, the default for anything that is not a
@@ -265,17 +279,11 @@ class DeathRecapRecorder:
         death would carry it (result, ability, source, the player's state
         after it), for a death the log wrote no line for (issue #221); None
         when none is kept."""
-        for (timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
-             health, damage_type, _player_source) in reversed(self._recent.get(unit_id, ())):
-            if timestamp_ms < at_ms - KILLER_WINDOW_MS:
+        for event in reversed(self._recent.get(unit_id, ())):
+            if event[0] < at_ms - KILLER_WINDOW_MS:
                 return None
-            if timestamp_ms <= at_ms and result in KILLING_HIT_RESULTS:
-                fields = [""] * (_TARGET_HEALTH + 1)
-                fields[0], fields[_DAMAGE_TYPE] = result, damage_type
-                fields[_HIT], fields[_OVERFLOW], fields[_CAST] = hit, overflow, cast_id
-                fields[_ABILITY], fields[_SOURCE] = ability_id, source_id
-                fields[_TARGET], fields[_TARGET_HEALTH] = unit_id, health
-                return fields
+            if event[0] <= at_ms and event[1] in KILLING_HIT_RESULTS:
+                return _death_fields(event, unit_id)
         return None
 
     def blow_fields(self, unit_id: str, from_ms: int) -> Optional[List[str]]:
@@ -283,18 +291,12 @@ class DeathRecapRecorder:
         within KILLING_BLOW_GRACE_MS from *from_ms*, as last_hit_fields
         gives it: the killing blow of a death the log wrote no line for,
         logged just after the line that first showed the 0 (issue #221)."""
-        for (timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
-             health, damage_type, _player_source) in self._recent.get(unit_id, ()):
-            if timestamp_ms > from_ms + KILLING_BLOW_GRACE_MS:
+        for event in self._recent.get(unit_id, ()):
+            if event[0] > from_ms + KILLING_BLOW_GRACE_MS:
                 return None
-            if (timestamp_ms >= from_ms and result in KILLING_HIT_RESULTS
-                    and str(health).partition("/")[0] == "0"):
-                fields = [""] * (_TARGET_HEALTH + 1)
-                fields[0], fields[_DAMAGE_TYPE] = result, damage_type
-                fields[_HIT], fields[_OVERFLOW], fields[_CAST] = hit, overflow, cast_id
-                fields[_ABILITY], fields[_SOURCE] = ability_id, source_id
-                fields[_TARGET], fields[_TARGET_HEALTH] = unit_id, health
-                return fields
+            if (event[0] >= from_ms and event[1] in KILLING_HIT_RESULTS
+                    and str(event[7]).partition("/")[0] == "0"):
+                return _death_fields(event, unit_id)
         return None
 
     def note_death(self, unit_id: str, timestamp_ms: int, fields: List[str],

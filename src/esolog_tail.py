@@ -2627,8 +2627,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # BEGIN_CAST format: durationMS, channeled, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>
         # sourceUnitState: unitId, health/max, magicka/max, stamina/max, ultimate/max, werewolf/max, shield, x, y, heading
         # The states for the deaths the log writes no line for (issue #221),
-        # laid out as an effect's: the cheap tests here, and the line's own
-        # time read only if needed
+        # laid out as an effect's: the cheap tests here, inlined as in
+        # _handle_effect_changed, and the line's own time read only if
+        # needed (the dispatcher calls this only with an encounter)
         states = entry.fields
         units = self._at_zero_units
         if (self._waiting
@@ -2799,11 +2800,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # A player at 0 health, or one of those up again (_note_zero_state):
         # the cheap test on every state, the rest only for such a state. A
         # resurrection's line shows its target, the corpse, at 0: no wait
-        units = self._at_zero_units
-        if source is not None and (fields[8][:2] == "0/" or fields[7] in units):
+        units, at_zero = self._at_zero_units, self._at_zero
+        if source is not None and (fields[8][:2] == "0/" or fields[7] in units
+                                   or (at_zero and source in at_zero)):
             self._note_zero_state(fields, 7, entry, entry.timestamp, source)
         if (target is not None and target is not source and len(fields) > 18
-                and (fields[18][:2] == "0/" or fields[17] in units)):
+                and (fields[18][:2] == "0/" or fields[17] in units
+                     or (at_zero and target in at_zero))):
             self._note_zero_state(fields, 17, entry, entry.timestamp, target,
                                   may_wait=fields[0] not in REVIVE_RESULTS)
         # The same player twice is observed once, with the gain
@@ -3213,7 +3216,10 @@ class ESOLogAnalyzer(ListenerMixin):
         with them are followed (player_of names any player unit, strangers
         overland included), and not in a form with no stamina pool: the
         Infinite Archive's tome-hold polymorph is knocked to 0 and restored
-        when its minigame ends, with no death.
+        when its minigame ends, with no death. A log session that begins in
+        the middle of a fight has no BEGIN_COMBAT for it, so nothing tells
+        its deaths from corpses before the pull: those with no death line
+        are not counted (death lines are).
 
         A state with no health pool, or the 1/1 placeholder the log writes
         for a unit it has no state for, says nothing. Nor does a corpse's
@@ -3229,9 +3235,21 @@ class ESOLogAnalyzer(ListenerMixin):
         if as_zero:
             current = "0"
         key = self._at_zero_units.get(unit_id)
+        if key is None and player is not None and player in self._at_zero:
+            # The player followed at 0, on a unit id not yet seen: back on a
+            # new unit id with no UNIT_REMOVED for the old one
+            key = player
+            self._at_zero_units[unit_id] = key
         if current != "0":
             if (key is None or self._corpse_health.get(unit_id) == current
                     or (len(fields) > at + 3 and _corpse_pools(fields[at + 2], fields[at + 3]))):
+                return
+            if player is None and (self.current_encounter is None
+                                   or self.current_encounter.player_of(unit_id) is not key):
+                # The unit id is no longer the player's (handed to another
+                # unit): it says nothing of them
+                del self._at_zero_units[unit_id]
+                self._corpse_health.pop(unit_id, None)
                 return
             run = self._at_zero[key]
             if now_ms is None:
@@ -3374,9 +3392,13 @@ class ESOLogAnalyzer(ListenerMixin):
         regen, unit_id, health = fields[0], fields[1], fields[2]
         if regen not in ("", "0") and health.startswith(regen + "/"):
             player = self.current_encounter.player_of(unit_id)
-            if player is not None and (player.grouped or player.is_local):
-                self._corpse_health[unit_id] = regen
+            if player is not None:
                 self._note_zero_state(fields, 1, entry, entry.timestamp, player, as_zero=True)
+                # The stale value only for a unit now followed at 0 (not a
+                # stranger, a placeholder or the polymorph form), so the
+                # follow's end clears it
+                if unit_id in self._at_zero_units:
+                    self._corpse_health[unit_id] = regen
             return
         if health[:2] == "0/" or unit_id in self._at_zero_units:
             self._note_zero_state(fields, 1, entry, entry.timestamp)
@@ -3417,8 +3439,11 @@ class ESOLogAnalyzer(ListenerMixin):
         REVIVE_MIN_MS then counts from the line, as time dead's does."""
         run = self._at_zero.get(player)
         if run is None:
-            self._at_zero[player] = [died_ms, unit_id, player, None, ZERO_LINED, False]
-            self._at_zero_units[unit_id] = player
+            # Only the logging player and their group are followed: a
+            # stranger's death line counts as it did, with no run
+            if player.grouped or player.is_local:
+                self._at_zero[player] = [died_ms, unit_id, player, None, ZERO_LINED, False]
+                self._at_zero_units[unit_id] = player
             return True
         if (run[ZERO_STATE] == ZERO_COUNTED
                 and died_ms - run[ZERO_T0] <= pull_outcome.ZERO_LINE_SAME_MS):
@@ -3501,7 +3526,17 @@ class ESOLogAnalyzer(ListenerMixin):
             # Dead as the fight ended, which can turn its verdict; and still
             # dead should the fight carry on (pull_outcome)
             pull_outcome.note_late_death(late_entry.pull, player.unit_id, bool(player.is_local))
-            self.current_encounter.time_dead.late_death(player.unit_id, route_ms)
+            dead = self.current_encounter.time_dead
+            ended = self.current_encounter.combat_ended_at
+            if ended is not None and died_ms < ended:
+                # A death read from 0 health before END_COMBAT, counted after
+                # it (issue #221): dead from the first 0 to the fight's end
+                span = ended - died_ms
+                dead.ms[player.unit_id] = dead.ms.get(player.unit_id, 0) + span
+                totals = dict(late_entry.time_dead or {})
+                totals[player.unit_id] = totals.get(player.unit_id, 0) + span
+                late_entry.time_dead = totals
+            dead.late_death(player.unit_id, route_ms)
             self._notify('on_fight_updated', late_entry)
         elif between or not self.current_encounter.finalized:
             self.current_encounter.time_dead.died(player.unit_id, died_ms)
@@ -3555,7 +3590,9 @@ class ESOLogAnalyzer(ListenerMixin):
 
             # The source's and the target's states for the deaths the log
             # writes no line for (issue #221): health is [5] and [15]; the
-            # cheap tests here, the rest only when they say so
+            # cheap tests here, the rest only when they say so. Inlined here
+            # and in _handle_begin_cast rather than in one helper: a method
+            # call on every effect line cost about 2% of replay time
             states = entry.fields
             units = self._at_zero_units
             if self.current_encounter is not None and (

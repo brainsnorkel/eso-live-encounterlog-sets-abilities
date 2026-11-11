@@ -68,6 +68,9 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(po.verdict(_pull(health_left=0.000006, dead_at_end=dead)), po.KILL)
         self.assertEqual(po.verdict(_pull(health_left=po.NEAR_ZERO_KILL_PCT, dead_at_end=dead)),
                          po.WIPE)
+        # Not with every player dead: a wipe however close
+        self.assertEqual(po.verdict(_pull(health_left=0.000006, dead_at_end=list("abcdefghijkl"))),
+                         po.WIPE)
 
     def test_a_late_death_can_turn_the_verdict(self):
         pull = _pull(dead_at_end=list("abcde"))

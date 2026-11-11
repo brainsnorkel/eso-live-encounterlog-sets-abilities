@@ -679,6 +679,8 @@ class TestDeathsWithNoDeathLine(unittest.TestCase):
         recap = fight.death_recaps[0]
         self.assertEqual((recap['time_ms'], recap['cause']), (9900, HEALTH_CAUSE))
         self.assertEqual(len(listener.of_kind('fight_updated')), 1)
+        # Dead from the first 0 to the fight's end
+        self.assertEqual(fight.time_dead.get('1'), 100)
 
     def test_at_zero_as_combat_ends_then_up_again_is_no_death(self):
         analyzer, listener = _run([
@@ -983,6 +985,36 @@ class TestDeathsWithNoDeathLine(unittest.TestCase):
             '50000,END_COMBAT',
         ])
         self.assertEqual(analyzer.fight_history.fights[0].deaths, 2)
+
+    def test_back_on_a_new_unit_id_with_no_removal_can_die_again(self):
+        """No UNIT_REMOVED for the old unit: the player's health on the new
+        one, read from a combat line, still ends the old follow."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DIED', 0, BOSS, _player(2, 0)),
+            ('30000,UNIT_ADDED,12,PLAYER,F,2,0,F,6,1,"Templar Friend","@templar",'
+             '1708524619155578000,50,787,0,PLAYER_ALLY,T'),
+            _event(31000, 'HEAL', 4000, _player(1, 20000), _player(12, 20000), ability=40079),
+            _event(40000, 'DAMAGE', 0, BOSS, _player(12, 0), overflow=900),
+            _tick(41200),
+            '50000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 2)
+
+    def test_strangers_are_not_followed(self):
+        """A player outside the group: their death line counts as before,
+        with no follow and no corpse value kept."""
+        analyzer, _ = _run([
+            ('2100,UNIT_ADDED,3,PLAYER,F,3,0,F,6,1,"Passer By","@passer",'
+             '1708524619155578001,50,787,0,PLAYER_ALLY,F'),
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _event(16000, 'DIED', 0, BOSS, _player(3, 0)),
+            _regen(16001, 894, _player(3, 894)),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+        self.assertEqual((analyzer._at_zero, analyzer._corpse_health), ({}, {}))
 
     def test_a_corpse_with_no_pools_after_a_death_line_is_no_revive(self):
         corpse = "1,400/20000,0/26657,0/13021,500/500,1000/1000,0,0.2,0.5,5.5"

@@ -1,5 +1,5 @@
 ### Changed
-- **A boss left all but dead is a kill however many lay dead** (#221): under 0.01% of its health. Sanity's Edge's Archwizard Twelvane leaves his phase at 7 of 124 million health and writes no death line. Once the deaths below counted, his pull read as a wipe with exactly half the group dead. No other pull in 391 split logs ends that close to 0 without a kill
+- **A boss left all but dead is a kill while anyone in the group stands** (#221): under 0.01% of its health. Sanity's Edge's Archwizard Twelvane leaves his phase at 7 of 124 million health and writes no death line. Once the deaths below counted, his pull read as a wipe with exactly half the group dead. No other pull in 391 split logs ends that close to 0 without a kill
 
 ### Fixed
 - **Deaths the log writes no death line for are counted** (#221): about one player death in thirteen in fights has no `DIED` line in the log, nor a fall's `KILLED_BY_SUBZONE`. The player's health reads 0 and stays there until they are resurrected or release. The app counted none of these deaths, so they had no recap, no time dead and no part in the kill or wipe verdict. Now:

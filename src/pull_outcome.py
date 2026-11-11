@@ -36,12 +36,13 @@ shades, and a few seconds-long scripted starts.
   whose death line never reached the log (Tremorscale at 0.2%, Eliam
   Merick at 0.1%): none was pulled again, and 4 were followed by the next
   boss. A kill with half the group dead is still a kill: 174 fights. A boss
-  left under NEAR_ZERO_KILL_PCT died whatever the dead: once the deaths
-  the log writes no line for counted (issue #221), Sanity's Edge's
-  Archwizard Twelvane, who leaves his phase at 7 of 124 million health and
-  writes no death line, read as a wipe with exactly half the group dead,
-  the Chimera kill beginning 0.6 s later. Over the 391 split logs no other
-  pull ends that close to 0 without a kill.
+  left under NEAR_ZERO_KILL_PCT with one of the group standing died: once
+  the deaths the log writes no line for counted (issue #221), Sanity's
+  Edge's Archwizard Twelvane, who leaves his phase at 7 of 124 million
+  health and writes no death line, read as a wipe with exactly half the
+  group dead, the Chimera kill beginning 0.6 s later. Over the 391 split
+  logs no other pull ends that close to 0 without a kill. With every
+  player dead it stays a wipe, however close.
 - **Wipe**: not a kill, and at least half the fight's players were dead
   when it ended, not revived before END_COMBAT. "Half the group died at
   some point" is the wrong test: in a long fight with resurrections every
@@ -123,7 +124,8 @@ BOSS_SHARE = 0.10
 # out of the log's sight
 LOW_HEALTH_KILL_PCT = 2.0
 # A boss left under this much health died, however many of the group lay
-# dead (see the module: a phase boss that leaves all but dead)
+# dead, so long as one stood (see the module: a phase boss that leaves all
+# but dead)
 NEAR_ZERO_KILL_PCT = 0.01
 # A state with health this soon after a death is the dying line's own
 REVIVE_MIN_MS = 1000
@@ -340,10 +342,12 @@ def verdict(pull: dict) -> str:
     """KILL, WIPE, UNSEEN or LEFT from a pull record's facts (see the
     module)."""
     dead = len(pull.get("dead_at_end") or ())
-    half = dead >= 1 and dead * 2 >= max(int(pull.get("players") or 0), 1)
+    players = max(int(pull.get("players") or 0), 1)
+    half = dead >= 1 and dead * 2 >= players
     left = pull.get("health_left")
     if pull.get("boss_died") or (left is not None and (
-            left < NEAR_ZERO_KILL_PCT or (left < LOW_HEALTH_KILL_PCT and not half))):
+            (left < NEAR_ZERO_KILL_PCT and dead < players)
+            or (left < LOW_HEALTH_KILL_PCT and not half))):
         return KILL
     if half:
         return WIPE
