@@ -3635,6 +3635,7 @@ class ESOLogAnalyzer(ListenerMixin):
         recap['unit_id'] = player.unit_id
         recap['name'] = player.get_display_name()
         recap['time_ms'] = max(0, died_ms - fight_start)
+        recap['casts'] = self._recap_casts(player, died_ms)
         # In time order: a death read from 0 health is counted after deaths
         # that came while it waited
         _insert_by_time(self.fight_death_recaps, recap)
@@ -3978,6 +3979,28 @@ class ESOLogAnalyzer(ListenerMixin):
         ability_id = str(ability_id)
         return (self.ability_cache.get(ability_id) or f"Ability {ability_id}",
                 self.ability_icons.get(ability_id, ''))
+
+    def _recap_casts(self, player: PlayerInfo, died_ms: int) -> list[dict]:
+        """The player's own casts in the death recap's window before
+        *died_ms*, oldest first (issue #214): offset_ms (to the death, 0 or
+        less), ability_id, ability, icon and kind (casts.kind_of: 'light',
+        'heavy' and the like, '' for a skill). Procs are left out as in the
+        fight's counts, but for those of a skill on the front or back bar
+        (casts.on_bars); the rebuilt werewolf bar is not built mid-fight,
+        and no werewolf skill is a proc in the maintainer's logs."""
+        def name_of(ability_id):
+            return self._resolve_recap_ability(ability_id)[0]
+
+        slotted = casts.on_bars(self.casts.procs_of(player.unit_id),
+                                (player.front_bar_slots, player.back_bar_slots), name_of)
+        rows = []
+        window = self.death_recap_recorder.window_ms
+        for at, ability_id in self.casts.casts_between(player.unit_id, died_ms - window, died_ms,
+                                                       slotted):
+            name, icon = self._resolve_recap_ability(ability_id)
+            rows.append({'offset_ms': at - died_ms, 'ability_id': ability_id, 'ability': name,
+                         'icon': icon, 'kind': casts.kind_of(ability_id) or ''})
+        return rows
 
     def _remember_cast(self, cast_id: str, ability_id: str):
         """Keep which ability a cast tracking id belongs to (see TAUNTED in

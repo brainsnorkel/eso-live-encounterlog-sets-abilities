@@ -184,6 +184,41 @@ class TestRecapFromTheLog(unittest.TestCase):
         self.assertEqual(recap['killer'], '')
 
 
+def _press(ts, unit, ability, track, health=19000):
+    """A BEGIN_CAST by the player *unit* on its own track."""
+    return f"{ts},BEGIN_CAST,0,F,{track},{ability},{_player(unit, health)},*"
+
+
+class TestCastsInTheRecap(unittest.TestCase):
+    """Issue #214: the dying player's own casts in the recap's window."""
+
+    def test_the_players_casts_in_the_window(self):
+        light, meridias_favor = 18350, 117119
+        analyzer, _ = _run([
+            '2600,ABILITY_INFO,18350,"Light Attack (Lightning)","/esoui/art/icons/x.dds",F,T',
+            '10000,BEGIN_COMBAT',
+            _press(13000, 1, 40079, 1),                    # older than the 5 s window
+            _press(16000, 1, light, 2),
+            _press(17500, 1, 40079, 3),
+            _press(18000, 2, 40079, 4),                    # another player's
+            # A proc written again on its track after END_CAST (casts.py)
+            _press(18200, 1, meridias_favor, 5), f"18200,END_CAST,COMPLETED,5,{meridias_favor}",
+            _press(19200, 1, meridias_favor, 5), f"19200,END_CAST,COMPLETED,5,{meridias_favor}",
+            _event(20000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _event(20001, 'DAMAGE', 15000, BOSS, _player(1, 0), overflow=3000, cast=901),
+            '70000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual(recap['casts'], [
+            {'offset_ms': -4000, 'ability_id': '18350', 'ability': 'Light Attack (Lightning)',
+             'icon': 'x', 'kind': 'light'},
+            {'offset_ms': -2500, 'ability_id': '40079', 'ability': 'Radiating Regeneration',
+             'icon': 'ability_restorationstaff_002b', 'kind': ''},
+        ])
+        # The hits and heals are as before
+        self.assertEqual([r['result'] for r in recap['events']], ['DAMAGE'])
+
+
 class TestKillingBlowDeaths(unittest.TestCase):
     """A player killed by a player is logged as KILLING_BLOW, with no DIED."""
 

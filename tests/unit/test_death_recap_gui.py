@@ -270,6 +270,42 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         self.assertIn('No damage or healing was logged in the 5 seconds', html)
         self.assertNotIn('<table', html)
 
+    def test_the_players_own_casts_sit_among_the_rows(self):
+        """Issue #214: the dying player's casts in the window, by time:
+        'Cast', with an extra's kind, and no health, source or amount."""
+        from gui.death_render import render_death_recap_html
+        entry = _entry_with_deaths()
+        self.assertIn('Damage and healing in the', render_death_recap_html(entry, '1'))
+        entry.death_recaps[0]['casts'] = [
+            {'offset_ms': -2000, 'ability_id': '2', 'ability': 'Crystal Fragments',
+             'icon': 'death_recap_test', 'kind': ''},
+            {'offset_ms': -600, 'ability_id': '3', 'ability': 'Light Attack (Lightning)',
+             'icon': '', 'kind': 'light'},
+        ]
+        html = render_death_recap_html(entry, '1', icons=self._cache())
+        self.assertIn("Damage, healing and the player's own casts in the", html)
+        one = html[:html.index('Death 2 of 2')]
+        order = [one.index(text) for text in
+                 ('>Swinging Cleave<', '>Crystal Fragments<', '>Radiating Regeneration<',
+                  '>Tremor<', '>Light Attack (Lightning)<', '>Hindered<')]
+        self.assertEqual(order, sorted(order))
+        self.assertIn('>Cast<', one)
+        self.assertIn('>Cast · light attack<', one)
+        self.assertIn('-2.0s', one)
+        # The cast's icon beside the killer line's and the two rows'
+        self.assertEqual(one.count('<img src="icon:death_recap_test"'), 4)
+
+    def test_casts_with_no_hit_or_heal_still_make_a_table(self):
+        from gui.death_render import render_death_recap_html
+        entry = _entry_with_deaths()
+        entry.death_recaps[1]['casts'] = [
+            {'offset_ms': -1000, 'ability_id': '2', 'ability': 'Crystal Fragments',
+             'icon': '', 'kind': ''}]
+        html = render_death_recap_html(entry, '77')
+        self.assertIn('>Crystal Fragments<', html)
+        self.assertIn('<table', html)
+        self.assertIn('No damage or healing was logged in the 5 seconds', html)
+
     def test_themes_use_different_colors(self):
         self.assertNotEqual(self._html(dark=True), self._html(dark=False))
 

@@ -328,6 +328,13 @@ class CastRecorder:
         return [(timestamp, ability_id) for timestamp, ability_id
                 in self._counted(key, start, end, slotted) if ability_id in ability_ids]
 
+    def casts_between(self, key: str, start: int, end: int,
+                      slotted=()) -> list[tuple[int, str]]:
+        """(time, ability id) of every cast begun from *start* to *end*, in
+        the order cast, procs left out as in fight_counts: the casts of a
+        death recap's window (issue #214)."""
+        return self._counted(key, start, end, slotted)
+
     def prune_before(self, timestamp: int) -> None:
         """Forget the casts begun before *timestamp*, and the tracks last
         written before it. A track still written after it stays, so that a

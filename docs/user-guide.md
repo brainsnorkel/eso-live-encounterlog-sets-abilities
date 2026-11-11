@@ -311,7 +311,7 @@ A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deat
 
 ![The Deaths tab: the last seconds before a death](screencaps/death-recap.png)
 
-Each death names the killing ability and who used it (for a fall into lava or off a ledge, *a fall or lava*; for a death the log wrote no line for, the hit that left the player at 0, marked *read from health reaching 0*), lists the last seconds of damage and healing, oldest first (3 seconds by default, 1 to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Positions**, at the end of each death's heading, shows where everyone stood at that moment, in the [positions window](#positions). The line after the last death, **Over the whole fight: Damage taken tab**, opens [Damage taken](#damage-taken): everything that reached the player's health over the fight, summed the same way, with every ability, the units that did the damage and the healers.
+Each death names the killing ability and who used it (for a fall into lava or off a ledge, *a fall or lava*; for a death the log wrote no line for, the hit that left the player at 0, marked *read from health reaching 0*), lists the last seconds of damage and healing with the player's own casts among them, oldest first (3 seconds by default, 1 to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Positions**, at the end of each death's heading, shows where everyone stood at that moment, in the [positions window](#positions). The line after the last death, **Over the whole fight: Damage taken tab**, opens [Damage taken](#damage-taken): everything that reached the player's health over the fight, summed the same way, with every ability, the units that did the damage and the healers.
 
 The kinds are the splits the Warfare champion point stars act on, each a two-colour bar with the amounts and percentages on either side:
 
@@ -326,6 +326,7 @@ The event table:
 - **Time** before the death, and the player's **health** after the event (with its share of max health).
 - The **ability**, with the game's icon, and its **source**: the monster or player that hit or healed.
 - The **amount** that reached or restored health, and the **result**: hit, critical hit, DoT, blocked, dodged, missed, fall damage, heal, or HoT, with the damage type after it (`Hit · fire`) and `area · hit N players` for an area hit. A hit soaked by a damage shield says how much was absorbed and by which shield, a heal eaten by a healing-absorb effect is listed as such, and the killing blow shows its overkill.
+- The player's own **casts**, at the time they began: the ability and its icon, and `Cast` as the result, with the kind for a light or heavy attack, a bash, a weapon swap, a dodge, a synergy, a potion or Break Free (`Cast · light attack`). They have no health, source or amount, and the sums under the table leave them out. A proc the game writes as a cast over and over, such as Meridia's Favor, is left out, as in the [cast counts](#build).
 
 Heals that were pure overheal are left out of the table and counted in the overheal figure. A death the game writes just after combat ends (the last player standing in a wipe) still counts and is added to that fight. A fight recorded by an older version says `Damage kinds were not recorded for this fight` where the summaries would be.
 
