@@ -21,6 +21,9 @@ LIGHT_LIGHTNING, HEAVY_LIGHTNING = '18350', '18396'
 SWAP, DODGE, BASH, BREAK_FREE = '28541', '28549', '21970', '16565'
 CONDUIT, RESTORE_HEALTH, RECALL = '23196', '45221', '6811'
 FATECARVER, FATECARVER_CHANNEL, FATECARVER_SHIELD = '186366', '189533', '201265'
+HEALING_COMBUSTION, HEALING_COMBUSTION_2 = '63507', '95042'
+MERIDIAS_FAVOR = '117119'                       # a proc written as instant casts
+MAGICAL_BANNER, BANNER_TICK = '217699', '252143'   # a scribed banner and its tick
 
 
 class _AllIcons:
@@ -70,6 +73,92 @@ class TestRecorder(unittest.TestCase):
         companion_ids = set().union(*(ids for _kind, ids in casts.COMPANION_EXTRA_KINDS))
         self.assertFalse(player_ids & companion_ids)
 
+    def test_a_synergy_taken_again_on_its_first_takes_track_is_a_new_cast(self):
+        """#226: Healing Combustion writes its two ids in one millisecond,
+        one cast; taken again later under the first take's track id, after
+        that track's END_CAST, it is a second cast."""
+        recorder = casts.CastRecorder()
+        recorder.note_cast('1', '7', HEALING_COMBUSTION, 1000)
+        recorder.note_end('7', 1000)
+        recorder.note_cast('1', '7', HEALING_COMBUSTION_2, 1000)   # same ms: the same cast
+        recorder.note_end('7', 1000)
+        recorder.note_cast('1', '7', HEALING_COMBUSTION_2, 9000)   # taken again
+        recorder.note_cast('1', '7', HEALING_COMBUSTION_2, 9010)   # before that take's end
+        recorder.note_end('7', 9010)
+        counts = recorder.fight_counts('1', 0, 10000)
+        self.assertEqual(counts, Counter({HEALING_COMBUSTION: 1, HEALING_COMBUSTION_2: 1}))
+        self.assertEqual(casts.cast_summary(counts, 60.0)['synergy'], 2)
+        # Combustion, the Necrotic Orb's other synergy, writes a second
+        # take as 95040
+        recorder.note_cast('2', '8', '39301', 1000)
+        recorder.note_end('8', 1000)
+        recorder.note_cast('2', '8', '95040', 5000)
+        recorder.note_end('8', 5000)
+        counts = recorder.fight_counts('2', 0, 10000)
+        self.assertEqual(casts.cast_summary(counts, 60.0)['synergy'], 2)
+
+    def test_a_proc_written_again_on_its_own_track_is_no_cast(self):
+        """#226: a proc the game writes as an instant cast keeps its first
+        tick's track id. Once it is written again after END_CAST, it leaves
+        that caster's counts, its first tick too and in later fights,
+        unless it is on their bar."""
+        recorder = casts.CastRecorder()
+        for at in (1000, 2000, 3000):
+            recorder.note_cast('1', '50', MERIDIAS_FAVOR, at)
+            recorder.note_end('50', at)
+        recorder.note_cast('1', '51', FORCE_PULSE, 1500)
+        recorder.note_cast('2', '52', MERIDIAS_FAVOR, 1600)   # another caster's, once
+        self.assertEqual(recorder.fight_counts('1', 0, 5000), Counter({FORCE_PULSE: 1}))
+        self.assertEqual(recorder.fight_counts('1', 0, 5000, {MERIDIAS_FAVOR})[MERIDIAS_FAVOR], 1)
+        self.assertEqual(recorder.fight_counts('2', 0, 5000), Counter({MERIDIAS_FAVOR: 1}))
+        self.assertEqual(recorder.fight_times('1', 0, 5000, {MERIDIAS_FAVOR}), [])
+        # The next fight: the proc on a fresh track id is still no cast
+        recorder.prune_before(4000)
+        recorder.note_cast('1', '60', MERIDIAS_FAVOR, 6000)
+        self.assertEqual(recorder.fight_counts('1', 4000, 9000), Counter())
+        recorder.reset()   # a new session finds its procs again
+        recorder.note_cast('1', '70', MERIDIAS_FAVOR, 100)
+        self.assertEqual(recorder.fight_counts('1', 0, 999)[MERIDIAS_FAVOR], 1)
+
+    def test_a_slotted_skills_effect_on_its_track_stays_with_the_press(self):
+        """The scribed banner's ticks are written later on the press's
+        track: the press is one cast, its ticks none."""
+        recorder = casts.CastRecorder()
+        recorder.note_cast('1', '80', MAGICAL_BANNER, 1000)
+        recorder.note_end('80', 1000)
+        for at in (6000, 11000, 16000):
+            recorder.note_cast('1', '80', BANNER_TICK, at)
+            recorder.note_end('80', at)
+        self.assertEqual(recorder.fight_counts('1', 0, 20000), Counter({MAGICAL_BANNER: 1}))
+
+    def test_a_banner_ticking_into_the_next_fight_is_not_cast_there(self):
+        """A track still written when a fight is built carries over: the
+        banner pressed in one fight ticks on in the next, no cast there. A
+        track last written before the built fight is forgotten."""
+        recorder = casts.CastRecorder()
+        recorder.note_cast('1', '80', MAGICAL_BANNER, 1000)
+        recorder.note_end('80', 1000)
+        recorder.note_cast('1', '80', BANNER_TICK, 6000)
+        recorder.note_end('80', 6000)
+        self.assertEqual(recorder.fight_counts('1', 500, 9000), Counter({MAGICAL_BANNER: 1}))
+        recorder.prune_before(500)   # the first fight's entry is built
+        recorder.note_cast('1', '80', BANNER_TICK, 11000)
+        recorder.note_end('80', 11000)
+        self.assertEqual(recorder.fight_counts('1', 10000, 20000), Counter())
+        recorder.note_cast('1', '81', FORCE_PULSE, 12000)
+        recorder.prune_before(15000)
+        recorder.note_cast('1', '81', FORCE_PULSE, 16000)   # the id begun again
+        self.assertEqual(recorder.fight_counts('1', 15000, 20000), Counter({FORCE_PULSE: 1}))
+
+    def test_a_channels_lines_before_its_end_are_one_cast(self):
+        """A channelled heavy attack's later line comes before its
+        END_CAST: one cast, as before #226."""
+        recorder = casts.CastRecorder()
+        recorder.note_cast('1', '900', HEAVY_LIGHTNING, 1000)
+        recorder.note_cast('1', '900', HEAVY_LIGHTNING, 1015)
+        recorder.note_end('900', 2600)
+        self.assertEqual(recorder.fight_counts('1', 0, 5000), Counter({HEAVY_LIGHTNING: 1}))
+
     def test_prune_and_reset(self):
         recorder = casts.CastRecorder()
         recorder.note_cast('1', '1', FORCE_PULSE, 900)
@@ -97,6 +186,19 @@ class TestSlots(unittest.TestCase):
         # A werewolf morph's form effect is cast under the ultimate's name
         self.assertFalse(casts.same_skill('39076', 'Werewolf Berserker', '47083',
                                           'Werewolf Berserker'))
+
+    def test_on_bars(self):
+        """#226: the procs that stay counted are casts of a slotted skill,
+        matched as the slot counts are: Chakram of Destiny is slotted as
+        186207 and pressed as 194237, again on the same track."""
+        names = {'186207': 'Chakram of Destiny', '194237': 'Chakram of Destiny',
+                 MERIDIAS_FAVOR: "Meridia's Favor", BLOCKADE_OF_FROST: 'Blockade of Frost'}
+        front = [{'id': '186207', 'name': 'Chakram of Destiny'},
+                 {'id': ELEMENTAL_BLOCKADE, 'name': 'Elemental Blockade'}]
+        found = casts.on_bars({'194237', MERIDIAS_FAVOR, BLOCKADE_OF_FROST}, (front, []),
+                              names.get)
+        self.assertEqual(found, {'194237', BLOCKADE_OF_FROST})
+        self.assertEqual(casts.on_bars((), (front,), names.get), set())
 
     def test_mark_slot_casts(self):
         names = {FORCE_PULSE: 'Force Pulse', BLOCKADE_OF_FROST: 'Blockade of Frost',
@@ -225,6 +327,39 @@ class TestEngine(unittest.TestCase):
     def test_each_slot_carries_its_casts(self):
         self.assertEqual([slot['casts'] for slot in self.player['front_bar_slots']], [1, 1])
         self.assertEqual([slot['casts'] for slot in self.player['back_bar_slots']], [1, 1])
+
+
+def _end(ts, track, ability):
+    return f"{ts},END_CAST,COMPLETED,{track},{ability}"
+
+
+class TestTracksWrittenAgain(unittest.TestCase):
+    """#226 through the engine, which reads END_CAST: Conduit taken again
+    under its first take's track id is a second synergy; a proc written
+    again on its own track is no cast, unless the player slotted it."""
+
+    def test_the_fight_entry(self):
+        extra = [
+            _end(13000, 7, CONDUIT),
+            _cast(20000, 1, CONDUIT, 7), _end(20000, 7, CONDUIT),     # taken again
+            _cast(21000, 1, MERIDIAS_FAVOR, 20), _end(21000, 20, MERIDIAS_FAVOR),
+            _cast(22000, 1, MERIDIAS_FAVOR, 20), _end(22000, 20, MERIDIAS_FAVOR),
+            _cast(23000, 1, MERIDIAS_FAVOR, 20), _end(23000, 20, MERIDIAS_FAVOR),
+            # Force Pulse, slotted, written again on its track: still its one press
+            _end(10200, 3, FORCE_PULSE),
+            _cast(24000, 1, FORCE_PULSE, 3), _end(24000, 3, FORCE_PULSE),
+        ]
+        at = LOG.index('70000,END_COMBAT')
+        analyzer = ESOLogAnalyzer()
+        analyzer.fight_history = FightHistory()
+        analyzer.add_listener(RecordingListener())
+        for line in LOG[:at] + extra + LOG[at:]:
+            entry = analyzer.log_parser.parse_line(line)
+            if entry is not None:
+                analyzer.process_log_entry(entry)
+        summary = analyzer.fight_history.fights[0].players[0]['casts']
+        # The seven of TestEngine, and Conduit once more; no proc
+        self.assertEqual((summary['total'], summary['synergy']), (8, 2))
 
 
 class TestRender(unittest.TestCase):

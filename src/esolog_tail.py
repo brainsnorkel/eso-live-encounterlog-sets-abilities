@@ -1386,6 +1386,11 @@ class ESOLogAnalyzer(ListenerMixin):
         elif entry.event_type == "BEGIN_CAST":
             if self.current_encounter:
                 self._handle_begin_cast(entry)
+        elif entry.event_type == "END_CAST":
+            # When a cast's track ended, which tells a synergy taken again
+            # or a proc from a later line of the same cast (casts.py)
+            if len(entry.fields) >= 2:
+                self.casts.note_end(entry.fields[1], casts.line_time(entry.original_line))
         elif entry.event_type == "EFFECT_CHANGED":
             self._handle_effect_changed(entry)
         elif entry.event_type == "COMBAT_EVENT":
@@ -4304,8 +4309,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['left'] = True
                 entry.players[-1]['present_pct'] = present_share(
                     enc.start_time, enc.end_time, player.joined_at, player.left_at)
-            # The fight's casts: the total, cpm and extras (casts.py)
-            cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time)
+            # The fight's casts: the total, cpm and extras (casts.py), the
+            # player's procs left out unless of a skill on their bars
+            slotted = casts.on_bars(self.casts.procs_of(player.unit_id),
+                                    (player.front_bar_slots, player.back_bar_slots), ability_name)
+            cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time,
+                                                  slotted)
             entry.players[-1]['casts'] = casts.cast_summary(
                 cast_counts, duration, entry.players[-1].get('present_pct'))
             # Magicka, stamina and ultimate spent and gained (resources.py)
