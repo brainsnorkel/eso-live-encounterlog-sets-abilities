@@ -29,8 +29,13 @@ on its own track after END_CAST, at a later millisecond, is a proc for the
 rest of the session: it leaves that caster's counts, the extras and casts
 per minute, unless it is a cast of a skill on their bar, matched as the
 slot counts are (on_bars): Chakram of Destiny, slotted as 186207, is
-pressed as 194237 and pressed again on the same track. Before, each proc
-counted once a fight, and a synergy taken again not at all. A track still
+pressed as 194237 and pressed again on the same track. An extra (a light
+or heavy attack, a dodge, a potion) is never a proc. Over the 391 logs the
+rule finds 14 procs, all players' (none a companion's, an extra or a
+werewolf skill). A proc is known from its second tick, so a fight whose
+entry was built between its first two ticks keeps that first one: at most
+one cast, once a session. Before, each proc counted once a fight, and a
+synergy taken again not at all. A track still
 written when a fight's entry is built carries over to the next fight:
 the banner pressed in one fight ticks on in the next, and before, its
 first tick there counted as a press (638 players' fights over the 391
@@ -213,6 +218,8 @@ COMPANION_EXTRA_KINDS: tuple[tuple[str, frozenset], ...] = (
     ("block", COMPANION_BLOCKS), ("dodge", COMPANION_DODGES),
     ("break_free", COMPANION_BREAK_FREE),
 )
+# The extras are presses by kind, never taken for procs (#226)
+_EXTRA_IDS = frozenset().union(*(ids for _kind, ids in EXTRA_KINDS + COMPANION_EXTRA_KINDS))
 
 
 def line_time(line: str) -> int:
@@ -250,10 +257,11 @@ class CastRecorder:
 
     def __init__(self):
         self._casts: dict[str, list[tuple[int, str]]] = defaultdict(list)
-        # Each caster's tracks: track id -> [the last ability written under
-        # it, that line's time]; and each track's last END_CAST time (the
-        # line names no caster)
-        self._tracks: dict[str, dict[str, list]] = defaultdict(dict)
+        # Each caster's tracks: track id -> (the last ability written under
+        # it, that line's time); the track ids any caster holds; and each
+        # of those tracks' last END_CAST time (the line names no caster)
+        self._tracks: dict[str, dict[str, tuple[str, int]]] = defaultdict(dict)
+        self._held: set[str] = set()
         self._ended: dict[str, int] = {}
         # Each caster's procs, for the session (see the module)
         self._procs: dict[str, set[str]] = defaultdict(set)
@@ -262,32 +270,36 @@ class CastRecorder:
         """A new BEGIN_LOG session: timestamps restart."""
         self._casts.clear()
         self._tracks.clear()
+        self._held.clear()
         self._ended.clear()
         self._procs.clear()
 
     def note_end(self, track_id: str, timestamp: int) -> None:
-        """An END_CAST (the line names the track, not the caster)."""
-        self._ended[track_id] = timestamp
+        """An END_CAST (the line names the track, not the caster), kept
+        for a track a caster here holds."""
+        if track_id in self._held:
+            self._ended[track_id] = timestamp
 
     def note_cast(self, key: str, track_id: str, ability_id: str, timestamp: int) -> None:
         """A BEGIN_CAST by the player. A second line under the same
         castTrackId is the same cast, unless it comes at a later
         millisecond after the track's END_CAST: then a synergy is taken
-        again, a new cast, and the same ability again is a proc."""
+        again, a new cast, and the same ability again is a proc (never an
+        extra: a light or heavy attack, a dodge, a potion is a press)."""
         tracks = self._tracks[key]
         held = tracks.get(track_id)
+        tracks[track_id] = (ability_id, timestamp)
         if held is None:
-            tracks[track_id] = [ability_id, timestamp]
+            self._held.add(track_id)
             self._casts[key].append((timestamp, ability_id))
             return
         last_ability, last_at = held
-        held[0], held[1] = ability_id, timestamp
         ended = self._ended.get(track_id)
         if ended is None or not last_at <= ended < timestamp:
             return  # a later line of the same cast
         if ability_id in SYNERGIES:
             self._casts[key].append((timestamp, ability_id))
-        elif ability_id == last_ability:
+        elif ability_id == last_ability and ability_id not in _EXTRA_IDS:
             self._procs[key].add(ability_id)
 
     def procs_of(self, key: str) -> frozenset:
@@ -334,14 +346,20 @@ class CastRecorder:
                 self._tracks[key] = tracks
             else:
                 del self._tracks[key]
-        self._ended = {track_id: at for track_id, at in self._ended.items() if at >= timestamp}
+        self._held = {track_id for tracks in self._tracks.values() for track_id in tracks}
+        self._ended = {track_id: at for track_id, at in self._ended.items()
+                       if track_id in self._held}
 
 
-def _slot_names(slot: dict, slot_id: str, name_of: Callable[[str], str]) -> set:
-    """The names a bar slot's skill goes by: the slot's, its id's and a
+def _slot_holds(slot: dict, name_of: Callable[[str], str]) -> Callable[[str, str], bool]:
+    """Whether a cast (id, name) is of the skill bar *slot* holds
+    (same_skill), by any name the slot goes by: its own, its id's, or a
     stand-in's (a Rampage shown as its morph)."""
-    return {str(slot.get("name") or ""), name_of(slot_id) or "",
-            str(slot.get("stand_in") or "")} - {""}
+    slot_id = str(slot.get("id", ""))
+    slot_names = {str(slot.get("name") or ""), name_of(slot_id) or "",
+                  str(slot.get("stand_in") or "")} - {""}
+    return lambda cast_id, cast_name: any(
+        same_skill(slot_id, name, cast_id, cast_name) for name in slot_names or {""})
 
 
 def mark_slot_casts(counts: Counter, bars: Iterable[list], name_of: Callable[[str], str]) -> None:
@@ -352,11 +370,8 @@ def mark_slot_casts(counts: Counter, bars: Iterable[list], name_of: Callable[[st
     names = {ability_id: name_of(ability_id) or "" for ability_id in counts}
     for bar in bars:
         for slot in bar or []:
-            slot_id = str(slot.get("id", ""))
-            slot_names = _slot_names(slot, slot_id, name_of)
-            slot["casts"] = sum(n for cast_id, n in counts.items()
-                                if any(same_skill(slot_id, name, cast_id, names[cast_id])
-                                       for name in slot_names or {""}))
+            holds = _slot_holds(slot, name_of)
+            slot["casts"] = sum(n for cast_id, n in counts.items() if holds(cast_id, names[cast_id]))
 
 
 def on_bars(ability_ids: Iterable[str], bars: Iterable[list],
@@ -366,17 +381,15 @@ def on_bars(ability_ids: Iterable[str], bars: Iterable[list],
     such an id is a press written again, which stays counted (Chakram of
     Destiny, slotted as 186207, is pressed as 194237 and pressed again on
     the same track)."""
-    ability_ids = {ability_id: name_of(ability_id) or "" for ability_id in ability_ids}
+    names = {ability_id: name_of(ability_id) or "" for ability_id in ability_ids}
     found = set()
-    if not ability_ids:
+    if not names:
         return found
     for bar in bars:
         for slot in bar or []:
-            slot_id = str(slot.get("id", ""))
-            slot_names = _slot_names(slot, slot_id, name_of)
-            found.update(cast_id for cast_id, cast_name in ability_ids.items()
-                         if any(same_skill(slot_id, name, cast_id, cast_name)
-                                for name in slot_names or {""}))
+            holds = _slot_holds(slot, name_of)
+            found.update(cast_id for cast_id, cast_name in names.items()
+                         if holds(cast_id, cast_name))
     return found
 
 

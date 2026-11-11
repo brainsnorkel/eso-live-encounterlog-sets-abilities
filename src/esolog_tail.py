@@ -4309,10 +4309,14 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['left'] = True
                 entry.players[-1]['present_pct'] = present_share(
                     enc.start_time, enc.end_time, player.joined_at, player.left_at)
+            # The werewolf bar the log never writes, rebuilt from casts, and
+            # the share of the fight spent in form (werewolf.py)
+            werewolf_fields = self._werewolf_fields(player, enc)
             # The fight's casts: the total, cpm and extras (casts.py), the
             # player's procs left out unless of a skill on their bars
             slotted = casts.on_bars(self.casts.procs_of(player.unit_id),
-                                    (player.front_bar_slots, player.back_bar_slots), ability_name)
+                                    (player.front_bar_slots, player.back_bar_slots,
+                                     werewolf_fields.get('werewolf_bar_slots')), ability_name)
             cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time,
                                                   slotted)
             entry.players[-1]['casts'] = casts.cast_summary(
@@ -4336,9 +4340,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if gear_rows:
                 key = json.dumps(gear_rows, sort_keys=True, default=str)
                 entry.players[-1]['gear'] = self._shared_gear.setdefault(key, gear_rows)
-            # The werewolf bar the log never writes, rebuilt from casts, and
-            # the share of the fight spent in form (werewolf.py)
-            entry.players[-1].update(self._werewolf_fields(player, enc))
+            entry.players[-1].update(werewolf_fields)
             # Each slot's casts in the fight, under its icon in the build
             # window (casts.py)
             casts.mark_slot_casts(cast_counts, (entry.players[-1]['front_bar_slots'],
@@ -4584,12 +4586,14 @@ class ESOLogAnalyzer(ListenerMixin):
                 if slot['id'] in companions.ULTIMATES:
                     slot['ultimate'] = True
             # This fight's casts, under each skill of the bar, and the
-            # ultimate's with their times (casts.py)
-            cast_counts = self.casts.fight_counts(key, enc.start_time, enc.end_time)
+            # ultimate's with their times (casts.py); a proc stays counted
+            # when it is of a skill on the bar
+            slotted = casts.on_bars(self.casts.procs_of(key), (slots,), ability_name)
+            cast_counts = self.casts.fight_counts(key, enc.start_time, enc.end_time, slotted)
             casts.mark_slot_casts(cast_counts, (slots,), ability_name)
             ultimates: dict[str, dict] = {}
             for at, ability_id in self.casts.fight_times(key, enc.start_time, enc.end_time,
-                                                         companions.ULTIMATES):
+                                                         companions.ULTIMATES, slotted):
                 ultimate = ultimates.setdefault(ability_id, {
                     'id': ability_id, 'name': ability_name(ability_id), 'at': []})
                 ultimate['at'].append(round((at - enc.start_time) / 1000.0, 1))

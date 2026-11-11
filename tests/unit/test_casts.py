@@ -150,6 +150,28 @@ class TestRecorder(unittest.TestCase):
         recorder.note_cast('1', '81', FORCE_PULSE, 16000)   # the id begun again
         self.assertEqual(recorder.fight_counts('1', 15000, 20000), Counter({FORCE_PULSE: 1}))
 
+    def test_an_extra_is_never_a_proc(self):
+        """An extra (a heavy attack here) written again on its track after
+        END_CAST is a later line of a press, never a proc that would take
+        the kind out of the counts for the session."""
+        recorder = casts.CastRecorder()
+        recorder.note_cast('1', '90', HEAVY_LIGHTNING, 1000)
+        recorder.note_end('90', 1000)
+        recorder.note_cast('1', '90', HEAVY_LIGHTNING, 2000)
+        recorder.note_cast('1', '91', HEAVY_LIGHTNING, 3000)
+        self.assertEqual(recorder.fight_counts('1', 0, 5000), Counter({HEAVY_LIGHTNING: 2}))
+
+    def test_an_end_is_kept_for_a_held_track_only(self):
+        """END_CAST lines name no caster: those of tracks no player holds
+        (an enemy's) are not kept."""
+        recorder = casts.CastRecorder()
+        recorder.note_end('5', 900)
+        recorder.note_cast('1', '6', FORCE_PULSE, 1000)
+        recorder.note_end('6', 1000)
+        self.assertEqual(recorder._ended, {'6': 1000})
+        recorder.prune_before(2000)
+        self.assertEqual((recorder._held, recorder._ended), (set(), {}))
+
     def test_a_channels_lines_before_its_end_are_one_cast(self):
         """A channelled heavy attack's later line comes before its
         END_CAST: one cast, as before #226."""
