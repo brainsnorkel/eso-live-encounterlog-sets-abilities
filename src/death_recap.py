@@ -24,6 +24,25 @@ logs):
   END_COMBAT. A FALLING line came before only that last one, and FALLING
   lines carry whatever ability the player had (Bash, a fire or shock id),
   so they make no recap row.
+- Some player deaths have no death line at all (issue #221): 1,366 of the
+  17,976 deaths in fights in the maintainer's 391 split logs (7.6%), from
+  7.1% in dungeons to 8.0% in arenas. The player's state reads health 0,
+  they stay down, and they come back by a resurrection or a release. The
+  engine counts such a death when the player's state, on any line that
+  carries it, reads 0 for pull_outcome.ZERO_HEALTH_HOLD_MS and no death
+  line names the player meanwhile (esolog_tail's _note_zero_state); one up
+  again sooner was no death. It is timed at the first 0. Its killer and
+  ability are the hit that left the player at 0: the line that first
+  showed the 0, or one logged up to KILLING_BLOW_GRACE_MS after it
+  (blow_fields), else the last hit on the player at or before it,
+  KILLER_WINDOW_MS back at most (last_hit_fields; often a hit of 0 with
+  the overkill in the overflow), else NO_HIT_DEATH. The recap carries
+  cause HEALTH_CAUSE so a frontend can say the death was read from health.
+  A death line up to pull_outcome.ZERO_LINE_SAME_MS after it, the player
+  not seen up between, is the same death written late, and keeps that
+  recap. Each player's history is kept that hold longer than the window,
+  so the corpse's hits and heals in the hold cut neither the recap's
+  window nor the killer's.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
@@ -70,6 +89,7 @@ from collections import deque
 from typing import Callable, Dict, List, Optional, Tuple
 
 from damage_kinds import area_of
+from pull_outcome import ZERO_HEALTH_HOLD_MS
 
 # Chronology kept before each death: the default, and what Settings allows
 DEFAULT_WINDOW_S = 3
@@ -97,6 +117,16 @@ DEATH_RESULTS = frozenset({"DIED", "DIED_XP", "KILLING_BLOW", SUBZONE_DEATH})
 FALL_DEATH = "a fall or lava"
 # The recap's 'cause' for a fall, the field code tests rather than the text
 FALL_CAUSE = "fall"
+# The recap's 'cause' for a death the log wrote no line for, read from the
+# player's health reaching 0 (issue #221; see the module docstring)
+HEALTH_CAUSE = "health"
+# Such a death's killer is the last hit on the player this long before the
+# first 0 at most (last_hit_fields); a quarter of them have none, mostly
+# deaths first seen on an effect's line, and read as killed by this, which
+# fits every sentence that names a killer ('Killed by …', 'First death: @x
+# to …', 'Killers: … 2')
+KILLER_WINDOW_MS = 3000
+NO_HIT_DEATH = "an unknown cause"
 
 # actionResult -> kind of recap row
 _KINDS: Dict[str, str] = {
@@ -121,6 +151,9 @@ RECAP_RESULTS = frozenset(_KINDS)
 # How the log writes a heal that restored health (the analyzer totals these
 # for the role heuristic too)
 HEAL_RESULTS = frozenset(r for r, kind in _KINDS.items() if kind == "heal")
+# The hits that can name the killer of a death the log wrote no line for
+# (last_hit_fields)
+KILLING_HIT_RESULTS = frozenset(r for r, kind in _KINDS.items() if kind == "damage")
 
 # Indices into a COMBAT_EVENT's fields (after the time offset and line type):
 # actionResult, damageType, powerType, hitValue, overflow, castTrackId,
@@ -219,17 +252,64 @@ class DeathRecapRecorder:
         if recent is None:
             recent = self._recent[target_id] = deque()
         recent.append(event)
-        cutoff = timestamp_ms - self.window_ms
+        # A death the log wrote no line for is counted the hold after its
+        # first 0 (issue #221): the corpse's hits and heals meanwhile must
+        # not cut its recap's window, nor the killer's 3 s, short
+        cutoff = timestamp_ms - max(self.window_ms, KILLER_WINDOW_MS) - ZERO_HEALTH_HOLD_MS
         while recent[0][0] < cutoff:
             recent.popleft()
 
-    def note_death(self, unit_id: str, timestamp_ms: int, fields: List[str]) -> dict:
+    def last_hit_fields(self, unit_id: str, at_ms: int) -> Optional[List[str]]:
+        """The last hit on the player *unit_id* at or before *at_ms*, and
+        KILLER_WINDOW_MS before it at most, as the fields of a line naming a
+        death would carry it (result, ability, source, the player's state
+        after it), for a death the log wrote no line for (issue #221); None
+        when none is kept."""
+        for (timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
+             health, damage_type, _player_source) in reversed(self._recent.get(unit_id, ())):
+            if timestamp_ms < at_ms - KILLER_WINDOW_MS:
+                return None
+            if timestamp_ms <= at_ms and result in KILLING_HIT_RESULTS:
+                fields = [""] * (_TARGET_HEALTH + 1)
+                fields[0], fields[_DAMAGE_TYPE] = result, damage_type
+                fields[_HIT], fields[_OVERFLOW], fields[_CAST] = hit, overflow, cast_id
+                fields[_ABILITY], fields[_SOURCE] = ability_id, source_id
+                fields[_TARGET], fields[_TARGET_HEALTH] = unit_id, health
+                return fields
+        return None
+
+    def blow_fields(self, unit_id: str, from_ms: int) -> Optional[List[str]]:
+        """The first hit on the player *unit_id* that left them at 0,
+        within KILLING_BLOW_GRACE_MS from *from_ms*, as last_hit_fields
+        gives it: the killing blow of a death the log wrote no line for,
+        logged just after the line that first showed the 0 (issue #221)."""
+        for (timestamp_ms, result, hit, overflow, cast_id, ability_id, source_id,
+             health, damage_type, _player_source) in self._recent.get(unit_id, ()):
+            if timestamp_ms > from_ms + KILLING_BLOW_GRACE_MS:
+                return None
+            if (timestamp_ms >= from_ms and result in KILLING_HIT_RESULTS
+                    and str(health).partition("/")[0] == "0"):
+                fields = [""] * (_TARGET_HEALTH + 1)
+                fields[0], fields[_DAMAGE_TYPE] = result, damage_type
+                fields[_HIT], fields[_OVERFLOW], fields[_CAST] = hit, overflow, cast_id
+                fields[_ABILITY], fields[_SOURCE] = ability_id, source_id
+                fields[_TARGET], fields[_TARGET_HEALTH] = unit_id, health
+                return fields
+        return None
+
+    def note_death(self, unit_id: str, timestamp_ms: int, fields: List[str],
+                   cause: str = "") -> dict:
         """Recap for the player *unit_id*, whose DIED/KILLING_BLOW event has
         *fields* (or KILLED_BY_SUBZONE, a fall). The returned dict keeps
         filling for KILLING_BLOW_GRACE_MS as the killing blow is logged.
+        *cause*: HEALTH_CAUSE for a death the log wrote no line for, counted
+        a while after *timestamp_ms* (issue #221), *fields* then the hit that
+        put the player at 0; the hits on the corpse since are left out, as a
+        death line's later hits are.
         """
         cutoff = timestamp_ms - self.window_ms
-        events = [e for e in self._recent.pop(unit_id, ()) if e[0] >= cutoff]
+        last = timestamp_ms + KILLING_BLOW_GRACE_MS
+        events = [e for e in self._recent.pop(unit_id, ()) if cutoff <= e[0] <= last]
         ability_id = fields[_ABILITY] if len(fields) > _ABILITY else ""
         source_id = fields[_SOURCE] if len(fields) > _SOURCE else "0"
         self_inflicted = len(fields) <= _TARGET or fields[_TARGET] == "*"
@@ -238,6 +318,9 @@ class DeathRecapRecorder:
         if fall:
             # A fall names no killer and no ability (ids 0)
             ability, icon = FALL_DEATH, ""
+        elif cause == HEALTH_CAUSE and not ability_id:
+            # Read from 0 health with no hit before it (issue #221)
+            ability, icon = NO_HIT_DEATH, ""
         else:
             ability, icon = self._resolve_ability(ability_id)
         recap = {
@@ -246,8 +329,9 @@ class DeathRecapRecorder:
             "ability_id": ability_id,
             "icon": icon,
             # Why the player died where the line says more than its killer:
-            # FALL_CAUSE for a fall, else empty
-            "cause": FALL_CAUSE if fall else "",
+            # FALL_CAUSE for a fall, HEALTH_CAUSE for a death the log wrote
+            # no line for (issue #221), else empty
+            "cause": FALL_CAUSE if fall else cause,
             "max_health": _health(fields[health_at])[1] if len(fields) > health_at else 0,
             "window_ms": self.window_ms,
             "overheal": 0,

@@ -61,6 +61,14 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(po.verdict(_pull(health_left=0.2, dead_at_end=list("abcdef"))), po.WIPE)
         self.assertEqual(po.verdict(_pull(health_left=2.5)), po.LEFT)
 
+    def test_a_boss_left_all_but_dead_died_whoever_lay_dead(self):
+        """Sanity's Edge's Archwizard Twelvane leaves his phase at 7 of 124
+        million health with no death line (issue #221)."""
+        dead = list("abcdef")
+        self.assertEqual(po.verdict(_pull(health_left=0.000006, dead_at_end=dead)), po.KILL)
+        self.assertEqual(po.verdict(_pull(health_left=po.NEAR_ZERO_KILL_PCT, dead_at_end=dead)),
+                         po.WIPE)
+
     def test_a_late_death_can_turn_the_verdict(self):
         pull = _pull(dead_at_end=list("abcde"))
         self.assertEqual(pull["outcome"], po.LEFT)

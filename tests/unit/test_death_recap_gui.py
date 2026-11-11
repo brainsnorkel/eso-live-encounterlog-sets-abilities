@@ -197,6 +197,16 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         return render_death_recap_html(_entry_with_deaths(), unit_id,
                                        icons=self._cache(), **kwargs)
 
+    def test_a_death_with_no_death_line_says_so(self):
+        """Issue #221: a death counted from the player's health reaching 0,
+        its killer the last hit they took."""
+        from death_recap import HEALTH_CAUSE
+        from gui.death_render import NO_DEATH_LINE, render_death_recap_html
+        entry = _entry_with_deaths()
+        self.assertNotIn(NO_DEATH_LINE, render_death_recap_html(entry, '1'))
+        entry.death_recaps[0]['cause'] = HEALTH_CAUSE
+        self.assertIn(NO_DEATH_LINE, render_death_recap_html(entry, '1'))
+
     def test_each_death_has_its_chronology(self):
         html = self._html()
         self.assertIn('@tester', html)

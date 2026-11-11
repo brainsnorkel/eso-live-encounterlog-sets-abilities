@@ -47,7 +47,7 @@ from damage_kinds import (
     summary_of_taken,
     type_label,
 )
-from death_recap import LEGACY_WINDOW_MS
+from death_recap import HEALTH_CAUSE, LEGACY_WINDOW_MS
 from gui.name_mask import NO_MASK
 from pull_outcome import at_clock, dead_hover_text
 from gui.text_size import scaled_px
@@ -73,6 +73,10 @@ ICON_PX = 20  # ability icon edge in the recap table
 NOT_RECORDED = "Damage kinds were not recorded for this fight."
 NO_DAMAGE_IN_WINDOW = "No damage other than the killing blow was logged in the window."
 NO_DAMAGE_TAKEN = "This player took no damage in this fight."
+# Beside the time of a death the log wrote no line for within a second
+# (issue #221; a few come up to 3 s late): it is counted from the player's
+# health reaching 0, its killer the hit that left them there
+NO_DEATH_LINE = "read from health reaching 0: no death line within a second"
 FIGHT_BLOCK_TITLE = "Damage taken this fight"
 TOP_ABILITIES = 5  # the fight block lists this many abilities
 # The link beside the fight block's title to the damage taken window
@@ -589,6 +593,10 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
     facts = [f"{_clock(recap.get('time_ms', 0))} into the fight"]
     if max_health:
         facts.append(f"{max_health:,} max health")
+    if recap.get("cause") == HEALTH_CAUSE:
+        # Counted from the player's health reaching 0 (issue #221): the
+        # killer is the last hit they took, which a reader should know
+        facts.append(NO_DEATH_LINE)
     # The killer, normally an enemy; a player in a PvP log, hidden like
     # any other player's name
     killer = names.html(str(recap.get("killer") or ""), theme["text"], base_pt)

@@ -54,11 +54,15 @@ def _run(lines):
     analyzer.death_recap_recorder.window_ms = FIVE_S_MS
     listener = RecordingListener()
     analyzer.add_listener(listener)
-    for line in BASE + lines:
+    _feed(analyzer, BASE + lines)
+    return analyzer, listener
+
+
+def _feed(analyzer, lines):
+    for line in lines:
         entry = analyzer.log_parser.parse_line(line)
         if entry is not None:
             analyzer.process_log_entry(entry)
-    return analyzer, listener
 
 
 class TestRecapFromTheLog(unittest.TestCase):
@@ -529,6 +533,531 @@ class TestKindsInTheRecap(unittest.TestCase):
                          [(True, 'table'), (False, 'table'), (False, 'none'),
                           (False, 'none'), (False, 'none')])
         self.assertEqual(_taken(analyzer, 0, '1')['rules'], {'table': 4000, 'none': 16000})
+
+
+# Any line a second on, which lets a wait at 0 health run out (the boss on
+# itself: no player's state on it)
+def _tick(ts):
+    return _event(ts, 'DAMAGE', 300, BOSS)
+
+
+def _effect(ts, source, target=None, ability=40079):
+    """An EFFECT_CHANGED line; *target* None writes the self-target '*'."""
+    return (f"{ts},EFFECT_CHANGED,GAINED,1,950,{ability},{source},"
+            f"{target if target is not None else '*'}")
+
+
+def _cast(ts, source, target=None, ability=12437):
+    """A BEGIN_CAST line (instant, not channelled)."""
+    return f"{ts},BEGIN_CAST,0,F,960,{ability},{source},{target if target is not None else '*'}"
+
+
+def _regen(ts, regen, unit):
+    """A HEALTH_REGEN line: the regeneration, then the unit's state."""
+    return f"{ts},HEALTH_REGEN,{regen},{unit}"
+
+
+class TestDeathsWithNoDeathLine(unittest.TestCase):
+    """About one death in thirteen has no DIED, KILLING_BLOW or KILLED_BY_SUBZONE:
+    the player's state reads 0 and stays there (issue #221)."""
+
+    def test_a_player_at_zero_for_a_second_with_no_death_line_died(self):
+        from death_recap import HEALTH_CAUSE
+        from pull_outcome import first_death_text
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),
+            # The blow: a hit of 0 with the overkill in the overflow, and no
+            # death line after it
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=17000, cast=901),
+            _event(16400, 'DAMAGE', 500, BOSS, _player(1, 0), cast=902),     # on the corpse
+            _tick(17200),
+            # Resurrected: the state shows health again
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, analyzer.zone_deaths), (1, 1))
+        recap = fight.death_recaps[0]
+        self.assertEqual((recap['unit_id'], recap['name'], recap['time_ms']),
+                         ('1', '@brainsnorkel', 6000))
+        self.assertEqual((recap['killer'], recap['ability'], recap['cause'], recap['max_health']),
+                         ('Test Boss', 'Toppling Blow', HEALTH_CAUSE, 20000))
+        # The window up to the blow; the hit on the corpse is left out, as a
+        # death line's later hits are
+        self.assertEqual([(r['offset_ms'], r['amount'], r['overflow']) for r in recap['events']],
+                         [(-1000, 3000, 0), (0, 0, 17000)])
+        # Dead from the first 0 until the state showed health
+        self.assertEqual(fight.time_dead.get('1'), 9000)
+        self.assertEqual(first_death_text(fight),
+                         'First death: @brainsnorkel to Toppling Blow (Test Boss) at 0:06 · 1 death')
+
+    def test_a_blip_at_zero_is_no_death(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            _event(16300, 'HEAL', 3000, _player(2, 20000), _player(1, 3000), ability=40079),
+            _tick(18000),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.death_recaps, fight.time_dead), (0, [], {}))
+
+    def test_a_death_line_after_the_zero_names_the_death_once(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _event(16002, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _tick(18000),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        self.assertEqual([r['cause'] for r in fight.death_recaps], [''])
+
+    def test_a_death_line_after_the_hold_is_the_same_death(self):
+        from death_recap import HEALTH_CAUSE
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _tick(17100),                                              # counted here
+            _event(17500, 'DIED', 0, BOSS, _player(1, 0), cast=901),   # the same death
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, analyzer.zone_deaths), (1, 1))
+        self.assertEqual([r['cause'] for r in fight.death_recaps], [HEALTH_CAUSE])
+
+    def test_a_second_death_after_a_revive_still_counts(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _tick(17100),
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            _event(28000, 'DIED', 0, BOSS, _player(1, 0), cast=905),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 2)
+
+    def test_a_corpse_at_zero_after_its_death_line_is_no_second_death(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _event(16001, 'DAMAGE', 20000, BOSS, _player(1, 0), overflow=10, cast=901),
+            _event(18000, 'DAMAGE', 500, BOSS, _player(1, 0), cast=902),
+            _tick(20000),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_the_recaps_stay_in_time_order(self):
+        """A death read from 0 health is counted a second late, after a
+        death line that came while it waited."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _event(16500, 'DIED', 0, BOSS, _player(2, 0), cast=903),
+            _tick(17100),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual([(r['unit_id'], r['time_ms']) for r in fight.death_recaps],
+                         [('1', 6000), ('2', 6500)])
+
+    def test_at_zero_as_combat_ends_joins_the_fight_after_the_grace(self):
+        """No death line in the late-death grace either: the death joins the
+        fight that ended, as a death logged just after it would."""
+        from death_recap import HEALTH_CAUSE
+        analyzer, listener = _run([
+            '10000,BEGIN_COMBAT',
+            _event(19900, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=1224),
+            '20000,END_COMBAT',
+            _tick(21000),
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        recap = fight.death_recaps[0]
+        self.assertEqual((recap['time_ms'], recap['cause']), (9900, HEALTH_CAUSE))
+        self.assertEqual(len(listener.of_kind('fight_updated')), 1)
+
+    def test_at_zero_as_combat_ends_then_up_again_is_no_death(self):
+        analyzer, listener = _run([
+            '10000,BEGIN_COMBAT',
+            _event(19900, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=10),
+            '20000,END_COMBAT',
+            _event(20300, 'HEAL', 3000, _player(2, 20000), _player(1, 3000), ability=40079),
+            _tick(21500),
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+        self.assertEqual(listener.of_kind('fight_updated'), [])
+
+    def test_at_zero_as_combat_ends_and_nothing_after_until_the_next_pull(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(19900, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=10),
+            '20000,END_COMBAT',
+            '90000,BEGIN_COMBAT',
+            _event(95000, 'DAMAGE', 719, BOSS, _player(2, 19281)),
+            '99000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        self.assertEqual((first.deaths, second.deaths), (1, 0))
+
+    def test_a_death_first_seen_on_an_effect_line(self):
+        """Nearly a third of these deaths show the first 0 on an effect's or
+        a cast's line; with no hit within 3 s the killer is unknown."""
+        from death_recap import HEALTH_CAUSE, NO_HIT_DEATH
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 3000, BOSS, _player(1, 17000)),    # 4 s before
+            _effect(16000, BOSS, _player(1, 0)),
+            _effect(16500, _player(1, 0)),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        recap = fight.death_recaps[0]
+        self.assertEqual((recap['time_ms'], recap['cause'], recap['ability'], recap['killer']),
+                         (6000, HEALTH_CAUSE, NO_HIT_DEATH, ''))
+
+    def test_a_hit_within_three_seconds_names_the_killer(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(14500, 'DAMAGE', 15000, BOSS, _player(1, 5000)),
+            _effect(16000, BOSS, _player(1, 0)),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual((recap['killer'], recap['ability']), ('Test Boss', 'Toppling Blow'))
+
+    def test_the_blow_just_after_an_effect_line_names_the_killer(self):
+        """The 0 first shows on an effect's line and the killing blow comes
+        1 ms later: the blow names the death, not 'an unknown cause'."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _effect(16000, BOSS, _player(1, 0)),
+            _event(16001, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=8000, cast=901),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        recap = analyzer.fight_history.fights[0].death_recaps[0]
+        self.assertEqual((recap['time_ms'], recap['killer'], recap['ability']),
+                         (6000, 'Test Boss', 'Toppling Blow'))
+
+    def test_a_death_first_seen_on_a_cast_line_takes_the_lines_time(self):
+        """The parser stamps BEGIN_CAST with 0: the line's own time counts."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _cast(16000, BOSS, _player(1, 0)),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual([r['time_ms'] for r in fight.death_recaps], [6000])
+
+    def test_a_corpse_tick_is_no_revive(self):
+        """A dead player's regeneration tick writes health equal to its own
+        regeneration, and later lines repeat that stale value."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _regen(16001, 894, _player(1, 894)),
+            _event(16500, 'DAMAGE', 0, BOSS, _player(1, 894)),
+            _tick(17200),
+            _event(19000, 'DAMAGE', 0, BOSS, _player(1, 894)),
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual(fight.deaths, 1)
+        # Dead until the resurrection, not until the stale value came back
+        self.assertEqual(fight.time_dead.get('1'), 9000)
+
+    def test_a_corpse_tick_after_a_death_line_is_no_revive(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _regen(16001, 894, _player(1, 894)),
+            _event(19000, 'DAMAGE', 0, BOSS, _player(1, 894)),
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, fight.time_dead.get('1')), (1, 9000))
+
+    def test_a_corpse_from_before_the_pull_is_no_death(self):
+        analyzer, _ = _run([
+            _event(5000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=10),
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 0, BOSS, _player(1, 0)),
+            _tick(14000),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
+    def test_a_death_line_well_after_one_read_from_zero_is_a_new_death(self):
+        """Past ZERO_LINE_SAME_MS a death line is a death of its own, the
+        player's revive not having been seen."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _tick(17100),
+            _event(23000, 'DIED', 0, BOSS, _player(1, 0), cast=905),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 2)
+
+    def test_a_revive_seen_only_on_an_effect_ends_the_follow(self):
+        """Time dead's revive reads only combat events; the follow at 0
+        health ends on any line, so the next death is still read."""
+        from death_recap import HEALTH_CAUSE
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _effect(25000, _player(2, 20000), _player(1, 6000)),
+            _event(28000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=900, cast=906),
+            _tick(29200),
+            '30000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual([r['cause'] for r in fight.death_recaps], ['', HEALTH_CAUSE])
+
+    def test_a_corpse_with_no_magicka_or_stamina_is_no_revive(self):
+        """The dead player's own healing tick writes health on the corpse,
+        magicka and stamina both at 0."""
+        corpse = "1,400/20000,0/26657,0/13021,500/500,1000/1000,0,0.2,0.5,5.5"
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            _event(16300, 'HOT_TICK', 400, _player(2, 20000), corpse, ability=40079),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_no_wait_starts_on_a_resurrection_line(self):
+        """The accept line shows the corpse being raised at 0: a death not
+        seen before it is not dated there."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),    # the group met the boss
+            _event(16000, 'SOUL_GEM_RESURRECTION_ACCEPTED', 0, _player(2, 20000), _player(1, 0)),
+            _tick(17200),
+            _event(18500, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
+    def test_a_player_outside_the_group_is_not_watched(self):
+        analyzer, _ = _run([
+            ('2100,UNIT_ADDED,3,PLAYER,F,3,0,F,6,1,"Passer By","@passer",'
+             '1708524619155578001,50,787,0,PLAYER_ALLY,F'),
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(3, 0), overflow=500),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
+    def test_the_tome_hold_polymorph_is_no_death(self):
+        """The Infinite Archive's minigame form has no stamina pool; it is
+        knocked to 0 and restored when the minigame ends."""
+        form = "1,0/4501,0/0,0/0,0/0,0/0,0,0.2,0.5,5.5"
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, form, overflow=500),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
+    def test_the_hold_cuts_no_row_from_the_recap(self):
+        """The recap is built a second late: the corpse's heals meanwhile
+        must not push the window's oldest hit out of the history."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(11500, 'DAMAGE', 1000, BOSS, _player(1, 19000)),     # 4.5 s before
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            _event(16600, 'HOT_TICK', 0, _player(2, 20000), _player(1, 0), ability=40079),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        rows = analyzer.fight_history.fights[0].death_recaps[0]['events']
+        self.assertEqual([r['offset_ms'] for r in rows], [-4500, 0])
+
+    def test_a_death_with_no_hit_keeps_the_players_max_health(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _effect(16000, BOSS, _player(1, 0)),
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].death_recaps[0]['max_health'], 20000)
+
+    def test_a_first_zero_in_the_late_grace_joins_the_fight_that_ended(self):
+        """As a death line just after END_COMBAT does."""
+        analyzer, listener = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, _player(1, 20000), BOSS),
+            '20000,END_COMBAT',
+            _event(20300, 'DAMAGE', 0, BOSS, _player(2, 0), overflow=500),
+            _tick(21500),
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual([(r['unit_id'], r['time_ms']) for r in fight.death_recaps], [('2', 10300)])
+        self.assertEqual(len(listener.of_kind('fight_updated')), 1)
+
+    def test_the_late_path_replaces_the_recap_list(self):
+        """A frontend may be reading the entry's list: a late death gives
+        the entry a new one."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, _player(1, 20000), BOSS),
+            _event(19900, 'DAMAGE', 0, BOSS, _player(2, 0), overflow=500),
+            '20000,END_COMBAT',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        sent = fight.death_recaps
+        _feed(analyzer, [_tick(21000)])
+        self.assertIsNot(fight.death_recaps, sent)
+        self.assertEqual((len(sent), len(fight.death_recaps)), (0, 1))
+
+    def test_a_death_while_the_group_fights_on_joins_the_fight_it_carries_on(self):
+        """The logging player dies, combat ends for the log, the group
+        fights on and the fight carries on: a death between the lines with
+        no death line is the fight's, as one with a line is (#162)."""
+        boss = "72,{h}/287485,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
+        lines = [('2100,UNIT_ADDED,3,PLAYER,F,3,0,F,6,1,"Third Friend","@third",'
+                  '1708524619155578002,50,787,0,PLAYER_ALLY,T'),
+                 '2600,UNIT_ADDED,72,MONSTER,F,0,105636,T,0,0,"Big Boss","",0,50,160,0,HOSTILE,F',
+                 '10000,BEGIN_COMBAT']
+        health = 280000
+        hits = []
+        for ts in list(range(11000, 29000, 1000)) + list(range(30000, 60000, 1000)):
+            hits.append(_event(ts, 'DAMAGE', 1000, _player(3, 20000), boss.format(h=health)))
+            health -= 1000
+        hits += [
+            _event(20000, 'DIED', 0, BOSS, _player(1, 0)),
+            _event(31000, 'DAMAGE', 0, BOSS, _player(2, 0), overflow=7000),
+            _event(40200, 'HEAL', 5000, _player(3, 20000), _player(1, 5000), ability=40079),
+        ]
+        hits.sort(key=lambda line: int(line.split(',')[0]))
+        lines += [h for h in hits if int(h.split(',')[0]) < 29000] + ['29000,END_COMBAT']
+        lines += [h for h in hits if 29000 < int(h.split(',')[0]) < 40500] + ['40500,BEGIN_COMBAT']
+        lines += [h for h in hits if int(h.split(',')[0]) > 40500] + ['60000,END_COMBAT']
+        analyzer, _ = _run(lines)
+        fight, = analyzer.fight_history.fights
+        self.assertEqual(sorted(r['unit_id'] for r in fight.death_recaps), ['1', '2'])
+        self.assertEqual((fight.time_dead.get('2'), fight.pull['dead_at_end']), (29000, ['2']))
+
+    def test_a_new_fight_inside_the_hold_leaves_the_death_in_the_fight_that_ended(self):
+        add = "71,{h}/5000,0/0,0/0,0/0,0/0,0,0.6,0.4,2.3"
+        analyzer, _ = _run([
+            '2600,UNIT_ADDED,71,MONSTER,F,0,105635,F,0,0,"Test Add","",0,50,160,0,HOSTILE,F',
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 2000, _player(1, 20000), add.format(h=3000)),
+            _event(19500, 'DAMAGE', 0, BOSS, _player(2, 0), overflow=500),
+            _event(19600, 'DIED_XP', 0, _player(1, 20000), add.format(h=0)),
+            '19800,END_COMBAT',
+            '20200,BEGIN_COMBAT',
+            _event(20300, 'DAMAGE', 500, BOSS, _player(1, 19500)),
+            _event(26000, 'DAMAGE', 500, BOSS, _player(1, 19000)),
+            '40000,END_COMBAT',
+        ])
+        first, second = analyzer.fight_history.fights
+        self.assertEqual((first.deaths, second.deaths), (1, 0))
+
+    def test_a_player_back_on_a_new_unit_id_can_die_again(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(15000, 'DIED', 0, BOSS, _player(2, 0)),
+            '20000,UNIT_REMOVED,2',
+            ('30000,UNIT_ADDED,12,PLAYER,F,2,0,F,6,1,"Templar Friend","@templar",'
+             '1708524619155578000,50,787,0,PLAYER_ALLY,T'),
+            _event(31000, 'HEAL', 4000, _player(1, 20000), _player(12, 20000), ability=40079),
+            _event(40000, 'DAMAGE', 0, BOSS, _player(12, 0), overflow=900),
+            _tick(41200),
+            '50000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 2)
+
+    def test_a_corpse_with_no_pools_after_a_death_line_is_no_revive(self):
+        corpse = "1,400/20000,0/26657,0/13021,500/500,1000/1000,0,0.2,0.5,5.5"
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _event(18000, 'HOT_TICK', 400, _player(2, 20000), corpse, ability=40079),
+            _event(25000, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].time_dead.get('1'), 9000)
+
+    def test_no_wait_starts_on_a_release_effect(self):
+        """Recently Revived and the like show the corpse at 0."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _effect(16000, _player(1, 0), ability=14646),
+            _tick(17200),
+            _event(18500, 'HEAL', 4000, _player(2, 20000), _player(1, 4000), ability=40079),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
+    def test_regeneration_ticks_start_and_end_a_wait(self):
+        died, lived = (_run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            *lines,
+            _tick(17200),
+            '30000,END_COMBAT',
+        ])[0].fight_history.fights[0].deaths for lines in (
+            [_regen(16000, 0, _player(1, 0))],
+            [_event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=10),
+             _regen(16300, 500, _player(1, 3000))],
+        ))
+        self.assertEqual((died, lived), (1, 0))
+
+    def test_health_just_after_a_late_death_line_is_the_dying_lines_own(self):
+        """The revive guard counts from the death line, as time dead's
+        does, so the corpse's next 0 is no second death."""
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500, cast=901),
+            _tick(17100),
+            _event(18000, 'DIED', 0, BOSS, _player(1, 0), cast=901),
+            _event(18500, 'HEAL', 300, _player(2, 20000), _player(1, 300), ability=40079),
+            _event(19000, 'DAMAGE', 0, BOSS, _player(1, 0)),
+            _tick(20500),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_a_zone_change_counts_a_wait_that_lasted_the_hold(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            '16500,END_COMBAT',
+            '17500,ZONE_CHANGED,1302,"Somewhere Else",NORMAL',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
+
+    def test_a_placeholder_state_says_nothing(self):
+        """The log's 1/1 placeholder for a unit it has no state for does not
+        end a wait at 0 health."""
+        placeholder = "1,1/1,0/0,0/0,0/0,0/0,0,0.0000,0.0000,0.0000"
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            _event(16300, 'DAMAGE', 0, BOSS, placeholder),
+            _tick(17100),
+            '30000,END_COMBAT',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
 
 
 if __name__ == '__main__':
