@@ -2,6 +2,13 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.43.0] - 2026-11-12
+
+### Added
+- **One player's actions on the Events tab** (#214): **Who**, at the start of the tab's bar, picks one of the fight's players, and the table lists every cast they began, in order: its bar slot, a light attack just before it, the ability, its target, how long it lasted when the log wrote its end, and the seconds since the skill before. Between the casts come their deaths and returns, the hits they took of 30% of their health or more, the bosses' casts at them and the taunt swaps they were in, with the bosses' health, map changes and boss deaths as grey context rows. For your own character, rows also say where you had no cast going for 3 seconds or more while alive. **More** shows light attacks and weapon swaps as rows of their own, or hides the context. The player stays picked as the fights change, and **This player's actions** in a player's window opens the tab on them.
+- **From an event to the DPS graph, and back** (#214): Ctrl+G on a row of the Events tab, or **On the DPS graph** under the table, opens the DPS graph with that moment marked. A double-click on the graph, **Events around** in the buff strip's pop-up and **Events** on a death in a player's Deaths tab each open the Events tab on the ten seconds either side of their moment, and **Show** there can keep to the 10 or 30 seconds around the selected row.
+- **The positions window plays a fight back** (#232): **Play**, beside the bar under the picture, runs the fight on from the moment shown at 1x to 5x the fight's pace (Space in the table or on the bar plays or pauses; Ctrl+, and Ctrl+. go slower and faster) and stops at the fight's end. While it plays, a mark glides between two places the log gave for it at most a second apart; paused, every mark stands where the log last put it, exactly as before. The table and what a screen reader reads follow once a second while it plays, and nothing moves until you press Play.
+
 ## [0.42.0] - 2026-11-12
 
 ### Added
