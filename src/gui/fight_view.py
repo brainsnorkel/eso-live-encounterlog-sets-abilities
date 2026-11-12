@@ -47,7 +47,8 @@ from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.activity_render import activity_action_from_href, review_index_from_href
 from gui.death_render import (
-    FIGHT_DEATHS_HREF, FIGHT_POSITIONS_HREF, RECAP_HREF, positions_from_href, recap_from_href,
+    FIGHT_DEATHS_HREF, FIGHT_POSITIONS_HREF, RECAP_HREF, events_from_href, positions_from_href,
+    recap_from_href,
     unit_from_href,
 )
 from gui.fight_render import (
@@ -130,6 +131,9 @@ class FightView(QTextBrowser):
     # the unit to select ('' for none) and ms into the fight; and the fight
     # header's Positions, which opens at the fight's own moment
     positions_requested = Signal(str, int)
+    # A death's Events link: the player's unit id and the moment, in ms
+    # into the fight (issue #214)
+    events_requested = Signal(str, int)
     fight_positions_requested = Signal()
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
     # A split log listed beside a run's result: its place in the list the
@@ -879,6 +883,10 @@ class FightView(QTextBrowser):
         moment = positions_from_href(url.toString())
         if moment is not None:
             self.positions_requested.emit(*moment)
+            return
+        moment = events_from_href(url.toString())
+        if moment is not None:
+            self.events_requested.emit(*moment)
             return
         death = recap_from_href(url.toString())
         if death is not None:

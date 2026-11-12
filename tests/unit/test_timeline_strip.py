@@ -476,6 +476,40 @@ class TestTimelineStrip(unittest.TestCase):
         QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.assertEqual(self.strip.findChildren(SummaryPopup), [])
 
+    def test_the_popup_links_to_the_events_around_the_moment_clicked(self):
+        """Issue #214: opened on a moment of a row, for a fight whose events
+        were recorded, the pop-up ends in a link to that moment's events;
+        the link closes it and asks for the moment. Opened on a label, or
+        for a fight without events, it has no link."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        from gui.death_render import events_href
+        from gui.timeline_strip import SummaryPopup
+        self.strip.set_timeline(_sample_timeline())
+        self.strip.show()
+        y = int(self.strip._row_rect(0).center().y())
+        x = int(self.strip._x_for_ms(50_000))
+        QTest.mouseClick(self.strip, Qt.LeftButton, pos=QPoint(x, y))
+        popup = self.strip.findChildren(SummaryPopup)[-1]
+        self.assertNotIn("<a ", popup.label.text())   # no events recorded
+        popup.close()
+        self.strip.set_moment_links(True)
+        QTest.mouseClick(self.strip, Qt.LeftButton, pos=QPoint(10, y))    # the label
+        popup = self.strip.findChildren(SummaryPopup)[-1]
+        self.assertNotIn("<a ", popup.label.text())
+        popup.close()
+        asked = []
+        self.strip.moment_requested.connect(asked.append)
+        QTest.mouseClick(self.strip, Qt.LeftButton, pos=QPoint(x, y))
+        popup = self.strip.findChildren(SummaryPopup)[-1]
+        ms = self.strip._ms_for_x(x)
+        # The Events link every view uses (death_render), with no player
+        self.assertIn(f"<a href='{events_href(ms)}'>Events around 49s</a>", popup.label.text())
+        popup.label.linkActivated.emit(events_href(ms))
+        self.assertEqual(asked, [ms])
+        self.assertFalse(popup.isVisible())
+
     def test_summary_text_for_a_sparse_row_and_a_stacking_rule(self):
         tracked = [{"name": "Crux", "kind": "stacks", "scope": "self", "text": "Crux:2.0/3",
                     "uptime_pct": 66.7, "max_stacks": 3, "intervals": [

@@ -222,6 +222,60 @@ class TestTheTable(EventsTestCase):
         self.assertEqual(len(page.shown_rows()), 4)
         self.assertEqual(page.selected().t, 70000)  # kept while shown
 
+    def test_show_the_seconds_around_a_moment(self):
+        """Show's ± choices keep the rows either side of the row selected
+        when the choice is made, and say the moment; ±30 s keeps that
+        moment; another fight goes back to the whole fight."""
+        notes = [("note_map", t, f"Map {t}") for t in (5000, 42000, 50000, 58000, 75000, 110000)]
+        page = self._page(_entry(duration_s=120.0, notes=notes))
+        self._select(page, 2)                      # 0:50.0
+        page.show_picker.setCurrentIndex(2)
+        self.assertEqual(page.show_picker.currentText(), "±10 s around a moment")
+        self.assertEqual([row.t for row in page.shown_rows()], [42000, 50000, 58000])
+        self.assertEqual(page.selected().t, 50000)
+        self.assertEqual(page.count_label.text(), "3 of 6 shown · around 0:50.0")
+        self._select(page, 0)                      # another row: the moment stays
+        page.show_picker.setCurrentIndex(3)
+        self.assertEqual([row.t for row in page.shown_rows()], [42000, 50000, 58000, 75000])
+        page.show_picker.setCurrentIndex(0)
+        self.assertEqual((len(page.shown_rows()), page.count_label.text()), (6, "6 of 6 shown"))
+        # Chosen again: around the row selected now, 0:42.0
+        page.show_picker.setCurrentIndex(2)
+        self.assertEqual([row.t for row in page.shown_rows()], [42000, 50000])
+        page.show_fight(_entry(duration_s=120.0, notes=notes))
+        self.assertEqual((page.show_picker.currentIndex(), len(page.shown_rows())), (0, 6))
+
+    def test_show_around_a_moment_another_view_sends(self):
+        """show_around: the rows within ten seconds of the moment, the first
+        from it on selected; nothing with no fight."""
+        notes = [("note_map", t, f"Map {t}") for t in (5000, 42000, 50000, 58000, 110000)]
+        page = self._page(_entry(duration_s=120.0, notes=notes))
+        page.show_around(49000)
+        self.assertEqual(page.show_picker.currentText(), "±10 s around a moment")
+        self.assertEqual([row.t for row in page.shown_rows()], [42000, 50000, 58000])
+        self.assertEqual(page.selected().t, 50000)
+        self.assertIn("around 0:49.0", page.count_label.text())
+        page.clear()
+        page.show_around(1000)
+        self.assertEqual(page.shown_rows(), [])
+
+    def test_ctrl_g_and_the_link_ask_for_the_row_on_the_graph(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from gui.events_tab import GRAPH_HREF
+        page = self._page(_fight())
+        asked = []
+        page.graph_requested.connect(lambda ms, label: asked.append((ms, label)))
+        self._select(page, self._row_of(page, "Died"))
+        page.table.setFocus()
+        QTest.keyClick(page.table, Qt.Key_G, Qt.ControlModifier)
+        self.assertEqual(asked, [(10000, "Died · Toppling Blow")])
+        self._select(page, self._row_of(page, "Back"))
+        page.full_row.linkActivated.emit(GRAPH_HREF)
+        self.assertEqual(asked[-1], (16000, "Back"))
+        self.assertIn(page.full_row, page.focus_chain())  # its link is a Tab stop
+
     def test_an_entry_from_before_the_events_says_so(self):
         from gui.events_tab import OLD_FIGHT
         page = self._page(SimpleNamespace(events=None, duration_s=10.0, death_recaps=[]))
@@ -259,16 +313,21 @@ class TestTheDeathRow(EventsTestCase):
     def test_the_row_selected_is_whole_under_the_table(self):
         """Every cell of the row selected on the line under the table, cut
         or not, and what Enter does on a single death's."""
-        from gui.events_tab import RECAP_TIP
+        from gui.events_tab import GRAPH_HREF, GRAPH_KEYS, GRAPH_LINK, RECAP_TIP
         page = self._page(_fight(), size=(500, 400))
         died = self._row_of(page, "Died")
         self._select(page, died)
         text = page.full_row.text()
         self.assertTrue(text.startswith("0:10.0 · Died · Toppling Blow · @third · from Lokkestiiz"))
         self.assertIn("resurrected by @first at 0:16.0", text)
-        self.assertTrue(text.endswith(RECAP_TIP))
+        # What Enter does, then the row's moment on the DPS graph
+        from gui.fight_render import link_color
+        link = (f'<a href="{GRAPH_HREF}" style="text-decoration:none;color:{link_color(False)}">'
+                f'{GRAPH_LINK}</a> ({GRAPH_KEYS})')
+        self.assertTrue(text.endswith(f"{RECAP_TIP} — {link}"))
         self._select(page, self._row_of(page, "Back"))
         self.assertNotIn(RECAP_TIP, page.full_row.text())
+        self.assertTrue(page.full_row.text().endswith(link))
         page.show_fight(None)
         self.assertEqual(page.full_row.text(), "")
 
@@ -418,6 +477,138 @@ class TestTheSearch(EventsTestCase):
         self.assertNotEqual(win.search_count.text(), count_text(len(page.shown_rows())))
         win.fight_tabs.setCurrentWidget(win.events_view)
         self.assertEqual(win.search_count.text(), count_text(len(page.shown_rows())))
+
+
+class TestJumps(EventsTestCase):
+    """Issue #214: from an Events row to the DPS graph and back, and from
+    the buff strip's pop-up and a death's recap to the Events tab."""
+
+    def test_ctrl_g_marks_the_rows_moment_on_the_dps_graph(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        entry = _fight()
+        win = self._window(entry)
+        win.fight_tabs.setCurrentWidget(win.events_view)
+        page = win.events_view
+        page.table.setFocus()
+        QTest.keyClick(page.table, Qt.Key_G, Qt.ControlModifier)   # on the first death
+        self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
+        self.assertIs(win.dps_panel.entry, entry)
+        self.assertEqual(win.dps_panel.graph.cursor, (10.0, "Died · Toppling Blow"))
+        # Another fight shown: the mark was the last fight's
+        other = _fight()
+        win._on_fight_completed(other)
+        self.assertIs(win.dps_panel.entry, other)
+        self.assertIsNone(win.dps_panel.graph.cursor)
+
+    def test_a_double_click_on_the_graph_opens_the_events_around_it(self):
+        entry = _fight()
+        win = self._window(entry)
+        win.fight_tabs.setCurrentWidget(win.dps_panel)
+        win.dps_panel.moment_requested.emit(12000)
+        page = win.events_view
+        self.assertIs(win.fight_tabs.currentWidget(), page)
+        self.assertEqual(page.show_picker.currentText(), "±10 s around a moment")
+        times = [row.t for row in page.shown_rows()]
+        self.assertTrue(times and all(2000 <= t <= 22000 for t in times), times)
+        self.assertGreaterEqual(page.selected().t, 12000)
+        self.assertIn("around 0:12.0", page.count_label.text())
+        self.assertEqual(win.dps_panel.graph.cursor, (12.0, ""))
+        self.assertTrue(page.table.hasFocus())
+
+    def test_the_strips_popup_link_opens_the_events_around_its_moment(self):
+        entry = _fight()
+        win = self._window(entry)
+        self.assertTrue(win.timeline_strip._moment_links)   # the fight has its events
+        win.timeline_strip.moment_requested.emit(3000)
+        page = win.events_view
+        self.assertIs(win.fight_tabs.currentWidget(), page)
+        self.assertTrue(all(t <= 13000 for t in (row.t for row in page.shown_rows())))
+        # A fight from before the events: no link, and nothing to open
+        from tests.unit.test_death_recap_gui import _entry_with_deaths
+        old = _entry_with_deaths()
+        win._on_fight_completed(old)
+        self.assertFalse(win.timeline_strip._moment_links)
+        win.fight_tabs.setCurrentIndex(0)
+        win.timeline_strip.moment_requested.emit(3000)
+        self.assertEqual(win.fight_tabs.currentIndex(), 0)
+
+    def test_a_deaths_events_link_selects_its_fight_and_opens_the_tab(self):
+        """From the player window, which keeps the fight it was opened for:
+        that fight is selected in the list again, and the Events tab shows
+        the seconds around the death."""
+        from gui.player_window import DEATHS_TAB
+        first, second = _fight(), _fight()
+        win = self._window(first, second)
+        self.assertIs(win.history_list.current_entry(), second)
+        win._open_player("3", DEATHS_TAB, entry=first, death=1)
+        win._player_window.events_requested.emit(first, "3", 10000)
+        self.assertIs(win.history_list.current_entry(), first)
+        page = win.events_view
+        self.assertIs(win.fight_tabs.currentWidget(), page)
+        self.assertIs(page.entry, first)
+        self.assertEqual((page.selected().what, page.selected().t), ("Died", 10000))
+
+    def test_a_fight_gone_from_the_list_opens_nothing(self):
+        """As the window's Show in list: said in the status bar, and the
+        Events tab left alone."""
+        from gui.player_window import DEATHS_TAB
+        first, second = _fight(), _fight()
+        win = self._window(first, second)
+        win._open_player("3", DEATHS_TAB, entry=first, death=1)
+        gone = _fight()
+        win._player_window.events_requested.emit(gone, "3", 10000)
+        self.assertIs(win.history_list.current_entry(), second)
+        self.assertEqual(win.fight_tabs.currentIndex(), 0)
+        self.assertIn("not in the list", win.statusBar().currentMessage())
+
+    def test_another_fight_picked_takes_the_mark_with_the_graph_not_drawn(self):
+        """The mark is the fight's: back on the fight after a visit to
+        another, with the graph never on screen between, it is gone."""
+        first, second = _fight(), _fight()
+        win = self._window(first, second)
+        win.history_list.select_entry(first)
+        win.fight_tabs.setCurrentWidget(win.events_view)
+        win.events_view._ask_graph()
+        self.assertIsNotNone(win.dps_panel.graph.cursor)
+        win.fight_tabs.setCurrentIndex(0)
+        win.history_list.select_entry(second)
+        win.history_list.select_entry(first)
+        win.fight_tabs.setCurrentWidget(win.dps_panel)
+        self.assertIsNone(win.dps_panel.graph.cursor)
+
+    def test_a_deaths_link_selects_the_row_that_tells_it(self):
+        """Players who died together are one row at the first death's time:
+        the link of the last to die selects that row, not the next one; the
+        Deaths box unticked is ticked again; a search that narrows the rows
+        is said in the count."""
+        recaps = [{"unit_id": key, "name": f"@{key}", "time_ms": t, "ability": "Melt",
+                   "ability_id": "5", "killer": "Boss", "icon": "", "cause": ""}
+                  for key, t in (("1", 60000), ("2", 60400), ("3", 60900))]
+        notes = [("note_map", t, f"Map {t}") for t in (55000, 61000, 65000)]
+        page = self._page(_entry(duration_s=120.0, notes=notes, recaps=recaps))
+        page.category_boxes["deaths"].setChecked(False)
+        self.assertTrue(page.show_around(60900, unit_key="3"))
+        self.assertTrue(page.category_boxes["deaths"].isChecked())
+        self.assertEqual((page.selected().what, page.selected().t), ("Died x3", 60000))
+        # A moment that is no death: the first row from it on
+        page.show_around(60900)
+        self.assertEqual(page.selected().t, 61000)
+        page.set_search("Melt")
+        self.assertEqual(page.count_label.text(),
+                         "1 of 4 shown · around 1:00.9 · matching the search")
+        page.set_search("")
+        self.assertNotIn("matching", page.count_label.text())
+        page.clear()
+        self.assertFalse(page.show_around(1000))     # no fight to show it for
+
+    def test_the_line_under_the_table_is_a_tab_stop_only_with_a_row(self):
+        from PySide6.QtCore import Qt
+        page = self._page(_fight())
+        self.assertTrue(page.full_row.textInteractionFlags() & Qt.LinksAccessibleByKeyboard)
+        page.clear()
+        self.assertEqual(page.full_row.textInteractionFlags(), Qt.NoTextInteraction)
+        self.assertEqual(page.full_row.focusPolicy(), Qt.NoFocus)
 
 
 class TestInTheWindow(EventsTestCase):
