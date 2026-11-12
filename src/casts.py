@@ -306,7 +306,12 @@ class CastRecorder:
         """The ability ids found to be the caster's procs this session."""
         return frozenset(self._procs.get(key, ()))
 
-    def _counted(self, key: str, start: int, end: int, slotted) -> list[tuple[int, str]]:
+    def casts_between(self, key: str, start: int, end: int,
+                      slotted=()) -> list[tuple[int, str]]:
+        """(time, ability id) of every cast begun from *start* to *end*, in
+        the order cast, less the caster's procs that are not among the
+        ability ids *slotted*, those of a skill on their bars (on_bars). A
+        death recap's casts are these (issue #214)."""
         procs = self._procs.get(key)
         if procs:
             procs = procs - set(slotted)
@@ -314,19 +319,18 @@ class CastRecorder:
                 if start <= timestamp <= end and not (procs and ability_id in procs)]
 
     def fight_counts(self, key: str, start: int, end: int, slotted=()) -> Counter:
-        """Casts per ability id begun from *start* to *end*, less the
-        caster's procs that are not among the ability ids *slotted*, those
-        of a skill on their bars (on_bars)."""
+        """Casts per ability id begun from *start* to *end*, procs left out
+        as in casts_between."""
         return Counter(ability_id for _timestamp, ability_id
-                       in self._counted(key, start, end, slotted))
+                       in self.casts_between(key, start, end, slotted))
 
     def fight_times(self, key: str, start: int, end: int, ability_ids,
                     slotted=()) -> list[tuple[int, str]]:
         """(time, ability id) of each cast of one of *ability_ids* begun
         from *start* to *end*, in the order cast (procs left out as in
-        fight_counts)."""
+        casts_between)."""
         return [(timestamp, ability_id) for timestamp, ability_id
-                in self._counted(key, start, end, slotted) if ability_id in ability_ids]
+                in self.casts_between(key, start, end, slotted) if ability_id in ability_ids]
 
     def prune_before(self, timestamp: int) -> None:
         """Forget the casts begun before *timestamp*, and the tracks last

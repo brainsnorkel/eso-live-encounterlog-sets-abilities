@@ -86,8 +86,12 @@ class FightHistoryEntry:
         self.buff_timeline = None
         # One dict per player death, in order (len == deaths): unit_id, name,
         # time_ms (into the fight), killer, ability, ability_id, icon,
-        # max_health, and events: the last seconds before the death, oldest
-        # first (see death_recap.py for the row keys)
+        # max_health, events: the last seconds before the death, oldest
+        # first (see death_recap.py for the row keys), and casts: the
+        # player's own casts in those seconds, oldest first, each with
+        # offset_ms, ability_id, ability, icon and extra (the kind of an
+        # extra, '' for a skill; issue #214, ESOLogAnalyzer._recap_casts;
+        # missing on an entry built before them)
         self.death_recaps = []
         # The tracked effects for this fight (every item of the uptime line
         # is one), one dict per rule in rule order: name, scope, kind, units

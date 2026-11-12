@@ -80,6 +80,13 @@ FIGHT_LINK_LEAD = "Over the whole fight:"
 FIGHT_LINK_TEXT = "Damage taken tab"
 SKULL = "☠"
 ICON_PX = 20  # ability icon edge in the recap table
+# The dying player's own casts among the table's rows (issue #214): the
+# Result column's word, and the kind of an extra after it (casts.kind_of,
+# the cast's 'extra'; casts.EXTRA_KINDS's kinds, which a test holds it to)
+CAST_LABEL = "Cast"
+CAST_KIND_LABELS = {"light": "light attack", "heavy": "heavy attack", "bash": "bash",
+                    "swap": "weapon swap", "dodge": "dodge", "synergy": "synergy",
+                    "potion": "potion", "break_free": "Break Free"}
 NOT_RECORDED = "Damage kinds were not recorded for this fight."
 NO_DAMAGE_IN_WINDOW = "No damage other than the killing blow was logged in the window."
 NO_DAMAGE_TAKEN = "This player took no damage in this fight."
@@ -712,9 +719,11 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         + "</p>",
     ]
     rows = recap.get("events") or []
-    if not rows:
-        parts.append(f"<p style='margin:0;color:{muted}'>No damage or healing was logged "
-                     f"in the {window_text(recap)} before this death.</p>")
+    cast_rows = recap.get("casts") or []
+    no_events = (f"<p style='margin:0;color:{muted}'>No damage or healing was logged "
+                 f"in the {window_text(recap)} before this death.</p>")
+    if not rows and not cast_rows:
+        parts.append(no_events)
         return "".join(parts)
 
     head = (f"style='color:{muted};border-bottom-style:solid;"
@@ -731,33 +740,66 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         f"<td colspan='2' {head}>Ability</td><td width='17%' {head}>Source</td>"
         f"<td width='8%' align='right' {head}>Amount</td>"
         f"<td {head}>Result</td></tr>")
-    for row in rows:
+    # The player's own casts among the hits, by time (issue #214); a cast
+    # before a hit of the same millisecond, as the hit may be its answer
+    timeline = sorted([(c.get("offset_ms", 0), 0, i, c) for i, c in enumerate(cast_rows)]
+                      + [(r.get("offset_ms", 0), 1, i, r) for i, r in enumerate(rows)],
+                      key=lambda item: item[:3])
+    for _offset, is_event, _index, row in timeline:
+        if not is_event:
+            parts.append(_cast_row_html(row, theme, icons, e))
+            continue
         # The blow (or blows) that left the player on zero health stands out
         final = row.get("kind") == "damage" and not row.get("health")
         tr = f"<tr bgcolor='{theme['final_bg']}'>" if final else "<tr>"
         bold = "font-weight:bold;" if final else ""
-        icon = _icon_html(row, icons)
-        # A row without an icon is padded out to the height of one with
-        pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
         # The source, a player's handle for a heal, through the Hide names
         # mask (gui.name_mask); an enemy's name passes as it is
         source = str(row.get("source") or "")
-        cells = (
-            (" align='right'", f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
-            (" align='right'", "", _health_html(row, theme)),
-            (f" width='{scaled_px(ICON_PX)}'", "", icon),
-            (" width='20%'", bold, e(str(row.get("ability", "")))),
-            ("", bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
-            (" align='right'", bold, _amount_html(row, theme)),
-            ("", "", _result_html(row, theme, e)),
-        )
-        parts.append(tr + "".join(
-            f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
-            for attrs, style, content in cells) + "</tr>")
+        parts.append(_table_row_html(tr, _icon_html(row, icons), (
+            (f"color:{muted};", _offset_text(row.get("offset_ms", 0))),
+            ("", _health_html(row, theme)),
+            (bold, e(str(row.get("ability", "")))),
+            (bold, names.html(source, theme["text"], base_pt, bool(final)) if source else "–"),
+            (bold, _amount_html(row, theme)),
+            ("", _result_html(row, theme, e)),
+        )))
     parts.append("</table>")
     # The window's summary, under the table it sums (issue #95)
-    parts.append(_death_kinds_html(recap, rows, theme, e, base_pt))
+    parts.append(_death_kinds_html(recap, rows, theme, e, base_pt) if rows else no_events)
     return "".join(parts)
+
+
+def _cast_row_html(cast: dict, theme: dict, icons, e) -> str:
+    """One of the dying player's own casts in the recap table (issue #214):
+    its time, icon and ability, and 'Cast' with the kind of an extra in
+    the Result column; no health, source or amount, which belong to what
+    the player was dealt."""
+    muted = theme["muted"]
+    extra = CAST_KIND_LABELS.get(str(cast.get("extra") or ""))
+    result = CAST_LABEL + (f" · {extra}" if extra else "")
+    return _table_row_html("<tr>", _icon_html(cast, icons), (
+        (f"color:{muted};", _offset_text(cast.get("offset_ms", 0))),
+        ("", ""),
+        ("", e(str(cast.get("ability", "")))),
+        (f"color:{muted};", "–"),
+        ("", ""),
+        (f"color:{muted};", e(result)),
+    ))
+
+
+def _table_row_html(tr: str, icon: str, cells: tuple) -> str:
+    """One row of the recap table, opened by *tr*: *cells* are (style,
+    content) for Time, Health, Ability, Source, Amount and Result, and
+    *icon* fills the icon column between Health and Ability. A row with no
+    icon is padded out to the height of one with."""
+    pad = "" if icon else "padding-top:5px;padding-bottom:5px;"
+    time_cell, health, ability, source, amount, result = cells
+    columns = ((" align='right'", time_cell), (" align='right'", health),
+               (f" width='{scaled_px(ICON_PX)}'", ("", icon)), (" width='20%'", ability),
+               ("", source), (" align='right'", amount), ("", result))
+    return tr + "".join(f"<td{attrs} valign='middle' style='{pad}{style}'>{content}</td>"
+                        for attrs, (style, content) in columns) + "</tr>"
 
 
 def _fight_link_html(unit_id, theme: dict, e, base_pt: float) -> str:
@@ -818,8 +860,12 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     if not deaths:
         parts.append(f"<p style='color:{muted}'>No deaths recorded for this player.</p>")
         return "".join(parts)
-    parts.append(f"<p style='margin:{'8px' if header else '0'} 0 2px 0;color:{muted}'>Damage "
-                 f"and healing in the {window_text(deaths[0])} before each death, oldest "
+    # The player's own casts are named once any recap carries them: a fight
+    # recorded before them has none (issue #214)
+    what = ("Damage, healing and the player's own casts"
+            if any("casts" in recap for recap in deaths) else "Damage and healing")
+    parts.append(f"<p style='margin:{'8px' if header else '0'} 0 2px 0;color:{muted}'>{what} "
+                 f"in the {window_text(deaths[0])} before each death, oldest "
                  f"first. Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
         parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt,

@@ -83,6 +83,15 @@ to KILLING_BLOW_GRACE_MS after the death. Only new installs get 3: the
 main window saves the whole merged config on close, so everyone on 0.20.0
 or later has a stored 5 that cannot be told from a chosen one, and it is
 kept.
+
+A recap also carries the dying player's own casts in its window ('casts',
+issue #214), which the recap's table shows among the hits and heals, so a
+reader sees what the player was pressing as the damage came in. They come
+from the engine's cast recorder (casts.CastRecorder) when the death is
+counted, by its rules: one cast per castTrackId, begun in the window up
+to the death, a proc the game writes as a cast over and over left out
+unless it is of a skill on the player's bars. They are kept apart from
+'events', so the window's sums by kind never count them.
 """
 
 from collections import deque

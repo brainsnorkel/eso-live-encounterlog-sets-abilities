@@ -16,7 +16,7 @@ import io
 import json
 import re
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime
 from gear_set_database import gear_set_db
@@ -1187,6 +1187,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self.death_recap_recorder = DeathRecapRecorder(
             self._resolve_recap_unit, self._resolve_recap_ability, self.cast_index)
         self.fight_death_recaps: List[dict] = []  # this fight's (reset with fight_deaths)
+        # Each of those recaps with its player, death time and the casts read
+        # as it was counted, for the read again as the entry is built (_refresh_recap_casts)
+        self._recap_deaths: list[tuple[dict, PlayerInfo, int, list]] = []
         # Deaths the log wrote no line for (issue #221, _note_zero_state).
         # Each group player at 0 health, keyed by their record (PlayerInfo):
         # a ZeroRun ([when the 0 came, unit id, record, the fields that name
@@ -1951,6 +1954,7 @@ class ESOLogAnalyzer(ListenerMixin):
             self.zone_deaths = 0
             self.fight_deaths = 0
             self.fight_death_recaps = []
+            self._recap_deaths = []
             # Unit ids start over: no player is followed at 0 health (#221)
             self._clear_zero_runs()
             # A fight's lead-in never reaches back past this line, and the
@@ -2034,6 +2038,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight's casts in the kinds index and the recorder's list of recaps
         self.fight_deaths = 0
         self.fight_death_recaps = []
+        self._recap_deaths = []
         self.cast_index.new_fight()
         self.death_recap_recorder.new_fight()
         self._last_fight_entry = None
@@ -3635,6 +3640,11 @@ class ESOLogAnalyzer(ListenerMixin):
         recap['unit_id'] = player.unit_id
         recap['name'] = player.get_display_name()
         recap['time_ms'] = max(0, died_ms - fight_start)
+        # The player's own casts, read again as the fight's entry is built
+        # (_refresh_recap_casts)
+        times = self._recap_cast_times(player, died_ms, recap['window_ms'])
+        recap['casts'] = self._recap_casts(player, died_ms, times)
+        self._recap_deaths.append((recap, player, died_ms, times))
         # In time order: a death read from 0 health is counted after deaths
         # that came while it waited
         _insert_by_time(self.fight_death_recaps, recap)
@@ -3979,6 +3989,68 @@ class ESOLogAnalyzer(ListenerMixin):
         return (self.ability_cache.get(ability_id) or f"Ability {ability_id}",
                 self.ability_icons.get(ability_id, ''))
 
+    def _recap_cast_times(self, player: PlayerInfo, died_ms: int,
+                          window_ms: int) -> list[tuple[int, str]]:
+        """(time, ability id) of the player's own casts in the *window_ms*
+        before *died_ms*, the death recap's window, procs included (issue
+        #214, _recap_casts leaves them out)."""
+        key = player.unit_id
+        return self.casts.casts_between(key, died_ms - window_ms, died_ms,
+                                        self.casts.procs_of(key))
+
+    def _recap_casts(self, player: PlayerInfo, died_ms: int, times,
+                     werewolf_bar=None) -> list[dict]:
+        """The recap's casts from *times* (_recap_cast_times), oldest first
+        (issue #214): offset_ms (to the death, 0 or less), ability_id,
+        ability, icon and extra (the kind of an extra, casts.kind_of:
+        'light', 'heavy' and the like; '' for a skill). Procs are left out
+        as in the fight's counts, but for those of a skill on the front or
+        back bar or on *werewolf_bar*, the rebuilt werewolf bar's slots
+        (casts.on_bars)."""
+        resolved = {}
+
+        def resolve(ability_id):
+            if ability_id not in resolved:
+                resolved[ability_id] = self._resolve_recap_ability(ability_id)
+            return resolved[ability_id]
+
+        procs = self.casts.procs_of(player.unit_id)
+        procs -= casts.on_bars(procs, (player.front_bar_slots, player.back_bar_slots,
+                                       werewolf_bar), lambda ability_id: resolve(ability_id)[0])
+        rows = []
+        for at, ability_id in times:
+            if ability_id in procs:
+                continue
+            name, icon = resolve(ability_id)
+            rows.append({'offset_ms': at - died_ms, 'ability_id': ability_id, 'ability': name,
+                         'icon': icon, 'extra': casts.kind_of(ability_id) or ''})
+        return rows
+
+    def _refresh_recap_casts(self, enc: CombatEncounter) -> None:
+        """Read the fight's recaps' casts again as its entry is built (issue
+        #214): every line of a death's millisecond is in by now (a cast the
+        log writes just after the death line included), a proc found since
+        a death is known, and the procs kept are the fight's counts' own,
+        the rebuilt werewolf bar's included. The casts read as the death
+        was counted stay: those begun before the pull, in the window of a
+        death soon after it, can be pruned by then. A death that joins the
+        entry after it is built keeps the casts read as it was counted."""
+        for recap, player, died_ms, times in self._recap_deaths:
+            werewolf_bar = self._werewolf_fields(player, enc).get('werewolf_bar_slots')
+            # The casts read now that the first read lacks, in the log's
+            # order; then all by time, the log's order kept within a
+            # millisecond (a stable sort)
+            now = self._recap_cast_times(player, died_ms, recap['window_ms'])
+            missing = Counter(now)
+            missing.subtract(times)
+            added = []
+            for cast in now:
+                if missing[cast] > 0:
+                    added.append(cast)
+                    missing[cast] -= 1
+            recap['casts'] = self._recap_casts(
+                player, died_ms, sorted(times + added, key=lambda cast: cast[0]), werewolf_bar)
+
     def _remember_cast(self, cast_id: str, ability_id: str):
         """Keep which ability a cast tracking id belongs to (see TAUNTED in
         _handle_combat_event). The first word stands: a BEGIN_CAST precedes
@@ -4146,6 +4218,7 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight known (an area cast's hit on a second target may come late)
         if not again:
             self.death_recap_recorder.refresh_fight()
+        self._refresh_recap_casts(enc)
         entry.death_recaps = list(self.fight_death_recaps)
         # Who opened the fight and with what, and the monster's act before
         # it, names resolved now (fight_opener)
