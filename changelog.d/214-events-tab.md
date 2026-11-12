@@ -1,5 +1,0 @@
-### Added
-- **An Events tab tells the fight in order** (#214): a fifth tab after Deaths (Alt+V) lists the fight's notable events as a table, one row each, with a line summing the fight up. At first it shows the deaths and returns from the dead, the bosses' casts and health, the big hits on the group, the taunt swaps and the fight's phases; **More** adds a boss's casts at its tank, its auto-attacks and the hits of 30 to 49% of a player's health, and **Show** picks the whole fight or its last 60 seconds. The search filters the rows and counts them, Enter or a double-click on a death's row opens that death's recap, and Hide names hides the other players there too
-
-### Changed
-- **The search shrinks to a Find button at large text** (#214): where the tab bar leaves the search too little room, a Find button takes its place in the tab bar's corner, and the field opens on a row above the tabs only while you search (the button or Ctrl+F opens it; Esc on the empty field, or leaving it empty, closes it), so no tab loses that row's height

@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:3686](../src/esolog_tail.py#L3686)*
+*[src/esolog_tail.py:3719](../src/esolog_tail.py#L3719)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:92](../src/esolog_tail.py#L92)*
+*[src/esolog_tail.py:93](../src/esolog_tail.py#L93)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull. Later than that, it continues a boss fight when the group has fought on its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS, issue #162).
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:2145](../src/esolog_tail.py#L2145)*
+*[src/esolog_tail.py:2155](../src/esolog_tail.py#L2155)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one: it follows the END_COMBAT
@@ -52,7 +52,7 @@ within FIGHT_ON_MS (waiting_hits).
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:2176](../src/esolog_tail.py#L2176)*
+*[src/esolog_tail.py:2186](../src/esolog_tail.py#L2186)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -60,7 +60,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:86](../src/esolog_tail.py#L86)*
+*[src/esolog_tail.py:87](../src/esolog_tail.py#L87)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -68,7 +68,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:2373](../src/esolog_tail.py#L2373)*
+*[src/esolog_tail.py:2383](../src/esolog_tail.py#L2383)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -383,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:5731](../src/esolog_tail.py#L5731)*
+*[src/esolog_tail.py:5841](../src/esolog_tail.py#L5841)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -426,7 +426,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:375](../src/esolog_tail.py#L375)*
+*[src/esolog_tail.py:376](../src/esolog_tail.py#L376)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -2572,7 +2572,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:1028](../src/esolog_tail.py#L1028)*
+*[src/esolog_tail.py:1029](../src/esolog_tail.py#L1029)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2613,13 +2613,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:112](../src/esolog_tail.py#L112)*
+*[src/esolog_tail.py:113](../src/esolog_tail.py#L113)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:425](../src/esolog_tail.py#L425)*
+*[src/esolog_tail.py:426](../src/esolog_tail.py#L426)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2703,7 +2703,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:129](../src/esolog_tail.py#L129)*
+*[src/esolog_tail.py:130](../src/esolog_tail.py#L130)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2711,7 +2711,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:152](../src/esolog_tail.py#L152)*
+*[src/esolog_tail.py:153](../src/esolog_tail.py#L153)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2891,7 +2891,7 @@ instead of piling into the fight's last.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:709](../src/esolog_tail.py#L709)*
+*[src/esolog_tail.py:710](../src/esolog_tail.py#L710)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2914,7 +2914,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:856](../src/esolog_tail.py#L856)*
+*[src/esolog_tail.py:857](../src/esolog_tail.py#L857)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2946,7 +2946,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:4929](../src/esolog_tail.py#L4929)*
+*[src/esolog_tail.py:5039](../src/esolog_tail.py#L5039)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3698,7 +3698,8 @@ in the tab bar's corner.
 
 Design: The fight tabs. The list's fight is shown on tabs: Fight, the buff
 timeline strip and the fight pane as they were; Deaths, every death of the
-fight on one page (fight_deaths_render); the DPS graph (dps_graph); and
+fight on one page (fight_deaths_render); Events, the fight's notable
+events as a table (events_tab, issue #214); the DPS graph (dps_graph); and
 Instance, the instance the fight belongs to, its block of the list
 (instance_render). The tabs show the fight the list has selected, so this
 level cannot go stale, where the player window keeps the fight it was
@@ -3715,15 +3716,25 @@ was, it clipped the tab labels at 190-200% text (probed with the window's
 own text). The field takes the width the bar leaves, at most about forty
 characters (260 px at 100% in Segoe UI). When the bar leaves less than the
 widest count ('999+ matches') and about six characters, at a large text
-size in a narrow column or in a wide font (the four tabs' labels need
-424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
-takes a row of its own above the tabs. It is placed again as the column's
-width, the text size or the tabs change, so the bar is never narrower than
-its labels and none hides behind Qt's scroll arrows.
+size in a narrow column or in a wide font (at 200% in Segoe UI the five
+tabs' labels need 517 px of the 705 a 1080 px window gives the column,
+leaving 188 where the field needs 267), the corner holds a Find button
+instead (issue #214; the maintainer's decision: "the search field shrinks to a
+button at large text, so no page loses 48 px"). The button, or Ctrl+F, shows the
+field on a row of its own above the tabs while the search is in use; Esc
+on the empty field, or leaving it empty, hides the row and gives the
+button back, with the focus after Esc. A search with text keeps its row,
+and its count, until it is cleared. When the field took that row whenever
+the corner was short, every page lost the row's height for as long as the
+window was narrow. The field is placed again as the column's width, the
+text size or the tabs change, so the bar is never narrower than its labels
+and the button together, and none hides behind Qt's scroll arrows; a
+search in use, or the field with the focus, goes on on its row as the
+corner shrinks.
 
 With no fight to show (the page before the first fight, a Settings
-replay), the Fight tab is on screen and the bar and the field are hidden
-together: hiding the bar alone left the field a control 0 px tall that took
+replay), the Fight tab is on screen and the bar and the field (or the
+button) are hidden together: hiding the bar alone left the field a control 0 px tall that took
 the focus, and Ctrl+PgDn still switched the pages (probed on PySide6
 6.12.0). The window's Ctrl+F, Ctrl+PgDn and Ctrl+PgUp do nothing then, and
 the hidden bar's Alt letters do not fire, until a fight brings back the tab
@@ -3731,7 +3742,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1654](../src/gui/main_window.py#L1654)*
+*[src/gui/main_window.py:1664](../src/gui/main_window.py#L1664)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -3748,7 +3759,8 @@ the pen/crit settings all draw through, and a fight changes in place
 only a few times (a late death, its banner, a mastery found later).
 Then the tab on screen, if it is another, in place when it shows
 this fight already (the Instance page: this fight's instance, the
-search going on from its place); the other tabs are marked, and
+search going on from its place; the Events page: its row selected
+and its scroll kept, gui.events_tab); the other tabs are marked, and
 drawn when they are next shown, the search going on where it was on
 a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
 issue #196).
@@ -3911,6 +3923,158 @@ Nothing here changes an entry: the engine's thread updates delivered
 fights in place while a page is drawn (MainWindow._fight_changed), so
 their lists are read and counted into new lists and dicts, sorted with
 sorted(), never in place.
+
+## The Events tab: a fight's notable events, in order
+
+### src/fight_events.py
+
+*[src/fight_events.py:1](../src/fight_events.py#L1)*
+
+A fight's notable events, kept as the engine reads the log, for the Events
+tab (issue #214): the bosses' casts and health, the big hits on the group,
+the taunts, the resurrections and the fight's phases. The deaths are the
+entry's own (death_recaps); event_rows turns both into the tab's rows.
+
+Design: the notable events of a fight, recorded in the engine's pass
+(issue #214). The study of #214 weighed three ways to give a view a fight's
+moments: record them as the engine reads the log, read the fight again from
+disk when the view opens, or record where the lines are and read them then.
+The maintainer chose to record: a re-read depends on the log still being on disk
+(splits are off by default, and an archived and deleted log has nothing to
+read), while a recording lives with the fight. What is kept is what the
+tab's five default categories need, and no more:
+
+- Boss: each cast of a unit the game flags as a boss (casts.py's track rule
+  is not needed: a boss's cast is one line), with its target and length,
+  and the END_CAST that stopped one (INTERRUPTED, with who did it); each
+  boss's health as it first reaches 75, 50 and 25% in a fight; the
+  stretches of 5 seconds or more in which a boss lost no health; a boss's
+  death.
+- Big hits: a hit on a player of 30% of their maximum health or more, the
+  part a damage shield absorbed counted in (the log writes the shield's
+  line just before the hit, with the attacker and the same castTrackId;
+  41% of such hits are hidden otherwise), and the overkill.
+- Taunts: who taunted what, and with which skill.
+- Resurrections (RESURRECT and SOUL_GEM_RESURRECTION_ACCEPTED, with who
+  raised whom) and each player's return from the dead, which the fight's
+  time dead (pull_outcome.TimeDead) knows to the line.
+- Phases: the map changing, and the game ending combat and beginning it
+  again in one fight (COMBAT_RESUME_MS). A trial's end is the entry's own
+  (trial_result): END_TRIAL can come seconds after the fight's last line.
+
+Names are resolved as each event is noted, since unit ids are handed out
+again in a later zone. The recorder keeps the session's events in lists,
+like casts.CastRecorder, until a fight's entry is built: then the events of
+its window are packed into a FightEvents, one bytes object of fixed-size
+records and a table of the strings and abilities they name, immutable as
+an entry must be once it crosses to the GUI's thread. The study measured
+tuples at 9 to 12 times the packed size. The events before the fight's
+start are then forgotten, but not when the build is of a fight the game
+cut in two: the resumed entry is packed again from the same start.
+
+### src/event_rows.py
+
+*[src/event_rows.py:1](../src/event_rows.py#L1)*
+
+The Events tab's rows (issue #214): a fight's deaths, the bosses' casts and
+health, the big hits on the group, the taunt swaps and the fight's phases,
+one row per happening, in time order. Qt-free: the tab draws what this
+gives (gui.events_tab).
+
+Design: the Events tab's rows. The rules are the #214 study's, written as
+code and measured on six fights (build/surveys/timeline-214-2026-11-11,
+design/lists): 5.5 to 16.3 rows a minute by default, never more than 9 in
+any ten seconds, so a fight reads as a story rather than a log.
+
+- Deaths are the entry's own recaps (death_recaps), with the death the log
+  wrote no line for said so. Deaths to one ability within DEATH_CHAIN_MS
+  are one row ("Died x3"). Each return from the dead is a "Back" row with
+  how long the player was down and who raised them: a resurrection line
+  for the player at most RAISED_BEFORE_MS before the return, else "no line
+  says how" (a release and run back writes none). A player dead since an
+  earlier pull has no death in this fight: their return says "dead since
+  before the pull".
+- A boss's casts of one ability, each within BURST_MS of the last, are one
+  row ("Hemorrhage x12"), with whom they were aimed at and whether one was
+  stopped: by a player ("interrupted by"), or by the boss's own script.
+  Rows are keyed by names, not unit ids: a boss the game adds again as a
+  new unit is the same boss to a reader.
+- A boss's health marks (75, 50 and 25%), the stretches of UNTOUCHED_MS or
+  more in which it lost no health, and its death.
+- Big hits: BIG_HIT_SHARE of the player's maximum health or more, the part
+  a damage shield absorbed and the overkill counted in. One source's hits
+  with one ability, each within HIT_CHAIN_MS of the last and all within
+  HIT_SPAN_MS, are one row. A lone hit on a player who died to it within
+  KILLING_HIT_MS is left to the death's row.
+- Taunt swaps: the first taunt on a boss, and a taunt by another player
+  than the last one to taunt it. A player taunting again is no row.
+- Phases: the map changing, the game ending combat and beginning it again
+  in one fight, and a trial's end, at the fight's end.
+
+### src/gui/events_tab.py
+
+*[src/gui/events_tab.py:1](../src/gui/events_tab.py#L1)*
+
+The Events tab (issue #214): the fight selected in the list told as a
+table of its notable events, one row per happening in time order (the rows
+are event_rows'), with a line that sums it up, the categories to show and
+the search of the fight's tabs filtering the rows. The main window's fifth
+fight tab, after Deaths.
+
+Design: the Events tab. A table, not a page of rich text like Deaths: a
+QTableView over a model reads to a screen reader as rows and cells, the
+arrow keys go from row to row, and Enter or a double-click on a death's row
+opens that death's recap in the player window (recap_requested, the
+(unit id, number) the Deaths tab's names carry). A row of several deaths
+(Died x3) opens nothing: it names no one death.
+
+What is shown. The five categories the study chose are on at first
+(event_rows.DEFAULT_CATEGORIES: deaths, the bosses, the big hits, the
+taunt swaps, the phases), and More holds the three that are off
+(event_rows.MORE: a boss's casts at the player holding its taunt, its
+auto-attacks, the hits of 30 to 49% of a player's health), which on a
+145-second Kyne's Aegis boss fight add 51 rows to its 78. Show picks the
+whole fight or its last 60 seconds, where a wipe's story ends. The
+choices carry from one fight to the next, as the DPS graph's do, and not
+from one run of the app to the next.
+
+The search. The tab bar's search filters the rows to those whose cells
+hold its text, case-insensitive, over what the cells show (a hidden name
+is its blocks, so a hidden player is not found by name); the field counts
+the rows, and Enter goes to the next of them. A table has no text cursor
+to move to a match, and a row that matches is shown whole. A search typed
+selects its first row, as the text pages put the cursor on the first
+match; cleared, the row selected stays and comes into view among the
+others.
+
+Keeping the reader's place. A new fight selects its first death, the
+moment a wipe turns on, else its first row. The same fight drawn again (it
+changed: a death logged after combat ended, the fight the game had cut in
+two going on, Hide names, the text size, the theme) is drawn in place: the
+row selected is found again by what it says, its time, what and ability,
+not by its place, since rows can come before it, and the scroll is kept.
+A category or Show changed keeps the row selected while it is shown, else
+takes the first row from its time on.
+
+Hide names. Cells are plain text, so a hidden name is '@' and a block per
+character, as in hover text and the DPS graph's legend
+(NameMask.text_in): in Who, which can name two players or say '3
+players', and in Detail, which names who raised, interrupted or was aimed
+at. A screen reader hears 'hidden name' (Qt.AccessibleTextRole), as in the
+positions window's table.
+
+Sizes. The rows are as tall as a line of text or an ability icon at the
+text size in force (death_render.ICON_PX scaled): a QTableView keeps its
+30 px rows at any text size (the positions window measured it). The
+filter bar wraps its controls onto more lines as the column narrows (a
+flow layout), so at 200% text the tab never sets the column's least width:
+its controls take 1,185 px on one line at 200% in Segoe UI (666 at 100%),
+where a 1080 px window gives the tabs 705. The Time and What columns are
+as wide as the fight's widest cell, Ability and Who too up to a share of
+the table, and Detail takes the rest: at 200% text in that column, Detail
+had a quarter of the table while Ability and Who took their whole cells. A
+cut cell is whole in its hover, and the row selected is whole on the line
+under the table, as the study's design has it.
 
 ## Experimental buff timeline
 
@@ -4237,7 +4401,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1272](../src/gui/main_window.py#L1272)*
+*[src/gui/main_window.py:1282](../src/gui/main_window.py#L1282)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -4296,13 +4460,13 @@ fight, which no replay builds again, keeps it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:2971](../src/gui/main_window.py#L2971)*
+*[src/gui/main_window.py:3051](../src/gui/main_window.py#L3051)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:1095](../src/gui/main_window.py#L1095)*
+*[src/gui/main_window.py:1105](../src/gui/main_window.py#L1105)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -4862,7 +5026,7 @@ own: Qt's focus frame (PE_FrameFocusRect) draws a 6,000 px tint over a
 
 ### MainWindow.show_moment
 
-*[src/gui/main_window.py:2459](../src/gui/main_window.py#L2459)*
+*[src/gui/main_window.py:2536](../src/gui/main_window.py#L2536)*
 
 The positions window on the fight *entry* at the moment *t_ms*
 (ms since its session's BEGIN_LOG, the locator's own clock), the
