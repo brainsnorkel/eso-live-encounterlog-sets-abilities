@@ -191,6 +191,11 @@ TOPICS = [
         "src/gui/fight_deaths_render.py",
         "src/gui/instance_render.py",
     ]),
+    ("The Events tab: a fight's notable events, in order", [
+        "src/fight_events.py",
+        "src/event_rows.py",
+        "src/gui/events_tab.py",
+    ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",

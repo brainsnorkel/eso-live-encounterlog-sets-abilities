@@ -15,7 +15,7 @@ class FightHistoryEntry:
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
                  'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
-                 'session_stamp', 'locator']
+                 'session_stamp', 'locator', 'events']
 
     def __init__(self):
         self.timestamp = ""
@@ -135,6 +135,11 @@ class FightHistoryEntry:
         # #214): a FightLocator, immutable, replaced whole when a fight the
         # game cut in two goes on; None on an entry built without it
         self.locator = None
+        # The fight's notable events for the Events tab: the bosses' casts
+        # and health, the big hits on the group, the taunts, resurrections
+        # and phases (fight_events.FightEvents, immutable, issue #214); None
+        # on an entry built without them
+        self.events = None
 
 
 class FightHistory:

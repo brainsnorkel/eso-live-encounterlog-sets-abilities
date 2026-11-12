@@ -223,7 +223,7 @@ class TimeDead:
     the next pull."""
 
     __slots__ = ("_ended", "_paused", "_paused_carried", "at_end", "carried", "carried_at_end",
-                 "carried_ms", "ms", "since", "start")
+                 "carried_ms", "ms", "revived", "since", "start")
 
     def __init__(self):
         self.start = 0  # the fight's start, set at BEGIN_COMBAT
@@ -236,6 +236,9 @@ class TimeDead:
         self._ended = 0
         self._paused: dict[str, tuple[int, int]] = {}
         self._paused_carried: dict[str, int] = {}
+        # Each return from the dead: (key, the death, the moment back), for
+        # the fight's events (fight_events)
+        self.revived: list[tuple[str, int, int]] = []
 
     def begin(self, start_ms: int, carried=()) -> None:
         """BEGIN_COMBAT: the fight's start, and the players still dead
@@ -276,6 +279,7 @@ class TimeDead:
             return
         del self.since[key]
         self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - span[0])
+        self.revived.append((key, span[1], timestamp_ms))
 
     def watching(self) -> bool:
         """Whether any player is down (a line with their health matters),

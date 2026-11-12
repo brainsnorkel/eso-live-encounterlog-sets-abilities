@@ -63,6 +63,10 @@ class TestKeyboard(unittest.TestCase):
         self.win = MainWindow(config)
         self.win.worker_thread.quit()
         self.win.worker_thread.wait(3000)
+        # Wide enough for the search in the tab bar's corner in the test
+        # runner's wide font, where a short corner holds the Find button
+        # instead (gui.fight_tabs, issue #214)
+        self.win.resize(1600, 720)
         # A shortcut needs an active window, which show() alone does not
         # give offscreen
         self.win.show()
