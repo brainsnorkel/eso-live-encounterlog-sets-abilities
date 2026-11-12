@@ -15,7 +15,7 @@ class FightHistoryEntry:
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
                  'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
-                 'session_stamp', 'locator', 'events']
+                 'session_stamp', 'locator', 'events', 'casts']
 
     def __init__(self):
         self.timestamp = ""
@@ -140,6 +140,10 @@ class FightHistoryEntry:
         # and phases (fight_events.FightEvents, immutable, issue #214); None
         # on an entry built without them
         self.events = None
+        # Every group player's casts, for the Events tab's actions: when,
+        # what, at whom and for how long (fight_casts.FightCasts,
+        # immutable, issue #214); None on an entry built without them
+        self.casts = None
 
 
 class FightHistory:

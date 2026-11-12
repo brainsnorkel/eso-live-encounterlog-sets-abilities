@@ -1843,6 +1843,8 @@ class MainWindow(QMainWindow):
             self._player_window.positions_requested.connect(self._show_player_positions)
             # A death's Events link there: the Events tab around the death
             self._player_window.events_requested.connect(self._show_player_events)
+            # Its player's actions: the Events tab with Who on that player
+            self._player_window.actions_requested.connect(self._show_player_actions)
         self._player_window.open(entry, unit_id, tab, self._dark, names=self._names_for(entry),
                                  death=death, listed=self.history_list.row_of(entry) is not None)
 
@@ -2765,6 +2767,25 @@ class MainWindow(QMainWindow):
         self._show_in_list(entry)
         if self.history_list.current_entry() is entry:
             self._show_events_around(ms, unit_key)
+
+    def _show_player_actions(self, entry, unit_key):
+        """The player window's actions button: its fight selected in the
+        list and this window brought up (_show_in_list), then the Events
+        tab with Who on that player (gui.events_tab.show_player), the
+        table given the focus. Nothing for a fight whose casts were not
+        kept."""
+        if getattr(entry, "casts", None) is None:
+            return
+        self._show_in_list(entry)
+        if self.history_list.current_entry() is not entry or not self.fight_views.is_shown():
+            return
+        # The tab change draws the page if it was marked
+        self.fight_tabs.setCurrentWidget(self.events_view)
+        if self.events_view.entry is not entry:
+            self._draw_events(entry)
+        if self.events_view.show_player(unit_key):
+            self._apply_search()  # the search's count, for the rows now shown
+            self.events_view.table.setFocus()
 
     @Slot(object, str, int)
     def _show_player_positions(self, entry, unit_key, ms):

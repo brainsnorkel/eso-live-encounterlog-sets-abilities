@@ -196,6 +196,10 @@ TOPICS = [
         "src/event_rows.py",
         "src/gui/events_tab.py",
     ]),
+    ("The Events tab: one player's actions", [
+        "src/fight_casts.py",
+        "src/action_rows.py",
+    ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
         "src/effect_rules.py:EffectTracker.record",
