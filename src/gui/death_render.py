@@ -71,6 +71,10 @@ POSITIONS_HREF = "esolog:positions/"
 # player selected, else at its start (fight_moment)
 FIGHT_POSITIONS_HREF = "esolog:positions/fight"
 POSITIONS_LABEL = "Positions"
+# A death's link to the Events tab around it (issue #214): + the ms into the
+# fight
+EVENTS_HREF = "esolog:events/"
+EVENTS_LABEL = "Events"
 # + the death's number from 1: the <a name> each death's recap begins with,
 # where a link to that death scrolls to
 DEATH_ANCHOR = "death-"
@@ -207,6 +211,40 @@ def positions_known(entry) -> bool:
     could only say it found nothing is not drawn."""
     locator = getattr(entry, "locator", None)
     return locator is not None and getattr(locator, "session_epoch_ms", None) is not None
+
+
+def events_known(entry) -> bool:
+    """Whether the fight *entry* has its events recorded (fight_events,
+    issue #214), so a death can link to the Events tab around it."""
+    return getattr(entry, "events", None) is not None
+
+
+def events_href(ms) -> str:
+    """The link to the Events tab around the moment *ms* into the fight."""
+    return f"{EVENTS_HREF}{int(ms)}"
+
+
+def events_from_href(href: str) -> int | None:
+    """The moment an Events link names, None for any other link."""
+    if not (href and href.startswith(EVENTS_HREF)):
+        return None
+    ms = href[len(EVENTS_HREF):]
+    return int(ms) if ms.isdigit() else None
+
+
+def death_events_tooltips(entry) -> dict[str, str]:
+    """Hover text per death's Events link in the player window's recap
+    headings; {} for a fight with no events recorded (events_known)."""
+    if not events_known(entry):
+        return {}
+    tips = {}
+    for recap in getattr(entry, "death_recaps", None) or []:
+        ms = recap.get("time_ms") or 0
+        tips[events_href(ms)] = (
+            f"<b>Events around {_clock(ms)}</b><br><span style='font-size:85%'>"
+            f"Click for what happened in the fight in the seconds either side "
+            f"of this death, on the Events tab</span>")
+    return tips
 
 
 def positions_href(unit_key, ms) -> str:
@@ -681,10 +719,12 @@ def _icon_html(row: dict, icons) -> str:
 
 
 def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
-                names, base_pt: float, positions: str | None = None) -> str:
+                names, base_pt: float, positions: str | None = None,
+                events: str | None = None) -> str:
     """One death: its heading, Killed by, its table and the kinds of its
     window. *positions*: the link colour when the heading ends in the
-    death's Positions link (issue #214), None for no link."""
+    death's Positions link (issue #214), None for no link; *events*: the
+    same for its Events link."""
     muted = theme["muted"]
     max_health = recap.get("max_health") or 0
     facts = [f"{_clock(recap.get('time_ms', 0))} into the fight"]
@@ -709,6 +749,11 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
         href = positions_href(recap.get("unit_id", ""), recap.get("time_ms") or 0)
         link = (f" <span style='color:{muted}'>·</span> <a href=\"{e(href, quote=True)}\" "
                 f"style=\"text-decoration:none;color:{positions}\">{POSITIONS_LABEL}</a>")
+    # And what happened around the death, on the Events tab
+    if events is not None:
+        href = events_href(recap.get("time_ms") or 0)
+        link += (f" <span style='color:{muted}'>·</span> <a href=\"{e(href, quote=True)}\" "
+                 f"style=\"text-decoration:none;color:{events}\">{EVENTS_LABEL}</a>")
     parts = [
         # The anchor inside the paragraph, so it adds no line of its own
         f"<p style='margin:14px 0 2px 0'><a name='{death_anchor(index)}'></a>"
@@ -833,18 +878,21 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
     Each death's recap begins with an <a name>, death_anchor(n), and its
     heading ends in a Positions link for a fight whose lines can be read
     again (positions_known, issue #214); its hover text is
-    death_positions_tooltips().
+    death_positions_tooltips(). After it, an Events link for a fight whose
+    events were recorded (events_known), to the Events tab around the
+    death; its hover text is death_events_tooltips().
     """
     theme = dict(_THEMES[bool(dark)])
     if text_color:
         theme["text"] = text_color
     names = names or NO_MASK
     e = html.escape
-    positions = None
-    if positions_known(entry):
+    positions = events = None
+    if positions_known(entry) or events_known(entry):
         # fight_render imports this module, so its link colour is taken here
         from gui.fight_render import link_color
-        positions = link_color(dark)
+        positions = link_color(dark) if positions_known(entry) else None
+        events = link_color(dark) if events_known(entry) else None
     deaths = deaths_by_unit(entry).get(str(unit_id), [])
     muted = theme["muted"]
     where = " · ".join(e(str(part)) for part in (
@@ -869,7 +917,7 @@ def render_death_recap_html(entry, unit_id, dark: bool = False, icons=None,
                  f"first. Health is the value after each event.</p>")
     for index, recap in enumerate(deaths, 1):
         parts.append(_death_html(recap, index, len(deaths), theme, icons, e, names, base_pt,
-                                 positions))
+                                 positions, events))
     # The whole fight closes the window: the deaths are what it is opened
     # for (issue #95)
     if fight_block:

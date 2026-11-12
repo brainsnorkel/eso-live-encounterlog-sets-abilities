@@ -46,7 +46,8 @@ from gui.activity_render import (
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import player_for
 from gui.death_render import (
-    death_tooltips, deaths_by_unit, fight_moment, fight_positions_tooltips, positions_known,
+    death_tooltips, deaths_by_unit, events_known, fight_moment, fight_positions_tooltips,
+    positions_known,
 )
 from gui.dps_graph import DpsGraphPanel
 from gui.engine_worker import EngineWorker
@@ -478,6 +479,8 @@ class MainWindow(QMainWindow):
         # EXPERIMENTAL buff timeline strip: sits between the header area and
         # the summary text; hidden whenever the fight has no timeline data
         self.timeline_strip = TimelineStrip()
+        # Its pop-up's link to the events around the moment clicked
+        self.timeline_strip.moment_requested.connect(self._show_events_around)
         fight_layout.addWidget(self.timeline_strip)
 
         # The search: highlights every match on the tab on screen, the count
@@ -533,10 +536,14 @@ class MainWindow(QMainWindow):
         # #214): a death's row opens that death in the player window
         self.events_view = EventsPage(icons=self.fight_view.icons)
         self.events_view.recap_requested.connect(self._show_event_death)
+        # Ctrl+G on a row: that moment marked on the DPS graph
+        self.events_view.graph_requested.connect(self._show_event_on_graph)
         self.fight_views.add_tab(self.events_view, "E&vents")
         # The dps over time graph (gui.dps_graph), a tab where it was a window
         self.dps_panel = DpsGraphPanel()
         self.dps_panel.setAccessibleName("DPS graph")
+        # A double-click on the chart: the events around that moment
+        self.dps_panel.moment_requested.connect(self._show_graph_moment)
         self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self.fight_views.add_tab(self.dps_panel, "DPS &graph")
         # The instance the fight belongs to, its block of the list
@@ -1703,6 +1710,7 @@ class MainWindow(QMainWindow):
         # The Hide names mask for this fight: the identity unless the
         # switch is on (gui.name_mask)
         names = self._names_for(entry)
+        self.timeline_strip.set_moment_links(events_known(entry))
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
             armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names,
@@ -1828,6 +1836,8 @@ class MainWindow(QMainWindow):
             self._player_window.show_in_list_requested.connect(self._show_in_list)
             # A death's Positions link on its Deaths tab (issue #214)
             self._player_window.positions_requested.connect(self._show_player_positions)
+            # A death's Events link there: the Events tab around the death
+            self._player_window.events_requested.connect(self._show_player_events)
         self._player_window.open(entry, unit_id, tab, self._dark, names=self._names_for(entry),
                                  death=death, listed=self.history_list.row_of(entry) is not None)
 
@@ -2702,6 +2712,57 @@ class MainWindow(QMainWindow):
             self.show_moment(entry, entry.locator.start_ms + ms, unit_key)
 
     @Slot(object, str, int)
+    # ---- jumps between the views of a fight (issue #214) ----
+
+    def _show_events_around(self, ms):
+        """The Events tab around the moment *ms* of the fight on screen
+        (gui.events_tab.show_around), its table given the focus: where the
+        buff strip's pop-up, a double-click on the DPS graph and a death's
+        Events link send the reader. Nothing for a fight whose events were
+        not recorded."""
+        entry = self.history_list.current_entry()
+        if entry is None or not self.fight_views.is_shown() or not events_known(entry):
+            return
+        # The tab change draws the page if it was marked
+        self.fight_tabs.setCurrentWidget(self.events_view)
+        self.events_view.show_around(ms)
+        self._apply_search()  # the search's count, for the rows now shown
+        self.events_view.table.setFocus()
+
+    def _show_event_on_graph(self, ms, label):
+        """Ctrl+G on an Events row, or the link under the table: the DPS
+        graph tab with that moment marked (gui.dps_graph), until another
+        fight is shown."""
+        if self.history_list.current_entry() is None or not self.fight_views.is_shown():
+            return
+        # The tab change draws the graph if it was marked: the mark after it
+        self.fight_tabs.setCurrentWidget(self.dps_panel)
+        self.dps_panel.set_cursor_ms(ms, label)
+
+    def _show_graph_moment(self, ms):
+        """A double-click on the DPS graph: the moment marked there, and
+        the Events tab around it."""
+        entry = self.dps_panel.entry
+        if entry is None or entry is not self.history_list.current_entry()                 or not events_known(entry):
+            return
+        self.dps_panel.set_cursor_ms(ms)
+        self._show_events_around(ms)
+
+    def _show_player_events(self, entry, ms):
+        """A death's Events link in the player window's recap: the Events
+        tab around that death, the window's fight selected in the list
+        first when another is, and the main window brought forward."""
+        if not events_known(entry):
+            return
+        if self.history_list.current_entry() is not entry:
+            if self.history_list.row_of(entry) is None:
+                self.statusBar().showMessage("That fight is no longer in the list", 5000)
+                return
+            self.history_list.select_entry(entry)
+        self._show_events_around(ms)
+        self.raise_()
+        self.activateWindow()
+
     def _show_player_positions(self, entry, unit_key, ms):
         """A death's Positions in the player window's recap: the positions
         window at that moment of the player window's fight."""

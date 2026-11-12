@@ -31,6 +31,19 @@ selects its first row, as the text pages put the cursor on the first
 match; cleared, the row selected stays and comes into view among the
 others.
 
+Around a moment. Show's ± choices keep the rows within 10 or 30 seconds
+of a moment: the row selected when the choice is made, named in the count
+beside it. The moment stays as the reader picks other rows, so the window
+does not slide under them, and from ±10 s to ±30 s; it belongs to its
+fight, and another fight goes back to the whole. It is how the other views
+open the tab (show_around): a double-click on the DPS graph, the buff
+strip's pop-up and a death's Events link in the player window each send
+their moment, where the study had a double-click on the strip too: a click
+there already opens the pop-up, so the pop-up carries the link. The other
+way, Ctrl+G or the link that ends the line under the table marks the row's
+moment on the DPS graph (graph_requested), with what happened and no name,
+so the mark needs no mask.
+
 Keeping the reader's place. A new fight selects its first death, the
 moment a wipe turns on, else its first row. The same fight drawn again (it
 changed: a death logged after combat ended, the fight the game had cut in
@@ -62,6 +75,7 @@ under the table, as the study's design has it.
 """
 
 from collections import namedtuple
+from html import escape
 
 from PySide6.QtCore import (
     QAbstractTableModel,
@@ -74,7 +88,15 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QFont, QFontMetrics, QIcon, QPixmap
+from PySide6.QtGui import (
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QKeySequence,
+    QPalette,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -93,6 +115,7 @@ from PySide6.QtWidgets import (
 import event_rows
 from event_rows import CATEGORIES, DEFAULT_CATEGORIES, MORE, clock
 from gui.death_render import ICON_PX
+from gui.fight_render import link_color
 from gui.icon_cache import IconCache
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -103,12 +126,22 @@ TABLE_HINT = "Enter or a double-click on a death's row opens that death's recap.
 COLUMNS = ("Time", "What", "Ability", "Who", "Detail")
 TIME_COL, WHAT_COL, ABILITY_COL, WHO_COL, DETAIL_COL = range(len(COLUMNS))
 SHOW_LABEL = "Show"
-SHOW_CHOICES = (("Whole fight", None), ("Last 60 s", 60000))
+# Show's choices: the whole fight, its last stretch, or the seconds either
+# side of a moment (the row selected when the choice is made, or the moment
+# another view sent: show_around)
+LAST, AROUND = "last", "around"
+SHOW_CHOICES = (("Whole fight", None), ("Last 60 s", (LAST, 60000)),
+                ("±10 s around a moment", (AROUND, 10000)),
+                ("±30 s around a moment", (AROUND, 30000)))
+AROUND_MS = 10000  # the window a jump from another view opens with
 MORE_LABEL = "More"
 MORE_TIP = "More kinds of events, off at first"
 HIDDEN_NAME = "hidden name"  # what a reader hears for a name Hide names hides
 RECAP_TIP = "Enter or double-click: this death's recap"
 FULL_ROW_NAME = "Selected event"
+GRAPH_HREF = "graph"
+GRAPH_LINK = "On the DPS graph"
+GRAPH_KEYS = "Ctrl+G"
 OLD_FIGHT = "This fight was recorded before the app kept its events."
 NO_EVENTS = "No events in this fight."
 # The widest each column's cells make it, in average characters and as a
@@ -334,6 +367,9 @@ class EventsPage(QWidget):
     # A death's row chosen with Enter or a double-click: the player's unit
     # id and the death's number among theirs, as the Deaths tab's names
     recap_requested = Signal(str, int)
+    # The row selected asked for on the DPS graph (Ctrl+G, or the link under
+    # the table): its time in ms into the fight, and what it was
+    graph_requested = Signal(int, str)
 
     def __init__(self, icons=None, parent=None):
         super().__init__(parent)
@@ -342,6 +378,7 @@ class EventsPage(QWidget):
         self._names = NO_MASK
         self._all: list = []  # every row of the fight, as shown (Shown)
         self._search = ""
+        self._anchor_ms = None  # the moment Show's ± choices are around
         self._content_widths: dict = {}  # column -> its widest cell, measured for the rows
 
         layout = QVBoxLayout(self)
@@ -418,12 +455,18 @@ class EventsPage(QWidget):
         # The row selected in full, under the table: its cells are cut at a
         # large text size
         self.full_row = QLabel("")
-        self.full_row.setTextFormat(Qt.PlainText)
+        self.full_row.setTextFormat(Qt.RichText)
         self.full_row.setWordWrap(True)
-        self.full_row.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # Its link, the row's moment on the DPS graph, by mouse and by Tab
+        self.full_row.setTextInteractionFlags(Qt.TextSelectableByMouse
+                                              | Qt.LinksAccessibleByMouse
+                                              | Qt.LinksAccessibleByKeyboard)
         self.full_row.setAccessibleName(FULL_ROW_NAME)
+        self.full_row.linkActivated.connect(self._ask_graph)
         layout.addWidget(self.full_row)
         self.table.selectionModel().currentRowChanged.connect(self._show_full_row)
+        QShortcut(QKeySequence(GRAPH_KEYS), self, self._ask_graph,
+                  context=Qt.WidgetWithChildrenShortcut)
         self._fit_rows()
 
     # ---- what the main window asks ----
@@ -435,7 +478,8 @@ class EventsPage(QWidget):
 
     def focus_chain(self) -> list:
         """The page's controls in Tab order, for the window's."""
-        return [*self.category_boxes.values(), self.more_button, self.show_picker, self.table]
+        return [*self.category_boxes.values(), self.more_button, self.show_picker, self.table,
+                self.full_row]
 
     def show_fight(self, entry, names=None) -> None:
         """Show the fight *entry*, its names through the mask *names*: in
@@ -455,6 +499,10 @@ class EventsPage(QWidget):
         if same:
             self._refill(key, scroll=scroll)
         else:
+            # Another fight: a moment of the last one is none of this one's
+            if self._around() is not None:
+                self._set_show(0)
+            self._anchor_ms = None
             self._refill(_FIRST_DEATH)
         # Measured again in place too: rows logged later, or Hide names,
         # can widen a column (the selection and the scroll stay)
@@ -464,8 +512,32 @@ class EventsPage(QWidget):
         """Show no fight: the page with no fight keeps no names from the last."""
         self._entry = None
         self._all = []
+        self._anchor_ms = None
         self.summary.setText("")
         self._refill(None)
+
+    def show_around(self, t_ms: int, window_ms: int = AROUND_MS) -> None:
+        """Show the rows within *window_ms* of the moment *t_ms* (ms into
+        the fight), the first row from that moment on selected: where a
+        death's recap, the DPS graph or the buff strip sends the reader."""
+        index = next((n for n, (_label, data) in enumerate(SHOW_CHOICES)
+                      if data == (AROUND, window_ms)), None)
+        if index is None or self._entry is None:
+            return
+        self._anchor_ms = int(t_ms)
+        self._set_show(index)
+        self._refill((int(t_ms), None, None))
+
+    def _set_show(self, index: int) -> None:
+        """Show's choice set without its signal: the caller fills the rows."""
+        self.show_picker.blockSignals(True)
+        self.show_picker.setCurrentIndex(index)
+        self.show_picker.blockSignals(False)
+
+    def _around(self):
+        """The window either side of the moment, when Show is one; else None."""
+        data = self.show_picker.currentData()
+        return data[1] if data and data[0] == AROUND else None
 
     def set_search(self, text: str) -> int:
         """Filter the rows to those whose cells hold *text*
@@ -506,10 +578,15 @@ class EventsPage(QWidget):
     def _filtered(self) -> list:
         chosen = set(self.categories())
         rows = [shown for shown in self._all if shown.row.category in chosen]
-        window = self.show_picker.currentData()
-        if window and self._entry is not None:
-            end = round(float(getattr(self._entry, "duration_s", 0) or 0) * 1000)
-            rows = [shown for shown in rows if shown.row.t >= end - window]
+        data = self.show_picker.currentData()
+        if data and self._entry is not None:
+            kind, window = data
+            if kind == LAST:
+                end = round(float(getattr(self._entry, "duration_s", 0) or 0) * 1000)
+                rows = [shown for shown in rows if shown.row.t >= end - window]
+            elif self._anchor_ms is not None:
+                low, high = self._anchor_ms - window, self._anchor_ms + window
+                rows = [shown for shown in rows if low <= shown.row.t <= high]
         if self._search:
             needle = self._search.casefold()
             rows = [shown for shown in rows if needle in shown.searched]
@@ -571,15 +648,24 @@ class EventsPage(QWidget):
         if self._entry is None or not total:
             self.count_label.setText("")
         else:
-            self.count_label.setText(f"{shown} of {total} shown")
+            around = (f" · around {clock(self._anchor_ms)}"
+                      if self._around() is not None and self._anchor_ms is not None else "")
+            self.count_label.setText(f"{shown} of {total} shown{around}")
         on = sum(1 for action in self.more_actions.values() if action.isChecked())
         label = f"{MORE_LABEL} ({on})" if on else MORE_LABEL
         self.more_button.setText(label)
         self.more_button.setAccessibleName(label)
 
     def _on_filter(self, *_):
-        """A category or Show changed: the row selected kept while shown."""
-        self._refill(self._selected_key())
+        """A category or Show changed: the row selected kept while shown.
+        Show turned to the seconds around a moment takes the row selected
+        as the moment, and keeps the one it has from ±10 s to ±30 s."""
+        key = self._selected_key()
+        if self._around() is None:
+            self._anchor_ms = None
+        elif self._anchor_ms is None:
+            self._anchor_ms = key[0] if key is not None else 0
+        self._refill(key)
 
     def _show_full_row(self, current, _previous=None) -> None:
         """The row selected, every cell whole, under the table; and for a
@@ -588,10 +674,22 @@ class EventsPage(QWidget):
         if shown is None:
             self.full_row.setText("")
             return
-        text = " · ".join(cell for cell in shown.cells if cell)
+        text = escape(" · ".join(cell for cell in shown.cells if cell), quote=False)
         if shown.row.death is not None:
-            text += f" — {RECAP_TIP}"
+            text += f" — {escape(RECAP_TIP, quote=False)}"
+        # In the app's link colour, as a death's Positions link is
+        dark = self.palette().color(QPalette.Base).lightness() < 128
+        text += (f' — <a href="{GRAPH_HREF}" style="text-decoration:none;'
+                 f'color:{link_color(dark)}">{GRAPH_LINK}</a> ({GRAPH_KEYS})')
         self.full_row.setText(text)
+
+    def _ask_graph(self, *_) -> None:
+        """Ctrl+G or the link under the table: the row selected, as a
+        moment on the DPS graph."""
+        row = self.selected()
+        if row is not None:
+            label = row.what + (f" · {row.ability}" if row.ability else "")
+            self.graph_requested.emit(int(row.t), label)
 
     def _on_activated(self, index) -> None:
         """Enter or a double-click: a single death's recap."""

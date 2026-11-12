@@ -66,7 +66,7 @@ Hidden entirely when nothing was up at all.
 import math
 from html import escape
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
@@ -171,6 +171,9 @@ SUMMARY_LIST_LIMIT = 12
 MATRIX_MAX_SOURCES = 4
 MATRIX_MAX_TARGETS = 12
 CLICK_HINT = "<br><i>Click for who applied it and who had it</i>"
+# The pop-up's link to the events around the moment clicked (issue #214)
+MOMENT_HREF = "events:"
+MOMENT_LINK = "Events around"
 
 
 def given_by_caster(players) -> dict:
@@ -272,9 +275,16 @@ def paint_sparse_span(painter, rect: QRectF, color: QColor, grid_left: float) ->
 class TimelineStrip(QWidget):
     """Paints the per-fight effect timeline; hover shows attribution."""
 
+    # The pop-up's "Events around" link: the moment clicked, in ms into the
+    # fight (issue #214)
+    moment_requested = Signal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._timeline = None
+        # Whether the pop-up links to the moment's events: the fight has
+        # them recorded (set_moment_links)
+        self._moment_links = False
         self._rows = []       # ordered effect names present in the timeline
         self._row_info = {}   # effect -> {'uptime_pct': int, 'sparse': bool}
         self._tracked = {}    # tracked effect name -> its FightHistoryEntry.tracked item
@@ -765,20 +775,45 @@ class TimelineStrip(QWidget):
         parts.append(f"<i>{escape(str(armour.get('explain') or ''), quote=False)}</i>")
         return "<br>".join(parts)
 
-    def show_summary(self, effect: str, global_pos) -> "SummaryPopup":
-        """Open the pop-up for *effect*'s row at *global_pos*."""
+    def set_moment_links(self, on: bool) -> None:
+        """Whether a pop-up opened on a moment of a row ends in a link to
+        that moment's events (the Events tab, issue #214): on for a fight
+        whose events were recorded."""
+        self._moment_links = bool(on)
+
+    def show_summary(self, effect: str, global_pos, at_ms=None) -> "SummaryPopup":
+        """Open the pop-up for *effect*'s row at *global_pos*. Opened on a
+        moment of the row, *at_ms* into the fight, it ends in a link to the
+        events around that moment (moment_requested), which a click on the
+        strip already taken by the pop-up could not ask for itself."""
         QToolTip.hideText()
-        popup = SummaryPopup(self.summary_html(effect), self)
+        html = self.summary_html(effect)
+        if at_ms is not None and self._moment_links:
+            html += (f"<p style='margin:6px 0 0 0'><a href='{MOMENT_HREF}{int(at_ms)}'>"
+                     f"{MOMENT_LINK} {_fmt_tick(at_ms)}</a></p>")
+        popup = SummaryPopup(html, self)
+        popup.label.linkActivated.connect(self._on_popup_link)
         popup.adjustSize()
         popup.move(global_pos)
         popup.show()
         return popup
 
+    def _on_popup_link(self, href: str) -> None:
+        if href.startswith(MOMENT_HREF) and href[len(MOMENT_HREF):].isdigit():
+            # The pop-up the link is in closes: it holds no reference here
+            label = self.sender()
+            popup = label.window() if label is not None else None
+            if isinstance(popup, SummaryPopup):
+                popup.close()
+            self.moment_requested.emit(int(href[len(MOMENT_HREF):]))
+
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.LeftButton and self._timeline:
             effect = self._row_at(ev.position())
             if effect:
-                self.show_summary(effect, ev.globalPosition().toPoint())
+                # On the track, the moment under the click; on the label, none
+                self.show_summary(effect, ev.globalPosition().toPoint(),
+                                  at_ms=self._ms_for_x(ev.position().x()))
                 return
         super().mouseReleaseEvent(ev)
 
@@ -898,7 +933,10 @@ class SummaryPopup(QFrame):
         layout.setContentsMargins(8, 6, 8, 6)
         self.label = QLabel(html)
         self.label.setTextFormat(Qt.RichText)
-        self.label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # Its text can be selected, and its link to the moment's events
+        # followed by mouse or by Tab and Enter
+        self.label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse
+                                           | Qt.LinksAccessibleByKeyboard)
         layout.addWidget(self.label)
 
     def keyPressEvent(self, ev):

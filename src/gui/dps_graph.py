@@ -55,13 +55,23 @@ The group fighting on after the fight's END_COMBAT counts in the fight
 (waiting_hits, issue #162): the chart then runs to the group's last hit,
 a dashed line where the fight ended, so that damage keeps its own seconds
 instead of piling into the fight's last.
+
+A moment can be marked on the chart (issue #214): an Events row asked for
+with Ctrl+G is a line down both panels in the palette's highlight, with
+its time and what happened at the plot's top, on the side that has room.
+The chart and the Events tab count time alike, from the fight's start, so
+the mark needs no conversion. It stays through the same fight drawn again
+and goes with the fight. A double-click on the chart asks for the events
+around the second under it (moment_requested); the keyboard's way to a
+moment is the Events tab itself, whose rows the arrow keys walk. The mark
+is in the chart's description for a screen reader, after its lines.
 """
 
 import math
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QListView, QListWidget, QListWidgetItem,
@@ -200,6 +210,9 @@ class Curve:
 class DpsGraph(QWidget):
     """The chart itself; the panel around it builds the curves."""
 
+    # A double-click on the chart: the moment under it, in ms into the fight
+    moment_requested = Signal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
@@ -211,6 +224,11 @@ class DpsGraph(QWidget):
         self._y_top: Dict[int, float] = {}
         self._y_step: Dict[int, float] = {}
         self.hover_second: Optional[int] = None
+        # A moment another view sent (the Events tab's row, issue #214): its
+        # second into the fight and what happened then, None for none
+        self._cursor_s: float | None = None
+        self._cursor_label = ""
+        self._lines_described = ""
 
     # ---- data ----
 
@@ -239,8 +257,36 @@ class DpsGraph(QWidget):
         if self._fight_end_s is not None:
             description += (f"; the fight ended at {_fmt_duration(self._fight_end_s)}, "
                             f"the group fought on to {_fmt_duration(self._duration_s)}")
-        self.setAccessibleDescription(description)
+        self._lines_described = description
+        self._describe()
         self.update()
+
+    def set_cursor(self, second: float | None, label: str = "") -> None:
+        """Mark the moment *second* into the fight with a line down the
+        chart and *label* beside it (issue #214: an Events row asked for on
+        the graph); None takes the mark away."""
+        self._cursor_s = float(second) if second is not None else None
+        self._cursor_label = str(label or "") if second is not None else ""
+        self._describe()
+        self.update()
+
+    @property
+    def cursor(self) -> tuple | None:
+        """(second, label) of the moment marked, None for none."""
+        return (self._cursor_s, self._cursor_label) if self._cursor_s is not None else None
+
+    def cursor_text(self) -> str:
+        """'1:50.6 Died · Bile Spray' for the moment marked, '' for none."""
+        if self._cursor_s is None:
+            return ""
+        minutes, tenths = divmod(round(self._cursor_s * 10), 600)
+        return f"{minutes}:{tenths / 10:04.1f} {self._cursor_label}".rstrip()
+
+    def _describe(self) -> None:
+        """What a screen reader hears: the lines, then the moment marked."""
+        marked = self.cursor_text()
+        self.setAccessibleDescription(
+            self._lines_described + (f"; marked: {marked}" if marked and self._curves else ""))
 
     @property
     def curves(self) -> List[Curve]:
@@ -335,6 +381,22 @@ class DpsGraph(QWidget):
 
         for panel in self._panels:
             self._paint_panel(painter, panel, text, surface, dim, grid, metrics)
+
+        # The moment another view sent: a line down every panel in the
+        # palette's highlight, its time and what happened at the plot's
+        # top, on the side with room for it
+        if self._cursor_s is not None and 0 <= self._cursor_s <= self._duration_s:
+            x = self._x_for(self._cursor_s)
+            accent = palette.color(QPalette.Highlight)
+            painter.setPen(QPen(accent, 2))
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            label = self.cursor_text()
+            width = metrics.horizontalAdvance(label) + 8
+            left = x + 5 if x + 5 + width <= plot.right() else max(plot.left(), x - 5 - width)
+            box = QRectF(left, plot.top() + 1, width, metrics.height() + 2)
+            painter.fillRect(box, surface)
+            painter.setPen(text)
+            painter.drawText(box, Qt.AlignCenter, label)
 
         # Crosshair down every panel at the hovered second
         if self.hover_second is not None:
@@ -438,6 +500,15 @@ class DpsGraph(QWidget):
                               else event.globalPos(), self.tooltip_html(second), self)
         super().mouseMoveEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        """A double-click on the chart: that moment's events (issue #214)."""
+        pos = event.position() if hasattr(event, "position") else event.pos()
+        second = self.second_at(pos.x())
+        if event.button() == Qt.LeftButton and second is not None and self._curves:
+            self.moment_requested.emit(int(second) * 1000)
+            return
+        super().mouseDoubleClickEvent(event)
+
     def leaveEvent(self, event):
         if self.hover_second is not None:
             self.hover_second = None
@@ -522,6 +593,9 @@ class DpsGraphPanel(QWidget):
     the legend's ticks carry from one fight to the next within a session
     (see the module notes)."""
 
+    # A double-click on the chart: the moment under it, in ms into the fight
+    moment_requested = Signal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._shown = None  # (entry, dark, names) on display
@@ -540,6 +614,7 @@ class DpsGraphPanel(QWidget):
         middle = QHBoxLayout()
         self.graph = DpsGraph()
         self.graph.setAccessibleName("DPS over time")
+        self.graph.moment_requested.connect(self.moment_requested)
         middle.addWidget(self.graph, 1)
         self.legend = _Legend()
         self.legend.setAccessibleName(LEGEND_NAME)
@@ -618,6 +693,12 @@ class DpsGraphPanel(QWidget):
         """The fight on display, None before the first."""
         return self._shown[0] if self._shown is not None else None
 
+    def set_cursor_ms(self, ms, label: str = "") -> None:
+        """Mark the moment *ms* into the fight on the chart, with *label*
+        (DpsGraph.set_cursor); None takes the mark away. It stays until
+        another fight is shown."""
+        self.graph.set_cursor(ms / 1000.0 if ms is not None else None, label)
+
     def show_graph(self, entry, dark: bool, names=None) -> None:
         """Show the fight *entry*: the group's line and every player's.
         *names* is the Hide names mask (gui.name_mask) for the legend and
@@ -629,6 +710,8 @@ class DpsGraphPanel(QWidget):
             self._checked = {key: on for key, on in self._checked.items()
                              if key == GROUP or key.startswith("@")}
             self._zone = zone
+        if entry is not self.entry:
+            self.graph.set_cursor(None)  # a moment of the last fight
         self._shown = (entry, dark, names)
         facts = [entry.boss_name or "", entry.zone_name or "",
                  str(entry.timestamp or ""), f"{_fmt_duration(entry.duration_s)} fight"]
@@ -772,6 +855,7 @@ class DpsGraphPanel(QWidget):
         self.legend.blockSignals(False)
         self._players = []
         self._keys = {}
+        self.graph.set_cursor(None)
         self.graph.set_curves([], 0.0)
 
     def set_colorblind(self, on: bool, redraw: bool = True) -> None:
