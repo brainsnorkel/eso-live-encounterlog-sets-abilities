@@ -71,6 +71,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QLabel, QToolTip, QVBoxLayout, QWidget
 
 from effect_rules import DOTS_CAP
+from gui.death_render import events_from_href, events_href
 from effect_summary import matrix, summarise
 from set_text import sets_behind
 from gui.name_mask import NO_MASK
@@ -171,8 +172,8 @@ SUMMARY_LIST_LIMIT = 12
 MATRIX_MAX_SOURCES = 4
 MATRIX_MAX_TARGETS = 12
 CLICK_HINT = "<br><i>Click for who applied it and who had it</i>"
-# The pop-up's link to the events around the moment clicked (issue #214)
-MOMENT_HREF = "events:"
+# The pop-up's link to the events around the moment clicked (issue #214):
+# death_render's Events link, with no player
 MOMENT_LINK = "Events around"
 
 
@@ -789,7 +790,7 @@ class TimelineStrip(QWidget):
         QToolTip.hideText()
         html = self.summary_html(effect)
         if at_ms is not None and self._moment_links:
-            html += (f"<p style='margin:6px 0 0 0'><a href='{MOMENT_HREF}{int(at_ms)}'>"
+            html += (f"<p style='margin:6px 0 0 0'><a href='{events_href(at_ms)}'>"
                      f"{MOMENT_LINK} {_fmt_tick(at_ms)}</a></p>")
         popup = SummaryPopup(html, self)
         popup.label.linkActivated.connect(self._on_popup_link)
@@ -799,13 +800,14 @@ class TimelineStrip(QWidget):
         return popup
 
     def _on_popup_link(self, href: str) -> None:
-        if href.startswith(MOMENT_HREF) and href[len(MOMENT_HREF):].isdigit():
+        moment = events_from_href(href)
+        if moment is not None:
             # The pop-up the link is in closes: it holds no reference here
             label = self.sender()
             popup = label.window() if label is not None else None
             if isinstance(popup, SummaryPopup):
                 popup.close()
-            self.moment_requested.emit(int(href[len(MOMENT_HREF):]))
+            self.moment_requested.emit(moment[1])
 
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.LeftButton and self._timeline:

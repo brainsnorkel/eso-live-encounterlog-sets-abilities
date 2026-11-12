@@ -80,6 +80,7 @@ from PySide6.QtWidgets import (
 )
 
 from damage_stats import running_dps, smoothed_dps
+from event_rows import clock
 from gui.fight_render import _fmt_dps, _fmt_duration, _join
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -279,8 +280,7 @@ class DpsGraph(QWidget):
         """'1:50.6 Died · Bile Spray' for the moment marked, '' for none."""
         if self._cursor_s is None:
             return ""
-        minutes, tenths = divmod(round(self._cursor_s * 10), 600)
-        return f"{minutes}:{tenths / 10:04.1f} {self._cursor_label}".rstrip()
+        return f"{clock(round(self._cursor_s * 1000))} {self._cursor_label}".rstrip()
 
     def _describe(self) -> None:
         """What a screen reader hears: the lines, then the moment marked."""
@@ -385,7 +385,9 @@ class DpsGraph(QWidget):
         # The moment another view sent: a line down every panel in the
         # palette's highlight, its time and what happened at the plot's
         # top, on the side with room for it
-        if self._cursor_s is not None and 0 <= self._cursor_s <= self._duration_s:
+        if self._cursor_s is not None:
+            # A moment off the chart (a death logged after its end, a hit
+            # before the pull) is marked at that edge, its own time said
             x = self._x_for(self._cursor_s)
             accent = palette.color(QPalette.Highlight)
             painter.setPen(QPen(accent, 2))

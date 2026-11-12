@@ -484,7 +484,8 @@ class TestTimelineStrip(unittest.TestCase):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
 
-        from gui.timeline_strip import MOMENT_HREF, SummaryPopup
+        from gui.death_render import events_href
+        from gui.timeline_strip import SummaryPopup
         self.strip.set_timeline(_sample_timeline())
         self.strip.show()
         y = int(self.strip._row_rect(0).center().y())
@@ -503,8 +504,9 @@ class TestTimelineStrip(unittest.TestCase):
         QTest.mouseClick(self.strip, Qt.LeftButton, pos=QPoint(x, y))
         popup = self.strip.findChildren(SummaryPopup)[-1]
         ms = self.strip._ms_for_x(x)
-        self.assertIn(f"<a href='{MOMENT_HREF}{ms}'>Events around 49s</a>", popup.label.text())
-        popup.label.linkActivated.emit(f"{MOMENT_HREF}{ms}")
+        # The Events link every view uses (death_render), with no player
+        self.assertIn(f"<a href='{events_href(ms)}'>Events around 49s</a>", popup.label.text())
+        popup.label.linkActivated.emit(events_href(ms))
         self.assertEqual(asked, [ms])
         self.assertFalse(popup.isVisible())
 

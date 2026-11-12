@@ -711,6 +711,32 @@ class TestTheMomentMarked(unittest.TestCase):
         self.panel.clear()
         self.assertIsNone(graph.cursor)
 
+    def test_a_moment_off_the_chart_is_marked_at_its_edge(self):
+        """A death logged after the chart's end, or a hit before the pull:
+        the mark is drawn at that edge with its own time, as the
+        description says it is marked."""
+        from PySide6.QtGui import QPalette
+        self.panel.show_graph(_entry(players=2), False)
+        self.panel.show()
+        graph = self.panel.graph
+        highlight = graph.palette().color(QPalette.Highlight).rgb()
+
+        def marked_columns():
+            image = graph.grab().toImage()
+            y = int(graph._plot_rect().center().y())
+            return [x for x in range(image.width()) if image.pixel(x, y) == highlight]
+
+        self.assertEqual(marked_columns(), [])
+        self.panel.set_cursor_ms(25000, "Died · Slap")       # the chart is 10 s long
+        self.assertEqual(graph.cursor_text(), "0:25.0 Died · Slap")
+        columns = marked_columns()
+        self.assertTrue(columns and abs(columns[-1] - graph._plot_rect().right()) <= 2, columns)
+        self.panel.set_cursor_ms(-3200, "Hit")
+        self.assertEqual(graph.cursor_text(), "-0:03.2 Hit")  # the Events tab's clock
+        columns = marked_columns()
+        self.assertTrue(columns and abs(columns[0] - graph._plot_rect().left()) <= 2, columns)
+        self.panel.hide()
+
     def test_a_double_click_asks_for_the_moment(self):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest

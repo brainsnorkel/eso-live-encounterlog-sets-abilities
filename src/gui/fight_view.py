@@ -131,8 +131,9 @@ class FightView(QTextBrowser):
     # the unit to select ('' for none) and ms into the fight; and the fight
     # header's Positions, which opens at the fight's own moment
     positions_requested = Signal(str, int)
-    # A death's Events link: the moment, in ms into the fight (issue #214)
-    events_requested = Signal(int)
+    # A death's Events link: the player's unit id and the moment, in ms
+    # into the fight (issue #214)
+    events_requested = Signal(str, int)
     fight_positions_requested = Signal()
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
     # A split log listed beside a run's result: its place in the list the
@@ -885,7 +886,7 @@ class FightView(QTextBrowser):
             return
         moment = events_from_href(url.toString())
         if moment is not None:
-            self.events_requested.emit(moment)
+            self.events_requested.emit(*moment)
             return
         death = recap_from_href(url.toString())
         if death is not None:

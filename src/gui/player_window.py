@@ -192,9 +192,9 @@ class PlayerWindow(QDialog):
     # main window opens the positions window at: the fight, the key of the
     # unit to select ('' for none) and ms into the fight
     positions_requested = Signal(object, str, int)
-    # A death's Events link: the window's fight and the moment, for the
-    # main window's Events tab (issue #214)
-    events_requested = Signal(object, int)
+    # A death's Events link: the window's fight, the player and the moment,
+    # for the main window's Events tab (issue #214)
+    events_requested = Signal(object, str, int)
 
     def __init__(self, parent=None, icons=None, config=None):
         super().__init__(parent)
@@ -635,11 +635,11 @@ class PlayerWindow(QDialog):
         if self._entry is not None:
             self.positions_requested.emit(self._entry, str(unit_key), int(ms))
 
-    def _to_events(self, ms):
+    def _to_events(self, unit_key, ms):
         """A death's Events link: the main window shows the Events tab
-        around that moment of the window's fight (issue #214)."""
+        around that death of the window's fight (issue #214)."""
         if self._entry is not None:
-            self.events_requested.emit(self._entry, int(ms))
+            self.events_requested.emit(self._entry, str(unit_key), int(ms))
 
     def _switch_player(self, unit_id: str) -> None:
         self._unit_id = unit_id

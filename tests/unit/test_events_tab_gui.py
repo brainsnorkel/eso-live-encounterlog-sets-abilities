@@ -542,12 +542,73 @@ class TestJumps(EventsTestCase):
         win = self._window(first, second)
         self.assertIs(win.history_list.current_entry(), second)
         win._open_player("3", DEATHS_TAB, entry=first, death=1)
-        win._player_window.events_requested.emit(first, 10000)
+        win._player_window.events_requested.emit(first, "3", 10000)
         self.assertIs(win.history_list.current_entry(), first)
         page = win.events_view
         self.assertIs(win.fight_tabs.currentWidget(), page)
         self.assertIs(page.entry, first)
         self.assertEqual((page.selected().what, page.selected().t), ("Died", 10000))
+
+    def test_a_fight_gone_from_the_list_opens_nothing(self):
+        """As the window's Show in list: said in the status bar, and the
+        Events tab left alone."""
+        from gui.player_window import DEATHS_TAB
+        first, second = _fight(), _fight()
+        win = self._window(first, second)
+        win._open_player("3", DEATHS_TAB, entry=first, death=1)
+        gone = _fight()
+        win._player_window.events_requested.emit(gone, "3", 10000)
+        self.assertIs(win.history_list.current_entry(), second)
+        self.assertEqual(win.fight_tabs.currentIndex(), 0)
+        self.assertIn("not in the list", win.statusBar().currentMessage())
+
+    def test_another_fight_picked_takes_the_mark_with_the_graph_not_drawn(self):
+        """The mark is the fight's: back on the fight after a visit to
+        another, with the graph never on screen between, it is gone."""
+        first, second = _fight(), _fight()
+        win = self._window(first, second)
+        win.history_list.select_entry(first)
+        win.fight_tabs.setCurrentWidget(win.events_view)
+        win.events_view._ask_graph()
+        self.assertIsNotNone(win.dps_panel.graph.cursor)
+        win.fight_tabs.setCurrentIndex(0)
+        win.history_list.select_entry(second)
+        win.history_list.select_entry(first)
+        win.fight_tabs.setCurrentWidget(win.dps_panel)
+        self.assertIsNone(win.dps_panel.graph.cursor)
+
+    def test_a_deaths_link_selects_the_row_that_tells_it(self):
+        """Players who died together are one row at the first death's time:
+        the link of the last to die selects that row, not the next one; the
+        Deaths box unticked is ticked again; a search that narrows the rows
+        is said in the count."""
+        recaps = [{"unit_id": key, "name": f"@{key}", "time_ms": t, "ability": "Melt",
+                   "ability_id": "5", "killer": "Boss", "icon": "", "cause": ""}
+                  for key, t in (("1", 60000), ("2", 60400), ("3", 60900))]
+        notes = [("note_map", t, f"Map {t}") for t in (55000, 61000, 65000)]
+        page = self._page(_entry(duration_s=120.0, notes=notes, recaps=recaps))
+        page.category_boxes["deaths"].setChecked(False)
+        self.assertTrue(page.show_around(60900, unit_key="3"))
+        self.assertTrue(page.category_boxes["deaths"].isChecked())
+        self.assertEqual((page.selected().what, page.selected().t), ("Died x3", 60000))
+        # A moment that is no death: the first row from it on
+        page.show_around(60900)
+        self.assertEqual(page.selected().t, 61000)
+        page.set_search("Melt")
+        self.assertEqual(page.count_label.text(),
+                         "1 of 4 shown · around 1:00.9 · matching the search")
+        page.set_search("")
+        self.assertNotIn("matching", page.count_label.text())
+        page.clear()
+        self.assertFalse(page.show_around(1000))     # no fight to show it for
+
+    def test_the_line_under_the_table_is_a_tab_stop_only_with_a_row(self):
+        from PySide6.QtCore import Qt
+        page = self._page(_fight())
+        self.assertTrue(page.full_row.textInteractionFlags() & Qt.LinksAccessibleByKeyboard)
+        page.clear()
+        self.assertEqual(page.full_row.textInteractionFlags(), Qt.NoTextInteraction)
+        self.assertEqual(page.full_row.focusPolicy(), Qt.NoFocus)
 
 
 class TestInTheWindow(EventsTestCase):

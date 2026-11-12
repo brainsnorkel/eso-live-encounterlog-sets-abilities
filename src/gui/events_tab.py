@@ -142,6 +142,7 @@ FULL_ROW_NAME = "Selected event"
 GRAPH_HREF = "graph"
 GRAPH_LINK = "On the DPS graph"
 GRAPH_KEYS = "Ctrl+G"
+SEARCHED = " · matching the search"  # the count's end while a search narrows the rows
 OLD_FIGHT = "This fight was recorded before the app kept its events."
 NO_EVENTS = "No events in this fight."
 # The widest each column's cells make it, in average characters and as a
@@ -155,6 +156,10 @@ _DISPLAY, _ACCESSIBLE, _DECORATION, _ALIGNMENT, _TOOLTIP, _FONT = (
     int(role.value) for role in (Qt.DisplayRole, Qt.AccessibleTextRole, Qt.DecorationRole,
                                  Qt.TextAlignmentRole, Qt.ToolTipRole, Qt.FontRole))
 _RIGHT = int((Qt.AlignRight | Qt.AlignVCenter).value)
+# The selected row's line: its text can be selected, its link followed by
+# mouse or by Tab and Enter
+_LINE_FLAGS = (Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse
+               | Qt.LinksAccessibleByKeyboard)
 # How a row is chosen after the rows change (EventsPage._refill)
 _FIRST_DEATH, _FIRST = "first death", "first"
 
@@ -457,10 +462,9 @@ class EventsPage(QWidget):
         self.full_row = QLabel("")
         self.full_row.setTextFormat(Qt.RichText)
         self.full_row.setWordWrap(True)
-        # Its link, the row's moment on the DPS graph, by mouse and by Tab
-        self.full_row.setTextInteractionFlags(Qt.TextSelectableByMouse
-                                              | Qt.LinksAccessibleByMouse
-                                              | Qt.LinksAccessibleByKeyboard)
+        # Its link, the row's moment on the DPS graph, by mouse and by Tab,
+        # once a row is selected (_show_full_row)
+        self.full_row.setTextInteractionFlags(Qt.NoTextInteraction)
         self.full_row.setAccessibleName(FULL_ROW_NAME)
         self.full_row.linkActivated.connect(self._ask_graph)
         layout.addWidget(self.full_row)
@@ -516,17 +520,34 @@ class EventsPage(QWidget):
         self.summary.setText("")
         self._refill(None)
 
-    def show_around(self, t_ms: int, window_ms: int = AROUND_MS) -> None:
+    def show_around(self, t_ms: int, window_ms: int = AROUND_MS, unit_key: str = "") -> bool:
         """Show the rows within *window_ms* of the moment *t_ms* (ms into
         the fight), the first row from that moment on selected: where a
-        death's recap, the DPS graph or the buff strip sends the reader."""
+        death's recap, the DPS graph or the buff strip sends the reader.
+        With *unit_key*, the moment is that player's death: the Deaths box
+        is ticked if it was not, and the row that tells the death is
+        selected, which for players who died together is one row at the
+        first death's time. Whether there was a fight to show it for."""
         index = next((n for n, (_label, data) in enumerate(SHOW_CHOICES)
                       if data == (AROUND, window_ms)), None)
         if index is None or self._entry is None:
-            return
+            return False
         self._anchor_ms = int(t_ms)
         self._set_show(index)
-        self._refill((int(t_ms), None, None))
+        select = (int(t_ms), None, None)
+        if unit_key:
+            box = self.category_boxes["deaths"]
+            if not box.isChecked():
+                box.blockSignals(True)
+                box.setChecked(True)
+                box.blockSignals(False)
+            told = [shown.row for shown in self._all
+                    if shown.row.category == "deaths" and shown.row.strong
+                    and str(unit_key) in shown.row.who_keys and shown.row.t <= int(t_ms)]
+            if told:
+                select = row_key(told[-1])
+        self._refill(select)
+        return True
 
     def _set_show(self, index: int) -> None:
         """Show's choice set without its signal: the caller fills the rows."""
@@ -650,7 +671,10 @@ class EventsPage(QWidget):
         else:
             around = (f" · around {clock(self._anchor_ms)}"
                       if self._around() is not None and self._anchor_ms is not None else "")
-            self.count_label.setText(f"{shown} of {total} shown{around}")
+            # A search narrows the rows too: said, so a table left short or
+            # empty after a jump from another view explains itself
+            searched = SEARCHED if self._search else ""
+            self.count_label.setText(f"{shown} of {total} shown{around}{searched}")
         on = sum(1 for action in self.more_actions.values() if action.isChecked())
         label = f"{MORE_LABEL} ({on})" if on else MORE_LABEL
         self.more_button.setText(label)
@@ -671,6 +695,9 @@ class EventsPage(QWidget):
         """The row selected, every cell whole, under the table; and for a
         single death, what Enter does."""
         shown = self.model.shown_at(current.row()) if current.isValid() else None
+        # A Tab stop only while it has a link to stop at
+        self.full_row.setTextInteractionFlags(_LINE_FLAGS if shown is not None
+                                              else Qt.NoTextInteraction)
         if shown is None:
             self.full_row.setText("")
             return

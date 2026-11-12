@@ -1762,6 +1762,11 @@ class MainWindow(QMainWindow):
             self._search_places.pop(self.fight_view, None)  # the page is the search's now
         else:
             self._note_search_place(self.fight_view, entry is self._fight_entry)
+        if entry is not self._fight_entry:
+            # Another fight picked: the moment marked on the DPS graph was
+            # the last one's, whether or not the graph is drawn before the
+            # reader comes back to that fight
+            self.dps_panel.set_cursor_ms(None)
         self._fight_entry = entry
         self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
                                             icons=self.fight_view.icons,
@@ -2711,23 +2716,24 @@ class MainWindow(QMainWindow):
             ms, unit_key = fight_moment(entry)
             self.show_moment(entry, entry.locator.start_ms + ms, unit_key)
 
-    @Slot(object, str, int)
     # ---- jumps between the views of a fight (issue #214) ----
 
-    def _show_events_around(self, ms):
+    def _show_events_around(self, ms, unit_key=""):
         """The Events tab around the moment *ms* of the fight on screen
         (gui.events_tab.show_around), its table given the focus: where the
         buff strip's pop-up, a double-click on the DPS graph and a death's
-        Events link send the reader. Nothing for a fight whose events were
-        not recorded."""
+        Events link (*unit_key*: the player who died) send the reader.
+        Whether it was shown: not for a fight whose events were not
+        recorded, nor while no fight is on screen."""
         entry = self.history_list.current_entry()
         if entry is None or not self.fight_views.is_shown() or not events_known(entry):
-            return
+            return False
         # The tab change draws the page if it was marked
         self.fight_tabs.setCurrentWidget(self.events_view)
-        self.events_view.show_around(ms)
+        self.events_view.show_around(ms, unit_key=unit_key)
         self._apply_search()  # the search's count, for the rows now shown
         self.events_view.table.setFocus()
+        return True
 
     def _show_event_on_graph(self, ms, label):
         """Ctrl+G on an Events row, or the link under the table: the DPS
@@ -2743,26 +2749,24 @@ class MainWindow(QMainWindow):
         """A double-click on the DPS graph: the moment marked there, and
         the Events tab around it."""
         entry = self.dps_panel.entry
-        if entry is None or entry is not self.history_list.current_entry()                 or not events_known(entry):
+        if (entry is None or entry is not self.history_list.current_entry()
+                or not events_known(entry)):
             return
         self.dps_panel.set_cursor_ms(ms)
         self._show_events_around(ms)
 
-    def _show_player_events(self, entry, ms):
-        """A death's Events link in the player window's recap: the Events
-        tab around that death, the window's fight selected in the list
-        first when another is, and the main window brought forward."""
+    def _show_player_events(self, entry, unit_key, ms):
+        """A death's Events link in the player window's recap: the window's
+        fight selected in the list and this window brought up, as its Show
+        in list does (_show_in_list), then the Events tab around that
+        death, its row selected."""
         if not events_known(entry):
             return
-        if self.history_list.current_entry() is not entry:
-            if self.history_list.row_of(entry) is None:
-                self.statusBar().showMessage("That fight is no longer in the list", 5000)
-                return
-            self.history_list.select_entry(entry)
-        self._show_events_around(ms)
-        self.raise_()
-        self.activateWindow()
+        self._show_in_list(entry)
+        if self.history_list.current_entry() is entry:
+            self._show_events_around(ms, unit_key)
 
+    @Slot(object, str, int)
     def _show_player_positions(self, entry, unit_key, ms):
         """A death's Positions in the player window's recap: the positions
         window at that moment of the player window's fight."""

@@ -971,7 +971,7 @@ class TestEventsLinks(DeathRecapGuiTestCase):
         headings = re.findall(r"<p[^>]*><a name='death-\d+'></a>.*?</p>", html)
         self.assertEqual(len(headings), 2)
         for heading, ms in zip(headings, (54000, 95000)):
-            self.assertIn(f'href="{events_href(ms)}"', heading)
+            self.assertIn(f'href="{events_href(ms, "1")}"', heading)
             self.assertTrue(heading.endswith(f'color:{link_color(False)}">Events</a></p>'),
                             heading)
             self.assertLess(heading.index(">Positions<"), heading.index(">Events<"))
@@ -987,12 +987,17 @@ class TestEventsLinks(DeathRecapGuiTestCase):
             events_from_href,
             events_href,
         )
-        self.assertEqual(events_from_href(events_href(95000)), 95000)
+        # The player whose death it is, and the moment; no player for a
+        # moment that is no death (the buff strip's)
+        self.assertEqual(events_from_href(events_href(95000, "1")), ("1", 95000))
+        self.assertEqual(events_from_href(events_href(95000)), ("", 95000))
         self.assertIsNone(events_from_href("esolog:positions/1/95000"))
-        self.assertIsNone(events_from_href("esolog:events/x"))
+        self.assertIsNone(events_from_href("esolog:events/1/x"))
+        self.assertIsNone(events_from_href("esolog:events/95000"))
         tips = death_events_tooltips(_with_events(_entry_with_deaths()))
-        self.assertEqual(sorted(tips), sorted(events_href(ms) for ms in (54000, 61000, 95000)))
-        self.assertIn("Events around 1:35", tips[events_href(95000)])
+        self.assertEqual(sorted(tips), sorted(events_href(ms, unit) for unit, ms in
+                                              (("1", 54000), ("77", 61000), ("1", 95000))))
+        self.assertIn("Events around 1:35", tips[events_href(95000, "1")])
         self.assertEqual(death_events_tooltips(_entry_with_deaths()), {})
 
     def test_the_player_window_hands_the_link_on_with_its_fight(self):
@@ -1008,9 +1013,9 @@ class TestEventsLinks(DeathRecapGuiTestCase):
         window.events_requested.connect(lambda *args: asked.append(args))
         window.open(entry, '1', DEATHS_TAB, dark=False)
         page = window.view(DEATHS_TAB)
-        self.assertIn('Events around 1:35', page._tooltips[events_href(95000)])
-        page.anchorClicked.emit(QUrl(events_href(95000)))
-        self.assertEqual(asked, [(entry, 95000)])
+        self.assertIn('Events around 1:35', page._tooltips[events_href(95000, '1')])
+        page.anchorClicked.emit(QUrl(events_href(95000, '1')))
+        self.assertEqual(asked, [(entry, '1', 95000)])
         self.assertEqual((window.current_tab(), window.unit_id), (DEATHS_TAB, '1'))
 
 

@@ -71,8 +71,8 @@ POSITIONS_HREF = "esolog:positions/"
 # player selected, else at its start (fight_moment)
 FIGHT_POSITIONS_HREF = "esolog:positions/fight"
 POSITIONS_LABEL = "Positions"
-# A death's link to the Events tab around it (issue #214): + the ms into the
-# fight
+# A link to the Events tab around a moment (issue #214): + the unit key of
+# the player whose death it is ('' for none), '/', and the ms into the fight
 EVENTS_HREF = "esolog:events/"
 EVENTS_LABEL = "Events"
 # + the death's number from 1: the <a name> each death's recap begins with,
@@ -219,17 +219,21 @@ def events_known(entry) -> bool:
     return getattr(entry, "events", None) is not None
 
 
-def events_href(ms) -> str:
-    """The link to the Events tab around the moment *ms* into the fight."""
-    return f"{EVENTS_HREF}{int(ms)}"
+def events_href(ms, unit_key="") -> str:
+    """The link to the Events tab around the moment *ms* into the fight;
+    with *unit_key*, a player's row 'unit_id', for that player's death
+    then: the tab selects the row that tells it, which for players who
+    died together is one row at the first death's time."""
+    return f"{EVENTS_HREF}{unit_key or ''}/{int(ms)}"
 
 
-def events_from_href(href: str) -> int | None:
-    """The moment an Events link names, None for any other link."""
+def events_from_href(href: str) -> tuple[str, int] | None:
+    """(unit key or '', ms into the fight) of an Events link, None for any
+    other link."""
     if not (href and href.startswith(EVENTS_HREF)):
         return None
-    ms = href[len(EVENTS_HREF):]
-    return int(ms) if ms.isdigit() else None
+    unit_key, slash, ms = href[len(EVENTS_HREF):].rpartition("/")
+    return (unit_key, int(ms)) if slash and ms.isdigit() else None
 
 
 def death_events_tooltips(entry) -> dict[str, str]:
@@ -240,7 +244,7 @@ def death_events_tooltips(entry) -> dict[str, str]:
     tips = {}
     for recap in getattr(entry, "death_recaps", None) or []:
         ms = recap.get("time_ms") or 0
-        tips[events_href(ms)] = (
+        tips[events_href(ms, recap.get("unit_id", ""))] = (
             f"<b>Events around {_clock(ms)}</b><br><span style='font-size:85%'>"
             f"Click for what happened in the fight in the seconds either side "
             f"of this death, on the Events tab</span>")
@@ -751,7 +755,7 @@ def _death_html(recap: dict, index: int, total: int, theme: dict, icons, e,
                 f"style=\"text-decoration:none;color:{positions}\">{POSITIONS_LABEL}</a>")
     # And what happened around the death, on the Events tab
     if events is not None:
-        href = events_href(recap.get("time_ms") or 0)
+        href = events_href(recap.get("time_ms") or 0, recap.get("unit_id", ""))
         link += (f" <span style='color:{muted}'>·</span> <a href=\"{e(href, quote=True)}\" "
                  f"style=\"text-decoration:none;color:{events}\">{EVENTS_LABEL}</a>")
     parts = [
