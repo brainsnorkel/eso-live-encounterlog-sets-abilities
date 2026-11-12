@@ -5,10 +5,13 @@ A walk through the app, screen by screen, and the reference for every setting. T
 - [First run](#first-run)
 - [The main window](#the-main-window)
 - [A player's window](#a-players-window)
+- [Positions](#positions)
 - [DPS over time](#dps-over-time)
 - [Tracked effects](#tracked-effects)
 - [The buff timeline](#the-buff-timeline)
 - [Reviewing and copying fights](#reviewing-and-copying-fights)
+- [Your fight history](#your-fight-history)
+- [Hiding other players' names](#hiding-other-players-names)
 - [Settings](#settings)
 - [Accessibility](#accessibility)
 - [The status bar](#the-status-bar)
@@ -158,6 +161,8 @@ Then come the killers, each ability with its source and how many it killed, `a f
 
 The **Events** tab (Alt+V) tells the fight as a table, one row for each thing that happened, in the order it happened: the time into the fight, what happened, the ability with its icon, who, and the details. A line above the table sums the fight up: `62 events · 3 deaths · Lokkestiiz reached 25%`, or the boss's death and when.
 
+![The Events tab: the fight's events in order, a death selected and spelled out on the line under the table](screencaps/events-tab.png)
+
 Five kinds of event are shown at first, each with a box to turn it off:
 
 - **Deaths**: each death, with what killed the player and from whom, how long they stayed dead and who raised them. Players killed by one ability within a second share a row, `Died x3`. A death the log wrote no line for, found from the player's health reaching 0, says so. Each return from the dead is a `Back` row.
@@ -173,6 +178,8 @@ The [search](#finding-things-in-a-fight) filters the table: only the rows that h
 #### One player's actions
 
 **Who**, at the start of the bar above the table, picks whose fight the table tells: **Everyone**, the fight as above, or one of the fight's players, listed by role and name (`D  @handle`), tanks first, then healers, then damage dealers. With a player picked, the table lists every cast they began in the fight, in order, with the events that touched them in between. The line above it sums them up, `@handle · D · Warden · 202 casts · 1 death`, the casts counted as the player's [Build](#build) tab counts them.
+
+![One player's actions: Who on a damage dealer, their casts in order with bar slot, light-attack mark, target and gap](screencaps/player-actions.png)
 
 The columns:
 
@@ -224,6 +231,7 @@ Type in the search field at the right of the tabs, `Find (Ctrl+F)`; Ctrl+F puts 
 | Ctrl+PgDn, Ctrl+PgUp | The next or previous tab, from anywhere in the window |
 | Ctrl+D | Detail view on or off |
 | Ctrl+G | On the Events tab: the selected row's moment, marked on the DPS graph |
+| Enter (or a double-click) | On the Events tab, a death's row: that death's recap on the player's Deaths tab |
 | Ctrl+F | Put the cursor in the search field, which searches the tab on screen (opening it when the Find button stands in its place); Enter jumps to the next match, Esc clears |
 | Ctrl+C | Copy fight |
 | Ctrl+Shift+C | Copy session: the whole list as a recap |
@@ -231,6 +239,7 @@ Type in the search field at the right of the tabs, `Find (Ctrl+F)`; Ctrl+F puts 
 | Ctrl+= (or Ctrl++), Ctrl+- | [Text size](#settings) a step bigger or smaller, from any of the app's windows; saved |
 | Ctrl+0 | Text size back to 100% |
 | Ctrl + mouse wheel | Zoom the one page under the pointer until the app closes; the next text size change resets it |
+| Esc | Close the `ⓘ` popup of a player's possible build issues, or the release notes popup |
 
 Tab used to toggle Detail view, which kept the focus on the fight list; that is Ctrl+D now.
 
@@ -351,7 +360,7 @@ With **Hide names** on, other players are masked on both tabs as everywhere, as 
 
 A player who died has a red skull (**☠**) on their row, `☠ ×2` for two deaths. Hover it for when and to what they died, and how long they spent dead, `Dead for 1:32 of 5:10 (30%)`: from each death until they were back on their feet, or the fight's end. When that was a tenth of the fight or more, the row says so after the skull, `dead 1:32`, and **Copy fight** adds it to their line. Click the skull for the Deaths tab. It shows a death the game writes just after the fight ended, and the rest of a fight the game had cut in two, as they come in.
 
-![The Deaths tab: the last seconds before a death](screencaps/death-recap.png)
+![The Deaths tab: the last seconds before a death, the player's own casts among them, with Positions and Events on the death's heading](screencaps/death-recap.png)
 
 Each death names the killing ability and who used it (for a fall into lava or off a ledge, *a fall or lava*; for a death the log wrote no line for, the hit that left the player at 0, marked *read from health reaching 0*), lists the last seconds of damage and healing with the player's own casts among them, oldest first (3 seconds by default, 1 to 10 in [Settings](#settings)), and sums those seconds by kind under the table. **Positions**, at the end of each death's heading, shows where everyone stood at that moment, in the [positions window](#positions), and **Events** after it opens the main window's [Events tab](#the-fights-events) on the ten seconds either side of the death. The line after the last death, **Over the whole fight: Damage taken tab**, opens [Damage taken](#damage-taken): everything that reached the player's health over the fight, summed the same way, with every ability, the units that did the damage and the healers.
 
@@ -376,6 +385,8 @@ Heals that were pure overheal are left out of the table and counted in the overh
 
 The positions window shows where everyone stood at one moment of a fight, seen from above, held still or played back. The time on each row of the [Deaths tab](#every-death-of-a-fight) opens it, and so does **Positions** on each death's heading on a player's [Deaths](#deaths) tab, at that death with the player selected; **Positions** at the end of the fight's header opens it at the first death, or as the fight began when no one died. One window serves every link, and it keeps its fight while the list moves on.
 
+![The positions window at a death: the players' marks seen from above beside the table of their health, with Play and the scrub bar under them](screencaps/positions-window.png)
+
 To draw a fight, the app reads its lines from the log again, which takes a moment; the window says `Reading the fight's lines…` until then. It looks in the session's split log, the live log and the archives made since; for a fight from a [reviewed file](#reviewing-and-copying-fights), in that file first, even after **Back to live** while a window still shows the fight. When none of them holds the session any more, the window says `This fight's lines are no longer on disk`; with [split logs](#settings) on, each session's lines are kept in a file of their own. A fight from a log whose start the app never read (a reviewed file that begins partway through a session, say) has no **Positions** link.
 
 - **The picture**: each player in the fight table is a mark with a number in it, the place of their row in the table (companions are not counted). The shape is the role: a circle for DPS, a diamond for a healer, a square for a tank. The ring around a mark is their health, full when the ring is whole; a thin outer arc is a damage shield, and a small point shows which way they face. A boss is a hexagon with its name and health, and an add a small triangle pointing the way it faces. A mark is hollow with a cross when the unit is dead, dashed when the log has said nothing of it for over a second, and dotted after five. Players standing too close to tell apart share one box that lists each one's shape and number with a short bar of their health under it, without the ring or the facing point; a dashed line runs from the box to where they stand when it had to move aside. A unit outside the drawn area is held at the picture's edge, and a small grey arrow beside it points to where it really is, not the way it faces. An add stays drawn until the log has said nothing of it for 15 seconds, and is a cross for 2 seconds after its health reaches 0; after that it is not drawn, and nothing names it. Someone in another part of the zone or on another map is not drawn: the line under the picture names them. There is no map, only the places.
@@ -390,7 +401,7 @@ After a Settings save that replays the session, the window moves to the replayed
 
 ## DPS over time
 
-The **DPS graph** tab (Alt+G), beside Fight and Deaths, draws the fight selected in the list: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group DPS figure in the fight header, the one ending in a small graph line, and **DPS graph** on the toolbar open it. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis. Like the other tabs it follows the list, new live fights included, and redraws its fight when the fight changes. It takes the fight pane's place while it is on screen, where the graph used to open in a window of its own; Alt+F goes back to the fight.
+The **DPS graph** tab (Alt+G), the fourth of the fight's tabs, after Fight, Deaths and Events, draws the fight selected in the list: the group's dps and each player's across the fight, drawn the way Combat Metrics' graph tab draws them. The group DPS figure in the fight header, the one ending in a small graph line, and **DPS graph** on the toolbar open it. The group has the upper panel and the players the lower, each on its own scale (the group's figure is as many times a player's as there are players), sharing the time axis. Like the other tabs it follows the list, new live fights included, and redraws its fight when the fight changes. It takes the fight pane's place while it is on screen, where the graph used to open in a window of its own; Alt+F goes back to the fight.
 
 ![The DPS graph: the group and the players over a fight](screencaps/dps-graph.png)
 
@@ -403,7 +414,7 @@ The **DPS graph** tab (Alt+G), beside Fight and Deaths, draws the fight selected
 
 ## Tracked effects
 
-Every row of the buff timeline is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these:
+Every row of the buff timeline is a rule in Settings → **Tracked effects**, one per line, the group buffs and the taunt included. The rules are plain text: copy them to a friend, or paste theirs in. A fresh install starts with these rules, with a few `#` comment lines above and between them that sum up the format (a line starting with `#` is skipped):
 
 ![Settings, the Tracked effects page: the rules, one per line, with the count under the box and Examples…](screencaps/settings-tracked-effects.png)
 
@@ -461,7 +472,7 @@ A compact strip above each fight shows every tracked effect across the fight's l
 
 ![Review mode: a file's fights, with the banner and Back to live](screencaps/review-mode.png)
 
-**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares, effective penetration and critical damage (`— 61.8k / 63.0k (12.4% / 12.1%) · p:18141 cd:119%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`, and last the line saying who opened the fight. With [Hide names](#hiding-other-players-names) on, the copy carries `@▒▒▒▒▒▒` in place of every name but yours.
+**Copy fight** (Ctrl+C) puts the selected fight on the clipboard as plain text, names rather than icons, ready for Discord: the header, the tracked effects on one line (`Major Courage:87% … Alkosh:45%`), each player with their dps, shares, effective penetration and critical damage (`— 61.8k / 63.0k (12.4% / 12.1%) · p:18141 cd:119%`), their bars, sets and scribed skills (`Leashing Soul (Druid's Resurgence / Cowardice)`), and for anyone who taunted, what with: `taunted with Inner Rage ×262, Inner Fire ×11`, and last the lines saying who opened the fight and who died first. With [Hide names](#hiding-other-players-names) on, the copy carries `@▒▒▒▒▒▒` in place of every name but yours.
 
 **Copy session** (Ctrl+Shift+C) puts the whole list on the clipboard as a short recap of the night, for the raid lead's post: every fight in the list, live or under review, one paragraph per instance as the list groups them.
 
@@ -621,6 +632,7 @@ Not yet checked: Windows' High Contrast themes (the app picks its colours from w
 - **Last entry**: the time of the newest log line and how long ago it was: green while **live** (under two minutes), plain while idle, amber when **stale** (over thirty minutes), and red **No log file** when nothing is monitored, or `Waiting for Encounter.log (archived 3 Nov 2026, 08:46)` in the plain colour when the app itself archived and deleted the log in this run, at its start or with **Archive now** (see [Before the first fight](#before-the-first-fight)). With a fight on the pane, the bar alone says so, and the fight stays where you were reading. A `~` means the time came from the file's clock rather than its content.
 - **Zone**: the current zone and difficulty.
 - **Game data**, in amber on the right, only when there is something to say: `Game 12.2, data built for 12.1: 3 unknown sets, 2 icons missing`. The log names the game version that wrote it, and the app's bundled game data (set names, item types, skill icons, ESO-Hub links) was built for one version. After a game update, what the update added shows as `Set#<id>`, as a dash in the Build tab's Type column, or as a skill's name where its icon would be, until a release of the app brings new data; this line says so once, rather than leaving each symptom to be puzzled over. Hover it for the set ids, item ids and skill names the log named that the data does not know. Nothing else in the fight is affected. **About** lists the version the data was built for and the date of each table.
+- **⚠**, in red, while something keeps going wrong: `Split file writing stopped: …` when the [split log](#settings) cannot be written (a full disk, a folder that went away), or `Reading the log keeps failing: …` when the log cannot be read several times running. It goes once the problem does; hover it for the whole text when it is cut short.
 - A progress bar on the right while the app parses a reviewed log, catches up on a large backlog, archives, or downloads an update.
 
 ## What the numbers are based on
