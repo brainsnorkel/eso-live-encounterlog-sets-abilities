@@ -40,10 +40,13 @@ character has at most three lines, since subclassing swaps lines and never
 adds a fourth; a fourth line of passives, seen three times in the survey,
 loses to the lines whose actives are slotted.
 
-The fight view and build window show only the borrowed lines, each with a
-plus sign before its first word ("NB +Herald" for a Nightblade who swapped
-a line for Herald of the Tome), so a stock build shows just its class. A
-player whose class is unknown shows every line found.
+The fight view and build window show only the borrowed lines, each by its
+full name after a plus sign ("NB +Herald of the Tome" for a Nightblade who
+swapped a line for Herald of the Tome), so a stock build shows just its
+class. A player whose class is unknown shows every line found. The lines
+were once cut to their first word ("+Herald"); the maintainer asked for the
+full names on 2026-11-11, since 'Dark', 'Green' or 'Living' alone did not
+say which line was meant.
 
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
