@@ -227,7 +227,7 @@ TOPICS = [
         "src/fight_locator.py",
         "src/fight_reread.py",
     ]),
-    ("Positions at a paused moment", [
+    ("Positions: a moment held still, and played back", [
         "src/gui/positions_window.py",
         "src/gui/positions_canvas.py",
         "src/gui/main_window.py:MainWindow.show_moment",
