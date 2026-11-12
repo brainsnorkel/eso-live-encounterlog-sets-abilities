@@ -51,9 +51,11 @@ and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
 the list by a signal, and its pages' links are its own tab switches, but
-for a death's Positions link (issue #214), the one way out of it, which it
-hands on by a signal too, with its fight: the positions window is the main
-window's. It stores no lambda on a child.
+for a death's Positions and Events links and the This player's actions
+button beside Show in list (issue #214), the ways out of it, which it hands
+on by signals too, with its fight: the positions window and the Events tab
+are the main window's. The button is on for a player row whose casts the
+fight kept while the fight is in the list. It stores no lambda on a child.
 """
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
@@ -71,6 +73,7 @@ from PySide6.QtWidgets import (
 )
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
+from action_rows import player_row
 from gui.build_render import (
     BUILD_PART,
     NO_BUILD,
@@ -119,6 +122,10 @@ BOSS_ONLY_LABEL = "Boss targets &only"
 SHOW_IN_LIST_LABEL = "Show in list"
 SHOW_IN_LIST_TIP = "Select this fight in the fight list"
 NOT_LISTED_TIP = "This fight is not in the list now"
+ACTIONS_LABEL = "This player's actions"
+ACTIONS_TIP = ("This player's casts and the events that touched them, on the main window's "
+               "Events tab")
+NO_ACTIONS_TIP = "The app kept no casts for this player in this fight"
 REPLAYED_NOTE = ("From before Settings replayed the session: this fight is not in the "
                  "replay, so it is shown as it was.")
 NO_COMPANION_DATA = "None logged for companions."
@@ -195,6 +202,9 @@ class PlayerWindow(QDialog):
     # A death's Events link: the window's fight, the player and the moment,
     # for the main window's Events tab (issue #214)
     events_requested = Signal(object, str, int)
+    # The player's actions button: the window's fight and the player, for
+    # the main window's Events tab with Who on them (issue #214)
+    actions_requested = Signal(object, str)
 
     def __init__(self, parent=None, icons=None, config=None):
         super().__init__(parent)
@@ -207,6 +217,7 @@ class PlayerWindow(QDialog):
         self._dirty = set(TAB_KEYS)  # the pages to draw again before they show
         self._drawn = {}  # tab -> (entry, unit id) its page was last drawn for
         self._death = None  # the death the Deaths tab opens at, from 1
+        self._listed = True  # whether the fight is in the fight list
 
         layout = QVBoxLayout(self)
         # First header row: the player
@@ -246,8 +257,17 @@ class PlayerWindow(QDialog):
         self.show_in_list.setAutoRaise(True)
         self.show_in_list.setFocusPolicy(Qt.StrongFocus)  # in the Tab chain
         self.show_in_list.clicked.connect(self._on_show_in_list)
+        # The player's casts and the events that touched them, on the main
+        # window's Events tab (issue #214)
+        self.actions_button = QToolButton()
+        self.actions_button.setText(ACTIONS_LABEL)
+        self.actions_button.setAccessibleName(ACTIONS_LABEL)
+        self.actions_button.setAutoRaise(True)
+        self.actions_button.setFocusPolicy(Qt.StrongFocus)  # in the Tab chain
+        self.actions_button.clicked.connect(self._on_actions)
         fight.addWidget(self.fight_label, 1)
         fight.addWidget(self.show_in_list, 0, Qt.AlignTop)
+        fight.addWidget(self.actions_button, 0, Qt.AlignTop)
         layout.addLayout(fight)
         self.replayed_label = QLabel(REPLAYED_NOTE)
         self.replayed_label.setWordWrap(True)
@@ -388,9 +408,21 @@ class PlayerWindow(QDialog):
 
     def set_listed(self, listed: bool) -> None:
         """Whether the window's fight is in the fight list, for Show in
-        list."""
+        list and the player's actions, which select it there."""
+        self._listed = bool(listed)
         self.show_in_list.setEnabled(bool(listed))
         self.show_in_list.setToolTip(SHOW_IN_LIST_TIP if listed else NOT_LISTED_TIP)
+        self._fill_actions()
+
+    def _fill_actions(self) -> None:
+        """The player's actions button: on for a player row whose casts the
+        fight kept (not a companion's, nor a player the table does not
+        list), while the fight is in the list."""
+        kept = (getattr(self._entry, "casts", None) is not None
+                and player_row(self._entry, self._unit_id) is not None)
+        self.actions_button.setEnabled(kept and self._listed)
+        self.actions_button.setToolTip(ACTIONS_TIP if kept and self._listed
+                                       else NO_ACTIONS_TIP if not kept else NOT_LISTED_TIP)
 
     def redraw_pages(self) -> None:
         """The pen/crit settings changed (decision 10): every page drawn
@@ -439,6 +471,7 @@ class PlayerWindow(QDialog):
         for view in self._views.values():
             view.set_accessible_lead(line)
         self._fill_boss_only()
+        self._fill_actions()
         self._fill_title()
 
     def _fill_boss_only(self) -> None:
@@ -683,6 +716,12 @@ class PlayerWindow(QDialog):
     def _on_show_in_list(self) -> None:
         if self._entry is not None:
             self.show_in_list_requested.emit(self._entry)
+
+    def _on_actions(self) -> None:
+        """The player's actions button: the main window selects the fight
+        and shows this player's actions on its Events tab (issue #214)."""
+        if self._entry is not None:
+            self.actions_requested.emit(self._entry, self._unit_id)
 
     # ---- size ----
 

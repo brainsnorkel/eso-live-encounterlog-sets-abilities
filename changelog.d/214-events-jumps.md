@@ -1,2 +1,0 @@
-### Added
-- **From an event to the DPS graph, and back** (#214): Ctrl+G on a row of the Events tab, or **On the DPS graph** under the table, opens the DPS graph with that moment marked. A double-click on the graph, **Events around** in the buff strip's pop-up and **Events** on a death in a player's Deaths tab each open the Events tab on the ten seconds either side of their moment, and **Show** there can keep to the 10 or 30 seconds around the selected row

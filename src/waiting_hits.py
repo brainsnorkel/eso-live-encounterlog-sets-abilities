@@ -181,9 +181,10 @@ if TYPE_CHECKING:
 FIGHT_ON_MS = 3000
 # What the group fighting on changes in a fight's entry: the slots its
 # damage decides, and the keys of each row's (see the module notes); and
-# the fight's events (fight_events), as its deaths are taken too
+# the fight's events (fight_events) and casts (fight_casts), as its deaths
+# are taken too
 FOUGHT_ON_SLOTS = ('group_dps', 'group_boss_dps', 'dps_time_s', 'boss_dps_time_s',
-                   'damage_series', 'boss_name', 'pen_crit', 'pull', 'events')
+                   'damage_series', 'boss_name', 'pen_crit', 'pull', 'events', 'casts')
 ROW_DAMAGE_KEYS = ('dps', 'boss_dps', 'dmg_pct', 'boss_pct', 'damage', 'pen_crit')
 
 

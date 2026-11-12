@@ -44,6 +44,7 @@ from presence import present_share
 import casts
 import companions
 import fight_blocks
+import fight_casts
 import fight_events
 import fight_locator
 import fight_opener
@@ -1087,7 +1088,9 @@ class ESOLogAnalyzer(ListenerMixin):
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
-        self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
+        # Each player's casts, for the counts and cpm, and with their
+        # targets and ends for the Events tab's actions (fight_casts)
+        self.casts = casts.CastRecorder()
         # The fight's notable events, for the Events tab (fight_events)
         self.events = fight_events.EventRecorder()
         # Each player's magicka, stamina and ultimate spent and gained
@@ -1210,6 +1213,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # is logged after END_COMBAT (see LATE_DEATH_GRACE_MS)
         self._last_fight_entry: Optional[FightHistoryEntry] = None
         self._last_fight_start: int = 0
+        # The casts the last fight's entry kept, each player row's, with the
+        # encounter's id and start they were taken for: the build again for
+        # the group fighting on packs these, their ends read since (fight_casts)
+        self._built_casts: tuple | None = None
         # A fight the game cut in two (see COMBAT_RESUME_MS): the entry
         # already emitted for its first part, brought up to date when the
         # fight really ends; when the group last hit each living enemy; and
@@ -1396,7 +1403,8 @@ class ESOLogAnalyzer(ListenerMixin):
             # When a cast's track ended, which tells a synergy taken again
             # or a proc from a later line of the same cast (casts.py)
             if len(entry.fields) >= 2:
-                self.casts.note_end(entry.fields[1], casts.line_time(entry.original_line))
+                self.casts.note_end(entry.fields[1], casts.line_time(entry.original_line),
+                                    entry.fields[0])
                 # A boss's cast someone stopped (fight_events)
                 if self.events.holds_track(entry.fields[1]):
                     self._note_boss_cast_end(entry)
@@ -2620,6 +2628,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters.clear()
         self.werewolf.reset()
         self.casts.reset()
+        self._built_casts = None
         self.events.reset()
         self.resources.reset()
         self.build_issues.reset()
@@ -2800,7 +2809,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._remember_cast(entry.fields[2], ability_id)
                 # Counted for the build window and the cpm (casts.py)
                 cast_time = casts.line_time(entry.original_line)
-                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time)
+                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time,
+                                     entry.fields[14] if len(entry.fields) > 14 else "",
+                                     caster_unit_id, self._cast_target)
                 # The cast's cost is in the state it carries (resources.py)
                 self.resources.note_cast(caster.unit_id, cast_time, entry.fields[2], ability_id)
                 if len(entry.fields) >= 9:
@@ -4016,6 +4027,13 @@ class ESOLogAnalyzer(ListenerMixin):
             return enemy.name
         return ""
 
+    def _cast_target(self, unit_id: str) -> tuple[str, str] | None:
+        """(name, key) of the unit a player's cast was aimed at
+        (casts.CastRecorder, fight_casts), as fight_events names a unit;
+        None for one the engine does not know by name."""
+        name = self._resolve_recap_unit(unit_id)
+        return (name, self._event_key(unit_id)) if name else None
+
     def _event_key(self, unit_id: str) -> str:
         """A unit's key in the fight's events (fight_events): a player's
         record id, which a return on another unit id keeps; any other
@@ -4395,6 +4413,7 @@ class ESOLogAnalyzer(ListenerMixin):
         def ability_icon(ability_id):
             return self.ability_icons.get(str(ability_id), '')
 
+        fight_cast_lists = []
         for player, player_damage in players_with_damage:
             # Each player's dps over the span of their own hits, the boss
             # figure over the span of their hits on the bosses
@@ -4503,6 +4522,10 @@ class ESOLogAnalyzer(ListenerMixin):
                                                   slotted)
             entry.players[-1]['casts'] = casts.cast_summary(
                 cast_counts, duration, entry.players[-1].get('present_pct'))
+            # The same casts one by one, for the Events tab's actions
+            # (fight_casts): the counts' own, so the two agree
+            fight_cast_lists.append((player.unit_id, self.casts.cast_records(
+                player.unit_id, enc.start_time, enc.end_time, slotted)))
             # Magicka, stamina and ultimate spent and gained (resources.py)
             entry.players[-1]['resources'] = self.resources.fight_summary(
                 player.unit_id, enc.start_time, enc.end_time, duration,
@@ -4567,6 +4590,19 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['build_issues'] += food_findings(
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
+
+        # Every player row's casts, packed (fight_casts, issue #214). Built
+        # again for the group fighting on, the fight keeps the casts its
+        # first build took, as its rows keep their counts (waiting_hits),
+        # an END_CAST read since giving one its end
+        built = self._built_casts
+        if again:
+            if built is not None and built[0] == id(enc) and built[1] == enc.start_time:
+                fight_cast_lists = built[2]
+        else:
+            self._built_casts = (id(enc), enc.start_time, fight_cast_lists)
+        entry.casts = fight_casts.pack(fight_cast_lists, enc.start_time,
+                                       self._resolve_recap_ability)
 
         # A second copy of a group buff set, or a second holder of a
         # Champion Point star, that added next to nothing this session

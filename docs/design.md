@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:3719](../src/esolog_tail.py#L3719)*
+*[src/esolog_tail.py:3730](../src/esolog_tail.py#L3730)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:93](../src/esolog_tail.py#L93)*
+*[src/esolog_tail.py:94](../src/esolog_tail.py#L94)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull. Later than that, it continues a boss fight when the group has fought on its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS, issue #162).
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:2155](../src/esolog_tail.py#L2155)*
+*[src/esolog_tail.py:2163](../src/esolog_tail.py#L2163)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one: it follows the END_COMBAT
@@ -52,7 +52,7 @@ within FIGHT_ON_MS (waiting_hits).
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:2186](../src/esolog_tail.py#L2186)*
+*[src/esolog_tail.py:2194](../src/esolog_tail.py#L2194)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -60,7 +60,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:87](../src/esolog_tail.py#L87)*
+*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -68,7 +68,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:2383](../src/esolog_tail.py#L2383)*
+*[src/esolog_tail.py:2391](../src/esolog_tail.py#L2391)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -383,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:5841](../src/esolog_tail.py#L5841)*
+*[src/esolog_tail.py:5877](../src/esolog_tail.py#L5877)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -426,7 +426,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:376](../src/esolog_tail.py#L376)*
+*[src/esolog_tail.py:377](../src/esolog_tail.py#L377)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -879,6 +879,13 @@ are not skills were those ids and Mount Up. So its extras line has kinds
 of its own (COMPANION_EXTRA_KINDS), Block among them, which a player's
 never needs (a player's block writes no cast), and a player's 'casts'
 stays as it was.
+
+Each cast the recorder keeps also holds the unit it was aimed at, named
+as it is noted, and the time of the END_CAST its track wrote next, with
+whether that said INTERRUPTED (issue #214): the Events tab's actions show
+them, from the fight entry's packed copy (fight_casts). Nothing here
+counts them, so the counts are as they were; cast_records gives the
+counts' casts one by one.
 
 ## Magicka, stamina and ultimate spent and gained
 
@@ -1549,7 +1556,7 @@ finding's set link, so all three show the same hover (issue #79).
 
 ### FightView._show_key_tip
 
-*[src/gui/fight_view.py:321](../src/gui/fight_view.py#L321)*
+*[src/gui/fight_view.py:325](../src/gui/fight_view.py#L325)*
 
 Design: Hover text from the keyboard. A link's hover text was the
 mouse's alone: Qt reports a hovered link (highlighted) and nothing
@@ -2572,7 +2579,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:1029](../src/esolog_tail.py#L1029)*
+*[src/esolog_tail.py:1030](../src/esolog_tail.py#L1030)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2613,13 +2620,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:113](../src/esolog_tail.py#L113)*
+*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:426](../src/esolog_tail.py#L426)*
+*[src/esolog_tail.py:427](../src/esolog_tail.py#L427)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2703,7 +2710,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:130](../src/esolog_tail.py#L130)*
+*[src/esolog_tail.py:131](../src/esolog_tail.py#L131)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2711,7 +2718,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:153](../src/esolog_tail.py#L153)*
+*[src/esolog_tail.py:154](../src/esolog_tail.py#L154)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2887,11 +2894,21 @@ The group fighting on after the fight's END_COMBAT counts in the fight
 a dashed line where the fight ended, so that damage keeps its own seconds
 instead of piling into the fight's last.
 
+A moment can be marked on the chart (issue #214): an Events row asked for
+with Ctrl+G is a line down both panels in the palette's highlight, with
+its time and what happened at the plot's top, on the side that has room.
+The chart and the Events tab count time alike, from the fight's start, so
+the mark needs no conversion. It stays through the same fight drawn again
+and goes with the fight. A double-click on the chart asks for the events
+around the second under it (moment_requested); the keyboard's way to a
+moment is the Events tab itself, whose rows the arrow keys walk. The mark
+is in the chart's description for a screen reader, after its lines.
+
 ## Pets: whose damage and healing they are
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:710](../src/esolog_tail.py#L710)*
+*[src/esolog_tail.py:711](../src/esolog_tail.py#L711)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2914,7 +2931,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:857](../src/esolog_tail.py#L857)*
+*[src/esolog_tail.py:858](../src/esolog_tail.py#L858)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2946,7 +2963,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:5039](../src/esolog_tail.py#L5039)*
+*[src/esolog_tail.py:5075](../src/esolog_tail.py#L5075)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3682,9 +3699,11 @@ and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
 the list by a signal, and its pages' links are its own tab switches, but
-for a death's Positions link (issue #214), the one way out of it, which it
-hands on by a signal too, with its fight: the positions window is the main
-window's. It stores no lambda on a child.
+for a death's Positions and Events links and the This player's actions
+button beside Show in list (issue #214), the ways out of it, which it hands
+on by signals too, with its fight: the positions window and the Events tab
+are the main window's. The button is on for a player row whose casts the
+fight kept while the fight is in the list. It stores no lambda on a child.
 
 ## The fight's tabs: Fight, Deaths and Instance
 
@@ -3742,7 +3761,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1664](../src/gui/main_window.py#L1664)*
+*[src/gui/main_window.py:1671](../src/gui/main_window.py#L1671)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -4047,6 +4066,19 @@ selects its first row, as the text pages put the cursor on the first
 match; cleared, the row selected stays and comes into view among the
 others.
 
+Around a moment. Show's ± choices keep the rows within 10 or 30 seconds
+of a moment: the row selected when the choice is made, named in the count
+beside it. The moment stays as the reader picks other rows, so the window
+does not slide under them, and from ±10 s to ±30 s; it belongs to its
+fight, and another fight goes back to the whole. It is how the other views
+open the tab (show_around): a double-click on the DPS graph, the buff
+strip's pop-up and a death's Events link in the player window each send
+their moment, where the study had a double-click on the strip too: a click
+there already opens the pop-up, so the pop-up carries the link. The other
+way, Ctrl+G or the link that ends the line under the table marks the row's
+moment on the DPS graph (graph_requested), with what happened and no name,
+so the mark needs no mask.
+
 Keeping the reader's place. A new fight selects its first death, the
 moment a wipe turns on, else its first row. The same fight drawn again (it
 changed: a death logged after combat ended, the fight the game had cut in
@@ -4075,6 +4107,152 @@ the table, and Detail takes the rest: at 200% text in that column, Detail
 had a quarter of the table while Ability and Who took their whole cells. A
 cut cell is whole in its hover, and the row selected is whole on the line
 under the table, as the study's design has it.
+
+Design: one player's actions on the Events tab (issue #214). Who, first on
+the bar, picks Everyone (the rows above) or one of the fight's player
+rows (action_rows.players: tanks, healers, then damage dealers, each in
+the table's order; companions' casts are not kept), and the table lists
+that player's casts with the events that touched them (action_rows has
+the rules). It lives here rather than on an eighth tab of the player
+window, the maintainer's choice: that window has no search and would need
+more than its width at 200% text. The table takes the mode's columns
+(ACTION_COLUMNS: Time, Bar, LA, Action, Target, Length, Gap, Detail) and
+is named Player actions for a screen reader; a column no row of the
+player's fills is hidden (HIDEABLE), judged on all their rows rather than
+the ones the filters leave, so columns do not come and go as boxes are
+ticked.
+
+The controls keep their meaning for one player. The casts are always
+shown; Deaths, Boss, Big hits and Taunt swaps show or hide the player's
+events of that kind; Phases is greyed out, its rows (the map, combat begun
+again, the trial's end) being context rows (action_rows._context_rows),
+which More's Context switch shows with the bosses' health and deaths. More's three kinds are everyone's and greyed
+out for one player, and the player's switches (ACTION_SWITCHES: light
+attacks as rows, swaps as rows, context) are greyed out for everyone; the
+count on More is of the items on that apply. Context rows are italic in
+the palette's placeholder colour, the fight around the player rather than
+the player's own. Show, the search, the line under the table, Ctrl+G and
+Enter on a death's row work on the player's rows as on everyone's. The
+marks are words to a screen reader and on the line under the table ('after
+a weapon swap', 'after a light attack'), whose two seconds are labelled
+('lasted 1.6 s', '1.1 s after the skill before'), as they would read
+alike there.
+
+Who changed keeps the reader's moment: the other mode's rows from the
+selected row's time on. The player picked carries to the next fight as
+the DPS graph's legend ticks do, by legend_key (the handle, or an
+anonymous player's zone and unit id): a fight without them shows everyone,
+and the next fight with them picks them again. A jump from another view
+keeps the mode, but a death's Events link for another player than the one
+picked goes back to everyone, whose rows hold that death. The player
+window's This player's actions button selects its fight in the list and
+opens the tab on the player (show_player), at their first death, else
+their first row.
+
+## The Events tab: one player's actions
+
+### src/fight_casts.py
+
+*[src/fight_casts.py:1](../src/fight_casts.py#L1)*
+
+Every group player's casts in a fight, packed for the fight's entry, for the
+Events tab's actions (issue #214, action_rows): when each cast began, the
+ability, the unit it was aimed at and how long it lasted.
+
+Design: one player's casts on the fight entry (issue #214). The casts are
+casts.CastRecorder's, the ones the Build tab counts: one per castTrackId,
+a synergy taken again counted, a proc left out unless it is of a skill on
+the player's bars (#226), taken by the same call (cast_records) the
+counts are, for each player row of the fight, so a player's casts here are
+their row's casts['total'] (the replay below checks it). Companions' casts
+are left out. Each cast keeps:
+
+- its time, from the fight's start (the casts begun before the pull are
+  not the fight's, as in the counts);
+- its ability id; the names and icons are a table of the fight's abilities;
+- the unit it was aimed at, named as the cast is noted, as fight_events
+  names its units (an id is handed out again in a later zone): the target
+  unit of the BEGIN_CAST line, unless the line names none ('0') or the
+  caster ('*', or the caster's own unit or record);
+- its length: the time from its BEGIN_CAST to its END_CAST, when the log
+  wrote one, never the BEGIN_CAST's own duration field; and whether that
+  END_CAST says INTERRUPTED. A cancelled cast's END_CAST (PLAYER_CANCELLED)
+  never reaches the engine, as the parser rejects it, so that cast has no
+  length.
+
+The form: a fight's casts are packed when its entry is built, like the
+events (fight_events), into one bytes object of fixed-size records for
+each player, a table of the targets they name and a table of the
+abilities, immutable as an entry must be once it crosses to the GUI's
+thread. A record is 17 bytes (time, ability id, target, length, flags).
+Kept apart from the events rather than in them: an event's record is 38
+bytes, and a cast needs none of its strings but the target. The casts
+live as the events do: built with the entry, gone from the recorder at the
+fight's start but when the build is the one the group fighting on asks
+for (again), and taken by that rebuild (waiting_hits.FOUGHT_ON_SLOTS)
+with the deaths and the events, an END_CAST read after END_COMBAT then
+giving the cast its length.
+
+### src/action_rows.py
+
+*[src/action_rows.py:1](../src/action_rows.py#L1)*
+
+One player's actions on the Events tab (issue #214): their casts in the
+order begun, with the events that touched them between, when the tab's Who
+picks a player. Qt-free: the tab draws what this gives (gui.events_tab).
+
+Design: one player's actions, the Events tab's second mode (issue #214).
+The study's design (build/surveys/timeline-214-2026-11-11, design/lists,
+section 2.2) as the maintainer trimmed it: no judgement marks (no idle
+share, no amber gaps, no 'weave' or 'miss'), a gap a plain number, and the
+rows below.
+
+- A cast is a row: when it began, its bar slot, the ability, the unit it
+  was aimed at, its length and the gap since the skill before. The casts
+  are the fight entry's (fight_casts), the Build tab's own count of them.
+- Bar: F1 to F5 and FU on the front bar, B1 to B5 and BU on the back, W
+  on a werewolf bar the engine rebuilt, for the slot whose skill the cast
+  is (casts.slot_holds, as the Build tab puts a count under a slot): a
+  skill slotted on both bars reads 'F3/B3', since the log does not say
+  which bar was up. Blank for a cast no slot holds.
+- A light attack begun LA_FOLD_MS or less before a skill is that skill's
+  mark in the LA column rather than a row of its own, and a weapon swap is
+  a mark (SWAP_MARK) on the Bar of the next cast begun within
+  SWAP_FOLD_MS. A light attack no skill follows so soon, or a swap no cast
+  follows, stays a row. The tab's More holds both as rows instead.
+- Length: from the cast's BEGIN_CAST to its END_CAST, shown only when the
+  log wrote one and it is INSTANT_MS or longer. Over the Kyne's Aegis split
+  of 2026-10-11, 15,026 of the 17,641 END_CASTs came in the cast's own
+  millisecond and 234 one millisecond later (Swap Weapons, light attacks,
+  Bash: casts whose BEGIN_CAST gives no duration), all instants; a
+  channelled heavy attack, Claw Fury or Insatiable Hunger lasts 0.5 to 4.5
+  s. The BEGIN_CAST's own duration field is never read: it is what the
+  cast would take, not what it took.
+- Gap: the seconds since the skill before began, for a skill (a cast that
+  is none of casts.EXTRA_KINDS: no light or heavy attack, swap, potion
+  and the like). A plain number.
+- Between the casts, the events that touched the player, from the fight's
+  events (fight_events) by their rules (event_rows): their deaths and
+  returns; the hits they took of 30% of their maximum health or more,
+  chained as the tab's Big hits are, the killing hit left to the death's
+  row; the bosses' casts aimed at them, a burst of one ability one row;
+  the taunt swaps they were in. Then context rows, drawn muted: the
+  bosses' health marks, their stretches with no health lost, a boss's
+  death, and the rows the tab's Phases box shows for everyone (the map
+  changing, the game ending combat and beginning it again, the trial's
+  end), whose box is greyed out for one player.
+- No cast for N s: for the player who writes the log alone (the row the
+  game flags isLocalPlayer), a stretch of IDLE_MS or more with no cast of
+  theirs going on, from the end of a cast (its END_CAST, else its start)
+  to the next one's start, the fight's start and end included, less the
+  time they were dead (a death to their return, or to the end). The
+  client writes every cast of its own player, so a gap there is the
+  player's; another player's casts reach the log only while that player
+  is near enough to the logging one, so a gap in theirs can be the log's,
+  and none is drawn. The row names what the log can say of the stretch:
+  big hits the player blocked (a block writes no cast), a boss that lost
+  no health then, the map changing, the game ending combat and beginning
+  it again; else nothing more.
 
 ## Experimental buff timeline
 
@@ -4139,7 +4317,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:236](../src/gui/timeline_strip.py#L236)*
+*[src/gui/timeline_strip.py:240](../src/gui/timeline_strip.py#L240)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -4401,7 +4579,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1282](../src/gui/main_window.py#L1282)*
+*[src/gui/main_window.py:1289](../src/gui/main_window.py#L1289)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -4460,13 +4638,13 @@ fight, which no replay builds again, keeps it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:3051](../src/gui/main_window.py#L3051)*
+*[src/gui/main_window.py:3137](../src/gui/main_window.py#L3137)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:1105](../src/gui/main_window.py#L1105)*
+*[src/gui/main_window.py:1112](../src/gui/main_window.py#L1112)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -4511,13 +4689,13 @@ lacks.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:170](../src/gui/fight_view.py#L170)*
+*[src/gui/fight_view.py:174](../src/gui/fight_view.py#L174)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:394](../src/gui/fight_view.py#L394)*
+*[src/gui/fight_view.py:398](../src/gui/fight_view.py#L398)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -4809,15 +4987,15 @@ from a plain file and 27 MB from a zip. RereadRunner reads on a thread of
 its own, not the review's, whose one job can run for minutes, and a cancel
 is seen between chunks.
 
-## Positions at a paused moment
+## Positions: a moment held still, and played back
 
 ### src/gui/positions_window.py
 
 *[src/gui/positions_window.py:1](../src/gui/positions_window.py#L1)*
 
-The positions window (issue #214): one fight paused at a moment, where
-everyone stood, with their health, opened from a death (and later from an
-event) of the fight.
+The positions window (issue #214): one fight at a moment, where everyone
+stood, with their health, opened from a death (and later from an event) of
+the fight, held still or played back (#232).
 
 Design: One window, re-used, beside the main window, as the player window
 is (a QDialog child of it, never deleted before it, hidden by Esc): it
@@ -4828,10 +5006,11 @@ and the moment ('Lord Falgravn · Kyne's Aegis VET · Kill · 1:50.0 of
 (positions_canvas) beside a table of the same units in a splitter, the
 line under the canvas naming who is not drawn ('Not on this map: 6, 11');
 the controls (previous death, a second back, the moment's clock, a second
-on, next death, Show); and the scrub bar. Decided for #214: paused
-moments only (no playback, no animation, no casts yet), players, bosses
-and adds drawn, pets, companions, unannounced and other units each one
-toggle away in Show.
+on, next death, Show); and Play, the speed and the scrub bar, a row of
+their own (the controls' row had no room left at 200% text). Decided for
+#214: players, bosses and adds drawn, pets, companions, unannounced and
+other units each one toggle away in Show, no casts yet; #232 added
+playback (below).
 
 What it draws comes from two places. The fight entry gives the numbers,
 the roles and the deaths: a player's number is the place of their row in
@@ -4899,9 +5078,15 @@ the moment in words, names through the mask. Ctrl+H and the text size
 keys are the main window's, application-wide, and never bound here: a
 second binding makes both ambiguous and neither fires (probed on Ctrl+0).
 The bare keys belong to the focused scrub bar: Left and Right, Shift, Home
-and End, PgUp and PgDn. The buttons are QToolButtons: a QPushButton in a
-dialog takes Enter even with the focus elsewhere (probed). Tab goes from
-the scrub bar to the table to the buttons.
+and End, PgUp and PgDn. Space alone is not a shortcut, which would take it
+from a focused button too: the table and the scrub bar leave a plain Space
+to the window (keyPressEvent), which plays or pauses, while a button and
+the speed picker keep their own. Ctrl+, and Ctrl+. play slower and faster,
+as the < and > of a video player. The buttons are QToolButtons: a
+QPushButton in a dialog takes Enter even with the focus elsewhere
+(probed); they and the speed picker take the focus by Tab only, so a click
+leaves it in the table. Tab goes from the scrub bar to the table to Play,
+the speed and the buttons.
 
 Hide names. The main window hands the window the mask of its fight
 (NameMask.for_entry, from the entry's player_names). The window extends it
@@ -4912,31 +5097,99 @@ the roster drops them, but not in player_names. Bosses, adds and pets are
 never hidden. On the canvas a hidden name is drawn as '@' and its
 pixelated stand-in, as the pages draw it.
 
+Playback (#232). Play runs the moment on from where it is at the speed
+picked, 1x to 5x, and only the reader starts it, by Play or Space: no
+link, no states read, no speed and no redraw does (the guide's
+Accessibility says so, under Motion). The moment is reckoned from the
+wall clock, never counted in frames: the moment and the wall time at Play
+or at a new speed, plus the wall time since times the speed, so a slow
+frame shows a later moment and never slows the fight. Frames come from a
+precise QTimer every FRAME_MS, about 30 a second (the measures below),
+running only while playing. It pauses by itself at the fight's end
+(END_COMBAT, not the tail after it, and never at a death); Play there, or
+in the tail, starts again from the fight's start. A step, a scrub or a
+death pauses at the moment it goes to, as does a link: the reader asked
+for that moment, held still. Selecting a unit, a speed and Show play on,
+as they move no moment. A hide stops it, and a minimised window, whose
+hide is spontaneous and which keeps its states, pauses: the moment does
+not run on unseen. New states, states dropped and a Settings replay pause
+too.
+
+Gliding. While playing, a mark moves on a straight line between two
+logged samples at most GLIDE_MS (1 s) apart (positions_canvas.glide_state):
+from the last line that wrote its place, the reader's seen (a unit
+standing still is written again and again, so the state's own time would
+start the glide early), to the next state's first, in one map frame and
+both on their map. Its facing, health and pools stay the last sample's.
+Further apart it waits at its last place, as paused: a line over a longer
+gap, which the canvas marks dashed after STALE_MS anyway, would draw a
+path the log never gave. Paused, nothing glides: every mark stands where
+its last state put it, and Pause redraws the whole moment as a step to it
+does, so a paused window is the #214 window to the pixel
+(test_positions_playback_gui compares the two).
+
+What a reader reads, while playing. A frame moves the picture, the clock,
+the boss bars' paint and the scrub bar's mark. The table, the header, the
+line under the canvas, the descriptions (the canvas's, the table's, the
+boss bars'), and the scrub bar's value and description follow once a
+DESCRIBE_MS (1 s) of wall time, and in full at Pause: a screen reader is
+not handed 30 changes a second. Those updates leave the table's scroll and
+current row alone; the clock has a fixed size, so its new text asks
+nothing of the layout (it asked for one every fifth frame), and the
+canvas, which fills itself, is opaque, so the window, the splitter and the
+pane under it are not painted again with it.
+
+Measured (build/playback232/measure_paint.py): Lord Falgravn, a 284 s
+Kyne's Aegis kill, 12 players with adds, 108 tracks, every frame of the
+fight at 1x, offscreen, the machine busy with another job (an earlier,
+quieter run of the paused code painted the canvas in 3.3 ms against
+5.4). At 200% text and device pixel
+ratio 2: the glided scene a median 0.66 ms (p99 1.3; paused, 0.59), the
+canvas's paint 5.4 ms (p99 8.7, as paused), a whole frame, tick and
+repaint, 7.7 ms (p90 10.4, p99 12.7, at most 16.8), 14 units drawn at the
+median and 29 at most. At 100% text and ratio 1: the canvas 3.4 ms, a
+frame 4.7 ms (p99 9.2). At 60 frames a second the UI thread would be half
+busy at 200% with its p99 frame near the 16.7 ms interval; at 30 it is a
+quarter busy with room, and a frame late only skips.
+
 It holds no reference to the main window and stores no lambda on a child;
-its only timer is its own single-shot 0 ms redraw, which draws a burst of
-updates to the fight once.
+its timers are its own: the single-shot 0 ms redraw, which draws a burst
+of updates to the fight once, and playback's frames.
 
 ### src/gui/positions_canvas.py
 
 *[src/gui/positions_canvas.py:1](../src/gui/positions_canvas.py#L1)*
 
-The positions canvas (issue #214): where everyone stood at one paused
-moment of a fight, drawn on a plain 2D canvas, with the boss bars above it
-and the scrub bar the moment is chosen on. The positions window
-(positions_window) holds the fight and its re-read states (fight_reread)
-and hands these widgets a Scene for each moment.
+The positions canvas (issue #214): where everyone stood at one moment of a
+fight, drawn on a plain 2D canvas, with the boss bars above it and the
+scrub bar the moment is chosen on. The positions window (positions_window)
+holds the fight and its re-read states (fight_reread) and hands these
+widgets a Scene for each moment, held still or, while it plays (#232),
+for each frame.
 
-Design: A paused moment, drawn directly. Nothing moves by itself: the
-canvas is repainted on a step, a selection, a resize, a theme or Hide
-names flip, or a new text size, and a full repaint is cheap. Measured
-offscreen for the study (build/positions214/paint): 60 markers with rings,
-noses, bodies and numbers in 2.2 to 3.4 ms at device pixel ratio 1 and 4.7
-to 7.9 ms at ratio 2; twelve players alone 1.3 to 2.0 ms. Over every
-second of six real 12-player boss fights (build/positions214/window/
-probe_piles_out.txt) this canvas repainted in a median 1.9 to 4.2 ms, a
-step of the moment cost 0.5 to 1.6 ms and the whole window's repaint 5.7
-to 11.3 ms. So there is no sprite or frame cache, no QGraphicsView and no
-timer here.
+Design: A moment, drawn directly. Nothing moves by itself: the canvas is
+repainted on a step, a selection, a resize, a theme or Hide names flip, a
+new text size, or a frame of playback, which only the reader's Play
+starts, and a full repaint is cheap. Measured offscreen for the study
+(build/positions214/paint): 60 markers with rings, noses, bodies and
+numbers in 2.2 to 3.4 ms at device pixel ratio 1 and 4.7 to 7.9 ms at
+ratio 2; twelve players alone 1.3 to 2.0 ms. Over every second of six real
+12-player boss fights (build/positions214/window/probe_piles_out.txt)
+this canvas repainted in a median 1.9 to 4.2 ms, a step of the moment cost
+0.5 to 1.6 ms and the whole window's repaint 5.7 to 11.3 ms. Played back
+at 200% text and ratio 2, a frame of a 284 s Lord Falgravn kill painted
+the canvas in a median 5.4 ms on a busy machine, as paused, and built its
+glided scene in 0.66 ms (positions_window has the measures and the frame
+rate). So there is no sprite or frame cache, no QGraphicsView and no timer
+here; the canvas is opaque (it fills itself first), so a frame does not
+paint the panes under it again.
+
+Playback glides, a paused moment never does (glide_state, build_scene's
+glide): while the window plays, a mark moves on a straight line between
+two logged samples at most GLIDE_MS apart, from the last line that wrote
+its place to the next state's first, in one map frame, both on their map;
+only its place moves. Paused, every mark is where its last state put it.
+The window's notes say why.
 
 One box per map frame. The log's coordinates are fractions of the map the
 last MAP_CHANGED line named, so places in two frames are never joined: each
@@ -5026,7 +5279,7 @@ own: Qt's focus frame (PE_FrameFocusRect) draws a 6,000 px tint over a
 
 ### MainWindow.show_moment
 
-*[src/gui/main_window.py:2536](../src/gui/main_window.py#L2536)*
+*[src/gui/main_window.py:2553](../src/gui/main_window.py#L2553)*
 
 The positions window on the fight *entry* at the moment *t_ms*
 (ms since its session's BEGIN_LOG, the locator's own clock), the
@@ -5503,7 +5756,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:780](../src/gui/fight_view.py#L780)*
+*[src/gui/fight_view.py:784](../src/gui/fight_view.py#L784)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -5591,7 +5844,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:643](../src/gui/fight_view.py#L643)*
+*[src/gui/fight_view.py:647](../src/gui/fight_view.py#L647)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
