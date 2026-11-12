@@ -2,6 +2,16 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.41.0] - 2026-11-12
+
+### Added
+- **Where everyone stood at a death** (#214): the time on each row of the Deaths tab, and **Positions** on each death in a player's window and at the end of the fight's header, open a new window with the fight held still at that moment, seen from above. The players are numbered marks shaped by their role, with a ring for their health, beside the bosses and the adds, and a table lists each one's health, shield, magicka, stamina and ultimate, which a screen reader can read (above 150% text it leaves out magicka and stamina and gives health as a share, to fit; Ctrl+C copies them all). Step a second at a time (a tenth with Shift), go from death to death, or click the bar for any moment. Pets, companions and other units are a click away in **Show**. The app reads the fight's lines from the log again to draw it, from the session's split log, the live log or an archive, and says so when they are no longer on disk
+- **The death recap shows the player's own casts** (#214): each skill, light or heavy attack, swap, dodge, synergy and potion begun in the recap's seconds sits among the hits and heals, at its time, marked `Cast`, so the table shows what the player was pressing as the damage came in
+
+### Fixed
+- **A log line the game is still writing is read once it is whole** (#214): the app now reads the log as bytes and leaves a half-written last line for its next read. Before, it read the two halves as two broken lines, which could lose a hit or, in a test, a whole fight. No such broken line turned up in 411 split logs, so this was rare. Starting in the middle of a session also no longer misses the session's first line when it falls on a 1 MB boundary of the search (about one start in a million)
+- **Casts count presses, not procs** (#226): a synergy taken again, which the game writes under the first take's id, counts as a second cast; procs the game writes as casts over and over (Meridia's Favor, Highland Sentinel, Blood Magic) no longer count in the Other row's total or the casts per minute; and a scribed banner pressed in one fight no longer counts as cast again in each later fight it ticks through
+
 ## [0.40.0] - 2026-11-11
 
 ### Added
