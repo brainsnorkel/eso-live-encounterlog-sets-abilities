@@ -226,15 +226,21 @@ def main():
                         str(deaths[0]["unit_id"]))
         window = win._positions_window
         t0 = time.time()
-        while time.time() - t0 < 60 and not window.has_states_for(locator):
+        while (window is not None and time.time() - t0 < 60
+               and not window.has_states_for(locator)):
             pump(0.2)
         pump(1)
-        if window.has_states_for(locator):
+        if window is None:
+            # show_moment opens nothing for a log whose session it does not
+            # know (no BEGIN_LOG: death_render.positions_known)
+            print("  (no session start in this log: positions-window.png not written)")
+        elif window.has_states_for(locator):
             save(window, "positions-window.png")
         else:
             print("  (the fight's lines were not read in time: positions-window.png not written)")
-        window.hide()
-        pump(0.5)
+        if window is not None:
+            window.hide()
+            pump(0.5)
     else:
         print("  (no death or no locator in this fight: positions-window.png not written)")
 

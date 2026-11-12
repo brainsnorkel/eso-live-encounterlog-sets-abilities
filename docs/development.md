@@ -245,7 +245,7 @@ Local tools, run by hand; each one's docstring has its usage.
 | Script | What it does |
 |---|---|
 | `scripts/check_fight_reread.py` | Checks the fight re-reader (`fight_reread.py`) against the engine on real split logs. Run it after any change to the engine's identity rules, the fight locator or the log format. |
-| `scripts/dedupe_splits.py` | Moves byte-identical copies of split logs, which versions before 0.18.0 wrote, to the Recycle Bin (issue #85). |
+| `scripts/dedupe_splits.py` | Moves byte-identical copies of split logs, which versions before 0.19.0 wrote, to the Recycle Bin (issue #85). |
 | `scripts/survey_fight_opener.py`, `scripts/survey_masteries.py` | Replay a folder of logs through the engine and count who opens fights (issue #159), and which Class Masteries the fight pane shows (issue #149, for `generate_class_passives.MASTERIES_TAKEN`). |
 | `scripts/simulate_eso_logging.py` | Copies a log into another file a few lines at a time, as the game writes it, to try the tailing without playing. |
 | `scripts/changelog_check.py` | The *Changelog* check `.github/workflows/changelog.yml` runs on each pull request (see [Releasing](#releasing)). |
