@@ -245,8 +245,9 @@ class TestPositionsWindow(AccessibilityTestCase):
     """The positions window (issue #214): its painted canvas is named and
     describes the moment in numbers, never names; the table beside it is
     the reader's surface, a real table whose hidden names read 'hidden
-    name'; the scrub bar is a slider with the moment in words; no
-    animation runs, so Reduce motion has nothing to stop."""
+    name'; the scrub bar is a slider with the moment in words; nothing
+    moves until the reader presses Play (#232), so Reduce motion has
+    nothing to stop."""
 
     def _window(self, hide=False):
         from fight_reread import RereadEvent
@@ -301,14 +302,21 @@ class TestPositionsWindow(AccessibilityTestCase):
         self.assertEqual(_described(window.boss_bars), "Test Boss 95% (950,000 of 1,000,000)")
 
     def test_nothing_moves_by_itself(self):
+        """Its timers are the single-shot redraw of a burst of updates and
+        playback's frames (#232), which run only after the reader's Play:
+        opened and read, neither runs."""
         from PySide6.QtCore import QTimer
         window = self._window()
         timers = window.findChildren(QTimer)
-        # Its one timer is the single-shot redraw of a burst of updates
-        self.assertEqual(len(timers), 1)
-        self.assertTrue(timers[0].isSingleShot())
-        self.assertEqual(timers[0].interval(), 0)
-        self.assertFalse(timers[0].isActive())
+        self.assertEqual(len(timers), 2)
+        redraw = [timer for timer in timers if timer.isSingleShot()]
+        self.assertEqual([timer.interval() for timer in redraw], [0])
+        self.assertFalse(any(timer.isActive() for timer in timers))
+        self.assertFalse(window.is_playing())
+        window.play()
+        self.assertTrue(any(timer.isActive() for timer in timers))
+        window.pause()
+        self.assertFalse(any(timer.isActive() for timer in timers))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+### Added
+- **The positions window plays a fight back** (#232): **Play**, beside the bar under the picture, runs the fight on from the moment shown at 1x to 5x the fight's pace (Space in the table or on the bar plays or pauses; Ctrl+, and Ctrl+. go slower and faster) and stops at the fight's end. While it plays, a mark glides between two places the log gave for it at most a second apart; paused, every mark stands where the log last put it, exactly as before. The table and what a screen reader reads follow once a second while it plays, and nothing moves until you press Play.
