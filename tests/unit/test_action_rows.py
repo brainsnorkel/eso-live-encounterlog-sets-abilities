@@ -378,6 +378,25 @@ class TestEventsBetween(unittest.TestCase):
         self.assertFalse(any(row.muted for row in ar.action_rows(self.entry, "2")
                              if row.category != ar.CONTEXT))
 
+    def test_the_phases_rows_are_context_rows(self):
+        """Phases is greyed out for one player: its rows (the map, combat
+        begun again, the trial's end) are context rows there, as its
+        tooltip says, worded as event_rows words them."""
+        import event_rows
+        entry = _entry({"1": [_cast(500, FORCE_PULSE)]}, duration_s=40.0,
+                       notes=[("note_map", 10000, "Upper"), ("note_resumed", 12000, 36)])
+        entry.trial_result = {"score": 1}
+        rows = [row for row in ar.action_rows(entry, "1") if row.category == ar.CONTEXT]
+        self.assertEqual([(row.t, row.action) for row in rows],
+                         [(10000, "Map: Upper"), (12000, "Combat: resumed"),
+                          (40000, "Trial: ended")])
+        self.assertTrue(all(row.muted for row in rows))
+        phases = [row for row in event_rows.event_rows(entry) if row.category == "phases"]
+        self.assertEqual([(row.t, row.detail) for row in rows[1:]],
+                         [(row.t, row.detail) for row in phases[1:]])
+        self.assertFalse([row for row in ar.shown(ar.action_rows(entry, "1"), [], context=False)
+                          if row.category == ar.CONTEXT])
+
     def test_in_time_order_and_shown_by_category(self):
         rows = ar.action_rows(self.entry, "1")
         self.assertEqual([row.t for row in rows], sorted(row.t for row in rows))

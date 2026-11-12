@@ -39,8 +39,10 @@ rows below.
   chained as the tab's Big hits are, the killing hit left to the death's
   row; the bosses' casts aimed at them, a burst of one ability one row;
   the taunt swaps they were in. Then context rows, drawn muted: the
-  bosses' health marks, their stretches with no health lost, the map
-  changing and a boss's death.
+  bosses' health marks, their stretches with no health lost, a boss's
+  death, and the rows the tab's Phases box shows for everyone (the map
+  changing, the game ending combat and beginning it again, the trial's
+  end), whose box is greyed out for one player.
 - No cast for N s: for the player who writes the log alone (the row the
   game flags isLocalPlayer), a stretch of IDLE_MS or more with no cast of
   theirs going on, from the end of a cast (its END_CAST, else its start)
@@ -318,7 +320,11 @@ def _taunt_rows(records: list, key: str, abilities: dict) -> list:
     return rows
 
 
-def _context_rows(records: list) -> list:
+def _context_rows(entry, records: list) -> list:
+    """The fight around the player, muted: the bosses' health marks and
+    stretches untouched, a boss's death, and the tab's Phases rows (the
+    map, combat begun again, the trial's end, worded as event_rows words
+    them), which the Phases box shows for everyone."""
     rows = []
     for r in records:
         if r.kind == fe.BOSS_HEALTH:
@@ -332,9 +338,17 @@ def _context_rows(records: list) -> list:
             row = Row(r.t, CONTEXT, "Map", r.other, "", "", (), "the map changed", False, None)
         elif r.kind == fe.BOSS_DIED:
             row = Row(r.t, CONTEXT, "Boss died", r.who, "", r.who, (), "killed", False, None)
+        elif r.kind == fe.RESUMED:
+            row = Row(r.t, CONTEXT, "Combat", "resumed", "", "", (),
+                      f"the game ended combat and began it again {r.value} ms later; one fight",
+                      False, None)
         else:
             continue
         rows.append(_event_row(row, muted=True))
+    if getattr(entry, "trial_result", None):
+        rows.append(_event_row(Row(round(float(getattr(entry, "duration_s", 0) or 0) * 1000),
+                                   CONTEXT, "Trial", "ended", "", "", (),
+                                   "the trial's end line (END_TRIAL)", False, None), muted=True))
     return rows
 
 
@@ -452,7 +466,7 @@ def action_rows(entry, key: str, light_rows: bool = False, swap_rows: bool = Fal
     deaths, died = _death_rows(entry, records, key)
     rows += (deaths + _hit_rows(records, key, event_abilities, died)
              + _boss_cast_rows(records, key, event_abilities)
-             + _taunt_rows(records, key, event_abilities) + _context_rows(records))
+             + _taunt_rows(records, key, event_abilities) + _context_rows(entry, records))
     if p.get("is_local"):
         rows += _idle_rows(entry, key, casts, records)
     rows.sort(key=lambda row: (row.t, _RANK.get(row.category, 2)))

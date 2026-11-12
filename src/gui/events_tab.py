@@ -90,8 +90,8 @@ ticked.
 The controls keep their meaning for one player. The casts are always
 shown; Deaths, Boss, Big hits and Taunt swaps show or hide the player's
 events of that kind; Phases is greyed out, its rows (the map, combat begun
-again) being context rows, which More's Context switch shows with the
-bosses' health and deaths. More's three kinds are everyone's and greyed
+again, the trial's end) being context rows (action_rows._context_rows),
+which More's Context switch shows with the bosses' health and deaths. More's three kinds are everyone's and greyed
 out for one player, and the player's switches (ACTION_SWITCHES: light
 attacks as rows, swaps as rows, context) are greyed out for everyone; the
 count on More is of the items on that apply. Context rows are italic in
