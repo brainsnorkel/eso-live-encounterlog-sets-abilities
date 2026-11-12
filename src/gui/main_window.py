@@ -50,6 +50,7 @@ from gui.death_render import (
 )
 from gui.dps_graph import DpsGraphPanel
 from gui.engine_worker import EngineWorker
+from gui.events_tab import EventsPage
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
 from gui.fight_render import (
@@ -251,6 +252,10 @@ class MainWindow(QMainWindow):
         self._chosen_tab = 0
         self._deaths_entry = None
         self._deaths_dirty = True
+        # The fight the Events page shows (gui.events_tab, issue #214), and
+        # whether it is to be drawn again before it is next shown
+        self._events_entry = None
+        self._events_dirty = True
         # The fight the Fight page shows, and for a page drawn while another
         # tab is on screen, where its search goes on when it is shown: from
         # its place among the matches for the same fight drawn again, None
@@ -524,6 +529,11 @@ class MainWindow(QMainWindow):
         self.deaths_view.recap_requested.connect(self._show_fight_death)
         self.deaths_view.positions_requested.connect(self._show_deaths_positions)
         self.fight_views.add_tab(self.deaths_view, "D&eaths")
+        # The fight's notable events as a table (gui.events_tab, issue
+        # #214): a death's row opens that death in the player window
+        self.events_view = EventsPage(icons=self.fight_view.icons)
+        self.events_view.recap_requested.connect(self._show_event_death)
+        self.fight_views.add_tab(self.events_view, "E&vents")
         # The dps over time graph (gui.dps_graph), a tab where it was a window
         self.dps_panel = DpsGraphPanel()
         self.dps_panel.setAccessibleName("DPS graph")
@@ -541,15 +551,15 @@ class MainWindow(QMainWindow):
         self.fight_views.add_tab(self.instance_view, "&Instance")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)
         self.fight_views.search_placed.connect(self._set_tab_order)
+        # The Find button the tab bar's corner holds at a large text size
+        self.fight_views.find_requested.connect(self._find)
         right_layout.addWidget(self.fight_views, 1)
 
+        # Esc in the search field is the field's own (gui.fight_tabs)
         find = QAction("Find", self)
         find.setShortcut(QKeySequence.Find)
         find.triggered.connect(self._find)
         self.addAction(find)
-        QShortcut(QKeySequence(Qt.Key_Escape), self.search_field,
-                  activated=self.search_field.clear,
-                  context=Qt.WidgetShortcut)
         # The fight's tabs from anywhere in the window, the list too: the tab
         # widget's own keys work only with the focus inside it
         QShortcut(QKeySequence("Ctrl+PgDown"), self, self._next_fight_tab)
@@ -1667,7 +1677,8 @@ class MainWindow(QMainWindow):
         only a few times (a late death, its banner, a mastery found later).
         Then the tab on screen, if it is another, in place when it shows
         this fight already (the Instance page: this fight's instance, the
-        search going on from its place); the other tabs are marked, and
+        search going on from its place; the Events page: its row selected
+        and its scroll kept, gui.events_tab); the other tabs are marked, and
         drawn when they are next shown, the search going on where it was on
         a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
         issue #196)."""
@@ -1760,15 +1771,24 @@ class MainWindow(QMainWindow):
             # The graph on screen: no search there
             if others:
                 self._draw_graph(entry)
-                self._deaths_dirty = self._instance_dirty = True
+                self._deaths_dirty = self._instance_dirty = self._events_dirty = True
             return
         if others:
             self._graph_dirty = True
         page = self.fight_tabs.currentWidget()
+        if page is self.events_view:
+            # The Events page, in place for the same fight, its row and its
+            # scroll kept; the search filters its rows (gui.events_tab)
+            if others:
+                self._deaths_dirty = self._instance_dirty = True
+                self._draw_events(entry)
+                self._apply_search()
+            return
         if page in (self.deaths_view, self.instance_view):
             if not others:
                 return
-            # The other of the two is drawn when it is next shown
+            # The other pages are drawn when they are next shown
+            self._events_dirty = True
             if page is self.deaths_view:
                 self._instance_dirty = True
             else:
@@ -1783,7 +1803,7 @@ class MainWindow(QMainWindow):
                 self._draw_page(page, entry)
                 self._apply_search(search_from=search_from)
             return
-        self._deaths_dirty = self._instance_dirty = True
+        self._deaths_dirty = self._instance_dirty = self._events_dirty = True
         self._apply_search(search_from=search_from)
 
     def _open_player(self, unit_id, tab, entry=None, death=None):
@@ -1883,6 +1903,9 @@ class MainWindow(QMainWindow):
         self.fight_views.set_shown(False)
         self._deaths_entry = None
         self._deaths_dirty = True
+        self._events_entry = None
+        self._events_dirty = True
+        self.events_view.clear()
         self.dps_panel.clear()
         self._graph_dirty = True
         self._fight_entry = None
@@ -1978,8 +2001,8 @@ class MainWindow(QMainWindow):
         text, not document text). Document order."""
         text = self.search_field.text()
         matches = []
-        if text:
-            view = view or self._search_view()
+        view = view or self._search_view()
+        if text and view is not self.events_view:  # the Events page filters its rows instead
             document = view.document()
             cursor = QTextCursor(document)
             while True:
@@ -2010,9 +2033,19 @@ class MainWindow(QMainWindow):
         next match. An update that ranks the players anew moves the matches
         with their rows: the number keeps the search's place among the
         matches, not the occurrence, as the pane's scroll is kept by
-        position (issue #196)."""
+        position (issue #196).
+
+        On the Events page, a table, the search filters the rows to those
+        that hold its text and counts them (gui.events_tab): a new search
+        selects its first row, and the same search, after a redraw or a
+        tab change, leaves the row selected where it was."""
         view = self._search_view()
         self._searched[view] = self.search_field.text()
+        if view is self.events_view:
+            text = self.search_field.text()
+            rows = view.set_search(text)
+            self.search_field.set_count(count_text(rows) if text else "")
+            return
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -2053,7 +2086,11 @@ class MainWindow(QMainWindow):
         return sum(1 for start in starts if start < position), position in starts
 
     def _goto_next_match(self):
-        """Enter in the search field cycles through matches."""
+        """Enter in the search field cycles through matches; on the Events
+        page, through the rows the search left."""
+        if self._search_view() is self.events_view:
+            self.events_view.select_next_match()
+            return
         matches = self._search_matches()
         if not matches:
             return
@@ -2070,30 +2107,39 @@ class MainWindow(QMainWindow):
     # ---- the fight's tabs (gui.fight_tabs, issue #196) ----
 
     def _set_tab_order(self):
-        """The Tab order: the list, the tab bar, the search, the page; set
-        again when the search moves between the bar's corner and its own
-        row, which gives it another parent."""
+        """The Tab order: the list, the tab bar, the search (or the Find
+        button standing for it), the page; set again when the search moves
+        between the bar's corner and its own row, which gives it another
+        parent. The Events page's controls in its own order (gui.events_tab)."""
         bar = self.fight_tabs.tabBar()
         QWidget.setTabOrder(self.history_list, bar)
-        QWidget.setTabOrder(bar, self.search_field)
+        QWidget.setTabOrder(bar, self.fight_views.find_button)
+        QWidget.setTabOrder(self.fight_views.find_button, self.search_field)
         QWidget.setTabOrder(self.search_field, self.fight_view)
         QWidget.setTabOrder(self.fight_view, self.deaths_view)
-        QWidget.setTabOrder(self.deaths_view, self.instance_view)
+        previous = self.deaths_view
+        for control in self.events_view.focus_chain():
+            QWidget.setTabOrder(previous, control)
+            previous = control
+        QWidget.setTabOrder(previous, self.instance_view)
 
     def _search_view(self):
         """The page the search works on: the tab on screen's."""
         page = self.fight_tabs.currentWidget()
-        if page in (self.deaths_view, self.instance_view):
+        if page in (self.deaths_view, self.events_view, self.instance_view):
             return page
         return self.fight_view
 
     def _find(self):
-        """Ctrl+F: the search, for the tab on screen, the Fight tab first
-        from the graph, which has no text to search; nothing while no fight
-        is shown, the field hidden with the tab bar."""
+        """Ctrl+F, or the Find button the bar's corner holds at a large text
+        size: the search, for the tab on screen, the Fight tab first from
+        the graph, which has no text to search, the field out on its own row
+        if the corner holds the button; nothing while no fight is shown, the
+        field hidden with the tab bar."""
         if self.fight_views.is_shown():
             if self.fight_tabs.currentWidget() is self.dps_panel:
                 self.fight_tabs.setCurrentIndex(0)
+            self.fight_views.open_search()
             self.search_field.setFocus()
             self.search_field.selectAll()
 
@@ -2129,6 +2175,15 @@ class MainWindow(QMainWindow):
                 self._draw_graph(entry)
             return
         searched = self._search_view()
+        if searched is self.events_view:
+            # A table: drawn if marked, in place for the same fight, and
+            # filtered by the search, its row kept for the same search
+            for view in (self.fight_view, self.deaths_view, self.instance_view):
+                view.set_search_selections([])
+            if entry is not None and self._page_state(searched, entry)[0]:
+                self._draw_page(searched, entry)
+            self._apply_search()
+            return
         # The page left keeps no matches; the one on screen has the search's
         for view in (self.fight_view, self.deaths_view, self.instance_view):
             if view is not searched:
@@ -2192,22 +2247,36 @@ class MainWindow(QMainWindow):
         self._deaths_dirty = False
 
     def _page_state(self, view, entry):
-        """For the Deaths or Instance page *view*: whether it is to be
-        drawn for *entry* before it is shown, and whether it shows what it
-        would show already (the same fight, the same instance), so is drawn
-        in place."""
+        """For the Deaths, Events or Instance page *view*: whether it is to
+        be drawn for *entry* before it is shown, and whether it shows what
+        it would show already (the same fight, the same instance), so is
+        drawn in place."""
         if view is self.deaths_view:
             same = entry is self._deaths_entry
             return self._deaths_dirty or not same, same
+        if view is self.events_view:
+            same = entry is self._events_entry
+            return self._events_dirty or not same, same
         same = self._same_instance(entry)
         return self._instance_dirty or not same, same
 
     def _draw_page(self, view, entry):
-        """The Deaths or Instance page *view* drawn for *entry*."""
+        """The Deaths, Events or Instance page *view* drawn for *entry*;
+        the Events page in place by itself for the fight it shows."""
         if view is self.deaths_view:
             self._draw_deaths(entry)
+        elif view is self.events_view:
+            self._draw_events(entry)
         else:
             self._draw_instance(entry)
+
+    def _draw_events(self, entry):
+        """The notable events of *entry* on the Events page
+        (gui.events_tab): in place, the row selected and the scroll kept,
+        when it shows that fight already."""
+        self.events_view.show_fight(entry, self._names_for(entry))
+        self._events_entry = entry
+        self._events_dirty = False
 
     def _draw_in_place(self, view, entry, search_from=None):
         """The Deaths or Instance page *view* drawn again for *entry* where
@@ -2454,6 +2523,14 @@ class MainWindow(QMainWindow):
         if self._deaths_entry is not None:
             self._open_player(unit_id, DEATHS_TAB, entry=self._deaths_entry, death=number)
 
+    @Slot(str, int)
+    def _show_event_death(self, unit_id, number):
+        """Enter or a double-click on a death's row of the Events tab: that
+        death on the player window's Deaths tab, in the fight the page was
+        drawn for."""
+        if self._events_entry is not None:
+            self._open_player(unit_id, DEATHS_TAB, entry=self._events_entry, death=number)
+
     # ---- the positions window (issue #214) ----
 
     def show_moment(self, entry, t_ms, unit_key=None):
@@ -2653,8 +2730,11 @@ class MainWindow(QMainWindow):
         """The fight on screen drawn again in place (it changed, a theme
         switch, Hide names, a new text size): each page where the reader
         had it, the search going on from its place among the matches of the
-        tab on screen (_search_place)."""
-        place = self._search_place(self._search_view().textCursor().position())
+        tab on screen (_search_place); the Events page keeps its row
+        itself."""
+        view = self._search_view()
+        place = (self._search_place(view.textCursor().position())
+                 if view is not self.events_view else None)
         with self.fight_view.keeping_place():
             self._show_fight(search_from=place)
 

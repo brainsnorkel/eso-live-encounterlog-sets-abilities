@@ -223,7 +223,7 @@ class TimeDead:
     the next pull."""
 
     __slots__ = ("_ended", "_paused", "_paused_carried", "at_end", "carried", "carried_at_end",
-                 "carried_ms", "ms", "since", "start")
+                 "carried_ms", "ms", "revived", "since", "start")
 
     def __init__(self):
         self.start = 0  # the fight's start, set at BEGIN_COMBAT
@@ -236,6 +236,10 @@ class TimeDead:
         self._ended = 0
         self._paused: dict[str, tuple[int, int]] = {}
         self._paused_carried: dict[str, int] = {}
+        # Each return from the dead: (key, the death, the moment back, and
+        # whether the player was dead since an earlier pull, the death then
+        # this fight's start), for the fight's events (fight_events)
+        self.revived: list[tuple[str, int, int, bool]] = []
 
     def begin(self, start_ms: int, carried=()) -> None:
         """BEGIN_COMBAT: the fight's start, and the players still dead
@@ -261,21 +265,28 @@ class TimeDead:
         began = self.carried.pop(key, None)
         if began is not None:
             self.carried_ms[key] = self.carried_ms.get(key, 0) + max(0, timestamp_ms - began)
+            # Dead since an earlier pull (fight_events: no death of this fight's)
+            self.revived.append((key, began, timestamp_ms, True))
         # Dead as the fight ended and up again before it carries on (the
         # group fighting on, waiting_hits): dead until now, not reopened
         # by resume
-        if self._paused_carried.pop(key, None) is not None:
+        paused_began = self._paused_carried.pop(key, None)
+        if paused_began is not None:
             self.carried_ms[key] = (self.carried_ms.get(key, 0)
                                     + max(0, timestamp_ms - self._ended))
+            self.revived.append((key, paused_began, timestamp_ms, True))
         paused = self._paused.get(key)
         if paused is not None and timestamp_ms - paused[1] >= REVIVE_MIN_MS:
             del self._paused[key]
             self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - self._ended)
+            # Dead as the fight ended, up again as it carries on
+            self.revived.append((key, paused[1], timestamp_ms, False))
         span = self.since.get(key)
         if span is None or timestamp_ms - span[1] < REVIVE_MIN_MS:
             return
         del self.since[key]
         self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - span[0])
+        self.revived.append((key, span[1], timestamp_ms, False))
 
     def watching(self) -> bool:
         """Whether any player is down (a line with their health matters),

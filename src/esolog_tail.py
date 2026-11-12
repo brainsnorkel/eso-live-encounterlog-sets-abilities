@@ -44,6 +44,7 @@ from presence import present_share
 import casts
 import companions
 import fight_blocks
+import fight_events
 import fight_locator
 import fight_opener
 import pen_crit
@@ -1087,6 +1088,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
         self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
+        # The fight's notable events, for the Events tab (fight_events)
+        self.events = fight_events.EventRecorder()
         # Each player's magicka, stamina and ultimate spent and gained
         self.resources = resources.ResourceRecorder()
         # Companions (companions.py): whether their damage and healing are
@@ -1394,6 +1397,9 @@ class ESOLogAnalyzer(ListenerMixin):
             # or a proc from a later line of the same cast (casts.py)
             if len(entry.fields) >= 2:
                 self.casts.note_end(entry.fields[1], casts.line_time(entry.original_line))
+                # A boss's cast someone stopped (fight_events)
+                if self.events.holds_track(entry.fields[1]):
+                    self._note_boss_cast_end(entry)
         elif entry.event_type == "EFFECT_CHANGED":
             self._handle_effect_changed(entry)
         elif entry.event_type == "COMBAT_EVENT":
@@ -2013,6 +2019,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight (issue #221, _note_zero_state)
         self._fighting = True
         if self._continues_last_fight(entry.timestamp):
+            # The game ended combat and began it again: a phase of the fight
+            # (fight_events)
+            self.events.note_resumed(
+                entry.timestamp, entry.timestamp - self.current_encounter.combat_ended_at)
             self._resume_last_fight()
             return
         # Players who waited at 0 health long enough with no death line died
@@ -2610,6 +2620,7 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters.clear()
         self.werewolf.reset()
         self.casts.reset()
+        self.events.reset()
         self.resources.reset()
         self.build_issues.reset()
         self.group_buff_credit.reset()
@@ -2690,6 +2701,8 @@ class ESOLogAnalyzer(ListenerMixin):
         if len(fields) >= 3:
             self._maps.append((casts.line_time(entry.original_line),
                                fight_locator.MapFrame(fields[0], fields[1], fields[2])))
+            # A phase of the fight (fight_events)
+            self.events.note_map(casts.line_time(entry.original_line), fields[1])
             if len(self._maps) > fight_locator.MAPS_KEPT:
                 del self._maps[0]
 
@@ -2798,6 +2811,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 if ability_id in werewolf.CAST_IDS:
                     self.werewolf.note_cast(self._scribing_player_key(caster_unit_id),
                                             ability_id, entry.timestamp)
+            else:
+                # A boss's cast, with its target and length (fight_events)
+                enemy = self.current_encounter.enemies.get(caster_unit_id)
+                if enemy is not None and enemy.is_boss:
+                    self._note_boss_cast(entry, enemy)
 
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
@@ -2958,9 +2976,12 @@ class ESOLogAnalyzer(ListenerMixin):
         enemy = enc.enemies.get(fields[17])
         if enemy is not None and enemy.is_boss:
             enc.boss_health.note(fields[17], fields[18])
+            # Its marks and the stretches it lost no health (fight_events)
+            self.events.note_boss_health(entry.timestamp, enemy.name, fields[17], fields[18])
         enemy = enc.enemies.get(fields[7])
         if enemy is not None and enemy.is_boss:
             enc.boss_health.note(fields[7], fields[8])
+            self.events.note_boss_health(entry.timestamp, enemy.name, fields[7], fields[8])
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -3125,8 +3146,13 @@ class ESOLogAnalyzer(ListenerMixin):
                     self.current_encounter.note_taunt(
                         self.current_encounter.record_id(entry.fields[7]),
                         self._cast_abilities.get(entry.fields[5], ""))
+                    self._note_taunt_event(entry)
                 else:
                     self._remember_cast(entry.fields[5], entry.fields[6])
+
+            # A resurrection, and who gave it (fight_events)
+            if combat_event_type in REVIVE_RESULTS and len(entry.fields) > 17:
+                self._note_resurrect_event(entry)
 
             # Death recap: keep what each player receives (damage, heals,
             # shields, dodges) for the seconds before a death
@@ -3303,6 +3329,13 @@ class ESOLogAnalyzer(ListenerMixin):
                              self_source=(healer_id == record), pet_owner=pet_owner)
         self.death_recap_recorder.record(entry.timestamp, fields, target_id,
                                          player_source=player_source)
+        # A big hit, its shield's absorb counted in (fight_events); the
+        # names are asked for only for a hit kept
+        if result in fight_events.DAMAGE_RESULTS or result == fight_events.SHIELDED:
+            self.events.note_on_player(
+                entry.timestamp, result, fields, record,
+                lambda: (self._resolve_recap_unit(target_id),
+                         self._resolve_recap_unit(source_id), self._event_key(source_id)))
 
     def _note_zero_state(self, fields: List[str], at: int, entry: ESOLogEntry,
                          now_ms: Optional[int], player: Optional[PlayerInfo] = None,
@@ -3983,6 +4016,80 @@ class ESOLogAnalyzer(ListenerMixin):
             return enemy.name
         return ""
 
+    def _event_key(self, unit_id: str) -> str:
+        """A unit's key in the fight's events (fight_events): a player's
+        record id, which a return on another unit id keeps; any other
+        unit's id."""
+        enc = self.current_encounter
+        return enc.record_id(unit_id) if enc is not None else str(unit_id)
+
+    def _note_boss_cast(self, entry: ESOLogEntry, enemy) -> None:
+        """A BEGIN_CAST by the boss *enemy*: its target, '*' the boss
+        itself, and its length (fight_events)."""
+        fields = entry.fields
+        caster_id = fields[4]
+        target_id = fields[14] if len(fields) > 14 else ""
+        at_player = False
+        if target_id in ("", "*", "0"):
+            target, target_key = "", ""
+        else:
+            target, target_key = self._resolve_recap_unit(target_id), self._event_key(target_id)
+            at_player = self.current_encounter.player_of(target_id) is not None
+        duration = int(fields[0]) if fields[0].isdigit() else 0
+        self.events.note_boss_cast(casts.line_time(entry.original_line), enemy.name, caster_id,
+                                   fields[2], fields[3], target, target_key, duration, at_player)
+
+    def _note_boss_cast_end(self, entry: ESOLogEntry) -> None:
+        """An END_CAST of a boss's cast (fight_events): the parser keeps its
+        reason, track and ability; who interrupted it is the line's last
+        field."""
+        parts = entry.original_line.rstrip().split(",")
+        by_id = parts[6] if len(parts) > 6 else ""
+        enc = self.current_encounter
+        by_enemy = enc.enemies.get(by_id) if enc is not None else None
+        self.events.note_cast_end(casts.line_time(entry.original_line), entry.fields[1],
+                                  entry.fields[0], self._resolve_recap_unit(by_id),
+                                  self._event_key(by_id),
+                                  bool(by_enemy is not None and by_enemy.is_boss))
+
+    def _note_taunt_event(self, entry: ESOLogEntry) -> None:
+        """A TAUNTED line by a player (fight_events): the taunted unit, and
+        the skill its cast id names."""
+        fields = entry.fields
+        enc = self.current_encounter
+        target_id = fields[17] if fields[17] != "*" else fields[7]
+        enemy = enc.enemies.get(target_id)
+        self.events.note_taunt(entry.timestamp, self._resolve_recap_unit(fields[7]),
+                               enc.record_id(fields[7]),
+                               self._cast_abilities.get(fields[5], "") or fields[6],
+                               self._resolve_recap_unit(target_id), str(target_id),
+                               bool(enemy is not None and enemy.is_boss))
+
+    def _note_resurrect_event(self, entry: ESOLogEntry) -> None:
+        """A resurrection line (fight_events): who was raised, a player, and
+        by whom."""
+        fields = entry.fields
+        enc = self.current_encounter
+        target_id = fields[17] if fields[17] != "*" else fields[7]
+        if enc is None or enc.player_of(target_id) is None:
+            return
+        self.events.note_resurrect(entry.timestamp, self._resolve_recap_unit(target_id),
+                                   enc.record_id(target_id), self._resolve_recap_unit(fields[7]),
+                                   self._event_key(fields[7]), fields[6])
+
+    def _fight_events(self, enc: CombatEncounter) -> fight_events.FightEvents:
+        """The fight's notable events, packed (fight_events), with the
+        players' returns from the dead (pull_outcome.TimeDead) and the
+        bosses' deaths."""
+        names = {player.unit_id: player.get_display_name() for player in enc.players.values()}
+        revived = [(back, names.get(key, ""), key, back - died, carried)
+                   for key, died, back, carried in enc.time_dead.revived]
+        boss_deaths = [(enemy.died_at, enemy.name, unit_id)
+                       for unit_id, enemy in enc.enemies.items()
+                       if enemy.is_boss and enemy.died_at is not None]
+        return self.events.fight_events(enc.start_time, enc.end_time, revived, boss_deaths,
+                                        self._resolve_recap_ability)
+
     def _resolve_recap_ability(self, ability_id: str) -> Tuple[str, str]:
         """(name, icon stem) for a death-recap ability id."""
         ability_id = str(ability_id)
@@ -4220,6 +4327,8 @@ class ESOLogAnalyzer(ListenerMixin):
             self.death_recap_recorder.refresh_fight()
         self._refresh_recap_casts(enc)
         entry.death_recaps = list(self.fight_death_recaps)
+        # The notable events, for the Events tab (fight_events)
+        entry.events = self._fight_events(enc)
         # Who opened the fight and with what, and the monster's act before
         # it, names resolved now (fight_opener)
         entry.opener, entry.monster_first = fight_opener.opener_records(
@@ -4481,6 +4590,7 @@ class ESOLogAnalyzer(ListenerMixin):
         if not again:
             self.casts.prune_before(enc.start_time)
             self.resources.prune_before(enc.start_time)
+            self.events.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the

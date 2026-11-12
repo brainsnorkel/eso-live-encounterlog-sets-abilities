@@ -171,9 +171,14 @@ class TestMainWindow(AccessibilityTestCase):
         win = self._window()
         for widget, name in ((win.history_list, "Fights"), (win.search_field, "Search this tab"),
                              (win.fight_tabs, "Fight views"), (win.fight_view, "Fight"),
-                             (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline")):
+                             (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline"),
+                             (win.events_view.table, "Fight events"),
+                             (win.events_view.more_button, "More"),
+                             (win.fight_views.find_button, "Find (Ctrl+F)")):
             self.assertEqual(QAccessible.queryAccessibleInterface(widget).text(QAccessible.Name),
                              name)
+        # Linux names a combo box by its current item, so its own name here
+        self.assertEqual(win.events_view.show_picker.accessibleName(), "Show")
 
     def test_reduce_motion_is_read_at_start(self):
         from gui.fight_view import reduce_motion
