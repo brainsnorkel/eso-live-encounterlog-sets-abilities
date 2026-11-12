@@ -324,6 +324,22 @@ class TestHideNames(EventsTestCase):
 
 class TestKeepingThePlace(EventsTestCase):
 
+    def test_the_same_fight_drawn_again_measures_its_columns_again(self):
+        """Rows logged later can be wider: the same fight drawn again in
+        place sizes its columns for them."""
+        import fight_events as fe
+        from gui.events_tab import WHO_COL
+        entry = _entry(notes=[("note_taunt", 1000, "@a", "1", "1", "Boss", "70", True)])
+        page = self._page(entry, size=(1200, 400))
+        narrow = page.table.columnWidth(WHO_COL)
+        recorder = fe.EventRecorder()
+        recorder.note_taunt(1000, "@a", "1", "1", "Boss", "70", True)
+        recorder.note_taunt(5000, "@a much longer handle", "2", "1", "Boss", "70", True)
+        entry.events = recorder.fight_events(0, 600000, ability=lambda a: (f"Ability {a}", ""))
+        page.show_fight(entry)
+        _app.processEvents()
+        self.assertGreater(page.table.columnWidth(WHO_COL), narrow)
+
     def test_a_fight_update_keeps_the_row_selected(self):
         """The fight changes in place (a later death, the rest of a fight
         the game cut in two): the rows are drawn again, the row selected

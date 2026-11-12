@@ -14,7 +14,9 @@ any ten seconds, so a fight reads as a story rather than a log.
   are one row ("Died x3"). Each return from the dead is a "Back" row with
   how long the player was down and who raised them: a resurrection line
   for the player at most RAISED_BEFORE_MS before the return, else "no line
-  says how" (a release and run back writes none).
+  says how" (a release and run back writes none). A player dead since an
+  earlier pull has no death in this fight: their return says "dead since
+  before the pull".
 - A boss's casts of one ability, each within BURST_MS of the last, are one
   row ("Hemorrhage x12"), with whom they were aimed at and whether one was
   stopped: by a player ("interrupted by"), or by the boss's own script.
@@ -72,8 +74,9 @@ Row = namedtuple("Row", "t category what ability icon who who_keys detail strong
 def clock(ms: int) -> str:
     """'1:50.6' (or '-0:03.2') from fight ms."""
     sign = "-" if ms < 0 else ""
-    minutes, rest = divmod(abs(int(ms)), 60000)
-    return f"{sign}{minutes}:{rest / 1000:04.1f}"
+    # Tenths first, so 59.96 s is 1:00.0, never 0:60.0
+    minutes, tenths = divmod(round(abs(ms) / 100), 600)
+    return f"{sign}{minutes}:{tenths / 10:04.1f}"
 
 
 def _seconds(ms: int) -> str:
@@ -151,7 +154,7 @@ def _death_rows(entry, records: list) -> list[Row]:
             parts.append("no death line; read from health reaching 0")
         if len(group) == 1:
             back = next((r for r in revived if r.who_key == str(first.get("unit_id"))
-                         and r.t >= first["time_ms"]), None)
+                         and r.t >= first["time_ms"] and not r.flags & fe.CARRIED), None)
             if back is None:
                 end_ms = round(getattr(entry, "duration_s", 0) * 1000)
                 parts.append(f"dead to the end ({_seconds(max(0, end_ms - first['time_ms']))})")
@@ -168,8 +171,10 @@ def _death_rows(entry, records: list) -> list[Row]:
                         (str(first.get("unit_id", "")), first["_number"])
                         if len(group) == 1 else None))
     for back in revived:
+        dead = ("dead since before the pull" if back.flags & fe.CARRIED
+                else f"dead {_seconds(back.value)}")
         rows.append(Row(back.t, "deaths", "Back", "", "", back.who, (back.who_key,),
-                        f"{_how_back(back, raised)} · dead {_seconds(back.value)}", False, None))
+                        f"{_how_back(back, raised)} · {dead}", False, None))
     return rows
 
 
@@ -179,8 +184,10 @@ def _how_back(back, raised: list) -> str:
                and back.t - RAISED_BEFORE_MS <= r.t <= back.t + 500), None)
     if by is None:
         return "back, no line says how"
-    if by.other_key == by.who_key or not by.other:
+    if by.other_key == by.who_key:
         return "raised themselves"
+    if not by.other:
+        return "resurrected by a unit the log does not name"
     return f"resurrected by {by.other}"
 
 

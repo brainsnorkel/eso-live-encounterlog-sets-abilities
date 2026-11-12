@@ -47,12 +47,14 @@ BASE = [
     '2600,ABILITY_INFO,26770,"Resurrect","/esoui/art/icons/rez.dds",F,T',
 ]
 
+# Every line that carries the boss gives its health at that moment, and the
+# lines come in time order (sorted below), as the log has them
 FIGHT = [
     '10000,BEGIN_COMBAT',
     # Player 2 taunts the boss, then player 3 takes it
     _event(10100, "TAUNTED", 0, _player(2), _boss(), cast=901, ability=38254),
-    _event(15000, "TAUNTED", 0, _player(3), _boss(), cast=902, ability=38254),
-    _event(16000, "TAUNTED", 0, _player(3), _boss(), cast=903, ability=38254),  # again: no swap
+    _event(15000, "TAUNTED", 0, _player(3), _boss(740000), cast=902, ability=38254),
+    _event(16000, "TAUNTED", 0, _player(3), _boss(740000), cast=903, ability=38254),  # no swap
     # The boss's health: under 75% at 11 s; nothing lost from 11 s to 18 s
     _boss_hit(10500, 900000),
     _boss_hit(11000, 740000),
@@ -62,18 +64,19 @@ FIGHT = [
     f"12000,BEGIN_CAST,2000,F,700,555,{_boss()},{_player(1)}",
     "12500,END_CAST,INTERRUPTED,700,555,38254,2",
     # A shield absorbs 4,000 of a 9,000 hit on player 1 (65% of 20,000)
-    _event(13000, "DAMAGE_SHIELDED", 4000, _boss(), _player(1, 20000), cast=950),
-    _event(13001, "DAMAGE", 9000, _boss(), _player(1, 11000), cast=950),
+    _event(13000, "DAMAGE_SHIELDED", 4000, _boss(740000), _player(1, 20000), cast=950),
+    _event(13001, "DAMAGE", 9000, _boss(740000), _player(1, 11000), cast=950),
     # A small hit: no event
-    _event(13500, "DAMAGE", 1000, _boss(), _player(1, 10000), cast=951),
+    _event(13500, "DAMAGE", 1000, _boss(740000), _player(1, 10000), cast=951),
     # Player 3 dies, and player 1 raises them; a heal shows them up
-    _event(20000, "DIED", 0, _boss(), _player(3, 0), cast=960),
+    _event(20000, "DIED", 0, _boss(480000), _player(3, 0), cast=960),
     _event(25000, "RESURRECT", 0, _player(1), _player(3, 0), cast=961, ability=26770),
     _event(26000, "HEAL", 4000, _player(1), _player(3, 4000), cast=962),
     '27000,MAP_CHANGED,1500,"The Upper Vault","sunspire/upper"',
     _boss_hit(29000, 470000),
     '30000,END_COMBAT',
 ]
+FIGHT.sort(key=lambda line: int(line.split(",")[0]))
 
 
 def _run(lines):
@@ -85,6 +88,12 @@ def _run(lines):
         if entry is not None:
             analyzer.process_log_entry(entry)
     return analyzer
+
+
+def _named(player):
+    """What note_on_player asks for a hit it keeps: the player's name, then
+    the source's name and key."""
+    return lambda: (player, "Boss", "70")
 
 
 def _kinds(events, kind):
@@ -115,7 +124,7 @@ class TestRecorder(unittest.TestCase):
         recorder = fe.EventRecorder()
         blow = ["DAMAGE", "", "", "2000", "5000", "7", "99", "70", "", "",
                 "", "", "", "", "", "", "", "1", "0/20000"]
-        recorder.note_on_player(100, "DAMAGE", blow, "1", "@a", "Boss", "70")
+        recorder.note_on_player(100, "DAMAGE", blow, "1", _named("@a"))
         hit, = _kinds(recorder.fight_events(0, 1000), fe.HIT)
         self.assertEqual((hit.value, hit.value2), (7000, 20000))
 
@@ -125,10 +134,10 @@ class TestRecorder(unittest.TestCase):
                   "", "", "", "", "", "", "", "1", "20000/20000"]
         hit = ["DAMAGE", "", "", "4000", "0", "7", "99", "70", "", "",
                "", "", "", "", "", "", "", "1", "16000/20000"]
-        recorder.note_on_player(100, "DAMAGE_SHIELDED", shield, "1", "@a", "Boss", "70")
-        recorder.note_on_player(101, "DAMAGE", hit, "1", "@a", "Boss", "70")
+        recorder.note_on_player(100, "DAMAGE_SHIELDED", shield, "1", _named("@a"))
+        recorder.note_on_player(101, "DAMAGE", hit, "1", _named("@a"))
         # The same 4,000 without its shield is 20%: no event
-        recorder.note_on_player(200, "DAMAGE", hit, "1", "@a", "Boss", "70")
+        recorder.note_on_player(200, "DAMAGE", hit, "1", _named("@a"))
         hits = _kinds(recorder.fight_events(0, 1000), fe.HIT)
         self.assertEqual([(r.value, r.value2, r.value3) for r in hits], [(4000, 20000, 3000)])
 
@@ -151,7 +160,7 @@ class TestRecorder(unittest.TestCase):
         recorder.note_map(500, "Before")
         recorder.note_map(1500, "In the fight")
         recorder.note_map(5000, "After")
-        events = recorder.fight_events(1000, 4000, revived=[(3000, "@a", "1", 1200)],
+        events = recorder.fight_events(1000, 4000, revived=[(3000, "@a", "1", 1200, False)],
                                        boss_deaths=[(3500, "Boss", "70"), (9000, "Other", "71")])
         self.assertEqual([(r.t, r.kind, r.other or r.who) for r in events.records()],
                          [(500, fe.MAP, "In the fight"), (2000, fe.REVIVED, "@a"),
@@ -163,6 +172,42 @@ class TestRecorder(unittest.TestCase):
         self.assertEqual(len(recorder.fight_events(0, 10000)), 2)
         recorder.reset()
         self.assertEqual(len(recorder.fight_events(0, 10000)), 0)
+
+    def test_names_are_asked_for_only_for_a_hit_kept(self):
+        asked = []
+
+        def describe():
+            asked.append(1)
+            return "@a", "Boss", "70"
+
+        recorder = fe.EventRecorder()
+        small = ["DAMAGE", "", "", "1000", "0", "7", "99", "70", "", "",
+                 "", "", "", "", "", "", "", "1", "19000/20000"]
+        recorder.note_on_player(100, "DAMAGE", small, "1", describe)
+        self.assertEqual(asked, [])
+
+    def test_more_than_65535_names_in_a_fight(self):
+        """A long open-world stretch can name more units than a 16-bit
+        index holds."""
+        recorder = fe.EventRecorder()
+        for n in range(40000):
+            recorder.note_taunt(n, f"@p{n}", f"k{n}", "1", "Boss", "70", False)
+        events = recorder.fight_events(0, 10**6)
+        last = list(events.records())[-1]
+        self.assertEqual((last.who, last.who_key), ("@p39999", "k39999"))
+
+    def test_marks_across_a_fight_cut_in_two_and_a_new_pull(self):
+        recorder = fe.EventRecorder()
+        recorder.note_boss_health(1000, "Boss", "70", "800/1000")
+        recorder.note_boss_health(2000, "Boss", "70", "760/1000")
+        recorder.prune_before(500)     # the first part's entry is built
+        recorder.note_boss_health(3000, "Boss", "70", "740/1000")  # goes on: 75% reached
+        recorder.note_boss_health(4000, "Boss", "70", "1000/1000")  # a new pull
+        recorder.note_boss_health(5000, "Boss", "70", "700/1000")   # 75% again
+        recorder.note_boss_health(6000, "Boss", "70", "800/1000")   # healed over 75%
+        recorder.note_boss_health(7000, "Boss", "70", "690/1000")   # no mark twice
+        marks = [(r.t, r.value) for r in _kinds(recorder.fight_events(0, 9000), fe.BOSS_HEALTH)]
+        self.assertEqual(marks, [(3000, 75), (5000, 75)])
 
     def test_abilities_are_named_once(self):
         recorder = fe.EventRecorder()
@@ -278,6 +323,13 @@ class TestRows(unittest.TestCase):
         row, = self._of("phases")
         self.assertEqual((row.what, row.ability), ("Map", "The Upper Vault"))
 
+    def test_the_fought_on_rebuild_carries_the_events(self):
+        """The group fighting on after END_COMBAT rebuilds the entry; its
+        events go with the slots that rebuild takes (waiting_hits), as its
+        deaths do."""
+        from waiting_hits import FOUGHT_ON_SLOTS
+        self.assertIn("events", FOUGHT_ON_SLOTS)
+
     def test_shown_by_category(self):
         self.assertEqual(event_rows.shown(self.rows, ["taunts"]), self._of("taunts"))
         self.assertEqual(set(event_rows.DEFAULT_CATEGORIES) | set(event_rows.MORE),
@@ -293,6 +345,28 @@ def _events(*notes):
 
 
 class TestRowRules(unittest.TestCase):
+
+    def test_the_clock_rounds_to_tenths_first(self):
+        self.assertEqual([event_rows.clock(ms) for ms in (59960, 119970, 61449, -3200, 0)],
+                         ["1:00.0", "2:00.0", "1:01.4", "-0:03.2", "0:00.0"])
+
+    def test_returns_from_the_dead(self):
+        """Who raised whom, a raiser the log does not name, and a player
+        dead since an earlier pull."""
+        notes = [("note_resurrect", 9000, "@a", "1", "@b", "2", "26770"),
+                 ("note_resurrect", 19000, "@c", "3", "", "9", "26770")]
+        recorder = fe.EventRecorder()
+        for name, *args in notes:
+            getattr(recorder, name)(*args)
+        events = recorder.fight_events(0, 60000, revived=[
+            (10000, "@a", "1", 4000, False), (20000, "@c", "3", 5000, False),
+            (30000, "@d", "4", 30000, True)])
+        entry = SimpleNamespace(duration_s=60.0, death_recaps=[], trial_result=None,
+                                events=events)
+        backs = [row.detail for row in event_rows.event_rows(entry) if row.what == "Back"]
+        self.assertEqual(backs, ["resurrected by @b · dead 4.0 s",
+                                 "resurrected by a unit the log does not name · dead 5.0 s",
+                                 "back, no line says how · dead since before the pull"])
 
     def test_a_burst_of_one_cast_is_one_row(self):
         entry = SimpleNamespace(duration_s=60.0, death_recaps=[], trial_result=None,
@@ -323,10 +397,10 @@ class TestRowRules(unittest.TestCase):
                "", "", "", "", "", "", "", "1", "8000/20000"]
         small = ["DAMAGE", "", "", "7000", "0", "8", "98", "70", "", "",
                  "", "", "", "", "", "", "", "1", "8000/20000"]
-        notes = [("note_on_player", t, "DAMAGE", hit, key, name, "Boss", "70")
+        notes = [("note_on_player", t, "DAMAGE", hit, key, _named(name))
                  for t, key, name in ((1000, "1", "@a"), (2000, "2", "@b"), (4500, "3", "@c"))]
-        notes += [("note_on_player", 9000, "DAMAGE", hit, "4", "@d", "Boss", "70"),
-                  ("note_on_player", 12000, "DAMAGE", small, "1", "@a", "Boss", "70")]
+        notes += [("note_on_player", 9000, "DAMAGE", hit, "4", _named("@d")),
+                  ("note_on_player", 12000, "DAMAGE", small, "1", _named("@a"))]
         recap = {"unit_id": "4", "name": "@d", "time_ms": 9100, "ability": "Ability 99",
                  "ability_id": "99", "killer": "Boss", "icon": "", "cause": ""}
         entry = SimpleNamespace(duration_s=60.0, death_recaps=[recap], trial_result=None,

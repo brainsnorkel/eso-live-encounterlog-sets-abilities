@@ -46,6 +46,8 @@ import struct
 from collections import namedtuple
 from collections.abc import Callable, Iterable, Iterator
 
+from death_recap import KILLING_HIT_RESULTS, SHIELD_PAIR_MS
+
 # Event kinds, one byte each in a record
 BOSS_CAST, CAST_STOPPED, BOSS_HEALTH, UNTOUCHED, BOSS_DIED = 1, 2, 3, 4, 5
 HIT, TAUNT, RESURRECT, REVIVED, MAP, RESUMED = 6, 7, 8, 9, 10, 11
@@ -56,24 +58,28 @@ BIG_HIT_SHARE = 0.30
 HEALTH_MARKS = (75, 50, 25)
 # A boss that lost no health this long is a stretch worth a row
 UNTOUCHED_MS = 5000
-# A damage shield's line comes this soon before the hit it absorbed
-# (death_recap.SHIELD_PAIR_MS)
-SHIELD_PAIR_MS = 100
+# A boss back at this share of its health, in percent, was reset for a new
+# pull: its marks are reached afresh
+RESET_SHARE = 99
 
 # Flags on a record
 BLOCKED = 1       # a hit the player blocked
 ON_BOSS = 2       # a taunt on a boss
 BY_ITSELF = 4     # a cast its own caster (or another boss) stopped
 AT_PLAYER = 8     # a boss's cast aimed at a player
+CARRIED = 16      # a return of a player dead since an earlier pull
 
-DAMAGE_RESULTS = frozenset({"DAMAGE", "CRITICAL_DAMAGE", "DOT_TICK", "DOT_TICK_CRITICAL",
-                            "BLOCKED_DAMAGE", "FALL_DAMAGE"})
+# A hit on a player and a damage shield's absorb, as the death recap reads
+# them (death_recap: the hits that can kill, and the shield paired with its
+# hit within SHIELD_PAIR_MS)
+DAMAGE_RESULTS = KILLING_HIT_RESULTS
 SHIELDED = "DAMAGE_SHIELDED"
 
 # time (ms from the fight's start), kind, who (string), who's key (string),
 # ability id, other (string), other's key (string), value, value2, value3,
-# flags
-_RECORD = struct.Struct("<iBHHIHHiiiB")
+# flags. The strings' indices are 32-bit: a long stretch of open-world or
+# Cyrodiil combat can name more than 65,535 units
+_RECORD = struct.Struct("<iBIIIIIiiiB")
 
 Event = namedtuple("Event", "t kind who who_key ability_id other other_key "
                             "value value2 value3 flags")
@@ -204,7 +210,13 @@ class EventRecorder:
         if last is None:
             self._boss_drop[boss_key] = t
             return
-        if current < last:
+        if current > last:
+            # Back at full health, reset for a new pull: its marks are to be
+            # reached again. A boss that heals a little keeps them, so a
+            # mark is not told twice in a fight
+            if current * 100 >= RESET_SHARE * maximum:
+                self._boss_marks.pop(boss_key, None)
+        elif current < last:
             dropped = self._boss_drop.get(boss_key)
             if dropped is not None and t - dropped >= UNTOUCHED_MS:
                 self._add(dropped, UNTOUCHED, boss, boss_key, value=t - dropped)
@@ -219,12 +231,14 @@ class EventRecorder:
 
     # ---------------------------------------------------------- the group --
 
-    def note_on_player(self, t: int, result: str, fields: list, target_key: str, target: str,
-                       source: str, source_key: str) -> None:
+    def note_on_player(self, t: int, result: str, fields: list, target_key: str,
+                       describe: Callable[[], tuple[str, str, str]]) -> None:
         """A combat event on the player *target_key* (a recap result): a
         damage shield's absorb waits for its hit; a hit of BIG_HIT_SHARE of
         the player's maximum health or more, absorbed part and overkill
-        counted in, is kept."""
+        counted in, is kept. *describe* gives (the player's name, the
+        source's name, the source's key), asked only for a hit kept: most
+        lines on a player are no big hit."""
         if result == SHIELDED:
             amount = int(fields[3]) if fields[3].isdigit() else 0
             if amount:
@@ -248,6 +262,7 @@ class EventRecorder:
         size = hit + overflow + absorbed
         if size < BIG_HIT_SHARE * health[1]:
             return
+        target, source, source_key = describe()
         self._add(t, HIT, target, target_key, fields[6], source, source_key,
                   hit + overflow, health[1], absorbed,
                   BLOCKED if result == "BLOCKED_DAMAGE" else 0)
@@ -275,12 +290,14 @@ class EventRecorder:
                      boss_deaths: Iterable[tuple] = (),
                      ability: Callable[[str], tuple[str, str]] = lambda a: (a, "")) -> FightEvents:
         """The events from *start* to *end* (raw ms), packed, with
-        *revived*: (time back, player name, player key, ms dead) from the
-        fight's time dead, and *boss_deaths*: (time, boss name, boss key).
+        *revived*: (time back, player name, player key, ms dead, whether
+        dead since an earlier pull) from the fight's time dead, and
+        *boss_deaths*: (time, boss name, boss key).
         *ability* names an ability id: (name, icon stem)."""
         events = [event for event in self._events if start <= event[0] <= end]
-        events += [(back, REVIVED, name, key, "", "", "", dead_ms, 0, 0, 0)
-                   for back, name, key, dead_ms in revived if start <= back <= end]
+        events += [(back, REVIVED, name, key, "", "", "", dead_ms, 0, 0,
+                    CARRIED if carried else 0)
+                   for back, name, key, dead_ms, carried in revived if start <= back <= end]
         events += [(died, BOSS_DIED, name, key, "", "", "", 0, 0, 0, 0)
                    for died, name, key in boss_deaths if start <= died <= end]
         events.sort(key=lambda event: event[0])
@@ -300,10 +317,10 @@ class EventRecorder:
         return FightEvents(bytes(packed), tuple(strings), tuple(abilities.values()))
 
     def prune_before(self, timestamp: int) -> None:
-        """Forget the events before *timestamp* (the built fight's start)
-        and each boss's marks: a new pull reaches them again."""
+        """Forget the events before *timestamp* (the built fight's start).
+        Each boss's health, last drop and marks stay: a fight the game cut
+        in two goes on from them, and a new pull's reset, the boss back at
+        RESET_SHARE of its health, frees the marks (note_boss_health). A
+        stretch that began in an earlier pull is outside the next fight's
+        window."""
         self._events = [event for event in self._events if event[0] >= timestamp]
-        self._boss_marks.clear()
-        self._boss_drop.clear()
-        self._boss_health.clear()
-        self._boss_field.clear()

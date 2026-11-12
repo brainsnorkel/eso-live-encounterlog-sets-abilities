@@ -149,6 +149,21 @@ class TestTimeDead(unittest.TestCase):
         dead.alive("1", 25_000)
         self.assertEqual(dead.totals(60_000), {"1": 15_000})
 
+    def test_each_return_from_the_dead_is_listed(self):
+        """For the fight's events (fight_events): a death and its return; a
+        player dead as the fight ended, up before it carries on; and one
+        dead since an earlier pull, marked so."""
+        dead = po.TimeDead()
+        dead.begin(10_000, carried=["3"])
+        dead.died("1", 20_000)
+        dead.alive("1", 35_000)
+        dead.alive("3", 40_000)
+        dead.died("2", 50_000)
+        dead.end(60_000)
+        dead.alive("2", 75_000)
+        self.assertEqual(dead.revived, [("1", 20_000, 35_000, False), ("3", 10_000, 40_000, True),
+                                        ("2", 50_000, 75_000, False)])
+
     def test_the_end_closes_what_is_open_and_says_who_was_dead(self):
         dead = po.TimeDead()
         dead.died("1", 10_000)

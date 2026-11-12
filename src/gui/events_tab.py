@@ -456,7 +456,9 @@ class EventsPage(QWidget):
             self._refill(key, scroll=scroll)
         else:
             self._refill(_FIRST_DEATH)
-            self._measure_columns()
+        # Measured again in place too: rows logged later, or Hide names,
+        # can widen a column (the selection and the scroll stay)
+        self._measure_columns()
 
     def clear(self) -> None:
         """Show no fight: the page with no fight keeps no names from the last."""

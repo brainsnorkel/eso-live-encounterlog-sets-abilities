@@ -3329,13 +3329,13 @@ class ESOLogAnalyzer(ListenerMixin):
                              self_source=(healer_id == record), pet_owner=pet_owner)
         self.death_recap_recorder.record(entry.timestamp, fields, target_id,
                                          player_source=player_source)
-        # A big hit, its shield's absorb counted in (fight_events)
+        # A big hit, its shield's absorb counted in (fight_events); the
+        # names are asked for only for a hit kept
         if result in fight_events.DAMAGE_RESULTS or result == fight_events.SHIELDED:
-            player = enc.player_of(target_id)
             self.events.note_on_player(
                 entry.timestamp, result, fields, record,
-                player.get_display_name() if player is not None else "",
-                self._resolve_recap_unit(source_id), self._event_key(source_id))
+                lambda: (self._resolve_recap_unit(target_id),
+                         self._resolve_recap_unit(source_id), self._event_key(source_id)))
 
     def _note_zero_state(self, fields: List[str], at: int, entry: ESOLogEntry,
                          now_ms: Optional[int], player: Optional[PlayerInfo] = None,
@@ -4082,8 +4082,8 @@ class ESOLogAnalyzer(ListenerMixin):
         players' returns from the dead (pull_outcome.TimeDead) and the
         bosses' deaths."""
         names = {player.unit_id: player.get_display_name() for player in enc.players.values()}
-        revived = [(back, names.get(key, ""), key, back - died)
-                   for key, died, back in enc.time_dead.revived]
+        revived = [(back, names.get(key, ""), key, back - died, carried)
+                   for key, died, back, carried in enc.time_dead.revived]
         boss_deaths = [(enemy.died_at, enemy.name, unit_id)
                        for unit_id, enemy in enc.enemies.items()
                        if enemy.is_boss and enemy.died_at is not None]
