@@ -1,7 +1,7 @@
 """
-The positions window (issue #214): one fight paused at a moment, where
-everyone stood, with their health, opened from a death (and later from an
-event) of the fight.
+The positions window (issue #214): one fight at a moment, where everyone
+stood, with their health, opened from a death (and later from an event) of
+the fight, held still or played back (#232).
 
 Design: One window, re-used, beside the main window, as the player window
 is (a QDialog child of it, never deleted before it, hidden by Esc): it
@@ -12,10 +12,11 @@ and the moment ('Lord Falgravn · Kyne's Aegis VET · Kill · 1:50.0 of
 (positions_canvas) beside a table of the same units in a splitter, the
 line under the canvas naming who is not drawn ('Not on this map: 6, 11');
 the controls (previous death, a second back, the moment's clock, a second
-on, next death, Show); and the scrub bar. Decided for #214: paused
-moments only (no playback, no animation, no casts yet), players, bosses
-and adds drawn, pets, companions, unannounced and other units each one
-toggle away in Show.
+on, next death, Show); and Play, the speed and the scrub bar, a row of
+their own (the controls' row had no room left at 200% text). Decided for
+#214: players, bosses and adds drawn, pets, companions, unannounced and
+other units each one toggle away in Show, no casts yet; #232 added
+playback (below).
 
 What it draws comes from two places. The fight entry gives the numbers,
 the roles and the deaths: a player's number is the place of their row in
@@ -83,9 +84,15 @@ the moment in words, names through the mask. Ctrl+H and the text size
 keys are the main window's, application-wide, and never bound here: a
 second binding makes both ambiguous and neither fires (probed on Ctrl+0).
 The bare keys belong to the focused scrub bar: Left and Right, Shift, Home
-and End, PgUp and PgDn. The buttons are QToolButtons: a QPushButton in a
-dialog takes Enter even with the focus elsewhere (probed). Tab goes from
-the scrub bar to the table to the buttons.
+and End, PgUp and PgDn. Space alone is not a shortcut, which would take it
+from a focused button too: the table and the scrub bar leave a plain Space
+to the window (keyPressEvent), which plays or pauses, while a button and
+the speed picker keep their own. Ctrl+, and Ctrl+. play slower and faster,
+as the < and > of a video player. The buttons are QToolButtons: a
+QPushButton in a dialog takes Enter even with the focus elsewhere
+(probed); they and the speed picker take the focus by Tab only, so a click
+leaves it in the table. Tab goes from the scrub bar to the table to Play,
+the speed and the buttons.
 
 Hide names. The main window hands the window the mask of its fight
 (NameMask.for_entry, from the entry's player_names). The window extends it
@@ -96,14 +103,70 @@ the roster drops them, but not in player_names. Bosses, adds and pets are
 never hidden. On the canvas a hidden name is drawn as '@' and its
 pixelated stand-in, as the pages draw it.
 
+Playback (#232). Play runs the moment on from where it is at the speed
+picked, 1x to 5x, and only the reader starts it, by Play or Space: no
+link, no states read, no speed and no redraw does (the guide's
+Accessibility says so, under Motion). The moment is reckoned from the
+wall clock, never counted in frames: the moment and the wall time at Play
+or at a new speed, plus the wall time since times the speed, so a slow
+frame shows a later moment and never slows the fight. Frames come from a
+precise QTimer every FRAME_MS, about 30 a second (the measures below),
+running only while playing. It pauses by itself at the fight's end
+(END_COMBAT, not the tail after it, and never at a death); Play there, or
+in the tail, starts again from the fight's start. A step, a scrub or a
+death pauses at the moment it goes to, as does a link: the reader asked
+for that moment, held still. Selecting a unit, a speed and Show play on,
+as they move no moment. A hide stops it, and a minimised window, whose
+hide is spontaneous and which keeps its states, pauses: the moment does
+not run on unseen. New states, states dropped and a Settings replay pause
+too.
+
+Gliding. While playing, a mark moves on a straight line between two
+logged samples at most GLIDE_MS (1 s) apart (positions_canvas.glide_state):
+from the last line that wrote its place, the reader's seen (a unit
+standing still is written again and again, so the state's own time would
+start the glide early), to the next state's first, in one map frame and
+both on their map. Its facing, health and pools stay the last sample's.
+Further apart it waits at its last place, as paused: a line over a longer
+gap, which the canvas marks dashed after STALE_MS anyway, would draw a
+path the log never gave. Paused, nothing glides: every mark stands where
+its last state put it, and Pause redraws the whole moment as a step to it
+does, so a paused window is the #214 window to the pixel
+(test_positions_playback_gui compares the two).
+
+What a reader reads, while playing. A frame moves the picture, the clock,
+the boss bars' paint and the scrub bar's mark. The table, the header, the
+line under the canvas, the descriptions (the canvas's, the table's, the
+boss bars'), and the scrub bar's value and description follow once a
+DESCRIBE_MS (1 s) of wall time, and in full at Pause: a screen reader is
+not handed 30 changes a second. Those updates leave the table's scroll and
+current row alone; the clock has a fixed size, so its new text asks
+nothing of the layout (it asked for one every fifth frame), and the
+canvas, which fills itself, is opaque, so the window, the splitter and the
+pane under it are not painted again with it.
+
+Measured (build/playback232/measure_paint.py): Lord Falgravn, a 284 s
+Kyne's Aegis kill, 12 players with adds, 108 tracks, every frame of the
+fight at 1x, offscreen, the machine busy with another job (an earlier,
+quieter run of the paused code painted the canvas in 3.3 ms against
+5.4). At 200% text and device pixel
+ratio 2: the glided scene a median 0.66 ms (p99 1.3; paused, 0.59), the
+canvas's paint 5.4 ms (p99 8.7, as paused), a whole frame, tick and
+repaint, 7.7 ms (p90 10.4, p99 12.7, at most 16.8), 14 units drawn at the
+median and 29 at most. At 100% text and ratio 1: the canvas 3.4 ms, a
+frame 4.7 ms (p99 9.2). At 60 frames a second the UI thread would be half
+busy at 200% with its p99 frame near the 16.7 ms interval; at 30 it is a
+quarter busy with room, and a frame late only skips.
+
 It holds no reference to the main window and stores no lambda on a child;
-its only timer is its own single-shot 0 ms redraw, which draws a burst of
-updates to the fight once.
+its timers are its own: the single-shot 0 ms redraw, which draws a burst
+of updates to the fight once, and playback's frames.
 """
 
 from __future__ import annotations
 
 import re
+import time
 from itertools import pairwise
 
 from PySide6.QtCore import (
@@ -126,6 +189,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -200,6 +264,16 @@ SHOW_TIPS = {MARK_ADD: "Hostile units other than the bosses",
              MARK_COMPANION: "Companions",
              MARK_UNKNOWN: "Units the log never announced: anchors, hazards, objects",
              MARK_OTHER: "Units neither hostile nor a player's: NPCs, invisible targets"}
+# Playback (#232, see the module): the speeds, the frame timer's interval,
+# and how often the table and the descriptions follow while playing
+SPEEDS = (1, 2, 3, 4, 5)
+FRAME_MS = 33
+DESCRIBE_MS = 1_000
+PLAY_TEXT, PAUSE_TEXT = "▶ Play", "❚❚ Pause"
+PLAY_TIP = "Play the fight from this moment (Space); it stops at the fight's end"
+PAUSE_TIP = "Pause (Space)"
+SPEED_TIP = "Playback speed (Ctrl+, slower, Ctrl+. faster)"
+CLOCK_TEMPLATE = "-00:00.0"  # the clock's widest text (fight_clock)
 
 # The table's columns
 # The table's columns: who, their health and their state first, where a
@@ -234,6 +308,12 @@ _DISPLAY, _ACCESSIBLE, _DECORATION, _ALIGNMENT, _TOOLTIP = (
                                  Qt.TextAlignmentRole, Qt.ToolTipRole))
 _RIGHT = int((Qt.AlignRight | Qt.AlignVCenter).value)
 _TABLE_MARKS = (MARK_PLAYER, MARK_LOOSE, MARK_BOSS)
+
+
+def wall_ms() -> float:
+    """The wall clock playback runs by, in ms: monotonic, finer than a
+    millisecond (see the module)."""
+    return time.perf_counter() * 1000.0
 
 
 # ------------------------------------------------------------- the words --
@@ -588,6 +668,24 @@ class _WrapLabel(QLabel):
             self._fit()
 
 
+class _MomentTable(QTableView):
+    """The table, leaving a plain Space to the window, which plays or
+    pauses (see the module): a QTableView takes Space to select its current
+    row, which the arrow keys already do in a table of single rows."""
+
+    def keyPressEvent(self, event) -> None:
+        if _plain_space(event):
+            event.ignore()  # on to the window
+            return
+        super().keyPressEvent(event)
+
+
+def _plain_space(event) -> bool:
+    return (event.key() == Qt.Key_Space
+            and not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
+                                         | Qt.ShiftModifier))
+
+
 class PositionsWindow(QDialog):
     """See the module notes."""
 
@@ -617,6 +715,13 @@ class PositionsWindow(QDialog):
         self._scene = None
         self._syncing = False
         self._split_done = False
+        # Playback (see the module): the moment runs from where it was at
+        # the wall clock's time, times the speed
+        self._playing = False
+        self._speed = SPEEDS[0]
+        self._play_from = (0, 0.0)   # (moment, wall ms) the moment is reckoned from
+        self._described_at = 0.0     # wall ms of the last update of what a reader reads
+        self._wall_ms = wall_ms
 
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
@@ -653,7 +758,7 @@ class PositionsWindow(QDialog):
         self.elsewhere_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         left_layout.addWidget(self.canvas, 1)
         left_layout.addWidget(self.elsewhere_label)
-        self.table = QTableView()
+        self.table = _MomentTable()
         self.model = PositionsTable(self)
         self.table.setModel(self.model)
         self.table.setAccessibleName("Players and bosses")
@@ -682,6 +787,14 @@ class PositionsWindow(QDialog):
         layout.addWidget(self.splitter, 1)
 
         controls = QHBoxLayout()
+        self.play_button = self._button(PLAY_TEXT, "Play", PLAY_TIP, self.toggle_play)
+        self.speed_box = QComboBox()
+        self.speed_box.addItems([f"{speed}x" for speed in SPEEDS])
+        self.speed_box.setAccessibleName("Speed")
+        self.speed_box.setToolTip(SPEED_TIP)
+        # As the buttons: a click leaves the focus where it was
+        self.speed_box.setFocusPolicy(Qt.TabFocus)
+        self.speed_box.currentIndexChanged.connect(self._on_speed_picked)
         self.previous_death = self._button("◀ Death", "Previous death",
                                            "Previous death (Ctrl+PgUp)", self._previous_death)
         self.back = self._button("−1 s", "Back one second",
@@ -689,6 +802,7 @@ class PositionsWindow(QDialog):
         self.clock = QLabel()
         self.clock.setAccessibleName("Moment")
         self.clock.setTextFormat(Qt.PlainText)
+        self.clock.setAlignment(Qt.AlignCenter)
         self.forward = self._button("+1 s", "On one second",
                                     "On a second (Ctrl+Right); with Shift a tenth", self._forward)
         self.next_death = self._button("Death ▶", "Next death", "Next death (Ctrl+PgDn)",
@@ -721,7 +835,13 @@ class PositionsWindow(QDialog):
         self.scrub.moment_requested.connect(self._go_to)
         self.scrub.step_requested.connect(self._step)
         self.scrub.death_requested.connect(self._death_step)
-        layout.addWidget(self.scrub)
+        # Play and the speed beside the bar the moment runs along, not in
+        # the row above, which has no room left at 200% text
+        playback = QHBoxLayout()
+        playback.addWidget(self.play_button, 0, Qt.AlignTop)
+        playback.addWidget(self.speed_box, 0, Qt.AlignTop)
+        playback.addWidget(self.scrub, 1)
+        layout.addLayout(playback)
 
         # Modified keys only (see the module); never Ctrl+H nor the text
         # size keys, which are the main window's, application-wide
@@ -729,7 +849,8 @@ class PositionsWindow(QDialog):
                            ("Ctrl+Shift+Left", self._back_tenth),
                            ("Ctrl+Shift+Right", self._forward_tenth),
                            ("Ctrl+PgUp", self._previous_death), ("Ctrl+PgDown", self._next_death),
-                           ("Ctrl+Up", self._previous_unit), ("Ctrl+Down", self._next_unit)):
+                           ("Ctrl+Up", self._previous_unit), ("Ctrl+Down", self._next_unit),
+                           ("Ctrl+,", self.slower), ("Ctrl+.", self.faster)):
             QShortcut(QKeySequence(keys), self, slot)
         QShortcut(QKeySequence(QKeySequence.Copy), self, self._copy_moment)
 
@@ -739,13 +860,21 @@ class PositionsWindow(QDialog):
         self._redraw.setSingleShot(True)
         self._redraw.setInterval(0)
         self._redraw.timeout.connect(self._redraw_now)
+        # Playback's frames, only while playing (see the module)
+        self._play_timer = QTimer(self)
+        self._play_timer.setTimerType(Qt.PreciseTimer)
+        self._play_timer.setInterval(FRAME_MS)
+        self._play_timer.timeout.connect(self._tick)
 
         QWidget.setTabOrder(self.scrub, self.table)
-        order = (self.table, self.previous_death, self.back, self.forward, self.next_death,
-                 self.show_button, self.show_in_list)
+        order = (self.table, self.play_button, self.speed_box, self.previous_death, self.back,
+                 self.forward, self.next_death, self.show_button, self.show_in_list)
         for first, second in pairwise(order):
             QWidget.setTabOrder(first, second)
         self._fit_table()
+        self._fit_play_button()
+        self._fit_clock()
+        self._fill_play_button()
         self.resize(*self._default_size())
 
     def _button(self, text: str, name: str, tip: str, slot) -> QToolButton:
@@ -784,7 +913,9 @@ class PositionsWindow(QDialog):
         BEGIN_LOG, the locator's clock) with *unit_key* selected (a
         player's fight-table 'unit_id'), and bring the window up with the
         focus in the table. Without the states of its locator it says it
-        is reading them until reread_done brings them."""
+        is reading them until reread_done brings them. A link while
+        playing pauses: the window shows the link's moment, held still."""
+        self._stop_playing()
         self._dark = bool(dark)
         self._given = names or NO_MASK
         self._entry = entry
@@ -861,7 +992,8 @@ class PositionsWindow(QDialog):
     def rebind(self, entry, names=None) -> None:
         """A Settings replay rebuilt the window's fight as *entry*: the
         window shows it, keeping the states it holds when the new locator
-        equals theirs."""
+        equals theirs; paused, as for any other fight it is given."""
+        self._stop_playing()
         self._entry = entry
         if names is not None:
             self._given = names
@@ -910,15 +1042,148 @@ class PositionsWindow(QDialog):
         """Turn a mark of the Show menu on or off."""
         self._show_actions[mark].setChecked(bool(on))
 
+    # ---- playback (see the module) ----
+
+    def is_playing(self) -> bool:
+        return self._playing
+
+    def speed(self) -> int:
+        return self._speed
+
+    def play(self) -> None:
+        """Play the fight on from the moment shown, at the speed picked;
+        from the fight's start when the moment is at or past its end.
+        Nothing without the fight's states."""
+        if self._playing or self._states is None or self._entry is None:
+            return
+        span = self._span()
+        if span is None:
+            return
+        if self._t >= span[2]:
+            self._t = span[1]
+        self._playing = True
+        now = self._wall_ms()
+        self._play_from = (self._t, now)
+        self._described_at = now
+        self._play_timer.start()
+        self._draw(sync_table=False)
+
+    def pause(self) -> None:
+        """Hold the moment shown: every mark back at its last logged place,
+        and the table, the descriptions and the bar complete."""
+        if not self._playing:
+            return
+        self._stop_playing()
+        self._draw()
+
+    def toggle_play(self) -> None:
+        if self._playing:
+            self.pause()
+        else:
+            self.play()
+
+    def set_speed(self, speed: int) -> None:
+        """Play at *speed* (one of SPEEDS, the nearest when outside them):
+        while playing, on from the moment reached at the old speed."""
+        speed = max(SPEEDS[0], min(SPEEDS[-1], int(speed)))
+        if speed != self._speed:
+            if self._playing:
+                now = self._wall_ms()
+                self._play_from = (self._moment_at(now), now)
+            self._speed = speed
+        index = SPEEDS.index(speed)
+        if self.speed_box.currentIndex() != index:
+            self.speed_box.blockSignals(True)
+            self.speed_box.setCurrentIndex(index)
+            self.speed_box.blockSignals(False)
+
+    def slower(self) -> None:
+        self.set_speed(self._speed - 1)
+
+    def faster(self) -> None:
+        self.set_speed(self._speed + 1)
+
+    def _on_speed_picked(self, index: int) -> None:
+        if 0 <= index < len(SPEEDS):
+            self.set_speed(SPEEDS[index])
+
+    def _moment_at(self, now: float) -> int:
+        """The moment playback has reached at the wall clock's *now*."""
+        t0, wall0 = self._play_from
+        return t0 + round((now - wall0) * self._speed)
+
+    def _stop_playing(self) -> None:
+        """Playback off, the timer stopped; nothing redrawn."""
+        self._play_timer.stop()
+        if self._playing:
+            self._playing = False
+            self._fill_play_button()
+
+    def _tick(self) -> bool:
+        """A frame of playback: the moment from the wall clock, the picture
+        glided, and once a DESCRIBE_MS what a reader reads; at the fight's
+        end, paused there. Whether it updated what a reader reads."""
+        if not self._playing:
+            return False
+        span = self._span()
+        if span is None or self._states is None or self._entry is None:
+            self._stop_playing()
+            return False
+        now = self._wall_ms()
+        t = self._moment_at(now)
+        if t >= span[2]:
+            self._t = span[2]
+            self.pause()
+            return True
+        self._t = t
+        describe = now - self._described_at >= DESCRIBE_MS
+        if describe:
+            self._described_at = now
+        self._draw(sync_table=False, describe=describe)
+        return describe
+
+    def _fill_play_button(self) -> None:
+        playing = self._playing
+        button = self.play_button
+        name = "Pause" if playing else "Play"
+        if button.accessibleName() != name:
+            button.setText(PAUSE_TEXT if playing else PLAY_TEXT)
+            button.setAccessibleName(name)
+            button.setToolTip(PAUSE_TIP if playing else PLAY_TIP)
+        button.setEnabled(playing or (self._states is not None and self._entry is not None))
+
+    def _fit_play_button(self) -> None:
+        """The play button as wide as its wider text at the font in force,
+        so a press never moves the controls after it."""
+        button = self.play_button
+        shown = button.text()
+        widths = []
+        for text in (PLAY_TEXT, PAUSE_TEXT):
+            button.setText(text)
+            widths.append(button.sizeHint().width())
+        button.setText(shown)
+        button.setMinimumWidth(max(widths))
+
+    def _fit_clock(self) -> None:
+        """The clock as wide as its widest moment at the font in force,
+        and fixed: its text changes at each tenth while playing, and a
+        label free to change its size asks the whole window for a layout
+        each time (measured: 60 in 300 frames)."""
+        metrics = self.clock.fontMetrics()
+        self.clock.setFixedSize(metrics.horizontalAdvance(CLOCK_TEMPLATE) + scaled_px(8),
+                                metrics.height())
+
     # ---- binding and drawing ----
 
     def _take_states(self, states) -> None:
+        self._stop_playing()  # new states are a new reading: paused
         self._states = states
         self._boxes = fit_boxes(states)
         self._maps = map_change_times(states)
         self._message = ""
 
     def _drop_states(self, message: str) -> None:
+        self._stop_playing()
         self._states = None
         self._boxes = {}
         self._maps = ()
@@ -957,10 +1222,13 @@ class PositionsWindow(QDialog):
             first = min(states.range_start_ms, locator.start_ms)
         return first, locator.start_ms, locator.end_ms, locator.end_ms + TAIL_MS
 
-    def _draw(self, sync_table: bool = True) -> None:
+    def _draw(self, sync_table: bool = True, describe: bool = True) -> None:
         """Everything for the moment: the header, the canvas, the table,
         the boss bars, the line under the canvas, the scrub bar, the
-        buttons."""
+        buttons. While playing, the places glide, and a frame that does
+        not *describe* (see the module) moves only the picture, the clock,
+        the boss bars' paint and the bar's mark: the rest waits for one
+        that does."""
         entry = self._entry
         if entry is None:
             return
@@ -968,10 +1236,19 @@ class PositionsWindow(QDialog):
         if span is not None:
             self._t = max(span[0], min(span[3], self._t))
         start, end = (span[1], span[2]) if span is not None else (self._t, self._t)
+        self.clock.setText(fight_clock(self._t - start) if span is not None else "")
+        if not describe:
+            if self._states is not None:
+                self._scene = self._build_scene()
+                self.canvas.set_scene(self._scene, self._names)
+                self.boss_bars.set_bosses([boss_bar(unit) for unit in boss_rows(self._scene.units)],
+                                          describe=False)
+            if span is not None:
+                self.scrub.move_to(self._t)
+            return
         self.fight_label.setText(header_line(entry, self._t - start if span is not None else None))
         title = str(getattr(entry, "boss_name", "") or getattr(entry, "zone_name", "") or "")
         self.setWindowTitle(f"{TITLE} – {title}" if title else TITLE)
-        self.clock.setText(fight_clock(self._t - start) if span is not None else "")
         if self._states is None:
             self._scene = None
             self.canvas.set_message(self._message)
@@ -980,9 +1257,7 @@ class PositionsWindow(QDialog):
             self.elsewhere_label.setText("")
             summary = self._message
         else:
-            self._resolve_selected()
-            self._scene = build_scene(self._states, self._roster, self._t, self._selected,
-                                      self._shown, self._boxes)
+            self._scene = self._build_scene()
             self.canvas.set_scene(self._scene, self._names)
             self._fill_table([u for u in self._scene.units if u.mark in _TABLE_MARKS])
             self.boss_bars.set_bosses([boss_bar(unit) for unit in boss_rows(self._scene.units)])
@@ -990,10 +1265,20 @@ class PositionsWindow(QDialog):
             summary = moment_summary(self._scene, start, end)
         self.canvas.setAccessibleDescription(summary)
         self.table.setAccessibleDescription(summary)
+        # A frame of playback leaves the table where the reader scrolled it
+        # (its rows are the same units throughout: only entry_updated's
+        # redraw, which syncs, can change them)
         if sync_table:
             self._sync_table()
         self._fill_scrub(span)
         self._fill_buttons()
+        self._fill_play_button()
+
+    def _build_scene(self):
+        """The moment's Scene, glided while playing (build_scene)."""
+        self._resolve_selected()
+        return build_scene(self._states, self._roster, self._t, self._selected, self._shown,
+                           self._boxes, glide=self._playing)
 
     def _resolve_selected(self) -> None:
         """A key from open() that names no player: the unit of that key
@@ -1129,6 +1414,9 @@ class PositionsWindow(QDialog):
     # ---- moving ----
 
     def _go_to(self, t: int) -> None:
+        """The moment *t*, held still: a step, a scrub or a death while
+        playing pauses there (see the module)."""
+        self._stop_playing()
         self._t = int(t)
         self._draw()
 
@@ -1181,6 +1469,7 @@ class PositionsWindow(QDialog):
         if index is None:
             return
         t, unit_id = self._roster.deaths[index][:2]
+        self._stop_playing()
         self._t = t
         self._selected = unit_id
         self._draw()
@@ -1287,15 +1576,30 @@ class PositionsWindow(QDialog):
             side = max(10, scaled_px(12))
             self.table.setIconSize(QSize(side, side))
             self._fit_table()
+            self._fit_play_button()
+            self._fit_clock()
             if self._entry is not None and self.isVisible():
                 self._draw()
 
+    def keyPressEvent(self, event) -> None:
+        """A plain Space the focused part left (the table, the scrub bar,
+        none) plays or pauses; a button or the speed picker keeps its own
+        Space. Held down, it toggles once."""
+        if _plain_space(event):
+            if not event.isAutoRepeat():
+                self.toggle_play()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def hideEvent(self, event) -> None:
         """Hidden by Esc, the title bar's x or the main window (no close
-        event comes): the states and the locator wanted are dropped, the
-        fight kept. A window the system minimised keeps them."""
+        event comes): playback stops, the states and the locator wanted
+        are dropped, the fight kept. A window the system minimised keeps
+        them, paused: the moment does not run on unseen."""
         super().hideEvent(event)
         if event.spontaneous():
+            self.pause()
             return
         self._redraw.stop()
         self._wanted = None

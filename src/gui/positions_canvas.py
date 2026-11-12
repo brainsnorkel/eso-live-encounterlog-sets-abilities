@@ -1,21 +1,34 @@
 """
-The positions canvas (issue #214): where everyone stood at one paused
-moment of a fight, drawn on a plain 2D canvas, with the boss bars above it
-and the scrub bar the moment is chosen on. The positions window
-(positions_window) holds the fight and its re-read states (fight_reread)
-and hands these widgets a Scene for each moment.
+The positions canvas (issue #214): where everyone stood at one moment of a
+fight, drawn on a plain 2D canvas, with the boss bars above it and the
+scrub bar the moment is chosen on. The positions window (positions_window)
+holds the fight and its re-read states (fight_reread) and hands these
+widgets a Scene for each moment, held still or, while it plays (#232),
+for each frame.
 
-Design: A paused moment, drawn directly. Nothing moves by itself: the
-canvas is repainted on a step, a selection, a resize, a theme or Hide
-names flip, or a new text size, and a full repaint is cheap. Measured
-offscreen for the study (build/positions214/paint): 60 markers with rings,
-noses, bodies and numbers in 2.2 to 3.4 ms at device pixel ratio 1 and 4.7
-to 7.9 ms at ratio 2; twelve players alone 1.3 to 2.0 ms. Over every
-second of six real 12-player boss fights (build/positions214/window/
-probe_piles_out.txt) this canvas repainted in a median 1.9 to 4.2 ms, a
-step of the moment cost 0.5 to 1.6 ms and the whole window's repaint 5.7
-to 11.3 ms. So there is no sprite or frame cache, no QGraphicsView and no
-timer here.
+Design: A moment, drawn directly. Nothing moves by itself: the canvas is
+repainted on a step, a selection, a resize, a theme or Hide names flip, a
+new text size, or a frame of playback, which only the reader's Play
+starts, and a full repaint is cheap. Measured offscreen for the study
+(build/positions214/paint): 60 markers with rings, noses, bodies and
+numbers in 2.2 to 3.4 ms at device pixel ratio 1 and 4.7 to 7.9 ms at
+ratio 2; twelve players alone 1.3 to 2.0 ms. Over every second of six real
+12-player boss fights (build/positions214/window/probe_piles_out.txt)
+this canvas repainted in a median 1.9 to 4.2 ms, a step of the moment cost
+0.5 to 1.6 ms and the whole window's repaint 5.7 to 11.3 ms. Played back
+at 200% text and ratio 2, a frame of a 284 s Lord Falgravn kill painted
+the canvas in a median 5.4 ms on a busy machine, as paused, and built its
+glided scene in 0.66 ms (positions_window has the measures and the frame
+rate). So there is no sprite or frame cache, no QGraphicsView and no timer
+here; the canvas is opaque (it fills itself first), so a frame does not
+paint the panes under it again.
+
+Playback glides, a paused moment never does (glide_state, build_scene's
+glide): while the window plays, a mark moves on a straight line between
+two logged samples at most GLIDE_MS apart, from the last line that wrote
+its place to the next state's first, in one map frame, both on their map;
+only its place moves. Paused, every mark is where its last state put it.
+The window's notes say why.
 
 One box per map frame. The log's coordinates are fractions of the map the
 last MAP_CHANGED line named, so places in two frames are never joined: each
@@ -169,6 +182,9 @@ DEAD_ADD_MS = 2_000    # an add at health 0 is a cross this long, then gone
 NOTES_BEFORE_MS = 4_000
 NOTES_AFTER_MS = 3_000
 NOTES_MAX = 5          # lines of notes at most; more are counted
+# While the window plays the fight back (#232), a mark glides between two
+# logged places at most this far apart (glide_state)
+GLIDE_MS = 1_000
 # The fit: these percentiles of the places, padded by this share of the longer side
 FIT_LOW, FIT_HIGH, FIT_PAD = 0.02, 0.98, 0.12
 MIN_SIDE = 0.01        # a box never narrower than this share of the map
@@ -457,15 +473,45 @@ def map_change_times(states) -> tuple:
     return tuple(times)
 
 
+def glide_state(track, state, t: int):
+    """*state*, the track's last at or before *t*, placed where the unit
+    is drawn at *t* while the window plays (see the module): on the
+    straight line from the last line that wrote it (its seen) to the next
+    state's first, when those two samples are GLIDE_MS or less apart, in
+    one map frame and both on their map; else *state* itself, as paused.
+    Only the place moves: the health, the pools and the heading stay the
+    last sample's."""
+    seen = state.seen
+    if t <= seen:
+        return state  # a line wrote it at or after the moment: it stood there
+    index = track.at(t) + 1
+    if index >= len(track):
+        return state
+    later = track.t[index]
+    if later - seen > GLIDE_MS or track.frame[index] != state.frame:
+        return state
+    x, y = track.x[index], track.y[index]
+    if not (on_map(state.x, state.y) and on_map(x, y)):
+        return state
+    share = (t - seen) / (later - seen)
+    return state._replace(x=state.x + (x - state.x) * share, y=state.y + (y - state.y) * share)
+
+
 def build_scene(states, roster: Roster, t: int, selected: str | None = None,
-                shown: dict | None = None, boxes: dict | None = None) -> Scene:
+                shown: dict | None = None, boxes: dict | None = None,
+                glide: bool = False) -> Scene:
     """The Scene of moment *t*: every unit with its last state, where it
     is and how it looks (see the module), the moment's frame and box, and
     the deaths near it. *shown*: the Show menu's marks on or off
-    (SHOWN_BY_DEFAULT); *boxes*: fit_boxes(states), computed when None."""
+    (SHOWN_BY_DEFAULT); *boxes*: fit_boxes(states), computed when None;
+    *glide*: while the window plays, each place as glide_state gives it,
+    never when paused."""
     shown = SHOWN_BY_DEFAULT if shown is None else shown
     boxes = fit_boxes(states) if boxes is None else boxes
-    last = {id(track): (state, state_age(state, t)) for track, state, _age in states.moment(t)}
+    moment = states.moment(t)
+    if glide:
+        moment = [(track, glide_state(track, state, t), age) for track, state, age in moment]
+    last = {id(track): (state, state_age(state, t)) for track, state, _age in moment}
     numbers = roster.numbers
     # Each player's latest death the fight counts, at or before the moment
     # (the roster's deaths are in time order)
@@ -902,6 +948,10 @@ class PositionsCanvas(QWidget):
         self._message = ""
         self._names = NO_MASK
         self.setFocusPolicy(Qt.NoFocus)
+        # Every paint fills the whole canvas first, so the window, the
+        # splitter and the pane under it are not painted again with it at
+        # each frame of playback (see the module)
+        self.setAttribute(Qt.WA_OpaquePaintEvent)
         self.setMinimumSize(*CANVAS_LEAST)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAccessibleName("Positions")
@@ -1480,14 +1530,23 @@ class BossBars(QWidget):
         self.setAccessibleName("Boss health")
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-    def set_bosses(self, rows) -> None:
+    def set_bosses(self, rows, describe: bool = True) -> None:
+        """Paint *rows*; with *describe* False (a frame of playback, see
+        positions_window) the accessible description waits for the next
+        call that describes. The layout is asked again only when the
+        number of lines changes, which is all the size hint reads."""
         rows = list(rows)
         if rows != self._rows:
+            lines = min(len(self._rows), BOSS_ROWS_MAX)
             self._rows = rows
-            self.setAccessibleDescription(self.accessible_text())
             self.setVisible(bool(rows))
-            self.updateGeometry()
+            if min(len(rows), BOSS_ROWS_MAX) != lines:
+                self.updateGeometry()
             self.update()
+        if describe:
+            text = self.accessible_text()
+            if text != self.accessibleDescription():
+                self.setAccessibleDescription(text)
 
     def rows(self) -> list:
         return list(self._rows)
@@ -1643,6 +1702,13 @@ class ScrubBar(QSlider):
             self.setValue(round((self._t - self._span[1]) / 1000))
             self.blockSignals(False)
         self.setAccessibleDescription(text)
+        self.update()
+
+    def move_to(self, t: int) -> None:
+        """The moment's mark alone, for a frame of playback: the slider's
+        value and the description, which a screen reader reads, wait for
+        set_moment (positions_window's once a second)."""
+        self._t = int(t)
         self.update()
 
     def moment(self) -> int:

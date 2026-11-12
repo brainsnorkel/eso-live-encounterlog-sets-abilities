@@ -855,9 +855,9 @@ class TestSelecting(PositionsTestCase):
         self.assertFalse(window.show_in_list.isEnabled())
 
     def test_the_tab_order_and_esc(self):
-        """Tab goes from the scrub bar to the table to the buttons (a
-        button that is off is passed: at the first death there is no
-        death before); Esc hides the window."""
+        """Tab goes from the scrub bar to the table to Play and the speed
+        (#232), then the buttons (a button that is off is passed: at the
+        first death there is no death before); Esc hides the window."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         window = self._window()
@@ -865,11 +865,12 @@ class TestSelecting(PositionsTestCase):
         self.assertFalse(window.previous_death.isEnabled())
         window.scrub.setFocus()
         seen = [window.focusWidget()]
-        for _ in range(6):
+        for _ in range(8):
             QTest.keyClick(window.focusWidget(), Qt.Key_Tab)
             seen.append(window.focusWidget())
-        self.assertEqual(seen, [window.scrub, window.table, window.back, window.forward,
-                                window.next_death, window.show_button, window.show_in_list])
+        self.assertEqual(seen, [window.scrub, window.table, window.play_button, window.speed_box,
+                                window.back, window.forward, window.next_death, window.show_button,
+                                window.show_in_list])
         QTest.keyClick(window.table, Qt.Key_Escape)
         self.assertFalse(window.isVisible())
 
