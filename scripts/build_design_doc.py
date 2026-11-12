@@ -175,6 +175,7 @@ TOPICS = [
     ]),
     ("Death recaps", [
         "src/death_recap.py",
+        "src/esolog_tail.py:ESOLogAnalyzer._note_zero_state",
     ]),
     ("Kinds of damage: direct or over time, area or single target, Martial or Magical", [
         "src/damage_kinds.py",
@@ -185,7 +186,7 @@ TOPICS = [
     ("The player window: one window, a tab for each link", [
         "src/gui/player_window.py",
     ]),
-    ("The fight's tabs: Fight, Deaths and Instance", [
+    ("The fight's tabs: Fight, Deaths, Events, DPS graph and Instance", [
         "src/gui/fight_tabs.py",
         "src/gui/main_window.py:MainWindow._show_fight",
         "src/gui/fight_deaths_render.py",
@@ -259,7 +260,8 @@ TOPICS = [
     ("Hidden names: the stand-in behind the blur", [
         "src/gui/name_mask.py",
     ]),
-    ("Links in the fight pane: the hover cue and the dps glyphs", [
+    ("Links in the fight pane: the hover cue, the dps glyphs and what a screen reader hears", [
+        "src/gui/fight_view.py",
         "src/gui/fight_view.py:FightView._show_hover_cue",
         "src/gui/glyphs.py",
     ]),
