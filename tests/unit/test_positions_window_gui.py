@@ -1417,9 +1417,13 @@ class TestTheGuide(unittest.TestCase):
                       f"above {round(POOLS_UP_TO * 100)}% it leaves out magicka and stamina",
                       "**Ctrl+C** still copies them", "The time on each row of the [Deaths tab]"):
             self.assertIn(words, guide)
-        fragment = (Path(__file__).resolve().parents[2] / "changelog.d" / "214-positions.md")
+        # The release notes: the fragment until a release commit folds it
+        # into CHANGELOG.md
+        root = Path(__file__).resolve().parents[2]
+        fragment = root / "changelog.d" / "214-positions.md"
+        notes = fragment if fragment.exists() else root / "CHANGELOG.md"
         self.assertIn(f"above {round(POOLS_UP_TO * 100)}% text it leaves out magicka and stamina",
-                      fragment.read_text(encoding="utf-8"))
+                      notes.read_text(encoding="utf-8"))
 
 
 # ----------------------------------------------- bosses added again --

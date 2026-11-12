@@ -1,2 +1,0 @@
-### Fixed
-- **Casts count presses, not procs** (#226): a synergy taken again, which the game writes under the first take's id, counts as a second cast; procs the game writes as casts over and over (Meridia's Favor, Highland Sentinel, Blood Magic) no longer count in the Other row's total or the casts per minute; and a scribed banner pressed in one fight no longer counts as cast again in each later fight it ticks through
