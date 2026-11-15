@@ -74,6 +74,8 @@ from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
+from ability_icons import bundle_root
+
 # ----------------------------------------------------------------- results --
 
 DIRECT_RESULTS = frozenset(("DAMAGE", "CRITICAL_DAMAGE", "BLOCKED_DAMAGE"))
@@ -152,12 +154,19 @@ def classify(result: str, damage_type: str) -> dict:
 
 # ------------------------------------------------- player skills' targets --
 
-TARGET_TABLE_PATH = Path(__file__).resolve().parent.parent / "data" / "skills" / "ability_targets.json"
+def target_table_path() -> Path:
+    """The bundled table: under sys._MEIPASS when frozen, else the repo's data/."""
+    return bundle_root() / "data" / "skills" / "ability_targets.json"
+
+
+TARGET_TABLE_PATH = target_table_path()
 _target_table: dict[str, str] | None = None
 
 
-def _load_targets(path: Path = TARGET_TABLE_PATH) -> dict[str, str]:
+def _load_targets(path: Path | None = None) -> dict[str, str]:
     """ability id -> 'area' | 'single' from the bundled table; {} without it."""
+    if path is None:
+        path = target_table_path()
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
