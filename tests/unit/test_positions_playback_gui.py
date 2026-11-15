@@ -14,6 +14,7 @@ hand, and each frame is the window's _tick, so nothing sleeps."""
 
 import copy
 import os
+import sys
 import unittest
 import weakref
 
@@ -674,8 +675,9 @@ class TestTheControls(PlaybackTestCase):
         self.assertEqual(window.speed_box.focusPolicy(), Qt.TabFocus)
         self.assertEqual(window.play_button.focusPolicy(), Qt.TabFocus)
         keys = {shortcut.key().toString() for shortcut in window.findChildren(QShortcut)}
-        self.assertTrue({QKeySequence("Ctrl+,").toString(), QKeySequence("Ctrl+.").toString()}
-                        <= keys)
+        # ⌃, and ⌃. on macOS, where ⌘, and ⌘. are Settings and Cancel
+        speed_keys = ({"Meta+,", "Meta+."} if sys.platform == "darwin" else {"Ctrl+,", "Ctrl+."})
+        self.assertTrue(speed_keys <= keys)
         self.assertNotIn(QKeySequence("Space").toString(), keys)  # a button keeps its own
 
     def test_they_fit_1280_by_720_at_200_percent(self):

@@ -52,19 +52,15 @@ def _enable_crash_log():
         return None
 
 
-def main() -> int:
-    from PySide6.QtWidgets import QApplication
+def _set_window_icon(app) -> None:
+    """The icon of the app's windows: bundled next to the app when frozen,
+    the repo root in dev.
 
-    from app_config import AppConfig
-    from gui.main_window import MainWindow
-
-    crash_log = _enable_crash_log()  # noqa: F841 (must outlive the app)
-
-    app = QApplication(sys.argv)
-    app.setApplicationName("ESO Log Tail")
-    app.setOrganizationName("esolog-tail")
-
-    # Window icon: bundled next to the app when frozen, repo root in dev
+    Not on macOS (issue #32): a window has no icon in its title bar there,
+    and the Dock's icon is the bundle's own, which this call is documented
+    to replace with the .ico's picture."""
+    if sys.platform == "darwin":
+        return
     from pathlib import Path
     from PySide6.QtGui import QIcon
     base = Path(getattr(sys, "_MEIPASS",
@@ -72,6 +68,23 @@ def main() -> int:
     icon_path = base / "icon.ico"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
+
+
+def main() -> int:
+    from PySide6.QtWidgets import QApplication
+
+    from app_config import AppConfig
+    from gui.keys import use_alt_letters
+    from gui.main_window import MainWindow
+
+    crash_log = _enable_crash_log()  # noqa: F841 (must outlive the app)
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("ESO Log Tail")
+    app.setOrganizationName("esolog-tail")
+    _set_window_icon(app)
+    # Before the first window: the tabs' Alt letters on macOS
+    use_alt_letters()
 
     config = AppConfig()
     window = MainWindow(config)

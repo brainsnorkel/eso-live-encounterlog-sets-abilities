@@ -22,6 +22,7 @@ from death_recap import DEFAULT_WINDOW_S, MAX_WINDOW_S, MIN_WINDOW_S, recap_wind
 from effect_rules import DEFAULT_RULES, parse_rules
 from gui import text_size
 from gui.fight_render import _theme
+from gui.keys import key_text
 from recycle_bin import TRASH_NAME
 from update_check import CHANNEL_CHOICES, normalize_channel
 from pen_crit import (
@@ -210,8 +211,8 @@ class _PathRow(QHBoxLayout):
 
 
 TEXT_SIZE_HELP = ("The size of all the app's text, its windows and the timeline strip; the "
-                  "ability icons grow with it. Ctrl+= and Ctrl+- change it a step from any "
-                  "window, Ctrl+0 puts it back to 100%.")
+                  f"ability icons grow with it. {key_text('Ctrl+=')} and {key_text('Ctrl+-')} change "
+                  f"it a step from any window, {key_text('Ctrl+0')} puts it back to 100%.")
 COLORBLIND_HELP = ("The graph's player lines in a set of colours chosen to stay apart for red-green "
                    "and blue-yellow colour blindness, each player also drawn solid, dashed, dotted "
                    "or dash-dotted in turn, so lines can be told apart by shape as well as colour.")
@@ -422,7 +423,7 @@ class SettingsDialog(QDialog):
         privacy_group = QGroupBox("Privacy")
         privacy_form = _form(privacy_group)
         self.hide_names = QCheckBox(
-            "Hide other players' handles and character names (Ctrl+H toggles it)")
+            f"Hide other players' handles and character names ({key_text('Ctrl+H')} toggles it)")
         self.hide_names.setChecked(bool(config.get("privacy.hide_names", False)))
         privacy_form.addRow(self.hide_names)
         privacy_form.addRow(self._help(PRIVACY_HELP, self.hide_names))

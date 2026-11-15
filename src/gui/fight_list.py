@@ -98,6 +98,7 @@ from gui.fight_render import (
     issues_description,
     summary_line,
 )
+from gui.keys import key_text
 from gui.name_mask import NameMask
 from pull_outcome import run_details, run_summary, runs
 from trial_result import result_text
@@ -121,8 +122,8 @@ MARK_SLACK = 3
 
 # A header, run or result row's hover line, and what a screen reader hears
 # for it: a click on one opens the Instance tab (issue #196)
-INSTANCE_CUE = "Click for the instance (Alt+I)"
-INSTANCE_DESCRIPTION = "Alt+I opens the instance"
+INSTANCE_CUE = f"Click for the instance ({key_text('Alt+I')})"
+INSTANCE_DESCRIPTION = f"{key_text('Alt+I')} opens the instance"
 
 def run_text(run, index=None) -> str:
     """A run row's line: the run's summary, and the best earlier kill of

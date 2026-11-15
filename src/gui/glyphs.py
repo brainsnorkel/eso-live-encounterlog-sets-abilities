@@ -58,6 +58,7 @@ one image per kind, colour, size and ratio, kept for the session.
 """
 
 import math
+import sys
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QRadialGradient
@@ -73,7 +74,23 @@ KINDS = (GRAPH_GLYPH, BREAKDOWN_GLYPH, TAKEN_GLYPH, ISSUES_GLYPH, DEATHS_GLYPH)
 ISSUES_RING = 0.36
 ISSUES_HALO_ALPHA = 0.38
 
+# The fonts asked for the death chip's skull, in order, before the system
+# font: symbol fonts whose skull is an outline the pen can colour. macOS has
+# a list of its own, with no name from another platform in it: a family Qt
+# cannot find costs a search of every installed font (about 50 ms on the
+# maintainer's Mac) and a warning in the log, and naming a font that is
+# there beside the missing one does not spare it (issue #32)
+SKULL_FAMILIES = ('Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols2')
+MAC_SKULL_FAMILIES = ('Apple Symbols',)
+
 _images: dict[tuple[str, str, int, float], QImage] = {}
+
+
+def skull_families(platform: str | None = None) -> list[str]:
+    """The font families asked for the skull on *platform* (the running
+    one unless given), before the system font."""
+    mac = (platform or sys.platform) == 'darwin'
+    return list(MAC_SKULL_FAMILIES if mac else SKULL_FAMILIES)
 
 
 def glyph_image(kind: str, color: str, px: int, dpr: float = 1.0) -> QImage | None:
@@ -132,7 +149,7 @@ def _draw(kind: str, color: QColor, px: int, dpr: float) -> QImage:
         # filled with the colour, since the font fallback otherwise finds a
         # colour emoji font (Segoe UI Emoji), which ignores the pen
         font = QFont()
-        font.setFamilies(['Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols2', font.family()])
+        font.setFamilies(skull_families() + [font.family()])
         font.setPixelSize(max(1, round(px * 0.95)))
         painter.setFont(font)
         painter.setPen(color)

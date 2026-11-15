@@ -292,9 +292,12 @@ class PositionsTestCase(unittest.TestCase):
         self.assertTrue(QTest.qWaitForWindowActive(window, 2000))
 
     def _press(self, target, keys):
-        from PySide6.QtGui import QKeySequence
+        """Press the app's *keys* as this platform binds them (the speed
+        keys are other keys on macOS: gui.keys)."""
         from PySide6.QtTest import QTest
-        combo = QKeySequence(keys)[0]
+
+        from gui.keys import sequence
+        combo = sequence(keys)[0]
         QTest.keyClick(target, combo.key(), combo.keyboardModifiers())
         _app.processEvents()
 

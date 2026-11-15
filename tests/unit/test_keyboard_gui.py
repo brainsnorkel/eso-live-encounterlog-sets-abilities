@@ -142,7 +142,9 @@ class TestKeyboard(unittest.TestCase):
 
     def test_the_toolbar_names_the_key(self):
         self.assertEqual(self.win.detail_action.shortcut().toString(), "Ctrl+D")
-        self.assertIn("Ctrl+D", self.win.detail_action.toolTip())
+        # As the platform writes the key: "⌘D" on macOS
+        from gui.keys import key_text
+        self.assertIn(key_text("Ctrl+D"), self.win.detail_action.toolTip())
 
     def test_the_arrows_pick_a_fight(self):
         # What the guide's Keyboard table says, with a second fight listed

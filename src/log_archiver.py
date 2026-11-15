@@ -15,6 +15,13 @@ Safety model (log-archiving spec):
 - Linux has no deny-all sharing. There the archive is skipped when another
   process has the log open (a /proc scan at the start), and a log that grows
   during the zip fails the size verification, so the original is kept.
+- macOS has neither deny-all sharing nor /proc. There lsof is asked who has
+  the log open (holder_check): at the start, where a holder skips the
+  archive, and again at the moment of an opted-in delete, which happens only
+  on the answer "free" and straight after it. A game that has the log open and writes nothing
+  while it is zipped passes the size verification, and deleting the log
+  under it would lose the rest of the session: the delete succeeds and the
+  game keeps writing to a file with no name.
 
 Trigger model:
 - Size-based: archive when the log has grown more than size_threshold_mb
@@ -23,6 +30,7 @@ Trigger model:
 """
 
 import os
+import subprocess
 import sys
 import time
 import zipfile
@@ -38,6 +46,62 @@ _CHUNK_SIZE = 4 * 1024 * 1024
 
 class LogInUseError(Exception):
     """The log file is open in another process (ESO is running)."""
+
+
+# holder_check's three answers
+HELD = "held"
+FREE = "free"
+UNKNOWN = "unknown"
+
+# Why an opted-in delete left the original (ArchiveEvent.kept_reason), as the
+# status bar writes it after "original kept: "
+KEPT_IN_USE = "the log is in use"
+KEPT_UNKNOWN = "could not check whether the log is in use"
+KEPT_NOT_DELETED = "the log could not be deleted"
+
+_LSOF = "/usr/sbin/lsof"
+_LSOF_TIMEOUT_S = 5
+
+
+def holder_check(path: Path) -> str:
+    """HELD, FREE or UNKNOWN: whether another process has *path* open, as
+    `lsof -t +w -- path` tells it. macOS uses it; it is defined on every
+    platform so that every platform's tests can run it.
+
+    HELD: lsof names a process other than this one. FREE: lsof found none
+    and said nothing else (exit 1 with both streams empty, measured on
+    macOS 27 for a file nobody has open), or named this process only (exit 0;
+    the app's own tail and the archive's own read handle do not count).
+    UNKNOWN: anything else, including a missing lsof, a timeout and any
+    message on stderr (a file it could not stat is one). Only FREE allows a
+    delete, so an answer that cannot be read keeps the original.
+
+    +w, because -t alone turns lsof's warnings off (its man page: "-t
+    selects the -w option"): something lsof could not look into would then
+    read as nobody having the log open. With +w it says so on stderr, and
+    the answer is UNKNOWN.
+
+    lsof sees the processes of the user who runs it, which is where the game
+    is.
+    """
+    try:
+        result = subprocess.run(
+            [_LSOF, "-t", "+w", "--", str(path)], stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, errors="replace",
+            timeout=_LSOF_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return UNKNOWN
+    lines = result.stdout.split()
+    if not all(line.isdigit() for line in lines):
+        return UNKNOWN
+    own_pid = str(os.getpid())
+    if any(pid != own_pid for pid in lines):
+        return HELD
+    if result.stderr.strip():
+        return UNKNOWN
+    if result.returncode == (0 if lines else 1):
+        return FREE
+    return UNKNOWN
 
 
 if sys.platform == "win32":
@@ -104,7 +168,7 @@ else:  # POSIX: no deny-all sharing; look for other holders, then size-verify
         ESO under Wine/Proton keeps the log open like it does on Windows.
         Matching is by device and inode, so it holds across mount namespaces
         (Flatpak). Processes we may not inspect are skipped; without /proc
-        (macOS) this is always False.
+        this is always False, which is why macOS asks holder_check instead.
         """
         try:
             target = os.stat(path)
@@ -135,12 +199,38 @@ else:  # POSIX: no deny-all sharing; look for other holders, then size-verify
     class _ExclusiveFile:
         def __init__(self, path: Path):
             self._path = Path(path)
-            if _held_by_another_process(self._path):
+            # macOS: only a known holder skips the archive. An answer that
+            # cannot be read lets the zip be made; the delete is where it
+            # counts, and that asks again.
+            if sys.platform == "darwin":
+                held = holder_check(self._path) == HELD
+            else:
+                held = _held_by_another_process(self._path)
+            if held:
                 raise LogInUseError(str(path))
             self.file = open(path, "rb")
             self._delete = False
+            self.kept_reason = ""  # why mark_delete_on_close said no
 
         def mark_delete_on_close(self) -> bool:
+            """Delete the log when it is closed. On macOS, only when lsof
+            says now that nobody else has it open: the check at the start is
+            seconds or minutes old, and a game that opened the log since and
+            has written nothing yet passes the size verification. There the
+            log is removed here, straight after the answer, not at close():
+            the config's save and the listeners run in between, and each
+            moment is one in which the game could open the log."""
+            if sys.platform == "darwin":
+                answer = holder_check(self._path)
+                if answer != FREE:
+                    self.kept_reason = KEPT_IN_USE if answer == HELD else KEPT_UNKNOWN
+                    return False
+                try:
+                    self._path.unlink()  # our own read handle stays good
+                except OSError:
+                    self.kept_reason = KEPT_NOT_DELETED
+                    return False
+                return True
             self._delete = True
             return True
 
@@ -293,8 +383,12 @@ class LogArchiver(ListenerMixin):
             # through the exclusive handle (delete-on-close): no other process
             # can touch the file between verification and deletion.
             deleted = False
+            kept_reason = ""
             if bool(self.config.get("archive.delete_original", False)):
                 deleted = source.mark_delete_on_close()
+                if not deleted:
+                    # Only the POSIX handle gives a reason (the macOS check)
+                    kept_reason = getattr(source, "kept_reason", "")
 
             self.config.set("archive.size_at_last_archive",
                             0 if deleted else total)
@@ -302,7 +396,8 @@ class LogArchiver(ListenerMixin):
 
             self._notify('on_archive_event', ArchiveEvent(
                 kind="completed", log_path=log_path, archive_path=archive_path,
-                done_bytes=total, total_bytes=total, original_deleted=deleted))
+                done_bytes=total, total_bytes=total, original_deleted=deleted,
+                kept_reason=kept_reason))
             return archive_path
 
         except Exception as exc:

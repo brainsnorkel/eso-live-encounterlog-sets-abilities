@@ -136,6 +136,47 @@ class TestTheLinks(SplitLinksTestCase):
         self.assertEqual(calls, [("program", "explorer"), ("arguments", f'/select,"{self.kynes}"'),
                                  ("detached",)])
 
+    def test_open_folder_on_macos_has_finder_select_the_file(self):
+        """macOS: `open -R` with the path as one argument of its own, so a
+        folder named with a space or a quote needs no quoting, started
+        detached as Explorer is (issue #32). The platform and the call are
+        stood in for, so this runs wherever the tests do."""
+        calls = []
+
+        class Finder:
+            def setProgram(self, program):
+                calls.append(("program", program))
+
+            def setArguments(self, arguments):
+                calls.append(("arguments", list(arguments)))
+
+            def startDetached(self):
+                calls.append(("detached",))
+                return True
+
+        from gui import main_window
+        with mock.patch.object(main_window.sys, "platform", "darwin"), \
+                mock.patch.object(main_window, "QProcess", Finder), \
+                mock.patch.object(main_window.QDesktopServices, "openUrl") as open_url:
+            main_window.reveal_file(self.kynes)
+        self.assertEqual(calls, [("program", "/usr/bin/open"), ("arguments", ["-R", str(self.kynes)]),
+                                 ("detached",)])
+        open_url.assert_not_called()  # the folder is not opened a second time
+
+    def test_open_folder_elsewhere_opens_the_folder(self):
+        """Linux has no one command that selects a file in every file
+        manager: the folder is opened, and no process is started."""
+        from pathlib import Path
+
+        from gui import main_window
+        with mock.patch.object(main_window.sys, "platform", "linux"), \
+                mock.patch.object(main_window, "QProcess") as process, \
+                mock.patch.object(main_window.QDesktopServices, "openUrl") as open_url:
+            main_window.reveal_file(self.kynes)
+        process.assert_not_called()
+        (url,), _kwargs = open_url.call_args
+        self.assertEqual(Path(url.toLocalFile()), self.splits)
+
     def test_a_run_the_list_begins_inside_offers_its_earlier_split(self):
         """The list begins inside the run (the app started, or Settings
         replayed the log, after a relog): the split of the session before,
@@ -176,12 +217,11 @@ class TestTheLinks(SplitLinksTestCase):
         self.assertEqual(searches, [])
 
     def test_the_archive_message_names_the_zip_alone_under_hide_names(self):
-        from types import SimpleNamespace
+        from engine_events import ArchiveEvent
         win = self._split_window()
         win.hide_names_action.setChecked(True)
         archive = self.root / "Archive" / "Encounter-20261109-120000.zip"
-        win._on_archive_event(SimpleNamespace(kind="completed", archive_path=str(archive),
-                                              original_deleted=False))
+        win._on_archive_event(ArchiveEvent("completed", archive_path=archive))
         message = win.statusBar().currentMessage()
         self.assertIn(archive.name, message)
         self.assertNotIn(str(archive.parent), message)

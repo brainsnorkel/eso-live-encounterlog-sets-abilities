@@ -34,7 +34,9 @@ class ArchiveEvent:
         "skipped"   - archive not attempted (reason set, e.g. file in use)
         "started"   - archive began (total_bytes set)
         "progress"  - chunk written (done_bytes/total_bytes set)
-        "completed" - archive verified (archive_path set, original_deleted set)
+        "completed" - archive verified (archive_path set, original_deleted set;
+                      kept_reason says why a delete that was asked for did
+                      not happen, e.g. "the log is in use")
         "failed"    - archive failed and was cleaned up (reason set)
     """
     kind: str
@@ -44,6 +46,7 @@ class ArchiveEvent:
     total_bytes: int = 0
     reason: str = ""
     original_deleted: bool = False
+    kept_reason: str = ""
 
 
 class AnalyzerListener:

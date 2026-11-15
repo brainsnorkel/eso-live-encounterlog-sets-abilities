@@ -66,6 +66,7 @@ from gui.fight_render import (
 from gui.fight_tabs import FightViews, count_text
 from gui.fight_view import FightView, set_reduce_motion
 from gui.instance_render import instance_tooltips, render_instance_html, run_anchor
+from gui.keys import key_text, sequence
 from gui.name_mask import NameMask
 from gui.player_window import (
     BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
@@ -150,14 +151,21 @@ def _encode_state(state: QByteArray) -> str:
 def reveal_file(path: Path) -> None:
     """Show *path* in its folder: on Windows, Explorer with the file
     selected, since a split folder holds hundreds of files (issue #194),
-    started detached, so nothing is left to wait for; elsewhere the
-    folder."""
+    and on macOS, Finder the same way (issue #32); each started detached,
+    so nothing is left to wait for; elsewhere the folder."""
     if sys.platform == "win32":
         explorer = QProcess()
         explorer.setProgram("explorer")
         # One argument as Explorer reads it, the path quoted inside it
         explorer.setNativeArguments(f'/select,"{path}"')
         explorer.startDetached()
+    elif sys.platform == "darwin":
+        finder = QProcess()
+        # By its full path: an app Finder starts has a short PATH, and
+        # this is where macOS keeps the command
+        finder.setProgram("/usr/bin/open")
+        finder.setArguments(["-R", str(path)])
+        finder.startDetached()
     else:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
@@ -356,9 +364,10 @@ class MainWindow(QMainWindow):
         self.detail_action.setChecked(True)
         # Not Tab, which this once was: Tab has to move the focus, or a
         # keyboard user never leaves the fight list (#77)
-        self.detail_action.setShortcut(QKeySequence("Ctrl+D"))
+        self.detail_action.setShortcut(sequence("Ctrl+D"))
         self.detail_action.setToolTip(
-            "Show each player's ability bars as icons, or one line per player (Ctrl+D)")
+            "Show each player's ability bars as icons, or one line per player "
+            f"({key_text('Ctrl+D')})")
         self.detail_action.toggled.connect(self._toggle_detail)
         toolbar.addAction(self.detail_action)
 
@@ -369,10 +378,10 @@ class MainWindow(QMainWindow):
 
         # The whole list as a recap for Discord (session_recap, issue #171)
         self.copy_session_action = QAction("Copy session", self)
-        self.copy_session_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self.copy_session_action.setShortcut(sequence("Ctrl+Shift+C"))
         self.copy_session_action.setToolTip(
             "Copy every fight in the list as a short recap: each boss's pulls, the kills, "
-            "what ended the pulls (Ctrl+Shift+C)")
+            f"what ended the pulls ({key_text('Ctrl+Shift+C')})")
         self.copy_session_action.triggered.connect(self._copy_session)
         toolbar.addAction(self.copy_session_action)
 
@@ -383,13 +392,14 @@ class MainWindow(QMainWindow):
         self.hide_names_action = QAction("Hide names", self)
         self.hide_names_action.setCheckable(True)
         self.hide_names_action.setChecked(self._hide_names)
-        self.hide_names_action.setShortcut(QKeySequence("Ctrl+H"))
+        # ⇧⌘H on macOS, where ⌘H hides the application (gui.keys)
+        self.hide_names_action.setShortcut(sequence("Ctrl+H"))
         # From any of the app's windows, not only this one: the key is for
         # the moment before a screenshot of a build or a recap too
         self.hide_names_action.setShortcutContext(Qt.ApplicationShortcut)
         self.hide_names_action.setToolTip(
             "Hide other players' handles and character names, for screenshots and "
-            "sharing; the player writing the log stays visible (Ctrl+H)")
+            f"sharing; the player writing the log stays visible ({key_text('Ctrl+H')})")
         self.hide_names_action.toggled.connect(self._toggle_hide_names)
         toolbar.addAction(self.hide_names_action)
 
@@ -399,7 +409,7 @@ class MainWindow(QMainWindow):
                                        ("Smaller text", ("Ctrl+-",), -1),
                                        ("Normal text size", ("Ctrl+0",), 0)):
             action = QAction(label, self)
-            action.setShortcuts([QKeySequence(key) for key in keys])
+            action.setShortcuts([sequence(key) for key in keys])
             action.setShortcutContext(Qt.ApplicationShortcut)
             action.triggered.connect(lambda _=False, d=direction: self._step_text_size(d))
             self.addAction(action)
@@ -569,8 +579,8 @@ class MainWindow(QMainWindow):
         self.addAction(find)
         # The fight's tabs from anywhere in the window, the list too: the tab
         # widget's own keys work only with the focus inside it
-        QShortcut(QKeySequence("Ctrl+PgDown"), self, self._next_fight_tab)
-        QShortcut(QKeySequence("Ctrl+PgUp"), self, self._previous_fight_tab)
+        QShortcut(sequence("Ctrl+PgDown"), self, self._next_fight_tab)
+        QShortcut(sequence("Ctrl+PgUp"), self, self._previous_fight_tab)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -1191,6 +1201,8 @@ class MainWindow(QMainWindow):
         elif event.kind == "completed":
             self.progress_bar.setVisible(False)
             deleted = " — original deleted" if event.original_deleted else ""
+            if event.kept_reason:  # a delete was asked for and refused
+                deleted = f" — original kept: {event.kept_reason}"
             self.statusBar().showMessage(
                 f"Archived to {self._shown_path(event.archive_path)}{deleted}", 15000)
             if event.original_deleted and event.archive_path:

@@ -61,10 +61,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.keys import key_text
+
 TABS_NAME = "Fight views"
-SEARCH_PLACEHOLDER = "Find (Ctrl+F)"
+SEARCH_PLACEHOLDER = f"Find ({key_text('Ctrl+F')})"
 FIND_LABEL = "Find"
-FIND_NAME = "Find (Ctrl+F)"  # the Find button's accessible name and hover text
+FIND_NAME = SEARCH_PLACEHOLDER  # the Find button's accessible name and hover text
 SEARCH_NAME = "Search this tab"
 SEARCH_HINTS = ("Enter goes to the next match and Esc clears the search; ability icons "
                 "match by their names.")

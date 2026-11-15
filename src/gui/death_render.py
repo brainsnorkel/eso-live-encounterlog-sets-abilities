@@ -48,6 +48,7 @@ from damage_kinds import (
     type_label,
 )
 from death_recap import HEALTH_CAUSE, LEGACY_WINDOW_MS
+from gui.keys import key_text
 from gui.name_mask import NO_MASK
 from pull_outcome import at_clock, dead_hover_text
 from gui.text_size import scaled_px
@@ -60,7 +61,7 @@ RECAP_HREF = "esolog:recap/"
 # The fight header's Deaths N: every death of the fight, on the main
 # window's Deaths tab (issue #196)
 FIGHT_DEATHS_HREF = "esolog:fightdeaths/"
-FIGHT_DEATHS_TIP = "Click for every death of the fight, on the Deaths tab (Alt+E)"
+FIGHT_DEATHS_TIP = f"Click for every death of the fight, on the Deaths tab ({key_text('Alt+E')})"
 # + the key of the unit to select ('' for none), '/' and a moment in ms into
 # the fight: the positions window at that moment (issue #214). A moment,
 # not a death's number as RECAP_HREF carries: a death the game writes late

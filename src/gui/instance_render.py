@@ -114,6 +114,7 @@ from gui.fight_render import (
     _theme,
     misfortunes_tooltips,
 )
+from gui.keys import key_text
 from gui.name_mask import NO_MASK
 from pull_outcome import (
     ANON,
@@ -182,7 +183,7 @@ FIGHT_TIP = "Click to show this fight on the Fight tab"
 PLAYER_TIP = "Click for their build in that fight"
 DEATH_TIP = "Click for their death in that fight"  # a player who never had a row
 COPY_TIP = ("Copy this instance as text for Discord: its bosses, what ended the pulls, the "
-            "trash and the result, as Copy session (Ctrl+Shift+C) writes each instance")
+            f"trash and the result, as Copy session ({key_text('Ctrl+Shift+C')}) writes each instance")
 
 
 # ----------------------------------------------------------------- links --
