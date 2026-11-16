@@ -117,6 +117,8 @@ The issue says macOS 14, from the wheel's tag. Qt's own minimum is 14.4, and the
 
 macOS 14 cannot be tested (its runner is retired) and is not claimed.
 
+**Settled (2026-11-16, the first run of pull request #240): the floor is 15.0.** On `macos-15` (macOS 15.8.2) the suite passed on the same PySide6 binaries (2,778 passed, 17 skipped, 87 s) and the zip started and stayed up; it did the same on `macos-26` (26.7.2) and `xcode-27` (27.0.1). So the binding libraries stamped 26.0 run on macOS 15, as far as the suite and a start can show. `build-macos` stays on `macos-15` and all three legs stay in the matrix. In the CI bundle, 49 files are stamped 11.0 (setup-python's Python and its libraries), 23 are 14.4 (Qt) and 7 are 26.0 (the binding libraries).
+
 The build job uses `setup-python`'s Python, never Homebrew's: a bundle built on the maintainer's Mac carries a Python stamped 27.0 and is for that Mac only. A step lists every binary's stamp and fails when Python's or OpenSSL's is above the floor. PySide6's own stamp is printed, not enforced: the runs above are its test.
 
 ## What differs on macOS, and what PR 1 does about it
@@ -180,7 +182,19 @@ build-macos ──> sign-macos ──> smoke-macos ──────┴──> 
 - `smoke-macos` takes the signed zip when `sign-macos` ran and the unsigned one when it was skipped. A job that needs a skipped job is itself skipped, so its condition is written out: `if: ${{ !cancelled() && needs.build-macos.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.sign-macos.result) }}`. The release job keeps the plain rule, with `sign-macos` and `smoke-macos` in its `needs` and no `always()`: a failed or skipped signing job means no release.
 - `smoke-macos`, each leg: download, `ditto -x -k` (so the test covers the round trip a user's download makes), `codesign --verify --deep --strict`, and for a signed zip `xcrun stapler validate` and `spctl --assess --type execute -vv`, whose output must contain `Notarized Developer ID`. Then `scripts/smoke_macos.py`, the spike's script made permanent: a scratch `HOME` holding a config whose `log_path` is the fixture, `Contents/MacOS/esolog-gui` started with its output sent to a file (a pipe nobody reads would let a blocked app pass as running), 20 s, and a pass when the process is still up and `crash.log` has no `Unhandled exception` or `Fatal Python error`. A scratch `HOME` keeps the run out of the runner's `~/Documents`, where nobody could answer a permission prompt. Each leg prints `sw_vers`, since `xcode-27` names an Xcode and not a macOS.
 
-Unverified, and answered by PR 2's first run: that a hosted runner has a window session the `cocoa` platform can use (if not, the smoke test runs with `QT_QPA_PLATFORM=offscreen`, which still proves the frozen Python, the data and the signature but not the platform plugin, and the workflow's comment says so); and that Gatekeeper is on there (`spctl --status`), without which the `spctl` check means nothing.
+Unverified, and answered by PR 2's first run: that a hosted runner has a window session the `cocoa` platform can use (if not, the smoke test runs with `QT_QPA_PLATFORM=offscreen`, which still proves the frozen Python, the data and the signature but not the platform plugin, and the workflow's comment says so); and that Gatekeeper is on there (`spctl --status`), without which the `spctl` check means nothing. **Answered (2026-11-16, the same run):** both hold. The app started with the `cocoa` platform on every leg, with no `QT_QPA_PLATFORM` set, so the smoke test covers the platform plugin and needs no `offscreen` fallback. `spctl --status` printed `assessments enabled` on every leg, so the `spctl` check of task 3.3 stays.
+
+## Built in PR 2 (2026-11-16)
+
+Measured on the maintainer's Mac (macOS 27.2, Homebrew Python 3.14.10, PyInstaller 6.22.3, Pillow 13.0.0), before any CI run:
+
+- **The bundle.** `dist/ESO Log Tail.app`, 103 MB, 81 Mach-O files. Its Info.plist has `CFBundleShortVersionString` and `CFBundleVersion` from `src/version.py`, `LSMinimumSystemVersion` 15.0 and the six usage descriptions. `codesign --verify --deep --strict` passes on it and again after `ditto` zips it (52 MB) and expands it. The signature is ad-hoc.
+- **One sentence for every folder question**, not the Documents sentence repeated: "ESO Log Tail reads the Encounter.log the game writes, and the logs you open for review." The Documents sentence would have been wrong when macOS asks about Downloads.
+- **The stamp check is stricter than planned.** `scripts/check_macos_stamps.py` fails on *any* binary above the floor except PySide6's and shiboken6's binding libraries, not only on Python's and OpenSSL's: a Homebrew build also brings `liblzma`, `libzstd` and `libmpdec` stamped 26.0, and a rule that names two libraries would have passed them. The floor is read from the bundle's own Info.plist. On the local bundle it lists 23 files at 14.4 (Qt), 7 binding libraries at 26.0 (reported), and fails on 50 at 26.0 and 27.0, as it should for a Homebrew build.
+- **The smoke test asks for one thing more than the plan:** the app must have written its `crash.log`. A bootloader that hangs before Python starts is "still running" and has no crash line; the session line the app writes at start-up shows Python got that far. The script runs under the runner's own `python3` (tried with 3.9.6). The local bundle passes it with the `cocoa` platform.
+- **The icon** is written by Pillow, which makes an `.icns` of 32 to 1024 px (16 pt at 2x up to 512 pt at 2x). It has no 16 px image at 1x; macOS scales the 32 px one. `iconutil` reads the file.
+- **After an independent review** (nothing above medium): the stamp check runs `otool -arch all`, since plain `otool -l` prints a fat file's slice for the machine it runs on only; it reads "15" and "15.0" as one version; a file that starts as a Mach-O file does and that `otool` refuses fails the check by name. The smoke test also looks for a crash in what the app printed. The stand-in tests wait 5 s where the stand-in must write in time, after the review judged 2 s too short for a cold Windows runner.
+- **Not built here:** the app-nap key (manual check 8 decides whether one is needed).
 
 ## Manual checks
 
@@ -195,8 +209,8 @@ Unverified, and answered by PR 2's first run: that a hosted runner has a window 
 
 **During PR 2**, from a locally built bundle:
 
-7. The Dock and Finder icon.
-8. A live session with the game full screen over the app for several minutes, then back: is the list current at once? If the app was held back (App Nap), the bundle asks macOS not to nap it. Which Info.plist key or call does that on macOS 27 is unverified, so it is tried here and not assumed.
+7. The Dock and Finder icon. **Skipped (the maintainer, 2026-11-16).** The plate was seen only as an image (`iconutil` expands the `.icns`); how Finder and the Dock draw it is unverified.
+8. A live session with the game full screen over the app for several minutes, then back: is the list current at once? If the app was held back (App Nap), the bundle asks macOS not to nap it. Which Info.plist key or call does that on macOS 27 is unverified, so it is tried here and not assumed. **Skipped (the maintainer, 2026-11-16).** Whether App Nap holds the app back is unverified, and the bundle carries no key against it. It comes round again in the checks after the first beta.
 
 **After the first beta**, from the zip downloaded in a browser:
 

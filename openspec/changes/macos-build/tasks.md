@@ -34,18 +34,21 @@ State on 2026-11-16: 1.2 to 1.11 are written; the suite passes on this Mac (2759
 
 Done when: `build-macos` and every leg of `smoke-macos` are green on the pull request, with the matrix in the state task 2.6 settles; a tag's run is unchanged (the Mac jobs do not run for tags).
 
-- [ ] 2.1 `esolog-tail.spec`: the `BUNDLE` for macOS (name, `icon.icns`, `com.brainsnorkel.esolog-tail`, version from `src/version.py`, `CFBundleVersion`, `NSHighResolutionCapable`, `LSMinimumSystemVersion`, `NSDocumentsFolderUsageDescription`, and the same sentence for Desktop, Downloads, removable and network volumes and cloud-provider files). No signing identity in the spec: the bundle is ad-hoc signed and `sign-macos` signs it later. Remove the `SPIKE` marks and the spike's two environment variables.
-- [ ] 2.2 `scripts/create_icon.py` writes `icon.icns` (16 to 1024 px) on a rounded-square plate; `icon.icns` in `.gitignore`.
-- [ ] 2.3 `scripts/smoke_macos.py` from `build/spike/smoke.py`: a scratch `HOME`, the fixture log, the update check off, the app's output to a file, 20 s, exit 1 on an early exit or a crash line, the output and `crash.log` printed either way. A unit test of its verdict on a stand-in executable that exits early, one that stays up, and one that writes a crash line.
-- [ ] 2.4 `build-macos` on `macos-15`, `if: ${{ !startsWith(github.ref, 'refs/tags/') }}`: the Linux job's steps, the stamp check (2.7), `ditto` to `esolog-tail-macos-arm64-<version>-unsigned.zip`, uploaded as the artifact `unsigned-macos-arm64` with `if-no-files-found: error`.
-- [ ] 2.5 `smoke-macos`, same `if`, a matrix of `macos-15`, `macos-26` and `xcode-27`, `fail-fast: false`: `sw_vers`, `spctl --status`, download, `ditto -x -k`, `codesign --verify --deep --strict`, `scripts/smoke_macos.py`.
-- [ ] 2.6 Read the first runs and settle three things, each recorded in design.md (a build that fails on `macos-15` skips the smoke job, so the newer images report only on the run after the build has moved):
+State on 2026-11-16: 2.1 to 2.5, 2.7 and 2.9 are written and pass on this Mac (design.md, "Built in PR 2"). 2.6 is settled by the first run of #240: every job passed. 2.8 is skipped on the maintainer's word: the Dock and Finder icon and App Nap are unverified until the checks after the first beta.
+
+- [x] 2.1 `esolog-tail.spec`: the `BUNDLE` for macOS (name, `icon.icns`, `com.brainsnorkel.esolog-tail`, version from `src/version.py`, `CFBundleVersion`, `NSHighResolutionCapable`, `LSMinimumSystemVersion`, `NSDocumentsFolderUsageDescription`, and the same sentence for Desktop, Downloads, removable and network volumes and cloud-provider files). No signing identity in the spec: the bundle is ad-hoc signed and `sign-macos` signs it later. Remove the `SPIKE` marks and the spike's two environment variables.
+- [x] 2.2 `scripts/create_icon.py` writes `icon.icns` (16 to 1024 px) on a rounded-square plate; `icon.icns` in `.gitignore`.
+- [x] 2.3 `scripts/smoke_macos.py` from `build/spike/smoke.py`: a scratch `HOME`, the fixture log, the update check off, the app's output to a file, 20 s, exit 1 on an early exit or a crash line, the output and `crash.log` printed either way. A unit test of its verdict on a stand-in executable that exits early, one that stays up, and one that writes a crash line.
+- [x] 2.4 `build-macos` on `macos-15`, `if: ${{ !startsWith(github.ref, 'refs/tags/') }}`: the Linux job's steps, the stamp check (2.7), `ditto` to `esolog-tail-macos-arm64-<version>-unsigned.zip`, uploaded as the artifact `unsigned-macos-arm64` with `if-no-files-found: error`.
+- [x] 2.5 `smoke-macos`, same `if`, a matrix of `macos-15`, `macos-26` and `xcode-27`, `fail-fast: false`: `sw_vers`, `spctl --status`, download, `ditto -x -k`, `codesign --verify --deep --strict`, `scripts/smoke_macos.py`.
+- [x] 2.6 Read the first runs and settle three things, each recorded in design.md (a build that fails on `macos-15` skips the smoke job, so the newer images report only on the run after the build has moved):
   - `cocoa` starts on a hosted runner, or the smoke test uses `offscreen` with the comment design.md asks for;
   - Gatekeeper is on there, or the `spctl` check of task 3.3 is dropped;
   - the suite and the smoke test pass on `macos-15`, and `LSMinimumSystemVersion` is `15.0`; or they do not, and `build-macos` moves to `macos-26`, `macos-15` leaves the matrix, and the floor is `26.0`.
-- [ ] 2.7 The stamp check: list every binary's minimum macOS (`otool -l`), fail when Python's or OpenSSL's is above the floor, print PySide6's.
-- [ ] 2.8 Manual checks 7 and 8 on a locally built bundle. If App Nap holds the app back, find the Info.plist key or call that stops it on macOS 27, add it to 2.1, and check again.
-- [ ] 2.9 `docs/development.md`: the spec row and the build section name macOS; how to build locally and why that bundle is not for distribution. `no-changelog`.
+  - (2026-11-16, the first run of #240: `cocoa` starts on every leg; Gatekeeper is on on every leg; the suite and the smoke test pass on `macos-15`, so the floor is `15.0` and nothing moves. design.md, decision 7 and "Workflow shape".)
+- [x] 2.7 The stamp check: list every binary's minimum macOS (`otool -l`), fail when Python's or OpenSSL's is above the floor, print PySide6's.
+- [x] 2.8 (Skipped on the maintainer's word, 2026-11-16: neither check was made. design.md, "Manual checks".) Manual checks 7 and 8 on a locally built bundle. If App Nap holds the app back, find the Info.plist key or call that stops it on macOS 27, add it to 2.1, and check again.
+- [x] 2.9 `docs/development.md`: the spec row and the build section name macOS; how to build locally and why that bundle is not for distribution. `no-changelog`.
 
 ## 3. PR 3: releases carry it
 
@@ -65,7 +68,7 @@ Done when: the dry run on `main` produces a zip that `spctl` calls *Notarized De
 
 ## 4. After the first beta
 
-- [ ] 4.1 The maintainer runs manual checks 9 to 12 from the downloaded zip and records each result on issue #32.
+- [ ] 4.1 The maintainer runs manual checks 9 to 12 from the downloaded zip and records each result on issue #32. With them, the checks skipped on 2026-11-16, which nobody has made on a real Mac window: 2 (the keys), 3 (the skull, the death chip, the icons at Retina scale), 6 (*Show in folder*, a split to the Trash), 7 (the Dock and Finder icon) and 8 (App Nap, with the game over the app).
 - [ ] 4.2 Fix what they find.
 - [ ] 4.3 When a live session has run clean on a released build, it may be promoted like any other, and the page's Mac link appears with it. Then the page's descriptions name macOS. The "experimental" label comes off when the maintainer says so.
 - [ ] 4.4 Archive this change; close #32.
