@@ -182,6 +182,17 @@ build-macos ──> sign-macos ──> smoke-macos ──────┴──> 
 
 Unverified, and answered by PR 2's first run: that a hosted runner has a window session the `cocoa` platform can use (if not, the smoke test runs with `QT_QPA_PLATFORM=offscreen`, which still proves the frozen Python, the data and the signature but not the platform plugin, and the workflow's comment says so); and that Gatekeeper is on there (`spctl --status`), without which the `spctl` check means nothing.
 
+## Built in PR 2 (2026-11-16)
+
+Measured on the maintainer's Mac (macOS 27.2, Homebrew Python 3.14.10, PyInstaller 6.22.3, Pillow 13.0.0), before any CI run:
+
+- **The bundle.** `dist/ESO Log Tail.app`, 103 MB, 81 Mach-O files. Its Info.plist has `CFBundleShortVersionString` and `CFBundleVersion` from `src/version.py`, `LSMinimumSystemVersion` 15.0 and the six usage descriptions. `codesign --verify --deep --strict` passes on it and again after `ditto` zips it (52 MB) and expands it. The signature is ad-hoc.
+- **One sentence for every folder question**, not the Documents sentence repeated: "ESO Log Tail reads the Encounter.log the game writes, and the logs you open for review." The Documents sentence would have been wrong when macOS asks about Downloads.
+- **The stamp check is stricter than planned.** `scripts/check_macos_stamps.py` fails on *any* binary above the floor except PySide6's and shiboken6's binding libraries, not only on Python's and OpenSSL's: a Homebrew build also brings `liblzma`, `libzstd` and `libmpdec` stamped 26.0, and a rule that names two libraries would have passed them. The floor is read from the bundle's own Info.plist. On the local bundle it lists 23 files at 14.4 (Qt), 7 binding libraries at 26.0 (reported), and fails on 50 at 26.0 and 27.0, as it should for a Homebrew build.
+- **The smoke test asks for one thing more than the plan:** the app must have written its `crash.log`. A bootloader that hangs before Python starts is "still running" and has no crash line; the session line the app writes at start-up shows Python got that far. The script runs under the runner's own `python3` (tried with 3.9.6). The local bundle passes it with the `cocoa` platform.
+- **The icon** is written by Pillow, which makes an `.icns` of 32 to 1024 px (16 pt at 2x up to 512 pt at 2x). It has no 16 px image at 1x; macOS scales the 32 px one. `iconutil` reads the file.
+- **Not built here:** the app-nap key (manual check 8 decides whether one is needed).
+
 ## Manual checks
 
 **During PR 1**, from the source (`python src/esolog_gui.py`):

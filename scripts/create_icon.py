@@ -8,6 +8,10 @@ solid, so simple backface culling) get flat Lambertian shading in the app's
 slate/amber palette, with edge strokes and a light keyline so the icon reads
 on both dark and light taskbars. Rendered supersampled, then downscaled into
 all Windows ico sizes.
+
+macOS (issue #32) gets the same die on a rounded-square plate, as icon.icns:
+macOS 26 and later put an icon that does not fill the rounded square on a
+grey plate of their own.
 """
 
 import math
@@ -161,6 +165,53 @@ def render(size: int) -> Image.Image:
     return outlined.resize((size, size), Image.LANCZOS)
 
 
+# Apple's icon grid: on a 1024 px canvas the plate is 824 px square with
+# corners of about 185 px, and the rest is left clear for the shadow
+MAC_PLATE = 824 / 1024
+MAC_CORNER = 185 / 1024
+MAC_DIE = 0.84                     # the die's share of the plate's width
+MAC_PLATE_TOP = (44, 56, 86)       # slate, lighter at the top
+MAC_PLATE_BOTTOM = (18, 23, 37)
+# Every size an .icns holds as a PNG: 16, 32, 128, 256 and 512 pt at 2x, and
+# 128 pt and up at 1x
+MAC_SIZES = [1024, 512, 256, 128, 64, 32]
+
+
+def render_mac(size: int) -> Image.Image:
+    """The d12 on the rounded-square plate macOS expects, at *size* px."""
+    ss = 4
+    canvas = size * ss
+    plate = round(canvas * MAC_PLATE)
+    edge = (canvas - plate) // 2
+
+    fill = Image.new('RGBA', (canvas, canvas))
+    draw = ImageDraw.Draw(fill)
+    for y in range(canvas):
+        t = min(1.0, max(0.0, (y - edge) / max(1, plate - 1)))
+        draw.line([(0, y), (canvas, y)], fill=tuple(
+            round(a + (b - a) * t) for a, b in zip(MAC_PLATE_TOP, MAC_PLATE_BOTTOM)) + (255,))
+    mask = Image.new('L', (canvas, canvas), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [edge, edge, edge + plate - 1, edge + plate - 1],
+        radius=round(canvas * MAC_CORNER), fill=255)
+    img = Image.new('RGBA', (canvas, canvas), (0, 0, 0, 0))
+    img.paste(fill, mask=mask)
+    img = img.resize((size, size), Image.LANCZOS)
+
+    die = render(max(1, round(size * MAC_PLATE * MAC_DIE)))
+    at = (size - die.width) // 2
+    img.alpha_composite(die, (at, at))
+    return img
+
+
+def create_mac_icon(path="icon.icns"):
+    """icon.icns for the macOS bundle. Each size is drawn at that size, not
+    scaled down from the largest, so the small ones keep their edges."""
+    images = {s: render_mac(s) for s in MAC_SIZES}
+    images[MAC_SIZES[0]].save(path, format='ICNS',
+                              append_images=[images[s] for s in MAC_SIZES[1:]])
+
+
 def create_icon():
     sizes = [256, 128, 64, 48, 32, 24, 16]
     images = {s: render(s) for s in sizes}
@@ -169,7 +220,8 @@ def create_icon():
               sizes=[(s, s) for s in sizes],
               append_images=[images[s] for s in sizes[1:]])
     base.save("icon.png", format='PNG')
-    print("Icon created: icon.ico and icon.png (d12, transparent)")
+    create_mac_icon()
+    print("Icon created: icon.ico, icon.png and icon.icns (d12)")
     return True
 
 

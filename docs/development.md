@@ -11,7 +11,7 @@ How the repository is laid out, and how to run, test, build and release ESO Log 
 | `scripts/` | Scripts to build, refresh the game data, build the documentation and release, and local surveys and checks (see [Other scripts](#other-scripts)). None of them ships with the app. |
 | `tests/` | The pytest suite: `unit/`, `integration/`, and `fixtures/` (a golden log and shared test data). |
 | `installer/esolog-gui.iss` | The Inno Setup script for the Windows installer. |
-| `esolog-tail.spec` | The PyInstaller spec, used for the Windows and Linux builds. |
+| `esolog-tail.spec` | The PyInstaller spec, used for the Windows, Linux and macOS builds. |
 | `.github/workflows/build-installers.yml` | CI: tests, builds, and the release on a version tag. |
 | `.github/workflows/changelog.yml` | CI: each pull request adds a changelog fragment and leaves `CHANGELOG.md` and `docs/design.md` to the release commit. |
 | `.github/workflows/pages.yml` | CI: builds and deploys the home page (see [Documentation](#documentation)). |
@@ -89,7 +89,7 @@ python -m pytest
 - `tests/conftest.py` turns Python's garbage collector off for the run and, after each test, closes any window the test left open (which stops its engine thread), deletes the app's top-level widgets and collects the garbage there, on the UI thread. Left to itself, a collection could run on an engine thread and free GUI objects off the UI thread, which can abort the process (issue #18). So a GUI test needs no teardown of its windows, and must not count on garbage being collected while it runs.
 - With `pip install pytest` alone, the tests of the scripts that read the LibSets workbook are skipped: they need `openpyxl`, from `requirements-build.txt`, which CI installs with `requirements.txt`.
 - `tests/integration/test_engine_golden.py` replays `tests/fixtures/golden_fight.log` and compares the fights and split files with `golden_fight_expected.json`. After a change that is meant to alter results, regenerate the expected file with `UPDATE_GOLDENS=1 python -m pytest tests/integration/test_engine_golden.py` and review its diff.
-- CI runs the suite, about 2,700 tests, on Python 3.14 on Windows and Linux.
+- CI runs the suite, about 2,800 tests, on Python 3.14 on Windows, Linux and macOS.
 
 ## Building
 
@@ -102,7 +102,7 @@ pip install -r requirements-build.txt
 :: Gear set data, whenever data/gear_sets/LibSets_SetData.xlsm changes
 python scripts/generate_gear_data.py
 
-:: App icon -> icon.ico and icon.png at the repository root (not tracked)
+:: App icon -> icon.ico, icon.png and icon.icns at the repository root (not tracked)
 python scripts/create_icon.py
 
 :: GUI executable (onedir, windowed) -> dist\esolog-gui\
@@ -120,6 +120,30 @@ powershell Compress-Archive -Path dist\esolog-gui\* -DestinationPath dist\esolog
 A module that PyInstaller cannot find by following imports must be listed under `hiddenimports` in `esolog-tail.spec`, and a new data folder under `datas`.
 
 On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs into the release tarball. Build on the oldest distribution you want to support, with Qt's X11 and Wayland libraries installed (the package list is in the workflow file): PyInstaller bundles the ones it finds.
+
+### macOS
+
+No release carries a macOS build yet (issue #32). CI builds the app for every pull request, ad-hoc signed, and starts it on each hosted macOS; signing and notarization, which a release needs, are not built.
+
+On a Mac the same PyInstaller command also builds `dist/ESO Log Tail.app`, for Apple Silicon:
+
+```sh
+pip install -r requirements.txt -r requirements-build.txt
+python scripts/generate_gear_data.py
+python scripts/create_icon.py
+python -m PyInstaller esolog-tail.spec --noconfirm
+
+# The checks CI runs on the bundle
+python scripts/check_macos_stamps.py "dist/ESO Log Tail.app"
+python scripts/smoke_macos.py "dist/ESO Log Tail.app/Contents/MacOS/esolog-gui"
+```
+
+- **A bundle built on your Mac is for your Mac.** It carries the Python that built it, and Homebrew's Python and OpenSSL are made for the macOS they were installed on. `check_macos_stamps.py` lists the oldest macOS each binary was built for and fails such a bundle; that failure is expected locally. CI builds with `setup-python`'s Python, which is made for old systems. PySide6's own binding libraries are stamped macOS 26 whatever builds them; the script prints them and does not fail on them, because the tests and the smoke test on the oldest runner are their check.
+- **It is not for handing out.** Its signature is ad-hoc, so Gatekeeper refuses it on any Mac that downloads it.
+- **The minimum macOS** is `LSMinimumSystemVersion` in the spec. It is the oldest macOS on which CI runs the suite and starts the app (the `build-macos` and `smoke-macos` jobs), and it moves only with them.
+- **The smoke test** starts the app for 20 seconds with a scratch `HOME` whose config names the fixture log, so it reads nothing in your `~/Documents` and touches no real settings. It passes when the app is still up, has written its `crash.log`, and that names no crash.
+- **The icon** is the same d12 on a rounded-square plate (`render_mac` in `scripts/create_icon.py`): macOS puts an icon that does not fill the rounded square on a grey plate of its own.
+- **The zip** is made with `ditto -c -k --sequesterRsrc --keepParent`, which keeps the bundle's symlinks and signature; `zip` does not.
 
 ## Refreshing game data after an ESO patch
 
@@ -262,7 +286,7 @@ Every release is first a **beta**; a beta that has been used in real fights for 
 
 A fragment that reaches the release branch after the release commit (with a merge of `main`, which the branch needs before it can merge) would ship its change in this release and its note in the next. The *Changelog* check and `--tag` both refuse that; revert the release commit and run step 2 again.
 
-The tag runs `.github/workflows/build-installers.yml`: a Windows job (the tests, then the installer and the portable zip) and a Linux job (the tests, then the tarball, with a start-up smoke test under xvfb) side by side, then the release job, which needs both. A failure in either build stops the release. A tag whose design notes lag the code fails at the start of the Linux build (`scripts/build_design_doc.py --check`). The release job first runs `scripts/release_guard.py`, which refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's `src/version.py`, or is not on `main`; then it publishes the three files as a GitHub **pre-release**, with notes generated from the previous `v*` tag. A pre-release is never GitHub's latest release, so Stable users and the home page's buttons do not move.
+The tag runs `.github/workflows/build-installers.yml`: a Windows job (the tests, then the installer and the portable zip) and a Linux job (the tests, then the tarball, with a start-up smoke test under xvfb) side by side, then the release job, which needs both. The macOS jobs do not run for a tag. A failure in either build stops the release. A tag whose design notes lag the code fails at the start of the Linux build (`scripts/build_design_doc.py --check`). The release job first runs `scripts/release_guard.py`, which refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's `src/version.py`, or is not on `main`; then it publishes the three files as a GitHub **pre-release**, with notes generated from the previous `v*` tag. A pre-release is never GitHub's latest release, so Stable users and the home page's buttons do not move.
 
 To run the workflow without releasing, push a branch and start it by hand (`gh workflow run build-installers.yml --ref <branch>`); the release job only runs for tags. Pull requests to `main` run the builds too.
 

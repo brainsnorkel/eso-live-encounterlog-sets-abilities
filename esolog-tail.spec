@@ -2,6 +2,7 @@
 # ESO Log Tail GUI: onedir, windowed. Build with: pyinstaller esolog-tail.spec
 
 import os
+import sys
 
 _icon = ['icon.ico'] if os.path.exists('icon.ico') else []
 
@@ -111,3 +112,39 @@ coll = COLLECT(
     upx_exclude=[],
     name='esolog-gui',
 )
+
+# macOS (issue #32): the app bundle, dist/ESO Log Tail.app. No signing
+# identity is named: PyInstaller gives the bundle an ad-hoc signature, and a
+# release is signed afterwards, in a job of its own.
+if sys.platform == 'darwin':
+    sys.path.insert(0, 'src')
+    from version import __version__ as _version
+
+    # macOS shows this when it asks the user whether the app may read a
+    # folder. One sentence for every place a log can be: the game writes in
+    # Documents, and a log opened for review can be anywhere
+    _why_files = ('ESO Log Tail reads the Encounter.log the game writes, '
+                  'and the logs you open for review.')
+    app = BUNDLE(
+        coll,
+        name='ESO Log Tail.app',
+        icon='icon.icns' if os.path.exists('icon.icns') else None,
+        bundle_identifier='com.brainsnorkel.esolog-tail',
+        version=_version,
+        info_plist={
+            'CFBundleDisplayName': 'ESO Log Tail',
+            'CFBundleVersion': _version,
+            'NSHighResolutionCapable': True,
+            # The oldest macOS CI starts the app on (the smoke-macos job in
+            # .github/workflows/build-installers.yml). The stamp check reads
+            # it from here: scripts/check_macos_stamps.py
+            'LSMinimumSystemVersion': '15.0',
+            'LSApplicationCategoryType': 'public.app-category.utilities',
+            'NSDocumentsFolderUsageDescription': _why_files,
+            'NSDesktopFolderUsageDescription': _why_files,
+            'NSDownloadsFolderUsageDescription': _why_files,
+            'NSRemovableVolumesUsageDescription': _why_files,
+            'NSNetworkVolumesUsageDescription': _why_files,
+            'NSFileProviderDomainUsageDescription': _why_files,
+        },
+    )
