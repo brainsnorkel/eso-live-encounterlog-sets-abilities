@@ -39,21 +39,23 @@ _STAND_IN_HEAD = '''
 class TestSmokeVerdict(unittest.TestCase):
     """smoke() on programs that behave as a built app could."""
 
-    # Long enough for a stand-in to start Python and write its file on a
-    # slow CI machine, short enough to run with the suite
-    SECONDS = 2
+    # The wait for a stand-in that must write its file before the wait
+    # ends: long enough for Python to start on a slow CI machine (a cold
+    # Windows runner can take seconds)
+    SECONDS = 5
 
     def setUp(self):
         self._folder = tempfile.TemporaryDirectory()
         self.addCleanup(self._folder.cleanup)
         self.folder = Path(self._folder.name)
 
-    def _run(self, body: str):
+    def _run(self, body: str, seconds=None):
         program = self.folder / "stand_in.py"
         program.write_text(textwrap.dedent(_STAND_IN_HEAD) + textwrap.dedent(body),
                            encoding="utf-8")
         home = self.folder / "home"
-        return smoke_macos.smoke([sys.executable, str(program)], seconds=self.SECONDS,
+        return smoke_macos.smoke([sys.executable, str(program)],
+                                 seconds=self.SECONDS if seconds is None else seconds,
                                  home=home)
 
     def test_an_app_that_stays_up_passes(self):
@@ -68,36 +70,48 @@ class TestSmokeVerdict(unittest.TestCase):
             time.sleep(60)
         ''')
         self.assertEqual(problem, "", report)
-        self.assertIn("still running after 2 s: True", report)
+        self.assertIn("still running after 5 s: True", report)
         # The config it was given: the fixture log, and no update check
         self.assertIn("golden_fight.log", report)
         self.assertIn('"check_enabled": false', report)
 
     def test_an_app_that_exits_early_fails(self):
+        # The wait ends when the program does, so a long one costs nothing
         problem, report = self._run('''
             crash.write_text("--- session ---\\n")
             print("could not start")
             sys.exit(3)
-        ''')
+        ''', seconds=60)
         self.assertIn("exited (status 3)", problem)
         self.assertIn("could not start", report)
 
     def test_an_app_that_logs_a_crash_fails_though_it_stays_up(self):
-        for mark in smoke_macos.CRASH_MARKS:
-            with self.subTest(mark=mark):
-                shutil.rmtree(self.folder / "home", ignore_errors=True)
-                problem, report = self._run(f'''
-                    crash.write_text("--- session ---\\n[10:00:00] {mark}:\\nTraceback\\n")
-                    time.sleep(60)
-                ''')
-                self.assertIn("logged a crash", problem)
-                self.assertIn("Traceback", report)
+        problem, report = self._run('''
+            crash.write_text("--- session ---\\n[10:00:00] Unhandled exception:\\nTraceback\\n")
+            time.sleep(60)
+        ''')
+        self.assertIn("logged a crash", problem)
+        self.assertIn("Traceback", report)
 
     def test_an_app_that_never_writes_its_crash_log_fails(self):
-        # Up, but Python's start-up was never reached (a hung bootloader)
-        problem, report = self._run('time.sleep(60)')
+        # Up, but Python's start-up was never reached (a hung bootloader).
+        # Nothing has to be written in time, so the wait is short
+        problem, report = self._run('time.sleep(60)', seconds=1)
         self.assertIn("no crash.log", problem)
         self.assertIn("(none)", report)
+
+    def test_the_verdict(self):
+        verdict = smoke_macos.verdict
+        session = "--- session 2026-11-16 10:00:00 ---\n"
+        self.assertEqual(verdict(True, None, session), "")
+        self.assertEqual(verdict(True, None, session, "Scanning recent log entries"), "")
+        self.assertIn("exited (status -11)", verdict(False, -11, session))
+        self.assertIn("no crash.log", verdict(True, None, None))
+        for mark in smoke_macos.CRASH_MARKS:
+            with self.subTest(mark=mark):
+                self.assertIn("crash.log", verdict(True, None, session + mark + ": ..."))
+                # Printed before crash.log was opened
+                self.assertIn("its output", verdict(True, None, session, mark + ": ..."))
 
     def test_the_fixture_log_exists(self):
         self.assertTrue(smoke_macos.FIXTURE_LOG.is_file())
@@ -171,6 +185,11 @@ class TestMinimumMacOS(unittest.TestCase):
     def test_no_stamp(self):
         self.assertEqual(stamps.min_macos("Load command 0\n      cmd LC_SEGMENT_64\n"), "")
 
+    def test_a_version_with_fewer_parts_is_the_same_version(self):
+        self.assertEqual(stamps.version_tuple("15"), stamps.version_tuple("15.0"))
+        self.assertEqual(stamps.version_tuple("15.0"), stamps.version_tuple("15.0.0"))
+        self.assertLess(stamps.version_tuple("15"), stamps.version_tuple("15.0.1"))
+
 
 class TestWhichBinariesFail(unittest.TestCase):
 
@@ -200,6 +219,9 @@ class TestWhichBinariesFail(unittest.TestCase):
         too_new, bindings_above = stamps.judge(found, "15.0")
         self.assertEqual(sorted(too_new), sorted(self.NOT_BINDINGS))
         self.assertEqual(sorted(bindings_above), sorted(self.BINDINGS))
+
+    def test_a_floor_written_short_still_passes_its_own_version(self):
+        self.assertEqual(stamps.judge({"Contents/MacOS/esolog-gui": "15.0"}, "15"), ({}, {}))
 
     def test_at_or_below_the_floor_passes(self):
         found = {"Contents/MacOS/esolog-gui": "15.0",
@@ -235,9 +257,25 @@ class TestTheCheckOnRealBinaries(unittest.TestCase):
         return app
 
     def test_the_bundles_binaries_are_found_once_each(self):
-        found = stamps.read_stamps(self._app("99.0"))
+        found, unread = stamps.read_stamps(self._app("99.0"))
         self.assertEqual(list(found), ["Contents/MacOS/stand-in"])
         self.assertRegex(found["Contents/MacOS/stand-in"], r"^\d+\.\d+")
+        self.assertEqual(unread, [])
+
+    def test_a_file_otool_cannot_read_fails_without_a_traceback(self):
+        import contextlib
+        import io
+        app = self._app("99.0")
+        # A Java class file starts with the bytes of a fat Mach-O file
+        (app / "Contents" / "Resources" / "Thing.class").write_bytes(
+            b"\xca\xfe\xba\xbe" + b"\x00\x00\x00\x41" + b"not a binary at all")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = stamps.main([str(app)])
+        if "otool could not read" not in out.getvalue():
+            self.skipTest("this otool reads the stand-in file")
+        self.assertEqual(status, 1)
+        self.assertIn("Contents/Resources/Thing.class", out.getvalue())
 
     def test_the_floor_comes_from_the_bundles_own_plist(self):
         import contextlib

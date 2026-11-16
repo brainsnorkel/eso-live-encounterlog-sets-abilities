@@ -48,12 +48,14 @@ _BINDING_NAME = re.compile(r"(\.abi3\.so$|^libpyside6|^libshiboken6)")
 
 
 def version_tuple(text: str) -> tuple:
-    return tuple(int(part) for part in text.split("."))
+    """"15" and "15.0" as the same version: three numbers, the missing ones 0."""
+    parts = [int(part) for part in text.split(".")]
+    return tuple(parts + [0] * (3 - len(parts)))
 
 
 def min_macos(otool_output: str) -> str:
-    """The highest minimum macOS in `otool -l` output (a fat file prints one
-    per architecture), or "" when it names none."""
+    """The highest minimum macOS in `otool -arch all -l` output (one for each
+    architecture of a fat file), or "" when it names none."""
     found = _MINOS.findall(otool_output) + _VERSION_MIN.findall(otool_output)
     return max(found, key=version_tuple) if found else ""
 
@@ -89,17 +91,22 @@ def is_mach_o(path: Path) -> bool:
         return False
 
 
-def read_stamps(app: Path) -> dict:
-    """{path relative to the bundle: minimum macOS} for every Mach-O file in
-    it. Symlinks are skipped: each points at a file that is listed itself."""
-    stamps = {}
+def read_stamps(app: Path) -> tuple:
+    """({path relative to the bundle: minimum macOS}, [paths otool could not
+    read]) for every Mach-O file in the bundle. Symlinks are skipped: each
+    points at a file that is listed itself. `-arch all` because otool
+    otherwise prints a fat file's slice for this machine only."""
+    stamps, unread = {}, []
     for path in sorted(app.rglob("*")):
         if path.is_symlink() or not path.is_file() or not is_mach_o(path):
             continue
-        output = subprocess.run(["otool", "-l", str(path)], capture_output=True,
-                                text=True, check=True).stdout
-        stamps[str(path.relative_to(app))] = min_macos(output)
-    return stamps
+        done = subprocess.run(["otool", "-arch", "all", "-l", str(path)],
+                              capture_output=True, text=True)
+        if done.returncode:
+            unread.append(str(path.relative_to(app)))
+        else:
+            stamps[str(path.relative_to(app))] = min_macos(done.stdout)
+    return stamps, unread
 
 
 def main(argv=None) -> int:
@@ -110,7 +117,16 @@ def main(argv=None) -> int:
     app = Path(args[0])
     with open(app / "Contents" / "Info.plist", "rb") as handle:
         floor = plistlib.load(handle)["LSMinimumSystemVersion"]
-    stamps = read_stamps(app)
+    stamps, unread = read_stamps(app)
+    if unread:
+        # A file that starts as a Mach-O file does and that otool refuses:
+        # its stamp is unknown, and unknown is not a pass
+        print("otool could not read:")
+        for path in unread:
+            print(f"  {path}")
+        print(f"::error::otool could not read {len(unread)} binaries "
+              f"(the first: {unread[0]})")
+        return 1
     if not stamps:
         print(f"::error::no Mach-O file found in {app}")
         return 1

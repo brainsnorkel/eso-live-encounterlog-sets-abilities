@@ -117,7 +117,7 @@ coll = COLLECT(
 # identity is named: PyInstaller gives the bundle an ad-hoc signature, and a
 # release is signed afterwards, in a job of its own.
 if sys.platform == 'darwin':
-    sys.path.insert(0, 'src')
+    sys.path.insert(0, os.path.join(SPECPATH, 'src'))
     from version import __version__ as _version
 
     # macOS shows this when it asks the user whether the app may read a

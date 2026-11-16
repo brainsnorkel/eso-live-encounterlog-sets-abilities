@@ -205,8 +205,9 @@ def render_mac(size: int) -> Image.Image:
 
 
 def create_mac_icon(path="icon.icns"):
-    """icon.icns for the macOS bundle. Each size is drawn at that size, not
-    scaled down from the largest, so the small ones keep their edges."""
+    """icon.icns for the macOS bundle. Each size in it is drawn at that
+    size, not scaled down from the largest, so the small ones keep their
+    edges. Pillow writes no 16 px image; macOS scales the 32 px one."""
     images = {s: render_mac(s) for s in MAC_SIZES}
     images[MAC_SIZES[0]].save(path, format='ICNS',
                               append_images=[images[s] for s in MAC_SIZES[1:]])

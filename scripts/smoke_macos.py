@@ -39,9 +39,10 @@ CRASH_MARKS = ("Unhandled exception", "Fatal Python error")
 CONFIG_DIR = Path("Library") / "Application Support" / "esolog-tail"
 
 
-def verdict(alive: bool, exit_code, crash_log):
+def verdict(alive: bool, exit_code, crash_log, output: str = ""):
     """Why the start failed, or "" for a pass. *crash_log* is the text of
-    crash.log, or None when the app wrote none."""
+    crash.log, or None when the app wrote none; *output* is what the app
+    printed, where a crash from before crash.log was opened would be."""
     if not alive:
         return f"the app exited (status {exit_code}) instead of staying up"
     if crash_log is None:
@@ -49,6 +50,8 @@ def verdict(alive: bool, exit_code, crash_log):
     for mark in CRASH_MARKS:
         if mark in crash_log:
             return f"the app logged a crash while starting ({mark!r} in crash.log)"
+        if mark in output:
+            return f"the app printed a crash while starting ({mark!r} in its output)"
     return ""
 
 
@@ -92,12 +95,13 @@ def smoke(command, seconds: float = 20, log: Path = FIXTURE_LOG, platform: str =
     crash_path = config_dir / "crash.log"
     crash_log = (crash_path.read_text(encoding="utf-8", errors="replace")
                  if crash_path.exists() else None)
-    problem = verdict(alive, exit_code, crash_log)
+    printed = output_path.read_text(encoding="utf-8", errors="replace")
+    problem = verdict(alive, exit_code, crash_log, printed)
     report = "\n".join([
         f"scratch HOME: {home}",
         f"still running after {seconds:g} s: {alive}",
         "--- output ---",
-        output_path.read_text(encoding="utf-8", errors="replace").rstrip(),
+        printed.rstrip(),
         "--- crash.log ---",
         "(none)" if crash_log is None else crash_log.rstrip(),
         "--- config folder ---",
