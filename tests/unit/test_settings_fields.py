@@ -217,12 +217,14 @@ class TestSettingsFields(unittest.TestCase):
         dialog.apply_to_config()
         self.assertNotEqual(engine_settings(self.config), again)
 
-    def test_the_rules_editor_prefers_consolas(self):
+    def test_the_rules_editor_prefers_the_platforms_fixed_family(self):
+        """Consolas, or Menlo on macOS (issue #32), where it is installed."""
         from gui import text_size
-        if QFontInfo(QFont("Consolas")).family() != "Consolas":
-            self.skipTest("Consolas not installed")
-        self.assertEqual(text_size.fixed_font().family(), "Consolas")
-        self.assertEqual(self._dialog().rules_edit.font().family(), "Consolas")
+        family = text_size.fixed_family()
+        if QFontInfo(QFont(family)).family() != family:
+            self.skipTest(f"{family} not installed")
+        self.assertEqual(text_size.fixed_font().family(), family)
+        self.assertEqual(self._dialog().rules_edit.font().family(), family)
 
 
 if __name__ == '__main__':

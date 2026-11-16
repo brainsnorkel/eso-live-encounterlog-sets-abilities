@@ -133,7 +133,6 @@ from PySide6.QtGui import (
     QFont,
     QFontMetrics,
     QIcon,
-    QKeySequence,
     QPalette,
     QPixmap,
     QShortcut,
@@ -160,6 +159,7 @@ from gui.death_render import ICON_PX
 from gui.dps_graph import legend_key
 from gui.fight_render import link_color
 from gui.icon_cache import IconCache
+from gui.keys import key_text, on_row_activated, sequence
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
 
@@ -203,6 +203,7 @@ FULL_ROW_NAME = "Selected event"
 GRAPH_HREF = "graph"
 GRAPH_LINK = "On the DPS graph"
 GRAPH_KEYS = "Ctrl+G"
+GRAPH_KEYS_TEXT = key_text(GRAPH_KEYS)  # as the line under the table names it
 SEARCHED = " · matching the search"  # the count's end while a search narrows the rows
 OLD_FIGHT = "This fight was recorded before the app kept its events."
 NO_EVENTS = "No events in this fight."
@@ -616,7 +617,7 @@ class EventsPage(QWidget):
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setStretchLastSection(True)
         header.setHighlightSections(False)
-        self.table.activated.connect(self._on_activated)
+        on_row_activated(self.table, self._on_activated)
         layout.addWidget(self.table, 1)
         # The row selected in full, under the table: its cells are cut at a
         # large text size
@@ -630,7 +631,7 @@ class EventsPage(QWidget):
         self.full_row.linkActivated.connect(self._ask_graph)
         layout.addWidget(self.full_row)
         self.table.selectionModel().currentRowChanged.connect(self._show_full_row)
-        QShortcut(QKeySequence(GRAPH_KEYS), self, self._ask_graph,
+        QShortcut(sequence(GRAPH_KEYS), self, self._ask_graph,
                   context=Qt.WidgetWithChildrenShortcut)
         self._fit_rows()
         self._fit_controls()
@@ -1023,7 +1024,7 @@ class EventsPage(QWidget):
         # In the app's link colour, as a death's Positions link is
         dark = self.palette().color(QPalette.Base).lightness() < 128
         text += (f' — <a href="{GRAPH_HREF}" style="text-decoration:none;'
-                 f'color:{link_color(dark)}">{GRAPH_LINK}</a> ({GRAPH_KEYS})')
+                 f'color:{link_color(dark)}">{GRAPH_LINK}</a> ({GRAPH_KEYS_TEXT})')
         self.full_row.setText(text)
 
     def _ask_graph(self, *_) -> None:

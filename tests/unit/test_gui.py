@@ -511,6 +511,31 @@ class TestMainWindowStates(GuiTestCase):
         finally:
             win.close()
 
+    def test_a_completed_archive_says_what_became_of_the_original(self):
+        """Kept by default: nothing said. Deleted: said. A delete that was
+        asked for and refused (macOS, the log in use or the check failing):
+        said with the reason, so a log left behind is not a surprise."""
+        from engine_events import ArchiveEvent
+        win = self._window()
+        try:
+            def line(**outcome):
+                win._on_archive_event(ArchiveEvent(
+                    kind='completed', archive_path=Path('x.zip'),
+                    done_bytes=100, total_bytes=100, **outcome))
+                return win.statusBar().currentMessage()
+
+            self.assertTrue(line().endswith('x.zip'))
+            self.assertTrue(line(kept_reason='could not check whether the log is in use').endswith(
+                'x.zip — original kept: could not check whether the log is in use'))
+            self.assertTrue(line(kept_reason='the log is in use').endswith(
+                'x.zip — original kept: the log is in use'))
+            # A kept original is not taken for the archive that deleted the log
+            self.assertIsNone(win._archive_that_deleted_log)
+            self.assertTrue(line(original_deleted=True).endswith('x.zip — original deleted'))
+            self.assertEqual(win._archive_that_deleted_log, Path('x.zip'))
+        finally:
+            win.close()
+
     def test_parse_progress_drives_progress_bar(self):
         win = self._window()
         try:

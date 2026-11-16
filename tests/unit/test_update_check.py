@@ -31,6 +31,9 @@ def _release(tag='v0.4.0', assets=None, **extra):
         }, {
             'name': f'esolog-tail-linux-x86_64-{version}.tar.gz',
             'browser_download_url': f'https://example.invalid/{tag}/linux.tar.gz',
+        }, {
+            'name': f'esolog-tail-macos-arm64-{version}.zip',
+            'browser_download_url': f'https://example.invalid/{tag}/macos.zip',
         }]
     return {
         'tag_name': tag,
@@ -86,6 +89,10 @@ class TestReleaseParsing(unittest.TestCase):
         self.assertEqual(linux.installer_name,
                          'esolog-tail-linux-x86_64-0.4.0.tar.gz')
         self.assertTrue(linux.installer_url.endswith('linux.tar.gz'))
+        # macOS: the app's zip, never the Windows portable zip beside it
+        mac = release_to_update_info(release, platform='darwin')
+        self.assertEqual(mac.installer_name, 'esolog-tail-macos-arm64-0.4.0.zip')
+        self.assertTrue(mac.installer_url.endswith('macos.zip'))
         # The running platform is the default
         if sys.platform in update_check.PLATFORM_ASSETS:
             self.assertEqual(
@@ -93,7 +100,19 @@ class TestReleaseParsing(unittest.TestCase):
                 release_to_update_info(release, sys.platform).installer_name)
 
     def test_platform_without_a_build_is_rejected(self):
-        self.assertIsNone(release_to_update_info(_release(), platform='darwin'))
+        self.assertNotIn('freebsd14', update_check.PLATFORM_ASSETS)
+        self.assertIsNone(release_to_update_info(_release(), platform='freebsd14'))
+
+    def test_a_release_from_before_the_mac_build_offers_a_mac_nothing(self):
+        """The releases published before the first Mac zip carry three
+        files, one of them a zip (the Windows portable build): a Mac is
+        offered none of them (issue #32)."""
+        older = _release(assets=[
+            {'name': 'esolog-tail-windows-setup-0.4.0.exe', 'browser_download_url': 'https://x/setup.exe'},
+            {'name': 'esolog-tail-windows-portable-0.4.0.zip', 'browser_download_url': 'https://x/p.zip'},
+            {'name': 'esolog-tail-linux-x86_64-0.4.0.tar.gz', 'browser_download_url': 'https://x/l.tar.gz'}])
+        self.assertIsNone(release_to_update_info(older, platform='darwin'))
+        self.assertIsNotNone(release_to_update_info(older, platform='win32'))
 
     def test_release_without_this_platforms_asset_rejected(self):
         # A Windows-only release offers nothing to Linux, and vice versa

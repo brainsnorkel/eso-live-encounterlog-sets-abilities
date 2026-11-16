@@ -63,10 +63,15 @@ CHANNEL_CHOICES = (
 CHANNELS = tuple(key for key, _name, _offers in CHANNEL_CHOICES)
 DEFAULT_CHANNEL = "stable"
 # Release asset that carries the update on each platform: (name prefix, suffix).
-# Windows gets the installer; Linux the tarball. Other platforms have no build.
+# Windows gets the installer; Linux the tarball; macOS the zip of the app for
+# Apple Silicon (issue #32). Other platforms have no build. A release without
+# this platform's asset is not offered, so a Mac is told of no release older
+# than the first that carries the zip. Only Windows downloads the asset
+# (main_window.HAS_INSTALLER); elsewhere the button opens the release page.
 PLATFORM_ASSETS = {
     "win32": ("esolog-tail-windows-setup", ".exe"),
     "linux": ("esolog-tail-linux-x86_64", ".tar.gz"),
+    "darwin": ("esolog-tail-macos-arm64", ".zip"),
 }
 _TIMEOUT_S = 10
 _MAX_WAIT_S = 3600          # the longest a rate-limit reply can hold checks off

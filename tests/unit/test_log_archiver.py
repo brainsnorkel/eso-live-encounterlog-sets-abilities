@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Unit tests for the startup log archiver (log-archiving spec)."""
 
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
+import log_archiver
 from app_config import AppConfig
 from engine_events import RecordingListener
-from log_archiver import LogArchiver
+from log_archiver import FREE, HELD, UNKNOWN, LogArchiver, holder_check
 
 EPOCH_MS = 1755729685851
 BEGIN_LOG = f'5,BEGIN_LOG,{EPOCH_MS},15,"NA Megaserver","en","eso.live.11.1"'
@@ -38,6 +42,22 @@ class ArchiverTestCase(unittest.TestCase):
     def _events(self, kind):
         return [e[1] for e in self.recorder.of_kind('archive_event')
                 if e[1].kind == kind]
+
+    def _hold_open_in_another_process(self):
+        """A child process with the log open for append, as ESO would have."""
+        child = subprocess.Popen(
+            [sys.executable, '-c',
+             'import sys, time\n'
+             'handle = open(sys.argv[1], "a")\n'
+             'print("ready", flush=True)\n'
+             'time.sleep(60)\n',
+             str(self.log)],
+            stdout=subprocess.PIPE, text=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        self.assertEqual(child.stdout.readline().strip(), 'ready')
+        self.addCleanup(child.stdout.close)
+        return child
 
 
 class TestArchiveOperation(ArchiverTestCase):
@@ -152,23 +172,6 @@ class TestInUseGuard(ArchiverTestCase):
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux /proc holder scan')
 class TestInUseGuardLinux(ArchiverTestCase):
 
-    def _hold_open_in_another_process(self):
-        """A child process with the log open for append, as ESO would have."""
-        import subprocess
-        child = subprocess.Popen(
-            [sys.executable, '-c',
-             'import sys, time\n'
-             'handle = open(sys.argv[1], "a")\n'
-             'print("ready", flush=True)\n'
-             'time.sleep(60)\n',
-             str(self.log)],
-            stdout=subprocess.PIPE, text=True)
-        self.addCleanup(child.wait)
-        self.addCleanup(child.kill)
-        self.assertEqual(child.stdout.readline().strip(), 'ready')
-        self.addCleanup(child.stdout.close)
-        return child
-
     def test_skip_when_another_process_holds_the_log(self):
         self._write_log()
         self.config.set('archive.delete_original', True)  # must still keep
@@ -193,6 +196,238 @@ class TestInUseGuardLinux(ArchiverTestCase):
         self._write_log()
         with open(self.log, 'rb'):
             self.assertIsNotNone(self.archiver.archive(self.log))
+
+
+class TestHolderCheck(unittest.TestCase):
+    """holder_check reads lsof's answer into held, free or unknown. lsof is
+    patched, so these run on every platform; only "free" lets macOS delete
+    the log, so everything that is not plainly free must come out unknown."""
+
+    def _answer(self, returncode=0, stdout='', stderr=''):
+        done = subprocess.CompletedProcess(['lsof'], returncode, stdout, stderr)
+        with mock.patch.object(log_archiver.subprocess, 'run', return_value=done) as run:
+            answer = holder_check(Path('/logs/Encounter.log'))
+        self.run_call = run.call_args
+        return answer
+
+    def test_another_process_is_held(self):
+        self.assertEqual(self._answer(0, '4242\n'), HELD)
+
+    def test_another_process_beside_our_own_is_held(self):
+        self.assertEqual(self._answer(0, f'{os.getpid()}\n4242\n'), HELD)
+
+    def test_our_own_id_only_is_free(self):
+        """The app's tail and the archive's read handle are this process."""
+        self.assertEqual(self._answer(0, f'{os.getpid()}\n'), FREE)
+
+    def test_exit_1_with_both_streams_empty_is_free(self):
+        """What lsof gives for a file nobody has open."""
+        self.assertEqual(self._answer(1), FREE)
+
+    def test_exit_1_with_a_message_on_stderr_is_unknown(self):
+        self.assertEqual(
+            self._answer(1, stderr='lsof: status error on /logs/Encounter.log: '
+                                   'No such file or directory\n'), UNKNOWN)
+
+    def test_our_own_id_with_a_message_on_stderr_is_unknown(self):
+        """A warning may mean lsof could not look at every process."""
+        self.assertEqual(self._answer(0, f'{os.getpid()}\n', "lsof: WARNING: can't stat()\n"),
+                         UNKNOWN)
+
+    def test_an_exit_code_that_fits_neither_answer_is_unknown(self):
+        self.assertEqual(self._answer(0), UNKNOWN)
+        self.assertEqual(self._answer(1, f'{os.getpid()}\n'), UNKNOWN)
+        self.assertEqual(self._answer(2), UNKNOWN)
+
+    def test_output_that_is_not_process_ids_is_unknown(self):
+        self.assertEqual(self._answer(0, 'COMMAND PID USER\n'), UNKNOWN)
+
+    def test_a_missing_lsof_is_unknown(self):
+        with mock.patch.object(log_archiver.subprocess, 'run',
+                               side_effect=FileNotFoundError('/usr/sbin/lsof')):
+            self.assertEqual(holder_check(Path('/logs/Encounter.log')), UNKNOWN)
+
+    def test_a_timeout_is_unknown(self):
+        with mock.patch.object(log_archiver.subprocess, 'run',
+                               side_effect=subprocess.TimeoutExpired('lsof', 5)):
+            self.assertEqual(holder_check(Path('/logs/Encounter.log')), UNKNOWN)
+
+    def test_lsof_is_asked_for_ids_of_this_path_with_a_time_limit(self):
+        """By its full path (the app's PATH is not a shell's), with its
+        warnings on (-t alone turns them off, and a thing lsof could not look
+        into would read as free), after "--" so a path that starts with a
+        dash is not read as an option."""
+        self._answer(1)
+        args, kwargs = self.run_call
+        self.assertEqual(args[0],
+                         ['/usr/sbin/lsof', '-t', '+w', '--', str(Path('/logs/Encounter.log'))])
+        self.assertEqual(kwargs['timeout'], 5)
+
+
+@unittest.skipUnless(sys.platform == 'darwin', 'macOS lsof holder check')
+class TestInUseGuardMac(ArchiverTestCase):
+    """The Linux scenarios against the real lsof, and the second check at the
+    moment of the delete."""
+
+    def test_skip_when_another_process_holds_the_log(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)  # must still keep
+        self._hold_open_in_another_process()
+        result = self.archiver.archive(self.log)
+        self.assertIsNone(result)
+        skipped = self._events('skipped')
+        self.assertEqual(len(skipped), 1)
+        self.assertIn('in use', skipped[0].reason)
+        self.assertTrue(self.log.exists())
+        self.assertEqual(list(self.dir.glob('*.zip')), [])
+
+    def test_archive_proceeds_once_the_holder_is_gone(self):
+        self._write_log()
+        child = self._hold_open_in_another_process()
+        child.kill()
+        child.wait()
+        self.assertIsNotNone(self.archiver.archive(self.log))
+
+    def test_own_handles_do_not_count(self):
+        """The app's own open handle (the tail) must not block an archive,
+        nor the delete: the archive's own read handle is open at that check."""
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        with open(self.log, 'rb'):
+            self.assertIsNotNone(self.archiver.archive(self.log))
+        completed = self._events('completed')
+        self.assertTrue(completed[0].original_deleted)
+        self.assertEqual(completed[0].kept_reason, '')
+        self.assertFalse(self.log.exists())
+
+    def test_a_holder_that_arrives_during_the_zip_keeps_the_original(self):
+        """The game opens the log after the first check and writes nothing
+        while it is zipped, so the size verification passes: only the second
+        check, against the real lsof, stands between it and the delete."""
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        real_verify = self.archiver._verify
+
+        def verify_then_the_game_starts(*args):
+            verified = real_verify(*args)
+            self._hold_open_in_another_process()
+            return verified
+
+        self.archiver._verify = verify_then_the_game_starts
+        result = self.archiver.archive(self.log)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.exists())
+        self.assertTrue(self.log.exists())
+        completed = self._events('completed')
+        self.assertFalse(completed[0].original_deleted)
+        self.assertEqual(completed[0].kept_reason, 'the log is in use')
+
+
+@unittest.skipIf(sys.platform == 'win32', 'the POSIX handle; Windows denies sharing instead')
+class TestMacDeleteGate(ArchiverTestCase):
+    """What macOS does with holder_check's answers, at the start and at the
+    moment of the delete. The answers are given, not asked of lsof, and the
+    platform is said to be macOS, so Linux runs these too: CI has no Mac."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(log_archiver.sys, 'platform', 'darwin')
+        self.addCleanup(patcher.stop)
+        patcher.start()
+
+    def _answers(self, *answers):
+        """holder_check gives *answers* in turn: the start, then the delete."""
+        patcher = mock.patch.object(log_archiver, 'holder_check', side_effect=list(answers))
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
+    def test_a_holder_at_the_start_skips_the_archive(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        check = self._answers(HELD)
+        self.assertIsNone(self.archiver.archive(self.log))
+        self.assertEqual(check.call_count, 1)
+        self.assertIn('in use', self._events('skipped')[0].reason)
+        self.assertTrue(self.log.exists())
+        self.assertEqual(list(self.dir.glob('*.zip')), [])
+
+    def test_a_holder_at_delete_time_keeps_the_original(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        self._answers(FREE, HELD)
+        result = self.archiver.archive(self.log)
+        self.assertTrue(result.exists())
+        self.assertTrue(self.log.exists())
+        completed = self._events('completed')
+        self.assertFalse(completed[0].original_deleted)
+        self.assertEqual(completed[0].kept_reason, 'the log is in use')
+
+    def test_the_log_is_deleted_straight_after_the_answer(self):
+        """Not at the handle's close, which comes after the config's save and
+        the listeners: when they hear of the archive the log is gone."""
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        self._answers(FREE, FREE)
+        there = []
+
+        class AtTheEvent:
+            def on_archive_event(listener, event):
+                if event.kind == 'completed':
+                    there.append(self.log.exists())
+
+        self.archiver.add_listener(AtTheEvent())
+        self.assertIsNotNone(self.archiver.archive(self.log))
+        self.assertEqual(there, [False])
+
+    def test_a_log_that_cannot_be_deleted_is_said_to_be_kept(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        self._answers(FREE, FREE)
+        with mock.patch.object(Path, 'unlink', side_effect=PermissionError('no')):
+            result = self.archiver.archive(self.log)
+        self.assertIsNotNone(result)
+        self.assertTrue(self.log.exists())
+        completed = self._events('completed')
+        self.assertFalse(completed[0].original_deleted)
+        self.assertEqual(completed[0].kept_reason, 'the log could not be deleted')
+        self.assertEqual(self.config.get('archive.size_at_last_archive'),
+                         self.log.stat().st_size)
+
+    def test_the_check_failing_at_delete_time_keeps_the_original(self):
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        check = self._answers(FREE, UNKNOWN)
+        result = self.archiver.archive(self.log)
+        self.assertEqual(check.call_count, 2)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.exists())  # the zip is kept
+        self.assertTrue(self.log.exists())
+        completed = self._events('completed')
+        self.assertFalse(completed[0].original_deleted)
+        self.assertEqual(completed[0].kept_reason,
+                         'could not check whether the log is in use')
+        # The log is still there, so the marker is its size, as for a kept one
+        self.assertEqual(self.config.get('archive.size_at_last_archive'),
+                         self.log.stat().st_size)
+
+    def test_the_check_failing_at_the_start_still_makes_the_zip(self):
+        """Unknown is not held: the zip is made, and the delete asks again."""
+        self._write_log()
+        self.config.set('archive.delete_original', True)
+        self._answers(UNKNOWN, FREE)
+        self.assertIsNotNone(self.archiver.archive(self.log))
+        completed = self._events('completed')
+        self.assertTrue(completed[0].original_deleted)
+        self.assertFalse(self.log.exists())
+
+    def test_no_second_check_when_the_original_is_kept_anyway(self):
+        self._write_log()
+        check = self._answers(FREE)
+        self.assertIsNotNone(self.archiver.archive(self.log))
+        self.assertEqual(check.call_count, 1)
+        completed = self._events('completed')
+        self.assertEqual(completed[0].kept_reason, '')
+        self.assertTrue(self.log.exists())
 
 
 class TestTriggerAndMarker(ArchiverTestCase):

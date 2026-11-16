@@ -168,13 +168,16 @@ class TestMainWindow(AccessibilityTestCase):
 
     def test_the_parts_are_named(self):
         from PySide6.QtGui import QAccessible
+
+        from gui.keys import key_text
         win = self._window()
+        find = f"Find ({key_text('Ctrl+F')})"  # as the platform writes the key
         for widget, name in ((win.history_list, "Fights"), (win.search_field, "Search this tab"),
                              (win.fight_tabs, "Fight views"), (win.fight_view, "Fight"),
                              (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline"),
                              (win.events_view.table, "Fight events"),
                              (win.events_view.more_button, "More"),
-                             (win.fight_views.find_button, "Find (Ctrl+F)")):
+                             (win.fight_views.find_button, find)):
             self.assertEqual(QAccessible.queryAccessibleInterface(widget).text(QAccessible.Name),
                              name)
         # Linux names a combo box by its current item, so its own name here

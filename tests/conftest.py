@@ -13,8 +13,17 @@ def pytest_configure(config):
     whichever thread is allocating, and the engine threads the GUI tests
     start run Python: on Python 3.14 a run of the suite saw one or two
     collections on an engine thread. One that found GUI objects would free
-    them off the UI thread."""
+    them off the UI thread.
+
+    The '&' mnemonics are turned on, as the app turns them on at start-up
+    on macOS (gui.keys.use_alt_letters), so the tabs' Alt letters are
+    tested there as the app has them. They are already on elsewhere."""
     gc.disable()
+    try:
+        from PySide6.QtGui import qt_set_sequence_auto_mnemonic
+    except ImportError:
+        return
+    qt_set_sequence_auto_mnemonic(True)
 
 
 @pytest.fixture(autouse=True)

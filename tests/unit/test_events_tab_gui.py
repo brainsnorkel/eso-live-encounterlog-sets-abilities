@@ -314,6 +314,7 @@ class TestTheDeathRow(EventsTestCase):
         """Every cell of the row selected on the line under the table, cut
         or not, and what Enter does on a single death's."""
         from gui.events_tab import GRAPH_HREF, GRAPH_KEYS, GRAPH_LINK, RECAP_TIP
+        from gui.keys import key_text
         page = self._page(_fight(), size=(500, 400))
         died = self._row_of(page, "Died")
         self._select(page, died)
@@ -323,7 +324,7 @@ class TestTheDeathRow(EventsTestCase):
         # What Enter does, then the row's moment on the DPS graph
         from gui.fight_render import link_color
         link = (f'<a href="{GRAPH_HREF}" style="text-decoration:none;color:{link_color(False)}">'
-                f'{GRAPH_LINK}</a> ({GRAPH_KEYS})')
+                f'{GRAPH_LINK}</a> ({key_text(GRAPH_KEYS)})')
         self.assertTrue(text.endswith(f"{RECAP_TIP} — {link}"))
         self._select(page, self._row_of(page, "Back"))
         self.assertNotIn(RECAP_TIP, page.full_row.text())
@@ -714,8 +715,11 @@ class TestTheFindButton(EventsTestCase):
         self.assertIs(win.fight_tabs.cornerWidget(), button)
         self.assertTrue(button.isVisible())
         self.assertFalse(field.isVisible())
-        self.assertEqual(button.accessibleName(), "Find (Ctrl+F)")
-        self.assertEqual(button.toolTip(), "Find (Ctrl+F)")
+        # As the platform writes the key: "Find (⌘F)" on macOS
+        from gui.keys import key_text
+        find = f"Find ({key_text('Ctrl+F')})"
+        self.assertEqual(button.accessibleName(), find)
+        self.assertEqual(button.toolTip(), find)
         QTest.mouseClick(button, Qt.LeftButton)
         _app.processEvents()
         self.assertTrue(field.isVisible())

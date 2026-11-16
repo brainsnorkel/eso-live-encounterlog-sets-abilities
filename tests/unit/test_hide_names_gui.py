@@ -8,6 +8,7 @@ and in the handle's hover (issue #71)."""
 
 import os
 import re
+import sys
 import tempfile
 import unittest
 from math import ceil
@@ -26,6 +27,16 @@ BLOCK = "▒"
 FRIEND = "@" + BLOCK * 6  # '@friend' hidden
 FRIEND_CHAR = BLOCK * 11  # 'Friend Char' hidden
 IMG_SRC = re.compile(r'<img src="(mask:[a-z_]+\?color=[0-9a-f]{6}&amp;pt=[0-9.]+&amp;b=[01])"')
+
+
+def _press_hide_names(target):
+    """Press Hide names' key as this platform binds it: Ctrl+H, and ⇧⌘H on
+    macOS (gui.keys)."""
+    from PySide6.QtTest import QTest
+
+    from gui.keys import sequence
+    combo = sequence("Ctrl+H")[0]
+    QTest.keyClick(target, combo.key(), combo.keyboardModifiers())
 
 
 def _ensure_app():
@@ -231,7 +242,9 @@ class TestTheWindows(HideNamesTestCase):
         win = self._window()
         try:
             self.assertFalse(win.hide_names_action.isChecked())
-            self.assertEqual(win.hide_names_action.shortcut().toString(), "Ctrl+H")
+            # ⇧⌘H on macOS, where ⌘H hides the application (gui.keys)
+            self.assertEqual(win.hide_names_action.shortcut().toString(),
+                             "Ctrl+Shift+H" if sys.platform == "darwin" else "Ctrl+H")
             # Flipping with nothing on screen is harmless
             win.hide_names_action.setChecked(True)
             win.hide_names_action.setChecked(False)
@@ -505,7 +518,7 @@ class TestTheWindows(HideNamesTestCase):
             win.close()
 
     def test_ctrl_h_flips_the_switch_from_any_window(self):
-        from PySide6.QtCore import Qt, QUrl
+        from PySide6.QtCore import QUrl
         from PySide6.QtTest import QTest
         win = self._window()
         try:
@@ -516,7 +529,7 @@ class TestTheWindows(HideNamesTestCase):
             self.assertTrue(QTest.qWaitForWindowActive(win, 2000))
             win._on_fight_completed(_entry())
             win.history_list.select_fight(0)
-            QTest.keyClick(win, Qt.Key_H, Qt.ControlModifier)
+            _press_hide_names(win)
             self.assertTrue(win.hide_names_action.isChecked())
             self.assertNotIn("@friend", win.fight_view.toPlainText())
             # From the build window too (the action's context is the application)
@@ -524,7 +537,7 @@ class TestTheWindows(HideNamesTestCase):
             build = win._player_window
             build.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(build, 2000))
-            QTest.keyClick(build, Qt.Key_H, Qt.ControlModifier)
+            _press_hide_names(build)
             self.assertFalse(win.hide_names_action.isChecked())
             self.assertIn("@friend", win.fight_view.toPlainText())
         finally:
@@ -736,7 +749,6 @@ class TestPositionsWindowNames(HideNamesTestCase):
         self.assertIn("@dps", self._names_shown(window))
 
     def test_ctrl_h_flips_the_switch_from_the_positions_window(self):
-        from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         win = self._window()
         try:
@@ -748,9 +760,9 @@ class TestPositionsWindowNames(HideNamesTestCase):
             window = self._positions(hide=False, parent=win)
             window.activateWindow()
             self.assertTrue(QTest.qWaitForWindowActive(window, 2000))
-            QTest.keyClick(window, Qt.Key_H, Qt.ControlModifier)
+            _press_hide_names(window)
             self.assertTrue(win.hide_names_action.isChecked())
-            QTest.keyClick(window.table, Qt.Key_H, Qt.ControlModifier)
+            _press_hide_names(window.table)
             self.assertFalse(win.hide_names_action.isChecked())
         finally:
             win.close()

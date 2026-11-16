@@ -88,7 +88,8 @@ and End, PgUp and PgDn. Space alone is not a shortcut, which would take it
 from a focused button too: the table and the scrub bar leave a plain Space
 to the window (keyPressEvent), which plays or pauses, while a button and
 the speed picker keep their own. Ctrl+, and Ctrl+. play slower and faster,
-as the < and > of a video player. The buttons are QToolButtons: a
+as the < and > of a video player (⌃, and ⌃. on macOS, where ⌘, and ⌘.
+are Settings and Cancel: gui.keys). The buttons are QToolButtons: a
 QPushButton in a dialog takes Enter even with the focus elsewhere
 (probed); they and the speed picker take the focus by Tab only, so a click
 leaves it in the table. Tab goes from the scrub bar to the table to Play,
@@ -207,6 +208,7 @@ from companions import ANON
 from fight_locator import LEAD_MS, SELF, TAIL_MS
 from gui import text_size
 from gui.fight_render import ROLE_NAMES
+from gui.keys import key_text, on_row_activated, sequence
 from gui.name_mask import NO_MASK, NameMask
 from gui.positions_canvas import (
     DEAD,
@@ -272,7 +274,7 @@ DESCRIBE_MS = 1_000
 PLAY_TEXT, PAUSE_TEXT = "▶ Play", "❚❚ Pause"
 PLAY_TIP = "Play the fight from this moment (Space); it stops at the fight's end"
 PAUSE_TIP = "Pause (Space)"
-SPEED_TIP = "Playback speed (Ctrl+, slower, Ctrl+. faster)"
+SPEED_TIP = f"Playback speed ({key_text('Ctrl+,')} slower, {key_text('Ctrl+.')} faster)"
 CLOCK_TEMPLATE = "-00:00.0"  # the clock's widest text (fight_clock)
 
 # The table's columns
@@ -779,7 +781,7 @@ class PositionsWindow(QDialog):
         # no current row makes its first row current, unselected, and the
         # window's return to the front picked player 1 by itself
         self.table.selectionModel().selectionChanged.connect(self._on_row_changed)
-        self.table.activated.connect(self._on_activated)
+        on_row_activated(self.table, self._on_activated)
         self.splitter.addWidget(left)
         self.splitter.addWidget(self.table)
         self.splitter.setStretchFactor(0, 3)
@@ -796,16 +798,20 @@ class PositionsWindow(QDialog):
         self.speed_box.setFocusPolicy(Qt.TabFocus)
         self.speed_box.currentIndexChanged.connect(self._on_speed_picked)
         self.previous_death = self._button("◀ Death", "Previous death",
-                                           "Previous death (Ctrl+PgUp)", self._previous_death)
+                                           f"Previous death ({key_text('Ctrl+PgUp')})",
+                                           self._previous_death)
         self.back = self._button("−1 s", "Back one second",
-                                 "Back a second (Ctrl+Left); with Shift a tenth", self._back)
+                                 f"Back a second ({key_text('Ctrl+Left')}); with Shift a tenth",
+                                 self._back)
         self.clock = QLabel()
         self.clock.setAccessibleName("Moment")
         self.clock.setTextFormat(Qt.PlainText)
         self.clock.setAlignment(Qt.AlignCenter)
         self.forward = self._button("+1 s", "On one second",
-                                    "On a second (Ctrl+Right); with Shift a tenth", self._forward)
-        self.next_death = self._button("Death ▶", "Next death", "Next death (Ctrl+PgDn)",
+                                    f"On a second ({key_text('Ctrl+Right')}); with Shift a tenth",
+                                    self._forward)
+        self.next_death = self._button("Death ▶", "Next death",
+                                       f"Next death ({key_text('Ctrl+PgDown')})",
                                        self._next_death)
         self.show_button = QToolButton()
         self.show_button.setText("Show")
@@ -844,14 +850,15 @@ class PositionsWindow(QDialog):
         layout.addLayout(playback)
 
         # Modified keys only (see the module); never Ctrl+H nor the text
-        # size keys, which are the main window's, application-wide
+        # size keys, which are the main window's, application-wide. The
+        # speed keys are other keys on macOS (gui.keys)
         for keys, slot in (("Ctrl+Left", self._back_second), ("Ctrl+Right", self._forward_second),
                            ("Ctrl+Shift+Left", self._back_tenth),
                            ("Ctrl+Shift+Right", self._forward_tenth),
                            ("Ctrl+PgUp", self._previous_death), ("Ctrl+PgDown", self._next_death),
                            ("Ctrl+Up", self._previous_unit), ("Ctrl+Down", self._next_unit),
                            ("Ctrl+,", self.slower), ("Ctrl+.", self.faster)):
-            QShortcut(QKeySequence(keys), self, slot)
+            QShortcut(sequence(keys), self, slot)
         QShortcut(QKeySequence(QKeySequence.Copy), self, self._copy_moment)
 
         # A burst of updates to the fight draws once, on the event loop's

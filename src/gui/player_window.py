@@ -59,7 +59,7 @@ fight kept while the fight is in the list. It stores no lambda on a child.
 """
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QGuiApplication, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -95,6 +95,7 @@ from gui.death_render import (
 )
 from gui.fight_render import _join, _theme, anchor_tooltips
 from gui.fight_view import FightView
+from gui.keys import key_text, sequence
 from gui.name_mask import NO_MASK
 from gui.taken_render import HEALING_PART, TAKEN_PART, render_taken_html, taken_title
 from pull_outcome import clock, outcome_text
@@ -225,7 +226,7 @@ class PlayerWindow(QDialog):
         self.previous_player = QToolButton()
         self.previous_player.setText("◀")
         self.previous_player.setAccessibleName("Previous player")
-        self.previous_player.setToolTip("Previous player (Ctrl+Up)")
+        self.previous_player.setToolTip(f"Previous player ({key_text('Ctrl+Up')})")
         self.previous_player.clicked.connect(self._previous_player)
         self.picker = QComboBox()
         self.picker.setAccessibleName("Player")
@@ -235,7 +236,7 @@ class PlayerWindow(QDialog):
         self.next_player = QToolButton()
         self.next_player.setText("▶")
         self.next_player.setAccessibleName("Next player")
-        self.next_player.setToolTip("Next player (Ctrl+Down)")
+        self.next_player.setToolTip(f"Next player ({key_text('Ctrl+Down')})")
         self.next_player.clicked.connect(self._next_player)
         self.boss_only = QCheckBox(BOSS_ONLY_LABEL)
         self.boss_only.toggled.connect(self._on_boss_only)
@@ -301,7 +302,7 @@ class PlayerWindow(QDialog):
         # Ctrl+Up for the player (decided keys; not the labels' Alt letters)
         for keys, slot in (("Ctrl+PgDown", self._next_tab), ("Ctrl+PgUp", self._previous_tab),
                            ("Ctrl+Down", self._next_player), ("Ctrl+Up", self._previous_player)):
-            QShortcut(QKeySequence(keys), self, slot)
+            QShortcut(sequence(keys), self, slot)
 
         # A burst of updates to the fight draws once, on the next turn of the
         # event loop, on a timer the window owns (see fight_view's steps)
