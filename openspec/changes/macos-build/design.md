@@ -209,8 +209,8 @@ Measured on the maintainer's Mac (macOS 27.2, Homebrew Python 3.14.10, PyInstall
 
 **During PR 2**, from a locally built bundle:
 
-7. The Dock and Finder icon.
-8. A live session with the game full screen over the app for several minutes, then back: is the list current at once? If the app was held back (App Nap), the bundle asks macOS not to nap it. Which Info.plist key or call does that on macOS 27 is unverified, so it is tried here and not assumed.
+7. The Dock and Finder icon. **Skipped (the maintainer, 2026-11-16).** The plate was seen only as an image (`iconutil` expands the `.icns`); how Finder and the Dock draw it is unverified.
+8. A live session with the game full screen over the app for several minutes, then back: is the list current at once? If the app was held back (App Nap), the bundle asks macOS not to nap it. Which Info.plist key or call does that on macOS 27 is unverified, so it is tried here and not assumed. **Skipped (the maintainer, 2026-11-16).** Whether App Nap holds the app back is unverified, and the bundle carries no key against it. It comes round again in the checks after the first beta.
 
 **After the first beta**, from the zip downloaded in a browser:
 
