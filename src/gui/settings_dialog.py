@@ -216,6 +216,9 @@ TEXT_SIZE_HELP = ("The size of all the app's text, its windows and the timeline 
 COLORBLIND_HELP = ("The graph's player lines in a set of colours chosen to stay apart for red-green "
                    "and blue-yellow colour blindness, each player also drawn solid, dashed, dotted "
                    "or dash-dotted in turn, so lines can be told apart by shape as well as colour.")
+INSTANCE_ART_HELP = ("A strip of the game's loading-screen painting for the instance. Trials and "
+                     "arenas have one; anywhere else the header is plain, as it is with this "
+                     "off. It is also off while the system is set to high contrast.")
 
 
 class SettingsDialog(QDialog):
@@ -416,6 +419,11 @@ class SettingsDialog(QDialog):
             "Reduce motion: the ring on a taunt skill's icon stays still instead of pulsing")
         self.reduce_motion.setChecked(bool(config.get("display.reduce_motion", False)))
         display_form.addRow(self.reduce_motion)
+        self.instance_art = QCheckBox("Instance art: a trial's or an arena's art on its header "
+                                      "in the fight list and on the Instance tab")
+        self.instance_art.setChecked(bool(config.get("display.instance_art", True)))
+        display_form.addRow(self.instance_art)
+        display_form.addRow(self._help(INSTANCE_ART_HELP, self.instance_art))
         display.addWidget(display_group)
 
         # Privacy: the Hide names switch (issue #72, gui.name_mask), the
@@ -897,6 +905,7 @@ class SettingsDialog(QDialog):
         self.config.set(text_size.CONFIG_KEY, self.text_size.value())
         self.config.set("display.colorblind_graph", self.colorblind_graph.isChecked())
         self.config.set("display.reduce_motion", self.reduce_motion.isChecked())
+        self.config.set("display.instance_art", self.instance_art.isChecked())
         self.config.set("companions.accrue_to_owner", self.companion_accrual.isChecked())
         self.config.set("death_recap.window_s", self.recap_window.value())
         self.config.set("pen_crit.piercing", self.assume_piercing.isChecked())

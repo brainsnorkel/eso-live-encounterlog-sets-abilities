@@ -163,6 +163,10 @@ TOPICS = [
         "src/trial_result.py",
         "src/gui/fight_list.py",
     ]),
+    ("Instance art: a trial's or an arena's painting on its header and its tab", [
+        "src/gui/instance_art.py",
+        "scripts/extract_instance_art.py",
+    ]),
     ("Kill or wipe, time dead, and a boss's pulls in a row", [
         "src/pull_outcome.py",
     ]),

@@ -39,7 +39,7 @@ from fight_index import (
     player_history,
     player_history_text,
 )
-from gui import text_size
+from gui import instance_art, text_size
 from gui.activity_render import (
     OPEN_AT_FIRST, activity_paths, activity_tooltips, empty_state_html, status_text as empty_status_text,
 )
@@ -297,6 +297,9 @@ class MainWindow(QMainWindow):
         # The text size, before any widget is made, so all of them start at it
         text_size.apply(config.get(text_size.CONFIG_KEY, text_size.DEFAULT_PCT))
         set_reduce_motion(bool(config.get("display.reduce_motion", False)))
+        # A trial's or an arena's art on its header in the fight list and
+        # on the Instance tab (gui.instance_art, issue #249)
+        instance_art.set_enabled(bool(config.get("display.instance_art", True)))
         # The fight history across sessions (fight_index, issue #170): read
         # once here, beside the config, and written as fights come
         self.fight_index = FightIndex(index_path(config.path))
@@ -2359,12 +2362,17 @@ class MainWindow(QMainWindow):
         tips.update(split_tooltips(split_files))
         view.set_link_hover_color(link_color(self._dark))
         view.set_tooltips(tips)
+        # The instance's art across the top of the page, when its zone has
+        # any and the setting is on (issue #249)
+        art = instance_art.zone_with_art(getattr(block[0], "zone_id", None))
+        view.set_art(art)
         view.setHtml(render_instance_html(
             block, index_of, shown=entry, dark=self._dark, icons=view.icons,
             base_pt=view.font().pointSizeF(), names=names,
             text_color=view.palette().color(QPalette.Text).name(),
             opens_list=opens_list, fight_index=self.fight_index, split_files=split_files,
-            hide_paths=self._hide_names))
+            hide_paths=self._hide_names,
+            art_space=instance_art.STRIP_SPACE if art else 0))
         self._instance_split_files = split_files
         self._instance_block = block
         self._instance_links = {places[id(fight)]: fight for fight in block if id(fight) in places}
@@ -3132,6 +3140,13 @@ class MainWindow(QMainWindow):
             if repr(self.config.get("pen_crit") or {}) != pen_crit_before:
                 self._apply_pen_crit_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
+            if instance_art.set_enabled(bool(self.config.get("display.instance_art", True))):
+                # The headers' rows change height, and the Instance page
+                # gains or loses its strip
+                self.history_list.refresh_art()
+                self._instance_dirty = True
+                if self.history_list.current_entry() is not None:
+                    self._redraw_fight()
             # The graph on screen redraws with the new colours; a hidden one
             # is drawn when it is next shown
             on_graph = self.fight_tabs.currentWidget() is self.dps_panel

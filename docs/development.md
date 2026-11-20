@@ -64,7 +64,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | `gui/fight_render.py`, `gui/fight_deaths_render.py`, `gui/instance_render.py`, `gui/activity_render.py` | HTML and plain text for the main window's Fight, Deaths and Instance tabs, and for the pane before the first fight. They take fight data and return strings, so they are tested without a window. |
 | `gui/player_window.py`, `gui/build_render.py`, `gui/damage_render.py`, `gui/healing_render.py`, `gui/taken_render.py`, `gui/death_render.py`, `gui/build_issues_popup.py` | A player's window, a tab for each of their pages, and the HTML for a build, a player's damage, their healing done, their damage taken and a death recap, tested the same way; the ⓘ popup of a player's possible build issues. |
 | `gui/positions_window.py`, `gui/positions_canvas.py` | The positions window: a fight from above at one moment, held still or played back, beside a table of the same units. |
-| `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/glyphs.py`, `gui/name_mask.py`, `gui/text_size.py`, `gui/banner_burst.py` | The buff timeline strip, the icon cache, the small glyphs after the clickable figures, Hide names, the app-wide text size, and the GUI side of the banner capture. |
+| `gui/timeline_strip.py`, `gui/icon_cache.py`, `gui/instance_art.py`, `gui/glyphs.py`, `gui/name_mask.py`, `gui/text_size.py`, `gui/banner_burst.py` | The buff timeline strip, the icon cache, the trials' and arenas' art on the fight list's headers and the Instance tab, the small glyphs after the clickable figures, Hide names, the app-wide text size, and the GUI side of the banner capture. |
 
 ## Running from source
 
@@ -160,6 +160,12 @@ The app bundles game data that goes stale when the game changes. Each table has 
 :: EsoExtractData and Pillow; see the script's header for the paths it looks
 :: for). About 2.5 minutes.
 python scripts\extract_ability_icons.py --check-log "%USERPROFILE%\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
+
+:: The trials' and arenas' art, a strip of each one's loading-screen painting
+:: (same needs; under a minute). A new trial or arena first gets a line in the
+:: script's INSTANCES table: its zone id, its name and its painting's file
+:: name. --sheet writes one picture of every strip, to check them by eye
+python scripts\extract_instance_art.py --sheet build\instance-art.png
 
 :: ESO-Hub skill, set and scribing link maps, from ESO-Hub's sitemaps (network access)
 python scripts\generate_esohub_links.py

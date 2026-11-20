@@ -52,7 +52,18 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
    `--log` reads the version from the log's last `BEGIN_LOG` line, so use a log written by the patched client; `--game-version eso.live.12.2` names it directly.
 
-6. Commit `data/icons/abilities/` (PNGs + manifest.json) and `data/version.json` together with a `changelog.d/` fragment naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` (see `datas` in `esolog-tail.spec`).
+6. Refresh the trials' and arenas' art in the same sitting (under a minute, same extractor and game files):
+
+   ```cmd
+   python scripts\extract_instance_art.py --sheet build\instance-art.png
+   ```
+
+   - It rewrites `data/art/instances/<zone id>.jpg` and `manifest.json`, and exits 1 when a line of its `INSTANCES` table found no painting. It never removes the art of a line it could not extract.
+   - **A new trial or arena** needs one line in `INSTANCES` first: its zone id (the `ZONE_CHANGED` line of a log from inside it, or the client's en.lang table 162658389), its name, and its loading screen's file name without `.dds`. The file names follow no rule (Sanctum Ophidia is `loadscreen_serpenttrial_01`), so find it in the file table: `EsoExtractData.exe <eso.mnf> <scratch>\ -k -m <scratch>\mnf.txt`, then search `mnf.txt` for `loadingscreens`. Use the plain painting, not its `_veteran` copy.
+   - Open the sheet and look at the new strip. When its subject is cut off, give the line a fourth value, the focus, from 0 (the painting's top) to 1 (its bottom), and run again with `--only <zone id>`.
+   - Until its line exists the app draws that instance's header plain, so nothing breaks in the meantime. The unit test `test_every_trial_and_arena_the_app_names_has_a_line` fails when `trial_result.TRIAL_NAMES` gains a raid the table lacks.
+
+7. Commit `data/icons/abilities/` (PNGs + manifest.json), `data/art/instances/` and `data/version.json` together with a `changelog.d/` fragment naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` and `data/art/instances` (see `datas` in `esolog-tail.spec`).
 
 **Notes**
 

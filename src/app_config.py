@@ -101,6 +101,9 @@ DEFAULTS = {
         "colorblind_graph": False,
         # The taunt ring stays still rather than pulsing (gui.fight_view)
         "reduce_motion": False,
+        # A trial's or an arena's art on its header in the fight list and
+        # on the Instance tab (gui.instance_art, issue #249)
+        "instance_art": True,
     },
     "window": {
         "geometry": None,        # base64 QMainWindow.saveGeometry(), set on close

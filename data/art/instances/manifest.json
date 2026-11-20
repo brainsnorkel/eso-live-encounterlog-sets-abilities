@@ -1,0 +1,222 @@
+{
+ "generated": "2026-11-20T22:22:25+00:00",
+ "source": {
+  "eso_mnf": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Zenimax Online\\The Elder Scrolls Online\\depot\\eso.mnf",
+  "bytes": 50347872,
+  "modified": "2026-11-10T07:35:30+00:00"
+ },
+ "width": 1680,
+ "height": 240,
+ "count": 19,
+ "instances": {
+  "635": {
+   "name": "Dragonstar Arena",
+   "art": "loadscreen_dragonstararena_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "6832dedf354653ba1c5e59f9bbc4ba35ff0d187f"
+  },
+  "636": {
+   "name": "Hel Ra Citadel",
+   "art": "loadscreen_helracitadel_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "0b25aa0f00b09937cce139dc85936670878a6728"
+  },
+  "638": {
+   "name": "Aetherian Archive",
+   "art": "loadscreen_aetherianarchive_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "758d4a93d809f71c21a148394e2cd217adb35f43"
+  },
+  "639": {
+   "name": "Sanctum Ophidia",
+   "art": "loadscreen_serpenttrial_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "b3b8bfea13c974bfd13656954edc27062241fa9d"
+  },
+  "677": {
+   "name": "Maelstrom Arena",
+   "art": "loadscreen_maelstromarena_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "5734344cddcc6167ccdfde7fadb64b247446985e"
+  },
+  "725": {
+   "name": "Maw of Lorkhaj",
+   "art": "loadscreen_maw_of_lorkaj",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "0d011be8a9e1fad12af16e4b6a5eeea15d9142e7"
+  },
+  "975": {
+   "name": "Halls of Fabrication",
+   "art": "loadscreen_hallsoffabrication_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "8183f037e14c323bef9f9376e733ec1fa318cb49"
+  },
+  "1000": {
+   "name": "Asylum Sanctorium",
+   "art": "loadscreen_asylumsanctorium_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "7a2d8c47aa112c800b4c8a8b6d943fb8b5649bc1"
+  },
+  "1051": {
+   "name": "Cloudrest",
+   "art": "loadscreen_cloudrest_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "7ae23243d5e7e413bec08a859073abd2686f15d3"
+  },
+  "1082": {
+   "name": "Blackrose Prison",
+   "art": "loadscreen_blackrose_prison_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "85fa6ff06c633b869246a61c3a212da3d63035cc"
+  },
+  "1121": {
+   "name": "Sunspire",
+   "art": "loadscreen_sunspire_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "5aabf7dbdaac6a7617dd1ce0281792d8ffbb405e"
+  },
+  "1196": {
+   "name": "Kyne's Aegis",
+   "art": "loadscreen_kynesaegis_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "73a9026dda4354aabf531c470e96a97bfb3525b4"
+  },
+  "1227": {
+   "name": "Vateshran Hollows",
+   "art": "loadscreen_vateshranhollows_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "e42a7fd2c6cfaf33a002380dc1647f0a066458f9"
+  },
+  "1263": {
+   "name": "Rockgrove",
+   "art": "loadscreen_rockgrove_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "4107870ec673a7eaa41d2ab901e8de170a90121b"
+  },
+  "1344": {
+   "name": "Dreadsail Reef",
+   "art": "loadscreen_dreadsail_reef_trial_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "4d4ccd7ca298246b8325937c6010b88327ed33f4"
+  },
+  "1427": {
+   "name": "Sanity's Edge",
+   "art": "loadscreen_sanitysedge_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "53e25189cebc552030fb41fadd63a9000566538d"
+  },
+  "1436": {
+   "name": "Infinite Archive",
+   "art": "loadscreen_endless_archive_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "b2a80dc6f24a49a41a242a455785c33f006d51ce"
+  },
+  "1478": {
+   "name": "Lucent Citadel",
+   "art": "loadscreen_lucentcitadel_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "3bd240a31b363cfd4e273f52303f57463cb07369"
+  },
+  "1548": {
+   "name": "Ossein Cage",
+   "art": "loadscreen_ossein_cage_01",
+   "focus": 0.42,
+   "painting": [
+    1680,
+    1052
+   ],
+   "dds_bytes": 883808,
+   "dds_sha1": "0f3a6a5a964dddd4564f86e871d5e786121d2acb"
+  }
+ }
+}
