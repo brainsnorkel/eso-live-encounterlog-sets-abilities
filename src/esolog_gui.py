@@ -7,6 +7,9 @@ import sys
 # Flat engine imports (esolog_tail, app_config, ...) resolve against src/
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Set to "1", the app checks its bundled data and exits (self_check)
+SELF_CHECK_VARIABLE = "ESOLOG_TAIL_SELF_CHECK"
+
 
 def _enable_crash_log():
     """Crash/exception capture for windowed builds.
@@ -70,7 +73,26 @@ def _set_window_icon(app) -> None:
         app.setWindowIcon(QIcon(str(icon_path)))
 
 
+def _self_check() -> int:
+    """The bundle's check of its own data (self_check, issue #237): its
+    status, 0 when every bundled table loaded. An error is printed and
+    returned as 1, never raised: a windowed build shows an unhandled
+    exception in a dialog, which nobody in CI is there to close."""
+    try:
+        from self_check import run
+        return run()
+    except Exception:  # noqa: BLE001 - printed for CI, never raised
+        import traceback
+        traceback.print_exc(file=sys.stdout)
+        return 1
+
+
 def main() -> int:
+    # The check of the bundled data, and nothing else: before the crash log,
+    # Qt or the config
+    if os.environ.get(SELF_CHECK_VARIABLE) == "1":
+        return _self_check()
+
     from PySide6.QtWidgets import QApplication
 
     from app_config import AppConfig
