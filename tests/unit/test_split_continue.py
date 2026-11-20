@@ -76,10 +76,17 @@ class TestContinuedSplits(SplitCase):
         _feed(LogSplitter(FIXTURE, split_dir=self.folder), self.lines)
         before = _digest(self._split())
         again = LogSplitter(FIXTURE, split_dir=self.folder)
-        _feed(again, self.lines, end=False)
-        self.assertEqual(_splits(self.folder), [self.name])   # no -1 at any point
-        self.assertTrue(again.continued)
-        again.end_encounter()
+        try:
+            # Up to the session's END_LOG, which ends it (issue #225)
+            self.assertTrue(self.lines[-1].endswith(',END_LOG'))
+            _feed(again, self.lines[:-1], end=False)
+            self.assertEqual(_splits(self.folder), [self.name])   # no -1 at any point
+            self.assertTrue(again.continued)
+            _feed(again, self.lines[-1:], end=False)
+            self.assertIsNone(again.file_handle)                  # closed at END_LOG
+            self.assertIsNone(again.current_split_file)
+        finally:
+            again.end_encounter()   # nothing left to close once END_LOG has
         self.assertEqual(_splits(self.folder), [self.name])
         self.assertEqual(_digest(self._split()), before)
         self.assertEqual(self._split().read_bytes(), self.reference.read_bytes())
@@ -207,6 +214,66 @@ class TestEveryLineReachesTheSplit(unittest.TestCase):
             monitor.log_splitter.end_encounter()
             (split,) = [p for p in folder.iterdir() if p.suffix == '.log']
             self.assertIn(rejected.encode('utf-8') + b'\r\n', split.read_bytes())
+
+
+class TestSessionEndsAtEndLog(unittest.TestCase):
+    """END_LOG closes the session's split (issue #225: until then the parser
+    handed it over as ENDLOG, and the split stayed open until the next
+    BEGIN_LOG or the app closed). Fed through the tail as the game writes
+    it, CRLF lines, a session's split is still the session byte for byte,
+    and a session after an END_LOG in the same file gets its own."""
+
+    def _second_session(self):
+        # The same session an hour later: another stamp, so another split
+        first = _lines()
+        epoch = first[0].split(',')[2]
+        return [first[0].replace(epoch, str(int(epoch) + 3_600_000))] + first[1:]
+
+    @staticmethod
+    def _bytes(lines):
+        return ''.join(line + '\r\n' for line in lines).encode('utf-8')
+
+    def _monitor(self, tmp):
+        log = Path(tmp) / 'Encounter.log'
+        log.write_bytes(b'')
+        monitor = LogFileMonitor(ESOLogAnalyzer(), log, tail_and_split=True,
+                                 split_dir=Path(tmp) / 'splits')
+        return log, monitor
+
+    def _poll(self, log, monitor, lines):
+        with open(log, 'ab') as f:
+            f.write(self._bytes(lines))
+        monitor._process_new_lines()
+
+    def test_a_session_through_the_tail_is_its_split_closed_at_end_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log, monitor = self._monitor(tmp)
+            try:
+                lines = _lines()
+                self._poll(log, monitor, lines)
+                splitter = monitor.log_splitter
+                self.assertIsNone(splitter.file_handle)          # closed at END_LOG
+                self.assertIsNone(splitter.current_split_file)
+                (split,) = [p for p in (Path(tmp) / 'splits').iterdir() if p.suffix == '.log']
+                self.assertEqual(split.read_bytes(), self._bytes(lines))
+            finally:
+                monitor.log_splitter.cleanup()
+
+    def test_a_session_after_an_end_log_in_the_same_file_gets_its_own_split(self):
+        first, second = _lines(), self._second_session()
+        for polls in ([first + second], [first, second]):
+            with self.subTest(polls=len(polls)), tempfile.TemporaryDirectory() as tmp:
+                log, monitor = self._monitor(tmp)
+                try:
+                    for lines in polls:
+                        self._poll(log, monitor, lines)
+                    splits = sorted(p for p in (Path(tmp) / 'splits').iterdir()
+                                    if p.suffix == '.log')
+                    self.assertEqual(len(splits), 2)
+                    self.assertEqual([p.read_bytes() for p in splits],
+                                     [self._bytes(first), self._bytes(second)])
+                finally:
+                    monitor.log_splitter.cleanup()
 
 
 class TestSplitFlushedPerBatch(unittest.TestCase):

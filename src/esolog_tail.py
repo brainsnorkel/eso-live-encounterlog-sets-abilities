@@ -2753,7 +2753,10 @@ class ESOLogAnalyzer(ListenerMixin):
         return fight_locator.locate(start, end_offset, enc.start_time, enc.end_time, units)
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
-        """Handle END_LOG events."""
+        """Handle END_LOG events. Until issue #225 the parser handed END_LOG
+        over as ENDLOG, so this never ran: a wait at 0 health that had
+        lasted the hold by a log's END_LOG, with no line after it to settle
+        it, was lost."""
         # A player who waited at 0 health long enough died (issue #221)
         if self._waiting and self.current_encounter:
             self._settle_zero_health(entry.timestamp)
@@ -6320,7 +6323,12 @@ class LogFileMonitor:
             # Write the COMBAT_EVENT line
             self.log_splitter.write_log_line(line)
         
-        # Handle END_LOG - end current encounter
+        # Handle END_LOG - end current encounter. Until issue #225 the parser
+        # handed END_LOG over as ENDLOG, so the line went in by the last
+        # branch and the split stayed open until the next BEGIN_LOG or the
+        # app closed; the game writes nothing between an END_LOG and the
+        # next BEGIN_LOG (all 252 in the maintainer's raw logs), so closing
+        # here loses no line
         elif entry.event_type == "END_LOG":
             # Always write END_LOG to split file if we have an active split file
             if self.log_splitter.file_handle:
@@ -6596,7 +6604,8 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
         # Write the COMBAT_EVENT line
         log_splitter.write_log_line(line)
     
-    # Handle END_LOG - end current encounter
+    # Handle END_LOG - end current encounter (as LogFileMonitor.
+    # _handle_log_splitting, which says why this first ran with issue #225)
     elif entry.event_type == "END_LOG":
         # Always write END_LOG to split file if we have an active split file
         if log_splitter.file_handle:
