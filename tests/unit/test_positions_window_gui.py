@@ -496,8 +496,9 @@ class TestTheMoment(PositionsTestCase):
         # The units, then the trail's section (#246): its lengths, then whose
         self.assertEqual([a.text() for a in window.show_menu.actions() if not a.isSeparator()],
                          ["Adds", "Pets", "Companions", "Unannounced units", "Other units",
-                          "Off", "Last 10 s", "Last 30 s", "Whole fight so far",
-                          "Selected unit", "Every player"])
+                          "No trail", "Trail: last 10 s", "Trail: last 30 s",
+                          "Trail: whole fight so far", "Trail of the selected unit",
+                          "Trails of every player"])
         for mark in (MARK_PET, MARK_UNKNOWN, MARK_OTHER):
             window.set_shown(mark, True)
         window.set_shown(MARK_ADD, False)
@@ -873,16 +874,15 @@ class TestSelecting(PositionsTestCase):
         self.assertFalse(window.previous_death.isEnabled())
         window.scrub.setFocus()
         seen = [window.focusWidget()]
-        for _ in range(10):
+        for _ in range(11):
             QTest.keyClick(window.focusWidget(), Qt.Key_Tab)
             seen.append(window.focusWidget())
-        # The view's buttons in the canvas's corner (#241) before Show; Fit
-        # is off while the view is the fitted one
-        self.assertFalse(window.fit_button.isEnabled())
+        # The view's buttons in the canvas's corner (#241) before Show,
+        # never turned off (Fit when fitted does nothing)
         self.assertEqual(seen, [window.scrub, window.table, window.play_button, window.speed_box,
                                 window.back, window.forward, window.next_death,
-                                window.zoom_out_button, window.zoom_in_button, window.show_button,
-                                window.show_in_list])
+                                window.zoom_out_button, window.zoom_in_button, window.fit_button,
+                                window.show_button, window.show_in_list])
         QTest.keyClick(window.table, Qt.Key_Escape)
         self.assertFalse(window.isVisible())
 
@@ -1190,14 +1190,14 @@ class TestAccessible(PositionsTestCase):
         window = self._window(hide=False)
         iface = QAccessible.queryAccessibleInterface(window.canvas)
         self.assertEqual(iface.text(QAccessible.Name), "Positions")
-        # Then the trail drawn (#246): the selected damage dealer is 1
+        # Then the trail (#246): the selected damage dealer, 1, has one place on this map
         self.assertEqual(iface.text(QAccessible.Description),
                          "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive. "
-                         "Trail: 1's last 10 s.")
+                         "No trail: 1 has not moved in the last 10 s.")
         window._go_to(TANK_DEATH - 500)
         description = window.canvas.accessibleDescription()
         self.assertEqual(description, "0:10.5 into the fight. Test Boss 90%. 3 players, 2 alive. "
-                                      "Trail: 1's last 10 s.")
+                                      "No trail: 1 has not moved in the last 10 s.")
         self.assertNotIn("@", description)
         from PySide6.QtCore import Qt
         self.assertEqual(window.canvas.focusPolicy(), Qt.NoFocus)

@@ -111,7 +111,7 @@ from PySide6.QtGui import QPainterPath
 
 from fight_reread import on_map
 
-# The trail's lengths (ms), as the Trail button offers them
+# The trail's lengths (ms), as Show offers them
 TRAIL_OFF = 0
 TRAIL_WHOLE = -1           # the whole fight so far
 TRAIL_LENGTHS = (TRAIL_OFF, 10_000, 30_000, TRAIL_WHOLE)
@@ -382,11 +382,14 @@ def stroke(trail: Trail, t0: int, t: int, taper: int, frame: int, head=None,
     for chunk in trail.chunks_over(t0, t):
         if chunk.frame != frame:
             continue
-        if chunk.t0 >= t0 and chunk.t1 <= t:
+        if (chunk.t0 >= t0 and chunk.t1 <= t
+                and band_of(t - chunk.t0, taper) == band_of(t - chunk.t1, taper)):
+            # Whole and within one taper band: from the cache (a chunk
+            # across a band's edge is built from its points, as the ends are)
             bounds = chunk.bounds
             if view is not None and not view.intersects(bounds.adjusted(-1e-9, -1e-9, 1e-9, 1e-9)):
                 continue
-            band = band_of(t - (chunk.t0 + chunk.t1) // 2, taper)
+            band = band_of(t - chunk.t1, taper)
             for style, path in chunk.paths.items():
                 into = paths.get((style, band))
                 if into is None:

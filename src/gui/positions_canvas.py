@@ -61,7 +61,9 @@ transform, the one place the box becomes pixels, so the marks, the piles,
 the labels, the hit test, the grid and the trails all follow it. Marks
 keep their size: zooming in spreads them and breaks the piles up. It is
 kept while stepping, playing and selecting, and fitted again by Fit, by
-another fight read and by a new map frame. Under the follow, the shift
+another fight read and whenever the picture's map frame changes (a map
+change, or a unit selected on another map: the picture shows the
+selected unit's map). Under the follow, the shift
 rides along with the group's box.
 
 Trails (#246) are drawn over the grid and under the notes, the badges,
@@ -1017,7 +1019,7 @@ class PositionsCanvas(QWidget):
         self._names = NO_MASK
         self._zoom = 1.0
         self._shift = (0.0, 0.0)   # the view's centre less the box's, map units
-        self._press = None         # (position, shift) of a press on no mark: a drag may follow
+        self._press = None         # (where pressed, where last moved) on no mark: a drag may follow
         self._dragged = False
         self._trails = None        # positions_trails.TrailSet
         self._trail = (trails.TRAIL_OFF, trails.WHOSE_SELECTED, 0)  # (length, whose, fight start)
@@ -1495,7 +1497,7 @@ class PositionsCanvas(QWidget):
                 return
             if self.transform() is not None:
                 # On no mark: a drag that may follow pans the view
-                self._press = (QPointF(event.position()), self._shift)
+                self._press = (QPointF(event.position()), QPointF(event.position()))
                 self._dragged = False
                 event.accept()
                 return
@@ -1504,20 +1506,18 @@ class PositionsCanvas(QWidget):
     def mouseMoveEvent(self, event) -> None:
         press = self._press
         if press is not None and event.buttons() & Qt.LeftButton:
-            at, shift = press
-            dx, dy = event.position().x() - at.x(), event.position().y() - at.y()
-            if not self._dragged and math.hypot(dx, dy) < DRAG_SLOP_PX:
+            origin, last = press
+            here = QPointF(event.position())
+            if not self._dragged and math.hypot(here.x() - origin.x(), here.y() - origin.y()) < DRAG_SLOP_PX:
                 event.accept()
                 return
             if not self._dragged:
                 self._dragged = True
                 self.setCursor(Qt.ClosedHandCursor)
-            transform = self.transform()
-            if transform is not None:
-                scale = transform[0]
-                self._shift = (shift[0] - dx / scale, shift[1] - dy / scale)
-                self.update()
-                self.view_changed.emit()
+            # By the move since the last, at the scale in force: a wheel
+            # zoom in the middle of a drag is kept
+            self._press = (origin, here)
+            self.pan_by(here.x() - last.x(), here.y() - last.y())
             event.accept()
             return
         super().mouseMoveEvent(event)

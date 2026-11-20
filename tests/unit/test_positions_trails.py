@@ -161,7 +161,7 @@ def random_trail(seed, n=400):
     return tr.Trail(*tr.smoothed(*tr.places_of(track, 0.01)))
 
 
-def reference(trail, t0, t, frame):
+def reference(trail, t0, t, frame, taper=10_000):
     """The segments drawn from *t0* to *t* in *frame*, one at a time, the
     one *t0* falls in cut at its share: (style, a, b)."""
     out = []
@@ -179,7 +179,7 @@ def reference(trail, t0, t, frame):
         # A unit stepping back and forth gives two equal midpoints in a
         # row; Qt adds no element for a line to where the path is
         if a != b:
-            out.append((trail.style[j], a, b))
+            out.append((trail.style[j], tr.band_of(t - tj, taper), a, b))
     return sorted(out)
 
 
@@ -213,7 +213,7 @@ class TestChunksAndStrokes(unittest.TestCase):
                 t0 = t - rng.choice((10_000, 30_000, 10 ** 9))
                 for frame in set(trail.frame):
                     stroke = tr.stroke(trail, t0, t, 10_000, frame)
-                    drawn = sorted((style, a, b) for (style, _band), path in stroke.paths.items()
+                    drawn = sorted((style, band, a, b) for (style, band), path in stroke.paths.items()
                                    for a, b in segments_of(path))
                     self.assertEqual(drawn, reference(trail, t0, t, frame), (seed, t0, t, frame))
 
@@ -224,7 +224,7 @@ class TestChunksAndStrokes(unittest.TestCase):
             t = t0 + 10_000
             for frame in set(trail.frame):
                 stroke = tr.stroke(trail, t0, t, 10_000, frame)
-                drawn = sorted((style, a, b) for (style, _band), path in stroke.paths.items()
+                drawn = sorted((style, band, a, b) for (style, band), path in stroke.paths.items()
                                for a, b in segments_of(path))
                 self.assertEqual(drawn, reference(trail, t0, t, frame))
 

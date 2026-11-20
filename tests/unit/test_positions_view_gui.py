@@ -198,16 +198,35 @@ class TestTrails(ViewTestCase):
         self.assertTrue(window.canvas.accessibleDescription().endswith(
             "No trail: the selected unit is not drawn."))
 
+    def test_a_unit_that_stood_still_has_no_line_and_the_reader_is_told(self):
+        """The review's finding: a selected unit that has not moved over
+        the span draws no line; the description said 'Trail: 3's last 10 s'."""
+        from tests.unit.test_positions_window_gui import END
+        window = self._window(t=END, unit=HEALER)               # stood since the throw, 8 s
+        window._go_to(END + 900)                                # in the tail: still 10 s < span
+        self.assertTrue(window.canvas.accessibleDescription().endswith("Trail: 3's last 10 s."))
+        from gui import positions_trails as tr
+        window.set_trail(length=10_000)
+        window._selected = DPS                                  # dead since 26 s, in frame 1
+        window._go_to(END + 900)
+        self.assertEqual([s.paths for _u, s in window.canvas.trail_strokes()], [{}])
+        self.assertTrue(window.canvas.accessibleDescription().endswith(
+            "No trail: 1 has not moved in the last 10 s."))
+        # Over the whole fight 1 moved, but on the other map: none on this one
+        window.set_trail(length=tr.TRAIL_WHOLE)
+        self.assertTrue(window.canvas.accessibleDescription().endswith(
+            "No trail: 1 has not moved on this map."))
+
     def test_the_show_menu_picks_it(self):
         from gui import positions_trails as tr
         window = self._window(t=AFTER, unit=HEALER)
-        thirty = next(a for a in window.show_menu.actions() if a.text() == "Last 30 s")
-        every = next(a for a in window.show_menu.actions() if a.text() == "Every player")
+        thirty = next(a for a in window.show_menu.actions() if a.text() == "Trail: last 30 s")
+        every = next(a for a in window.show_menu.actions() if a.text() == "Trails of every player")
         thirty.trigger()
         every.trigger()
         self.assertEqual(window.trail(), (30_000, tr.WHOSE_EVERY))
         self.assertTrue(thirty.isChecked() and every.isChecked())
-        ten = next(a for a in window.show_menu.actions() if a.text() == "Last 10 s")
+        ten = next(a for a in window.show_menu.actions() if a.text() == "Trail: last 10 s")
         self.assertFalse(ten.isChecked())  # one length at a time
         # Kept when the window is given another moment, as Show's choices
         window.open(self.entry, AFTER - 100, HEALER, dark=False)
@@ -247,17 +266,36 @@ class TestTheView(ViewTestCase):
     def test_the_buttons_zoom_and_fit(self):
         from gui.positions_canvas import BUTTON_ZOOM, ZOOM_MAX
         window = self._window(t=AFTER, unit=HEALER)
-        self.assertFalse(window.fit_button.isEnabled())
         window.zoom_in_button.click()
         self.assertAlmostEqual(window.canvas.zoom(), BUTTON_ZOOM)
-        self.assertTrue(window.fit_button.isEnabled())
         window.fit_button.click()
         self.assertEqual((window.canvas.zoom(), window.canvas.shift()), (1.0, (0.0, 0.0)))
-        self.assertFalse(window.fit_button.isEnabled())
         for _ in range(20):
             window.zoom_in()
         self.assertEqual(window.canvas.zoom(), ZOOM_MAX)
-        self.assertFalse(window.zoom_in_button.isEnabled())
+        window.zoom_in_button.click()                           # at the limit: nothing
+        self.assertEqual(window.canvas.zoom(), ZOOM_MAX)
+
+    def test_a_focused_view_button_keeps_the_focus(self):
+        """The review's finding: a button turned off under the focus handed
+        it on (Fit once fitted, + at its limit), so the next Space pressed
+        Show. They are never turned off while there is a picture."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        from gui.positions_canvas import ZOOM_MAX
+        window = self._window(t=AFTER, unit=HEALER)
+        self._active(window)
+        window.zoom_in()
+        window.fit_button.setFocus()
+        QTest.keyClick(window.fit_button, Qt.Key_Space)
+        self.assertTrue(window.canvas.view_is_fitted())
+        self.assertIs(window.focusWidget(), window.fit_button)
+        while window.canvas.zoom() < ZOOM_MAX:
+            window.zoom_in()
+        window.zoom_in_button.setFocus()
+        QTest.keyClick(window.zoom_in_button, Qt.Key_Space)
+        self.assertIs(window.focusWidget(), window.zoom_in_button)
 
     def test_a_drag_on_no_mark_pans_and_a_click_on_a_mark_selects(self):
         from PySide6.QtCore import QPointF, Qt
@@ -395,6 +433,33 @@ class TestTheView(ViewTestCase):
         self.assertTrue(any(box.bottom() > overlay.top() for box, _o, _t in lines))
         for box, _offset, _text in lines:
             self.assertFalse(box.intersects(overlay))
+
+    def test_a_wheel_zoom_in_the_middle_of_a_drag_is_kept(self):
+        """The review's finding: the next move rebuilt the view from the
+        press, undoing the zoom's anchor."""
+        from PySide6.QtCore import QPointF
+        window = self._window(t=AFTER, unit=HEALER)
+        canvas = window.canvas
+        at = self._empty(canvas)
+        mouse(canvas, "press", at)
+        mouse(canvas, "move", at + QPointF(10, 0))
+        here = at + QPointF(10, 0)
+        scale, ox, oy = canvas.transform()
+        mx, my = (here.x() - ox) / scale, (here.y() - oy) / scale
+        wheel(canvas, here, 2)
+        mouse(canvas, "move", here + QPointF(20, 0))
+        scale, ox, oy = canvas.transform()
+        # The map point that was under the pointer moved with the drag's 20 px
+        self.assertAlmostEqual(ox + mx * scale, here.x() + 20, places=6)
+        self.assertAlmostEqual(oy + my * scale, here.y(), places=6)
+
+    def test_a_zoom_a_hair_off_the_fit_is_not_called_zoomed(self):
+        window = self._window(t=AFTER, unit=HEALER)
+        window.canvas.zoom_by(1.02)
+        self.assertNotIn("Zoomed", window.canvas.accessibleDescription())
+        self.assertIn("View moved", window.canvas.accessibleDescription())
+        window.canvas.zoom_by(1.2)
+        self.assertIn("Zoomed in 1.2x", window.canvas.accessibleDescription())
 
     def test_fine_wheel_steps_come_back_to_the_fitted_view(self):
         """The review's finding 5: a high-resolution wheel's eighth notches
