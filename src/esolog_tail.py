@@ -2757,10 +2757,17 @@ class ESOLogAnalyzer(ListenerMixin):
         """Handle END_LOG events. Until issue #225 the parser handed END_LOG
         over as ENDLOG, so this never ran: a wait at 0 health that had
         lasted the hold by a log's END_LOG, with no line after it to settle
-        it, was lost."""
+        it, was lost, and a fight the group fought on took their hits only
+        at the next session's BEGIN_LOG, or when the app closed. A wait
+        still under the hold at END_LOG is not counted: every 0 a player
+        survived lasted under the hold (#221), so it cannot be told from a
+        blip, and the next BEGIN_LOG clears it."""
         # A player who waited at 0 health long enough died (issue #221)
         if self._waiting and self.current_encounter:
             self._settle_zero_health(entry.timestamp)
+        # The group fighting on stops with the log, as at BEGIN_LOG
+        # (waiting_hits)
+        self._settle_fought_on()
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected{Style.RESET_ALL}")
@@ -5811,6 +5818,8 @@ class LogFileMonitor:
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
         self._split_warning = None  # the split failure last reported
+        # The last session's split was closed at its END_LOG (issue #225)
+        self._ended_at_end_log = False
         # Offsets in another file mean nothing in this one (fight_locator),
         # nor does its session: both are this file's once its BEGIN_LOG is
         # read, and a fight of a file whose BEGIN_LOG never is names none
@@ -6300,11 +6309,12 @@ class LogFileMonitor:
             
         # Handle BEGIN_LOG - start new encounter
         if entry.event_type == "BEGIN_LOG":
+            self._ended_at_end_log = False
             # Start encounter without zone info - will wait for first zone
             self.log_splitter.start_encounter(entry)
             # Write the BEGIN_LOG line
             self.log_splitter.write_log_line(line)
-        
+
         # Handle ZONE_CHANGED - track current zone
         elif entry.event_type == "ZONE_CHANGED":
             # Extract zone name and difficulty from ZONE_CHANGED
@@ -6339,6 +6349,7 @@ class LogFileMonitor:
         # next BEGIN_LOG (all 252 in the maintainer's raw logs), so closing
         # here loses no line
         elif entry.event_type == "END_LOG":
+            self._ended_at_end_log = True
             # Always write END_LOG to split file if we have an active split file
             if self.log_splitter.file_handle:
                 self.log_splitter.write_log_line(line)
@@ -6363,6 +6374,13 @@ class LogFileMonitor:
         
         # Write all other lines to current split file
         else:
+            if self._ended_at_end_log and self.diagnostic:
+                # The game has never been seen to write a line between an
+                # END_LOG and the next BEGIN_LOG (all 252 in the
+                # maintainer's raw logs, issue #225); should one come, the
+                # closed split does not take it
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: {entry.event_type} after END_LOG with no BEGIN_LOG, not written to a split{Style.RESET_ALL}")
             self.log_splitter.write_log_line(line)
 
 def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
