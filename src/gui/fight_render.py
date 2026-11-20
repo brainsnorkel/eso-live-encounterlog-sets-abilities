@@ -128,7 +128,7 @@ from trial_result import result_text
 
 ROLE_NAMES = {"T": "Tank", "H": "Healer", "D": "DPS", "C": "Companion"}
 COMPANION_INDENT = "↳ "  # before a companion's name, under its owner's row (companions.py)
-NBSP = " "  # between the words of a borrowed skill line's name, so a wrap falls between lines
+NBSP = "\u00a0"  # between the words of a borrowed skill line's name, so a wrap falls between lines
 # Beside a player who left during the fight, whose row is greyed, and one
 # back on another character whose build the log has not written yet
 # (presence.py)
