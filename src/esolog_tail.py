@@ -24,7 +24,8 @@ from fight_history import FightHistory, FightHistoryEntry
 from engine_events import AnalyzerListener, ArchiveEvent, ListenerMixin, LogStatus
 from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
-from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
+from damage_kinds import (CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of,
+                          healing_done)
 from data_staleness import DataCheckTracker
 from death_recap import (DEATH_RESULTS, HEALTH_CAUSE, KILLING_HIT_RESULTS, SUBZONE_DEATH,
                          DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS)
@@ -3336,11 +3337,13 @@ class ESOLogAnalyzer(ListenerMixin):
         else:
             # A heal is kept by healer for the damage taken window: a
             # player's heals under their record whatever unit id they are
-            # on, a pet's under the pet with its owner for the name
+            # on, a pet's under the pet with its owner for the name, and a
+            # companion's marked so, its heals its own row's (healing_done)
             pet_owner = enc.pet_ownership.get(source_id, "")
             healer_id = source_id if pet_owner else enc.record_id(source_id)
             tally.note_other(result, hit, overflow, source_id=healer_id, ability_id=fields[6],
-                             self_source=(healer_id == record), pet_owner=pet_owner)
+                             self_source=(healer_id == record), pet_owner=pet_owner,
+                             companion=(enc.companion_key(source_id) or "") if pet_owner else "")
         self.death_recap_recorder.record(entry.timestamp, fields, target_id,
                                          player_source=player_source)
         # A big hit, its shield's absorb counted in (fight_events); the
@@ -4483,6 +4486,12 @@ class ESOLogAnalyzer(ListenerMixin):
                 # by kind, for the death recap window (damage_kinds)
                 'taken': enc.taken_for(player.unit_id).snapshot(
                     ability_name, ability_icon, self._resolve_timeline_name),
+                # The same heals from the healer's side: what this player's
+                # heals did for the others, by ability and by player healed
+                # (damage_kinds.healing_done, issue #242)
+                'healing_done': healing_done(
+                    enc.taken, player.unit_id, enc.record_id, ability_name, ability_icon,
+                    self._resolve_timeline_name, companions=self.companion_accrual),
                 'skill_line_role': skill_line_role or '',
                 'unit_id': player.unit_id,
                 'sets': player_sets,

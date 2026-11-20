@@ -183,6 +183,11 @@ TOPICS = [
     ("The damage taken window: by source and by healer, over the whole fight", [
         "src/gui/taken_render.py",
     ]),
+    ("Healing done: a healer's heals on the others, by ability and by player", [
+        "src/gui/fight_render.py:healing_token_parts",
+        "src/damage_kinds.py:healing_done",
+        "src/gui/healing_render.py",
+    ]),
     ("The player window: one window, a tab for each link", [
         "src/gui/player_window.py",
     ]),
