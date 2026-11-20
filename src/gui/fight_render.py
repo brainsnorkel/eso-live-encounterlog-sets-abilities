@@ -63,6 +63,12 @@ player with no damage to weigh has none, and so does an entry built before
 the figures existed. The plain-text copy adds the same token to the
 player's line.
 
+Under the shares, on a healer's row, 'heal 4.1k · 46%' (issue #242): the
+player's healing to others a second of the fight, and their share of the
+group's, a link to the player window's Healing done tab whose hover gives
+the total, the clock and what is counted (see healing_token_parts for which
+rows show it). The plain-text copy adds 'heal 4.1k (46%)' after the shares.
+
 A companion's row (companions.py) hangs under its owner's. Its last cell
 is its health pool, its casts per minute and, when it cast its ultimate
 in the fight, 'Ult ×2' (issue #130); the hover on its name names the
@@ -278,6 +284,12 @@ DEATHS_GLYPH = "deaths"
 # + the player's unit id: the healing received line of their damage taken
 # page, which opens its own page, the table by healer (issue #196)
 HEALING_HREF = "esolog:healing/"
+# + the player's unit id: the healing token on a row, which opens their
+# Healing done tab (issue #242); its words, and the share of the group's
+# healing to others from which a row not marked H shows it
+HEALING_DONE_HREF = "esolog:healingdone/"
+HEAL_TOKEN_LABEL = "heal"
+HEAL_TOKEN_SHARE = 10.0
 # The (i) of possible build issues after a player's name, drawn bold with a
 # faint halo (gui.glyphs, issue #140) on an image as tall as the text line,
 # so the halo has room around a ring the size of the font's ⓘ. The main
@@ -913,6 +925,105 @@ def healing_text(p, fight_s: float) -> str:
         return ""
     rate = f", {healed / fight_s:,.0f} a second of the fight" if fight_s > 0 else ""
     return f"{healed:,} {HEALING_LABEL}{rate}"
+
+
+def group_healing(entry) -> int:
+    """The group's healing to others: the players' rows summed (a
+    companion's healing is its owner's figure only when accrued to it, see
+    the module notes)."""
+    return sum(int(p.get("healing") or 0) for p in getattr(entry, "players", None) or []
+               if not p.get("companion"))
+
+
+def healing_share(entry, p) -> float | None:
+    """The player's share of the group's healing to others, in percent;
+    None for a player who healed nobody else."""
+    healed = int(p.get("healing") or 0)
+    group = group_healing(entry)
+    return 100.0 * healed / group if healed > 0 and group > 0 else None
+
+
+def share_text(share: float) -> str:
+    """'46%', '<1%' for a share under one percent."""
+    return f"{share:.0f}%" if share >= 1 else "<1%"
+
+
+def healing_token_parts(entry, p) -> tuple[str, str] | None:
+    """('4.1k', '46%'), the rate a second of the fight and the share, for a
+    row that shows the healing token: a player (not a companion) who healed
+    another, marked H or with HEAL_TOKEN_SHARE or more of the group's
+    healing to others; None for any other row.
+
+    Design. The healing token is muted, like the pen/crit token beside it,
+    and never ranks or colours a row: the table stays ranked by damage. Every
+    row the role guess marks H shows it, and any other with a tenth of the
+    group's healing to others, so an off-healer and a healer the guess reads
+    as a tank (largest pool health) show it too. Over the maintainer's 419
+    split logs (2026-11-21; boss fights of 30 s or more), an H row's share of
+    a trial group's healing to others was a median 44% (p10 26%), the H rows'
+    together 88%; a T row's 1.2% and a D row's 0.0% at the median, both
+    reaching 80% or more. Rows not marked H reached 10% in 4.0% of trial
+    player-fights, a third of the fights, and in 71% of the fights of 3 to 7
+    players, where the H rows held none of the healing in the median fight;
+    144 rows at 10% or more that the guess called tanks had a healer's skill
+    lines. Between two pulls of one boss 3.4% of rows gained or lost the
+    token at 10% (1.6% at 20%, 5.7% at 5%), so the share is always printed
+    beside it and the rule can be read off the row.
+
+    The rate divides by the fight time, as Damage taken's figures do: the
+    dps time was 0.993 of it at the median, so the choice moves the figure
+    0.7% there. The group's figure sums the players' rows: a companion's
+    healing is its own row's, and is in its owner's figure only under
+    companions.accrue_to_owner, so summing companion rows too would count it
+    twice."""
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
+    share = healing_share(entry, p)
+    if p.get("companion") or share is None or fight_s <= 0:
+        return None
+    if p.get("role") != "H" and share < HEAL_TOKEN_SHARE:
+        return None
+    return _fmt_dps(int(p.get("healing") or 0) / fight_s), share_text(share)
+
+
+def healing_token(entry, p) -> str:
+    """'heal 4.1k · 46%' on the row (see healing_token_parts), '' for none."""
+    parts = healing_token_parts(entry, p)
+    return f"{HEAL_TOKEN_LABEL} {parts[0]} · {parts[1]}" if parts else ""
+
+
+def healing_done_href(unit_id) -> str:
+    return f"{HEALING_DONE_HREF}{unit_id}"
+
+
+def healing_done_unit_from_href(href: str) -> str | None:
+    """The player's unit id when *href* is a row's healing token, else None."""
+    if href and href.startswith(HEALING_DONE_HREF):
+        return href[len(HEALING_DONE_HREF):]
+    return None
+
+
+def healing_tooltips(entry) -> dict:
+    """Hover text per healing token: the total, the rate and the clock it
+    divides by, the share with the group's total, and what is counted."""
+    e = html.escape
+    fight_s = float(getattr(entry, "duration_s", 0) or 0)
+    group = group_healing(entry)
+    tips = {}
+    for p in getattr(entry, "players", None) or []:
+        unit_id = str(p.get("unit_id", ""))
+        parts = healing_token_parts(entry, p)
+        if not unit_id or parts is None:
+            continue
+        healed = int(p.get("healing") or 0)
+        tips[healing_done_href(unit_id)] = (
+            f"<b>Healing to others</b><br>"
+            f"{healed:,} over the {e(_fmt_duration(fight_s))} fight, "
+            f"{healed / fight_s:,.0f} a second<br>"
+            f"{e(parts[1])} of the group's {group:,}<br>"
+            f"<span style='font-size:85%'>What the player's heals, and their pets', restored "
+            f"to other players: not their heals on themselves, not overheal, not damage "
+            f"shields. Click for Healing done: by ability and by player healed</span>")
+    return tips
 
 
 def _resources_html(p) -> str:
@@ -1682,12 +1793,23 @@ def render_html(entry, detailed: bool, dark: bool = False,
         if caps and unit_id:
             caps = (f'<a href="{e(pen_crit_href(unit_id), quote=True)}" '
                     f'style="text-decoration:none;color:{muted}">{caps}</a>')
+        # A healer's healing to others a second and their share of the
+        # group's (issue #242): muted, a link to their Healing done tab, the
+        # hover giving the total and what is counted. On a line of its own
+        # under the shares: a column of its own kept its width empty on
+        # every other row (170 px at 200% text), and the &nbsp; keeps it
+        # whole
+        heal = healing_token(entry, p)
+        if heal and unit_id:
+            heal = (f'<br><a href="{e(healing_done_href(unit_id), quote=True)}" '
+                    f'style="text-decoration:none;color:{muted}">'
+                    f'{e(heal).replace(" ", "&nbsp;")}</a>')
         pct_style = f" style='color:{muted}'" if left else ""
         row = (f"<tr><td style='color:{color};font-weight:bold'>{role}</td>"
                f"<td><b>{name}</b> <span style='color:{muted}'>{class_abbr}</span>"
                f"{subclass_html}{recap_html}{taken_cue}</td>"
                f"<td align='right'>{dps}</td>"
-               f"<td align='right'{pct_style}>{_pct_text(p, boss_fight)}</td>"
+               f"<td align='right'{pct_style}>{_pct_text(p, boss_fight)}{heal}</td>"
                f"<td align='right' style='color:{muted}'>{caps}</td>"
                f"<td align='right' style='color:{muted}'>{_resources_html(p)}</td></tr>")
         parts.append(row)
@@ -1856,8 +1978,12 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         indent = COMPANION_INDENT if p.get("companion") else ""
         note = presence_note(p)
         dead = "" if p.get("companion") else dead_row_text(entry, p.get("unit_id", ""))
+        # The pane's healing token, 'heal 4.1k (46%)' as the dps and its
+        # share read here (issue #242)
+        heal = healing_token_parts(entry, p)
         lines.append(f"{indent}[{role}] {names.text(_join(p.get('name', '')))} "
                      f"{_join(p.get('class_abbr', ''))} — {dps} ({_pct_text(p, boss_fight)})"
+                     + (f" · {HEAL_TOKEN_LABEL} {heal[0]} ({heal[1]})" if heal else "")
                      + (f" · {caps}" if caps else "") + (f" · {cpm}" if cpm else "")
                      + (f" · {ult}" if ult else "") + (f" · {dead}" if dead else "")
                      + (f" · {note}" if note else ""))

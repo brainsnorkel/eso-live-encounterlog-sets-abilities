@@ -30,6 +30,7 @@ time, so the pictures stay in step with the app:
     damage-window.png               the same window on its Damage done tab
     taken-window.png                the fight's tank's Damage taken tab
     healing-received.png            the same player's Healing received tab
+    healing-done.png                the fight's top healer's Healing done tab
     dps-graph.png                   the DPS graph tab: the dps over time graph
     death-recap.png                 the Deaths tab, the fullest recap of the fight shown
     settings-general.png            the Settings dialog, one picture per page
@@ -330,6 +331,15 @@ def main():
         window = player_window(win._show_taken, tank["unit_id"], "taken-window.png")
         tab(window, HEALING_TAB, "healing-received.png")
         window.hide()
+
+    # Healing done for the fight's top healer (issue #242): the H row that
+    # healed the others most, else whoever healed them most
+    healers = sorted((p for p in fight.players if not p.get("companion") and p.get("healing")),
+                     key=lambda p: (p.get("role") != "H", -int(p.get("healing") or 0)))
+    if healers:
+        player_window(win._show_healing_done, healers[0]["unit_id"], "healing-done.png").hide()
+    else:
+        print("  (nobody healed anyone else in this fight: healing-done.png not written)")
 
     # The dps over time graph of the fight, the main window on its DPS graph
     # tab (issue #196), then the Fight tab again
