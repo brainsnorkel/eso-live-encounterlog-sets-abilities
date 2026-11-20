@@ -386,23 +386,31 @@ class TestBarRendering(FightViewTestCase):
         # A stock Nightblade: the class abbreviation says it all
         self.assertNotIn('Assassination/Shadow/Siphoning', html)
         self.assertNotIn('Assassination / Shadow', html)  # and never inside the card
-        # Subclassed: only the borrowed line appears beside the class, its
-        # first word after a plus sign
+        # Subclassed: only the borrowed line appears beside the class, by its
+        # full name after a plus sign, its words held together by no-break
+        # spaces so a wrap falls between two lines, never inside one
+        from gui.fight_render import NBSP
+        herald = '+Herald of the Tome'.replace(' ', NBSP)
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Herald of the Tome']
         html = render_html(entry, detailed=True, icons=self._cache(), links=_links)
         name_row = html[html.index('@tester'):html.index('<td align=')]
         self.assertIn("NB</span> <span style='color:", name_row)
-        self.assertIn('+Herald</span>', name_row)
+        self.assertIn(f'{herald}</span>', name_row)
         self.assertNotIn('Assassination', name_row)
         self.assertEqual(html.count('+Herald'), 1)
-        # Compact view carries it too, and the plain copy keeps full names
-        self.assertIn('+Herald', render_html(entry, detailed=False))
+        # Compact view carries it too; the plain copy keeps plain spaces
+        self.assertIn(herald, render_html(entry, detailed=False))
         from gui.fight_render import render_plain_text
         self.assertIn('+Herald of the Tome', render_plain_text(entry))
+        self.assertNotIn(NBSP, render_plain_text(entry))
         self.assertNotIn('Assassination/Shadow', render_plain_text(entry))
-        # Two borrowed lines, each with its own plus sign
+        # Two borrowed lines, each with its own plus sign and a plain space
+        # between them; an apostrophe in a name is kept, and escaped in the HTML
         entry.players[0]['skill_lines'] = ['Assassination', 'Animal Companions', 'Herald of the Tome']
-        self.assertIn('+Animal +Herald', render_html(entry, detailed=False))
+        self.assertIn(f'+Animal{NBSP}Companions {herald}', render_html(entry, detailed=False))
+        entry.players[0]['skill_lines'] = ['Assassination', "Dawn's Wrath", 'Shadow']
+        self.assertIn(f'+Dawn&#x27;s{NBSP}Wrath</span>', render_html(entry, detailed=False))
+        self.assertIn("+Dawn's Wrath", render_plain_text(entry))
         # Class Mastery passives: a pure-class build names them after the
         # class, with a colon ("NB: An Eye for Exploitation, Above and Beyond")
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Siphoning']
@@ -415,7 +423,7 @@ class TestBarRendering(FightViewTestCase):
         # A subclassed build cannot have one; the borrowed lines win the place
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Herald of the Tome']
         self.assertIn('NB</span>', render_html(entry, detailed=False))
-        self.assertIn('+Herald', render_html(entry, detailed=False))
+        self.assertIn(herald, render_html(entry, detailed=False))
         entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Siphoning']
         entry.players[0]['masteries'] = []
         self.assertNotIn('NB:', render_html(entry, detailed=False))
@@ -423,7 +431,8 @@ class TestBarRendering(FightViewTestCase):
         # Unknown class: every line is shown rather than hidden
         entry.players[0]['class_lines'] = []
         entry.players[0]['skill_lines'] = ["Dawn's Wrath", 'Bone Tyrant']
-        self.assertIn('Dawn/Bone', render_html(entry, detailed=False))
+        self.assertIn(f'Dawn&#x27;s{NBSP}Wrath / Bone{NBSP}Tyrant', render_html(entry, detailed=False))
+        self.assertIn("Dawn's Wrath / Bone Tyrant", render_plain_text(entry))
 
     def test_a_lone_mastery_is_followed_by_a_question_mark(self):
         """Issue #149: one Class Mastery shown means a second is likely."""
@@ -489,6 +498,20 @@ class TestBarRendering(FightViewTestCase):
 
 
 class TestFightViewWidget(FightViewTestCase):
+
+    def test_search_finds_a_borrowed_line_typed_with_plain_spaces(self):
+        """The pane joins a line's words with no-break spaces; the search
+        (QTextDocument.find, as MainWindow._search_matches calls it) still
+        finds the name as a reader types it, and the copied text reads it
+        with plain spaces."""
+        from gui.fight_render import render_html
+        from gui.fight_view import FightView
+        entry = _entry_with_bars()
+        entry.players[0]['skill_lines'] = ['Assassination', 'Shadow', 'Herald of the Tome']
+        view = FightView(icons=self._cache())
+        view.setHtml(render_html(entry, detailed=True, icons=view.icons, links=_links))
+        self.assertFalse(view.document().find('herald of the tome').isNull())
+        self.assertIn('+Herald of the Tome', view.toPlainText())
 
     def test_serves_icons_and_never_navigates(self):
         from PySide6.QtCore import QUrl
