@@ -131,7 +131,10 @@ def _figure_lines(entry, p, done: dict, theme) -> list[str]:
     if fight_s > 0:
         line += f" · <b>{_rate(healed, fight_s)}</b> a second of the {_fmt_duration(fight_s)} fight"
     if group > 0:
-        line += f" · <b>{share_text(100.0 * healed / group)}</b> of the group's {_n(group)}"
+        # Escaped: under one percent the share is '<1%', which Qt would
+        # read as the start of a tag
+        line += (f" · <b>{html.escape(share_text(100.0 * healed / group))}</b> "
+                 f"of the group's {_n(group)}")
     lines = [line]
     landed, overheal = int(done.get("landed") or 0), int(done.get("overheal") or 0)
     if landed + overheal:

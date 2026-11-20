@@ -349,6 +349,21 @@ class TestThePage(unittest.TestCase):
         self.assertIn(NOT_RECORDED, self._text(render_healing_done_html(entry, "2")))
         self.assertEqual(healing_done_title(entry, "4"), "Healing done – @healer")
 
+    def test_a_share_under_one_percent_shows(self):
+        """'<1%' is text on the page, not the start of a tag that would
+        swallow it and the bold after it (the review of PR #247)."""
+        from gui.healing_render import render_healing_done_html
+        entry = _page_entry()
+        entry.players[1]["healing"] = 2000  # of the group's 342,000: 0.6%
+        entry.players[1]["healing_done"] = {
+            "landed": 2000, "overheal": 0, "hits": 2, "hot": 0, "direct": 2000,
+            "abilities": [], "targets": [],
+            "own": {"landed": 0, "overheal": 0, "hits": 0, "hot": 0, "direct": 0}}
+        page = render_healing_done_html(entry, "2")
+        self.assertIn("<b>&lt;1%</b>", page)
+        self.assertIn("2,000 healing to others · 20 a second of the 1:40 fight · <1% of the "
+                      "group's 342,000", self._text(page))
+
 
 if __name__ == "__main__":
     unittest.main()
