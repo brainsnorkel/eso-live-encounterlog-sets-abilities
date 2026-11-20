@@ -142,8 +142,17 @@ so a new default reaches a fresh install alone unless an upgrade step
 adds it: the maintainer's own text, saved at version 5, had no Elemental
 Catalyst line two releases after #53 made it a default. Version 6 gives a
 saved text the Major Breach and Elemental Catalyst lines (ADDED_IN_6) when
-it has no rule of that name, a commented-out one included, since a line
-the user switched off stays theirs (upgrade_rules_text).
+it has no rule of that name, a commented-out one or one that does not
+parse included, since a line the user switched off or mistyped stays
+theirs (upgrade_rules_text). A Catalyst line the user deleted since 0.13.3
+comes back once: a saved text cannot tell a deleted line from one it never
+had, and the next Save stores version 6, after which a deletion sticks.
+
+The Trial dummy keeps Major Breach on itself from its spawn (its own
+120010, pen_crit's TRIAL_DUMMY_DEBUFFS), and a session begun later never
+sees it applied, so a group parse there would read a red 0% while the
+Armour row credits it in full: the engine opens a span of 120010 on the
+dummy from the fight's start before the snapshot (EffectTracker.seed).
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -545,8 +554,9 @@ def upgrade_rules_text(text: str, version: int) -> str:
     now has it (issue #80); a Crux line with other ids, a scope, measure or
     ``expected`` of its own is the user's and is kept. Before version 6: a
     text with at least one rule is given each line of ADDED_IN_6 (Major
-    Breach, issue #243, and Elemental Catalyst, issue #53) whose name it
-    has neither as a rule nor commented out, right after the default
+    Breach, issue #243, and Elemental Catalyst, issue #53) whose name no
+    line of it gives, a commented-out line or one that does not parse
+    included, right after the default
     text's boss-debuff comment when it has that line and at its end
     otherwise; a text with no rule tracks nothing on purpose and gets none.
     The line's own spelling, ids and spacing are kept; any other line is
@@ -580,12 +590,11 @@ def _with_defaults_added_in_6(lines: List[str]) -> List[str]:
         return lines
     have = {rule.name.lower() for rule in live}
     for raw in lines:
-        line = raw.strip()
-        if line.startswith("#"):
-            # A rule the user switched off is still theirs
-            rule, _error = _parse_line(line.lstrip("#").strip())
-            if rule is not None:
-                have.add(rule.name.lower())
+        line = raw.strip().lstrip("#").strip()
+        if "=" in line and not line.startswith("$"):
+            # A rule the user switched off, or wrote in a way that does not
+            # parse, is still theirs: by the name before its '='
+            have.add(rule_name(line))
     missing = [line for line in ADDED_IN_6 if rule_name(line) not in have]
     if not missing:
         return lines

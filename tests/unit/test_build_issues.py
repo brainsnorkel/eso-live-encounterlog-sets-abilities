@@ -590,6 +590,8 @@ class TestTankBreach(unittest.TestCase):
         self.assertEqual(rule([self._row('t', judged=False), self._row('d', 'D')], 90.0, 4), {})
         self.assertEqual(rule([self._row('t'), self._row('u', judged=False, applied=True)], 90.0, 4), {})
         self.assertEqual(list(rule([self._row('t'), self._row('u', judged=False)], 90.0, 4)), ['t'])
+        # The Trial dummy keeps Major Breach on itself: nothing to judge
+        self.assertEqual(rule(rows, 90.0, 4, kept_by_target=True), {})
 
 
 class TestFood(unittest.TestCase):
@@ -1022,6 +1024,10 @@ class TestEngine(unittest.TestCase):
         self.assertTrue(finding['detail'].endswith('; a damage dealer applied it instead.'))
         # Under 30 s: not judged
         self.assertEqual(rules(fight(10000, 39900)), [{'@nirn': ['nirnhoned-off-hand'], '@alkosh': []}])
+        # Nor a fight against the Trial dummy, which keeps Major Breach on itself
+        dummy = [line.replace('"Test Boss"', '"Target Iron Atronach, Trial"')
+                 for line in _session(fight(10000, 40000))]
+        self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in _fights(dummy)], [[]])
 
     def test_a_warmask_wearer_who_never_marks_is_judged_like_a_proc_set(self):
         # @nirn wears the mythic on the head; the mark's GAINED has the

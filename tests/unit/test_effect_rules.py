@@ -190,6 +190,12 @@ class TestRuleText(unittest.TestCase):
         own = ("major breach = 61743 on boss\n"
                "# Elemental Catalyst = 142610 on boss\n")
         self.assertEqual(upgrade_rules_text(own, 5), own)
+        # A line of the name that does not parse is the user's too, and is
+        # not given a second one beside it
+        mistyped = ("Mine = 1 on boss\n"
+                    "Major Breach = 61743 on mobs\n"
+                    "#Elemental Catalyst =\n")
+        self.assertEqual(upgrade_rules_text(mistyped, 5), mistyped)
         self.assertEqual(upgrade_rules_text("# nothing tracked\n", 5), "# nothing tracked\n")
         self.assertEqual(upgrade_rules_text("", 5), "")
         # Safe to repeat, and a current text is left alone

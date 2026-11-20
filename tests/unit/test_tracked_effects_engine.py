@@ -188,6 +188,33 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
                          "Major Courage:50% Taunt:60% Major Breach:0%")
 
 
+class TestTrialDummyMajorBreach(unittest.TestCase):
+    """Issue #243: the Trial dummy keeps its own Major Breach (120010) from
+    its spawn, so a session begun later never sees it applied; the
+    expected Major Breach rule reads it up for the whole fight there, as
+    the Armour row does, instead of a red 0%."""
+
+    RULE = "Major Breach = 61743 120010 on boss expected small large\n"
+
+    def _parse(self, name):
+        analyzer = _run([
+            _mob(2600, 75, name, boss="T", health=BOSS_HEALTH),
+            *FIGHT_START,
+            _hit_unit(11000, 1, 75, BOSS_HEALTH), _hit_unit(12000, 2, 75, BOSS_HEALTH),
+            _hit_unit(29000, 1, 75, BOSS_HEALTH),
+            '30000,END_COMBAT',
+        ], rules=self.RULE)
+        return _items(analyzer.fight_history.fights[0])["Major Breach"]
+
+    def test_the_dummys_own_major_breach_is_up_for_the_whole_fight(self):
+        item = self._parse("Target Iron Atronach, Trial")
+        self.assertEqual((item["seen"], item["uptime_pct"]), (True, 100.0))
+
+    def test_any_other_target_without_it_reads_an_expected_zero(self):
+        item = self._parse("Target Iron Atronach")
+        self.assertEqual((item["seen"], item["expected"], item["uptime_pct"]), (False, True, 0.0))
+
+
 class TestFightsWithoutABoss(unittest.TestCase):
     """A trash pack: a boss rule measures the mobs the group fought and says
     how many it reached; a mob's death ends the effects on it."""

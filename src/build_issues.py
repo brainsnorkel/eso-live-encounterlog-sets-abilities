@@ -266,10 +266,18 @@ rule, player-fights / distinct characters in that survey:
   bar; 37 of the 50 who did not had Elemental Susceptibility on a bar all
   the same. So the rule is the group's tanks: a tank
   (the role 'T' and a taunt this session, the heavy-armor rule's guard the
-  other way round) is flagged in a group fight (two players or more) of
+  other way round, or in this fight, which is all a row with no build in
+  the log has) is flagged in a group fight (two players or more) of
   TANK_BREACH_MIN_S or more when no tank of the fight applied Major Breach
   to any hostile, and every such tank is flagged. A tank with no build in
   the log counts as a tank who could have applied it, but is not flagged.
+  A fight against the Trial dummy is not judged: the dummy keeps a trial
+  group's debuffs on itself, Major Breach among them (pen_crit), so there
+  is nothing for a tank to apply. Major Breach on any hostile counts, the
+  adds of a boss fight included, as in the survey: the rule is about what
+  the tanks did. A companion's or pet's Major Breach is not a tank's, and
+  is not named among who covered it; in the survey a unit that was no
+  player row applied it in 3 of the 1,484 fights, never alone.
   The floor is when tanks apply it: the group's tanks' first Major Breach
   of a boss fight came a median 2.5 s in for a small group (22 s at the
   95th percentile) and 3.0 s for a large one (33 s at the 90th), so a
@@ -1184,13 +1192,16 @@ def _cover_text(roles: Counter) -> str:
 
 
 def tank_breach_findings(rows: Iterable[BreachRow], duration_s: float,
-                         players: Optional[int]) -> Dict[str, dict]:
+                         players: Optional[int], kept_by_target: bool = False) -> Dict[str, dict]:
     """The finding on the tanks of a group fight none of whom applied Major
     Breach (see the module notes), by the key of each tank's row that can
     carry it; {} when the rule does not apply. *rows* has every player of
-    the fight, *duration_s* is its length and *players* its group size."""
+    the fight, *duration_s* is its length and *players* its group size;
+    *kept_by_target* says the target keeps Major Breach on itself (the
+    Trial dummy), so there is nothing for a tank to apply."""
     rows = list(rows)
-    if float(duration_s) < TANK_BREACH_MIN_S or group_size_class(players or 0) not in ("small", "large"):
+    if (kept_by_target or float(duration_s) < TANK_BREACH_MIN_S
+            or group_size_class(players or 0) not in ("small", "large")):
         return {}
     tanks = [row for row in rows if row.tank]
     if not tanks or any(row.applied for row in tanks):

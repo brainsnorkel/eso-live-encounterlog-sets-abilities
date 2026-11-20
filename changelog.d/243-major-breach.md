@@ -3,4 +3,4 @@
 - **A possible build issue when no tank applied Major Breach** (#243): in a group fight of 30 seconds or more where no tank put Major Breach on an enemy, each tank's `ⓘ` says so, and whether a healer or a damage dealer applied it instead. One tank applying it is enough, so a trial's second tank is not flagged for leaving it to the first.
 
 ### Changed
-- **Saved tracked-effect rules gain Major Breach and Elemental Catalyst** (#243) when they have no line of that name, once, at the next start. Elemental Catalyst became a default in 0.13.3 but only reached fresh installs. A line of that name you wrote or commented out is left as it is, and rules with nothing in them stay empty.
+- **Saved tracked-effect rules gain Major Breach and Elemental Catalyst** (#243) when they have no line of that name, once, at the next start. Elemental Catalyst became a default in 0.13.3 but only reached fresh installs. A line of that name you wrote or commented out is left as it is, and rules with nothing in them stay empty. A Catalyst line you deleted comes back this once, since saved rules cannot tell a deleted line from one they never had; delete it again and it stays gone.
