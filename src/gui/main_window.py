@@ -57,7 +57,8 @@ from gui.fight_list import FightList
 from gui.fight_render import (
     EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
     SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
-    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, healing_tooltips,
+    issues_html,
     set_tooltips,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
@@ -69,7 +70,7 @@ from gui.instance_render import instance_tooltips, render_instance_html, run_anc
 from gui.keys import key_text, sequence
 from gui.name_mask import NameMask
 from gui.player_window import (
-    BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
+    BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, HEALING_DONE_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
 )
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
@@ -512,6 +513,7 @@ class MainWindow(QMainWindow):
         self.fight_view.build_requested.connect(self._show_build)
         self.fight_view.damage_requested.connect(self._show_damage)
         self.fight_view.taken_requested.connect(self._show_taken)
+        self.fight_view.healing_done_requested.connect(self._show_healing_done)
         self.fight_view.graph_requested.connect(self._show_graph)
         self.fight_view.issues_requested.connect(self._show_issues)
         self.fight_view.pen_crit_requested.connect(self._show_pen_crit)
@@ -1746,6 +1748,7 @@ class MainWindow(QMainWindow):
         tooltips.update(build_tooltips(entry, names, histories))
         tooltips.update(damage_tooltips(entry, names))
         tooltips.update(taken_tooltips(entry, names))
+        tooltips.update(healing_tooltips(entry))
         tooltips.update(issues_tooltips(entry))
         tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
@@ -1875,6 +1878,11 @@ class MainWindow(QMainWindow):
     def _show_damage(self, unit_id):
         """A player's dps figure was clicked: the Damage done tab."""
         self._open_player(unit_id, DAMAGE_TAB)
+
+    def _show_healing_done(self, unit_id):
+        """A healer's healing token was clicked: the Healing done tab, their
+        heals on the others by ability and by player healed (issue #242)."""
+        self._open_player(unit_id, HEALING_DONE_TAB)
 
     def _show_taken(self, unit_id, entry=None):
         """A player's damage-taken shield was clicked: the Damage taken tab,
