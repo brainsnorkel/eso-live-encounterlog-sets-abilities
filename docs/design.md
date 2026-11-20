@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:3730](../src/esolog_tail.py#L3730)*
+*[src/esolog_tail.py:3733](../src/esolog_tail.py#L3733)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,13 +34,13 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:94](../src/esolog_tail.py#L94)*
+*[src/esolog_tail.py:95](../src/esolog_tail.py#L95)*
 
 The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull. Later than that, it continues a boss fight when the group has fought on its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS, issue #162).
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:2163](../src/esolog_tail.py#L2163)*
+*[src/esolog_tail.py:2164](../src/esolog_tail.py#L2164)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
 just ended instead of starting one: it follows the END_COMBAT
@@ -52,7 +52,7 @@ within FIGHT_ON_MS (waiting_hits).
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:2194](../src/esolog_tail.py#L2194)*
+*[src/esolog_tail.py:2195](../src/esolog_tail.py#L2195)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -60,7 +60,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
+*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -68,7 +68,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:2391](../src/esolog_tail.py#L2391)*
+*[src/esolog_tail.py:2392](../src/esolog_tail.py#L2392)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -383,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:5877](../src/esolog_tail.py#L5877)*
+*[src/esolog_tail.py:5886](../src/esolog_tail.py#L5886)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -426,7 +426,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:377](../src/esolog_tail.py#L377)*
+*[src/esolog_tail.py:378](../src/esolog_tail.py#L378)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -491,10 +491,13 @@ character has at most three lines, since subclassing swaps lines and never
 adds a fourth; a fourth line of passives, seen three times in the survey,
 loses to the lines whose actives are slotted.
 
-The fight view and build window show only the borrowed lines, each with a
-plus sign before its first word ("NB +Herald" for a Nightblade who swapped
-a line for Herald of the Tome), so a stock build shows just its class. A
-player whose class is unknown shows every line found.
+The fight view and build window show only the borrowed lines, each by its
+full name after a plus sign ("NB +Herald of the Tome" for a Nightblade who
+swapped a line for Herald of the Tome), so a stock build shows just its
+class. A player whose class is unknown shows every line found. The lines
+were once cut to their first word ("+Herald"); the maintainer asked for the
+full names on 2026-11-11, since 'Dark', 'Green' or 'Living' alone did not
+say which line was meant.
 
 Class Mastery passives (five per class; only a character with all three of
 its own lines can take them) take the same place beside the class, after a
@@ -1271,7 +1274,7 @@ which needs its count in perfected pieces, so it keeps them
 
 ### set_entries
 
-*[src/gui/fight_render.py:1250](../src/gui/fight_render.py#L1250)*
+*[src/gui/fight_render.py:1360](../src/gui/fight_render.py#L1360)*
 
 Design: Perfected and normal pieces on the gear line. The log gives
 a perfected set and its normal version two set ids and two names, but
@@ -1531,7 +1534,7 @@ Chance". The bundled file keeps UESP's text as it came.
 
 ### set_hovers
 
-*[src/gui/fight_render.py:1348](../src/gui/fight_render.py#L1348)*
+*[src/gui/fight_render.py:1458](../src/gui/fight_render.py#L1458)*
 
 Design: A set link's hover. What each set link of one player
 carries, by the set's name as the link shows it (a set worn in both
@@ -1556,7 +1559,7 @@ finding's set link, so all three show the same hover (issue #79).
 
 ### FightView._show_key_tip
 
-*[src/gui/fight_view.py:325](../src/gui/fight_view.py#L325)*
+*[src/gui/fight_view.py:330](../src/gui/fight_view.py#L330)*
 
 Design: Hover text from the keyboard. A link's hover text was the
 mouse's alone: Qt reports a hovered link (highlighted) and nothing
@@ -2579,7 +2582,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:1030](../src/esolog_tail.py#L1030)*
+*[src/esolog_tail.py:1031](../src/esolog_tail.py#L1031)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2620,13 +2623,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
+*[src/esolog_tail.py:115](../src/esolog_tail.py#L115)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:427](../src/esolog_tail.py#L427)*
+*[src/esolog_tail.py:428](../src/esolog_tail.py#L428)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2710,7 +2713,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:131](../src/esolog_tail.py#L131)*
+*[src/esolog_tail.py:132](../src/esolog_tail.py#L132)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2718,7 +2721,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:154](../src/esolog_tail.py#L154)*
+*[src/esolog_tail.py:155](../src/esolog_tail.py#L155)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2908,7 +2911,7 @@ is in the chart's description for a screen reader, after its lines.
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:711](../src/esolog_tail.py#L711)*
+*[src/esolog_tail.py:712](../src/esolog_tail.py#L712)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2931,7 +2934,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:858](../src/esolog_tail.py#L858)*
+*[src/esolog_tail.py:859](../src/esolog_tail.py#L859)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2963,7 +2966,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:5075](../src/esolog_tail.py#L5075)*
+*[src/esolog_tail.py:5084](../src/esolog_tail.py#L5084)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3004,7 +3007,7 @@ continuation tolerates.
 
 Move the byte-identical copies of split logs to the Recycle Bin (issue #85).
 
-Until 0.18.0 a session split again was written out again under the next
+Through 0.18.0 a session split again was written out again under the next
 ``-N`` suffix: the pre-GUI tool's ``--read-all-then-tail`` did that to every
 session in the log at every start, and 513 of the 899 files in the
 maintainer's split folder were copies of another file, several GB in all.
@@ -3508,6 +3511,58 @@ to the death, a proc the game writes as a cast over and over left out
 unless it is of a skill on the player's bars. They are kept apart from
 'events', so the window's sums by kind never count them.
 
+### ESOLogAnalyzer._note_zero_state
+
+*[src/esolog_tail.py:3354](../src/esolog_tail.py#L3354)*
+
+The unit state at fields[*at*] (unitId, health, magicka, stamina,
+...) when it reads 0, or is the state of a player followed at 0
+(_at_zero_units), on any line that carries one, for the deaths the
+log writes no line for (issue #221). *now_ms* None: the line's own
+time (BEGIN_CAST, which the parser stamps 0); *player*: the unit's
+record when the caller has it; *may_wait* False: a resurrection's or
+a release's line, which shows the corpse at 0 and starts no wait;
+*as_zero*: read the state as 0 (a corpse's regeneration tick).
+
+Design: 7.6% of the deaths in fights in the maintainer's 391 split
+logs (1,366 of 17,976) have no DIED, KILLING_BLOW or
+KILLED_BY_SUBZONE. The player's state reads 0 and stays there until
+a resurrection or a release (see death_recap). So each group player
+whose state reads 0 is followed from that line (a ZeroRun) until a
+state shows them up again, on whatever line carries the state: the
+first 0 is on an effect's or a cast's line in nearly a third of
+those deaths (players out of the logging player's combat range or
+in another area: Cloudrest's portal, Sunspire's), and a combat event
+shows some only on the resurrection's own line. A run that begins
+while a fight runs is WAITING: a death line names the death
+(_record_player_death counts it as before, the run LINED), a state
+with health within pull_outcome.ZERO_HEALTH_HOLD_MS was no death
+(every 0 a player survived in those logs lasted under 1 s), and a
+run that lasts that long is a death at the first 0 (COUNTED,
+_settle_zero_health). A run that begins between fights is a corpse
+from before the pull (OFF) and never counts. A death line opens a
+LINED run of its own if no run is open, so a corpse is followed
+until it is up again whatever line shows that, not only until a
+combat event does (time dead's revive, which lags a release by 10 s
+or more for half of all deaths). In a LINED or COUNTED run a state
+with health in the death's first REVIVE_MIN_MS is the dying lines'
+own, as for time dead. Only the logging player and those grouped
+with them are followed (player_of names any player unit, strangers
+overland included), and not in a form with no stamina pool: the
+Infinite Archive's tome-hold polymorph is knocked to 0 and restored
+when its minigame ends, with no death. A log session that begins in
+the middle of a fight has no BEGIN_COMBAT for it, so nothing tells
+its deaths from corpses before the pull: those with no death line
+are not counted (death lines are).
+
+A state with no health pool, or the 1/1 placeholder the log writes
+for a unit it has no state for, says nothing. Nor does a corpse's
+state: health above 0 with magicka and stamina both at 0 (the dead
+player's own healing ticks, _corpse_pools), or the stale health a
+corpse's regeneration tick wrote, equal to its own regeneration and
+repeated by later lines for seconds until a resurrection writes 0
+again (_handle_health_regen keeps it in _corpse_health).
+
 ## Kinds of damage: direct or over time, area or single target, Martial or Magical
 
 ### src/damage_kinds.py
@@ -3639,34 +3694,147 @@ The kinds bars are the death recap's block (death_render.kinds_block_html)
 so the two windows read alike; the player names go through the Hide names
 mask (gui.name_mask), the sources and healers included.
 
+## Healing done: a healer's heals on the others, by ability and by player
+
+### healing_token_parts
+
+*[src/gui/fight_render.py:952](../src/gui/fight_render.py#L952)*
+
+('4.1k', '46%'), the rate a second of the fight and the share, for a
+row that shows the healing token: a player (not a companion) who healed
+another, marked H or with HEAL_TOKEN_SHARE or more of the group's
+healing to others; None for any other row.
+
+Design. The healing token is muted, like the pen/crit token beside it,
+and never ranks or colours a row: the table stays ranked by damage. Every
+row the role guess marks H shows it, and any other with a tenth of the
+group's healing to others, so an off-healer and a healer the guess reads
+as a tank (largest pool health) show it too. Over the maintainer's 419
+split logs (2026-11-21; boss fights of 30 s or more), an H row's share of
+a trial group's healing to others was a median 44% (p10 26%), the H rows'
+together 88%; a T row's 1.2% and a D row's 0.0% at the median, both
+reaching 80% or more. Rows not marked H reached 10% in 4.0% of trial
+player-fights, a third of the fights, and in 71% of the fights of 3 to 7
+players, where the H rows held none of the healing in the median fight;
+144 rows at 10% or more that the guess called tanks had a healer's skill
+lines. Between two pulls of one boss 3.4% of rows gained or lost the
+token at 10% (1.6% at 20%, 5.7% at 5%), so the share is always printed
+beside it and the rule can be read off the row.
+
+The rate divides by the fight time, as Damage taken's figures do: the
+dps time was 0.993 of it at the median, so the choice moves the figure
+0.7% there. The group's figure sums the players' rows: a companion's
+healing is its own row's, and is in its owner's figure only under
+companions.accrue_to_owner, so summing companion rows too would count it
+twice.
+
+### healing_done
+
+*[src/damage_kinds.py:578](../src/damage_kinds.py#L578)*
+
+What one player's heals did in a fight, from the healer's side (the
+player window's Healing done tab, issue #242): the healing that landed
+on other players with its overheal, hits and HoT or direct split, by
+ability ('abilities') and by the player healed ('targets'), and the
+heals on themselves in one total ('own').
+
+Design. Every heal on a player is kept already from the receiver's
+side, by healer and ability (TakenTally.healers, for Healing received),
+for any player unit, with a row of the fight's or not (a player whose
+build never reached the log is still healed). Turning those rows round
+as the fight's entry is built gives each healer's view at no cost per
+line. *tallies* is the fight's receiver record id -> TakenTally, and
+*healer* the player's record id. The rows count as the row's healing to
+others does (CombatEncounter.add_healing_to_player):
+
+- a player's heals are kept under their record, whatever unit they are on;
+- a pet's heals (a Twilight Matriarch's) are its owner's, *record_of*
+  taking the owner's unit to the record, and the ability rows say 'pet';
+- a companion's heals are its own row's (companions.py), and the
+  owner's too only with *companions* (Settings' companions.accrue_to_owner),
+  then marked 'companion';
+- heals on the healer, by themselves or their pet, are 'own': never in
+  the healing to others, so a healer's figure is what reached the rest
+  of the group.
+
+The pure overheal lines (hit 0) count too, so the overheal is a share of
+every heal on others: in the survey of #73, 3.1M of 3.6M heal lines
+were all overheal. Replayed over the maintainer's 419 split logs
+(2026-11-21; 9,656 fights), the landed total equalled the row's figure
+for all 62,601 player rows, as did its abilities' and its targets'
+sums; no other field of any entry changed, the replay took no longer,
+and the slot is about 2% of the entries' size.
+
+### src/gui/healing_render.py
+
+*[src/gui/healing_render.py:1](../src/gui/healing_render.py#L1)*
+
+The Healing done tab (issue #242): one player's heals on the rest of the
+group over a fight, by ability and by the player healed, from the player
+dict's 'healing_done' (damage_kinds.healing_done).
+
+Design. The fight pane's healing token says how much a healer healed (see
+fight_render); this page says with what and on whom, as Damage done does for
+damage. The figures follow a survey of the maintainer's 419 split logs
+(2026-11-21; 2,547 healer-fights, the H rows of boss fights of 30 s or
+more):
+
+- The headline is the row's healing to others with its rate over the fight
+  time and its share of the group's, the token's three figures, then the
+  share of the player's heals on others that overflowed.
+- Abilities are one row per name. The game writes one skill's effects under
+  several ids (Radiating Regeneration's two in 2,048 of those healer-fights,
+  Budding Seeds' heal and its HoT in 1,248, Evolving Runemend's four), and
+  93% of the healer-fights had two rows of one name, carrying a quarter of
+  all healing: kept apart they read as two skills of one name with nothing
+  to tell them apart. Kind gives the mix, 'HoT 70% · direct 30%'. A pet's
+  abilities (a Twilight Matriarch's) are rows of their own, marked.
+- A healer had a median 8 abilities that landed (at most 17), so every one
+  is listed. The abilities whose every heal on another player overflowed
+  (a median 2, at most 8) are named on one line under the table, since a
+  row of 0 healed says nothing but that.
+- Overheal is a share of the row's heals on others, as on Healing received:
+  about nine tenths of all healing in a trial overflows.
+- The players healed follow, by what each received from this player: a
+  median 11 in those fights, everyone else in a trial. A player without a
+  row of the fight's (their build never reached the log) is listed too.
+- Heals on themselves are not healing to others, as on the row: one line
+  gives their total (a median 13% of an H row's own heals and heals on
+  others together) and links to Healing received, which lists them by
+  ability, marked own.
+
+Names go through the Hide names mask (gui.name_mask), the players healed
+included.
+
 ## The player window: one window, a tab for each link
 
 ### src/gui/player_window.py
 
 *[src/gui/player_window.py:1](../src/gui/player_window.py#L1)*
 
-The player window (issue #196): one player's fight on seven tabs, in place
+The player window (issue #196): one player's fight on eight tabs, in place
 of the build, damage, damage taken and death recap windows.
 
 Design: One window for a player. Each player link on the fight pane opens
 this one window at the tab for that link: the name and the lone mastery's
-'?' at Build, the dps figure at Damage done, the 'p:... cd:...' token at
-Pen and crit, the shield at Damage taken, the skull and the Also died chip
-at Deaths. Four windows to place became one, and the build page, which no
+'?' at Build, the dps figure at Damage done, a healer's 'heal ...' token at
+Healing done (issue #242), the 'p:... cd:...' token at Pen and crit, the
+shield at Damage taken, the skull and the Also died chip at Deaths. Four windows to place became one, and the build page, which no
 window fitted (2,352 px at the median), became pages that mostly do.
 
 ```
-    Build · Damage done · Pen and crit · Resources · Damage taken ·
-    Healing received · Deaths
+    Build · Damage done · Healing done · Pen and crit · Resources ·
+    Damage taken · Healing received · Deaths
 ```
 
-Each tab is a FightView drawing one part of the four pages (build_render,
-damage_render, taken_render and death_render, each with header=False), under
+Each tab is a FightView drawing one part of the five pages (build_render,
+damage_render, healing_render, taken_render and death_render, each with
+header=False), under
 two header rows the window draws itself: the previous player button, the
 player picker, the next player button and Boss targets only (shown on Damage
 done); then the fight line and Show in list. The order is the build window's
-(#143: gear, then what the player did with it, the cap sections and
-Resources), then the damage taken side. The kinds of damage dealt moved from
+(#143: gear, then what the player did with it, damage and then healing,
+the cap sections and Resources), then the damage taken side. The kinds of damage dealt moved from
 the build page to Damage done, beside the damage they sort, and the death
 recap's closing block of the whole fight's damage taken became a link to
 the Damage taken tab, which has all of it (decision 4, reversing that part
@@ -3705,7 +3873,7 @@ on by signals too, with its fight: the positions window and the Events tab
 are the main window's. The button is on for a player row whose casts the
 fight kept while the fight is in the list. It stores no lambda on a child.
 
-## The fight's tabs: Fight, Deaths and Instance
+## The fight's tabs: Fight, Deaths, Events, DPS graph and Instance
 
 ### src/gui/fight_tabs.py
 
@@ -3761,7 +3929,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1671](../src/gui/main_window.py#L1671)*
+*[src/gui/main_window.py:1685](../src/gui/main_window.py#L1685)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -4530,7 +4698,7 @@ began; none in that folder did (the latest ended at 23:46).
 
 ### split_lines_html
 
-*[src/gui/fight_render.py:213](../src/gui/fight_render.py#L213)*
+*[src/gui/fight_render.py:220](../src/gui/fight_render.py#L220)*
 
 Design: the split logs beside a run (issue #194). The result strip
 of the fight that completed a run, and the Instance tab under its
@@ -4579,7 +4747,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1289](../src/gui/main_window.py#L1289)*
+*[src/gui/main_window.py:1303](../src/gui/main_window.py#L1303)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -4638,13 +4806,13 @@ fight, which no replay builds again, keeps it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:3137](../src/gui/main_window.py#L3137)*
+*[src/gui/main_window.py:3157](../src/gui/main_window.py#L3157)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:1112](../src/gui/main_window.py#L1112)*
+*[src/gui/main_window.py:1124](../src/gui/main_window.py#L1124)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -4689,13 +4857,13 @@ lacks.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:174](../src/gui/fight_view.py#L174)*
+*[src/gui/fight_view.py:179](../src/gui/fight_view.py#L179)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:398](../src/gui/fight_view.py#L398)*
+*[src/gui/fight_view.py:403](../src/gui/fight_view.py#L403)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -5082,7 +5250,8 @@ and End, PgUp and PgDn. Space alone is not a shortcut, which would take it
 from a focused button too: the table and the scrub bar leave a plain Space
 to the window (keyPressEvent), which plays or pauses, while a button and
 the speed picker keep their own. Ctrl+, and Ctrl+. play slower and faster,
-as the < and > of a video player. The buttons are QToolButtons: a
+as the < and > of a video player (⌃, and ⌃. on macOS, where ⌘, and ⌘.
+are Settings and Cancel: gui.keys). The buttons are QToolButtons: a
 QPushButton in a dialog takes Enter even with the focus elsewhere
 (probed); they and the speed picker take the focus by Tab only, so a click
 leaves it in the table. Tab goes from the scrub bar to the table to Play,
@@ -5279,7 +5448,7 @@ own: Qt's focus frame (PE_FrameFocusRect) draws a 6,000 px tint over a
 
 ### MainWindow.show_moment
 
-*[src/gui/main_window.py:2553](../src/gui/main_window.py#L2553)*
+*[src/gui/main_window.py:2573](../src/gui/main_window.py#L2573)*
 
 The positions window on the fight *entry* at the moment *t_ms*
 (ms since its session's BEGIN_LOG, the locator's own clock), the
@@ -5756,7 +5925,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:784](../src/gui/fight_view.py#L784)*
+*[src/gui/fight_view.py:789](../src/gui/fight_view.py#L789)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -5840,11 +6009,49 @@ for the run by its parameters, as the link glyphs are (see gui.glyphs).
 The word is lower-case letters and underscores for spaces, so the URL
 needs no escaping and a malformed one is refused.
 
-## Links in the fight pane: the hover cue and the dps glyphs
+## Links in the fight pane: the hover cue, the dps glyphs and what a screen reader hears
+
+### src/gui/fight_view.py
+
+*[src/gui/fight_view.py:1](../src/gui/fight_view.py#L1)*
+
+Fight detail pane: a QTextBrowser that serves the bundled ability icons to the
+rendered HTML (``icon:<stem>`` image URLs), shows an ability's name while an
+icon is hovered, and opens ESO-Hub links in the system browser.
+
+Links never navigate the document itself: every click is routed through
+anchorClicked, and only http(s) targets are opened externally. A click on a
+player's death-recap button is announced through death_recap_requested, a
+click on a player's name, or on the '?' after a lone Class Mastery,
+through build_requested, a click on their dps
+figure through damage_requested, a click on the header's group dps figure
+through graph_requested, a click on a player's build-issues (i) through
+issues_requested, a click on a player's pen/crit token through
+pen_crit_requested, a click on a healer's healing token through
+healing_done_requested (issue #242), a click on a death's Positions link through
+positions_requested (a moment of the fight, issue #214) and on the
+header's through fight_positions_requested.
+
+A player's name and dps figure look like plain text (the dps figures carry
+a small glyph that says they can be clicked, see gui.glyphs; the names do
+not), so the pane shows they can be clicked while the pointer is over them:
+the text is underlined in the link color (see _show_hover_cue). The glyphs
+are images the page asks for by URL, served by loadResource like the icons,
+and so are the pixelated stand-ins the Hide names switch puts in place of
+other players' names (``mask:`` URLs, see gui.name_mask).
+
+Design: a screen reader reads a QTextBrowser's text, where every image is
+U+FFFC; Qt keeps an image's alt attribute but never reads it out. So the
+view gives its accessible description the page's text with each image
+replaced by its alt text (an ability icon on a bar says the ability, a
+glyph what it opens, a hidden name 'hidden name'; an icon beside its own
+name has alt="" and says nothing), rebuilt whenever the page changes
+(issue #77). The taunt ring's pulse stops, at its plain phase, while
+Reduce motion is on (set_reduce_motion).
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:647](../src/gui/fight_view.py#L647)*
+*[src/gui/fight_view.py:652](../src/gui/fight_view.py#L652)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
