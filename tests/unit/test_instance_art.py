@@ -58,6 +58,34 @@ class TestTheTable(unittest.TestCase):
             self.script.instances()
         with patch.object(self.script, "INSTANCES", ((1, "A", "a", 0.1),)):
             self.assertEqual(self.script.instances()["1"]["focus"], 0.1)
+        # A line copied for a new trial with its painting left as it was
+        with (patch.object(self.script, "INSTANCES", ((1, "Old", "Paint_01"), (2, "New", "paint_01"))),
+              self.assertRaisesRegex(ValueError, "both Old and New")):
+            self.script.instances()
+
+    def test_only_a_picture_an_earlier_run_wrote_is_ever_removed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder)
+            for name in ("635.jpg", "77.jpg", "88.jpg", "holiday.jpg"):
+                (out / name).write_bytes(b"x")
+            # 77 was written by an earlier run and its line is gone; 88 and
+            # the holiday picture are somebody else's; 635 still has a line
+            previous = {"635": {}, "77": {}, "99": {}}
+            self.assertEqual(self.script.remove_stale(out, previous, self.table), ["77.jpg"])
+            self.assertEqual(sorted(path.name for path in out.iterdir()),
+                             ["635.jpg", "88.jpg", "holiday.jpg"])
+
+    def test_the_art_is_dated_in_the_bundles_stamp(self):
+        """About's data dates and stamp_data_version.py --check know the
+        art's manifest as they know the icons'."""
+        path = REPO_ROOT / "scripts" / "stamp_data_version.py"
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        stamp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(stamp)
+        self.assertIn("data/art/instances/manifest.json", [file for _name, file in stamp.TABLES])
+        stamped = json.loads((REPO_ROOT / "data" / "version.json").read_text(encoding="utf-8"))
+        self.assertIn("data/art/instances/manifest.json",
+                      [table["file"] for table in stamped["tables"]])
 
     def test_every_trial_and_arena_the_app_names_has_a_line(self):
         """A raid the game adds goes into trial_result.TRIAL_NAMES; this
@@ -264,23 +292,59 @@ class TestHeaderRows(ArtTestCase):
     """The fight list: Sunspire (art), Craglorn (none), Kyne's Aegis (art,
     on the band)."""
 
-    def _list(self, width=460):
+    def _list(self, room=260, fights=None):
+        """The list, as wide as leaves *room* px for the art after the
+        Sunspire header's title: the fonts, and so the title's width and
+        the rows', differ from one platform to the next, and a width in
+        pixels would test another case on each."""
         from gui.fight_list import FightList
         from tests.unit.test_fight_list_gui import _entry
         lst = FightList()
         self.addCleanup(lst.close)
-        lst.resize(width, 400)
-        lst.set_fights([_entry("Lokkestiiz"), _entry("Yolnahkriin"),
-                        _entry("Iron Atronach", "Craglorn", CRAGLORN, "NONE"),
-                        _entry("Yandir the Butcher", "Kyne's Aegis", KYNES_AEGIS)])
+        lst.resize(900, 400)
+        lst.set_fights(fights or [
+            _entry("Lokkestiiz"), _entry("Yolnahkriin"),
+            _entry("Iron Atronach", "Craglorn", CRAGLORN, "NONE"),
+            _entry("Yandir the Butcher", "Kyne's Aegis", KYNES_AEGIS)])
         lst.show()
         self._pump()
+        for _ in range(3):  # a scroll bar coming or going changes the viewport
+            _image, asked = self._painted(lst)
+            wanted = asked[SUNSPIRE][0] + room
+            if lst.viewport().width() == wanted:
+                break
+            lst.resize(lst.width() + wanted - lst.viewport().width(), lst.height())
+            self._pump()
+        self.assertEqual(lst.viewport().width(), wanted)
         return lst
 
+    def _painted(self, lst):
+        """The viewport as painted, and what the delegate asked
+        paint_header_art for: {zone: (left, row, whether art was drawn)}."""
+        from PySide6.QtCore import QRect
+
+        from gui import instance_art
+        asked = {}
+        real = instance_art.paint_header_art
+
+        def spy(painter, zone, left, row, ground):
+            drawn = real(painter, zone, left, row, ground)
+            asked[zone] = (left, QRect(row), drawn)
+            return drawn
+
+        with patch.object(instance_art, "paint_header_art", side_effect=spy):
+            image = lst.viewport().grab().toImage()
+        return image, asked
+
     def _rows(self, lst):
+        """The header rows and their rectangles, cut to the viewport: a
+        list narrower than its rows scrolls sideways, and a row's own
+        rectangle then reaches past what a picture of the viewport holds."""
         from gui.fight_list import HEADER, KIND_ROLE
         headers = [row for row in range(lst.count()) if lst.item(row).data(KIND_ROLE) == HEADER]
-        return headers, [lst.visualItemRect(lst.item(row)) for row in headers]
+        view = lst.viewport().rect()
+        return headers, [lst.visualItemRect(lst.item(row)).intersected(
+            view.adjusted(0, -10000, 0, 10000)) for row in headers]
 
     def test_a_header_carries_its_zone(self):
         from gui.fight_list import ZONE_ROLE
@@ -306,11 +370,18 @@ class TestHeaderRows(ArtTestCase):
 
     def test_the_art_is_painted_after_the_title_and_the_title_on_the_ground(self):
         from PySide6.QtGui import QColor, QPalette
-        lst = self._list()
+        lst = self._list(room=260)
         _headers, rects = self._rows(lst)
-        image = lst.viewport().grab().toImage()
+        image, asked = self._painted(lst)
         base = lst.palette().color(QPalette.Active, QPalette.Base)
         row = rects[0]
+        # The art runs from after the title to the viewport's right edge
+        left, in_view, drawn = asked[SUNSPIRE]
+        self.assertTrue(drawn)
+        self.assertEqual(in_view.right(), lst.viewport().width() - 1)
+        self.assertEqual(in_view.right() + 1 - left, 260)
+        self.assertEqual(row.right(), image.width() - 1)  # every pixel read below is in the picture
+        self.assertNotIn(CRAGLORN, asked)  # a zone without art is left to the style
         # The row's own ground at its left edge: the list's base colour, not
         # the disabled group's grey a header's own palette answers with
         self.assertEqual(QColor(image.pixel(row.left() + 1, row.top() + 1)).name(), base.name())
@@ -393,13 +464,72 @@ class TestHeaderRows(ArtTestCase):
 
     def test_a_narrow_list_keeps_the_header_and_drops_the_art(self):
         from PySide6.QtGui import QColor, QPalette
-        lst = self._list(width=150)
+
+        from gui import instance_art
+        lst = self._list(room=instance_art.MIN_ART_WIDTH - 1)
         _headers, rects = self._rows(lst)
-        image = lst.viewport().grab().toImage()
+        tall = rects[0].height()
+        image, asked = self._painted(lst)
+        self.assertFalse(asked[SUNSPIRE][2])  # one pixel short of the least room
         base = lst.palette().color(QPalette.Active, QPalette.Base)
         row = rects[0]
-        edge = min(row.right(), image.width() - 1)
-        self.assertFalse(_differs(QColor(image.pixel(edge - 2, row.top() + 2)), base))
+        for x in range(asked[SUNSPIRE][0], image.width(), 7):
+            self.assertFalse(_differs(QColor(image.pixel(x, row.top() + 2)), base, by=2), x)
+        self.assertGreater(tall, rects[1].height())  # the header keeps its height
+        # With exactly the least room the art is there
+        wide = self._list(room=instance_art.MIN_ART_WIDTH)
+        image, asked = self._painted(wide)
+        self.assertTrue(asked[SUNSPIRE][2])
+        row = self._rows(wide)[1][0]
+        self.assertTrue(_differs(QColor(image.pixel(image.width() - 3, row.center().y())), base))
+
+    def test_a_list_that_scrolls_sideways_cuts_the_art_to_the_room_in_view(self):
+        """A row wider than the viewport makes every row's rectangle that
+        wide. The art ends at the viewport's edge all the same, follows the
+        title as the list is scrolled, and starts at the viewport's left
+        edge once the title has scrolled out."""
+        from PySide6.QtGui import QColor, QPalette
+
+        from tests.unit.test_fight_list_gui import _entry
+        lst = self._list(room=300, fights=[_entry("Lokkestiiz"),
+                                           _entry("A boss with a very long name " * 12)])
+        bar = lst.horizontalScrollBar()
+        self.assertGreater(bar.maximum(), 300)
+        header = lst.item(0)
+        edge = lst.viewport().width() - 1
+        self.assertGreater(lst.visualItemRect(header).right(), edge + 300)  # the row runs on
+        image, asked = self._painted(lst)
+        left, in_view, drawn = asked[SUNSPIRE]
+        self.assertTrue(drawn)
+        self.assertEqual((in_view.right(), in_view.right() + 1 - left), (edge, 300))
+        base = lst.palette().color(QPalette.Active, QPalette.Base)
+        row = self._rows(lst)[1][0]
+        # At the viewport's edge the art is at full strength, not at the
+        # faint start of a fade that runs on out of sight
+        self.assertTrue(_differs(QColor(image.pixel(edge - 2, row.center().y())), base, by=40))
+        for scrolled in (40, bar.maximum()):  # at the last the title is out of view
+            bar.setValue(scrolled)
+            self._pump()
+            _image, asked = self._painted(lst)
+            now_left, now_in_view, now_drawn = asked[SUNSPIRE]
+            self.assertEqual((now_left, now_in_view.right(), now_drawn),
+                             (max(0, left - scrolled), edge, True))
+
+    def test_a_sideways_scroll_paints_the_viewport_again(self):
+        """Qt scrolls a list by moving the pixels it has; art cut to the
+        room in view has to be painted again."""
+        from gui.fight_list import FightList
+        from tests.unit.test_fight_list_gui import _entry
+        with patch.object(FightList, "_repaint_art", autospec=True) as again:
+            lst = FightList()
+            self.addCleanup(lst.close)
+            lst.resize(300, 300)
+            lst.set_fights([_entry("A boss with a very long name " * 12)])
+            lst.show()
+            self._pump()
+            again.reset_mock()
+            lst.horizontalScrollBar().setValue(25)
+            self.assertTrue(again.called)
 
     def test_the_setting_off_gives_plain_headers_and_on_brings_the_art_back(self):
         from gui import instance_art
@@ -417,10 +547,14 @@ class TestHeaderRows(ArtTestCase):
 
     def test_high_contrast_gives_plain_headers(self):
         from gui import instance_art
+        lst = self._list()
+        self.assertGreater(len({rect.height() for rect in self._rows(lst)[1]}), 1)
         with patch.object(instance_art, "high_contrast", return_value=True):
-            lst = self._list()
-            _headers, rects = self._rows(lst)
-            self.assertEqual(len({rect.height() for rect in rects}), 1)
+            lst.refresh_art()
+            self._pump()
+            self.assertEqual(len({rect.height() for rect in self._rows(lst)[1]}), 1)
+            _image, asked = self._painted(lst)
+            self.assertEqual(asked, {})
 
     def test_a_click_on_a_header_with_art_still_opens_its_instance(self):
         from PySide6.QtCore import Qt
@@ -429,8 +563,9 @@ class TestHeaderRows(ArtTestCase):
         headers, rects = self._rows(lst)
         asked = []
         lst.instance_requested.connect(asked.append)
-        QTest.mouseClick(lst.viewport(), Qt.LeftButton, Qt.NoModifier,
-                         rects[0].center())  # on the art itself
+        on_the_art = rects[0].center()
+        on_the_art.setX(lst.viewport().width() - 30)
+        QTest.mouseClick(lst.viewport(), Qt.LeftButton, Qt.NoModifier, on_the_art)
         self.assertEqual(asked, [headers[0]])
 
     def test_the_delegate_holds_nothing_of_the_list(self):
@@ -683,6 +818,43 @@ class TestTheWindow(ArtTestCase):
         save(True)
         self.assertEqual(lst.visualItemRect(header).height(), tall)
         self.assertFalse(win.instance_view.art_rect().isEmpty())
+
+    def test_the_system_turning_high_contrast_on_takes_the_art_away_at_once(self):
+        """With the app open: the list's headers and the Instance page's
+        strip go together, and come back together."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+
+        from gui import instance_art
+        from gui.fight_list import HEADER, KIND_ROLE
+        lokkestiiz, _atronach = self._entries()
+        win = self._window(self._config(), lokkestiiz)
+        win.fight_tabs.setCurrentWidget(win.instance_view)
+        self._pump()
+        lst = win.history_list
+        header = next(lst.item(row) for row in range(lst.count())
+                      if lst.item(row).data(KIND_ROLE) == HEADER)
+        tall = lst.visualItemRect(header).height()
+        changed = QGuiApplication.styleHints().accessibility().contrastPreferenceChanged
+        with patch.object(instance_art, "high_contrast", return_value=True):
+            changed.emit(Qt.ContrastPreference.HighContrast)  # the system's own signal
+            self._pump()
+            self.assertLess(lst.visualItemRect(header).height(), tall)
+            self.assertTrue(win.instance_view.art_rect().isEmpty())
+            self.assertIn("Sunspire", win.instance_view.document().findBlockByNumber(0).text())
+        changed.emit(Qt.ContrastPreference.NoPreference)
+        self._pump()
+        self.assertEqual(lst.visualItemRect(header).height(), tall)
+        self.assertFalse(win.instance_view.art_rect().isEmpty())
+
+    def test_a_page_that_fails_to_render_leaves_no_asking_behind(self):
+        lokkestiiz, _atronach = self._entries()
+        win = self._window(self._config(), lokkestiiz)
+        with (patch("gui.main_window.render_instance_html", side_effect=RuntimeError("no page")),
+              self.assertRaises(RuntimeError)):
+            win._draw_instance(lokkestiiz)
+        win.instance_view.setHtml("<p>the next page set, with no room left for art</p>")
+        self.assertTrue(win.instance_view.art_rect().isEmpty())
 
 
 if __name__ == "__main__":

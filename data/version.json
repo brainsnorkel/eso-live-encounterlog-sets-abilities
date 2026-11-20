@@ -33,6 +33,11 @@
       "generated": "2026-10-27"
     },
     {
+      "name": "Trial and arena art (game client)",
+      "file": "data/art/instances/manifest.json",
+      "generated": "2026-11-20"
+    },
+    {
       "name": "Class passives and masteries (UESP)",
       "file": "data/skills/class_passives.json",
       "generated": "2026-10-31"

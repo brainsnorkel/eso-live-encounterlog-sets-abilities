@@ -85,8 +85,9 @@ its text, its click and what a screen reader hears; only its drawing is
 the list's own (HeaderDelegate): the block's ground, the title where the
 style puts a row's text (the style's text rectangle and margin, as for the
 (i) above, so a header with art and one without line up), and the art
-from after the title to the row's right edge, which is the viewport's
-unless the list scrolls sideways. Every other row, and a
+from after the title to the viewport's right edge, whatever the rows'
+own width: a list narrower than its text scrolls sideways, and the art
+is cut to the room in view at each step of that scroll. Every other row, and a
 header whose zone has no art, is drawn by the style as before, at the
 height it always had. The header's zone id is kept on its item
 (ZONE_ROLE), so the row needs no fight to know its art. The art is cut to
@@ -215,13 +216,17 @@ class HeaderDelegate(QStyledItemDelegate):
         self.initStyleOption(item, index)
         view = item.widget
         style = view.style() if view is not None else None
-        # The row, at least out to the viewport's right edge. A list
-        # narrower than its text scrolls sideways, and the row's rectangle
-        # is then as wide as the widest row and moves with the scroll: the
-        # art goes with it, cut by the viewport's edge as the rows' text is
+        # The row, at least out to the viewport's right edge, which is
+        # where the art ends. A list narrower than its text scrolls
+        # sideways, and the row's rectangle is then as wide as the widest
+        # row and moves with the scroll; art drawn to that edge was mostly
+        # off screen, and what showed was the faint start of its fade
+        # (the review of PR #258). So the art is cut to the room in view
         row = QRect(item.rect)
+        edge = row.right()
         if isinstance(view, QAbstractItemView):
-            row.setRight(max(row.right(), view.viewport().width() - 1))
+            edge = view.viewport().width() - 1
+            row.setRight(max(row.right(), edge))
         # The block's ground: its band, or the list's base colour. Not the
         # option's own base: a header row is not enabled, and its palette
         # answers with the disabled group's, a grey beside the fight rows
@@ -238,8 +243,12 @@ class HeaderDelegate(QStyledItemDelegate):
         painter.save()
         painter.setClipRect(row, Qt.IntersectClip)
         painter.fillRect(row, ground)
-        instance_art.paint_header_art(painter, zone, left + title + instance_art.ART_GAP,
-                                      row, ground)
+        # From after the title, or from the viewport's left edge once the
+        # title has scrolled out of it, to the viewport's right edge
+        in_view = QRect(row)
+        in_view.setRight(edge)
+        instance_art.paint_header_art(
+            painter, zone, max(0, left + title + instance_art.ART_GAP), in_view, ground)
         painter.setFont(item.font)
         painter.setPen(item.palette.brush(QPalette.Text).color())
         painter.drawText(QRect(left, row.top(), title + 2, row.height()),
@@ -258,8 +267,11 @@ class FightList(QListWidget):
         super().__init__(parent)
         self.setAccessibleName("Fights")
         # A header row's art (issue #249); the delegate is the list's child
-        # and holds nothing of it
+        # and holds nothing of it. The art is cut to the room in view, so a
+        # sideways scroll, which Qt does by moving the pixels it has, paints
+        # the viewport again
         self.setItemDelegate(HeaderDelegate(self))
+        self.horizontalScrollBar().valueChanged.connect(self._repaint_art)
         # The inert row a button last went down on, for the left button's
         # release; and whether the pointer shows the hand over one (see the
         # module), for which the viewport follows the pointer with no button
@@ -678,10 +690,13 @@ class FightList(QListWidget):
         self.scheduleDelayedItemsLayout()
         self.viewport().update()
 
+    def _repaint_art(self, *_):
+        self.viewport().update()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # A header's art is cut to the room after its title
-        self.viewport().update()
+        self._repaint_art()
 
     def changeEvent(self, event):
         super().changeEvent(event)

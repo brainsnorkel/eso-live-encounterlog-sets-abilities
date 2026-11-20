@@ -325,9 +325,38 @@ class MainWindow(QMainWindow):
             QGuiApplication.styleHints().colorSchemeChanged.connect(self._on_color_scheme_changed)
         except AttributeError:
             pass  # older Qt: changeEvent still covers palette changes
+        # The instance art goes when the system turns high contrast on and
+        # comes back when it turns it off (gui.instance_art, issue #249):
+        # the list would lay its headers out again by itself on the palette
+        # change, the Instance page's strip would stay (the review of PR
+        # #258). A bound method again; a Qt before 6.10 has no such signal
+        # and never reports high contrast
+        self._art_shown = instance_art.enabled()
+        try:
+            QGuiApplication.styleHints().accessibility().contrastPreferenceChanged.connect(
+                self._on_contrast_changed)
+        except AttributeError:
+            pass
 
     def _on_color_scheme_changed(self, *_):
         self._on_theme_maybe_changed()
+
+    def _on_contrast_changed(self, *_):
+        self._follow_instance_art()
+
+    def _follow_instance_art(self):
+        """The fight list's headers and the Instance page drawn again when
+        the art has just been turned on or off, by its setting or by the
+        system's contrast: the headers change height, and the page gains
+        or loses its strip and the room for it."""
+        shown = instance_art.enabled()
+        if shown == self._art_shown:
+            return
+        self._art_shown = shown
+        self.history_list.refresh_art()
+        self._instance_dirty = True
+        if self.history_list.current_entry() is not None:
+            self._redraw_fight()
 
     def changeEvent(self, event):
         from PySide6.QtCore import QEvent
@@ -2363,16 +2392,19 @@ class MainWindow(QMainWindow):
         view.set_link_hover_color(link_color(self._dark))
         view.set_tooltips(tips)
         # The instance's art across the top of the page, when its zone has
-        # any and the setting is on (issue #249)
+        # any and the setting is on (issue #249). The page is made first:
+        # the asking is for the very next page set, and one left standing
+        # by a rendering that failed would go to whatever page came next
         art = instance_art.zone_with_art(getattr(block[0], "zone_id", None))
-        view.set_art(art)
-        view.setHtml(render_instance_html(
+        page = render_instance_html(
             block, index_of, shown=entry, dark=self._dark, icons=view.icons,
             base_pt=view.font().pointSizeF(), names=names,
             text_color=view.palette().color(QPalette.Text).name(),
             opens_list=opens_list, fight_index=self.fight_index, split_files=split_files,
             hide_paths=self._hide_names,
-            art_space=instance_art.STRIP_SPACE if art else 0))
+            art_space=instance_art.STRIP_SPACE if art else 0)
+        view.set_art(art)
+        view.setHtml(page)
         self._instance_split_files = split_files
         self._instance_block = block
         self._instance_links = {places[id(fight)]: fight for fight in block if id(fight) in places}
@@ -3140,13 +3172,8 @@ class MainWindow(QMainWindow):
             if repr(self.config.get("pen_crit") or {}) != pen_crit_before:
                 self._apply_pen_crit_settings()
             set_reduce_motion(bool(self.config.get("display.reduce_motion", False)))
-            if instance_art.set_enabled(bool(self.config.get("display.instance_art", True))):
-                # The headers' rows change height, and the Instance page
-                # gains or loses its strip
-                self.history_list.refresh_art()
-                self._instance_dirty = True
-                if self.history_list.current_entry() is not None:
-                    self._redraw_fight()
+            instance_art.set_enabled(bool(self.config.get("display.instance_art", True)))
+            self._follow_instance_art()
             # The graph on screen redraws with the new colours; a hidden one
             # is drawn when it is next shown
             on_graph = self.fight_tabs.currentWidget() is self.dps_panel

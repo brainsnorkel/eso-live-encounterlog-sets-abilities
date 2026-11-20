@@ -40,7 +40,8 @@ app then draws its header as it always did and nothing above the Instance
 tab's heading. So a new trial needs nothing to work, and one line here (its
 zone id, its name, its painting) to get its art, at the next run after a
 game update. The run never removes the art of a line it could not extract;
-it removes a file only when its line has been taken out of the table.
+it removes a picture only when its line has been taken out of the table,
+and only one an earlier run's manifest lists (remove_stale).
 
 Requirements and the way the files are found in eso.mnf are those of
 extract_ability_icons.py, whose helpers this script uses. The game folder is
@@ -110,17 +111,36 @@ INSTANCES = (
 
 def instances() -> dict:
     """INSTANCES by zone id: {'1121': {'name', 'art', 'focus'}}. A zone id
-    or a painting named twice is a mistake in the table and stops the run."""
-    table = {}
+    or a painting named twice is a mistake in the table and stops the run:
+    a line copied for a new trial with its painting left as it was would
+    ship the old trial's art under the new one's zone."""
+    table, paintings = {}, {}
     for line in INSTANCES:
         zone_id, name, art = str(line[0]), line[1], line[2].lower()
         focus = float(line[3]) if len(line) > 3 else FOCUS
         if zone_id in table:
             raise ValueError(f"zone id {zone_id} is in INSTANCES twice")
+        if art in paintings:
+            raise ValueError(f"{art} is the painting of both {paintings[art]} and {name}")
         if not 0.0 <= focus <= 1.0:
             raise ValueError(f"{name}: focus {focus} is not between 0 and 1")
         table[zone_id] = {"name": name, "art": art, "focus": focus}
+        paintings[art] = name
     return table
+
+
+def remove_stale(out: Path, previous: dict, table: dict) -> list:
+    """Remove the pictures of lines taken out of the table; their names.
+    Only a picture an earlier run wrote is touched, one the manifest of
+    that run (*previous*) lists: --out may name a folder that holds other
+    pictures, which are none of this script's."""
+    removed = []
+    for zone_id in previous:
+        stale = out / f"{zone_id}.jpg"
+        if zone_id not in table and stale.is_file():
+            stale.unlink()
+            removed.append(stale.name)
+    return removed
 
 
 def band_box(size: tuple, focus: float) -> tuple:
@@ -261,10 +281,8 @@ def main() -> int:
 
     # A line taken out of the table takes its file with it; a line that
     # could not be extracted keeps the file and the manifest line it had
-    for stale in out.glob("*.jpg"):
-        if stale.stem not in table:
-            stale.unlink()
-            log(f"removed:    {stale.name} (no line in INSTANCES)")
+    for name in remove_stale(out, previous, table):
+        log(f"removed:    {name} (no line in INSTANCES)")
     kept = {z: e for z, e in previous.items() if z in table and z not in done
             and (out / f"{z}.jpg").is_file()}
     listed = {**kept, **done}

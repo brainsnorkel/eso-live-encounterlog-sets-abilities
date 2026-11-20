@@ -44,15 +44,7 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
 
 4. Spot-check one added icon visually (open the PNG) and make sure `data/icons/abilities/manifest.json` records the new eso.mnf modification date.
 
-5. Stamp the bundle, so `data/version.json` carries the new manifest's date and the game version the icons came from (the unit tests fail until it does):
-
-   ```cmd
-   python scripts\stamp_data_version.py --log "%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
-   ```
-
-   `--log` reads the version from the log's last `BEGIN_LOG` line, so use a log written by the patched client; `--game-version eso.live.12.2` names it directly.
-
-6. Refresh the trials' and arenas' art in the same sitting (under a minute, same extractor and game files):
+5. Refresh the trials' and arenas' art in the same sitting (under a minute, same extractor and game files), before the stamp of step 6, which dates it:
 
    ```cmd
    python scripts\extract_instance_art.py --sheet build\instance-art.png
@@ -62,6 +54,14 @@ The encounter log names each ability's icon (`ABILITY_INFO ... "/esoui/art/icons
    - **A new trial or arena** needs one line in `INSTANCES` first: its zone id (the `ZONE_CHANGED` line of a log from inside it, or the client's en.lang table 162658389), its name, and its loading screen's file name without `.dds`. The file names follow no rule (Sanctum Ophidia is `loadscreen_serpenttrial_01`), so find it in the file table: `EsoExtractData.exe <eso.mnf> <scratch>\ -k -m <scratch>\mnf.txt`, then search `mnf.txt` for `loadingscreens`. Use the plain painting, not its `_veteran` copy.
    - Open the sheet and look at the new strip. When its subject is cut off, give the line a fourth value, the focus, from 0 (the painting's top) to 1 (its bottom), and run again with `--only <zone id>`.
    - Until its line exists the app draws that instance's header plain, so nothing breaks in the meantime. The unit test `test_every_trial_and_arena_the_app_names_has_a_line` fails when `trial_result.TRIAL_NAMES` gains a raid the table lacks.
+
+6. Stamp the bundle, so `data/version.json` carries the two new manifests' dates and the game version the icons came from (the unit tests fail until it does; any later run of either extraction script needs the stamp again):
+
+   ```cmd
+   python scripts\stamp_data_version.py --log "%USERPROFILE%\OneDrive\Documents\Elder Scrolls Online\live\Logs\Encounter.log"
+   ```
+
+   `--log` reads the version from the log's last `BEGIN_LOG` line, so use a log written by the patched client; `--game-version eso.live.12.2` names it directly.
 
 7. Commit `data/icons/abilities/` (PNGs + manifest.json), `data/art/instances/` and `data/version.json` together with a `changelog.d/` fragment naming the ESO update, and the PyInstaller spec must keep bundling `data/icons/abilities` and `data/art/instances` (see `datas` in `esolog-tail.spec`).
 
