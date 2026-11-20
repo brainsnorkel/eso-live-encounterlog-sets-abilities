@@ -1,0 +1,6 @@
+### Added
+- **Trails in the positions window** (#246): a line through the places the selected player has been, over the last 10 seconds when the window opens, so a death's Positions link shows where they came from. **Show** picks 10 s, 30 s, the whole fight so far or none, and **Every player** adds a thinner grey line for each numbered player. The line is widest at the mark and narrows towards its oldest end. It is dashed where the log said nothing of the player for over a second, and dotted after five seconds or where a portal or teleport moved them in an instant: straight lines, not the way they went.
+- **Zoom and pan in the positions window** (#241): the mouse wheel zooms at the pointer, a drag on the picture moves it, and **−**, **+** and **Fit** in the picture's corner do the same from the keyboard. Zooming in spreads out players drawn as one box. A double-click on the picture fits it again.
+
+### Changed
+- **The positions window fits the fight, not the run-in** (#241): the picture is fitted to where the group fought, leaving out the ten seconds before the pull, which made short pulls such as Halls of Fabrication's Reducer and Reactor up to five times too wide. In a fight that crosses its room, such as Xoryn's, the picture follows the group instead of drawing the whole route in a corner.

@@ -33,15 +33,43 @@ The window's notes say why.
 One box per map frame. The log's coordinates are fractions of the map the
 last MAP_CHANGED line named, so places in two frames are never joined: each
 frame gets its own box, fitted once to the 2nd to 98th percentile of the
-players' and bosses' places in that frame over the whole range, padded by
-12% of its longer side, with one scale for x and y and y down. The study
-found the min-max box 1.2 to 2.6 times larger, empty for most of a fight.
-The moment's frame is the frame of the selected unit's state, else the one
-most drawn players are in. A unit whose last state is of another frame, or
-far off its map (fight_reread.on_map), is not drawn: the line under the
-canvas and the table say "not on this map". A drawn unit outside the
-fitted box is pinned to the canvas's edge, with a small arrow towards where
-it stands. There is no map art, scale or height (#148 stays parked).
+players' and bosses' places in that frame over the fight's time (#241: from
+each unit's state at BEGIN_COMBAT to its last before END_COMBAT, not the
+lead-in or the tail; a unit that left in the lead-in has no place in it),
+padded by 12% of its longer side, with one scale for x and y and y down.
+The study found the min-max box 1.2 to 2.6 times larger, empty for most of
+a fight; over 121 boss fights of nine trials the fight's time alone left
+most boxes within 10% of the whole range's and cut short pulls, where the
+10 s lead-in is a large share, to 19 to 80% of their area (Halls of
+Fabrication's Reducer and Reactor, Spiral Descender). In a fight that
+crosses its room the view follows the group instead (positions_trails,
+FollowView). The moment's frame is the frame of the selected unit's state,
+else the one most drawn players are in. A unit whose last state is of
+another frame, or far off its map (fight_reread.on_map), is not drawn: the
+line under the canvas and the table say "not on this map". A drawn unit
+outside the view is pinned to the canvas's edge, with a small arrow
+towards where it stands, and a unit that would be under the view's
+buttons is pinned just above them the same way. There is no map art, scale or height (#148 stays parked).
+
+The reader's view (#241). The wheel zooms at the pointer, a drag on no
+mark pans (a press that moves under DRAG_SLOP_PX is a click), a
+double-click on no mark fits again, and the window's three buttons in the
+canvas's bottom right corner (−, +, Fit) do the same from the keyboard:
+not the top, where the notes of the deaths near the moment run. The
+view is a zoom and a shift of the box's centre in map units, applied in
+transform, the one place the box becomes pixels, so the marks, the piles,
+the labels, the hit test, the grid and the trails all follow it. Marks
+keep their size: zooming in spreads them and breaks the piles up. It is
+kept while stepping, playing and selecting, and fitted again by Fit, by
+another fight read and by a new map frame. Under the follow, the shift
+rides along with the group's box.
+
+Trails (#246) are drawn over the grid and under the notes, the badges,
+the labels and the marks: the selected unit's last 10 s by default, from
+positions_trails (whose notes have the rules and the measures), clipped to
+where marks may stand. The badges and the selected unit's label keep off
+the trail's newest TRAIL_HEAD_RADII radii where the canvas has room, as
+they keep off the marks and the notes.
 
 Piles. A group stands close, and a marker's radius grows with the text
 size (it must hold '12') while the canvas does not, so numbered players
@@ -135,14 +163,17 @@ from PySide6.QtGui import (
     QPalette,
     QPen,
     QPolygonF,
+    QTransform,
 )
 from PySide6.QtWidgets import QSizePolicy, QSlider, QToolTip, QWidget
 
 from fight_locator import BOSS, COMPANION, ENEMY, GROUP, OTHER, PET, PLAYER, SELF
 from fight_reread import on_map
+from gui import positions_trails as trails
 from gui.death_render import _THEMES as _RECAP_THEMES
 from gui.fight_render import _theme as _pane_theme
 from gui.name_mask import NO_MASK, mask_image, stand_in
+from gui.text_size import scale as text_scale
 from gui.text_size import scaled_px
 
 # A player's kinds in the locator's unit table
@@ -213,7 +244,23 @@ PILE_PER_ROW = 6
 TRACK_ALPHA = 0.13     # the health ring's track: decorative
 NOSE_ALPHA = 0.75
 GRID_ALPHA = 0.06      # the faint grid: decorative, a reference for movement, not a scale
-GRID_STEPS = (0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5)
+GRID_STEPS = (0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5)
+# The reader's view (#241): zoomed this much at most and least against the
+# fitted box, a wheel notch or a button press this much, and a drag this
+# many pixels before it pans (less is a click)
+ZOOM_MIN, ZOOM_MAX = 0.5, 32.0
+ZOOM_STEP = 1.25
+BUTTON_ZOOM = 1.5
+DRAG_SLOP_PX = 4
+# A trail's widths (positions_trails): the selected unit's from its mark's
+# ring width at its newest to this at its oldest, Every player's thinner;
+# a gap's or a jump's dashes and dots never thinner than GAP_LEAST_PX
+TRAIL_WIDEST_PX, TRAIL_THINNEST_PX = RING_WIDTH_PX, 1.0
+TRAIL_EVERY_WIDEST_PX = 1.5
+GAP_LEAST_PX = 1.5
+TRAIL_DASHES = {trails.DASHED: [3.0, 2.5], trails.DOTTED: [0.01, 2.4]}  # in pen widths
+# The selected trail's newest end that labels and badges keep off, in radii
+TRAIL_HEAD_RADII = 3.0
 
 # New colours, keyed {False: light, True: dark}; measured in the module notes
 HOSTILE_COLORS = {False: "#a8322d", True: "#ef6f6c"}
@@ -427,18 +474,30 @@ def still_dead(track, died_at: int, t: int) -> bool:
 def fit_boxes(states) -> dict:
     """Frame index -> its box (x0, x1, y0, y1): the FIT_LOW to FIT_HIGH
     percentiles of the players' and bosses' places in that frame over the
-    whole range, padded by FIT_PAD of the longer side (see the module)."""
-    places: dict = {}
+    fight's time, from the state each unit was in at BEGIN_COMBAT to its
+    last before END_COMBAT, padded by FIT_PAD of the longer side (see the
+    module); a frame seen only in the lead-in or the tail is fitted to its
+    places there."""
+    start, end = getattr(states, "start_ms", None), getattr(states, "end_ms", None)
+    fight: dict = {}
+    anywhere: dict = {}
     for track in states.tracks:
         unit = track.unit
         if unit is None or unit.kind not in FIT_KINDS:
             continue
-        for x, y, frame in zip(track.x, track.y, track.frame):
-            if on_map(x, y):
+        first = max(0, track.at(start)) if start is not None else 0
+        last = track.at(end) if end is not None else len(track) - 1
+        until = getattr(unit, "until_ms", None)
+        if start is not None and until is not None and until < start:
+            last = -1  # it left in the lead-in: no place in the fight
+        for index, (x, y, frame) in enumerate(zip(track.x, track.y, track.frame)):
+            if not on_map(x, y):
+                continue
+            for places in ((fight,) if first <= index <= last else ()) + (anywhere,):
                 xs, ys = places.setdefault(frame, ([], []))
                 xs.append(x)
                 ys.append(y)
-    return {frame: box_of(xs, ys) for frame, (xs, ys) in places.items()}
+    return {frame: box_of(*(fight.get(frame) or anywhere[frame])) for frame in anywhere}
 
 
 def box_of(xs, ys) -> tuple:
@@ -499,13 +558,15 @@ def glide_state(track, state, t: int):
 
 def build_scene(states, roster: Roster, t: int, selected: str | None = None,
                 shown: dict | None = None, boxes: dict | None = None,
-                glide: bool = False) -> Scene:
+                glide: bool = False, follow=None) -> Scene:
     """The Scene of moment *t*: every unit with its last state, where it
     is and how it looks (see the module), the moment's frame and box, and
     the deaths near it. *shown*: the Show menu's marks on or off
     (SHOWN_BY_DEFAULT); *boxes*: fit_boxes(states), computed when None;
     *glide*: while the window plays, each place as glide_state gives it,
-    never when paused."""
+    never when paused; *follow*: a positions_trails.FollowView, whose box
+    of the moment is the scene's in a frame where the view follows the
+    group."""
     shown = SHOWN_BY_DEFAULT if shown is None else shown
     boxes = fit_boxes(states) if boxes is None else boxes
     moment = states.moment(t)
@@ -559,7 +620,9 @@ def build_scene(states, roster: Roster, t: int, selected: str | None = None,
 
     frame = _frame_of([u for u in ordered if u.until is None or t <= u.until], selected)
     units = tuple(unit._replace(where=_where(unit, frame, shown, t)) for unit in ordered)
-    box = boxes.get(frame)
+    box = follow.box_at(frame, t) if follow is not None else None
+    if box is None:
+        box = boxes.get(frame)
     if box is None:
         drawn = [u.state for u in units if u.where == DRAWN]
         box = box_of([s.x for s in drawn], [s.y for s in drawn]) if drawn else None
@@ -938,15 +1001,29 @@ class PositionsCanvas(QWidget):
     """The plain canvas of one moment (see the module): painted, never in
     the Tab chain; the table beside it carries the keyboard and the
     screen reader. A click on a marker asks for that unit (unit_clicked,
-    its selection key)."""
+    its selection key). The wheel zooms at the pointer and a drag on the
+    canvas pans (#241): the reader's view, kept until reset_view, a zoom
+    and the shift of the box's centre in map units, applied in transform
+    to the scene's box, so the marks, the piles, the labels, the hit test,
+    the grid and the trails all follow it; view_changed tells the window."""
 
     unit_clicked = Signal(str)
+    view_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._scene = None
         self._message = ""
         self._names = NO_MASK
+        self._zoom = 1.0
+        self._shift = (0.0, 0.0)   # the view's centre less the box's, map units
+        self._press = None         # (position, shift) of a press on no mark: a drag may follow
+        self._dragged = False
+        self._trails = None        # positions_trails.TrailSet
+        self._trail = (trails.TRAIL_OFF, trails.WHOSE_SELECTED, 0)  # (length, whose, fight start)
+        self._keys: dict = {}      # unit key -> track, for the trails' TrailSet
+        self._strokes = (None, [])  # (what they were worked out for, trail_strokes)
+        self._overlay = None       # the view's buttons, in the bottom right corner
         self.setFocusPolicy(Qt.NoFocus)
         # Every paint fills the whole canvas first, so the window, the
         # splitter and the pane under it are not painted again with it at
@@ -970,6 +1047,118 @@ class PositionsCanvas(QWidget):
         self._scene = None
         self._message = text
         self.update()
+
+    def set_trails(self, trail_set, length: int, whose: str, fight_start: int) -> None:
+        """The trails to draw (positions_trails): *trail_set* of the fight
+        read (None for none), *length* one of TRAIL_LENGTHS, *whose*
+        WHOSE_SELECTED or WHOSE_EVERY, *fight_start* where a whole-fight
+        trail starts (ms since BEGIN_LOG). Drawn at the next paint."""
+        if trail_set is not self._trails:
+            self._keys = ({} if trail_set is None else
+                          {unit_key_of(track): track for track in trail_set.states.tracks})
+        self._trails = trail_set
+        self._trail = (length, whose, fight_start)
+        self.update()
+
+    def set_overlay(self, widget) -> None:
+        """*widget* (the window's zoom and Fit buttons) in the canvas's
+        bottom right corner, kept there, clear of the notes along the top;
+        the badges and labels keep off it."""
+        widget.setParent(self)
+        self._overlay = widget
+        self._place_overlay()
+        widget.show()
+
+    def overlay_rect(self) -> QRectF | None:
+        overlay = self._overlay
+        if overlay is None or not overlay.isVisible():
+            return None
+        return QRectF(overlay.geometry())
+
+    def _place_overlay(self) -> None:
+        overlay = self._overlay
+        if overlay is None:
+            return
+        overlay.adjustSize()
+        gap = scaled_px(4)
+        overlay.move(max(0, self.width() - overlay.width() - gap),
+                     max(0, self.height() - overlay.height() - gap))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._place_overlay()
+
+    def trail_setting(self) -> tuple:
+        """(length, whose, fight start) as set_trails was last given."""
+        return self._trail
+
+    # ---- the reader's view (#241) ----
+
+    def zoom(self) -> float:
+        return self._zoom
+
+    def shift(self) -> tuple:
+        return self._shift
+
+    def view_is_fitted(self) -> bool:
+        """Whether the view is the fitted box as it is (no zoom, no pan)."""
+        return self._zoom == 1.0 and self._shift == (0.0, 0.0)
+
+    def reset_view(self) -> None:
+        """Back to the fitted box (Fit, a new fight, a new map frame)."""
+        changed = not self.view_is_fitted()
+        self._zoom, self._shift = 1.0, (0.0, 0.0)
+        self._press = None
+        if self._dragged:  # a reset in the middle of a drag ends it
+            self._dragged = False
+            self.unsetCursor()
+        if changed:
+            self.update()
+            self.view_changed.emit()
+
+    def zoom_by(self, factor: float, anchor: QPointF | None = None) -> None:
+        """Zoom by *factor* (over 1 in), the map point under *anchor* (the
+        canvas's centre when None) kept where it is, within ZOOM_MIN and
+        ZOOM_MAX."""
+        at = self.transform()
+        zoom = max(ZOOM_MIN, min(ZOOM_MAX, self._zoom * factor))
+        if abs(zoom - 1.0) < 1e-6:
+            zoom = 1.0  # a fine-step wheel's way back lands on the fitted scale exactly
+        if at is None or zoom == self._zoom:
+            return
+        anchor = QPointF(self.width() / 2, self.height() / 2) if anchor is None else QPointF(anchor)
+        scale, ox, oy = at
+        mx, my = (anchor.x() - ox) / scale, (anchor.y() - oy) / scale
+        self._zoom = zoom
+        scale, ox, oy = self.transform()
+        # Shift the view's centre so the map point is under the anchor again
+        sx, sy = self._shift
+        self._shift = (sx + (ox + mx * scale - anchor.x()) / scale,
+                       sy + (oy + my * scale - anchor.y()) / scale)
+        self.update()
+        self.view_changed.emit()
+
+    def pan_by(self, dx: float, dy: float) -> None:
+        """Move the picture by *dx*, *dy* pixels (the view the other way)."""
+        at = self.transform()
+        if at is None or (dx == 0 and dy == 0):
+            return
+        scale = at[0]
+        sx, sy = self._shift
+        self._shift = (sx - dx / scale, sy - dy / scale)
+        self.update()
+        self.view_changed.emit()
+
+    def view_box(self):
+        """The box the canvas fits to the widget, the reader's view applied
+        to the scene's box; None without one."""
+        scene = self._scene
+        if scene is None or scene.box is None:
+            return None
+        x0, x1, y0, y1 = scene.box
+        cx, cy = (x0 + x1) / 2 + self._shift[0], (y0 + y1) / 2 + self._shift[1]
+        half_w, half_h = (x1 - x0) / 2 / self._zoom, (y1 - y0) / 2 / self._zoom
+        return (cx - half_w, cx + half_w, cy - half_h, cy + half_h)
 
     def scene(self) -> Scene | None:
         return self._scene
@@ -1008,12 +1197,12 @@ class PositionsCanvas(QWidget):
         return self.radius() + scaled_px(SELECT_GAP_PX) + 3
 
     def transform(self):
-        """(scale, x origin, y origin) taking the scene's box to the
-        widget, None when there is no box."""
-        scene = self._scene
-        if scene is None or scene.box is None:
+        """(scale, x origin, y origin) taking the view's box (view_box) to
+        the widget, None when there is no box."""
+        box = self.view_box()
+        if box is None:
             return None
-        x0, x1, y0, y1 = scene.box
+        x0, x1, y0, y1 = box
         width, height = max(1e-9, x1 - x0), max(1e-9, y1 - y0)
         margin = self.margin()
         room_w = max(1.0, self.width() - 2 * margin)
@@ -1037,6 +1226,11 @@ class PositionsCanvas(QWidget):
         hits = {MARK_PLAYER: r * 1.35, MARK_BOSS: r * BOSS_SCALE + 2, MARK_ADD: max(6.0, r * 0.8),
                 MARK_LOOSE: max(6.0, r * 0.8)}
         out = []
+        # A unit under the view's buttons, out of the view or in it, is
+        # pinned just above them, its arrow to where it stands: covered, it
+        # could be neither seen nor clicked
+        overlay = self.overlay_rect()
+        under = overlay.adjusted(-r, -r, r, r) if overlay is not None else None
         for unit in scene.units:
             if unit.where != DRAWN:
                 continue
@@ -1045,6 +1239,9 @@ class PositionsCanvas(QWidget):
             if pinned:
                 x = min(max(x, inner.left()), inner.right())
                 y = min(max(y, inner.top()), inner.bottom())
+            if under is not None and under.contains(QPointF(x, y)):
+                y = under.top() - scaled_px(2)
+                pinned = True
             out.append(Placed(unit, QPointF(x, y), pinned, hits.get(unit.mark, max(6.0, r * 0.6))))
         out.sort(key=lambda p: (p.unit.key == scene.selected, _DRAW_ORDER.get(p.unit.mark, 0),
                                 p.unit.mark == MARK_PLAYER and p.unit.look != DEAD))
@@ -1087,6 +1284,7 @@ class PositionsCanvas(QWidget):
         piles = []
         taken = [self._extent(item, r) for item in singles if item.unit.mark in (MARK_PLAYER, MARK_BOSS)]
         taken += [box for box, _offset, _text in self.note_lines()]
+        taken += self.trail_head_boxes() + self._overlay_taken()
         pad, gap = scaled_px(4), scaled_px(4)
         cell_w, cell_h = 2 * r + gap, 2 * r + scaled_px(8)
         for members in sorted(groups, key=lambda group: group[0].unit.number):
@@ -1136,6 +1334,119 @@ class PositionsCanvas(QWidget):
     def piles(self) -> list:
         return self.layout()[1]
 
+    # ---- trails (#246) ----
+
+    def trail_units(self) -> list:
+        """The drawn units with a trail at the moment, the selected one
+        last (drawn on top): it, and every numbered player under Every
+        player; [] with trails off or none set."""
+        scene = self._scene
+        length, whose, _start = self._trail
+        if scene is None or self._trails is None or length == trails.TRAIL_OFF:
+            return []
+        out, chosen = [], None
+        for unit in scene.units:
+            if unit.where != DRAWN or unit.state is None:
+                continue
+            if unit.key == scene.selected:
+                chosen = unit
+            elif whose == trails.WHOSE_EVERY and unit.mark == MARK_PLAYER:
+                out.append(unit)
+        return out + ([chosen] if chosen is not None else [])
+
+    def trail_strokes(self) -> list:
+        """(unit, positions_trails.Stroke) for each of trail_units with a
+        track, in map coordinates, ending at the unit's place at the
+        moment (glided while playing), chunks outside the view skipped."""
+        scene, at = self._scene, self.transform()
+        units = self.trail_units()
+        if at is None or not units:
+            return []
+        # Worked out once a moment and view: the layout, the labels and the
+        # paint all ask
+        key = (id(scene), scene, at, self.width(), self.height(), self._trail, id(self._trails))
+        if self._strokes[0] == key:
+            return self._strokes[1]
+        scale, ox, oy = at
+        length, _whose, fight_start = self._trail
+        t0, taper = trails.span_of(length, scene.t, fight_start)
+        view = QRectF(-ox / scale, -oy / scale, self.width() / scale, self.height() / scale)
+        out = []
+        for unit in units:
+            track = self._keys.get(unit.key)
+            if track is None:
+                continue
+            trail = self._trails.trail(track)
+            out.append((unit, trails.stroke(trail, t0, scene.t, taper, scene.frame,
+                                            (unit.state.x, unit.state.y), view)))
+        self._strokes = (key, out)
+        return out
+
+    def trail_head_boxes(self) -> list:
+        """Boxes round the selected unit's trail's newest TRAIL_HEAD_RADII
+        radii of length, in pixels, which the badges and labels keep off
+        where the canvas has room."""
+        scene, at = self._scene, self.transform()
+        if scene is None or at is None or scene.selected is None:
+            return []
+        strokes = [s for unit, s in self.trail_strokes() if unit.key == scene.selected]
+        if not strokes:
+            return []
+        scale, ox, oy = at
+        r = self.radius()
+        newest = trails.TAPER_BANDS - 1
+        pad = TRAIL_WIDEST_PX * text_scale() + 2
+        boxes = []
+        for (_style, band), path in strokes[0].paths.items():
+            if band != newest:
+                continue
+            for k in range(path.elementCount()):
+                element = path.elementAt(k)
+                x, y = ox + element.x * scale, oy + element.y * scale
+                boxes.append(QRectF(x - pad, y - pad, 2 * pad, 2 * pad))
+        # Only the stretch nearest the mark
+        unit = next((u for u in scene.units if u.key == scene.selected), None)
+        if unit is None or unit.state is None:
+            return boxes
+        hx, hy = ox + unit.state.x * scale, oy + unit.state.y * scale
+        reach = TRAIL_HEAD_RADII * r
+        return [box for box in boxes
+                if math.hypot(box.center().x() - hx, box.center().y() - hy) <= reach]
+
+    def _paint_trails(self, painter, colours) -> None:
+        """The trails (positions_trails): opaque, tapered, clipped to where
+        the marks may stand, Every player's in the muted ink, the selected
+        unit's in ink, on top."""
+        strokes = self.trail_strokes()
+        if not strokes:
+            return
+        scale, ox, oy = self.transform()
+        margin = self.margin()
+        selected = self._scene.selected
+        k = text_scale()
+        painter.save()
+        painter.setClipRect(QRectF(margin, margin, max(1.0, self.width() - 2 * margin),
+                                   max(1.0, self.height() - 2 * margin)))
+        painter.setTransform(QTransform(scale, 0, 0, scale, ox, oy), True)
+        painter.setBrush(Qt.NoBrush)
+        for unit, stroke in strokes:
+            mine = unit.key == selected
+            colour = colours["ink"] if mine else colours["muted"]
+            widest = (TRAIL_WIDEST_PX if mine else TRAIL_EVERY_WIDEST_PX) * k
+            for (style, band), path in sorted(stroke.paths.items(), key=lambda kv: kv[0][1]):
+                width = trails.width_of(band, widest, TRAIL_THINNEST_PX * k)
+                if style != trails.SOLID:
+                    width = max(width, GAP_LEAST_PX * k)
+                pen = QPen(colour, width)
+                pen.setCosmetic(True)
+                pen.setCapStyle(Qt.RoundCap)
+                pen.setJoinStyle(Qt.RoundJoin)
+                if style in TRAIL_DASHES:
+                    pen.setDashPattern(TRAIL_DASHES[style])
+                painter.setPen(pen)
+                painter.drawPath(path)
+        painter.restore()
+
     def unit_at(self, pos) -> Placed | None:
         """The drawn unit a click at *pos* finds, as it is drawn: the
         selected unit (on top of all), a member of a pile (at its place in
@@ -1182,7 +1493,61 @@ class PositionsCanvas(QWidget):
                 self.unit_clicked.emit(item.unit.key)
                 event.accept()
                 return
+            if self.transform() is not None:
+                # On no mark: a drag that may follow pans the view
+                self._press = (QPointF(event.position()), self._shift)
+                self._dragged = False
+                event.accept()
+                return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        press = self._press
+        if press is not None and event.buttons() & Qt.LeftButton:
+            at, shift = press
+            dx, dy = event.position().x() - at.x(), event.position().y() - at.y()
+            if not self._dragged and math.hypot(dx, dy) < DRAG_SLOP_PX:
+                event.accept()
+                return
+            if not self._dragged:
+                self._dragged = True
+                self.setCursor(Qt.ClosedHandCursor)
+            transform = self.transform()
+            if transform is not None:
+                scale = transform[0]
+                self._shift = (shift[0] - dx / scale, shift[1] - dy / scale)
+                self.update()
+                self.view_changed.emit()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and (self._press is not None or self._dragged):
+            self._press = None
+            if self._dragged:
+                self._dragged = False
+                self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """A double-click on no mark fits the view again."""
+        if event.button() == Qt.LeftButton and self.unit_at(event.position()) is None:
+            self.reset_view()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        """The wheel zooms at the pointer, ZOOM_STEP a notch."""
+        steps = event.angleDelta().y() / 120
+        if steps == 0 or self.transform() is None:
+            event.ignore()
+            return
+        self.zoom_by(ZOOM_STEP ** steps, event.position())
+        event.accept()
 
     def event(self, event) -> bool:
         if event.type() == QEvent.ToolTip:
@@ -1211,8 +1576,13 @@ class PositionsCanvas(QWidget):
 
     def changeEvent(self, event) -> None:
         if event.type() in (QEvent.FontChange, QEvent.ApplicationFontChange):
+            self._place_overlay()
             self.update()
         super().changeEvent(event)
+
+    def _overlay_taken(self) -> list:
+        rect = self.overlay_rect()
+        return [rect] if rect is not None else []
 
     # ---- painting ----
 
@@ -1228,6 +1598,8 @@ class PositionsCanvas(QWidget):
         at = self.transform()
         if at is not None:
             self._paint_grid(painter, colours, *at)
+        # Over the grid, under the notes, the labels, the badges and the marks
+        self._paint_trails(painter, colours)
         # Under the units: a note may be covered, never a unit
         self._paint_notes(painter, colours)
         singles, piles = self.layout()
@@ -1243,6 +1615,7 @@ class PositionsCanvas(QWidget):
         # The labels keep off the markers and the badges where they can
         taken = [self._extent(item, r) for item in singles] + [pile.rect for pile in piles]
         taken += [box for box, _offset, _text in self.note_lines()]
+        taken += self.trail_head_boxes() + self._overlay_taken()
         taken += self._paint_boss_names(painter, colours, singles, r, taken)
         for item in singles:
             if item.unit.key == selected:
@@ -1461,8 +1834,14 @@ class PositionsCanvas(QWidget):
         offset_w = metrics.horizontalAdvance("+00.0 s") + scaled_px(8)
         height = metrics.height() + scaled_px(2)
         out, y = [], scaled_px(6)
+        # Short of the view's buttons where a line would reach them (they
+        # sit in the bottom right corner, the notes along the top)
+        overlay = self.overlay_rect()
         for offset, text in lines:
-            width = min(self.width() - scaled_px(12),
+            right = self.width() - scaled_px(6)
+            if overlay is not None and overlay.top() < y + height and y < overlay.bottom():
+                right = overlay.left() - scaled_px(6)
+            width = min(max(scaled_px(40), right - scaled_px(6)),
                         scaled_px(5) + offset_w + metrics.horizontalAdvance(text) + scaled_px(8))
             out.append((QRectF(scaled_px(6), y, width, height), offset, text))
             y += height

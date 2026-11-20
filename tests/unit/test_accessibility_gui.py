@@ -277,7 +277,9 @@ class TestPositionsWindow(AccessibilityTestCase):
         iface = QAccessible.queryAccessibleInterface(window.canvas)
         self.assertEqual(iface.text(QAccessible.Name), "Positions")
         text = _described(window.canvas)
-        self.assertEqual(text, "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive.")
+        # Then the trail drawn (#246), by number: the selected damage dealer is 1
+        self.assertEqual(text, "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive. "
+                               "Trail: 1's last 10 s.")
         self.assertNotIn("@", text)
 
     def test_the_table_is_a_table_and_a_hidden_name_reads_as_hidden(self):

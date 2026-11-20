@@ -235,6 +235,7 @@ TOPICS = [
     ("Positions: a moment held still, and played back", [
         "src/gui/positions_window.py",
         "src/gui/positions_canvas.py",
+        "src/gui/positions_trails.py",
         "src/gui/main_window.py:MainWindow.show_moment",
     ]),
     ("Before the first fight: the archive line and recent activity", [
