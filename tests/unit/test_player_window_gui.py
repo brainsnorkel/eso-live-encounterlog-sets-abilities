@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The player window (issue #196, PR 4), offscreen: one window with a tab
 for each pane link in place of the build, damage, damage taken and death
-recap windows. Which tab each link opens; the seven tabs and their Alt
+recap windows. Which tab each link opens; the eight tabs and their Alt
 letters, each pressed twice; Ctrl+PgDn, Ctrl+Up and the player picker;
 tabs that do not apply; Boss targets only; Show in list; the fight
 changing in place and a Settings replay; a pen/crit save; the size; the
@@ -98,6 +98,7 @@ class TestOneWindowForEveryLink(PlayerWindowTestCase):
             BUILD_TAB,
             DAMAGE_TAB,
             DEATHS_TAB,
+            HEALING_DONE_TAB,
             PEN_CRIT_TAB,
             TAKEN_TAB,
         )
@@ -106,6 +107,7 @@ class TestOneWindowForEveryLink(PlayerWindowTestCase):
         for href, tab, unit in (("esolog:build/1", BUILD_TAB, "1"),
                                 ("esolog:mastery/2", BUILD_TAB, "2"),
                                 ("esolog:damage/1", DAMAGE_TAB, "1"),
+                                ("esolog:healingdone/2", HEALING_DONE_TAB, "2"),
                                 ("esolog:pencrit/2", PEN_CRIT_TAB, "2"),
                                 ("esolog:taken/1", TAKEN_TAB, "1"),
                                 ("esolog:deaths/1", DEATHS_TAB, "1"),
@@ -116,18 +118,19 @@ class TestOneWindowForEveryLink(PlayerWindowTestCase):
             self.assertTrue(window.isVisible(), href)
             self.assertEqual((window.current_tab(), window.unit_id), (tab, unit), href)
 
-    def test_the_seven_tabs_in_order_with_their_titles(self):
+    def test_the_eight_tabs_in_order_with_their_titles(self):
         from gui.player_window import TAB_KEYS
         win = self._window(fights()[0])
         window = self._click(win, "esolog:build/1")
         labels = [window.tabs.tabText(i) for i in range(window.tabs.count())]
-        self.assertEqual(labels, ["&Build", "&Damage done", "&Pen and crit", "&Resources",
-                                  "Damage &taken", "&Healing received", "D&eaths"])
+        self.assertEqual(labels, ["&Build", "&Damage done", "Hea&ling done", "&Pen and crit",
+                                  "&Resources", "Damage &taken", "&Healing received", "D&eaths"])
         titles = []
         for index in range(len(TAB_KEYS)):
             window.tabs.setCurrentIndex(index)
             titles.append(window.windowTitle())
         self.assertEqual(titles, ["Build – @brainsnorkel (Pïque)", "Damage – @brainsnorkel",
+                                  "Healing done – @brainsnorkel",
                                   "Pen and crit – @brainsnorkel", "Resources – @brainsnorkel",
                                   "Damage taken – @brainsnorkel", "Healing received – @brainsnorkel",
                                   "Death recap – @brainsnorkel"])
@@ -169,7 +172,7 @@ class TestKeys(PlayerWindowTestCase):
 
         from gui.player_window import BUILD_TAB, TAB_KEYS
         window = self._alone(_damage_entry(), BUILD_TAB)
-        for letter, tab in zip("BDPRTHE", TAB_KEYS):
+        for letter, tab in zip("BDLPRTHE", TAB_KEYS):
             for press in (1, 2):
                 QTest.keyClick(window, getattr(Qt, f"Key_{letter}"), Qt.AltModifier)
                 self.assertEqual(window.current_tab(), tab, (letter, press))
@@ -318,7 +321,7 @@ class TestWhatTheTabsShow(PlayerWindowTestCase):
             window.tabs.setCurrentIndex(index)
             titles.append(window.windowTitle())
         self.assertEqual(titles, [f"{prefix} – @passerby" for prefix in (
-            "Build", "Damage", "Pen and crit", "Resources", "Damage taken",
+            "Build", "Damage", "Healing done", "Pen and crit", "Resources", "Damage taken",
             "Healing received", "Death recap")])
         window = self._click(win, "esolog:deaths/1")
         self.assertIn(FIGHT_LINK_LEAD, window.view(DEATHS_TAB).toPlainText())
@@ -330,6 +333,7 @@ class TestWhatTheTabsShow(PlayerWindowTestCase):
         tab)."""
         from gui.player_window import (
             DEATHS_TAB,
+            HEALING_DONE_TAB,
             HEALING_TAB,
             NO_COMPANION_DATA,
             PEN_CRIT_TAB,
@@ -344,7 +348,7 @@ class TestWhatTheTabsShow(PlayerWindowTestCase):
         self.assertEqual(window.view(DEATHS_TAB).toPlainText().strip(),
                          "@friend did not die in this fight.")
         window = self._click(win, "esolog:build/3")
-        for tab in (PEN_CRIT_TAB, RESOURCES_TAB, TAKEN_TAB, HEALING_TAB):
+        for tab in (HEALING_DONE_TAB, PEN_CRIT_TAB, RESOURCES_TAB, TAKEN_TAB, HEALING_TAB):
             window.tabs.setCurrentIndex(TAB_KEYS.index(tab))
             self.assertEqual(window.view(tab).toPlainText().strip(), NO_COMPANION_DATA, tab)
         window.tabs.setCurrentIndex(TAB_KEYS.index(DEATHS_TAB))
@@ -386,6 +390,18 @@ class TestWhatTheTabsShow(PlayerWindowTestCase):
         self.assertEqual(window.current_tab(), TAKEN_TAB)
         window.view(TAKEN_TAB).anchorClicked.emit(QUrl("esolog:deaths/1"))
         self.assertEqual(window.current_tab(), DEATHS_TAB)
+
+    def test_healing_done_links_to_the_heals_on_themselves(self):
+        """Healing done's line on the heals on themselves opens Healing
+        received, where they are listed by ability (issue #242)."""
+        from PySide6.QtCore import QUrl
+
+        from gui.player_window import HEALING_DONE_TAB, HEALING_TAB
+        win = self._window(_taken_entry())
+        window = self._click(win, "esolog:healingdone/2")
+        self.assertEqual((window.current_tab(), window.unit_id), (HEALING_DONE_TAB, "2"))
+        window.view(HEALING_DONE_TAB).anchorClicked.emit(QUrl("esolog:healing/2"))
+        self.assertEqual((window.current_tab(), window.unit_id), (HEALING_TAB, "2"))
 
 
 class TestTheWindowsFight(PlayerWindowTestCase):
@@ -599,8 +615,8 @@ class TestAccessibleNames(PlayerWindowTestCase):
         win = self._window(entry)
         window = self._click(win, "esolog:build/1")
         names = [window.view(key).accessibleName() for key, _label, _title in TABS]
-        self.assertEqual(names, ["Build", "Damage done", "Pen and crit", "Resources",
-                                 "Damage taken", "Healing received", "Death recap"])
+        self.assertEqual(names, ["Build", "Damage done", "Healing done", "Pen and crit",
+                                 "Resources", "Damage taken", "Healing received", "Death recap"])
         self.assertEqual(window.picker.accessibleDescription(), fight_line(entry))
         self.assertTrue(window.view(BUILD_TAB).accessibleDescription().startswith(
             fight_line(entry) + "\n"))

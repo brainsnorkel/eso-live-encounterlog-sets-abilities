@@ -11,7 +11,8 @@ through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested, a click on a player's pen/crit token through
-pen_crit_requested, a click on a death's Positions link through
+pen_crit_requested, a click on a healer's healing token through
+healing_done_requested (issue #242), a click on a death's Positions link through
 positions_requested (a moment of the fight, issue #214) and on the
 header's through fight_positions_requested.
 
@@ -53,7 +54,8 @@ from gui.death_render import (
 )
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
-    damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
+    damage_unit_from_href, healing_done_unit_from_href, healing_unit_from_href,
+    issues_unit_from_href, mastery_unit_from_href,
     pen_crit_unit_from_href, split_from_href, taken_unit_from_href,
 )
 from gui.glyphs import glyph_image
@@ -124,6 +126,9 @@ class FightView(QTextBrowser):
     # unit id of the player whose healing received line was clicked, on their
     # damage taken page (issue #196)
     healing_requested = Signal(str)
+    # unit id of the player whose healing token was clicked: their Healing
+    # done tab (issue #242)
+    healing_done_requested = Signal(str)
     # unit id and number from 1 of one death, in a list of a fight's deaths
     # (issue #196)
     recap_requested = Signal(str, int)
@@ -876,6 +881,10 @@ class FightView(QTextBrowser):
         unit_id = healing_unit_from_href(url.toString())
         if unit_id is not None:
             self.healing_requested.emit(unit_id)
+            return
+        unit_id = healing_done_unit_from_href(url.toString())
+        if unit_id is not None:
+            self.healing_done_requested.emit(unit_id)
             return
         if url.toString() == FIGHT_POSITIONS_HREF:
             self.fight_positions_requested.emit()
