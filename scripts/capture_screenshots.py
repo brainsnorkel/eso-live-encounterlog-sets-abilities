@@ -18,6 +18,9 @@ time, so the pictures stay in step with the app:
     search.png                      a search in the fight
     fight-deaths.png                the fight's Deaths tab, every death of the fight
     instance.png                    the Instance tab: the instance the fight belongs to
+    events-tab.png                  the Events tab: the fight's events in order, at its first death
+    player-actions.png              the Events tab with Who on the player who wrote the log
+    positions-window.png            the positions window at the fight's first death, paused
     build-window.png                the top damage dealer's player window, on its Build tab
     build-pen-crit.png              the same window on its Pen and crit tab
     build-resources.png             the same window on its Resources tab
@@ -196,8 +199,50 @@ def main():
     win.fight_tabs.setCurrentWidget(win.instance_view)
     pump(1)
     save(win, "instance.png")
+    # The Events tab (issue #214): everyone's events, at the first death;
+    # then one player's actions, the player who wrote the log picked in Who
+    events = win.events_view
+    win.fight_tabs.setCurrentWidget(events)
+    pump(1)
+    save(win, "events-tab.png")
+    local = next((p for p in fight.players if p.get("is_local") and not p.get("companion")), None)
+    if local is not None and events.show_player(str(local["unit_id"])):
+        pump(1)
+        save(win, "player-actions.png")
+        events.who_picker.setCurrentIndex(0)
+        pump(0.5)
+    else:
+        print("  (no logging player's casts in this fight: player-actions.png not written)")
     win.fight_tabs.setCurrentIndex(0)
     pump(0.5)
+
+    # The positions window (issue #214) at the fight's first death, that
+    # player selected, once the fight's lines are read again (a worker
+    # thread); paused, as a link opens it
+    deaths = sorted(fight.death_recaps or [], key=lambda r: r.get("time_ms") or 0)
+    locator = getattr(fight, "locator", None)
+    if deaths and locator is not None:
+        win.show_moment(fight, locator.start_ms + int(deaths[0]["time_ms"]),
+                        str(deaths[0]["unit_id"]))
+        window = win._positions_window
+        t0 = time.time()
+        while (window is not None and time.time() - t0 < 60
+               and not window.has_states_for(locator)):
+            pump(0.2)
+        pump(1)
+        if window is None:
+            # show_moment opens nothing for a log whose session it does not
+            # know (no BEGIN_LOG: death_render.positions_known)
+            print("  (no session start in this log: positions-window.png not written)")
+        elif window.has_states_for(locator):
+            save(window, "positions-window.png")
+        else:
+            print("  (the fight's lines were not read in time: positions-window.png not written)")
+        if window is not None:
+            window.hide()
+            pump(0.5)
+    else:
+        print("  (no death or no locator in this fight: positions-window.png not written)")
 
     # The player window (issue #196) for the top damage dealer, one picture
     # per tab, at its default size: on the offscreen platform's small

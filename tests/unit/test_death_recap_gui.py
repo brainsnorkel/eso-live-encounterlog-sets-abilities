@@ -197,6 +197,16 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         return render_death_recap_html(_entry_with_deaths(), unit_id,
                                        icons=self._cache(), **kwargs)
 
+    def test_a_death_with_no_death_line_says_so(self):
+        """Issue #221: a death counted from the player's health reaching 0,
+        its killer the last hit they took."""
+        from death_recap import HEALTH_CAUSE
+        from gui.death_render import NO_DEATH_LINE, render_death_recap_html
+        entry = _entry_with_deaths()
+        self.assertNotIn(NO_DEATH_LINE, render_death_recap_html(entry, '1'))
+        entry.death_recaps[0]['cause'] = HEALTH_CAUSE
+        self.assertIn(NO_DEATH_LINE, render_death_recap_html(entry, '1'))
+
     def test_each_death_has_its_chronology(self):
         html = self._html()
         self.assertIn('@tester', html)
@@ -259,6 +269,49 @@ class TestRecapRendering(DeathRecapGuiTestCase):
         self.assertIn('Death 1 of 1', html)
         self.assertIn('No damage or healing was logged in the 5 seconds', html)
         self.assertNotIn('<table', html)
+
+    def test_the_players_own_casts_sit_among_the_rows(self):
+        """Issue #214: the dying player's casts in the window, by time:
+        'Cast', with an extra's kind, and no health, source or amount."""
+        from gui.death_render import render_death_recap_html
+        entry = _entry_with_deaths()
+        self.assertIn('Damage and healing in the', render_death_recap_html(entry, '1'))
+        entry.death_recaps[0]['casts'] = [
+            {'offset_ms': -2000, 'ability_id': '2', 'ability': 'Crystal Fragments',
+             'icon': 'death_recap_test', 'extra': ''},
+            {'offset_ms': -600, 'ability_id': '3', 'ability': 'Light Attack (Lightning)',
+             'icon': '', 'extra': 'light'},
+        ]
+        html = render_death_recap_html(entry, '1', icons=self._cache())
+        self.assertIn("Damage, healing and the player's own casts in the", html)
+        one = html[:html.index('Death 2 of 2')]
+        order = [one.index(text) for text in
+                 ('>Swinging Cleave<', '>Crystal Fragments<', '>Radiating Regeneration<',
+                  '>Tremor<', '>Light Attack (Lightning)<', '>Hindered<')]
+        self.assertEqual(order, sorted(order))
+        self.assertIn('>Cast<', one)
+        self.assertIn('>Cast · light attack<', one)
+        self.assertIn('-2.0s', one)
+        # The cast's icon beside the killer line's and the two rows'
+        self.assertEqual(one.count('<img src="icon:death_recap_test"'), 4)
+
+    def test_every_extra_kind_has_its_label(self):
+        """A kind added to casts.EXTRA_KINDS needs its word in the recap's
+        Result column too."""
+        import casts
+        from gui.death_render import CAST_KIND_LABELS
+        self.assertEqual(set(CAST_KIND_LABELS), {kind for kind, _ids in casts.EXTRA_KINDS})
+
+    def test_casts_with_no_hit_or_heal_still_make_a_table(self):
+        from gui.death_render import render_death_recap_html
+        entry = _entry_with_deaths()
+        entry.death_recaps[1]['casts'] = [
+            {'offset_ms': -1000, 'ability_id': '2', 'ability': 'Crystal Fragments',
+             'icon': '', 'extra': ''}]
+        html = render_death_recap_html(entry, '77')
+        self.assertIn('>Crystal Fragments<', html)
+        self.assertIn('<table', html)
+        self.assertIn('No damage or healing was logged in the 5 seconds', html)
 
     def test_themes_use_different_colors(self):
         self.assertNotEqual(self._html(dark=True), self._html(dark=False))
@@ -827,6 +880,143 @@ class TestLiveTail(DeathRecapGuiTestCase):
         finally:
             worker.stop()
             win.close()
+
+
+def _located(entry):
+    """*entry* with a locator whose session is known, as the engine gives
+    a fight since issue #214 (fight_locator)."""
+    from fight_locator import FightLocator
+    entry.locator = FightLocator(
+        session_stamp='', session_epoch_ms=1_790_000_000_000, session_offset=0, zone_offset=0,
+        begin_offset=0, end_offset=0, start_ms=20_000, end_ms=120_000, map_at_lead=None,
+        units=())
+    return entry
+
+
+class TestPositionsLinks(DeathRecapGuiTestCase):
+    """Issue #214: each death's heading ends in a link to where everyone
+    stood at that moment, for a fight whose lines can be read again."""
+
+    def test_each_heading_ends_in_its_positions_link(self):
+        """After the heading's facts, in the pane's link colour: the
+        death's moment, the player; none for a fight without a locator or
+        whose session is not known."""
+        import re
+
+        from gui.death_render import positions_href, render_death_recap_html
+        from gui.fight_render import link_color
+        for dark in (False, True):
+            html = render_death_recap_html(_located(_entry_with_deaths()), '1', dark=dark)
+            headings = re.findall(r"<p[^>]*><a name='death-\d+'></a>.*?</p>", html)
+            self.assertEqual(len(headings), 2)
+            for heading, ms in zip(headings, (54000, 95000)):
+                self.assertIn(f'href="{positions_href("1", ms)}"', heading)
+                self.assertTrue(heading.endswith(f'color:{link_color(dark)}">Positions</a></p>'),
+                                heading)
+        unknown = _located(_entry_with_deaths())
+        unknown.locator = unknown.locator._replace(session_epoch_ms=None)
+        for entry in (_entry_with_deaths(), unknown):
+            self.assertNotIn('esolog:positions', render_death_recap_html(entry, '1'))
+
+    def test_the_hover_names_the_moment_and_no_one(self):
+        from gui.death_render import death_positions_tooltips, positions_href
+        tips = death_positions_tooltips(_located(_entry_with_deaths()))
+        self.assertEqual(sorted(tips), sorted([positions_href('1', 54000),
+                                               positions_href('77', 61000),
+                                               positions_href('1', 95000)]))
+        self.assertIn('Positions at 0:54', tips[positions_href('1', 54000)])
+        self.assertTrue(all('@' not in tip for tip in tips.values()))
+        self.assertEqual(death_positions_tooltips(_entry_with_deaths()), {})
+
+    def test_the_player_window_hands_the_link_on_with_its_fight(self):
+        """The link leaves the player window: it is handed on, with the
+        window's fight, for the main window's positions window; the player
+        window stays on its tab."""
+        from PySide6.QtCore import QUrl
+
+        from gui.death_render import positions_href
+        from gui.player_window import DEATHS_TAB, PlayerWindow
+        entry = _located(_entry_with_deaths())
+        window = PlayerWindow(icons=self._cache())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)
+        asked = []
+        window.positions_requested.connect(lambda *args: asked.append(args))
+        window.open(entry, '1', DEATHS_TAB, dark=False)
+        page = window.view(DEATHS_TAB)
+        self.assertIn('Positions at 1:35', page._tooltips[positions_href('1', 95000)])
+        page.anchorClicked.emit(QUrl(positions_href('1', 95000)))
+        self.assertEqual(asked, [(entry, '1', 95000)])
+        self.assertEqual((window.current_tab(), window.unit_id), (DEATHS_TAB, '1'))
+
+
+def _with_events(entry):
+    """*entry* with its events recorded (none in them: the link needs only
+    that the fight has them)."""
+    import fight_events
+    entry.events = fight_events.EventRecorder().fight_events(0, 1)
+    return entry
+
+
+class TestEventsLinks(DeathRecapGuiTestCase):
+    """Issue #214: each death's heading links to the Events tab around
+    that death, for a fight whose events were recorded."""
+
+    def test_each_heading_has_its_events_link_after_positions(self):
+        import re
+
+        from gui.death_render import events_href, render_death_recap_html
+        from gui.fight_render import link_color
+        html = render_death_recap_html(_with_events(_located(_entry_with_deaths())), '1')
+        headings = re.findall(r"<p[^>]*><a name='death-\d+'></a>.*?</p>", html)
+        self.assertEqual(len(headings), 2)
+        for heading, ms in zip(headings, (54000, 95000)):
+            self.assertIn(f'href="{events_href(ms, "1")}"', heading)
+            self.assertTrue(heading.endswith(f'color:{link_color(False)}">Events</a></p>'),
+                            heading)
+            self.assertLess(heading.index(">Positions<"), heading.index(">Events<"))
+        # Without a locator the Events link stands alone; without events, none
+        alone = render_death_recap_html(_with_events(_entry_with_deaths()), '1')
+        self.assertIn(">Events</a>", alone)
+        self.assertNotIn("esolog:positions", alone)
+        self.assertNotIn("esolog:events", render_death_recap_html(_entry_with_deaths(), '1'))
+
+    def test_the_link_and_its_hover(self):
+        from gui.death_render import (
+            death_events_tooltips,
+            events_from_href,
+            events_href,
+        )
+        # The player whose death it is, and the moment; no player for a
+        # moment that is no death (the buff strip's)
+        self.assertEqual(events_from_href(events_href(95000, "1")), ("1", 95000))
+        self.assertEqual(events_from_href(events_href(95000)), ("", 95000))
+        self.assertIsNone(events_from_href("esolog:positions/1/95000"))
+        self.assertIsNone(events_from_href("esolog:events/1/x"))
+        self.assertIsNone(events_from_href("esolog:events/95000"))
+        tips = death_events_tooltips(_with_events(_entry_with_deaths()))
+        self.assertEqual(sorted(tips), sorted(events_href(ms, unit) for unit, ms in
+                                              (("1", 54000), ("77", 61000), ("1", 95000))))
+        self.assertIn("Events around 1:35", tips[events_href(95000, "1")])
+        self.assertEqual(death_events_tooltips(_entry_with_deaths()), {})
+
+    def test_the_player_window_hands_the_link_on_with_its_fight(self):
+        from PySide6.QtCore import QUrl
+
+        from gui.death_render import events_href
+        from gui.player_window import DEATHS_TAB, PlayerWindow
+        entry = _with_events(_entry_with_deaths())
+        window = PlayerWindow(icons=self._cache())
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)
+        asked = []
+        window.events_requested.connect(lambda *args: asked.append(args))
+        window.open(entry, '1', DEATHS_TAB, dark=False)
+        page = window.view(DEATHS_TAB)
+        self.assertIn('Events around 1:35', page._tooltips[events_href(95000, '1')])
+        page.anchorClicked.emit(QUrl(events_href(95000, '1')))
+        self.assertEqual(asked, [(entry, '1', 95000)])
+        self.assertEqual((window.current_tab(), window.unit_id), (DEATHS_TAB, '1'))
 
 
 def _entry_no_deaths():

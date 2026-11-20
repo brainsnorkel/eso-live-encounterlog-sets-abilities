@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:2991](../src/esolog_tail.py#L2991)*
+*[src/esolog_tail.py:3730](../src/esolog_tail.py#L3730)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -34,22 +34,25 @@ source state's health is never the target's.
 
 ### Fights the game cuts in two
 
-*[src/esolog_tail.py:89](../src/esolog_tail.py#L89)*
+*[src/esolog_tail.py:94](../src/esolog_tail.py#L94)*
 
-The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull.
+The game ends and restarts combat in the middle of a fight, most often when the logging player is resurrected: END_COMBAT, then BEGIN_COMBAT a moment later. 48 logs of April to October 2026 held 53 such pairs, 0 to 484 ms apart, 45 of them straight after the player accepted a resurrection. A BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy the group hit in the fight's last seconds is still alive; none of the 51 pairs between half a second and three seconds apart was the same pull. Later than that, it continues a boss fight when the group has fought on its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS, issue #162).
 
 ### ESOLogAnalyzer._continues_last_fight
 
-*[src/esolog_tail.py:1978](../src/esolog_tail.py#L1978)*
+*[src/esolog_tail.py:2163](../src/esolog_tail.py#L2163)*
 
 Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
-just ended instead of starting one (see COMBAT_RESUME_MS): it follows
-the END_COMBAT closely, and an enemy the group was hitting when the
-fight ended is still alive.
+just ended instead of starting one: it follows the END_COMBAT
+closely and an enemy the group was hitting when the fight ended is
+still alive (see COMBAT_RESUME_MS), or, however long after, the
+fight had boss damage, the group has fought on since and is still
+hitting one, the same record, its last hit since END_COMBAT and
+within FIGHT_ON_MS (waiting_hits).
 
 ### ESOLogAnalyzer._resume_last_fight
 
-*[src/esolog_tail.py:1993](../src/esolog_tail.py#L1993)*
+*[src/esolog_tail.py:2194](../src/esolog_tail.py#L2194)*
 
 Reopen the encounter END_COMBAT closed. Its damage, deaths and
 players are kept, and the entry frontends already have is brought up
@@ -57,7 +60,7 @@ to date when the fight ends (see _publish_fight).
 
 ### A death just after END_COMBAT
 
-*[src/esolog_tail.py:83](../src/esolog_tail.py#L83)*
+*[src/esolog_tail.py:88](../src/esolog_tail.py#L88)*
 
 The blow that kills the last player standing ends combat, and that player's death event is written after END_COMBAT (about 85 ms later in live logs). A player death this soon after END_COMBAT belongs to the fight that just ended.
 
@@ -65,7 +68,7 @@ The blow that kills the last player standing ends combat, and that player's deat
 
 ### ESOLogAnalyzer._note_enemy_met
 
-*[src/esolog_tail.py:2117](../src/esolog_tail.py#L2117)*
+*[src/esolog_tail.py:2391](../src/esolog_tail.py#L2391)*
 
 A combat event of *result* and *hit_value*, or a cast
 (fight_opener.CAST, value 0), at *timestamp_ms*, with each unit's
@@ -109,14 +112,15 @@ waiting_hits). A cast counts as the opener's does: five
 of the survey's empty fights stay listed for a monster's cast at a
 player or a player's at a boss, acts the opener names.
 
-## Fight boundaries: the hits before the line
+## Fight boundaries: the hits before the line and the group fighting on
 
 ### src/waiting_hits.py
 
 *[src/waiting_hits.py:1](../src/waiting_hits.py#L1)*
 
-The group's hits between fights, waiting for the next fight's line (engine
-side, no Qt). Issue #162, part 1.
+The group's hits between fights: waiting for the next fight's line, or the
+group fighting on after the fight that ended (engine side, no Qt). Issue
+#162, parts 1 and 2.
 
 Design: The hits before the line. A fight runs from the logging player's
 BEGIN_COMBAT to their END_COMBAT, and the group's first hits often land
@@ -191,28 +195,92 @@ with no enemy took hits on new enemies only (in Sanity's Edge the next
 pack's Wamasus, units 602 to 626, where the fight before had fought unit
 333).
 
+The group fighting on (part 2). END_COMBAT is the logging player's line as
+well: when they die, or step out of combat while the rest of the group
+fights on, the group's hits after it went on the closed encounter, which
+nothing built again, and counted in no fight. In the survey's 395 split
+logs, 235 fights had such hits on their own enemies before the next line,
+119.5 M of damage: a fifth or more of the fight's in 25, and in a Hel Ra
+Citadel boss fight 16.4 M of its 48.2 M, the group fighting on for 64.7 s
+and three of them dying as they did. From a listed fight's END_COMBAT (a
+blip settles nothing, so none of its), a hit of the group's on an enemy
+record the fight hit is the group fighting on while it comes within
+FIGHT_ON_MS of END_COMBAT or of the last such hit: the fight's encounter
+counts it as a hit in it, at its own time, DoT ticks too. The 3 s are the
+survey's knee: a pause between two such hits was under 0.7 s in 99% of
+them, and 3 s takes 99.4% of their damage where 15 s would add 0.3%.
+
+Once the group has stopped, at the first log line past the wait (read at
+the line's own time, which the parser does not give every event), at the
+next fight's line, at a zone change or a new session, or at the log's end
+(ESOLogAnalyzer.finish, which a replay calls), the fight is built again,
+and the entry frontends hold takes what those hits decide
+(take_damage_figures): the dps and its time, the graph's series, each
+row's damage figures and the rows' order, the name shown (its most
+damaged enemy), the penetration figures and the pull, read again against
+the pull before it and with the boss as the group left it. The rest stays
+as END_COMBAT left it, though the encounter has gone on gathering: the
+deaths after LATE_DEATH_GRACE_MS, healing, damage taken, a player who came
+after, the build findings (a tank's share of the damage among them), the
+recaps, and the fight's time, which is the log's (the maintainer's
+decision 6). That build has no side effect (the builder's *again*): a
+tracker pruned then would forget the casts under way, and in a replay the
+next fight counted a cast written over its line twice, in 12 rows.
+
+Replayed through 0.39.0 and through this rule (411 split logs, 9,309
+fights), 186 fights take hits fought on without being carried on: 80.6 M,
+a median 0.81% of the fight's damage (p90 13.0%, over a fifth in 18).
+Their group dps moves a median +0.12%, lower in 61 and higher in 124,
+since a long mop-up after a kill lowers it: in a Hel Ra Citadel Yokeda
+Rok'dun kill the group fought the adds on for 104 s after the 118 s fight,
+and its dps reads 321k, not 500k, the boss dps unchanged, since it divides
+by the hits on the bosses. No pull's verdict changes in them, and nothing
+but the damage figures moves.
+
+A boss fight carried on (decision 5's b). Combat beginning again later
+than COMBAT_RESUME_MS after END_COMBAT carries the fight on, however long
+after, when the fight had boss damage, the group has fought on since
+without a pause of FIGHT_ON_MS, and an enemy it was hitting as the fight
+ended (the engine's _engaged_at_end, the same record, alive) took one of
+its hits since END_COMBAT within FIGHT_ON_MS of the line: one fight from
+its first line to its last, the deaths, healing and other hits between
+the lines its own, as a fight the game cut in two. Without the boss rule
+the replay carried 51 fights on, trash among them: in four Hel Ra Citadel
+runs the gargoyles the group was still finishing headed the Yokeda kill
+(a 107 s kill read as a 205 s fight), and the maintainer chose boss pulls
+only (2026-11-11). With it, 39 fights are 15 boss pulls again, 8 of them
+Lord Falgravn's in Kyne's Aegis, which the logging player's deaths had cut
+into as many as six parts (Lieutenant Njordal, added friendly, fights on
+its floors), the others the Yokeda twins, Ansuul, Z'Maja and an overland
+Dread Harvester; their pulls, Left or Lost sight on each cut part, now
+read 10 kills and 5 wipes.
+
 Where the hits wait: here, one ledger for the analyzer (WaitingHits), told
-of each fight boundary as the opener's memory is. Each hit after
-END_COMBAT still goes on the closed encounter as it comes, since a fight
-the game cut in two reopens that encounter with them, its cast watchers
-and all; the ledger keeps a copy, at most the last 10 s, read as the
-closed encounter read it (the kinds once, for both): the engine's record
-of its enemy, so a unit id handed out again is not the ended fight's
-enemy; whose it is (CombatEncounter.hitter_of), so a player back on a new
-unit id, re-keyed at the line, keeps their hits and a pet removed before
-the line (a Blastbones blows up and goes) is its owner's; and its kinds.
-The line takes the copies, the hitters still on the new fight's list, and
-puts their casts back in the kinds index it has just emptied, so a cast
-that strikes another unit after the line is area on both sides (in the
-replay 1.0 M of 75 G moved from single to area, in 59 fights, and 7.9 M of
-area damage was read by its cast rather than by the ability's session).
-END_COMBAT counts them by the same code as any hit, before the entry is
-built, once the fight's length shows it is no blip: nothing reads a
-fight's damage before then. Then the waiting starts again, and the ended
-fight's enemies are the records it hit. A fight carried on keeps the
-copies dealt before its END_COMBAT (a blip's, waiting on) and drops the
-later ones, which are on its encounter; a held combat listed late does the
-same, its entry having the later ones.
+of each fight boundary as the opener's memory is. After a listed fight's
+END_COMBAT a hit that is not the group fighting on waits here alone, never
+on the closed encounter, whose entry is built again with the hits fought
+on: read as that encounter would have credited it (CombatEncounter.
+read_hit, the kinds once): the engine's record of its enemy, so a unit id
+handed out again is not the ended fight's enemy; whose it is
+(CombatEncounter.hitter_of), so a player back on a new unit id, re-keyed
+at the line, keeps their hits and a pet removed before the line (a
+Blastbones blows up and goes) is its owner's; and its kinds. The ledger
+keeps the last 10 s of them, and every one since END_COMBAT while the
+group may still fight on: a fight carried on takes those back
+(carried_on) and counts them by the same code as any hit, its earlier
+copies (a blip's) waiting on. The line takes the copies, the hitters
+still on the new fight's list, and puts their casts back in the kinds
+index it has just emptied, so a cast that strikes another unit after the
+line is area on both sides (in the part 1 replay 1.0 M of 75 G moved from
+single to area, in 59 fights, and 7.9 M of area damage was read by its
+cast rather than by the ability's session). END_COMBAT counts them by the
+same code as any hit, before the entry is built, once the fight's length
+shows it is no blip: nothing reads a fight's damage before then. Then the
+waiting starts again, the ended fight's enemies are the records it hit,
+and the group may fight on them. A combat held for want of an enemy has
+no entry: its encounter takes each hit as it comes and a copy waits, and
+listed late it drops the copies since its END_COMBAT, its entry having
+them.
 
 ## The fight's opener
 
@@ -315,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:4911](../src/esolog_tail.py#L4911)*
+*[src/esolog_tail.py:5877](../src/esolog_tail.py#L5877)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -358,7 +426,7 @@ backward BEGIN_LOG search is capped rather than unbounded.
 
 ### infer_player_role
 
-*[src/esolog_tail.py:369](../src/esolog_tail.py#L369)*
+*[src/esolog_tail.py:377](../src/esolog_tail.py#L377)*
 
 Infer player role (T/H/D) from resources, weapon and healing heuristics.
 
@@ -715,6 +783,42 @@ of 2026-10-27), and a synergy can write two ability ids (Healing
 Combustion, 63507 then 95042, on the same timestamp). A cast is therefore
 one castTrackId per caster, whatever the lines under it.
 
+Design: a track id written again after its END_CAST (issue #226). Over the
+391 split logs of 2026 (5.3 million BEGIN_CAST lines), 388,764 lines reuse
+a track id their caster had already used. Most are the same cast. A
+channelled heavy attack's or a channel's later lines come with no END_CAST
+between (145,778, 99.99% within 200 ms), and a synergy's or a multi-hit
+skill's second line comes in the same millisecond. But 92,309 players'
+lines, which the engine merged, came at a later millisecond after the
+track's END_CAST, in two kinds:
+- A synergy taken again under its first take's track id: Healing
+  Combustion 477 times, Combustion 42. A new cast.
+- A proc the game writes as an instant cast, never on anyone's bar, under
+  the track id of its first tick, every tick: 91,230 lines. Meridia's
+  Favor about every second (43,625), Highland Sentinel and Peace and
+  Serenity every second, Blood Magic, the scribed banner's tick every five
+  seconds, Grundwulf, Obsidian Stance.
+A cast is a press (Chris's choice), so an ability its caster writes again
+on its own track after END_CAST, at a later millisecond, is a proc for the
+rest of the session: it leaves that caster's counts, the extras and casts
+per minute, unless it is a cast of a skill on their bar, matched as the
+slot counts are (on_bars): Chakram of Destiny, slotted as 186207, is
+pressed as 194237 and pressed again on the same track. An extra (a light
+or heavy attack, a dodge, a potion) is never a proc. Over the 391 logs the
+rule finds 14 procs, all players' (none a companion's, an extra or a
+werewolf skill). A proc is known from its second tick, so a fight whose
+entry was built between its first two ticks keeps that first one: at most
+one cast, once a session. Before, each proc counted once a fight, and a
+synergy taken again not at all. A track still
+written when a fight's entry is built carries over to the next fight:
+the banner pressed in one fight ticks on in the next, and before, its
+first tick there counted as a press (638 players' fights over the 391
+logs, every one a Shocking, Magical or Fiery Banner). A cancelled cast's
+END_CAST (PLAYER_CANCELLED) never reaches the engine, as the parser
+rejects it, so a track id reused after one stays the same cast; a slotted
+skill's own effect written later on its track (the banner's first tick, a
+werewolf ultimate's form) stays with the press.
+
 A fight's casts are those begun from its start to its end, the engine's
 fight window (BEGIN_COMBAT to END_COMBAT). Combat Metrics counts the same
 way: for the logging player in that fight it showed Force Pulse 37,
@@ -775,6 +879,13 @@ are not skills were those ids and Mount Up. So its extras line has kinds
 of its own (COMPANION_EXTRA_KINDS), Block among them, which a player's
 never needs (a player's block writes no cast), and a player's 'casts'
 stays as it was.
+
+Each cast the recorder keeps also holds the unit it was aimed at, named
+as it is noted, and the time of the END_CAST its track wrote next, with
+whether that said INTERRUPTED (issue #214): the Events tab's actions show
+them, from the fight entry's packed copy (fight_casts). Nothing here
+counts them, so the counts are as they were; cast_records gives the
+counts' casts one by one.
 
 ## Magicka, stamina and ultimate spent and gained
 
@@ -1107,6 +1218,87 @@ the game after this file was built shows no weight until it is regenerated.
 Run after an ESO update that adds gear (needs network access):
     python scripts/generate_armor_weights.py
 
+## Perfected and normal pieces of one set
+
+### family_counts
+
+*[src/player_build.py:472](../src/player_build.py#L472)*
+
+Design: Perfected and normal pieces count together. A trial or
+arena set comes in two versions with two set ids, and the game counts
+their pieces together towards the set's bonuses: two perfected and
+three normal pieces of Slivers of the Null Arca are five pieces of it.
+Only the perfected version's own extra line needs its count in
+perfected pieces alone.
+
+Measured on 411 split logs (issue #215), over the 15 sets someone wore
+in both versions, by whether the wearer was the source of an effect of
+the set's in that session:
+- five pieces only with both versions counted: 158 of 162 sessions;
+- five pieces of one version: 3,537 of 3,594;
+- below five with both counted: 1 of 62.
+The four without the effect wore Mora Scribe's Thesis (3 of its 6;
+one version alone shows it in 19 of 29) and Claw of Yolnahkriin (its
+one session; the buff needs a taunt). Minor Slayer, the three-piece
+line, was on all 28 PLAYER_INFO lines of the one session that reached
+three only together, and on none of the 209 lines below three.
+
+So: set id -> [pieces active on the front bar, on the back bar], as
+piece_counts gives them, but a set worn in both versions is one entry,
+under the normal version's id, with the two counts added per bar. A set
+worn in one version keeps that version's id, so a caller's table has to
+list both ids, as SLAYER_SETS and GROUP_SETS do. What needs perfected
+pieces alone reads piece_counts. *pairs* is {perfected id: normal id},
+the bundled set data's by default (perfected_pairs).
+
+### table_sets_worn
+
+*[src/pen_crit.py:419](../src/pen_crit.py#L419)*
+
+[(set id, its table entry, [pieces on the front bar, on the back])]
+for the worn sets the offense table lists, in set id order.
+
+A set's perfected and normal pieces count together towards the lines
+the two versions share (player_build.family_counts has the measure). So
+when both versions are worn and the table lists both, the lines are
+read once, from the normal version's entry, at the two counts added per
+bar: two perfected and two normal pieces of Ansuul's Torment give its
+four-piece penetration. A perfected version the table lists alone has
+only its own extra line there (an arena weapon's two-piece penetration),
+which needs its count in perfected pieces, so it keeps them
+(tests/unit/test_pen_crit.py holds the table to that shape). *pairs* is
+{perfected id: normal id}, the bundled set data's by default.
+
+### set_entries
+
+*[src/gui/fight_render.py:1250](../src/gui/fight_render.py#L1250)*
+
+Design: Perfected and normal pieces on the gear line. The log gives
+a perfected set and its normal version two set ids and two names, but
+the game counts their pieces together towards the set's bonuses (only
+the perfected version's own extra line needs five perfected pieces).
+So the gear line shows the pair as one entry, placed by the total:
+{'count', 'name'} for a set worn in one version, with 'perfected' (the
+perfected pieces among them) and 'perfected_name' added when both are
+worn, 'name' then being the normal version's. Entries keep the engine's
+order, most pieces first, a pair standing where its total puts it and
+ties staying as they came (issue #215).
+
+The entry reads '5x Slivers of the Null Arca (2 perfected)': the total
+first, since the first thing asked of a gear line is how much of the
+set is there, and it is the shortest of the forms tried, the one that
+kept a four-set line on one line of a 560 px pane. The name opens the
+normal version's ESO-Hub page and '2 perfected' the perfected one's.
+
+The counts are the engine's, as the line has always had them: every
+piece worn, the weapons of both bars among them. So a set with a
+weapon on each bar reads one or two above what either bar has active,
+which the Build tab's Pcs column gives per bar. Over 411 split logs
+that is 88 of the 242 builds wearing a set in both versions and 747 of
+the 19,952 wearing one; the line reads five or more where neither bar
+has five in 1 and 12 of them (issue #219 asks which count the line
+should show).
+
 ## Set names
 
 ### src/gear_set_database.py
@@ -1260,6 +1452,128 @@ Run after a patch, or when the logs hold more sets, then review the printed
 table before committing the file:
     python scripts/generate_set_buffs.py                    # the app's split folder
     python scripts/generate_set_buffs.py --dir D:/esologs/splits
+
+### sets_behind
+
+*[src/set_text.py:195](../src/set_text.py#L195)*
+
+The sets whose own id of the buff *buff_name* is among *given*, the
+set-buff ids a caster had up in a fight; in name order. [] for a row
+that is not named after a buff of the table.
+
+Design: The set behind a buff. A group buff from a set is written to the
+log twice: once under the buff's own id, the one the uptime strip's row
+follows (Major Courage 109966, Major Slayer 93109, Major Force 61747), and
+once under an id of the set's own (Spell Power Cure's 66902, Roaring
+Opportunist's 135923, Saxhleel Champion's 154830), from the same caster to
+the same receivers. In a Dreadsail Reef log both ids of each pair were
+gained the same number of times by the same casters on the same receivers
+(288, 56 and 122 times). So a row's own intervals cannot say which set a
+caster's share came from: they carry the buff's id whatever its source.
+What can is the set's own id: the engine notes, per fight, which of the
+ids in data/sets/set_buffs.json each player had up on anyone during it
+(SetBuffRecorder; the entry's player 'set_buffs'), and a row named after a
+buff reads its casters' sets from there (sets_behind). The label is per caster and fight:
+a caster who gave the buff from a set and by another means too reads
+"from <set>" for their whole share. The table (scripts/generate_set_buffs.py)
+knows 34 ids of 24 sets, those someone in the surveyed logs wore, and no id
+that several sets write.
+
+### SetBuffRecorder
+
+*[src/set_text.py:70](../src/set_text.py#L70)*
+
+Who had a set's own buff id up on anyone, and when, in raw log
+milliseconds: given_in() reads a fight's window out of it, as the buff
+timeline's recorder does for the strip's rows.
+
+A fight's casters are those with the id up during the fight, not those
+whose GAINED line fell inside it: a buff gained just before the pull
+and still up is the wearer's in that fight, as the row shows it, and a
+refresh (UPDATED) of a buff this recorder never saw gained counts too.
+An interval runs from the first GAINED or UPDATED of an id on a unit to
+its FADED, and is credited to every caster seen on it while it was up
+(two wearers refresh each other's buff, and FADED is not relied on to
+name the caster). The game writes no FADED for a unit that is removed
+or dies, and unit ids start afresh in a new zone, so forget_unit and
+zone_changed end the open intervals, as effect_rules' tracker does.
+
+## Set text in the hovers, and hover text from the keyboard
+
+### src/set_text.py
+
+*[src/set_text.py:1](../src/set_text.py#L1)*
+
+A set's bonus text, and the set behind a Major or Minor buff (issue #79).
+
+Design: Set text in the hovers. The game's client holds no set bonus text
+the app can read (it comes from the server through the add-on API), so the
+text is UESP's, bundled per set id in data/sets/bonuses_en.json by
+scripts/generate_set_offense.py (CC-BY-SA 2.5, credited in the README and
+the About box, and by a short line under each hover that shows it). A set
+link's click target stays the set's ESO-Hub page.
+
+What a hover shows is the lines the player has, not the set's whole text:
+the lines at or below the pieces active on their better bar. A set's whole
+text runs to 573 characters and one five-piece line to 496, and a player
+wearing three pieces has no use for the five-piece line. A set worn in both
+versions has the lines the two share at the two counts added, as the game
+counts them (player_build.family_counts), and the perfected version's own
+extra line only at its count in perfected pieces.
+
+Figures are shown at their top value: UESP writes a figure that scales with
+level as a range, "Adds 15-657 Critical Chance", low value first, and every
+one of the 1,970 ranges in the bundled text reads that way (18 of them
+percentages from 0, 12 plain figures from 0; none is a duration or a
+distance; tests/unit/test_set_text.py holds the file to it). A player at
+the level cap has the high value, so the text reads "Adds 657 Critical
+Chance". The bundled file keeps UESP's text as it came.
+
+### set_hovers
+
+*[src/gui/fight_render.py:1348](../src/gui/fight_render.py#L1348)*
+
+Design: A set link's hover. What each set link of one player
+carries, by the set's name as the link shows it (a set worn in both
+versions has two names, and two links): {'fragment', 'split', 'lines'}.
+
+'lines' are the set's bonus lines the player has (set_text.active_lines):
+those at or below the pieces active on their better bar, which the
+entry's gear rows carry as the Pcs column shows them (a set worn in both
+versions at the two counts added, player_build.family_counts), and its
+perfected line at the perfected pieces of that bar, counted from the
+rows (piece_counts). With the two bars level, the better bar is the one
+with more perfected pieces. An entry without gear rows falls back to
+the gear line's own counts. 'split' is '5
+pieces: 2 perfected, 3 normal' for a set worn in both versions.
+
+'fragment' goes on the link's address: the pane keeps one hover per
+address for the whole fight, and two players can wear one set at
+different counts, so the address says which hover is meant, as a
+scribed skill's does for its scripts. ESO-Hub ignores it, and the same
+address is built for the gear line, the Build tab's gear rows and a
+finding's set link, so all three show the same hover (issue #79).
+
+### FightView._show_key_tip
+
+*[src/gui/fight_view.py:325](../src/gui/fight_view.py#L325)*
+
+Design: Hover text from the keyboard. A link's hover text was the
+mouse's alone: Qt reports a hovered link (highlighted) and nothing
+for one Tab moves to, so a set's bonus lines, an ability's name
+behind its icon or a death's cause could not be read without a
+pointer. The reader's own Tab or Shift+Tab now shows the text of the
+link it lands on, just under the link's line, where the pointer may
+be anywhere; a link without text, or leaving the page, takes the
+last one away. Not the step keeping_place takes to give a link its
+focus back after a redraw: the page redraws on every live fight
+update, and the text would come back each time (issue #79).
+
+Qt takes a tooltip down on a mouse press, the wheel or a change of
+focus, but not on a key, so text shown for a key would stay over a
+page that scrolled or changed under it: it is taken down when the
+page is drawn anew, when the reader scrolls and when the focus
+leaves (_hide_key_tip).
 
 ## Game data against the game's version: the staleness check
 
@@ -1702,7 +2016,7 @@ or from a reply already on disk, such as the one the esobuild export keeps:
 
 ### _pen_crit_html
 
-*[src/gui/build_render.py:717](../src/gui/build_render.py#L717)*
+*[src/gui/build_render.py:722](../src/gui/build_render.py#L722)*
 
 The Penetration and Critical damage sections (pen_crit): the player's
 own rows and the assumed Champion Point rows, the fight's debuffs on
@@ -1724,7 +2038,7 @@ an absence would draw the eye to nothing.
 
 ### _heading_html
 
-*[src/gui/build_render.py:549](../src/gui/build_render.py#L549)*
+*[src/gui/build_render.py:554](../src/gui/build_render.py#L554)*
 
 A section heading with its rule, as a one-cell table head: Qt rich
 text draws borders on table cells and never on a <p>, so the Damage
@@ -1836,9 +2150,10 @@ rule, player-fights / distinct characters in that survey:
   buff for the whole group that holds only while five pieces are active.
   The rule cannot be general: 38% of all five-piece wearings in the survey
   were one-bar, which is normal for proc sets and front-bar damage sets.
-  Piece counts per bar come from player_build.piece_counts (a two-hander
-  counts as two). A build without a back-bar weapon, or wearing Oakensoul
-  Ring, is not reported.
+  Piece counts per bar come from player_build.family_counts (a two-hander
+  counts as two, and a set's perfected and normal pieces count together,
+  as they do in the Minor Slayer and proc-set checks). A build without a
+  back-bar weapon, or wearing Oakensoul Ring, is not reported.
 - **A tank with no taunt or pull** (95 / 3 with the gates below; added the
   same day at the maintainer's request). The health pool alone is not a
   tank: of 3,154 health-dominant player-fights in the same logs, 762 had
@@ -2003,7 +2318,7 @@ the weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:1099](../src/build_issues.py#L1099)*
+*[src/build_issues.py:1117](../src/build_issues.py#L1117)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, a second copy of a group buff set or a
@@ -2015,7 +2330,7 @@ instead of counting twice. reset() at BEGIN_LOG.
 
 ### GroupBuffCredit
 
-*[src/build_issues.py:825](../src/build_issues.py#L825)*
+*[src/build_issues.py:841](../src/build_issues.py#L841)*
 
 Whose copy of a group buff set's buff each player had, over time
 (issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
@@ -2264,7 +2579,7 @@ start to its death as forget_unit reported it, or the fight's end.
 
 ### CombatEncounter.fight_units
 
-*[src/esolog_tail.py:962](../src/esolog_tail.py#L962)*
+*[src/esolog_tail.py:1030](../src/esolog_tail.py#L1030)*
 
 What effect_rules measures a fight's rules on, unit id -> (kind,
 since_ms, gone_ms): the players ('self' or 'group'), and the
@@ -2305,13 +2620,13 @@ here, so the next Save leaves it out of the file.
 
 ### Taunts
 
-*[src/esolog_tail.py:102](../src/esolog_tail.py#L102)*
+*[src/esolog_tail.py:114](../src/esolog_tail.py#L114)*
 
 The game puts one Taunt debuff on a taunted enemy whatever skill taunted, and writes a TAUNTED combat event that shares its cast tracking id with that skill's own cast and hits, which is how the skill is known: no list of taunt skills is needed, and a skill logged under another id (Destructive Clench with an ice staff is logged as Frost Clench) is matched to its bar slot by the icon the two share (mark_taunt_slots). The debuff's spans on each enemy give the uptime line's Taunt item through the default rule ``Taunt = 38254 on boss each`` (effect_rules): each boss's taunted share of its time in the fight, averaged over the bosses, the pack's mobs in a fight without a boss. Checked on 1,361 taunts in twelve logs of October 2026.
 
 ### mark_taunt_slots
 
-*[src/esolog_tail.py:419](../src/esolog_tail.py#L419)*
+*[src/esolog_tail.py:427](../src/esolog_tail.py#L427)*
 
 Put 'taunt': True on each bar slot the player taunted with: the slot
 whose ability id a taunt names, or, for a taunt logged under an id no
@@ -2395,7 +2710,7 @@ of the fight's largest, and a line here is all it takes.
 
 ### What counts as damage
 
-*[src/esolog_tail.py:119](../src/esolog_tail.py#L119)*
+*[src/esolog_tail.py:131](../src/esolog_tail.py#L131)*
 
 A hit on an enemy is written with one of several results, and the dps figures sum the hit value of these: DAMAGE and CRITICAL_DAMAGE (direct hits), DOT_TICK and DOT_TICK_CRITICAL (each tick of a damage-over-time effect), BLOCKED_DAMAGE (what got through a blocking enemy) and DAMAGE_SHIELDED (what an enemy's damage shield absorbed). That is the set Combat Metrics (LibCombat) sums for damage done, and matches ESO Logs, which counts absorbed damage as damage done. Not counted: IMMUNE (the log writes a hit value the target never took), REFLECTED, FALL_DAMAGE, and the overflow field (overkill past the target's remaining health; Combat Metrics drops it too). Until 0.9.2 only the two direct-hit results counted: measured on 29 of Chris's split logs (990 dungeon and arena fights, 34 trial fights) the ticks were 26% of all damage dealt, and the top player's dps in a boss fight of a minute or more was understated by a median 35% in dungeons and 52% in trials, up to 79%. Shield absorbs were 2% and blocked hits 0.2%.
 
@@ -2403,7 +2718,7 @@ A hit on an enemy is written with one of several results, and the dps figures su
 
 ### Dps time
 
-*[src/esolog_tail.py:142](../src/esolog_tail.py#L142)*
+*[src/esolog_tail.py:154](../src/esolog_tail.py#L154)*
 
 Every dps figure divides by the span of the hits it sums, first hit to last, floored at one second, and not by the fight time (BEGIN_COMBAT to END_COMBAT), because that is Combat Metrics' definition (LibCombat's dpstime) and the number players compare against. A player's dps is their damage over the span of their own hits, a boss figure the boss damage over the span of the hits on the bosses, the group's over the span of the group's. The fight time is still what the history line and header show; the header adds the group's dps time when it differs. The long form, with what Combat Metrics does about overkill, shields, pets and the breakdown by ability, is damage_stats' module docstring.
 
@@ -2574,11 +2889,26 @@ time axis takes a wider step than the timeline strip's for a long fight
 when its labels would run together: the chart is narrower in the tab than
 it was in the window.
 
+The group fighting on after the fight's END_COMBAT counts in the fight
+(waiting_hits, issue #162): the chart then runs to the group's last hit,
+a dashed line where the fight ended, so that damage keeps its own seconds
+instead of piling into the fight's last.
+
+A moment can be marked on the chart (issue #214): an Events row asked for
+with Ctrl+G is a line down both panels in the palette's highlight, with
+its time and what happened at the plot's top, on the side that has room.
+The chart and the Events tab count time alike, from the fight's start, so
+the mark needs no conversion. It stays through the same fight drawn again
+and goes with the fight. A double-click on the chart asks for the events
+around the second under it (moment_requested); the keyboard's way to a
+moment is the Events tab itself, whose rows the arrow keys walk. The mark
+is in the chart's description for a screen reader, after its lines.
+
 ## Pets: whose damage and healing they are
 
 ### CombatEncounter.track_pet_ownership
 
-*[src/esolog_tail.py:658](../src/esolog_tail.py#L658)*
+*[src/esolog_tail.py:711](../src/esolog_tail.py#L711)*
 
 Record *pet_unit_id* as a pet of the player who owns it, so its
 damage and healing count as that player's; forget it when the owner
@@ -2601,7 +2931,7 @@ code guessed pets from EFFECT_CHANGED targets and never found one.
 
 ### CombatEncounter.add_damage_to_player
 
-*[src/esolog_tail.py:804](../src/esolog_tail.py#L804)*
+*[src/esolog_tail.py:858](../src/esolog_tail.py#L858)*
 
 Credit damage dealt by *unit_id* to the player it belongs to:
 the player themself, or the owner of a pet (see
@@ -2633,7 +2963,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:4115](../src/esolog_tail.py#L4115)*
+*[src/esolog_tail.py:5075](../src/esolog_tail.py#L5075)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -2881,7 +3211,14 @@ shades, and a few seconds-long scripted starts.
   the group dead when the fight ended. That last test caught 5 fights
   whose death line never reached the log (Tremorscale at 0.2%, Eliam
   Merick at 0.1%): none was pulled again, and 4 were followed by the next
-  boss. A kill with half the group dead is still a kill: 174 fights.
+  boss. A kill with half the group dead is still a kill: 174 fights. A boss
+  left under NEAR_ZERO_KILL_PCT with one of the group standing died: once
+  the deaths the log writes no line for counted (issue #221), Sanity's
+  Edge's Archwizard Twelvane, who leaves his phase at 7 of 124 million
+  health and writes no death line, read as a wipe with exactly half the
+  group dead, the Chimera kill beginning 0.6 s later. Over the 391 split
+  logs no other pull ends that close to 0 without a kill. With every
+  player dead it stays a wipe, however close.
 - **Wipe**: not a kill, and at least half the fight's players were dead
   when it ended, not revived before END_COMBAT. "Half the group died at
   some point" is the wrong test: in a long fight with resurrections every
@@ -2908,12 +3245,20 @@ Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
 read as kills, and the next pull of the pair shows the group still at it.
 
 Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
-issue #184) opens a span; the next line that carries their state with
-health above 0 closes it, at least
-REVIVE_MIN_MS after the death, since the lines of the killing blow carry
-the corpse's 0. END_COMBAT closes any span still open, and those still
+issue #184) opens a span, and so does a death the log wrote no such line
+for: the player's state reading health 0 for ZERO_HEALTH_HOLD_MS with no
+death line (issue #221, see death_recap), the span from the first 0. The
+next combat line that carries their state with health above 0 closes it,
+at least REVIVE_MIN_MS after the death, since the lines of the killing blow
+carry the corpse's 0. A corpse's own states close none: its healing ticks
+write health with magicka and stamina at 0, and its regeneration tick
+writes health equal to its own regeneration, which later lines repeat for
+seconds (#221, esolog_tail's _note_zero_state). END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
-two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+two (COMBAT_RESUME_MS), or carried on while the group fought on
+(waiting_hits), reopens them, but for a player up again between the
+lines, dead until then; a death between the lines is the fight's too
+should it carry on. A span starts at the fight's start
 at the earliest: a player who fell before the pull is dead from it, not
 from the fall. Deaths the log never saw (the others' after the logging
 player released) are missing from the counts, so time dead, read from
@@ -3094,6 +3439,25 @@ logs):
   END_COMBAT. A FALLING line came before only that last one, and FALLING
   lines carry whatever ability the player had (Bash, a fire or shock id),
   so they make no recap row.
+- Some player deaths have no death line at all (issue #221): 1,366 of the
+  17,976 deaths in fights in the maintainer's 391 split logs (7.6%), from
+  7.1% in dungeons to 8.0% in arenas. The player's state reads health 0,
+  they stay down, and they come back by a resurrection or a release. The
+  engine counts such a death when the player's state, on any line that
+  carries it, reads 0 for pull_outcome.ZERO_HEALTH_HOLD_MS and no death
+  line names the player meanwhile (esolog_tail's _note_zero_state); one up
+  again sooner was no death. It is timed at the first 0. Its killer and
+  ability are the hit that left the player at 0: the line that first
+  showed the 0, or one logged up to KILLING_BLOW_GRACE_MS after it
+  (blow_fields), else the last hit on the player at or before it,
+  KILLER_WINDOW_MS back at most (last_hit_fields; often a hit of 0 with
+  the overkill in the overflow), else NO_HIT_DEATH. The recap carries
+  cause HEALTH_CAUSE so a frontend can say the death was read from health.
+  A death line up to pull_outcome.ZERO_LINE_SAME_MS after it, the player
+  not seen up between, is the same death written late, and keeps that
+  recap. Each player's history is kept that hold longer than the window,
+  so the corpse's hits and heals in the hold cut neither the recap's
+  window nor the killer's.
 - The killing blow's own damage line usually comes *after* that event, 0-2 ms
   later, carrying the overkill in the overflow field.
 - hitValue is what actually reached (or restored) health; the target's unit
@@ -3134,6 +3498,15 @@ to KILLING_BLOW_GRACE_MS after the death. Only new installs get 3: the
 main window saves the whole merged config on close, so everyone on 0.20.0
 or later has a stored 5 that cannot be told from a chosen one, and it is
 kept.
+
+A recap also carries the dying player's own casts in its window ('casts',
+issue #214), which the recap's table shows among the hits and heals, so a
+reader sees what the player was pressing as the damage came in. They come
+from the engine's cast recorder (casts.CastRecorder) when the death is
+counted, by its rules: one cast per castTrackId, begun in the window up
+to the death, a proc the game writes as a cast over and over left out
+unless it is of a skill on the player's bars. They are kept apart from
+'events', so the window's sums by kind never count them.
 
 ## Kinds of damage: direct or over time, area or single target, Martial or Magical
 
@@ -3325,8 +3698,12 @@ The window has no Close or default button, so Enter never closes it; Esc
 and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
-the list by a signal, and its pages' links are its own tab switches. It
-stores no lambda on a child.
+the list by a signal, and its pages' links are its own tab switches, but
+for a death's Positions and Events links and the This player's actions
+button beside Show in list (issue #214), the ways out of it, which it hands
+on by signals too, with its fight: the positions window and the Events tab
+are the main window's. The button is on for a player row whose casts the
+fight kept while the fight is in the list. It stores no lambda on a child.
 
 ## The fight's tabs: Fight, Deaths and Instance
 
@@ -3340,7 +3717,8 @@ in the tab bar's corner.
 
 Design: The fight tabs. The list's fight is shown on tabs: Fight, the buff
 timeline strip and the fight pane as they were; Deaths, every death of the
-fight on one page (fight_deaths_render); the DPS graph (dps_graph); and
+fight on one page (fight_deaths_render); Events, the fight's notable
+events as a table (events_tab, issue #214); the DPS graph (dps_graph); and
 Instance, the instance the fight belongs to, its block of the list
 (instance_render). The tabs show the fight the list has selected, so this
 level cannot go stale, where the player window keeps the fight it was
@@ -3357,15 +3735,25 @@ was, it clipped the tab labels at 190-200% text (probed with the window's
 own text). The field takes the width the bar leaves, at most about forty
 characters (260 px at 100% in Segoe UI). When the bar leaves less than the
 widest count ('999+ matches') and about six characters, at a large text
-size in a narrow column or in a wide font (the four tabs' labels need
-424 px at 200% in Segoe UI, 471 in DejaVu Sans), the field
-takes a row of its own above the tabs. It is placed again as the column's
-width, the text size or the tabs change, so the bar is never narrower than
-its labels and none hides behind Qt's scroll arrows.
+size in a narrow column or in a wide font (at 200% in Segoe UI the five
+tabs' labels need 517 px of the 705 a 1080 px window gives the column,
+leaving 188 where the field needs 267), the corner holds a Find button
+instead (issue #214; the maintainer's decision: "the search field shrinks to a
+button at large text, so no page loses 48 px"). The button, or Ctrl+F, shows the
+field on a row of its own above the tabs while the search is in use; Esc
+on the empty field, or leaving it empty, hides the row and gives the
+button back, with the focus after Esc. A search with text keeps its row,
+and its count, until it is cleared. When the field took that row whenever
+the corner was short, every page lost the row's height for as long as the
+window was narrow. The field is placed again as the column's width, the
+text size or the tabs change, so the bar is never narrower than its labels
+and the button together, and none hides behind Qt's scroll arrows; a
+search in use, or the field with the focus, goes on on its row as the
+corner shrinks.
 
 With no fight to show (the page before the first fight, a Settings
-replay), the Fight tab is on screen and the bar and the field are hidden
-together: hiding the bar alone left the field a control 0 px tall that took
+replay), the Fight tab is on screen and the bar and the field (or the
+button) are hidden together: hiding the bar alone left the field a control 0 px tall that took
 the focus, and Ctrl+PgDn still switched the pages (probed on PySide6
 6.12.0). The window's Ctrl+F, Ctrl+PgDn and Ctrl+PgUp do nothing then, and
 the hidden bar's Alt letters do not fire, until a fight brings back the tab
@@ -3373,7 +3761,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1493](../src/gui/main_window.py#L1493)*
+*[src/gui/main_window.py:1671](../src/gui/main_window.py#L1671)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -3390,7 +3778,8 @@ the pen/crit settings all draw through, and a fight changes in place
 only a few times (a late death, its banner, a mastery found later).
 Then the tab on screen, if it is another, in place when it shows
 this fight already (the Instance page: this fight's instance, the
-search going on from its place); the other tabs are marked, and
+search going on from its place; the Events page: its row selected
+and its scroll kept, gui.events_tab); the other tabs are marked, and
 drawn when they are next shown, the search going on where it was on
 a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
 issue #196).
@@ -3429,6 +3818,23 @@ player's other deaths show a dash, which a note under the table explains,
 and their total is in the time dead line. Who was dead at the end is kept
 only with a pull (a fight with a named boss the players damaged): the page
 of a fight without one says nothing of the end.
+
+Where everyone stood (issue #214). In a fight whose lines the app can read
+again (death_render.positions_known: the engine gave it a locator, with
+its session known) each row's time is a link to the positions window at
+that death's moment, the player who died selected; its hover says
+'Positions at 0:54'. The link carries the moment, never the death's
+number, which a death the game writes late shifts. It is in the link
+colour, as a time gives no other sign of being a link. It takes no room of
+its own: a column of its own, after Dead for, took the room the 22% shares
+of Player and From are laid out in, so at 150% and 200% text the killer's
+name broke, at 200% in a 1600x900 window a letter a line ('Lieutenant
+Njordal' in 13 lines, the page 415 px high going to 703), and Killed by
+broke too; the table's least width, which the first test measured, never
+showed it, text being free to break anywhere. With the time as the link,
+From, Killed by and the page's height are as they are without it, at 150%
+and 200% in a 1366x768 window (test_positions_wiring_gui). A fight without
+a locator draws the time as plain muted text.
 
 Nothing here changes the entry: the engine's thread updates an entry in
 place while a page is drawn, so its lists are read with sorted() and
@@ -3537,6 +3943,317 @@ fights in place while a page is drawn (MainWindow._fight_changed), so
 their lists are read and counted into new lists and dicts, sorted with
 sorted(), never in place.
 
+## The Events tab: a fight's notable events, in order
+
+### src/fight_events.py
+
+*[src/fight_events.py:1](../src/fight_events.py#L1)*
+
+A fight's notable events, kept as the engine reads the log, for the Events
+tab (issue #214): the bosses' casts and health, the big hits on the group,
+the taunts, the resurrections and the fight's phases. The deaths are the
+entry's own (death_recaps); event_rows turns both into the tab's rows.
+
+Design: the notable events of a fight, recorded in the engine's pass
+(issue #214). The study of #214 weighed three ways to give a view a fight's
+moments: record them as the engine reads the log, read the fight again from
+disk when the view opens, or record where the lines are and read them then.
+The maintainer chose to record: a re-read depends on the log still being on disk
+(splits are off by default, and an archived and deleted log has nothing to
+read), while a recording lives with the fight. What is kept is what the
+tab's five default categories need, and no more:
+
+- Boss: each cast of a unit the game flags as a boss (casts.py's track rule
+  is not needed: a boss's cast is one line), with its target and length,
+  and the END_CAST that stopped one (INTERRUPTED, with who did it); each
+  boss's health as it first reaches 75, 50 and 25% in a fight; the
+  stretches of 5 seconds or more in which a boss lost no health; a boss's
+  death.
+- Big hits: a hit on a player of 30% of their maximum health or more, the
+  part a damage shield absorbed counted in (the log writes the shield's
+  line just before the hit, with the attacker and the same castTrackId;
+  41% of such hits are hidden otherwise), and the overkill.
+- Taunts: who taunted what, and with which skill.
+- Resurrections (RESURRECT and SOUL_GEM_RESURRECTION_ACCEPTED, with who
+  raised whom) and each player's return from the dead, which the fight's
+  time dead (pull_outcome.TimeDead) knows to the line.
+- Phases: the map changing, and the game ending combat and beginning it
+  again in one fight (COMBAT_RESUME_MS). A trial's end is the entry's own
+  (trial_result): END_TRIAL can come seconds after the fight's last line.
+
+Names are resolved as each event is noted, since unit ids are handed out
+again in a later zone. The recorder keeps the session's events in lists,
+like casts.CastRecorder, until a fight's entry is built: then the events of
+its window are packed into a FightEvents, one bytes object of fixed-size
+records and a table of the strings and abilities they name, immutable as
+an entry must be once it crosses to the GUI's thread. The study measured
+tuples at 9 to 12 times the packed size. The events before the fight's
+start are then forgotten, but not when the build is of a fight the game
+cut in two: the resumed entry is packed again from the same start.
+
+### src/event_rows.py
+
+*[src/event_rows.py:1](../src/event_rows.py#L1)*
+
+The Events tab's rows (issue #214): a fight's deaths, the bosses' casts and
+health, the big hits on the group, the taunt swaps and the fight's phases,
+one row per happening, in time order. Qt-free: the tab draws what this
+gives (gui.events_tab).
+
+Design: the Events tab's rows. The rules are the #214 study's, written as
+code and measured on six fights (build/surveys/timeline-214-2026-11-11,
+design/lists): 5.5 to 16.3 rows a minute by default, never more than 9 in
+any ten seconds, so a fight reads as a story rather than a log.
+
+- Deaths are the entry's own recaps (death_recaps), with the death the log
+  wrote no line for said so. Deaths to one ability within DEATH_CHAIN_MS
+  are one row ("Died x3"). Each return from the dead is a "Back" row with
+  how long the player was down and who raised them: a resurrection line
+  for the player at most RAISED_BEFORE_MS before the return, else "no line
+  says how" (a release and run back writes none). A player dead since an
+  earlier pull has no death in this fight: their return says "dead since
+  before the pull".
+- A boss's casts of one ability, each within BURST_MS of the last, are one
+  row ("Hemorrhage x12"), with whom they were aimed at and whether one was
+  stopped: by a player ("interrupted by"), or by the boss's own script.
+  Rows are keyed by names, not unit ids: a boss the game adds again as a
+  new unit is the same boss to a reader.
+- A boss's health marks (75, 50 and 25%), the stretches of UNTOUCHED_MS or
+  more in which it lost no health, and its death.
+- Big hits: BIG_HIT_SHARE of the player's maximum health or more, the part
+  a damage shield absorbed and the overkill counted in. One source's hits
+  with one ability, each within HIT_CHAIN_MS of the last and all within
+  HIT_SPAN_MS, are one row. A lone hit on a player who died to it within
+  KILLING_HIT_MS is left to the death's row.
+- Taunt swaps: the first taunt on a boss, and a taunt by another player
+  than the last one to taunt it. A player taunting again is no row.
+- Phases: the map changing, the game ending combat and beginning it again
+  in one fight, and a trial's end, at the fight's end.
+
+### src/gui/events_tab.py
+
+*[src/gui/events_tab.py:1](../src/gui/events_tab.py#L1)*
+
+The Events tab (issue #214): the fight selected in the list told as a
+table of its notable events, one row per happening in time order (the rows
+are event_rows'), with a line that sums it up, the categories to show and
+the search of the fight's tabs filtering the rows. The main window's fifth
+fight tab, after Deaths.
+
+Design: the Events tab. A table, not a page of rich text like Deaths: a
+QTableView over a model reads to a screen reader as rows and cells, the
+arrow keys go from row to row, and Enter or a double-click on a death's row
+opens that death's recap in the player window (recap_requested, the
+(unit id, number) the Deaths tab's names carry). A row of several deaths
+(Died x3) opens nothing: it names no one death.
+
+What is shown. The five categories the study chose are on at first
+(event_rows.DEFAULT_CATEGORIES: deaths, the bosses, the big hits, the
+taunt swaps, the phases), and More holds the three that are off
+(event_rows.MORE: a boss's casts at the player holding its taunt, its
+auto-attacks, the hits of 30 to 49% of a player's health), which on a
+145-second Kyne's Aegis boss fight add 51 rows to its 78. Show picks the
+whole fight or its last 60 seconds, where a wipe's story ends. The
+choices carry from one fight to the next, as the DPS graph's do, and not
+from one run of the app to the next.
+
+The search. The tab bar's search filters the rows to those whose cells
+hold its text, case-insensitive, over what the cells show (a hidden name
+is its blocks, so a hidden player is not found by name); the field counts
+the rows, and Enter goes to the next of them. A table has no text cursor
+to move to a match, and a row that matches is shown whole. A search typed
+selects its first row, as the text pages put the cursor on the first
+match; cleared, the row selected stays and comes into view among the
+others.
+
+Around a moment. Show's ± choices keep the rows within 10 or 30 seconds
+of a moment: the row selected when the choice is made, named in the count
+beside it. The moment stays as the reader picks other rows, so the window
+does not slide under them, and from ±10 s to ±30 s; it belongs to its
+fight, and another fight goes back to the whole. It is how the other views
+open the tab (show_around): a double-click on the DPS graph, the buff
+strip's pop-up and a death's Events link in the player window each send
+their moment, where the study had a double-click on the strip too: a click
+there already opens the pop-up, so the pop-up carries the link. The other
+way, Ctrl+G or the link that ends the line under the table marks the row's
+moment on the DPS graph (graph_requested), with what happened and no name,
+so the mark needs no mask.
+
+Keeping the reader's place. A new fight selects its first death, the
+moment a wipe turns on, else its first row. The same fight drawn again (it
+changed: a death logged after combat ended, the fight the game had cut in
+two going on, Hide names, the text size, the theme) is drawn in place: the
+row selected is found again by what it says, its time, what and ability,
+not by its place, since rows can come before it, and the scroll is kept.
+A category or Show changed keeps the row selected while it is shown, else
+takes the first row from its time on.
+
+Hide names. Cells are plain text, so a hidden name is '@' and a block per
+character, as in hover text and the DPS graph's legend
+(NameMask.text_in): in Who, which can name two players or say '3
+players', and in Detail, which names who raised, interrupted or was aimed
+at. A screen reader hears 'hidden name' (Qt.AccessibleTextRole), as in the
+positions window's table.
+
+Sizes. The rows are as tall as a line of text or an ability icon at the
+text size in force (death_render.ICON_PX scaled): a QTableView keeps its
+30 px rows at any text size (the positions window measured it). The
+filter bar wraps its controls onto more lines as the column narrows (a
+flow layout), so at 200% text the tab never sets the column's least width:
+its controls take 1,185 px on one line at 200% in Segoe UI (666 at 100%),
+where a 1080 px window gives the tabs 705. The Time and What columns are
+as wide as the fight's widest cell, Ability and Who too up to a share of
+the table, and Detail takes the rest: at 200% text in that column, Detail
+had a quarter of the table while Ability and Who took their whole cells. A
+cut cell is whole in its hover, and the row selected is whole on the line
+under the table, as the study's design has it.
+
+Design: one player's actions on the Events tab (issue #214). Who, first on
+the bar, picks Everyone (the rows above) or one of the fight's player
+rows (action_rows.players: tanks, healers, then damage dealers, each in
+the table's order; companions' casts are not kept), and the table lists
+that player's casts with the events that touched them (action_rows has
+the rules). It lives here rather than on an eighth tab of the player
+window, the maintainer's choice: that window has no search and would need
+more than its width at 200% text. The table takes the mode's columns
+(ACTION_COLUMNS: Time, Bar, LA, Action, Target, Length, Gap, Detail) and
+is named Player actions for a screen reader; a column no row of the
+player's fills is hidden (HIDEABLE), judged on all their rows rather than
+the ones the filters leave, so columns do not come and go as boxes are
+ticked.
+
+The controls keep their meaning for one player. The casts are always
+shown; Deaths, Boss, Big hits and Taunt swaps show or hide the player's
+events of that kind; Phases is greyed out, its rows (the map, combat begun
+again, the trial's end) being context rows (action_rows._context_rows),
+which More's Context switch shows with the bosses' health and deaths. More's three kinds are everyone's and greyed
+out for one player, and the player's switches (ACTION_SWITCHES: light
+attacks as rows, swaps as rows, context) are greyed out for everyone; the
+count on More is of the items on that apply. Context rows are italic in
+the palette's placeholder colour, the fight around the player rather than
+the player's own. Show, the search, the line under the table, Ctrl+G and
+Enter on a death's row work on the player's rows as on everyone's. The
+marks are words to a screen reader and on the line under the table ('after
+a weapon swap', 'after a light attack'), whose two seconds are labelled
+('lasted 1.6 s', '1.1 s after the skill before'), as they would read
+alike there.
+
+Who changed keeps the reader's moment: the other mode's rows from the
+selected row's time on. The player picked carries to the next fight as
+the DPS graph's legend ticks do, by legend_key (the handle, or an
+anonymous player's zone and unit id): a fight without them shows everyone,
+and the next fight with them picks them again. A jump from another view
+keeps the mode, but a death's Events link for another player than the one
+picked goes back to everyone, whose rows hold that death. The player
+window's This player's actions button selects its fight in the list and
+opens the tab on the player (show_player), at their first death, else
+their first row.
+
+## The Events tab: one player's actions
+
+### src/fight_casts.py
+
+*[src/fight_casts.py:1](../src/fight_casts.py#L1)*
+
+Every group player's casts in a fight, packed for the fight's entry, for the
+Events tab's actions (issue #214, action_rows): when each cast began, the
+ability, the unit it was aimed at and how long it lasted.
+
+Design: one player's casts on the fight entry (issue #214). The casts are
+casts.CastRecorder's, the ones the Build tab counts: one per castTrackId,
+a synergy taken again counted, a proc left out unless it is of a skill on
+the player's bars (#226), taken by the same call (cast_records) the
+counts are, for each player row of the fight, so a player's casts here are
+their row's casts['total'] (the replay below checks it). Companions' casts
+are left out. Each cast keeps:
+
+- its time, from the fight's start (the casts begun before the pull are
+  not the fight's, as in the counts);
+- its ability id; the names and icons are a table of the fight's abilities;
+- the unit it was aimed at, named as the cast is noted, as fight_events
+  names its units (an id is handed out again in a later zone): the target
+  unit of the BEGIN_CAST line, unless the line names none ('0') or the
+  caster ('*', or the caster's own unit or record);
+- its length: the time from its BEGIN_CAST to its END_CAST, when the log
+  wrote one, never the BEGIN_CAST's own duration field; and whether that
+  END_CAST says INTERRUPTED. A cancelled cast's END_CAST (PLAYER_CANCELLED)
+  never reaches the engine, as the parser rejects it, so that cast has no
+  length.
+
+The form: a fight's casts are packed when its entry is built, like the
+events (fight_events), into one bytes object of fixed-size records for
+each player, a table of the targets they name and a table of the
+abilities, immutable as an entry must be once it crosses to the GUI's
+thread. A record is 17 bytes (time, ability id, target, length, flags).
+Kept apart from the events rather than in them: an event's record is 38
+bytes, and a cast needs none of its strings but the target. The casts
+live as the events do: built with the entry, gone from the recorder at the
+fight's start but when the build is the one the group fighting on asks
+for (again), and taken by that rebuild (waiting_hits.FOUGHT_ON_SLOTS)
+with the deaths and the events, an END_CAST read after END_COMBAT then
+giving the cast its length.
+
+### src/action_rows.py
+
+*[src/action_rows.py:1](../src/action_rows.py#L1)*
+
+One player's actions on the Events tab (issue #214): their casts in the
+order begun, with the events that touched them between, when the tab's Who
+picks a player. Qt-free: the tab draws what this gives (gui.events_tab).
+
+Design: one player's actions, the Events tab's second mode (issue #214).
+The study's design (build/surveys/timeline-214-2026-11-11, design/lists,
+section 2.2) as the maintainer trimmed it: no judgement marks (no idle
+share, no amber gaps, no 'weave' or 'miss'), a gap a plain number, and the
+rows below.
+
+- A cast is a row: when it began, its bar slot, the ability, the unit it
+  was aimed at, its length and the gap since the skill before. The casts
+  are the fight entry's (fight_casts), the Build tab's own count of them.
+- Bar: F1 to F5 and FU on the front bar, B1 to B5 and BU on the back, W
+  on a werewolf bar the engine rebuilt, for the slot whose skill the cast
+  is (casts.slot_holds, as the Build tab puts a count under a slot): a
+  skill slotted on both bars reads 'F3/B3', since the log does not say
+  which bar was up. Blank for a cast no slot holds.
+- A light attack begun LA_FOLD_MS or less before a skill is that skill's
+  mark in the LA column rather than a row of its own, and a weapon swap is
+  a mark (SWAP_MARK) on the Bar of the next cast begun within
+  SWAP_FOLD_MS. A light attack no skill follows so soon, or a swap no cast
+  follows, stays a row. The tab's More holds both as rows instead.
+- Length: from the cast's BEGIN_CAST to its END_CAST, shown only when the
+  log wrote one and it is INSTANT_MS or longer. Over the Kyne's Aegis split
+  of 2026-10-11, 15,026 of the 17,641 END_CASTs came in the cast's own
+  millisecond and 234 one millisecond later (Swap Weapons, light attacks,
+  Bash: casts whose BEGIN_CAST gives no duration), all instants; a
+  channelled heavy attack, Claw Fury or Insatiable Hunger lasts 0.5 to 4.5
+  s. The BEGIN_CAST's own duration field is never read: it is what the
+  cast would take, not what it took.
+- Gap: the seconds since the skill before began, for a skill (a cast that
+  is none of casts.EXTRA_KINDS: no light or heavy attack, swap, potion
+  and the like). A plain number.
+- Between the casts, the events that touched the player, from the fight's
+  events (fight_events) by their rules (event_rows): their deaths and
+  returns; the hits they took of 30% of their maximum health or more,
+  chained as the tab's Big hits are, the killing hit left to the death's
+  row; the bosses' casts aimed at them, a burst of one ability one row;
+  the taunt swaps they were in. Then context rows, drawn muted: the
+  bosses' health marks, their stretches with no health lost, a boss's
+  death, and the rows the tab's Phases box shows for everyone (the map
+  changing, the game ending combat and beginning it again, the trial's
+  end), whose box is greyed out for one player.
+- No cast for N s: for the player who writes the log alone (the row the
+  game flags isLocalPlayer), a stretch of IDLE_MS or more with no cast of
+  theirs going on, from the end of a cast (its END_CAST, else its start)
+  to the next one's start, the fight's start and end included, less the
+  time they were dead (a death to their return, or to the end). The
+  client writes every cast of its own player, so a gap there is the
+  player's; another player's casts reach the log only while that player
+  is near enough to the logging one, so a gap in theirs can be the log's,
+  and none is drawn. The row names what the log can say of the stretch:
+  big hits the player blocked (a block writes no cast), a boss that lost
+  no health then, the map changing, the game ending combat and beginning
+  it again; else nothing more.
+
 ## Experimental buff timeline
 
 ### src/buff_timeline.py
@@ -3600,7 +4317,7 @@ without a unit) is counted under UNKNOWN_SOURCE rather than dropped.
 
 ### paint_sparse_span
 
-*[src/gui/timeline_strip.py:220](../src/gui/timeline_strip.py#L220)*
+*[src/gui/timeline_strip.py:240](../src/gui/timeline_strip.py#L240)*
 
 Paint one span of a group buff that reached only one or two receivers
 (issue #45): the effect's colour at SPARSE_BASE_ALPHA over the row's
@@ -3813,7 +4530,7 @@ began; none in that folder did (the latest ended at 23:46).
 
 ### split_lines_html
 
-*[src/gui/fight_render.py:196](../src/gui/fight_render.py#L196)*
+*[src/gui/fight_render.py:213](../src/gui/fight_render.py#L213)*
 
 Design: the split logs beside a run (issue #194). The result strip
 of the fight that completed a run, and the Instance tab under its
@@ -3862,7 +4579,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1145](../src/gui/main_window.py#L1145)*
+*[src/gui/main_window.py:1289](../src/gui/main_window.py#L1289)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -3909,20 +4626,25 @@ here and set again by waiting_for_log), Back to live with no fight
 listed draws the waiting page instead: nothing is replayed until
 the log appears.
 
-The player window's fight is known again by its key too, with the
-player's handle (_end_replay puts the window on the replayed copy);
-a window on a reviewed fight, which no replay builds again, keeps
-it.
+The windows' fights are known again by their keys too
+(_rebind_windows puts each window on the replayed copy): the player
+window's with the player's handle, which the copy must give again
+under the same unit id; the positions window's by the key alone,
+its units being the fight's (issue #214). A replay of the same log
+gives the same locator, so that window keeps the states it read,
+and the rows, numbers and roles it draws come from the new entry
+(companion accrual, say, changes the rows). A window on a reviewed
+fight, which no replay builds again, keeps it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:2606](../src/gui/main_window.py#L2606)*
+*[src/gui/main_window.py:3137](../src/gui/main_window.py#L3137)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:989](../src/gui/main_window.py#L989)*
+*[src/gui/main_window.py:1112](../src/gui/main_window.py#L1112)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -3951,15 +4673,29 @@ sorted() and new dicts, never .sort() or an added key: CPython
 empties a list while it sorts it, so an engine write built from that
 list meanwhile would lose its items.
 
+The positions window (issue #214) draws the fight's states, read
+again from disk by its locator, and is asked for a new read only
+when the update brought a new locator: a fight the game cut in two
+that went on is the one update that replaces it (the finished
+entry's slots copied onto the delivered one, its end later). A late
+death, a fought-on rebuild, a mastery found later, END_TRIAL and a
+banner leave the same locator object, and the window redraws its
+numbers, roles and death marks from the entry it holds: reading
+again on every update would have read 158 times in 172 for nothing
+(the replay design's engineering critique, R9). The window waits
+for the read it asked for and drops the answers to earlier ones; a
+hidden window is asked for nothing, and its next link reads what it
+lacks.
+
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:159](../src/gui/fight_view.py#L159)*
+*[src/gui/fight_view.py:174](../src/gui/fight_view.py#L174)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:345](../src/gui/fight_view.py#L345)*
+*[src/gui/fight_view.py:398](../src/gui/fight_view.py#L398)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -4040,6 +4776,533 @@ window turns into a signal on an object living on the UI thread (as split
 retention does), so nothing Qt is created or freed here; the analyzer and
 its fights are plain Python. The settings are a snapshot taken when the
 review starts, since Settings may change them meanwhile.
+
+## Re-reading one fight: where its lines are in the log
+
+### src/fight_locator.py
+
+*[src/fight_locator.py:1](../src/fight_locator.py#L1)*
+
+Where a fight's lines are in its log, and who its units are (issue #214):
+the locator the engine keeps on each fight's entry, by which a view
+re-reads that one fight from disk (fight_reread) instead of the engine
+holding every unit's place for the whole session.
+
+Design: Byte offsets from the session's BEGIN_LOG line. The locator holds
+the offsets of the fight's BEGIN_COMBAT and END_COMBAT lines and of its
+zone's ZONE_CHANGED line, each counted in bytes from the first byte of the
+session's BEGIN_LOG line, with that line's own offset in the file the
+engine read and its Unix milliseconds. Counted from the session, an offset
+is the same number in the live log, in the session's split and in a zipped
+split's member: a split written since 0.19.0 is its session's bytes (6 of 6
+sessions of the live log byte-identical to their splits, 116 MB down to
+11 MB), and a zip's member is a byte copy of the split. Every reader that
+feeds the engine therefore reads bytes and says where each line starts
+(``ESOLogAnalyzer.line_offset``): the live tail, the attach and Settings-save
+replay, the review of a plain or zipped log, and the roster sweep.
+Characters are not bytes: over the 411 split logs (35 GiB, 213.5 million
+lines, every one ending CRLF) text mode falls 213,527,919 characters short
+of the bytes, one per CRLF plus 1,257 for the multibyte letters of player
+names. Reading bytes costs nothing: whole engine passes over a Rockgrove
+and a Kyne's Aegis split ran 0.1% and 0.4% faster than in text, with the
+same fights, and the counting itself is 0.03 µs a line. The live tail
+holds back a last line the game has not finished writing, so every line
+reaches the engine once, whole, with its offset; so do the attach replay
+and the roster sweep at the point where they hand over to the tail. Read
+in text, a poll that landed inside a line handed the parser two broken
+lines, and in a test a fight was lost that way. In all 8,932 fights of the
+391 split logs (35.8 GB), 448 of them fights the game cut in two or more,
+the BEGIN_LOG, ZONE_CHANGED, BEGIN_COMBAT and END_COMBAT lines were at
+their recorded offsets, and every other field of every entry was as
+before. Ten splits zipped as retention zips them gave the same locators
+(186 fights), and so did two logs of three sessions each, attached to and
+tailed in about 1,180 polls each, nine in ten of them ending inside a line;
+the splits that tail wrote were byte-identical to their sessions.
+
+A split written before 0.19.0 lacks the lines the parser rejects (a
+cancelled cast, an OBJECT unit): a median 7.7 KB before a fight's
+BEGIN_COMBAT, so an offset taken from the live log lands late in it. So
+the reader checks the lines before trusting the offsets: the line at the
+session's base is a BEGIN_LOG with the session's Unix milliseconds, and the
+line at the BEGIN_COMBAT offset is ``<start ms>,BEGIN_COMBAT``; when either
+fails it finds the fight by its times within the session.
+
+The fight's times are its BEGIN_COMBAT and END_COMBAT lines' (start_ms,
+end_ms), taken as the entry is built, where every path that builds one has
+restored the fight's own start. Read at any later moment the encounter's
+start is not the fight's: a combat event after END_COMBAT sets the
+encounter in combat again and moves it, which at the next BEGIN_COMBAT had
+happened in 1,130 of 1,152 encounters, by a median of 16 s and up to 441 s.
+
+The range a view reads is not stored: from LEAD_MS before BEGIN_COMBAT
+(the moments the opener and the group's waiting hits read, fight_opener,
+waiting_hits) to TAIL_MS after END_COMBAT (the late-death grace). The
+reader finds its first line by time, reading back from the BEGIN_COMBAT
+line, never past the zone's ZONE_CHANGED line (unit ids start over there)
+or the session's BEGIN_LOG; over the 411 splits those 10 s held a median
+128 KB and at most 2.0 MB. It reads on past END_COMBAT to the first line
+after the tail, and stops at the next BEGIN_COMBAT, ZONE_CHANGED, BEGIN_LOG
+or END_LOG: over the 391 splits the next fight's BEGIN_COMBAT came within
+the tail in 801 of 8,932 fights, and 3,301 lead-ins reached back over the
+fight before. The group fighting on after END_COMBAT (#162, waiting_hits)
+is not in the range: that rebuild takes only the damage figures and keeps
+the locator, so the seconds the DPS graph shows past the fight's end are
+outside the view, as the fight's clock, deaths and recaps are.
+
+The map. The log's coordinates are fractions of the map last named by a
+MAP_CHANGED line, and a lead-in held one in 980 of 8,932 fights (11%), so
+the locator carries the map in force at the lead-in's first line
+(map_at_lead), and the reader switches maps at each MAP_CHANGED line in the
+file's order. MAP_CHANGED lines are kept per zone (MAPS_KEPT).
+
+The unit table is the engine's identity of the fight's units, frozen as the
+entry is built, so a re-read never works out who a unit is. A player's row
+holds every unit id they had in the fight: their record's, the ids they came
+back on (presence.py, rule 3) and the ids they were known by as BEGIN_COMBAT
+redid the roster. A companion's row holds every unit id the companion had,
+under its row's key and the name the fight shows (companions.shown_name,
+never the log's). A pet keeps its owner after its UNIT_REMOVED or its owner
+field dropping to 0, which the engine's own map of pets forgets: a table
+taken from that map at the fight's end gave the wrong owner on 1.52% of
+the unit states in the fights' ranges, in 206 of 545 fights; keeping each
+pet's last owner left 0.011%. Monsters, NPCs and pets are listed when they
+were in the zone during the range; each row's window (since_ms, until_ms,
+its UNIT_ADDED and UNIT_REMOVED, a player's arrival and departure) tells
+apart a unit id handed to another unit, the latest arrival winning. Units the
+log never announced in the zone (anchors, hazards) and objects, whose
+UNIT_ADDED the parser rejects, are not in it: over one split of each of 21
+zones, 99.04% of the 7.7 million unit states in the fights' ranges were of
+a unit in the table, every state of a unit in it was, and the reader reads
+the rest as unknown units. As tuples the locator is a median 29 KB for a
+12-player boss fight (p90 74 KB), 1.4 to 1.6 MB for three hours of trials.
+
+### src/fight_reread.py
+
+*[src/fight_reread.py:1](../src/fight_reread.py#L1)*
+
+Re-reading one fight's unit states from disk (issue #214), for a view that
+shows the fight paused at a moment: where everyone stood, with their health
+and pools. The engine keeps no unit's place for a whole session. It keeps a
+locator on each fight's entry (fight_locator), and this module reads that
+fight's lines back by it. No Qt, and the engine is never imported.
+
+What it reads. Unit states, and the maps they are drawn on. A state is the
+ten fields the log writes for a unit: its id, health, magicka, stamina,
+ultimate, werewolf and shield, then its place and heading. They are read
+where the engine reads them: the source and target of COMBAT_EVENT,
+EFFECT_CHANGED and BEGIN_CAST, and HEALTH_REGEN's unit. Three are skipped.
+A target of ``*`` is the source again. Unit id 0 is no unit. The 1/1
+placeholder (health 1 of 1 at place 0, 0) is what the log writes for a unit
+it knows nothing about. A member far off the map, in another zone or
+instance, is kept as written; on_map tells such a place. Casts are not
+read. The game hands a cast's track id on to later casts, so a second count
+would disagree with the engine's, and the cast rule is the casts step's.
+
+The range. It runs from LEAD_MS before BEGIN_COMBAT to TAIL_MS after
+END_COMBAT: the opener's and the waiting hits' window before the fight and
+the late-death grace after it (fight_locator). The group fighting on after
+END_COMBAT (#162) is not in it, as the fight's clock, deaths and recaps
+are not. The locator stores no range. The reader reads back from
+the BEGIN_COMBAT line to the first line whose time is start - LEAD_MS or
+later. It never reads past the zone's ZONE_CHANGED line, where unit ids
+start over, or the session's BEGIN_LOG, and a ZONE_CHANGED met in the
+lead-in drops what was read before it. It reads on past END_COMBAT to the
+first line later than end + TAIL_MS. It stops early at the next
+BEGIN_COMBAT, ZONE_CHANGED, BEGIN_LOG or END_LOG: the next fight's
+BEGIN_COMBAT came within the tail in 801 of the 8,932 fights of the 391
+split logs. A fight the game
+cut in two is read whole, its first END_COMBAT and second BEGIN_COMBAT
+included. When the bytes end first, as in a live log, the read ends there
+with tail_seen False, and a last line still being written is not read.
+
+Finding and checking the bytes. The places are tried in order: the
+reviewed file and the session's splits by its stamp (session_splits),
+plain before zipped (a zip's member streams from its start and cannot
+seek); the live log among the plain files when the line at the engine's
+hint, or its first line, is the session's BEGIN_LOG, else after them all,
+since it would be searched back whole; then the archives. In each the
+session's BEGIN_LOG is found: at offset 0 in
+a split, at the engine's hint in the live log, else by a search back from
+the end for its exact token ``,BEGIN_LOG,<unix ms>,``. The offsets are then
+checked before they are trusted. That line must be the session's BEGIN_LOG,
+the line at the BEGIN_COMBAT offset must be exactly ``<start>,BEGIN_COMBAT``,
+and the line at the zone offset a ZONE_CHANGED. A split written before
+0.19.0 lacks the lines the parser rejects, a median 7.7 KB before a fight,
+so offsets from the live log land late in it. When no place passes, each
+place holding the session is searched by time: a bisection on line times
+in a plain file (times never go back within a session), one pass over a
+zip's member. A fight with no BEGIN_COMBAT line, in a session that opens
+mid-fight, is always found by time. found_by says which way it went.
+
+Who is who. Identity is the engine's, frozen in the locator's unit table;
+nothing here works it out again. A unit id at a time names the table row
+that lists the id and whose window, since_ms to until_ms with both ends
+in, holds the time. The latest arrival wins, so an id the game handed to a
+new unit names each unit in turn. All of a row's ids make one track, so a
+player back on a new unit id stays one track. An id that names no row at
+that time gets an unknown track of its own: anchors, hazards, objects whose
+UNIT_ADDED the parser rejects.
+
+Frames. The log's coordinates are fractions of the map last named by a
+MAP_CHANGED line. Frame 0 is the map the locator names for the lead-in's
+start, and each MAP_CHANGED line in the range starts the next frame, in
+file order: states written after the line, even in its millisecond, are of
+the new map.
+
+What it keeps. Each track keeps one state a millisecond, the last line of
+the millisecond winning (a damage line shows the health after its own
+hit), and drops a state equal to the one before, keeping instead when it
+was last written (seen). A unit standing still at full pools is written
+again and again unchanged, so the time of its state is not when the log
+last said where it was: over seven boss fights of Kyne's Aegis and
+Sanity's Edge, 25 to 88% of the player-seconds whose state was over a
+second old had a line for that player within the second, and every one in
+Sanity's Edge's lead-ins did. So a moment's age counts from seen, and a
+unit is stale only when no line has written it. The states are packed in
+columns: time, place, heading, health, magicka and stamina with their
+maxima, ultimate, shield, frame and seen. Each column of all tracks is one
+immutable bytes object read through read-only memoryviews, so a result is
+cheap to hold and safe to hand from the reading thread to the UI.
+
+Measured on the 21-split sample (846 MB, 545 fights;
+scripts/check_fight_reread.py). The offsets held in all 545 fights, and
+with every offset spoiled by 13 bytes all 545 were found by time with
+identical states. Of 17,167 tracks built from the engine's own fields and
+identity at each line, 17,154 were byte-identical. The other 13, in 8
+fights, held 49 states of companions the engine had not yet linked to their
+owner, which the table already names. Of 7.71 million state occurrences
+the table named the engine's unit for all but those 49, and the owner for
+all but 824 (0.011%): pets after their owner field dropped to 0, which the
+table keeps and the engine forgets. A state costs 48 bytes, against 441 as
+tuples; a 12-player boss fight's result is a median 609 KB, 2.2 MB at most
+(46,368 states). Every fight of three splits zipped as split retention
+zips them read the same from the zip, by offset and by time.
+
+Read alone from its split, a 12-player boss fight took a median 95 ms by
+offset (p90 229 ms, at most 402 ms for a 316 s Lord Falgravn kill) and 145
+ms by time. That kill took 396 ms from a two-session live log with the
+hint, 455 ms without it, and 643 ms from its zip, whose member streams from
+its start to the fight 92 MB in. Reading in 4 MB chunks needs at most 19 MB
+from a plain file and 27 MB from a zip. RereadRunner reads on a thread of
+its own, not the review's, whose one job can run for minutes, and a cancel
+is seen between chunks.
+
+## Positions: a moment held still, and played back
+
+### src/gui/positions_window.py
+
+*[src/gui/positions_window.py:1](../src/gui/positions_window.py#L1)*
+
+The positions window (issue #214): one fight at a moment, where everyone
+stood, with their health, opened from a death (and later from an event) of
+the fight, held still or played back (#232).
+
+Design: One window, re-used, beside the main window, as the player window
+is (a QDialog child of it, never deleted before it, hidden by Esc): it
+keeps the fight it was opened for while the list moves on, and it has
+room the main window's tabs do not. Its parts, top to bottom: the fight
+and the moment ('Lord Falgravn · Kyne's Aegis VET · Kill · 1:50.0 of
+5:16'), Show in list; each boss's health at the moment; the canvas
+(positions_canvas) beside a table of the same units in a splitter, the
+line under the canvas naming who is not drawn ('Not on this map: 6, 11');
+the controls (previous death, a second back, the moment's clock, a second
+on, next death, Show); and Play, the speed and the scrub bar, a row of
+their own (the controls' row had no room left at 200% text). Decided for
+#214: players, bosses and adds drawn, pets, companions, unannounced and
+other units each one toggle away in Show, no casts yet; #232 added
+playback (below).
+
+What it draws comes from two places. The fight entry gives the numbers,
+the roles and the deaths: a player's number is the place of their row in
+the fight table (companion rows skipped), worked out afresh each time the
+fight changes in place, since the engine can re-rank the rows; a death's
+moment is the locator's start plus the recap's time into the fight, in
+the log's own clock (ms since BEGIN_LOG). The states come from re-reading
+the fight from disk (fight_reread), which the main window runs on its own
+thread and hands in through reread_done; the window never reads a file or
+starts a thread. It holds the states while shown: a 12-player boss
+fight's are a median 609 KB and 2.2 MB at most (fight_reread), dropped on
+hide (Esc gives a dialog no close event, only a hide) and read again at
+the next open, 95 ms at the median.
+
+Which states it takes. It asks for its fight's locator (wanted_locator)
+and drops any answer for another: a request the runner superseded still
+reports, as 'cancelled', with its old locator. Only a fight the game cut
+in two that then went on replaces its entry's locator (every other change
+in place leaves the same object: test_fight_locator), and then the window
+shows "Reading the fight's lines…" until the new states come. It follows
+the new locator when its coalesced redraw runs, the event loop's next
+turn, so the main window may compare entry.locator with wanted_locator
+before or after it calls entry_updated; and an answer for the entry's new
+locator that comes before that turn is taken too. After a Settings
+replay rebuilt the entry it keeps the states when the new locator equals
+theirs, as a replay of the same log makes it.
+
+The bosses. The game removes some bosses and adds them again, each time
+as a new unit with a track of its own: Z'Maja between her phases (three
+units in one 5:10 Cloudrest pull), Cloudrest's shades, Halls of
+Fabrication's Hunter-Killers at a reset. The canvas draws only the units
+present, but the boss bars, the description and the line under the canvas
+read every unit, and gave one boss three healths at once ('Z'Maja 56%.
+Z'Maja 30%. Z'Maja not in the log yet.', the 56% of a unit that had left a
+minute before). They take the bosses from boss_rows: by name, the units
+present; else the one that left last, as 'left'; 'not in the log yet'
+only while no unit of the name has come. The table keeps every unit, each
+with its State.
+
+The table is the reader's surface and the keyboard's. A painted canvas
+is a blank to a screen reader (its accessible name, 'Positions', and a
+one-line description of the moment in numbers are all it has), while a
+QTableView over a model reads as a real table, rows and cells, and a
+hidden name cell reads 'hidden name' through Qt.AccessibleTextRole rather
+than '@' and shade blocks (measured: build/positions214/paint). Its rows
+are the numbered players in number order, then players with no row (no
+build in the log, not grouped), then the bosses; a click on a marker
+selects its row and a row selects its marker, Enter or a double-click on a
+player opens the player window (player_requested). Its rows grow with the
+text size: a QTableView keeps 30 px rows at 100%, 150% and 200% text
+while the line grows to 16, 24 and 32 px, but sized to their contents
+with no word wrap they are 20, 28 and 36 px (probed). They are sized once
+for each text size and each new set of rows, not at each step: sized to
+contents, the header asked every cell for its size whenever the moment
+changed, 936 calls a step and 12 ms of it (profiled over Lord Falgravn's
+331 seconds); a step now costs 0.5 to 1.6 ms (positions_canvas has the
+measures).
+
+Keys. A window shortcut on a bare key takes it from a focused table (all
+21 keys probed), so the window binds modified keys only: Ctrl+Left and
+Ctrl+Right step a second, with Shift a tenth; Ctrl+PgUp and Ctrl+PgDn go
+to the previous and next death; Ctrl+Up and Ctrl+Down to the previous and
+next unit, as they change the player in the player window; Ctrl+C copies
+the moment in words, names through the mask. Ctrl+H and the text size
+keys are the main window's, application-wide, and never bound here: a
+second binding makes both ambiguous and neither fires (probed on Ctrl+0).
+The bare keys belong to the focused scrub bar: Left and Right, Shift, Home
+and End, PgUp and PgDn. Space alone is not a shortcut, which would take it
+from a focused button too: the table and the scrub bar leave a plain Space
+to the window (keyPressEvent), which plays or pauses, while a button and
+the speed picker keep their own. Ctrl+, and Ctrl+. play slower and faster,
+as the < and > of a video player. The buttons are QToolButtons: a
+QPushButton in a dialog takes Enter even with the focus elsewhere
+(probed); they and the speed picker take the focus by Tab only, so a click
+leaves it in the table. Tab goes from the scrub bar to the table to Play,
+the speed and the buttons.
+
+Hide names. The main window hands the window the mask of its fight
+(NameMask.for_entry, from the entry's player_names). The window extends it
+with the players of the locator's unit table, keeping the logging
+player's names and hiding every other player's name and character name:
+a player who left during the 10 s lead-in is in that table, read before
+the roster drops them, but not in player_names. Bosses, adds and pets are
+never hidden. On the canvas a hidden name is drawn as '@' and its
+pixelated stand-in, as the pages draw it.
+
+Playback (#232). Play runs the moment on from where it is at the speed
+picked, 1x to 5x, and only the reader starts it, by Play or Space: no
+link, no states read, no speed and no redraw does (the guide's
+Accessibility says so, under Motion). The moment is reckoned from the
+wall clock, never counted in frames: the moment and the wall time at Play
+or at a new speed, plus the wall time since times the speed, so a slow
+frame shows a later moment and never slows the fight. Frames come from a
+precise QTimer every FRAME_MS, about 30 a second (the measures below),
+running only while playing. It pauses by itself at the fight's end
+(END_COMBAT, not the tail after it, and never at a death); Play there, or
+in the tail, starts again from the fight's start. A step, a scrub or a
+death pauses at the moment it goes to, as does a link: the reader asked
+for that moment, held still. Selecting a unit, a speed and Show play on,
+as they move no moment. A hide stops it, and a minimised window, whose
+hide is spontaneous and which keeps its states, pauses: the moment does
+not run on unseen. New states, states dropped and a Settings replay pause
+too.
+
+Gliding. While playing, a mark moves on a straight line between two
+logged samples at most GLIDE_MS (1 s) apart (positions_canvas.glide_state):
+from the last line that wrote its place, the reader's seen (a unit
+standing still is written again and again, so the state's own time would
+start the glide early), to the next state's first, in one map frame and
+both on their map. Its facing, health and pools stay the last sample's.
+Further apart it waits at its last place, as paused: a line over a longer
+gap, which the canvas marks dashed after STALE_MS anyway, would draw a
+path the log never gave. Paused, nothing glides: every mark stands where
+its last state put it, and Pause redraws the whole moment as a step to it
+does, so a paused window is the #214 window to the pixel
+(test_positions_playback_gui compares the two).
+
+What a reader reads, while playing. A frame moves the picture, the clock,
+the boss bars' paint and the scrub bar's mark. The table, the header, the
+line under the canvas, the descriptions (the canvas's, the table's, the
+boss bars'), and the scrub bar's value and description follow once a
+DESCRIBE_MS (1 s) of wall time, and in full at Pause: a screen reader is
+not handed 30 changes a second. Those updates leave the table's scroll and
+current row alone; the clock has a fixed size, so its new text asks
+nothing of the layout (it asked for one every fifth frame), and the
+canvas, which fills itself, is opaque, so the window, the splitter and the
+pane under it are not painted again with it.
+
+Measured (build/playback232/measure_paint.py): Lord Falgravn, a 284 s
+Kyne's Aegis kill, 12 players with adds, 108 tracks, every frame of the
+fight at 1x, offscreen, the machine busy with another job (an earlier,
+quieter run of the paused code painted the canvas in 3.3 ms against
+5.4). At 200% text and device pixel
+ratio 2: the glided scene a median 0.66 ms (p99 1.3; paused, 0.59), the
+canvas's paint 5.4 ms (p99 8.7, as paused), a whole frame, tick and
+repaint, 7.7 ms (p90 10.4, p99 12.7, at most 16.8), 14 units drawn at the
+median and 29 at most. At 100% text and ratio 1: the canvas 3.4 ms, a
+frame 4.7 ms (p99 9.2). At 60 frames a second the UI thread would be half
+busy at 200% with its p99 frame near the 16.7 ms interval; at 30 it is a
+quarter busy with room, and a frame late only skips.
+
+It holds no reference to the main window and stores no lambda on a child;
+its timers are its own: the single-shot 0 ms redraw, which draws a burst
+of updates to the fight once, and playback's frames.
+
+### src/gui/positions_canvas.py
+
+*[src/gui/positions_canvas.py:1](../src/gui/positions_canvas.py#L1)*
+
+The positions canvas (issue #214): where everyone stood at one moment of a
+fight, drawn on a plain 2D canvas, with the boss bars above it and the
+scrub bar the moment is chosen on. The positions window (positions_window)
+holds the fight and its re-read states (fight_reread) and hands these
+widgets a Scene for each moment, held still or, while it plays (#232),
+for each frame.
+
+Design: A moment, drawn directly. Nothing moves by itself: the canvas is
+repainted on a step, a selection, a resize, a theme or Hide names flip, a
+new text size, or a frame of playback, which only the reader's Play
+starts, and a full repaint is cheap. Measured offscreen for the study
+(build/positions214/paint): 60 markers with rings, noses, bodies and
+numbers in 2.2 to 3.4 ms at device pixel ratio 1 and 4.7 to 7.9 ms at
+ratio 2; twelve players alone 1.3 to 2.0 ms. Over every second of six real
+12-player boss fights (build/positions214/window/probe_piles_out.txt)
+this canvas repainted in a median 1.9 to 4.2 ms, a step of the moment cost
+0.5 to 1.6 ms and the whole window's repaint 5.7 to 11.3 ms. Played back
+at 200% text and ratio 2, a frame of a 284 s Lord Falgravn kill painted
+the canvas in a median 5.4 ms on a busy machine, as paused, and built its
+glided scene in 0.66 ms (positions_window has the measures and the frame
+rate). So there is no sprite or frame cache, no QGraphicsView and no timer
+here; the canvas is opaque (it fills itself first), so a frame does not
+paint the panes under it again.
+
+Playback glides, a paused moment never does (glide_state, build_scene's
+glide): while the window plays, a mark moves on a straight line between
+two logged samples at most GLIDE_MS apart, from the last line that wrote
+its place to the next state's first, in one map frame, both on their map;
+only its place moves. Paused, every mark is where its last state put it.
+The window's notes say why.
+
+One box per map frame. The log's coordinates are fractions of the map the
+last MAP_CHANGED line named, so places in two frames are never joined: each
+frame gets its own box, fitted once to the 2nd to 98th percentile of the
+players' and bosses' places in that frame over the whole range, padded by
+12% of its longer side, with one scale for x and y and y down. The study
+found the min-max box 1.2 to 2.6 times larger, empty for most of a fight.
+The moment's frame is the frame of the selected unit's state, else the one
+most drawn players are in. A unit whose last state is of another frame, or
+far off its map (fight_reread.on_map), is not drawn: the line under the
+canvas and the table say "not on this map". A drawn unit outside the
+fitted box is pinned to the canvas's edge, with a small arrow towards where
+it stands. There is no map art, scale or height (#148 stays parked).
+
+Piles. A group stands close, and a marker's radius grows with the text
+size (it must hold '12') while the canvas does not, so numbered players
+whose markers overlap by over a quarter (closer than PILE_SHARE radii)
+are drawn as one badge that lists them: each member's shape and number
+with a short bar of its health, at their mean place, with a dashed line to
+it when the badge had to move. The selected player is never piled. Over
+six boss fights this gathered 2 to 61% of the players' seconds at 100%
+text (Chimera's split the most) and 32 to 90% at 200%, where unpiled
+numbers covered each other (the study's critique counted 18 to 82% piled
+at 200% with a tighter rule). Badges and labels keep off the players,
+bosses, notes and other badges where the canvas has room (_avoid), and
+cover least where it has none; a boss's name is never hidden.
+
+Meaning rides on shape, number, arc length and stroke, never on colour
+alone, and every mark is in neutral ink. The role hexes are the very
+hexes of health 'good', heal, health 'critical', damage and shield
+(measured: light T #1565c0 is the recap's shield, D #c62828 its critical
+health and damage), so a marker coloured by role would say 'DPS = critical
+health'. A player with a row in the fight table is a role shape (circle
+for damage, diamond for a healer, square for a tank) filled with the
+pane's text ink, holding the row's number in the Base colour (16.1:1
+light, 11.4:1 dark). The number font is the application font at 0.78,
+bold, in a radius of scaled_px(8): '12' needs 5.9 to 6.5 px at 100% text
+and 12.2 to 14.1 px at 200%, and the radius is 8 and 16 px there. Health
+is the length of a ring arc clockwise from 12 o'clock, in the death
+recap's four health steps, over a decorative 13% track: the steps' closest
+pair under deuteranopia is CIEDE2000 2.2 (light), so the length carries the
+value and the colour only repeats it. Shield is a thin outer arc in the
+recap's shield colour, capped at a full turn of the maximum health. The
+nose shows facing in text ink at 75% (7.1:1), the heading taken modulo 2π
+with the facing vector (-sin h, -cos h), y down; it is facing, not travel
+(the survey: players face their travel in under half their moving steps).
+
+Gaps in the log are marked, never faded. With text ink at 45% a number
+on the body reads 3.36:1 (light) and a 30% body 2.12:1, under the app's
+4.5:1 and 3:1 floors, so: a unit whose last state is over STALE_MS old is
+hollow with a dashed outline; over LOST_MS, hollow and dotted with its
+number in muted ink (6.05:1 and 5.22:1); dead, it is hollow in muted ink
+with a cross in the recap's damage red under its number, which stays in
+full ink. Dead is health 0 (the rule the engine counts deaths by since
+#221), and for a player also a death the fight counts, from its moment
+until their health next rises (still_dead): the log can write a dead
+player's health above 0. A regeneration tick written in the death's own
+millisecond after the DIED line kept one player at 631 health for the 17 s
+they lay dead, and a mechanic's DIED line carries the health before the
+kill; over 1,585 deaths in 9 trial splits, 7 were not at 0 at their own
+moment, the moment a death's Positions link opens at. Gaps over
+0.5 s are 0.5 to 15.9% of a fight, by log (the study), hence the two
+steps. A unit's age counts from the last line that wrote it (the
+reader's seen), not from when its state began: the log writes a unit
+standing still again and again unchanged (state_age has the measures),
+and the table says 'last seen 6 s ago'. Adds keep their own
+clock: an add's last line is not its death
+(62% of an add's life lies in gaps over 1 s), so a hostile unit is drawn
+while its last state is under FORGET_MS old, as a cross for DEAD_ADD_MS
+after a state at health 0, then not at all.
+
+The colours. Ink and muted are the fight pane's (fight_render._theme);
+health, shield and damage the death recap's (death_render._THEMES), all
+pinned by test_palette. New here, keyed {False: light, True: dark} and
+measured on the windows11 Base (#ffffff, #2d2d2d): the hostile red of the
+adds, 6.65:1 and 4.70:1, and the boss's, 10.30:1 and 6.03:1. The canvas
+reads light or dark from its palette's background at paint, as the
+timeline strip does, so a theme switch needs only a repaint.
+
+The scrub bar is a QSlider so a screen reader meets a slider with a value
+(whole seconds into the fight); Qt gives a QAbstractSlider subclass no
+value text at all, and a value text of '1:50.0' would need an accessible
+interface made in Python, which crashed at exit in the GUI survey, so the
+moment in words is its description. It takes the focus with a mark of its
+own: Qt's focus frame (PE_FrameFocusRect) draws a 6,000 px tint over a
+100x60 rect in the Fusion style.
+
+### MainWindow.show_moment
+
+*[src/gui/main_window.py:2553](../src/gui/main_window.py#L2553)*
+
+The positions window on the fight *entry* at the moment *t_ms*
+(ms since its session's BEGIN_LOG, the locator's own clock), the
+unit *unit_key* selected (a player's or companion's row 'unit_id',
+which is its FightUnit.key; None for none). The one way in for
+every link to it: a row of the Deaths tab, a death's heading in the
+player window, the fight header's Positions, and the fight's events
+to come. A fight with no locator, or one whose session is not known
+(death_render.positions_known), has no such link and opens nothing.
+
+Design: the positions window and the bytes. One window, made at
+the first link and kept, like the player window, which draws what
+it is given; this window finds where the fight's lines are and has
+them read. The places are worked out here, on the UI thread, at a
+link whose fight the window holds no states for (_reread_places): a
+listing of the split and archive folders, 0.4 to 1.0 ms over a
+428-file split folder. The read runs on 'fight-reread' (0.1 s for a
+median boss fight, 0.4 s for a long one, 0.6 s from a zip) and its
+answer comes back by the bridge (_build_reread). The window shows
+words, not a busy bar, while it waits: nothing in the app moves by
+itself under Reduce motion. A link to the fight being read asks for
+nothing more, and a link to another fight supersedes the read,
+whose answer the window then drops.
 
 ## Before the first fight: the archive line and recent activity
 
@@ -4493,7 +5756,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:729](../src/gui/fight_view.py#L729)*
+*[src/gui/fight_view.py:784](../src/gui/fight_view.py#L784)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -4581,7 +5844,7 @@ needs no escaping and a malformed one is refused.
 
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:592](../src/gui/fight_view.py#L592)*
+*[src/gui/fight_view.py:647](../src/gui/fight_view.py#L647)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.

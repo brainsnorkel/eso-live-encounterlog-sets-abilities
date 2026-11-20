@@ -382,6 +382,83 @@ class TestMinorSlayer(unittest.TestCase):
         self.assertEqual(_findings({}, players=12, veteran=True), [])
 
 
+class TestPerfectedAndNormalTogether(unittest.TestCase):
+    """Issue #215: the checks count a set's perfected and normal pieces
+    together, as the game does (player_build.family_counts)."""
+
+    def test_minor_slayer_from_two_perfected_pieces_and_a_normal_one(self):
+        judged = {'players': 12, 'veteran': True}
+        gear = TestMinorSlayer._deadly(None)
+        gear['HAND'][6] = gear['WAIST'][6] = '590'  # Perfected Sul-Xan's Torment
+        self.assertEqual(_rules(_findings(gear, **judged)), ['no-minor-slayer'])
+        gear['LEGS'][6] = '586'  # and one normal piece: three of the set
+        self.assertEqual(_findings(gear, **judged), [])
+        self.assertEqual(build_issues.slayer_sets(gear), {'586'})
+
+    def _lucent(self):
+        # Three normal body pieces of Lucent Echoes (768), nothing else of it
+        gear = _body('mmmmmmm', set_id='0')
+        for slot in ARMOR[:3]:
+            gear[slot] = _item(slot, 'm', set_id='768')
+        gear['MAIN_HAND'] = _weapon('MAIN_HAND')
+        gear['OFF_HAND'] = _weapon('OFF_HAND', enchant='POISONED_WEAPON')
+        gear['BACKUP_MAIN'] = _weapon('BACKUP_MAIN', 'bow')
+        return gear
+
+    def _one_bar(self, gear):
+        return [f['title'] for f in _findings(gear, role='H') if f['rule'] == 'set-on-one-bar']
+
+    def test_a_group_set_the_perfected_weapons_complete_on_one_bar(self):
+        gear = self._lucent()
+        self.assertEqual(self._one_bar(gear), [])  # three pieces: not the set
+        gear['MAIN_HAND'][6] = gear['OFF_HAND'][6] = '771'  # Perfected Lucent Echoes daggers
+        self.assertEqual(self._one_bar(gear),
+                         ['Lucent Echoes is complete only on the front bar (5/3 pieces)'])
+
+    def test_a_group_set_the_perfected_rings_complete_on_both_bars(self):
+        gear = self._lucent()
+        gear['RING1'][6] = gear['RING2'][6] = '771'
+        self.assertEqual(self._one_bar(gear), [])
+
+    def test_a_group_set_in_one_version_reads_as_before(self):
+        gear = self._lucent()
+        for slot in ARMOR[:3]:
+            gear[slot][6] = '771'
+        gear['MAIN_HAND'][6] = gear['OFF_HAND'][6] = '771'
+        self.assertEqual(self._one_bar(gear),
+                         ['Perfected Lucent Echoes is complete only on the front bar (5/3 pieces)'])
+
+    def test_a_swapped_piece_keeps_the_proc_sets_session_record(self):
+        """Five perfected pieces are the perfected id and four with a normal
+        one the normal id: the session's record is one, so a set that fired
+        before the swap has fired."""
+        tracker = build_issues.BuildIssueTracker()
+        tracker.note_fight('@x', 1000, 90.0, {'497'}, {'497'})   # fired, all perfected
+        tracker.note_fight('@x', 200000, 90.0, {'496'}, set())   # one ring swapped: silent
+        self.assertEqual(tracker.long_fights('@x', '496'), (2, True))
+        self.assertEqual(tracker.long_fights('@x', '497'), (2, True))
+        self.assertEqual(tracker.findings('@x', {'496'}), [])
+        # Never fired in either version: both fights count, under the worn name
+        tracker.note_fight('@y', 1000, 90.0, {'497'}, set())
+        tracker.note_fight('@y', 200000, 90.0, {'496'}, set())
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'496'})],
+                         ['Roaring Opportunist never fired in 2 fights of a minute or more'])
+        self.assertEqual([f['title'] for f in tracker.findings('@y', {'497'})],
+                         ['Perfected Roaring Opportunist never fired in 2 fights of a minute '
+                          'or more'])
+        # A set with one version keeps its own record
+        tracker.note_fight('@y', 1000, 90.0, {'232'}, {'232'})
+        self.assertEqual(tracker.long_fights('@y', '232'), (1, True))
+
+    def test_a_proc_set_in_both_versions_is_worn(self):
+        gear = _body('mmmmmmm', set_id='0')
+        for slot in ARMOR[:3]:
+            gear[slot] = _item(slot, 'm', set_id='496')  # Roaring Opportunist
+        self.assertEqual(worn_proc_sets(gear), set())
+        gear['RING1'][6] = gear['RING2'][6] = '497'  # and two perfected rings
+        self.assertEqual(worn_proc_sets(gear), {'496'})
+
+
 class TestTankWithoutTaunt(unittest.TestCase):
     """A tank with no taunt or pull: the role, tank gear, a small share of
     the damage and no healer sign, and nothing on the bars that holds a
@@ -707,6 +784,52 @@ class TestEngine(unittest.TestCase):
 
     def _players(self, entry):
         return {p['name']: p for p in entry.players}
+
+    def _set_buffs(self, *fights):
+        return [{name: p['set_buffs'] for name, p in self._players(entry).items()}
+                for entry in _fights(_session(*fights))]
+
+    def test_a_player_has_the_set_buff_ids_they_had_up(self):
+        """Issue #79: the sets' own ids of the buffs a player had up on
+        anyone in the fight (set_text.SetBuffRecorder), for the 'from <set>'
+        in a strip row's summary. Spell Power Cure's Major Courage is 66902,
+        Roaring Opportunist's Major Slayer 135923; 76667 is a proc id the
+        set-buff table does not hold."""
+        fight = _fight(10000, 30000, alkosh_fires=True)
+        fight[-1:-1] = [_self_effect(14000, 2, 'GAINED', '66902'),
+                        _self_effect(15000, 2, 'FADED', '66902'),
+                        _self_effect(16000, 2, 'GAINED', '135923'),
+                        _self_effect(17000, 2, 'FADED', '135923')]
+        first, second = self._set_buffs(fight, _fight(40000, 60000))
+        self.assertEqual(first['@alkosh'], ['66902', '135923'])
+        self.assertEqual(first['@nirn'], [])
+        # Faded in the first fight: none in the next
+        self.assertEqual(second['@alkosh'], [])
+
+    def test_a_buff_gained_before_the_pull_and_still_up_counts(self):
+        """Review of #220: Roaring Opportunist's Major Slayer procs at the
+        end of one pack and is still up through the next pull; the row
+        shows the wearer, so the set is theirs too."""
+        gap = [_self_effect(35000, 2, 'GAINED', '135923'),
+               _self_effect(45000, 2, 'FADED', '135923')]
+        _first, second = self._set_buffs(_fight(10000, 30000), gap + _fight(40000, 60000))
+        self.assertEqual(second['@alkosh'], ['135923'])
+
+    def test_a_buff_only_refreshed_in_the_fight_counts(self):
+        fight = _fight(10000, 30000)
+        fight[-1:-1] = [_self_effect(15000, 2, 'UPDATED', '66902'),
+                        _self_effect(16000, 2, 'FADED', '66902')]
+        (first,) = self._set_buffs(fight)
+        self.assertEqual(first['@alkosh'], ['66902'])
+
+    def test_a_buff_that_faded_before_the_zones_first_pull_does_not(self):
+        """Review of #220: the zone's first encounter is made at the zone
+        change; a set buff from the entrance, gone before the pull, is not
+        the fight's."""
+        early = [_self_effect(5000, 2, 'GAINED', '66902'),
+                 _self_effect(6000, 2, 'FADED', '66902')]
+        (first,) = self._set_buffs(early + _fight(10000, 30000))
+        self.assertEqual(first['@alkosh'], [])
 
     def test_every_player_gets_the_key_and_the_structural_findings(self):
         entries = _fights(_session(_fight(10000, 30000)))

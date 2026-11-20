@@ -23,6 +23,8 @@ Settings path did just that: Save, redraw, old size). apply() delivers the
 posted font changes before it returns.
 """
 
+import sys
+
 MIN_PCT = 80
 MAX_PCT = 200
 STEP_PCT = 10
@@ -86,18 +88,29 @@ def apply(pct) -> int:
     return _pct
 
 
+def fixed_family(platform: str | None = None) -> str:
+    """The fixed-pitch family asked for by name on *platform* (the running
+    one unless given): Menlo on macOS, Consolas elsewhere. macOS is never
+    asked for Consolas: a family Qt cannot find there costs a search of
+    every installed font and a warning in the log (issue #32)."""
+    return "Menlo" if (platform or sys.platform) == "darwin" else "Consolas"
+
+
 def fixed_font():
     """The fixed-pitch font at the text size in force, for the rule editor
-    and the examples list: Consolas where it is installed, else the
-    system's fixed font. Qt's fixed font is Courier New on the Windows
-    desktop and, offscreen, Agency FB, which is why the guide's rules
-    looked condensed (issue #187)."""
+    and the examples list: Consolas where it is installed (Menlo on
+    macOS), else the system's fixed font. Qt's fixed font is Courier New
+    on the Windows desktop and, offscreen, Agency FB, which is why the
+    guide's rules looked condensed (issue #187). On macOS it is Menlo
+    already on the desktop, and offscreen a name that resolves to the
+    system's proportional font."""
     from PySide6.QtGui import QFont, QFontDatabase, QFontInfo
     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
     # QFontInfo resolves the one family; QFontDatabase.families() would
     # enumerate every installed font on each open of Settings
-    if QFontInfo(QFont("Consolas")).family() == "Consolas":
-        font.setFamily("Consolas")
+    family = fixed_family()
+    if QFontInfo(QFont(family)).family() == family:
+        font.setFamily(family)
     font.setPointSizeF(font.pointSizeF() * _pct / 100.0)
     return font
 

@@ -61,6 +61,17 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(po.verdict(_pull(health_left=0.2, dead_at_end=list("abcdef"))), po.WIPE)
         self.assertEqual(po.verdict(_pull(health_left=2.5)), po.LEFT)
 
+    def test_a_boss_left_all_but_dead_died_whoever_lay_dead(self):
+        """Sanity's Edge's Archwizard Twelvane leaves his phase at 7 of 124
+        million health with no death line (issue #221)."""
+        dead = list("abcdef")
+        self.assertEqual(po.verdict(_pull(health_left=0.000006, dead_at_end=dead)), po.KILL)
+        self.assertEqual(po.verdict(_pull(health_left=po.NEAR_ZERO_KILL_PCT, dead_at_end=dead)),
+                         po.WIPE)
+        # Not with every player dead: a wipe however close
+        self.assertEqual(po.verdict(_pull(health_left=0.000006, dead_at_end=list("abcdefghijkl"))),
+                         po.WIPE)
+
     def test_a_late_death_can_turn_the_verdict(self):
         pull = _pull(dead_at_end=list("abcde"))
         self.assertEqual(pull["outcome"], po.LEFT)
@@ -137,6 +148,21 @@ class TestTimeDead(unittest.TestCase):
         self.assertIn("1", dead.since)
         dead.alive("1", 25_000)
         self.assertEqual(dead.totals(60_000), {"1": 15_000})
+
+    def test_each_return_from_the_dead_is_listed(self):
+        """For the fight's events (fight_events): a death and its return; a
+        player dead as the fight ended, up before it carries on; and one
+        dead since an earlier pull, marked so."""
+        dead = po.TimeDead()
+        dead.begin(10_000, carried=["3"])
+        dead.died("1", 20_000)
+        dead.alive("1", 35_000)
+        dead.alive("3", 40_000)
+        dead.died("2", 50_000)
+        dead.end(60_000)
+        dead.alive("2", 75_000)
+        self.assertEqual(dead.revived, [("1", 20_000, 35_000, False), ("3", 10_000, 40_000, True),
+                                        ("2", 50_000, 75_000, False)])
 
     def test_the_end_closes_what_is_open_and_says_who_was_dead(self):
         dead = po.TimeDead()

@@ -181,6 +181,115 @@ jobs:
         path: dist/esolog-tail-linux-x86_64-${{ steps.version.outputs.VERSION }}.tar.gz
         if-no-files-found: error
 
+  # macOS (issue #32). These two jobs run for pull requests and manual runs,
+  # not for tags: the app they build is ad-hoc signed, which Gatekeeper
+  # refuses on a user's Mac, so no release carries it and the release job
+  # does not wait for them. Signing and notarization come with the job that
+  # will make a release wait.
+  build-macos:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    # The oldest hosted macOS image, Apple Silicon. The app's minimum macOS
+    # (LSMinimumSystemVersion in esolog-tail.spec) is the oldest system the
+    # suite passes on here and the app starts on in smoke-macos
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    # setup-python's Python, never Homebrew's: Homebrew's is built for the
+    # macOS it runs on, and a bundle made with it runs nowhere older. The
+    # stamp check below fails a build that got the wrong one
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: '3.14'
+        check-latest: true
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-build.txt
+
+    - name: Generate gear set data
+      run: python scripts/generate_gear_data.py
+
+    - name: Create icon
+      run: python scripts/create_icon.py
+
+    - name: Run tests
+      run: |
+        pip install pytest
+        python -m pytest tests/ -q
+      env:
+        QT_QPA_PLATFORM: offscreen
+
+    - name: Get version
+      id: version
+      run: python -c "from src.version import __version__; print(f'VERSION={__version__}')" >> $GITHUB_OUTPUT
+
+    - name: Build the app bundle
+      run: python -m PyInstaller esolog-tail.spec --noconfirm
+
+    - name: Check the minimum macOS of every binary
+      run: python scripts/check_macos_stamps.py "dist/ESO Log Tail.app"
+
+    # ditto keeps the bundle's symlinks and signature as Finder's own
+    # "Compress" does; zip would not. "unsigned" is in the file's name and
+    # the artifact's, so that it can never be taken for a release's file
+    - name: Create zip
+      run: |
+        ditto -c -k --sequesterRsrc --keepParent "dist/ESO Log Tail.app" \
+          "dist/esolog-tail-macos-arm64-${{ steps.version.outputs.VERSION }}-unsigned.zip"
+
+    - name: Upload zip artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: unsigned-macos-arm64
+        path: dist/esolog-tail-macos-arm64-${{ steps.version.outputs.VERSION }}-unsigned.zip
+        if-no-files-found: error
+
+  # Start the zip, expanded as a download would be, on every macOS the app
+  # claims to run on. A leg that is expected to fail is taken out, not left
+  # red: when the app is released every leg will be in the release job's needs
+  smoke-macos:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    needs: build-macos
+    strategy:
+      fail-fast: false
+      matrix:
+        # xcode-27 is an image named for its Xcode, on the newest macOS;
+        # the first step prints which
+        os: [macos-15, macos-26, xcode-27]
+    runs-on: ${{ matrix.os }}
+    steps:
+    # For the smoke script and its fixture log; nothing is installed
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Show the macOS version and Gatekeeper's state
+      run: |
+        sw_vers
+        spctl --status || true
+
+    - name: Download the zip
+      uses: actions/download-artifact@v8
+      with:
+        name: unsigned-macos-arm64
+        path: download
+
+    - name: Expand the zip
+      run: ditto -x -k download/esolog-tail-macos-arm64-*-unsigned.zip app
+
+    - name: Verify the signature
+      run: codesign --verify --deep --strict --verbose=2 "app/ESO Log Tail.app"
+
+    # The app draws with the cocoa platform plugin here, as on a user's Mac
+    - name: Smoke test the app
+      run: python3 scripts/smoke_macos.py "app/ESO Log Tail.app/Contents/MacOS/esolog-gui"
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [build-windows, build-linux]

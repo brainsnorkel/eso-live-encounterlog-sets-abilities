@@ -11,7 +11,9 @@ through build_requested, a click on their dps
 figure through damage_requested, a click on the header's group dps figure
 through graph_requested, a click on a player's build-issues (i) through
 issues_requested, a click on a player's pen/crit token through
-pen_crit_requested.
+pen_crit_requested, a click on a death's Positions link through
+positions_requested (a moment of the fight, issue #214) and on the
+header's through fight_positions_requested.
 
 A player's name and dps figure look like plain text (the dps figures carry
 a small glyph that says they can be clicked, see gui.glyphs; the names do
@@ -44,7 +46,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
 from gui.activity_render import activity_action_from_href, review_index_from_href
-from gui.death_render import FIGHT_DEATHS_HREF, RECAP_HREF, recap_from_href, unit_from_href
+from gui.death_render import (
+    FIGHT_DEATHS_HREF, FIGHT_POSITIONS_HREF, RECAP_HREF, events_from_href, positions_from_href,
+    recap_from_href,
+    unit_from_href,
+)
 from gui.fight_render import (
     BANNER_HREF, BUILD_HREF, DAMAGE_HREF, GLYPH_SCHEME, GRAPH_HREF, MASTERY_HREF, build_unit_from_href,
     damage_unit_from_href, healing_unit_from_href, issues_unit_from_href, mastery_unit_from_href,
@@ -121,6 +127,14 @@ class FightView(QTextBrowser):
     # unit id and number from 1 of one death, in a list of a fight's deaths
     # (issue #196)
     recap_requested = Signal(str, int)
+    # A moment of the fight in the positions window (issue #214): the key of
+    # the unit to select ('' for none) and ms into the fight; and the fight
+    # header's Positions, which opens at the fight's own moment
+    positions_requested = Signal(str, int)
+    # A death's Events link: the player's unit id and the moment, in ms
+    # into the fight (issue #214)
+    events_requested = Signal(str, int)
+    fight_positions_requested = Signal()
     banner_requested = Signal(str)  # 'open', 'save' or 'copy': the run's score banner (issue #167)
     # A split log listed beside a run's result: its place in the list the
     # page was drawn with, and 'open' or 'copy' (issue #194)
@@ -145,6 +159,7 @@ class FightView(QTextBrowser):
         self._tooltips: Dict[str, str] = {}
         self._anchor_names: Dict[str, str] = {}
         self.current_tooltip = ""  # text shown for the hovered anchor, "" when none
+        self._key_tip = False  # the text on show is a link's that Tab reached
         self.hovered_build_link = ""  # href of the name carrying the hover cue
         self._search_selections: List[QTextEdit.ExtraSelection] = []
         self._hover_selections: List[QTextEdit.ExtraSelection] = []
@@ -235,6 +250,7 @@ class FightView(QTextBrowser):
         self._apply_selections()
 
     def setHtml(self, text: str) -> None:
+        self._hide_key_tip()  # its link is going with the page
         # Selections point into the document being replaced
         self._search_selections = []
         self._hover_selections = []
@@ -302,12 +318,49 @@ class FightView(QTextBrowser):
         cursor = self.textCursor()
         self._key_link = ((cursor.selectionStart(), cursor.selectionEnd())
                           if cursor.hasSelection() else None)
+        if not self._own_step:
+            self._show_key_tip()
         return moved
+
+    def _show_key_tip(self) -> None:
+        """Design: Hover text from the keyboard. A link's hover text was the
+        mouse's alone: Qt reports a hovered link (highlighted) and nothing
+        for one Tab moves to, so a set's bonus lines, an ability's name
+        behind its icon or a death's cause could not be read without a
+        pointer. The reader's own Tab or Shift+Tab now shows the text of the
+        link it lands on, just under the link's line, where the pointer may
+        be anywhere; a link without text, or leaving the page, takes the
+        last one away. Not the step keeping_place takes to give a link its
+        focus back after a redraw: the page redraws on every live fight
+        update, and the text would come back each time (issue #79).
+
+        Qt takes a tooltip down on a mouse press, the wheel or a change of
+        focus, but not on a key, so text shown for a key would stay over a
+        page that scrolled or changed under it: it is taken down when the
+        page is drawn anew, when the reader scrolls and when the focus
+        leaves (_hide_key_tip)."""
+        link = self._tab_link()
+        text = self._tooltips.get(link[0]) if link else None
+        self.current_tooltip = text or ""
+        self._key_tip = bool(text)
+        if text:
+            rect = self.cursorRect(self._selection_start())
+            QToolTip.showText(self.viewport().mapToGlobal(rect.bottomLeft()), text, self)
+        else:
+            QToolTip.hideText()
+
+    def _hide_key_tip(self) -> None:
+        """Take down the hover text Tab brought up, if it is still up."""
+        if self._key_tip:
+            self._key_tip = False
+            self.current_tooltip = ""
+            QToolTip.hideText()
 
     def mousePressEvent(self, event) -> None:
         # A click is not Tab: the link it selects is no link Tab reached
         # (_tab_link)
         self._key_link = None
+        self._hide_key_tip()
         super().mousePressEvent(event)
 
     def link_top(self) -> int | None:
@@ -427,6 +480,7 @@ class FightView(QTextBrowser):
     def _on_reader_scrolled(self, _action) -> None:
         # The wheel, a key or the bar itself: the reader's place from now on
         self.release_place()
+        self._hide_key_tip()  # its link has moved from under it
 
     def _links(self):
         """(href, start, end) of each link on the page, in document order,
@@ -515,6 +569,7 @@ class FightView(QTextBrowser):
         (give_link_back, issue #196)."""
         if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
             self._left_link = self._tab_link()
+        self._hide_key_tip()
         super().focusOutEvent(event)
 
     def give_link_back(self) -> None:
@@ -821,6 +876,17 @@ class FightView(QTextBrowser):
         unit_id = healing_unit_from_href(url.toString())
         if unit_id is not None:
             self.healing_requested.emit(unit_id)
+            return
+        if url.toString() == FIGHT_POSITIONS_HREF:
+            self.fight_positions_requested.emit()
+            return
+        moment = positions_from_href(url.toString())
+        if moment is not None:
+            self.positions_requested.emit(*moment)
+            return
+        moment = events_from_href(url.toString())
+        if moment is not None:
+            self.events_requested.emit(*moment)
             return
         death = recap_from_href(url.toString())
         if death is not None:

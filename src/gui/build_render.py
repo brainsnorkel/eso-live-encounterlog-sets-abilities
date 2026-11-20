@@ -49,7 +49,7 @@ from gui.death_render import _THEMES as _KIND_THEMES, kinds_block_html
 from gui.fight_render import (
     ROLE_NAMES, WEREWOLF_LABEL, _bar_html, _join, _scribed_html, _subclass_text, _theme,
     form_share_text, healing_text, issues_html, second_mastery_likely, second_mastery_phrase,
-    taken_href, ultimate_gap, ultimate_lines,
+    set_hovers, set_href, taken_href, ultimate_gap, ultimate_lines,
 )
 from gui.name_mask import NO_MASK
 from gui.text_size import scaled_px
@@ -457,6 +457,11 @@ def _item_cells(row: dict, dark: bool, theme, set_links, text_color: str, e):
 
 def _gear_html(p, dark: bool, theme, set_links, text_color: str, base_pt: float, e) -> str:
     gear = {str(row.get("slot")): row for row in p.get("gear") or []}
+    if set_links:
+        # A row's set link is the player's own, as on their gear line: its
+        # hover has the set's lines at their piece count (set_hovers)
+        hovers, pages = set_hovers(p), set_links
+        set_links = lambda name: set_href(name, pages, hovers)
     muted = theme["muted"]
     if not gear:
         return f"<p style='margin:8px 0;color:{muted}'>{NO_GEAR}</p>"

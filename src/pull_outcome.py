@@ -35,7 +35,14 @@ shades, and a few seconds-long scripted starts.
   the group dead when the fight ended. That last test caught 5 fights
   whose death line never reached the log (Tremorscale at 0.2%, Eliam
   Merick at 0.1%): none was pulled again, and 4 were followed by the next
-  boss. A kill with half the group dead is still a kill: 174 fights.
+  boss. A kill with half the group dead is still a kill: 174 fights. A boss
+  left under NEAR_ZERO_KILL_PCT with one of the group standing died: once
+  the deaths the log writes no line for counted (issue #221), Sanity's
+  Edge's Archwizard Twelvane, who leaves his phase at 7 of 124 million
+  health and writes no death line, read as a wipe with exactly half the
+  group dead, the Chimera kill beginning 0.6 s later. Over the 391 split
+  logs no other pull ends that close to 0 without a kill. With every
+  player dead it stays a wipe, however close.
 - **Wipe**: not a kill, and at least half the fight's players were dead
   when it ended, not revived before END_COMBAT. "Half the group died at
   some point" is the wrong test: in a long fight with resurrections every
@@ -62,12 +69,20 @@ Archwizard Twelvane at 0%), so the rule was dropped; 3 real twin wipes now
 read as kills, and the next pull of the pair shows the group still at it.
 
 Time dead: a player's DIED, KILLING_BLOW or KILLED_BY_SUBZONE (a fall,
-issue #184) opens a span; the next line that carries their state with
-health above 0 closes it, at least
-REVIVE_MIN_MS after the death, since the lines of the killing blow carry
-the corpse's 0. END_COMBAT closes any span still open, and those still
+issue #184) opens a span, and so does a death the log wrote no such line
+for: the player's state reading health 0 for ZERO_HEALTH_HOLD_MS with no
+death line (issue #221, see death_recap), the span from the first 0. The
+next combat line that carries their state with health above 0 closes it,
+at least REVIVE_MIN_MS after the death, since the lines of the killing blow
+carry the corpse's 0. A corpse's own states close none: its healing ticks
+write health with magicka and stamina at 0, and its regeneration tick
+writes health equal to its own regeneration, which later lines repeat for
+seconds (#221, esolog_tail's _note_zero_state). END_COMBAT closes any span still open, and those still
 open are the players dead when the fight ended. A fight the game cut in
-two (COMBAT_RESUME_MS) reopens them. A span starts at the fight's start
+two (COMBAT_RESUME_MS), or carried on while the group fought on
+(waiting_hits), reopens them, but for a player up again between the
+lines, dead until then; a death between the lines is the fight's too
+should it carry on. A span starts at the fight's start
 at the earliest: a player who fell before the pull is dead from it, not
 from the fall. Deaths the log never saw (the others' after the logging
 player released) are missing from the counts, so time dead, read from
@@ -108,8 +123,22 @@ BOSS_SHARE = 0.10
 # A boss under this much health at its last line, the group standing, died
 # out of the log's sight
 LOW_HEALTH_KILL_PCT = 2.0
+# A boss left under this much health died, however many of the group lay
+# dead, so long as one stood (see the module: a phase boss that leaves all
+# but dead)
+NEAR_ZERO_KILL_PCT = 0.01
 # A state with health this soon after a death is the dying line's own
 REVIVE_MIN_MS = 1000
+# A player at 0 health this long with no death line died (issue #221); one
+# up again sooner did not. Every 0 a player survived in the maintainer's
+# 391 split logs lasted under 1 s (the longest 964 ms); a longer hold only
+# loses real deaths
+ZERO_HEALTH_HOLD_MS = 1000
+# A death line this soon after a death read from 0 health, the player not
+# seen up between, is that death's own, written late (issue #221): death
+# lines come up to 3,018 ms after the first 0, and a player's next death
+# 13.7 s or more after one read from 0 health
+ZERO_LINE_SAME_MS = 5000
 # A fight that carries on the last pull (see the module)
 CONTINUE_GAP_S = 60.0
 CONTINUE_MAX_PCT = 97.0
@@ -194,7 +223,7 @@ class TimeDead:
     the next pull."""
 
     __slots__ = ("_ended", "_paused", "_paused_carried", "at_end", "carried", "carried_at_end",
-                 "carried_ms", "ms", "since", "start")
+                 "carried_ms", "ms", "revived", "since", "start")
 
     def __init__(self):
         self.start = 0  # the fight's start, set at BEGIN_COMBAT
@@ -207,6 +236,10 @@ class TimeDead:
         self._ended = 0
         self._paused: dict[str, tuple[int, int]] = {}
         self._paused_carried: dict[str, int] = {}
+        # Each return from the dead: (key, the death, the moment back, and
+        # whether the player was dead since an earlier pull, the death then
+        # this fight's start), for the fight's events (fight_events)
+        self.revived: list[tuple[str, int, int, bool]] = []
 
     def begin(self, start_ms: int, carried=()) -> None:
         """BEGIN_COMBAT: the fight's start, and the players still dead
@@ -232,18 +265,37 @@ class TimeDead:
         began = self.carried.pop(key, None)
         if began is not None:
             self.carried_ms[key] = self.carried_ms.get(key, 0) + max(0, timestamp_ms - began)
+            # Dead since an earlier pull (fight_events: no death of this fight's)
+            self.revived.append((key, began, timestamp_ms, True))
+        # Dead as the fight ended and up again before it carries on (the
+        # group fighting on, waiting_hits): dead until now, not reopened
+        # by resume
+        paused_began = self._paused_carried.pop(key, None)
+        if paused_began is not None:
+            self.carried_ms[key] = (self.carried_ms.get(key, 0)
+                                    + max(0, timestamp_ms - self._ended))
+            self.revived.append((key, paused_began, timestamp_ms, True))
+        paused = self._paused.get(key)
+        if paused is not None and timestamp_ms - paused[1] >= REVIVE_MIN_MS:
+            del self._paused[key]
+            self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - self._ended)
+            # Dead as the fight ended, up again as it carries on
+            self.revived.append((key, paused[1], timestamp_ms, False))
         span = self.since.get(key)
         if span is None or timestamp_ms - span[1] < REVIVE_MIN_MS:
             return
         del self.since[key]
         self.ms[key] = self.ms.get(key, 0) + max(0, timestamp_ms - span[0])
+        self.revived.append((key, span[1], timestamp_ms, False))
 
     def watching(self) -> bool:
-        """Whether any player is down (a line with their health matters)."""
-        return bool(self.since or self.carried)
+        """Whether any player is down (a line with their health matters),
+        the fight's dead at its end included, should it carry on."""
+        return bool(self.since or self.carried or self._paused or self._paused_carried)
 
     def watches(self, key: str) -> bool:
-        return key in self.since or key in self.carried
+        return (key in self.since or key in self.carried or key in self._paused
+                or key in self._paused_carried)
 
     def end(self, timestamp_ms: int) -> None:
         """END_COMBAT: close every span; those were dead at the end."""
@@ -266,8 +318,10 @@ class TimeDead:
         self._paused.setdefault(key, (timestamp_ms, timestamp_ms))
 
     def resume(self) -> None:
-        """The fight carries on (COMBAT_RESUME_MS): reopen, from the end,
-        the spans the end closed."""
+        """The fight carries on (COMBAT_RESUME_MS, or the group fighting
+        on): reopen, from the end, the spans the end closed, but for the
+        players up again since (alive). A death since is in since already
+        (the engine's died, between the lines)."""
         for key, (_start, death) in self._paused.items():
             self.since[key] = (self._ended, death)
         for key, began in self._paused_carried.items():
@@ -299,9 +353,12 @@ def verdict(pull: dict) -> str:
     """KILL, WIPE, UNSEEN or LEFT from a pull record's facts (see the
     module)."""
     dead = len(pull.get("dead_at_end") or ())
-    half = dead >= 1 and dead * 2 >= max(int(pull.get("players") or 0), 1)
+    players = max(int(pull.get("players") or 0), 1)
+    half = dead >= 1 and dead * 2 >= players
     left = pull.get("health_left")
-    if pull.get("boss_died") or (left is not None and left < LOW_HEALTH_KILL_PCT and not half):
+    if pull.get("boss_died") or (left is not None and (
+            (left < NEAR_ZERO_KILL_PCT and dead < players)
+            or (left < LOW_HEALTH_KILL_PCT and not half))):
         return KILL
     if half:
         return WIPE

@@ -39,7 +39,7 @@ TOPICS = [
     ("Fight boundaries: combat with no enemy", [
         "src/esolog_tail.py:ESOLogAnalyzer._note_enemy_met",
     ]),
-    ("Fight boundaries: the hits before the line", [
+    ("Fight boundaries: the hits before the line and the group fighting on", [
         "src/waiting_hits.py",
     ]),
     ("The fight's opener", [
@@ -85,6 +85,11 @@ TOPICS = [
         "scripts/generate_weapon_types.py",
         "scripts/generate_armor_weights.py",
     ]),
+    ("Perfected and normal pieces of one set", [
+        "src/player_build.py:family_counts",
+        "src/pen_crit.py:table_sets_worn",
+        "src/gui/fight_render.py:set_entries",
+    ]),
     ("Set names", [
         "src/gear_set_database.py",
         "scripts/generate_gear_data.py",
@@ -92,6 +97,13 @@ TOPICS = [
     ]),
     ("Set buffs: which set a Major or Minor buff came from", [
         "scripts/generate_set_buffs.py",
+        "src/set_text.py:sets_behind",
+        "src/set_text.py:SetBuffRecorder",
+    ]),
+    ("Set text in the hovers, and hover text from the keyboard", [
+        "src/set_text.py",
+        "src/gui/fight_render.py:set_hovers",
+        "src/gui/fight_view.py:FightView._show_key_tip",
     ]),
     ("Game data against the game's version: the staleness check", [
         "src/data_staleness.py",
@@ -163,6 +175,7 @@ TOPICS = [
     ]),
     ("Death recaps", [
         "src/death_recap.py",
+        "src/esolog_tail.py:ESOLogAnalyzer._note_zero_state",
     ]),
     ("Kinds of damage: direct or over time, area or single target, Martial or Magical", [
         "src/damage_kinds.py",
@@ -173,11 +186,20 @@ TOPICS = [
     ("The player window: one window, a tab for each link", [
         "src/gui/player_window.py",
     ]),
-    ("The fight's tabs: Fight, Deaths and Instance", [
+    ("The fight's tabs: Fight, Deaths, Events, DPS graph and Instance", [
         "src/gui/fight_tabs.py",
         "src/gui/main_window.py:MainWindow._show_fight",
         "src/gui/fight_deaths_render.py",
         "src/gui/instance_render.py",
+    ]),
+    ("The Events tab: a fight's notable events, in order", [
+        "src/fight_events.py",
+        "src/event_rows.py",
+        "src/gui/events_tab.py",
+    ]),
+    ("The Events tab: one player's actions", [
+        "src/fight_casts.py",
+        "src/action_rows.py",
     ]),
     ("Experimental buff timeline", [
         "src/buff_timeline.py",
@@ -206,6 +228,15 @@ TOPICS = [
         "src/review_load.py",
         "src/gui/review_runner.py",
     ]),
+    ("Re-reading one fight: where its lines are in the log", [
+        "src/fight_locator.py",
+        "src/fight_reread.py",
+    ]),
+    ("Positions: a moment held still, and played back", [
+        "src/gui/positions_window.py",
+        "src/gui/positions_canvas.py",
+        "src/gui/main_window.py:MainWindow.show_moment",
+    ]),
     ("Before the first fight: the archive line and recent activity", [
         "src/recent_activity.py",
         "src/gui/activity_render.py",
@@ -229,7 +260,8 @@ TOPICS = [
     ("Hidden names: the stand-in behind the blur", [
         "src/gui/name_mask.py",
     ]),
-    ("Links in the fight pane: the hover cue and the dps glyphs", [
+    ("Links in the fight pane: the hover cue, the dps glyphs and what a screen reader hears", [
+        "src/gui/fight_view.py",
         "src/gui/fight_view.py:FightView._show_hover_cue",
         "src/gui/glyphs.py",
     ]),

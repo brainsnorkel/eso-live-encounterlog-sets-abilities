@@ -2,7 +2,7 @@
 """
 Move the byte-identical copies of split logs to the Recycle Bin (issue #85).
 
-Until 0.18.0 a session split again was written out again under the next
+Through 0.18.0 a session split again was written out again under the next
 ``-N`` suffix: the pre-GUI tool's ``--read-all-then-tail`` did that to every
 session in the log at every start, and 513 of the 899 files in the
 maintainer's split folder were copies of another file, several GB in all.

@@ -168,12 +168,20 @@ class TestMainWindow(AccessibilityTestCase):
 
     def test_the_parts_are_named(self):
         from PySide6.QtGui import QAccessible
+
+        from gui.keys import key_text
         win = self._window()
+        find = f"Find ({key_text('Ctrl+F')})"  # as the platform writes the key
         for widget, name in ((win.history_list, "Fights"), (win.search_field, "Search this tab"),
                              (win.fight_tabs, "Fight views"), (win.fight_view, "Fight"),
-                             (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline")):
+                             (win.deaths_view, "Deaths"), (win.timeline_strip, "Buff timeline"),
+                             (win.events_view.table, "Fight events"),
+                             (win.events_view.more_button, "More"),
+                             (win.fight_views.find_button, find)):
             self.assertEqual(QAccessible.queryAccessibleInterface(widget).text(QAccessible.Name),
                              name)
+        # Linux names a combo box by its current item, so its own name here
+        self.assertEqual(win.events_view.show_picker.accessibleName(), "Show")
 
     def test_reduce_motion_is_read_at_start(self):
         from gui.fight_view import reduce_motion
@@ -234,6 +242,84 @@ class TestReduceMotion(AccessibilityTestCase):
         dialog.reduce_motion.setChecked(True)
         dialog.apply_to_config()
         self.assertTrue(config.get("display.reduce_motion"))
+
+
+class TestPositionsWindow(AccessibilityTestCase):
+    """The positions window (issue #214): its painted canvas is named and
+    describes the moment in numbers, never names; the table beside it is
+    the reader's surface, a real table whose hidden names read 'hidden
+    name'; the scrub bar is a slider with the moment in words; nothing
+    moves until the reader presses Play (#232), so Reduce motion has
+    nothing to stop."""
+
+    def _window(self, hide=False):
+        from fight_reread import RereadEvent
+        from gui.name_mask import NameMask
+        from gui.positions_window import PositionsWindow
+        from tests.unit.test_positions_window_gui import (
+            DEATH,
+            DPS,
+            session,
+            split_and_states,
+        )
+        _log, _path, fights, states = split_and_states(self.root, session())
+        entry = fights[0]
+        window = PositionsWindow()
+        self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)
+        window.open(entry, DEATH, DPS, dark=False, names=NameMask.for_entry(entry, hide))
+        window.reread_done(RereadEvent("loaded", entry.locator, states))
+        return window
+
+    def test_the_canvas_reads_the_moment_in_numbers(self):
+        from PySide6.QtGui import QAccessible
+        window = self._window(hide=True)
+        iface = QAccessible.queryAccessibleInterface(window.canvas)
+        self.assertEqual(iface.text(QAccessible.Name), "Positions")
+        text = _described(window.canvas)
+        self.assertEqual(text, "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive.")
+        self.assertNotIn("@", text)
+
+    def test_the_table_is_a_table_and_a_hidden_name_reads_as_hidden(self):
+        from PySide6.QtGui import QAccessible
+        window = self._window(hide=True)
+        iface = QAccessible.queryAccessibleInterface(window.table)
+        self.assertEqual(iface.role(), QAccessible.Table)
+        self.assertEqual(iface.text(QAccessible.Name), "Players and bosses")
+        names = [iface.child(i).text(QAccessible.Name) for i in range(iface.childCount())]
+        self.assertIn("hidden name", names)
+        self.assertIn("@tester", names)  # the player writing the log
+        self.assertFalse(any("▒" in name for name in names))
+        # The table carries the canvas's description, for a reader on it
+        self.assertEqual(_described(window.table), _described(window.canvas))
+
+    def test_the_scrub_bar_is_a_slider_and_the_boss_bars_are_read(self):
+        from PySide6.QtGui import QAccessible
+        window = self._window()
+        iface = QAccessible.queryAccessibleInterface(window.scrub)
+        self.assertEqual(iface.role(), QAccessible.Slider)
+        self.assertEqual(iface.text(QAccessible.Name), "Moment")
+        self.assertEqual(_described(window.scrub), "0:06.0 into the fight, of 12s")
+        bars = QAccessible.queryAccessibleInterface(window.boss_bars)
+        self.assertEqual(bars.text(QAccessible.Name), "Boss health")
+        self.assertEqual(_described(window.boss_bars), "Test Boss 95% (950,000 of 1,000,000)")
+
+    def test_nothing_moves_by_itself(self):
+        """Its timers are the single-shot redraw of a burst of updates and
+        playback's frames (#232), which run only after the reader's Play:
+        opened and read, neither runs."""
+        from PySide6.QtCore import QTimer
+        window = self._window()
+        timers = window.findChildren(QTimer)
+        self.assertEqual(len(timers), 2)
+        redraw = [timer for timer in timers if timer.isSingleShot()]
+        self.assertEqual([timer.interval() for timer in redraw], [0])
+        self.assertFalse(any(timer.isActive() for timer in timers))
+        self.assertFalse(window.is_playing())
+        window.play()
+        self.assertTrue(any(timer.isActive() for timer in timers))
+        window.pause()
+        self.assertFalse(any(timer.isActive() for timer in timers))
 
 
 if __name__ == "__main__":

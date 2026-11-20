@@ -79,6 +79,18 @@ USER_AGENT = ("esolog-tail build script "
 ATTRIBUTION = "Set data from UESP (esolog.uesp.net), CC-BY-SA 2.5"
 MIN_SETS = 500  # the game has 700-odd; fewer means a bad response
 
+
+
+def _family_name(set_name: str) -> str:
+    """A set's name without its version: the normal set's, by the rule the
+    app pairs a perfected set with its normal one (player_build)."""
+    src = str(REPO_ROOT / "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    from player_build import normal_set_name
+    return normal_set_name(set_name)
+
+
 _BONUS_RE = re.compile(r"^\((\d+) (perfected )?items?\)\s*(.*)$", re.DOTALL)
 # "Adds 34-1487 Offensive Penetration", "Gain 100000 Offensive Penetration",
 # "Adds 2-110 Weapon and Spell Damage and 28-1240 Offensive Penetration"
@@ -176,12 +188,12 @@ def classify_bonus(pieces: int, text: str, set_name: str) -> dict:
         if "Weakness" in sentence and "Critical Damage taken" in sentence and "Elemental Weakness" not in provides:
             provides.append("Elemental Weakness")
         if ("group members" in sentence and "Critical Damage" in sentence and "increases by" in sentence
-                and set_name.replace("Perfected ", "") not in provides):
-            provides.append(set_name.replace("Perfected ", ""))
+                and _family_name(set_name) not in provides):
+            provides.append(_family_name(set_name))
         if (not named_here and _REDUCES_ARMOR.search(sentence) and _OTHERS.search(sentence)
                 and "pen" not in record):
             # An armor or resistance reduction of the set's own: named after it
-            name = set_name.replace("Perfected ", "")
+            name = _family_name(set_name)
             if name not in provides:
                 provides.append(name)
     if gives:

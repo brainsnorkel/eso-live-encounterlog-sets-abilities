@@ -145,6 +145,26 @@ class TestGraphWidget(unittest.TestCase):
         graph.hover_second = 4
         graph.grab()  # the crosshair and markers paint without error
 
+    def test_the_fights_end_marked_when_the_group_fought_on(self):
+        """The group fought on after the fight's end (issue #162, part 2):
+        the chart runs to the last hit, the fight's end marked."""
+        from PySide6.QtGui import QColor
+        from gui.dps_graph import Curve, DpsGraph
+        graph = DpsGraph()
+        graph.resize(800, 400)
+        player = Curve('1', '@player1', QColor('#2a78d6'), smoothed_dps(SERIES, 1, 14.0))
+        graph.set_curves([player], 14.0, fight_end_s=10.0)
+        self.assertEqual(graph._fight_end_s, 10.0)
+        self.assertEqual(graph.second_at(graph._plot_rect().right()), 14)
+        self.assertIn('the fight ended at', graph.accessibleDescription())
+        graph.grab()  # the dashed line and its label paint without error
+        # A fight that ends the chart has no mark
+        graph.set_curves([player], 10.0, fight_end_s=10.0)
+        self.assertIsNone(graph._fight_end_s)
+        self.assertNotIn('the fight ended at', graph.accessibleDescription())
+        graph.set_curves([player], 10.0)
+        self.assertIsNone(graph._fight_end_s)
+
     def test_empty_graph_says_so(self):
         from gui.dps_graph import DpsGraph
         graph = DpsGraph()
@@ -634,6 +654,103 @@ class TestGraphTab(unittest.TestCase):
             dialog.graph.grab()
         finally:
             win.close()
+
+    def test_a_fight_the_group_fought_on_after(self):
+        """The engine's entry of a fight the group fought on after (issue
+        #162, part 2): the chart runs to the group's last hit, 3 s past the
+        10 s fight, and marks the fight's end."""
+        from PySide6.QtCore import QUrl
+        from tests.unit.test_fighting_on import FOUGHT_ON, LATER_BOSS
+        from tests.unit.test_hits_before_line import TRASH_FIGHT, Engine
+        entry = Engine().feed([*TRASH_FIGHT, *FOUGHT_ON, *LATER_BOSS]).fights[0]
+        win = self._main_window()
+        try:
+            win._on_fight_completed(entry)
+            win.history_list.select_fight(0)
+            win.fight_view.anchorClicked.emit(QUrl('esolog:graph/'))
+            graph = win.dps_panel.graph
+            self.assertAlmostEqual(graph._duration_s, 13.0)
+            self.assertAlmostEqual(graph._fight_end_s, 10.0)
+            group = next(c for c in graph.curves if c.key == 'Group')
+            self.assertAlmostEqual(group.points[-1][0], 13.0)
+            graph.grab()
+        finally:
+            win.close()
+
+
+@unittest.skipUnless(HAVE_QT, 'PySide6 not installed')
+class TestTheMomentMarked(unittest.TestCase):
+    """Issue #214: a moment another view sends is marked on the chart, and
+    a double-click on the chart asks for that moment's events."""
+
+    def setUp(self):
+        _ensure_app()
+        from gui.dps_graph import DpsGraphPanel
+        self.panel = DpsGraphPanel()
+        self.addCleanup(self.panel.deleteLater)
+        self.panel.resize(900, 500)
+
+    def test_the_mark_its_label_and_what_a_reader_hears(self):
+        entry = _entry(players=2)
+        self.panel.show_graph(entry, False)
+        graph = self.panel.graph
+        self.assertIsNone(graph.cursor)
+        lines = graph.accessibleDescription()
+        self.panel.set_cursor_ms(4960, "Died · Slap")
+        self.assertEqual(graph.cursor, (4.96, "Died · Slap"))
+        self.assertEqual(graph.cursor_text(), "0:05.0 Died · Slap")
+        self.assertEqual(graph.accessibleDescription(), lines + "; marked: 0:05.0 Died · Slap")
+        self.assertFalse(graph.grab().isNull())   # painted with the mark
+        # The same fight drawn again keeps it; another fight, or none, does not
+        self.panel.show_graph(entry, True)
+        self.assertEqual(graph.cursor, (4.96, "Died · Slap"))
+        self.panel.show_graph(_entry(players=2), False)
+        self.assertIsNone(graph.cursor)
+        self.assertEqual(graph.accessibleDescription(), lines)
+        self.panel.set_cursor_ms(1000)
+        self.panel.clear()
+        self.assertIsNone(graph.cursor)
+
+    def test_a_moment_off_the_chart_is_marked_at_its_edge(self):
+        """A death logged after the chart's end, or a hit before the pull:
+        the mark is drawn at that edge with its own time, as the
+        description says it is marked."""
+        from PySide6.QtGui import QPalette
+        self.panel.show_graph(_entry(players=2), False)
+        self.panel.show()
+        graph = self.panel.graph
+        highlight = graph.palette().color(QPalette.Highlight).rgb()
+
+        def marked_columns():
+            image = graph.grab().toImage()
+            y = int(graph._plot_rect().center().y())
+            return [x for x in range(image.width()) if image.pixel(x, y) == highlight]
+
+        self.assertEqual(marked_columns(), [])
+        self.panel.set_cursor_ms(25000, "Died · Slap")       # the chart is 10 s long
+        self.assertEqual(graph.cursor_text(), "0:25.0 Died · Slap")
+        columns = marked_columns()
+        self.assertTrue(columns and abs(columns[-1] - graph._plot_rect().right()) <= 2, columns)
+        self.panel.set_cursor_ms(-3200, "Hit")
+        self.assertEqual(graph.cursor_text(), "-0:03.2 Hit")  # the Events tab's clock
+        columns = marked_columns()
+        self.assertTrue(columns and abs(columns[0] - graph._plot_rect().left()) <= 2, columns)
+        self.panel.hide()
+
+    def test_a_double_click_asks_for_the_moment(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        self.panel.show_graph(_entry(players=2), False)
+        self.panel.show()
+        graph = self.panel.graph
+        asked = []
+        self.panel.moment_requested.connect(asked.append)
+        y = graph.height() // 2
+        QTest.mouseDClick(graph, Qt.LeftButton, pos=QPoint(int(graph._x_for(4.0)), y))
+        self.assertEqual(asked, [4000])
+        QTest.mouseDClick(graph, Qt.LeftButton, pos=QPoint(2, y))   # left of the plot
+        self.assertEqual(asked, [4000])
+        self.panel.hide()
 
 
 if __name__ == '__main__':

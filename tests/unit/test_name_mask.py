@@ -152,6 +152,31 @@ class TestWhoIsHidden(unittest.TestCase):
         self.assertEqual(mask.text("Bob's Companion"), BLOCK * len("Bob's Companion"))
         self.assertIsNotNone(IMG.fullmatch(mask.html("Bob's Companion", "#202124", 9.0)))
 
+    def test_names_within_a_line_of_words(self):
+        """text_in (the Events tab's who and detail, issue #214): each
+        handle the mask hides, a companion's with its suffix, and each
+        hidden character name as a whole word, in a line of other words;
+        the logging player, enemies and 'anon' kept; with a word, each
+        hidden name is that word, for a screen reader."""
+        from gui.name_mask import NO_MASK, NameMask
+        mask = NameMask.for_entry(_entry(), True)
+        hidden = "@" + BLOCK * 6
+        self.assertEqual(mask.text_in("resurrected by @friend at 0:16.0"),
+                         f"resurrected by {hidden} at 0:16.0")
+        self.assertEqual(mask.text_in("at @me, @friend · interrupted by @friend"),
+                         f"at @me, {hidden} · interrupted by {hidden}")
+        self.assertEqual(mask.text_in("@friend's Companion, anon"), f"{hidden}'s Companion, anon")
+        self.assertEqual(mask.text_in("took Sharpfang from Nameless One"),
+                         f"took Sharpfang from {BLOCK * 12}")
+        self.assertEqual(mask.text_in("Nameless Ones and My Char"), "Nameless Ones and My Char")
+        self.assertEqual(mask.text_in("3 players"), "3 players")
+        self.assertEqual(mask.text_in("by @friend, @me", hidden="hidden name"),
+                         "by hidden name, @me")
+        self.assertEqual(mask.text_in("@friend's Companion", hidden="hidden name"),
+                         "hidden name's Companion")
+        self.assertEqual(NO_MASK.text_in("by @friend"), "by @friend")
+        self.assertEqual(mask.text_in(None), "")
+
     def test_a_player_without_a_row_is_known_from_the_roster(self):
         """A player whose build never reached the log has no row, but the
         entry's roster names them, so their character name is hidden in

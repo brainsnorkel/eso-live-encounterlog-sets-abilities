@@ -231,7 +231,7 @@ footer nav a { margin-right: 18px; }
   {{beta_line}}
 
   <figure class="shot">
-    <img src="img/main-window.png" alt="The main window: the fight history on the left; on the right the fight on its Fight and Deaths tabs, the search beside them, with the buff and debuff timeline, the fight header, and one row per player with their ability bars as icons and their gear sets" width="1400" height="880">
+    <img src="img/main-window.png" alt="The main window: the fight history on the left; on the right the fight on its Fight tab, one of five beside Deaths, Events, DPS graph and Instance, the search beside them, with the buff and debuff timeline, the fight header, and one row per player with their ability bars as icons and their gear sets" width="1400" height="880">
     <figcaption>A veteran Kyne's Aegis fight as the app shows it: the session's fights on the left; the buff timeline, the fight header and a row per player on the right, ranked by boss damage, each with both ability bars, the sets they wore, and their penetration and critical damage.</figcaption>
   </figure>
 </section>
@@ -269,7 +269,23 @@ footer nav a { margin-right: 18px; }
       <div class="pic"><img src="img/death-recap.png" alt="A death recap: the hits and heals in the last seconds before a death" loading="lazy"></div>
       <div class="body">
         <h3>Death recaps</h3>
-        <p>A ☠ on a player's row opens the last three seconds before each death (one to ten in Settings): every hit and heal with its source, the health left after it, and whether it was blocked, dodged or shielded.</p>
+        <p>A ☠ on a player's row opens the last three seconds before each death (one to ten in Settings): every hit and heal with its source, the health left after it, and whether it was blocked, dodged or shielded, with the player's own casts in between and links to that moment's positions and events.</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="pic"><img src="img/events-tab.png" alt="The Events tab: the fight's deaths, boss casts, big hits and taunt swaps in time order" loading="lazy"></div>
+      <div class="body">
+        <h3>The fight in order, and one player's actions</h3>
+        <p>The Events tab tells the fight as a table: deaths, the bosses' casts and health, big hits, taunt swaps and phases, filtered by kind, by search or to the seconds around a moment, with Ctrl+G to mark a row on the DPS graph. Pick a player in Who for every cast they began, with its bar slot, its target, how long it lasted and the gap since the skill before.</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="pic"><img src="img/positions-window.png" alt="The positions window: the players' marks seen from above at a death, beside a table of their health" loading="lazy"></div>
+      <div class="body">
+        <h3>Where everyone stood</h3>
+        <p>Open any death's moment from above: each player as a numbered mark by role with a ring of health, the bosses and adds, and a table beside it for screen readers. Step a second at a time, jump from death to death, or play the fight back at 1x to 5x.</p>
       </div>
     </article>
 
@@ -301,7 +317,15 @@ footer nav a { margin-right: 18px; }
       <div class="pic contain"><img src="img/build-issues.png" alt="A player's row with the ⓘ mark and the list of possible build issues" loading="lazy"></div>
       <div class="body">
         <h3>Possible build issues</h3>
-        <p>A glowing ⓘ after a player's name flags a build worth a look: a tank with no taunt, a set that does nothing in this fight, a healer without a restoration staff. Hover for the list, click for the rule behind each finding.</p>
+        <p>A glowing ⓘ after a player's name flags a build worth a look: a tank with no taunt, a set that does nothing in this fight, food that ran out. Hover for the list, click for the rule behind each finding.</p>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="pic"><img src="img/instance.png" alt="The Instance tab: a trial's result, each boss's pulls, and everyone's pulls, deaths and time dead" loading="lazy"></div>
+      <div class="body">
+        <h3>The whole run on one page</h3>
+        <p>The Instance tab puts a trial, arena or dungeon run together: its result and score banner, each boss's pulls marked Kill or Wipe with the kill's time and boss DPS, the trash, and everyone's pulls, deaths and time dead. Copy it for Discord, or find its split log to upload to a log site.</p>
       </div>
     </article>
 
@@ -322,6 +346,7 @@ footer nav a { margin-right: 18px; }
     </article>
 
   </div>
+  <p class="muted">And more in the <a href="https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md">user guide</a>: companions on rows of their own, <a href="https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#hiding-other-players-names">Hide names</a> for screenshots, the keyboard, text size and screen reader support under <a href="https://github.com/brainsnorkel/eso-live-encounterlog-sets-abilities/blob/main/docs/user-guide.md#accessibility">Accessibility</a>, each pull set against your own earlier kills, and the Update button that keeps the app current.</p>
 </section>
 
 <section id="get-started">

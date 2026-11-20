@@ -265,6 +265,29 @@ class TestEngine(unittest.TestCase):
                          ['Feral Pounce', "Hircine's Rage", 'Ferocious Roar', 'Bloody Gnash',
                           'Bloodclaws', 'Werewolf Berserker'])
 
+    def test_a_werewolf_skill_written_again_on_its_track_stays_counted(self):
+        """#226: a skill written again on its track after END_CAST is taken
+        for a proc, but one on the rebuilt werewolf bar stays counted."""
+        lines = FIGHTS[:9] + [
+            _cast(12100, 1, BLOODCLAWS, cast=901), f"12100,END_CAST,COMPLETED,901,{BLOODCLAWS}",
+            _cast(13100, 1, BLOODCLAWS, cast=901), f"13100,END_CAST,COMPLETED,901,{BLOODCLAWS}",
+        ] + FIGHTS[9:]
+        first = _player(_fights(lines)[0], '@brainsnorkel')
+        bloodclaws = next(slot for slot in first['werewolf_bar_slots']
+                          if slot['name'] == 'Bloodclaws')
+        self.assertEqual(bloodclaws['casts'], 1)
+
+    def test_a_death_recap_keeps_the_werewolf_bars_skill(self):
+        """#214: the recap's casts leave procs out as the fight's counts
+        do, the rebuilt werewolf bar's skills kept."""
+        lines = FIGHTS[:9] + [
+            _cast(12100, 1, BLOODCLAWS, cast=901), f"12100,END_CAST,COMPLETED,901,{BLOODCLAWS}",
+            _cast(13100, 1, BLOODCLAWS, cast=901), f"13100,END_CAST,COMPLETED,901,{BLOODCLAWS}",
+            f"13500,COMBAT_EVENT,DIED,GENERIC,0,0,0,902,{HIT},{_boss()},{_unit(1, 0)}",
+        ] + FIGHTS[9:]
+        recap = _fights(lines)[0].death_recaps[0]
+        self.assertIn(BLOODCLAWS, [cast['ability_id'] for cast in recap['casts']])
+
     def test_the_share_of_each_fight_spent_in_form(self):
         self.assertAlmostEqual(_player(self.fights[0], '@brainsnorkel')['werewolf_share'], 0.975)
         self.assertEqual(_player(self.fights[1], '@brainsnorkel')['werewolf_share'], 1.0)

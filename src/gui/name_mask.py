@@ -90,6 +90,10 @@ _X_HEIGHT = "acemnorsuvwxz"
 _ASCENDERS = "bdfhklt"
 _DESCENDERS = "gjpqy"
 _WORD = re.compile(r"^[a-z_]{1,64}$")
+# A handle within a line of words (text_in): '@' and what follows up to a
+# space, a comma, a middle dot or a bracket, a companion's "'s Companion"
+# taken with it
+_HANDLE_IN_TEXT = re.compile(r"@[^\s,·()]+?(?:" + re.escape(NAME_SUFFIX) + r"|(?=[\s,·()]|$))")
 _KEY = secrets.token_bytes(16)  # per run: a stand-in never outlives the process
 
 _images: dict = {}
@@ -268,6 +272,34 @@ class NameMask:
             return name
         name, suffix = self._split(name)
         return ("@" if name.startswith("@") else "") + BLOCK * len(_body(name)) + suffix
+
+    def text_in(self, text, hidden: str | None = None) -> str:
+        """*text*, a line that names players among other words (an event's
+        who and detail, gui.events_tab), with each name the mask hides as
+        text() writes it: every handle, a companion's "<handle>'s
+        Companion" with it, and every other player's character name the
+        fight knows, as a whole word. With *hidden*, each is that word
+        instead (a companion's suffix kept), for a screen reader."""
+        text = str(text or "")
+        if not self.active or not text:
+            return text
+
+        def swap(match):
+            name = match.group(0)
+            if not self.hides(name):
+                return name
+            if hidden is None:
+                return self.text(name)
+            return hidden + self._split(name)[1]
+
+        out = _HANDLE_IN_TEXT.sub(swap, text)
+        characters = sorted((name for name in self._hidden if not name.startswith("@")),
+                            key=len, reverse=True)
+        if characters:
+            words = re.compile(r"(?<![\w@" + BLOCK + r"])(?:" + "|".join(map(re.escape, characters))
+                               + r")(?!\w)")
+            out = words.sub(swap, out)
+        return out
 
     def html(self, name, color: str, pt: float, bold: bool = False) -> str:
         """*name* for a rich-text page: escaped, or @ and the pixelated

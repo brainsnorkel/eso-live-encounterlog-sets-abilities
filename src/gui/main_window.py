@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 import fight_index
+import fight_reread
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
 from app_config import AppConfig
 from app_startup import engine_settings
@@ -44,15 +45,20 @@ from gui.activity_render import (
 )
 from gui.build_issues_popup import BuildIssuesPopup
 from gui.build_render import player_for
-from gui.death_render import death_tooltips, deaths_by_unit
+from gui.death_render import (
+    death_tooltips, deaths_by_unit, events_known, fight_moment, fight_positions_tooltips,
+    positions_known,
+)
 from gui.dps_graph import DpsGraphPanel
 from gui.engine_worker import EngineWorker
+from gui.events_tab import EventsPage
 from gui.fight_deaths_render import fight_deaths_tooltips, render_fight_deaths_html
 from gui.fight_list import FightList
 from gui.fight_render import (
     EARLIER_LABEL, ISSUES_CUE, REVIEWED_LABEL, SPLIT_FOLDER_NOTE, SPLIT_LABEL, SPLIT_MISSING_NOTE,
     SPLIT_UNKNOWN_NOTE, SPLITS_OFF_NOTE,
     anchor_names, anchor_tooltips, build_tooltips, damage_tooltips, issues_html,
+    set_tooltips,
     issues_tooltips, link_color, mastery_tooltips, misfortunes_tooltips, muted_color, pen_crit_tooltips,
     render_html,
     render_plain_text, split_tooltips, taken_tooltips,
@@ -60,13 +66,14 @@ from gui.fight_render import (
 from gui.fight_tabs import FightViews, count_text
 from gui.fight_view import FightView, set_reduce_motion
 from gui.instance_render import instance_tooltips, render_instance_html, run_anchor
+from gui.keys import key_text, sequence
 from gui.name_mask import NameMask
 from gui.player_window import (
     BUILD_TAB, DAMAGE_TAB, DEATHS_TAB, PEN_CRIT_TAB, TAKEN_TAB, PlayerWindow,
 )
 from gui.review_runner import ReviewRunner
 from gui.settings_dialog import SettingsDialog
-from gui.timeline_strip import TimelineStrip, strip_timeline
+from gui.timeline_strip import TimelineStrip, given_by_caster, strip_timeline
 from gui.update_poller import UpdatePoller
 from gui.update_popup import UpdateNotesPopup
 from log_open import is_zip, log_members, log_size
@@ -103,6 +110,10 @@ HAS_INSTALLER = sys.platform == "win32"
 RETENTION_FIRST_DELAY_MS = 30 * 1000
 RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000
 
+# How long closing the window waits for a fight re-read's thread to end
+# (see closeEvent): an idle runner closes in 0.4 to 1.4 ms (probed)
+REREAD_CLOSE_S = 1.0
+
 
 class _RetentionBridge(QObject):
     """Carries a retention run's events from its thread to this one."""
@@ -112,6 +123,12 @@ class _RetentionBridge(QObject):
 class _ReviewBridge(QObject):
     """Carries a review's events from its thread to this one."""
     event = Signal(object)  # gui.review_runner.ReviewEvent
+
+
+class _RereadBridge(QObject):
+    """Carries a fight re-read's events from its thread, 'fight-reread',
+    to this one (issue #214)."""
+    event = Signal(object)  # fight_reread.RereadEvent
 
 
 def _duration_text(seconds: float) -> str:
@@ -134,14 +151,21 @@ def _encode_state(state: QByteArray) -> str:
 def reveal_file(path: Path) -> None:
     """Show *path* in its folder: on Windows, Explorer with the file
     selected, since a split folder holds hundreds of files (issue #194),
-    started detached, so nothing is left to wait for; elsewhere the
-    folder."""
+    and on macOS, Finder the same way (issue #32); each started detached,
+    so nothing is left to wait for; elsewhere the folder."""
     if sys.platform == "win32":
         explorer = QProcess()
         explorer.setProgram("explorer")
         # One argument as Explorer reads it, the path quoted inside it
         explorer.setNativeArguments(f'/select,"{path}"')
         explorer.startDetached()
+    elif sys.platform == "darwin":
+        finder = QProcess()
+        # By its full path: an app Finder starts has a short PATH, and
+        # this is where macOS keeps the command
+        finder.setProgram("/usr/bin/open")
+        finder.setArguments(["-R", str(path)])
+        finder.startDetached()
     else:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
@@ -185,6 +209,13 @@ class MainWindow(QMainWindow):
         self._fights = []          # live session FightHistoryEntry list
         self._review_fights = None  # list when in review mode, else None
         self._review_path = None
+        # The reviewed file and its zip member ('' for its only one) as the
+        # review read them, where _review_path is the label shown, for the
+        # positions window to read a reviewed fight from (issue #214); and
+        # (fight, source) for each fight of an earlier review a window still
+        # holds (_keep_review_source)
+        self._review_source = None
+        self._past_reviews = []
         self._detailed = True
         self._last_status = None
         self._follow_live = True
@@ -215,10 +246,13 @@ class MainWindow(QMainWindow):
         # or a fight (_refresh_freshness_label)
         self._log_missing = False
         # The player window, created at the first player link (issue #196),
-        # and its fight's key and player across a Settings replay
-        # (_end_replay)
+        # and the positions window, at the first Positions link (issue
+        # #214); and for each window on a live fight as a Settings replay
+        # begins, by the attribute that holds it, what finds its fight again
+        # (_on_monitoring_restarting, _rebind_windows)
         self._player_window = None
-        self._player_window_key = None
+        self._positions_window = None
+        self._replay_keys = {}
         # The DPS graph tab's page is to be drawn before it is next shown
         self._graph_dirty = True
         # The fight's tabs (gui.fight_tabs, issue #196): the tab chosen, which
@@ -227,6 +261,10 @@ class MainWindow(QMainWindow):
         self._chosen_tab = 0
         self._deaths_entry = None
         self._deaths_dirty = True
+        # The fight the Events page shows (gui.events_tab, issue #214), and
+        # whether it is to be drawn again before it is next shown
+        self._events_entry = None
+        self._events_dirty = True
         # The fight the Fight page shows, and for a page drawn while another
         # tab is on screen, where its search goes on when it is shown: from
         # its place among the matches for the same fight drawn again, None
@@ -268,6 +306,7 @@ class MainWindow(QMainWindow):
         self._build_update_poller()
         self._build_retention()
         self._build_review()
+        self._build_reread()
         self._build_worker()  # last: the engine thread starts here
         # The once-only hint about building the fight history, shown after
         # 'Monitoring …' (_on_monitoring_started), which would replace it
@@ -325,9 +364,10 @@ class MainWindow(QMainWindow):
         self.detail_action.setChecked(True)
         # Not Tab, which this once was: Tab has to move the focus, or a
         # keyboard user never leaves the fight list (#77)
-        self.detail_action.setShortcut(QKeySequence("Ctrl+D"))
+        self.detail_action.setShortcut(sequence("Ctrl+D"))
         self.detail_action.setToolTip(
-            "Show each player's ability bars as icons, or one line per player (Ctrl+D)")
+            "Show each player's ability bars as icons, or one line per player "
+            f"({key_text('Ctrl+D')})")
         self.detail_action.toggled.connect(self._toggle_detail)
         toolbar.addAction(self.detail_action)
 
@@ -338,10 +378,10 @@ class MainWindow(QMainWindow):
 
         # The whole list as a recap for Discord (session_recap, issue #171)
         self.copy_session_action = QAction("Copy session", self)
-        self.copy_session_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self.copy_session_action.setShortcut(sequence("Ctrl+Shift+C"))
         self.copy_session_action.setToolTip(
             "Copy every fight in the list as a short recap: each boss's pulls, the kills, "
-            "what ended the pulls (Ctrl+Shift+C)")
+            f"what ended the pulls ({key_text('Ctrl+Shift+C')})")
         self.copy_session_action.triggered.connect(self._copy_session)
         toolbar.addAction(self.copy_session_action)
 
@@ -352,13 +392,14 @@ class MainWindow(QMainWindow):
         self.hide_names_action = QAction("Hide names", self)
         self.hide_names_action.setCheckable(True)
         self.hide_names_action.setChecked(self._hide_names)
-        self.hide_names_action.setShortcut(QKeySequence("Ctrl+H"))
+        # ⇧⌘H on macOS, where ⌘H hides the application (gui.keys)
+        self.hide_names_action.setShortcut(sequence("Ctrl+H"))
         # From any of the app's windows, not only this one: the key is for
         # the moment before a screenshot of a build or a recap too
         self.hide_names_action.setShortcutContext(Qt.ApplicationShortcut)
         self.hide_names_action.setToolTip(
             "Hide other players' handles and character names, for screenshots and "
-            "sharing; the player writing the log stays visible (Ctrl+H)")
+            f"sharing; the player writing the log stays visible ({key_text('Ctrl+H')})")
         self.hide_names_action.toggled.connect(self._toggle_hide_names)
         toolbar.addAction(self.hide_names_action)
 
@@ -368,7 +409,7 @@ class MainWindow(QMainWindow):
                                        ("Smaller text", ("Ctrl+-",), -1),
                                        ("Normal text size", ("Ctrl+0",), 0)):
             action = QAction(label, self)
-            action.setShortcuts([QKeySequence(key) for key in keys])
+            action.setShortcuts([sequence(key) for key in keys])
             action.setShortcutContext(Qt.ApplicationShortcut)
             action.triggered.connect(lambda _=False, d=direction: self._step_text_size(d))
             self.addAction(action)
@@ -448,6 +489,8 @@ class MainWindow(QMainWindow):
         # EXPERIMENTAL buff timeline strip: sits between the header area and
         # the summary text; hidden whenever the fight has no timeline data
         self.timeline_strip = TimelineStrip()
+        # Its pop-up's link to the events around the moment clicked
+        self.timeline_strip.moment_requested.connect(self._show_events_around)
         fight_layout.addWidget(self.timeline_strip)
 
         # The search: highlights every match on the tab on screen, the count
@@ -475,6 +518,8 @@ class MainWindow(QMainWindow):
         self.fight_view.banner_requested.connect(self._show_banner)
         self.fight_view.split_requested.connect(self._fight_split)
         self.fight_view.fight_deaths_requested.connect(self._show_fight_deaths)
+        # The header's Positions: the positions window (issue #214)
+        self.fight_view.fight_positions_requested.connect(self._show_fight_positions)
         # The empty pane's Recent activity link and the files under it
         self.fight_view.activity_requested.connect(self._on_activity_requested)
         self.fight_view.review_requested.connect(self._on_review_requested)
@@ -490,14 +535,25 @@ class MainWindow(QMainWindow):
         fight_layout.addWidget(self.fight_view, 1)
         self.fight_views.add_tab(fight_page, "&Fight")
         # Every death of the fight on one page (gui.fight_deaths_render); a
-        # name opens that death in the player window
+        # name opens that death in the player window, its Positions where
+        # everyone stood then (issue #214)
         self.deaths_view = FightView(icons=self.fight_view.icons)
         self.deaths_view.setAccessibleName("Deaths")
         self.deaths_view.recap_requested.connect(self._show_fight_death)
+        self.deaths_view.positions_requested.connect(self._show_deaths_positions)
         self.fight_views.add_tab(self.deaths_view, "D&eaths")
+        # The fight's notable events as a table (gui.events_tab, issue
+        # #214): a death's row opens that death in the player window
+        self.events_view = EventsPage(icons=self.fight_view.icons)
+        self.events_view.recap_requested.connect(self._show_event_death)
+        # Ctrl+G on a row: that moment marked on the DPS graph
+        self.events_view.graph_requested.connect(self._show_event_on_graph)
+        self.fight_views.add_tab(self.events_view, "E&vents")
         # The dps over time graph (gui.dps_graph), a tab where it was a window
         self.dps_panel = DpsGraphPanel()
         self.dps_panel.setAccessibleName("DPS graph")
+        # A double-click on the chart: the events around that moment
+        self.dps_panel.moment_requested.connect(self._show_graph_moment)
         self.dps_panel.set_colorblind(bool(self.config.get("display.colorblind_graph", False)))
         self.fight_views.add_tab(self.dps_panel, "DPS &graph")
         # The instance the fight belongs to, its block of the list
@@ -512,19 +568,19 @@ class MainWindow(QMainWindow):
         self.fight_views.add_tab(self.instance_view, "&Instance")
         self.fight_tabs.currentChanged.connect(self._on_fight_tab_changed)
         self.fight_views.search_placed.connect(self._set_tab_order)
+        # The Find button the tab bar's corner holds at a large text size
+        self.fight_views.find_requested.connect(self._find)
         right_layout.addWidget(self.fight_views, 1)
 
+        # Esc in the search field is the field's own (gui.fight_tabs)
         find = QAction("Find", self)
         find.setShortcut(QKeySequence.Find)
         find.triggered.connect(self._find)
         self.addAction(find)
-        QShortcut(QKeySequence(Qt.Key_Escape), self.search_field,
-                  activated=self.search_field.clear,
-                  context=Qt.WidgetShortcut)
         # The fight's tabs from anywhere in the window, the list too: the tab
         # widget's own keys work only with the focus inside it
-        QShortcut(QKeySequence("Ctrl+PgDown"), self, self._next_fight_tab)
-        QShortcut(QKeySequence("Ctrl+PgUp"), self, self._previous_fight_tab)
+        QShortcut(sequence("Ctrl+PgDown"), self, self._next_fight_tab)
+        QShortcut(sequence("Ctrl+PgUp"), self, self._previous_fight_tab)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -596,11 +652,14 @@ class MainWindow(QMainWindow):
     def _save_window_layout(self):
         self.config.set("window.geometry", _encode_state(self.saveGeometry()))
         self.config.set("window.splitter", _encode_state(self._splitter.saveState()))
-        # The player window's too, here: a dialog gets no close event when
-        # the app quits (issue #196)
+        # The player window's and the positions window's too, here: a
+        # dialog gets no close event when the app quits (issue #196)
         if self._player_window is not None:
             self.config.set("window.player_geometry",
                             _encode_state(self._player_window.saveGeometry()))
+        if self._positions_window is not None:
+            self.config.set("window.positions_geometry",
+                            _encode_state(self._positions_window.saveGeometry()))
         self.config.save()
 
     def _build_worker(self):
@@ -722,6 +781,60 @@ class MainWindow(QMainWindow):
                 target.event.emit(event)
         return notify
 
+    # ---- re-reading a fight for the positions window (fight_reread, #214) ----
+
+    def _build_reread(self):
+        """A fight's lines are read again on a thread of their own,
+        'fight-reread' (fight_reread.RereadRunner), never the review's,
+        which a review keeps busy for minutes. The thread holds no Qt
+        object: it reports through a QObject that lives here, a child of
+        this window rather than of the positions window, so it lives as long
+        as this window and the thread's weak hold on it is enough (see
+        gui/engine_worker.py on freeing Qt objects). The read last asked
+        for and not yet answered is kept (_reread_pending), so a second
+        link to the same fight while it is read asks for nothing."""
+        self._reread = fight_reread.RereadRunner()
+        self._reread_bridge = _RereadBridge(self)
+        self._reread_bridge.event.connect(self._on_reread_event)
+        self._reread_pending = None
+        self._reread_closed = False
+
+    def _reread_notify(self):
+        """The runner's notify: called on 'fight-reread', it emits on the
+        bridge, which Qt queues to this thread. The bridge is held weakly,
+        and an emit on a bridge whose C++ side has gone (the window being
+        deleted) raises RuntimeError even while the weak reference still
+        holds the wrapper (probed): it is caught, as an exception out of
+        notify would otherwise end the runner's thread for every later read
+        in a runner that did not catch it."""
+        bridge = weakref.ref(self._reread_bridge)
+
+        def notify(event):
+            target = bridge()
+            if target is None:
+                return
+            try:
+                target.event.emit(event)
+            except RuntimeError:
+                pass  # the window is going: no one waits for the read
+        return notify
+
+    @Slot(object)
+    def _on_reread_event(self, event):
+        """A read's answer, on this thread: to the positions window, which
+        keeps only the one for the locator it waits for (a read superseded
+        by a newer request answers 'cancelled' with its old locator). Only
+        an answer clears the read asked for: a 'cancelled' read was
+        superseded by a newer request, perhaps for the same fight, which
+        is the one waited for now. Locators are matched by identity, as the
+        window takes its answers: a Settings replay's equal copy is read
+        once more rather than left waiting for an answer it would drop."""
+        if event.kind != "cancelled" and event.locator is self._reread_pending:
+            self._reread_pending = None
+        window = self._positions_window
+        if window is not None:
+            window.reread_done(event)
+
     def _set_review_busy(self, busy: bool):
         self.review_cancel_button.setVisible(busy)
         if not busy:
@@ -756,7 +869,9 @@ class MainWindow(QMainWindow):
         if event.kind == "outlined":
             self._ask_review_range(event)
         elif event.kind == "loaded":
-            self._on_review_loaded(event.shown, event.fights)
+            # The file and member as read, not the label shown, which for a
+            # zip of several logs is no path
+            self._on_review_loaded(event.shown, event.fights, source=(event.path, event.member))
         elif event.kind == "indexed":
             # The fight history grew: the run rows and the pane read it
             self.statusBar().showMessage(event.label, 15000)
@@ -914,6 +1029,18 @@ class MainWindow(QMainWindow):
             self._review_bridge.event.disconnect(self._on_review_event)
         except (RuntimeError, TypeError):
             pass
+        # A fight being read again for the positions window: the runner
+        # closed and its thread given a moment to end. A read stops within
+        # a chunk, but the search for a session's start in a large plain log
+        # does not look at the cancel, and the thread is a daemon, so the
+        # wait is short; its answer, queued or to come, is cut off here as
+        # the review's is, and no request is made after this
+        self._reread_closed = True
+        self._reread.close(REREAD_CLOSE_S)
+        try:
+            self._reread_bridge.event.disconnect(self._on_reread_event)
+        except (RuntimeError, TypeError):
+            pass
         self._save_window_layout()
         # Lines a held file kept queued get one more try (fight_index)
         self.fight_index.flush()
@@ -979,12 +1106,18 @@ class MainWindow(QMainWindow):
         self._index_fight(entry)
         self._fight_changed(entry)
 
+    # The attributes holding the windows beside this one, each made at its
+    # first use
+    _WINDOW_SLOTS = ("_player_window", "_positions_window")
+
     def _windows(self):
         """The windows opened so far beside this one (each is made at its
-        first use): the player window, the DPS graph being a fight tab now.
-        The one list a theme switch, a flip of Hide names, a new text size
-        and a fight changing in place go through (issue #196)."""
-        return [window for window in (self._player_window,) if window is not None]
+        first use): the player window and the positions window (issue
+        #214), the DPS graph being a fight tab now. The one list a theme
+        switch, a flip of Hide names, a new text size, a fight changing in
+        place and a Settings replay go through (issue #196)."""
+        return [window for window in (getattr(self, slot) for slot in self._WINDOW_SLOTS)
+                if window is not None]
 
     def _fight_changed(self, entry):
         """A delivered fight changed in place (a fight update from the
@@ -1012,7 +1145,21 @@ class MainWindow(QMainWindow):
         pull, a player row or a recap (banner_path aside), and orders with
         sorted() and new dicts, never .sort() or an added key: CPython
         empties a list while it sorts it, so an engine write built from that
-        list meanwhile would lose its items."""
+        list meanwhile would lose its items.
+
+        The positions window (issue #214) draws the fight's states, read
+        again from disk by its locator, and is asked for a new read only
+        when the update brought a new locator: a fight the game cut in two
+        that went on is the one update that replaces it (the finished
+        entry's slots copied onto the delivered one, its end later). A late
+        death, a fought-on rebuild, a mastery found later, END_TRIAL and a
+        banner leave the same locator object, and the window redraws its
+        numbers, roles and death marks from the entry it holds: reading
+        again on every update would have read 158 times in 172 for nothing
+        (the replay design's engineering critique, R9). The window waits
+        for the read it asked for and drops the answers to earlier ones; a
+        hidden window is asked for nothing, and its next link reads what it
+        lacks."""
         row = self.history_list.update_fight(entry)
         if row is not None and row == self.history_list.currentRow():
             # Where the reader had it, as the windows keep theirs
@@ -1020,8 +1167,15 @@ class MainWindow(QMainWindow):
         elif row is not None:
             self._instance_changed(entry)  # another fight of the instance on screen
         names = self._names_for(entry)
+        # Taken before the windows hear of the update, which moves the
+        # positions window on to the fight's new locator
+        positions = self._positions_window
+        moved = (positions is not None and positions.entry is entry
+                 and getattr(entry, "locator", None) is not positions.wanted_locator)
         for window in self._windows():
             window.entry_updated(entry, self._dark, names)
+        if moved and self._positions_read_wanted(entry):
+            self._request_reread(entry)
 
     @Slot(str, str)
     def _on_zone_changed(self, zone, difficulty):
@@ -1047,6 +1201,8 @@ class MainWindow(QMainWindow):
         elif event.kind == "completed":
             self.progress_bar.setVisible(False)
             deleted = " — original deleted" if event.original_deleted else ""
+            if event.kept_reason:  # a delete was asked for and refused
+                deleted = f" — original kept: {event.kept_reason}"
             self.statusBar().showMessage(
                 f"Archived to {self._shown_path(event.archive_path)}{deleted}", 15000)
             if event.original_deleted and event.archive_path:
@@ -1188,18 +1344,24 @@ class MainWindow(QMainWindow):
         listed draws the waiting page instead: nothing is replayed until
         the log appears.
 
-        The player window's fight is known again by its key too, with the
-        player's handle (_end_replay puts the window on the replayed copy);
-        a window on a reviewed fight, which no replay builds again, keeps
-        it."""
+        The windows' fights are known again by their keys too
+        (_rebind_windows puts each window on the replayed copy): the player
+        window's with the player's handle, which the copy must give again
+        under the same unit id; the positions window's by the key alone,
+        its units being the fight's (issue #214). A replay of the same log
+        gives the same locator, so that window keeps the states it read,
+        and the rows, numbers and roles it draws come from the new entry
+        (companion accrual, say, changes the rows). A window on a reviewed
+        fight, which no replay builds again, keeps it."""
         self._restart_pending = False
         self._log_missing = False  # the restart may find it
-        window = self._player_window
-        if window is not None and any(fight is window.entry for fight in self._fights):
-            self._player_window_key = (self._listed_key(window.entry), window.unit_id,
-                                       _player_handle(window.entry, window.unit_id))
-        elif not self._replaying:
-            self._player_window_key = None
+        for slot in self._WINDOW_SLOTS:
+            window = getattr(self, slot)
+            if window is not None and any(fight is window.entry for fight in self._fights):
+                self._replay_keys[slot] = (self._listed_key(window.entry),
+                                           self._replay_check(window))
+            elif not self._replaying:
+                self._replay_keys.pop(slot, None)
         if self._review_fights is None:
             entry = self.history_list.current_entry()
             # During a replay this one cuts short, following is held off,
@@ -1215,7 +1377,7 @@ class MainWindow(QMainWindow):
             self._replay_key = None  # no live fight on screen to come back to
         self._replaying = True
         self._fights.clear()
-        self._update_player_listed()
+        self._update_windows_listed()
         # The new analyzer checks its session's data afresh
         self._on_data_check(None)
 
@@ -1240,7 +1402,7 @@ class MainWindow(QMainWindow):
         if not self._replaying or self._restart_pending:
             return
         self._replaying = False
-        self._rebind_player_window()
+        self._rebind_windows()
         if self._review_fights is not None:
             return  # Back to live goes to the newest
         if self.history_list.current_entry() is None:
@@ -1249,25 +1411,41 @@ class MainWindow(QMainWindow):
         # _show_fight's rule, last applied while fights were still coming
         self._follow_live = entry is None or entry is self._fights[-1]
 
-    def _rebind_player_window(self):
-        """The replay is in: the player window goes on to the replayed copy
-        of its fight, the one with its key, when the player under its unit
-        id has the same handle (a replay of the same log keeps both); with
-        none it keeps its fight as it was before the Save, and says so
-        (see _on_monitoring_restarting)."""
-        window, key = self._player_window, self._player_window_key
-        self._player_window_key = None
-        if window is None or key is None:
-            return
-        wanted, unit_id, handle = key
-        for index, entry in enumerate(self._fights):
-            if fight_key(entry, self._fights[:index]) == wanted:
-                if _player_handle(entry, unit_id) == handle:
-                    window.rebind(entry, names=self._names_for(entry))
-                    self._update_player_listed()
-                    return
-                break
-        window.mark_replayed()
+    def _replay_check(self, window):
+        """What the replayed copy of *window*'s fight must give again, past
+        its key: the player window's player, by the handle under its unit
+        id; nothing for the positions window."""
+        if window is self._player_window:
+            return window.unit_id, _player_handle(window.entry, window.unit_id)
+        return None
+
+    def _rebind_windows(self):
+        """The replay is in: each window kept by its fight's key goes on to
+        the replayed copy of its fight, the first one with that key, when it
+        passes the window's check (_replay_check; a replay of the same log
+        keeps the player's handle); with none, the window keeps its fight as
+        it was before the Save, and says so (see
+        _on_monitoring_restarting). The positions window re-bound is read
+        again only when it holds no states for the copy's locator, which a
+        replay of the same log gives again."""
+        keys, self._replay_keys = self._replay_keys, {}
+        for slot, (wanted, check) in keys.items():
+            window = getattr(self, slot)
+            if window is None:
+                continue
+            found = None
+            for index, entry in enumerate(self._fights):
+                if fight_key(entry, self._fights[:index]) == wanted:
+                    if check is None or _player_handle(entry, check[0]) == check[1]:
+                        found = entry
+                    break
+            if found is None:
+                window.mark_replayed()
+                continue
+            window.rebind(found, names=self._names_for(found))
+            if window is self._positions_window and self._positions_read_wanted(found):
+                self._request_reread(found)
+        self._update_windows_listed()
 
     @Slot(str)
     def _on_monitoring_started(self, path):
@@ -1282,6 +1460,12 @@ class MainWindow(QMainWindow):
                     self._fight_changed(entry)
         self.statusBar().showMessage(f"Monitoring {self._shown_path(path)}", 8000)
         self._end_replay()
+        # A Positions link clicked while the fights replayed at attach were
+        # listed, before the log was known, found no place to read: ask
+        # again now there is one (issue #214)
+        window = self._positions_window
+        if window is not None and self._positions_read_wanted(window.entry):
+            self._request_reread(window.entry)
         # Never over a review's fight, which stays on the pane
         if not self._fights and self._review_fights is None:
             self._show_empty_state("monitoring")
@@ -1291,14 +1475,20 @@ class MainWindow(QMainWindow):
             self._offer_backfill()
 
     @Slot(str, list)
-    def _on_review_loaded(self, path, fights):
+    def _on_review_loaded(self, path, fights, source=None):
+        """A review's fights in the list. *path*: the label the file is
+        shown by; *source*: (the file, its zip member or '') as the review
+        read it, which the positions window reads a reviewed fight from
+        again (issue #214), None when not known."""
         self.statusBar().clearMessage()  # replaces the persistent "Loading…"
         if not fights:
             QMessageBox.information(self, "Review",
                                     f"No completed fights found in\n{path}")
             return
+        self._keep_review_source()
         self._review_fights = fights
         self._review_path = path
+        self._review_source = source
         self.statusBar().showMessage(
             f"Loaded {len(fights)} fight{'s' if len(fights) != 1 else ''} "
             f"from {self._shown_path(path)}", 8000)
@@ -1488,7 +1678,7 @@ class MainWindow(QMainWindow):
     def _reload_list(self, fights):
         self.history_list.set_fights(fights)
         self.history_list.select_fight(-1)
-        self._update_player_listed()
+        self._update_windows_listed()
 
     def _show_fight(self, *_, search_from=None, others=True):
         """The current fight on the fight's tabs (the list's
@@ -1506,7 +1696,8 @@ class MainWindow(QMainWindow):
         only a few times (a late death, its banner, a mastery found later).
         Then the tab on screen, if it is another, in place when it shows
         this fight already (the Instance page: this fight's instance, the
-        search going on from its place); the other tabs are marked, and
+        search going on from its place; the Events page: its row selected
+        and its scroll kept, gui.events_tab); the other tabs are marked, and
         drawn when they are next shown, the search going on where it was on
         a page drawn while hidden (_on_fight_tab_changed, gui.fight_tabs,
         issue #196)."""
@@ -1531,9 +1722,12 @@ class MainWindow(QMainWindow):
         # The Hide names mask for this fight: the identity unless the
         # switch is on (gui.name_mask)
         names = self._names_for(entry)
+        self.timeline_strip.set_moment_links(events_known(entry))
         self.timeline_strip.set_timeline(
             strip_timeline(entry), getattr(entry, 'tracked', None),
-            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names)
+            armour_row(getattr(entry, 'pen_crit', None), pen_crit_options), names=names,
+            # The sets' own buff ids each player had up (set_text, issue #79)
+            given=given_by_caster(entry.players))
         # Ability icons replace names in the detail view; the hover text, the
         # ESO-Hub link and the searchable name of each icon come from the
         # same per-slot data. Death-recap buttons and the build link on each
@@ -1556,6 +1750,8 @@ class MainWindow(QMainWindow):
         tooltips.update(mastery_tooltips(entry))
         tooltips.update(pen_crit_tooltips(entry, pen_crit_options))
         tooltips.update(misfortunes_tooltips(entry))
+        # The header's Positions, where it opens (issue #214)
+        tooltips.update(fight_positions_tooltips(entry))
         # The split logs of the run this fight completed, every session of
         # it, on its result strip (issue #194)
         split_files = (self._split_files(self.history_list.block_of(entry) or [entry])
@@ -1578,6 +1774,11 @@ class MainWindow(QMainWindow):
             self._search_places.pop(self.fight_view, None)  # the page is the search's now
         else:
             self._note_search_place(self.fight_view, entry is self._fight_entry)
+        if entry is not self._fight_entry:
+            # Another fight picked: the moment marked on the DPS graph was
+            # the last one's, whether or not the graph is drawn before the
+            # reader comes back to that fight
+            self.dps_panel.set_cursor_ms(None)
         self._fight_entry = entry
         self.fight_view.setHtml(render_html(entry, self._detailed, dark=self._dark,
                                             icons=self.fight_view.icons,
@@ -1595,15 +1796,24 @@ class MainWindow(QMainWindow):
             # The graph on screen: no search there
             if others:
                 self._draw_graph(entry)
-                self._deaths_dirty = self._instance_dirty = True
+                self._deaths_dirty = self._instance_dirty = self._events_dirty = True
             return
         if others:
             self._graph_dirty = True
         page = self.fight_tabs.currentWidget()
+        if page is self.events_view:
+            # The Events page, in place for the same fight, its row and its
+            # scroll kept; the search filters its rows (gui.events_tab)
+            if others:
+                self._deaths_dirty = self._instance_dirty = True
+                self._draw_events(entry)
+                self._apply_search()
+            return
         if page in (self.deaths_view, self.instance_view):
             if not others:
                 return
-            # The other of the two is drawn when it is next shown
+            # The other pages are drawn when they are next shown
+            self._events_dirty = True
             if page is self.deaths_view:
                 self._instance_dirty = True
             else:
@@ -1618,7 +1828,7 @@ class MainWindow(QMainWindow):
                 self._draw_page(page, entry)
                 self._apply_search(search_from=search_from)
             return
-        self._deaths_dirty = self._instance_dirty = True
+        self._deaths_dirty = self._instance_dirty = self._events_dirty = True
         self._apply_search(search_from=search_from)
 
     def _open_player(self, unit_id, tab, entry=None, death=None):
@@ -1632,8 +1842,8 @@ class MainWindow(QMainWindow):
             return
         # A link clicked while a Settings replay runs is where the window
         # goes: the replay's end does not take it back to the fight it
-        # showed before the Save (_rebind_player_window)
-        self._player_window_key = None
+        # showed before the Save (_rebind_windows)
+        self._replay_keys.pop("_player_window", None)
         if self._player_window is None:
             self._player_window = PlayerWindow(self, icons=self.fight_view.icons,
                                                config=self.config)
@@ -1641,6 +1851,12 @@ class MainWindow(QMainWindow):
             if geometry is not None:
                 self._player_window.restoreGeometry(geometry)
             self._player_window.show_in_list_requested.connect(self._show_in_list)
+            # A death's Positions link on its Deaths tab (issue #214)
+            self._player_window.positions_requested.connect(self._show_player_positions)
+            # A death's Events link there: the Events tab around the death
+            self._player_window.events_requested.connect(self._show_player_events)
+            # Its player's actions: the Events tab with Who on that player
+            self._player_window.actions_requested.connect(self._show_player_actions)
         self._player_window.open(entry, unit_id, tab, self._dark, names=self._names_for(entry),
                                  death=death, listed=self.history_list.row_of(entry) is not None)
 
@@ -1666,9 +1882,9 @@ class MainWindow(QMainWindow):
         self._open_player(unit_id, TAKEN_TAB, entry)
 
     def _show_in_list(self, entry):
-        """The player window's Show in list: its fight selected in the
-        list, and this window brought up; the player window, which this one
-        owns, stays above it."""
+        """A window's Show in list (the player window's, the positions
+        window's): its fight selected in the list, and this window brought
+        up; the window, which this one owns, stays above it."""
         if self.history_list.row_of(entry) is None:
             self.statusBar().showMessage("That fight is not in the list now", 5000)
             return
@@ -1676,12 +1892,12 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def _update_player_listed(self):
-        """The player window's Show in list follows the list as it is
-        replaced: a review, Back to live, a Settings replay."""
-        window = self._player_window
-        if window is not None and window.entry is not None:
-            window.set_listed(self.history_list.row_of(window.entry) is not None)
+    def _update_windows_listed(self):
+        """Each window's Show in list follows the list as it is replaced: a
+        review, Back to live, a Settings replay."""
+        for window in self._windows():
+            if window.entry is not None:
+                window.set_listed(self.history_list.row_of(window.entry) is not None)
 
     def _show_issues(self, unit_id):
         """A player's (i) was clicked in the fight on screen: their possible
@@ -1695,7 +1911,8 @@ class MainWindow(QMainWindow):
         text = issues_html(player_for(entry, unit_id), self._dark,
                            set_links=esohub_set_url, links=esohub_ability_url)
         if text:
-            popup = BuildIssuesPopup(text, self)
+            popup = BuildIssuesPopup(text, self, tooltips=set_tooltips(
+                player_for(entry, unit_id), esohub_set_url))
             link = self.fight_view.keyboard_link_rect()
             if link is not None:
                 popup.show_under(link)
@@ -1715,6 +1932,9 @@ class MainWindow(QMainWindow):
         self.fight_views.set_shown(False)
         self._deaths_entry = None
         self._deaths_dirty = True
+        self._events_entry = None
+        self._events_dirty = True
+        self.events_view.clear()
         self.dps_panel.clear()
         self._graph_dirty = True
         self._fight_entry = None
@@ -1737,17 +1957,19 @@ class MainWindow(QMainWindow):
 
     # ---- the pane before the first fight (gui.activity_render, issue #191) ----
 
-    def _known_log(self):
+    def _known_log(self, search: bool = True):
         """The log the folders are taken from, without a search: the one
         Settings names, else the one the engine monitors or waits for
         (_log_path, _empty_expected: a log the app has just archived and
         deleted is not on disk, and auto-detection then finds nothing on
         Linux and walks the whole Logs folder on Windows), else, on a
-        first run, the auto-detected one; None when there is none."""
+        first run, the auto-detected one; None when there is none. With
+        *search* False, None rather than the auto-detection, for a link's
+        click (_reread_places)."""
         for candidate in (self.config.get("log_path"), self._log_path, self._empty_expected):
             if candidate:
                 return Path(candidate)
-        return split_retention.resolve_log("")
+        return split_retention.resolve_log("") if search else None
 
     def _archive_folder(self, log=None):
         """The archive folder: the one set, else the log's own (the
@@ -1808,8 +2030,8 @@ class MainWindow(QMainWindow):
         text, not document text). Document order."""
         text = self.search_field.text()
         matches = []
-        if text:
-            view = view or self._search_view()
+        view = view or self._search_view()
+        if text and view is not self.events_view:  # the Events page filters its rows instead
             document = view.document()
             cursor = QTextCursor(document)
             while True:
@@ -1840,9 +2062,19 @@ class MainWindow(QMainWindow):
         next match. An update that ranks the players anew moves the matches
         with their rows: the number keeps the search's place among the
         matches, not the occurrence, as the pane's scroll is kept by
-        position (issue #196)."""
+        position (issue #196).
+
+        On the Events page, a table, the search filters the rows to those
+        that hold its text and counts them (gui.events_tab): a new search
+        selects its first row, and the same search, after a redraw or a
+        tab change, leaves the row selected where it was."""
         view = self._search_view()
         self._searched[view] = self.search_field.text()
+        if view is self.events_view:
+            text = self.search_field.text()
+            rows = view.set_search(text)
+            self.search_field.set_count(count_text(rows) if text else "")
+            return
         matches = self._search_matches()
         highlight = QTextCharFormat()
         # Amber with black text reads on both light and dark themes
@@ -1883,7 +2115,11 @@ class MainWindow(QMainWindow):
         return sum(1 for start in starts if start < position), position in starts
 
     def _goto_next_match(self):
-        """Enter in the search field cycles through matches."""
+        """Enter in the search field cycles through matches; on the Events
+        page, through the rows the search left."""
+        if self._search_view() is self.events_view:
+            self.events_view.select_next_match()
+            return
         matches = self._search_matches()
         if not matches:
             return
@@ -1900,30 +2136,39 @@ class MainWindow(QMainWindow):
     # ---- the fight's tabs (gui.fight_tabs, issue #196) ----
 
     def _set_tab_order(self):
-        """The Tab order: the list, the tab bar, the search, the page; set
-        again when the search moves between the bar's corner and its own
-        row, which gives it another parent."""
+        """The Tab order: the list, the tab bar, the search (or the Find
+        button standing for it), the page; set again when the search moves
+        between the bar's corner and its own row, which gives it another
+        parent. The Events page's controls in its own order (gui.events_tab)."""
         bar = self.fight_tabs.tabBar()
         QWidget.setTabOrder(self.history_list, bar)
-        QWidget.setTabOrder(bar, self.search_field)
+        QWidget.setTabOrder(bar, self.fight_views.find_button)
+        QWidget.setTabOrder(self.fight_views.find_button, self.search_field)
         QWidget.setTabOrder(self.search_field, self.fight_view)
         QWidget.setTabOrder(self.fight_view, self.deaths_view)
-        QWidget.setTabOrder(self.deaths_view, self.instance_view)
+        previous = self.deaths_view
+        for control in self.events_view.focus_chain():
+            QWidget.setTabOrder(previous, control)
+            previous = control
+        QWidget.setTabOrder(previous, self.instance_view)
 
     def _search_view(self):
         """The page the search works on: the tab on screen's."""
         page = self.fight_tabs.currentWidget()
-        if page in (self.deaths_view, self.instance_view):
+        if page in (self.deaths_view, self.events_view, self.instance_view):
             return page
         return self.fight_view
 
     def _find(self):
-        """Ctrl+F: the search, for the tab on screen, the Fight tab first
-        from the graph, which has no text to search; nothing while no fight
-        is shown, the field hidden with the tab bar."""
+        """Ctrl+F, or the Find button the bar's corner holds at a large text
+        size: the search, for the tab on screen, the Fight tab first from
+        the graph, which has no text to search, the field out on its own row
+        if the corner holds the button; nothing while no fight is shown, the
+        field hidden with the tab bar."""
         if self.fight_views.is_shown():
             if self.fight_tabs.currentWidget() is self.dps_panel:
                 self.fight_tabs.setCurrentIndex(0)
+            self.fight_views.open_search()
             self.search_field.setFocus()
             self.search_field.selectAll()
 
@@ -1959,6 +2204,15 @@ class MainWindow(QMainWindow):
                 self._draw_graph(entry)
             return
         searched = self._search_view()
+        if searched is self.events_view:
+            # A table: drawn if marked, in place for the same fight, and
+            # filtered by the search, its row kept for the same search
+            for view in (self.fight_view, self.deaths_view, self.instance_view):
+                view.set_search_selections([])
+            if entry is not None and self._page_state(searched, entry)[0]:
+                self._draw_page(searched, entry)
+            self._apply_search()
+            return
         # The page left keeps no matches; the one on screen has the search's
         for view in (self.fight_view, self.deaths_view, self.instance_view):
             if view is not searched:
@@ -2022,22 +2276,36 @@ class MainWindow(QMainWindow):
         self._deaths_dirty = False
 
     def _page_state(self, view, entry):
-        """For the Deaths or Instance page *view*: whether it is to be
-        drawn for *entry* before it is shown, and whether it shows what it
-        would show already (the same fight, the same instance), so is drawn
-        in place."""
+        """For the Deaths, Events or Instance page *view*: whether it is to
+        be drawn for *entry* before it is shown, and whether it shows what
+        it would show already (the same fight, the same instance), so is
+        drawn in place."""
         if view is self.deaths_view:
             same = entry is self._deaths_entry
             return self._deaths_dirty or not same, same
+        if view is self.events_view:
+            same = entry is self._events_entry
+            return self._events_dirty or not same, same
         same = self._same_instance(entry)
         return self._instance_dirty or not same, same
 
     def _draw_page(self, view, entry):
-        """The Deaths or Instance page *view* drawn for *entry*."""
+        """The Deaths, Events or Instance page *view* drawn for *entry*;
+        the Events page in place by itself for the fight it shows."""
         if view is self.deaths_view:
             self._draw_deaths(entry)
+        elif view is self.events_view:
+            self._draw_events(entry)
         else:
             self._draw_instance(entry)
+
+    def _draw_events(self, entry):
+        """The notable events of *entry* on the Events page
+        (gui.events_tab): in place, the row selected and the scroll kept,
+        when it shows that fight already."""
+        self.events_view.show_fight(entry, self._names_for(entry))
+        self._events_entry = entry
+        self._events_dirty = False
 
     def _draw_in_place(self, view, entry, search_from=None):
         """The Deaths or Instance page *view* drawn again for *entry* where
@@ -2284,12 +2552,287 @@ class MainWindow(QMainWindow):
         if self._deaths_entry is not None:
             self._open_player(unit_id, DEATHS_TAB, entry=self._deaths_entry, death=number)
 
+    @Slot(str, int)
+    def _show_event_death(self, unit_id, number):
+        """Enter or a double-click on a death's row of the Events tab: that
+        death on the player window's Deaths tab, in the fight the page was
+        drawn for."""
+        if self._events_entry is not None:
+            self._open_player(unit_id, DEATHS_TAB, entry=self._events_entry, death=number)
+
+    # ---- the positions window (issue #214) ----
+
+    def show_moment(self, entry, t_ms, unit_key=None):
+        """The positions window on the fight *entry* at the moment *t_ms*
+        (ms since its session's BEGIN_LOG, the locator's own clock), the
+        unit *unit_key* selected (a player's or companion's row 'unit_id',
+        which is its FightUnit.key; None for none). The one way in for
+        every link to it: a row of the Deaths tab, a death's heading in the
+        player window, the fight header's Positions, and the fight's events
+        to come. A fight with no locator, or one whose session is not known
+        (death_render.positions_known), has no such link and opens nothing.
+
+        Design: the positions window and the bytes. One window, made at
+        the first link and kept, like the player window, which draws what
+        it is given; this window finds where the fight's lines are and has
+        them read. The places are worked out here, on the UI thread, at a
+        link whose fight the window holds no states for (_reread_places): a
+        listing of the split and archive folders, 0.4 to 1.0 ms over a
+        428-file split folder. The read runs on 'fight-reread' (0.1 s for a
+        median boss fight, 0.4 s for a long one, 0.6 s from a zip) and its
+        answer comes back by the bridge (_build_reread). The window shows
+        words, not a busy bar, while it waits: nothing in the app moves by
+        itself under Reduce motion. A link to the fight being read asks for
+        nothing more, and a link to another fight supersedes the read,
+        whose answer the window then drops."""
+        if not positions_known(entry):
+            return
+        window = self._positions()
+        if window is None:
+            return
+        # A link clicked while a Settings replay runs is where the window
+        # goes: the replay's end does not take it back (_rebind_windows)
+        self._replay_keys.pop("_positions_window", None)
+        locator = entry.locator
+        if not window.has_states_for(locator) and locator is not self._reread_pending:
+            self._request_reread(entry)
+        window.open(entry, int(t_ms), None if unit_key is None else str(unit_key), self._dark,
+                    self._names_for(entry), listed=self.history_list.row_of(entry) is not None)
+        # The window may have let go of an earlier review's last fight
+        self._prune_past_reviews()
+
+    def _positions(self):
+        """The positions window (gui.positions_window), made at the first
+        link and kept, its place put back from the last run; None, the
+        status bar saying so, when it cannot be made. Imported here, at its
+        first use, as this window does not need it to open."""
+        if self._positions_window is None:
+            try:
+                from gui.positions_window import PositionsWindow
+            except ImportError:
+                self.statusBar().showMessage("The positions window could not be opened", 8000)
+                return None
+            window = PositionsWindow(self)
+            geometry = _decode_state(self.config.get("window.positions_geometry"))
+            if geometry is not None:
+                window.restoreGeometry(geometry)
+            window.show_in_list_requested.connect(self._show_in_list)
+            window.player_requested.connect(self._open_positions_player)
+            self._positions_window = window
+        return self._positions_window
+
+    def _positions_read_wanted(self, entry) -> bool:
+        """Whether the positions window, shown on *entry*, lacks the states
+        of the fight's locator with no read asked for them: after an update
+        that brought a new locator (_fight_changed), and after a Settings
+        replay re-bound it (_rebind_windows). A hidden window is asked for
+        nothing: its next link reads what it lacks (show_moment)."""
+        window = self._positions_window
+        return (window is not None and window.entry is entry and window.isVisible()
+                and positions_known(entry) and entry.locator is not self._reread_pending
+                and not window.has_states_for(entry.locator))
+
+    def _held_entries(self) -> list:
+        """The fights a window holds: the player window's, the positions
+        window's and the Deaths tab's."""
+        held = [self._deaths_entry]
+        for window in (self._player_window, self._positions_window):
+            held.append(getattr(window, "entry", None) if window is not None else None)
+        return [entry for entry in held if entry is not None]
+
+    def _prune_past_reviews(self) -> None:
+        """Forget each earlier review's fight no window holds any more."""
+        held = self._held_entries()
+        self._past_reviews = [(fight, source) for fight, source in self._past_reviews
+                              if any(fight is entry for entry in held)]
+
+    def _keep_review_source(self) -> None:
+        """Before Back to live or another review replaces the review on
+        screen: keep its file for each of its fights a window holds, so a
+        Positions link there still reads that file (_reread_places), which
+        may be outside the split and archive folders (a log someone sent,
+        a zip of several logs). Only those fights are kept, not the
+        review's whole list, which would stay in memory with them."""
+        if self._review_source is not None and self._review_fights:
+            self._past_reviews += [(entry, self._review_source) for entry in self._held_entries()
+                                   if any(entry is fight for fight in self._review_fights)]
+        self._prune_past_reviews()
+
+    def _reread_places(self, entry) -> list:
+        """Where the fight *entry*'s lines may be, in the order they are
+        tried (fight_reread.places_for): the reviewed file and its zip
+        member when *entry* is one of the review's fights, or of an earlier
+        review's while a window holds it (_keep_review_source); the
+        session's splits by its stamp in the split folder, when it can be
+        read; the live log; and the archives made since the session began,
+        an archive's name being stamped with its last line's time to the
+        second. The folders are those of the log known, never searched for
+        (_known_log)."""
+        locator = entry.locator
+        reviewed = member = None
+        if (self._review_source is not None
+                and any(fight is entry for fight in self._review_fights or ())):
+            reviewed, member = self._review_source
+        else:
+            for fight, source in self._past_reviews:
+                if fight is entry:
+                    reviewed, member = source
+                    break
+        self._prune_past_reviews()
+        log = self._known_log(search=False)
+        split_dir = split_retention.split_folder(self.config.get("split.dir") or "", log)
+        if split_dir is not None and not split_dir.is_dir():
+            split_dir = None
+        try:
+            # Local time, as the archiver stamps its names (log_archiver)
+            began = datetime.fromtimestamp(  # noqa: DTZ006
+                locator.session_epoch_ms / 1000).replace(microsecond=0)
+        except (OverflowError, OSError, ValueError):
+            began = None
+        archives = []
+        if began is not None:
+            folder = recent_activity.archive_folder(self.config.get("archive.dir") or "", log)
+            archives = [archive.path for archive in recent_activity.scan_archives(folder)
+                        if archive.last_entry is not None and archive.last_entry >= began]
+        return fight_reread.places_for(locator, reviewed=reviewed, member=member or None,
+                                       split_dir=split_dir, live_log=self._log_path or log,
+                                       archives=archives)
+
+    def _request_reread(self, entry) -> None:
+        """Have the fight *entry* read again by its locator, on the
+        runner's thread; a read running or waiting is superseded. Nothing
+        once this window is closing."""
+        if self._reread_closed:
+            return
+        locator = entry.locator
+        try:
+            self._reread.request(locator, self._reread_places(entry), self._reread_notify())
+        except RuntimeError:
+            return  # the runner is closed
+        self._reread_pending = locator
+
+    @Slot(str, int)
+    def _show_deaths_positions(self, unit_key, ms):
+        """A death's Positions on the Deaths tab: the positions window at
+        that moment (*ms* into the fight) of the fight the page was drawn
+        for, the player who died selected."""
+        entry = self._deaths_entry
+        if positions_known(entry):
+            self.show_moment(entry, entry.locator.start_ms + ms, unit_key or None)
+
+    @Slot()
+    def _show_fight_positions(self):
+        """The fight header's Positions: the positions window on the fight
+        on screen, at its first death with that player selected, else as
+        it began (death_render.fight_moment)."""
+        entry = self.history_list.current_entry()
+        if positions_known(entry):
+            ms, unit_key = fight_moment(entry)
+            self.show_moment(entry, entry.locator.start_ms + ms, unit_key)
+
+    # ---- jumps between the views of a fight (issue #214) ----
+
+    def _show_events_around(self, ms, unit_key=""):
+        """The Events tab around the moment *ms* of the fight on screen
+        (gui.events_tab.show_around), its table given the focus: where the
+        buff strip's pop-up, a double-click on the DPS graph and a death's
+        Events link (*unit_key*: the player who died) send the reader.
+        Whether it was shown: not for a fight whose events were not
+        recorded, nor while no fight is on screen."""
+        entry = self.history_list.current_entry()
+        if entry is None or not self.fight_views.is_shown() or not events_known(entry):
+            return False
+        # The tab change draws the page if it was marked
+        self.fight_tabs.setCurrentWidget(self.events_view)
+        self.events_view.show_around(ms, unit_key=unit_key)
+        self._apply_search()  # the search's count, for the rows now shown
+        self.events_view.table.setFocus()
+        return True
+
+    def _show_event_on_graph(self, ms, label):
+        """Ctrl+G on an Events row, or the link under the table: the DPS
+        graph tab with that moment marked (gui.dps_graph), until another
+        fight is shown."""
+        if self.history_list.current_entry() is None or not self.fight_views.is_shown():
+            return
+        # The tab change draws the graph if it was marked: the mark after it
+        self.fight_tabs.setCurrentWidget(self.dps_panel)
+        self.dps_panel.set_cursor_ms(ms, label)
+
+    def _show_graph_moment(self, ms):
+        """A double-click on the DPS graph: the moment marked there, and
+        the Events tab around it."""
+        entry = self.dps_panel.entry
+        if (entry is None or entry is not self.history_list.current_entry()
+                or not events_known(entry)):
+            return
+        self.dps_panel.set_cursor_ms(ms)
+        self._show_events_around(ms)
+
+    def _show_player_events(self, entry, unit_key, ms):
+        """A death's Events link in the player window's recap: the window's
+        fight selected in the list and this window brought up, as its Show
+        in list does (_show_in_list), then the Events tab around that
+        death, its row selected."""
+        if not events_known(entry):
+            return
+        self._show_in_list(entry)
+        if self.history_list.current_entry() is entry:
+            self._show_events_around(ms, unit_key)
+
+    def _show_player_actions(self, entry, unit_key):
+        """The player window's actions button: its fight selected in the
+        list and this window brought up (_show_in_list), then the Events
+        tab with Who on that player (gui.events_tab.show_player), the
+        table given the focus. Nothing for a fight whose casts were not
+        kept."""
+        if getattr(entry, "casts", None) is None:
+            return
+        self._show_in_list(entry)
+        if self.history_list.current_entry() is not entry or not self.fight_views.is_shown():
+            return
+        # The tab change draws the page if it was marked
+        self.fight_tabs.setCurrentWidget(self.events_view)
+        if self.events_view.entry is not entry:
+            self._draw_events(entry)
+        if self.events_view.show_player(unit_key):
+            self._apply_search()  # the search's count, for the rows now shown
+            self.events_view.table.setFocus()
+
+    @Slot(object, str, int)
+    def _show_player_positions(self, entry, unit_key, ms):
+        """A death's Positions in the player window's recap: the positions
+        window at that moment of the player window's fight."""
+        if positions_known(entry):
+            self.show_moment(entry, entry.locator.start_ms + ms, unit_key or None)
+
+    @Slot(object, str)
+    def _open_positions_player(self, entry, unit_key):
+        """The positions window's player: the player window on that unit's
+        row of the window's fight, at Build; at Deaths for a player the
+        fight's table does not list who died, as Also died opens them. A
+        unit with neither (an enemy, a pet, a player with no build logged
+        who did not die) has no page there, and the status bar says so: the
+        player window would show another player in its place."""
+        unit_key = str(unit_key)
+        if player_for(entry, unit_key) is not None:
+            tab = BUILD_TAB
+        elif deaths_by_unit(entry).get(unit_key):
+            tab = DEATHS_TAB
+        else:
+            self.statusBar().showMessage("There is no player window for that one", 5000)
+            return
+        self._open_player(unit_key, tab, entry=entry)
+
     def _redraw_fight(self):
         """The fight on screen drawn again in place (it changed, a theme
         switch, Hide names, a new text size): each page where the reader
         had it, the search going on from its place among the matches of the
-        tab on screen (_search_place)."""
-        place = self._search_place(self._search_view().textCursor().position())
+        tab on screen (_search_place); the Events page keeps its row
+        itself."""
+        view = self._search_view()
+        place = (self._search_place(view.textCursor().position())
+                 if view is not self.events_view else None)
         with self.fight_view.keeping_place():
             self._show_fight(search_from=place)
 
@@ -2647,8 +3190,12 @@ class MainWindow(QMainWindow):
         self.request_review.emit(path, member)
 
     def _exit_review(self):
+        # A reviewed fight still in a window is read from the reviewed file
+        # while a window holds it (_keep_review_source, _reread_places)
+        self._keep_review_source()
         self._review_fights = None
         self._review_path = None
+        self._review_source = None
         self.banner.setVisible(False)
         self.back_to_live_action.setVisible(False)
         if self._replaying:
@@ -2657,7 +3204,7 @@ class MainWindow(QMainWindow):
             # rather than each one drawn as it comes
             self._replay_key = None
             self.history_list.set_fights(self._fights)
-            self._update_player_listed()
+            self._update_windows_listed()
             if self._log_missing and not self._fights:
                 # The restart found no log, so nothing is being replayed:
                 # the log's first fight, once it appears, puts the replay's
@@ -2676,7 +3223,7 @@ class MainWindow(QMainWindow):
 def _player_handle(entry, unit_id) -> str:
     """The name the player *unit_id* has in the fight *entry*, a row's or,
     for a player the table does not list, their death recap's: what a
-    Settings replay is checked by (MainWindow._rebind_player_window)."""
+    Settings replay is checked by (MainWindow._rebind_windows)."""
     p = player_for(entry, unit_id)
     if p is not None:
         return str(p.get("name") or "")

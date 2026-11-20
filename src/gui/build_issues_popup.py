@@ -8,11 +8,16 @@ and the build window shows the same HTML under its header.
 Like the timeline strip's SummaryPopup it is a Qt.Popup frame: it closes on
 a click elsewhere or Esc and deletes itself when closed, and nothing keeps
 a reference to it, Qt owning it through its parent. The ESO-Hub links in
-it open in the system browser.
+it open in the system browser, and a set's link shows on hover the lines
+of the set the player has (fight_render.set_tooltips, issue #79).
 """
 
-from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
+import html as html_text
+import re
+
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QToolTip, QVBoxLayout
 
 POPUP_WIDTH = 460  # wide enough for a rule's sentence or two per line
 
@@ -35,21 +40,66 @@ def place_popup(frame, pos: QPoint) -> None:
             frame.move(x, y)
 
 
+_LINK_RE = re.compile(r'<a\s[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.DOTALL)
+
+
+class _LinkLabel(QLabel):
+    """A label that says which link Tab moved to: Qt reports a link the
+    pointer is over (linkHovered) and nothing for one the keyboard reaches,
+    so the popup's hover text would be the mouse's alone. link_reached
+    carries the link's text as the label selects it, '' when Tab left the
+    links."""
+
+    link_reached = Signal(str)
+
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        moved = super().focusNextPrevChild(forward)
+        self.link_reached.emit(self.selectedText() if self.hasSelectedText() else "")
+        return moved
+
+
 class BuildIssuesPopup(QFrame):
 
-    def __init__(self, html: str, parent=None):
+    def __init__(self, html: str, parent=None, tooltips=None):
+        """*tooltips*: hover text per link address, as the fight pane's."""
         super().__init__(parent, Qt.Popup)
+        self._tooltips = dict(tooltips or {})
+        self.current_tooltip = ""  # the hover text last shown, for tests
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFrameShape(QFrame.StyledPanel)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
-        self.label = QLabel(html)
+        # A link's address by its text, to find the hover text of a link
+        # the keyboard reached (_LinkLabel gives the text, not the address)
+        self._href_of = {html_text.unescape(re.sub(r"<[^>]+>", "", text)): html_text.unescape(href)
+                         for href, text in _LINK_RE.findall(html)}
+        self.label = _LinkLabel(html)
         self.label.setTextFormat(Qt.RichText)
         self.label.setWordWrap(True)
         self.label.setFixedWidth(POPUP_WIDTH)
         self.label.setOpenExternalLinks(True)
         self.label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.label.linkHovered.connect(self._on_link_hovered)
+        self.label.link_reached.connect(self._on_link_reached)
         layout.addWidget(self.label)
+
+    def _on_link_reached(self, text: str) -> None:
+        """Tab moved to the link reading *text*: its hover text, shown just
+        under the popup, where the pointer may be anywhere."""
+        tip = self._tooltips.get(self._href_of.get(text, "")) if text else None
+        self.current_tooltip = tip or ""
+        if tip:
+            QToolTip.showText(self.mapToGlobal(self.rect().bottomLeft()), tip, self.label)
+        else:
+            QToolTip.hideText()
+
+    def _on_link_hovered(self, link: str) -> None:
+        text = self._tooltips.get(link) if link else None
+        self.current_tooltip = text or ""
+        if text:
+            QToolTip.showText(QCursor.pos(), text, self.label)
+        else:
+            QToolTip.hideText()
 
     def show_at(self, pos: QPoint) -> None:
         """Show with the top-left corner at *pos* (the pointer), kept on

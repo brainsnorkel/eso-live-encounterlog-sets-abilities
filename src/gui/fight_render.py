@@ -97,13 +97,23 @@ import zlib
 from pathlib import PurePath
 from typing import List, Optional, Tuple
 
+import set_text
 from ability_icons import slugify
 from eso_sets import likely_masteries, masteries_never_logged
 from fight_opener import PlayerName, opener_parts
-from gui.death_render import FIGHT_DEATHS_HREF, death_chip_html, deaths_by_unit
+from gear_set_database import gear_set_db
+from gui.death_render import (
+    FIGHT_DEATHS_HREF,
+    FIGHT_POSITIONS_HREF,
+    POSITIONS_LABEL,
+    death_chip_html,
+    deaths_by_unit,
+    positions_known,
+)
 from gui.name_mask import ANON, NO_MASK
 from gui.text_size import scaled_px
 from pen_crit import cap_shares
+from player_build import gear_of_rows, normal_set_name, piece_counts
 from pull_outcome import (
     clock,
     dead_row_text,
@@ -137,6 +147,13 @@ DEATH_CUE = "☠"  # history-list mark on a fight in which a player died: skull 
 ISSUES_LIST_CUE = "ⓘ"  # history-list mark on a fight with a player whose build has a finding: circled i
 SCRIPT_KINDS = ("Focus", "Signature", "Affix")  # order of a slot's 'scripts'
 SCRIPTS_UNKNOWN = "scripts not in log"
+# A set worn in both versions, on the gear line and in its hover (#215)
+SET_PERFECTED_PART = "{perfected} perfected"
+SET_SPLIT = "{count} pieces: {perfected} perfected, {normal} normal"
+# The two lines under a player's bars, the scribed skills and the gear, as
+# a share of the pane's text size (#215: the gear line was 0.75, the
+# smallest text in the app)
+UNDER_BARS_SCALE = 0.85
 BUILD_HREF = "esolog:build/"  # + the player's unit id
 DAMAGE_HREF = "esolog:damage/"  # + the player's unit id
 GRAPH_HREF = "esolog:graph/"  # the header's group dps figure: the dps over time graph
@@ -693,12 +710,18 @@ def issues_html(p, dark: bool = False, set_links=None, links=None,
         return ""
     theme = _theme(dark)
     e = html.escape
+    hovers = set_hovers(p) if set_links else {}
     rows = []
     for finding in findings:
         extras = []
         for key, lookup in (("set", set_links), ("skill", links)):
             name = str(finding.get(key) or "")
-            url = lookup(name) if lookup and name else None
+            if key == "set":
+                # The set's link as the player's gear line has it, so its
+                # hover has the lines they have (set_hovers, issue #79)
+                url = set_href(name, set_links, hovers) if name else None
+            else:
+                url = lookup(name) if lookup and name else None
             if url:
                 extras.append(f'<a href="{e(url, quote=True)}" style="color:{theme["link"]}">'
                               f'{e(name)} on ESO-Hub</a>')
@@ -728,6 +751,21 @@ def _deaths_link(entry, theme: dict, px: int) -> str:
         return f"Deaths {deaths}"
     return (f'<a href="{FIGHT_DEATHS_HREF}" style="text-decoration:none;color:{theme["muted"]}">'
             f'Deaths {deaths}&nbsp;{glyph_html(DEATHS_GLYPH, theme["link"], px)}</a>')
+
+
+def _positions_link(entry, theme: dict) -> str:
+    """The header's Positions, after Deaths N (issue #214): where everyone
+    stood, in the positions window, at the fight's first death with that
+    player selected, else as the fight began (death_render.fight_moment).
+    Only for a fight whose lines can be read again (positions_known); a
+    fight with no death has it too, its start being a moment like any
+    other. A word in the link colour rather than a glyph: it is the only
+    plain word in the muted line that is a link, so the colour says so,
+    and a word needs no alt text for a screen reader."""
+    if not positions_known(entry):
+        return ""
+    return (f' · <a href="{FIGHT_POSITIONS_HREF}" style="text-decoration:none;'
+            f'color:{theme["link"]}">{POSITIONS_LABEL}</a>')
 
 
 def _dps_time_text(seconds: float) -> str:
@@ -1125,8 +1163,11 @@ def _link_note(href: str, e) -> str:
             f"Click to open on ESO-Hub<br>{e(href.split('#', 1)[0])}</span>")
 
 
-def _link_tip(name: str, href: str, e) -> str:
-    return f"<b>{e(name)}</b>{_link_note(href, e)}"
+def _link_tip(name: str, href: str, e, note: str = "") -> str:
+    """Hover text of a link to an ESO-Hub page: the name, a *note* under it
+    when there is one, and where the link leads."""
+    extra = f"<br>{e(note)}" if note else ""
+    return f"<b>{e(name)}</b>{extra}{_link_note(href, e)}"
 
 
 def _scribed_tip(slot: dict, href: str, e) -> str:
@@ -1190,7 +1231,9 @@ def _scribed_html(p, icons, links, script_links, e, color: str) -> str:
 
 
 def _set_items(p):
-    """(count, name, perfected) tuples from a player's gear list, or []."""
+    """(count, name, mythic) tuples from a player's gear list, or []: the
+    engine's all_sets pairs, or its compact sets triples, whose third field
+    says the set is a mythic."""
     items = p.get("all_sets") or p.get("sets")
     if not items or isinstance(items, str):
         return []
@@ -1201,6 +1244,75 @@ def _set_items(p):
     except (TypeError, IndexError):
         return []
     return out
+
+
+def set_entries(p) -> List[dict]:
+    """Design: Perfected and normal pieces on the gear line. The log gives
+    a perfected set and its normal version two set ids and two names, but
+    the game counts their pieces together towards the set's bonuses (only
+    the perfected version's own extra line needs five perfected pieces).
+    So the gear line shows the pair as one entry, placed by the total:
+    {'count', 'name'} for a set worn in one version, with 'perfected' (the
+    perfected pieces among them) and 'perfected_name' added when both are
+    worn, 'name' then being the normal version's. Entries keep the engine's
+    order, most pieces first, a pair standing where its total puts it and
+    ties staying as they came (issue #215).
+
+    The entry reads '5x Slivers of the Null Arca (2 perfected)': the total
+    first, since the first thing asked of a gear line is how much of the
+    set is there, and it is the shortest of the forms tried, the one that
+    kept a four-set line on one line of a 560 px pane. The name opens the
+    normal version's ESO-Hub page and '2 perfected' the perfected one's.
+
+    The counts are the engine's, as the line has always had them: every
+    piece worn, the weapons of both bars among them. So a set with a
+    weapon on each bar reads one or two above what either bar has active,
+    which the Build tab's Pcs column gives per bar. Over 411 split logs
+    that is 88 of the 242 builds wearing a set in both versions and 747 of
+    the 19,952 wearing one; the line reads five or more where neither bar
+    has five in 1 and 12 of them (issue #219 asks which count the line
+    should show)."""
+    merged, order = {}, []
+    for count, name, _flag in _set_items(p):
+        key = normal_set_name(name)
+        entry = merged.get(key)
+        if entry is None:
+            merged[key] = entry = {"count": 0, "name": name, "versions": {}}
+            order.append(key)
+        try:
+            pieces = int(count)
+        except (TypeError, ValueError):
+            pieces = 0
+        entry["count"] += pieces
+        entry["versions"][name] = entry["versions"].get(name, 0) + pieces
+    out = []
+    for key in order:
+        entry = merged[key]
+        versions = entry.pop("versions")
+        if len(versions) > 1:
+            perfected_name = next(name for name in versions if name != key)
+            entry.update(name=key, perfected=versions[perfected_name],
+                         perfected_name=perfected_name)
+        out.append(entry)
+    if not any("perfected" in entry for entry in out):
+        return out  # nothing joined: the engine's order as it came
+    # Stable: Python's sort keeps the engine's order among equal totals
+    return sorted(out, key=lambda entry: -entry["count"])
+
+
+def set_entry_text(entry: dict) -> str:
+    """One gear-line entry as plain text: '5x Name', or for a set worn in
+    both versions '5x Name (2 perfected)'."""
+    text = f"{entry['count']}x {entry['name']}"
+    if "perfected" not in entry:
+        return text
+    return f"{text} ({SET_PERFECTED_PART.format(perfected=entry['perfected'])})"
+
+
+def set_split_text(entry: dict) -> str:
+    """'5 pieces: 2 perfected, 3 normal' for a set worn in both versions."""
+    return SET_SPLIT.format(count=entry["count"], perfected=entry["perfected"],
+                            normal=entry["count"] - entry["perfected"])
 
 
 def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dict:
@@ -1227,29 +1339,142 @@ def anchor_tooltips(entry, links=None, set_links=None, script_links=None) -> dic
                     if url and url not in tips:
                         tips[url] = (f"<b>{e(str(script))}</b><br>{kind} script"
                                      f"{_link_note(url, e)}")
-        if set_links:
-            for _count, name, _perfected in _set_items(p):
-                href = set_links(name)
-                if href and href not in tips:
-                    tips[href] = _link_tip(name, href, e)
+        for href, tip in set_tooltips(p, set_links).items():
+            tips.setdefault(href, tip)
+    return tips
+
+
+def set_hovers(p) -> dict:
+    """Design: A set link's hover. What each set link of one player
+    carries, by the set's name as the link shows it (a set worn in both
+    versions has two names, and two links): {'fragment', 'split', 'lines'}.
+
+    'lines' are the set's bonus lines the player has (set_text.active_lines):
+    those at or below the pieces active on their better bar, which the
+    entry's gear rows carry as the Pcs column shows them (a set worn in both
+    versions at the two counts added, player_build.family_counts), and its
+    perfected line at the perfected pieces of that bar, counted from the
+    rows (piece_counts). With the two bars level, the better bar is the one
+    with more perfected pieces. An entry without gear rows falls back to
+    the gear line's own counts. 'split' is '5
+    pieces: 2 perfected, 3 normal' for a set worn in both versions.
+
+    'fragment' goes on the link's address: the pane keeps one hover per
+    address for the whole fight, and two players can wear one set at
+    different counts, so the address says which hover is meant, as a
+    scribed skill's does for its scripts. ESO-Hub ignores it, and the same
+    address is built for the gear line, the Build tab's gear rows and a
+    finding's set link, so all three show the same hover (issue #79)."""
+    rows = p.get("gear") or []
+    active = {str(row.get("set")): row["pieces"] for row in rows if row.get("pieces")}
+    own = None  # each version's own pieces, counted only for a set worn in both
+    out = {}
+    for item in set_entries(p):
+        mixed = "perfected" in item
+        names = [item["name"]] + ([item["perfected_name"]] if mixed else [])
+        ids = [str(gear_set_db.get_set_id_by_name(name) or "") for name in names]
+        bars = next((active[name] for name in names if name in active), None)
+        if bars:
+            front, back = bars[0] or 0, bars[1] or 0
+            pieces, perfected = max(front, back), None
+            if mixed:
+                own = piece_counts(gear_of_rows(rows)) if own is None else own
+                theirs = own.get(ids[1]) or [0, None]
+                bar = 0 if (front, theirs[0] or 0) >= (back, theirs[1] or 0) else 1
+                perfected = theirs[bar] or 0
+        else:
+            pieces = item["count"]
+            perfected = item["perfected"] if mixed else None
+        # The perfected version's text has every line of the pair
+        text_id = ids[-1]
+        lines = set_text.active_lines(text_id, pieces, perfected) if text_id else []
+        fragment = ""
+        if mixed:
+            fragment = f"pieces-{item['perfected']}-{item['count'] - item['perfected']}"
+        if text_id and set_text.has_text(text_id):
+            fragment = f"{fragment or 'pieces'}-on-{pieces}" + (f"-{perfected}" if mixed else "")
+        for name in names:
+            out[name] = {"fragment": fragment, "lines": lines,
+                         "split": set_split_text(item) if mixed else ""}
+    return out
+
+
+def set_href(name: str, set_links, hovers: dict) -> Optional[str]:
+    """The address of a set link for one player: the set's ESO-Hub page,
+    with the fragment that picks the player's hover (set_hovers); the plain
+    page for a set the player does not wear, None for a set without a page."""
+    url = set_links(name) if set_links and name else None
+    fragment = (hovers.get(name) or {}).get("fragment")
+    return f"{url}#{fragment}" if url and fragment else url
+
+
+def _set_tip(name: str, href: str, e, hover: dict) -> str:
+    """Hover text of a set link: the name, the split of a set worn in both
+    versions, the bonus lines the player has, and where the click leads
+    with whose text it is. A set with no line to show reads as any link."""
+    if not hover.get("lines"):
+        return _link_tip(name, href, e, hover.get("split") or "")
+    rows = [f"<b>{e(name)}</b>"]
+    if hover.get("split"):
+        rows.append(e(hover["split"]))
+    rows.extend(f"({pieces}) {e(text)}" for pieces, text in hover["lines"])
+    rows.append(f"<span style='font-size:85%'>Click to open on ESO-Hub"
+                f" · {e(set_text.CREDIT)}</span>")
+    return "<br>".join(rows)
+
+
+def set_tooltips(p, set_links) -> dict:
+    """{address: hover text} of one player's set links: each set at the
+    address their gear line, their Build tab's gear rows and their findings
+    use (set_href), and its plain address with the name and the target,
+    for a link drawn without the player (a finding on a set they do not
+    wear links the plain page too)."""
+    if not set_links:
+        return {}
+    e = html.escape
+    tips = {}
+    hovers = set_hovers(p)
+    for name, hover in hovers.items():
+        href = set_href(name, set_links, hovers)
+        if href:
+            tips.setdefault(href, _set_tip(name, href, e, hover))
+            plain = href.split("#", 1)[0]
+            tips.setdefault(plain, _link_tip(name, plain, e))
+    for finding in p.get("build_issues") or []:
+        name = str(finding.get("set") or "")
+        plain = set_links(name) if name else None
+        if plain:
+            tips.setdefault(plain, _link_tip(name, plain, e))
     return tips
 
 
 def _sets_html(p, set_links, e, color: str) -> str:
     """Gear list "5pc Name, 2pc Other"; each set name is an ESO-Hub link
     when the bundled map knows the set's page."""
-    items = _set_items(p)
+    items = set_entries(p)
     if not items:
         raw = p.get("all_sets") or p.get("sets")
         return e(raw) if isinstance(raw, str) else ""
+
+    def linked(label: str, url) -> str:
+        if not url:
+            return label
+        return (f'<a href="{e(url, quote=True)}" '
+                f'style="text-decoration:none;color:{color}">{label}</a>')
+
+    hovers = set_hovers(p) if set_links else {}
     chunks = []
-    for count, name, _flag in items:
-        label = e(name)
-        url = set_links(name) if set_links else None
-        if url:
-            label = (f'<a href="{e(url, quote=True)}" '
-                     f'style="text-decoration:none;color:{color}">{label}</a>')
-        chunks.append(f"{count}x {label}")
+    for item in items:
+        name_href = set_href(item["name"], set_links, hovers)
+        if "perfected" not in item:
+            chunks.append(f"{item['count']}x {linked(e(item['name']), name_href)}")
+            continue
+        # '5x Name (2 perfected)': the name opens the normal version's
+        # page, the bracket the perfected one's. The name may wrap between
+        # its words; the bracket never parts from it, nor breaks inside
+        part = SET_PERFECTED_PART.format(perfected=item["perfected"]).replace(" ", "&nbsp;")
+        chunks.append(f"{item['count']}x {linked(e(item['name']), name_href)}&nbsp;"
+                      f"({linked(part, set_href(item['perfected_name'], set_links, hovers))})")
     return ", ".join(chunks)
 
 
@@ -1331,7 +1556,7 @@ def render_html(entry, detailed: bool, dark: bool = False,
              f" · {gdps}"
              f"{subline_zone}"
              f" · {e(str(entry.timestamp))}"
-             f" · {_deaths_link(entry, theme, px)}")
+             f" · {_deaths_link(entry, theme, px)}{_positions_link(entry, theme)}")
     # The fight that completed a trial: the run's result in a strip across
     # the top, framed like a build card (trial_result)
     result = getattr(entry, "trial_result", None)
@@ -1490,10 +1715,10 @@ def render_html(entry, detailed: bool, dark: bool = False,
             # Under the bars: what each scribed skill was scribed with
             scribed = _scribed_html(p, icons, links, script_links, e, detail_color)
             if scribed:
-                lines.append(f"<span style='font-size:{base_pt * 0.85:.2f}pt'>"
+                lines.append(f"<span style='font-size:{base_pt * UNDER_BARS_SCALE:.2f}pt'>"
                              f"{scribed}</span>")
             # The bars sit in a framed build card; the gear list follows it in
-            # a smaller font. padding-top:0 pulls the card up under the
+            # a smaller font (UNDER_BARS_SCALE). padding-top:0 pulls the card up under the
             # player's name row
             card = ""
             if lines:
@@ -1508,7 +1733,8 @@ def render_html(entry, detailed: bool, dark: bool = False,
             # the 5pc/mythic summary used elsewhere. Set names link to their
             # ESO-Hub pages
             sets = _sets_html(p, set_links, e, detail_color)
-            gear = (f"<span style='font-size:{base_pt * 0.75:.2f}pt'>{sets}</span>"
+            gear = (f"<span style='font-size:{base_pt * UNDER_BARS_SCALE:.2f}pt'>"
+                    f"{sets}</span>"
                     if sets else "")
             detail = (f"<tr><td></td><td colspan='5' "
                       f"style='color:{detail_color};padding-top:0'>"
@@ -1593,18 +1819,16 @@ def presence_note(p) -> str:
     return ""
 
 
-def _sets_text(sets_value) -> str:
-    """Human-readable gear sets ("5x Name, 2x Other") from the entry's sets
-    field: a preformatted string or a list of (piece_count, set_name, ...)
-    tuples."""
+def _sets_text(p) -> str:
+    """A player's gear sets as text ("5x Name, 5x Other (2 perfected)"),
+    the entries the pane's gear line shows (set_entries); a preformatted
+    string in the sets field is given as it is."""
+    sets_value = p.get("all_sets") or p.get("sets")
     if not sets_value:
         return ""
     if isinstance(sets_value, str):
         return sets_value
-    try:
-        return ", ".join(f"{item[0]}x {item[1]}" for item in sets_value)
-    except (TypeError, IndexError):
-        return str(sets_value)
+    return ", ".join(set_entry_text(item) for item in set_entries(p)) or str(sets_value)
 
 
 def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
@@ -1659,7 +1883,7 @@ def render_plain_text(entry, pen_crit_options=None, names=None) -> str:
         if taunts:
             lines.append("      taunted with " + ", ".join(
                 f"{t.get('name', '')} ×{t.get('count', 0)}" for t in taunts))
-        sets = _sets_text(p.get("all_sets") or p.get("sets"))
+        sets = _sets_text(p)
         if sets:
             lines.append(f"      {sets}")
     # Who opened the fight, as the pane's line under the table (issue #159)

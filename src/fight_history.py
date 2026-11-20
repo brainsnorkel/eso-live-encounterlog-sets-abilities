@@ -15,7 +15,7 @@ class FightHistoryEntry:
                  'death_recaps', 'tracked', 'dps_time_s', 'boss_dps_time_s',
                  'damage_series', 'pen_crit', 'player_names', 'misfortunes',
                  'zone_id', 'difficulty', 'pull', 'time_dead', 'banner_path', 'game_version',
-                 'session_stamp']
+                 'session_stamp', 'locator', 'events', 'casts']
 
     def __init__(self):
         self.timestamp = ""
@@ -86,8 +86,12 @@ class FightHistoryEntry:
         self.buff_timeline = None
         # One dict per player death, in order (len == deaths): unit_id, name,
         # time_ms (into the fight), killer, ability, ability_id, icon,
-        # max_health, and events: the last seconds before the death, oldest
-        # first (see death_recap.py for the row keys)
+        # max_health, events: the last seconds before the death, oldest
+        # first (see death_recap.py for the row keys), and casts: the
+        # player's own casts in those seconds, oldest first, each with
+        # offset_ms, ability_id, ability, icon and extra (the kind of an
+        # extra, '' for a skill; issue #214, ESOLogAnalyzer._recap_casts;
+        # missing on an entry built before them)
         self.death_recaps = []
         # The tracked effects for this fight (every item of the uptime line
         # is one), one dict per rule in rule order: name, scope, kind, units
@@ -126,6 +130,20 @@ class FightHistoryEntry:
         # Instance tab finds the fight's split (session_splits, issue #194);
         # '' when no BEGIN_LOG was seen
         self.session_stamp = ""
+        # Where the fight's lines are in its log and who its units are, for
+        # a view that re-reads the fight from disk (fight_locator, issue
+        # #214): a FightLocator, immutable, replaced whole when a fight the
+        # game cut in two goes on; None on an entry built without it
+        self.locator = None
+        # The fight's notable events for the Events tab: the bosses' casts
+        # and health, the big hits on the group, the taunts, resurrections
+        # and phases (fight_events.FightEvents, immutable, issue #214); None
+        # on an entry built without them
+        self.events = None
+        # Every group player's casts, for the Events tab's actions: when,
+        # what, at whom and for how long (fight_casts.FightCasts,
+        # immutable, issue #214); None on an entry built without them
+        self.casts = None
 
 
 class FightHistory:

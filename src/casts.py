@@ -9,6 +9,42 @@ of 2026-10-27), and a synergy can write two ability ids (Healing
 Combustion, 63507 then 95042, on the same timestamp). A cast is therefore
 one castTrackId per caster, whatever the lines under it.
 
+Design: a track id written again after its END_CAST (issue #226). Over the
+391 split logs of 2026 (5.3 million BEGIN_CAST lines), 388,764 lines reuse
+a track id their caster had already used. Most are the same cast. A
+channelled heavy attack's or a channel's later lines come with no END_CAST
+between (145,778, 99.99% within 200 ms), and a synergy's or a multi-hit
+skill's second line comes in the same millisecond. But 92,309 players'
+lines, which the engine merged, came at a later millisecond after the
+track's END_CAST, in two kinds:
+- A synergy taken again under its first take's track id: Healing
+  Combustion 477 times, Combustion 42. A new cast.
+- A proc the game writes as an instant cast, never on anyone's bar, under
+  the track id of its first tick, every tick: 91,230 lines. Meridia's
+  Favor about every second (43,625), Highland Sentinel and Peace and
+  Serenity every second, Blood Magic, the scribed banner's tick every five
+  seconds, Grundwulf, Obsidian Stance.
+A cast is a press (Chris's choice), so an ability its caster writes again
+on its own track after END_CAST, at a later millisecond, is a proc for the
+rest of the session: it leaves that caster's counts, the extras and casts
+per minute, unless it is a cast of a skill on their bar, matched as the
+slot counts are (on_bars): Chakram of Destiny, slotted as 186207, is
+pressed as 194237 and pressed again on the same track. An extra (a light
+or heavy attack, a dodge, a potion) is never a proc. Over the 391 logs the
+rule finds 14 procs, all players' (none a companion's, an extra or a
+werewolf skill). A proc is known from its second tick, so a fight whose
+entry was built between its first two ticks keeps that first one: at most
+one cast, once a session. Before, each proc counted once a fight, and a
+synergy taken again not at all. A track still
+written when a fight's entry is built carries over to the next fight:
+the banner pressed in one fight ticks on in the next, and before, its
+first tick there counted as a press (638 players' fights over the 391
+logs, every one a Shocking, Magical or Fiery Banner). A cancelled cast's
+END_CAST (PLAYER_CANCELLED) never reaches the engine, as the parser
+rejects it, so a track id reused after one stays the same cast; a slotted
+skill's own effect written later on its track (the banner's first tick, a
+werewolf ultimate's form) stays with the press.
+
 A fight's casts are those begun from its start to its end, the engine's
 fight window (BEGIN_COMBAT to END_COMBAT). Combat Metrics counts the same
 way: for the logging player in that fight it showed Force Pulse 37,
@@ -69,6 +105,13 @@ are not skills were those ids and Mount Up. So its extras line has kinds
 of its own (COMPANION_EXTRA_KINDS), Block among them, which a player's
 never needs (a player's block writes no cast), and a player's 'casts'
 stays as it was.
+
+Each cast the recorder keeps also holds the unit it was aimed at, named
+as it is noted, and the time of the END_CAST its track wrote next, with
+whether that said INTERRUPTED (issue #214): the Events tab's actions show
+them, from the fight entry's packed copy (fight_casts). Nothing here
+counts them, so the counts are as they were; cast_records gives the
+counts' casts one by one.
 """
 
 from collections import Counter, defaultdict
@@ -126,7 +169,8 @@ SWAPS = frozenset({"28541", "61874", "61875"})  # Swap Weapons; to weapon set 1,
 DODGES = frozenset({"28549"})  # Roll Dodge
 BREAK_FREE = frozenset({"16565"})
 SYNERGIES = frozenset({
-    "63507", "95042", "39301",   # Healing Combustion, Combustion (Necrotic Orb)
+    "63507", "95042",            # Healing Combustion (Necrotic Orb)
+    "39301", "95040",            # Combustion (Necrotic Orb)
     "42038",                     # Energy Orb
     "41963", "39500",            # Blood Feast, Blood Funnel (Blood Altar)
     "41838",                     # Radiate (Inner Fire)
@@ -181,6 +225,16 @@ COMPANION_EXTRA_KINDS: tuple[tuple[str, frozenset], ...] = (
     ("block", COMPANION_BLOCKS), ("dodge", COMPANION_DODGES),
     ("break_free", COMPANION_BREAK_FREE),
 )
+# The extras are presses by kind, never taken for procs (#226)
+_EXTRA_IDS = frozenset().union(*(ids for _kind, ids in EXTRA_KINDS + COMPANION_EXTRA_KINDS))
+
+# A cast as CastRecorder keeps it, by place: its time, ability id, target
+# ((name, key) or None), END_CAST time (None until read) and flags
+CAST_TIME, CAST_ABILITY, CAST_TARGET, CAST_END, CAST_FLAGS = range(5)
+INTERRUPTED = 1  # a flag: the cast's END_CAST says INTERRUPTED
+# What a BEGIN_CAST writes for a cast aimed at no other unit: '*' its
+# caster, '0' none
+_NO_TARGET = frozenset({"*", "0"})
 
 
 def line_time(line: str) -> int:
@@ -212,47 +266,163 @@ def same_skill(slot_id: str, slot_name: str, cast_id: str, cast_name: str) -> bo
 class CastRecorder:
     """Each player's casts over a BEGIN_LOG session, one per castTrackId,
     until a fight's entry is built from them. Keyed by the player's record
-    id in the encounter (CombatEncounter.player_of)."""
+    id in the encounter (CombatEncounter.player_of). See the module on a
+    track id written again after its END_CAST: a synergy taken again, or a
+    proc. Each cast keeps the unit it was aimed at and its END_CAST's time
+    as well, for the Events tab's actions (fight_casts, issue #214)."""
 
     def __init__(self):
-        self._casts: dict[str, list[tuple[int, str]]] = defaultdict(list)
-        self._tracks: dict[str, set[str]] = defaultdict(set)
+        # Each caster's casts in the order begun: [time, ability id,
+        # target, END_CAST time, flags] (CAST_* above): the target the
+        # (name, key) note_cast's target_of gave as the cast was noted, or
+        # None; the END_CAST's time None until one is read
+        self._casts: dict[str, list[list]] = defaultdict(list)
+        # Each caster's tracks: track id -> (the last ability written under
+        # it, that line's time); the track ids any caster holds; and each
+        # of those tracks' last END_CAST time (the line names no caster)
+        self._tracks: dict[str, dict[str, tuple[str, int]]] = defaultdict(dict)
+        self._held: set[str] = set()
+        self._ended: dict[str, int] = {}
+        # The cast each held track last began, until its END_CAST
+        self._open: dict[str, list] = {}
+        # Each caster's procs, for the session (see the module)
+        self._procs: dict[str, set[str]] = defaultdict(set)
 
     def reset(self) -> None:
         """A new BEGIN_LOG session: timestamps restart."""
         self._casts.clear()
         self._tracks.clear()
+        self._held.clear()
+        self._ended.clear()
+        self._open.clear()
+        self._procs.clear()
 
-    def note_cast(self, key: str, track_id: str, ability_id: str, timestamp: int) -> None:
-        """A BEGIN_CAST by the player; a second line under the same
-        castTrackId is the same cast."""
+    def note_end(self, track_id: str, timestamp: int, reason: str = "") -> None:
+        """An END_CAST (the line names the track, not the caster), kept
+        for a track a caster here holds: the time the cast the track last
+        began ended, and whether the line says it was INTERRUPTED. The
+        parser rejects a PLAYER_CANCELLED one: that cast has no end."""
+        if track_id in self._held:
+            self._ended[track_id] = timestamp
+            cast = self._open.pop(track_id, None)
+            if cast is not None:
+                cast[CAST_END] = timestamp
+                if reason == "INTERRUPTED":
+                    cast[CAST_FLAGS] |= INTERRUPTED
+
+    def note_cast(self, key: str, track_id: str, ability_id: str, timestamp: int,
+                  target_id: str = "", caster_id: str = "",
+                  target_of: Callable[[str], tuple[str, str] | None] | None = None) -> None:
+        """A BEGIN_CAST by the player. A second line under the same
+        castTrackId is the same cast, unless it comes at a later
+        millisecond after the track's END_CAST: then a synergy is taken
+        again, a new cast, and the same ability again is a proc (never an
+        extra: a light or heavy attack, a dodge, a potion is a press).
+        *target_id* is the unit the line says the cast was aimed at ('*',
+        '0' or the caster's own *caster_id* for none), which *target_of*
+        names for a new cast only, as the engine resolves it then (unit ids
+        are handed out again later): (name, key), or None for a unit it
+        does not know; without *target_of* no target is kept."""
         tracks = self._tracks[key]
-        if track_id in tracks:
+        held = tracks.get(track_id)
+        tracks[track_id] = (ability_id, timestamp)
+        if held is None:
+            self._held.add(track_id)
+            self._add(key, track_id, ability_id, timestamp, target_id, caster_id, target_of)
             return
-        tracks.add(track_id)
-        self._casts[key].append((timestamp, ability_id))
+        last_ability, last_at = held
+        ended = self._ended.get(track_id)
+        if ended is None or not last_at <= ended < timestamp:
+            return  # a later line of the same cast
+        if ability_id in SYNERGIES:
+            self._add(key, track_id, ability_id, timestamp, target_id, caster_id, target_of)
+        elif ability_id == last_ability and ability_id not in _EXTRA_IDS:
+            self._procs[key].add(ability_id)
 
-    def fight_counts(self, key: str, start: int, end: int) -> Counter:
-        """Casts per ability id begun from *start* to *end*."""
-        return Counter(ability_id for timestamp, ability_id in self._casts.get(key, ())
-                       if start <= timestamp <= end)
+    def _add(self, key: str, track_id: str, ability_id: str, timestamp: int,
+             target_id: str, caster_id: str, target_of) -> None:
+        target = None
+        if (target_of is not None and target_id and target_id not in _NO_TARGET
+                and target_id != caster_id):
+            target = target_of(target_id)
+            if target is not None and target[1] == key:
+                target = None  # the caster, back on another unit id
+        cast = [timestamp, ability_id, target, None, 0]
+        self._casts[key].append(cast)
+        self._open[track_id] = cast
 
-    def fight_times(self, key: str, start: int, end: int, ability_ids) -> list[tuple[int, str]]:
+    def procs_of(self, key: str) -> frozenset:
+        """The ability ids found to be the caster's procs this session."""
+        return frozenset(self._procs.get(key, ()))
+
+    def cast_records(self, key: str, start: int, end: int, slotted=()) -> list[list]:
+        """Every cast begun from *start* to *end*, in the order cast, as
+        the recorder keeps it ([time, ability id, target, END_CAST time,
+        flags]), less the caster's procs that are not among the ability
+        ids *slotted*, those of a skill on their bars (on_bars). The
+        fight's counts are of these, and so are the casts its entry keeps
+        (fight_casts)."""
+        procs = self._procs.get(key)
+        if procs:
+            procs = procs - set(slotted)
+        return [cast for cast in self._casts.get(key, ())
+                if start <= cast[0] <= end and not (procs and cast[1] in procs)]
+
+    def casts_between(self, key: str, start: int, end: int,
+                      slotted=()) -> list[tuple[int, str]]:
+        """(time, ability id) of every cast begun from *start* to *end*, in
+        the order cast, procs left out as in cast_records. A death recap's
+        casts are these (issue #214)."""
+        return [(cast[0], cast[1]) for cast in self.cast_records(key, start, end, slotted)]
+
+    def fight_counts(self, key: str, start: int, end: int, slotted=()) -> Counter:
+        """Casts per ability id begun from *start* to *end*, procs left out
+        as in casts_between."""
+        return Counter(ability_id for _timestamp, ability_id
+                       in self.casts_between(key, start, end, slotted))
+
+    def fight_times(self, key: str, start: int, end: int, ability_ids,
+                    slotted=()) -> list[tuple[int, str]]:
         """(time, ability id) of each cast of one of *ability_ids* begun
-        from *start* to *end*, in the order cast."""
-        return [(timestamp, ability_id) for timestamp, ability_id in self._casts.get(key, ())
-                if start <= timestamp <= end and ability_id in ability_ids]
+        from *start* to *end*, in the order cast (procs left out as in
+        casts_between)."""
+        return [(timestamp, ability_id) for timestamp, ability_id
+                in self.casts_between(key, start, end, slotted) if ability_id in ability_ids]
 
     def prune_before(self, timestamp: int) -> None:
-        """Forget the casts begun before *timestamp* (and the track ids,
-        which only ever matter within a cast)."""
+        """Forget the casts begun before *timestamp*, and the tracks last
+        written before it. A track still written after it stays, so that a
+        banner pressed in one fight and ticking on into the next is not
+        cast again there. The procs found stay for the session."""
         for key in list(self._casts):
             kept = [cast for cast in self._casts[key] if cast[0] >= timestamp]
             if kept:
                 self._casts[key] = kept
             else:
                 del self._casts[key]
-        self._tracks.clear()
+        for key in list(self._tracks):
+            tracks = {track_id: held for track_id, held in self._tracks[key].items()
+                      if held[1] >= timestamp}
+            if tracks:
+                self._tracks[key] = tracks
+            else:
+                del self._tracks[key]
+        self._held = {track_id for tracks in self._tracks.values() for track_id in tracks}
+        self._ended = {track_id: at for track_id, at in self._ended.items()
+                       if track_id in self._held}
+        self._open = {track_id: cast for track_id, cast in self._open.items()
+                      if track_id in self._held}
+
+
+def slot_holds(slot: dict, name_of: Callable[[str], str]) -> Callable[[str, str], bool]:
+    """Whether a cast (id, name) is of the skill bar *slot* holds
+    (same_skill), by any name the slot goes by: its own, its id's, or a
+    stand-in's (a Rampage shown as its morph)."""
+    slot_id = str(slot.get("id", ""))
+    slot_names = {str(slot.get("name") or ""), name_of(slot_id) or "",
+                  str(slot.get("stand_in") or "")} - {""}
+    return lambda cast_id, cast_name: any(
+        same_skill(slot_id, name, cast_id, cast_name) for name in slot_names or {""})
 
 
 def mark_slot_casts(counts: Counter, bars: Iterable[list], name_of: Callable[[str], str]) -> None:
@@ -263,12 +433,27 @@ def mark_slot_casts(counts: Counter, bars: Iterable[list], name_of: Callable[[st
     names = {ability_id: name_of(ability_id) or "" for ability_id in counts}
     for bar in bars:
         for slot in bar or []:
-            slot_id = str(slot.get("id", ""))
-            slot_names = {str(slot.get("name") or ""), name_of(slot_id) or "",
-                          str(slot.get("stand_in") or "")} - {""}
-            slot["casts"] = sum(n for cast_id, n in counts.items()
-                                if any(same_skill(slot_id, name, cast_id, names[cast_id])
-                                       for name in slot_names or {""}))
+            holds = slot_holds(slot, name_of)
+            slot["casts"] = sum(n for cast_id, n in counts.items() if holds(cast_id, names[cast_id]))
+
+
+def on_bars(ability_ids: Iterable[str], bars: Iterable[list],
+            name_of: Callable[[str], str]) -> set:
+    """The ids of *ability_ids* that are casts of a skill a slot of *bars*
+    holds, as mark_slot_casts matches them (same_skill): a proc found on
+    such an id is a press written again, which stays counted (Chakram of
+    Destiny, slotted as 186207, is pressed as 194237 and pressed again on
+    the same track)."""
+    names = {ability_id: name_of(ability_id) or "" for ability_id in ability_ids}
+    found = set()
+    if not names:
+        return found
+    for bar in bars:
+        for slot in bar or []:
+            holds = slot_holds(slot, name_of)
+            found.update(cast_id for cast_id, cast_name in names.items()
+                         if holds(cast_id, cast_name))
+    return found
 
 
 def cast_summary(counts: Counter, duration_s: float, present_pct: float | None = None,

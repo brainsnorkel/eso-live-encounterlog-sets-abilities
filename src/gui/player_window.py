@@ -50,12 +50,16 @@ The window has no Close or default button, so Enter never closes it; Esc
 and the title bar's x hide it.
 
 It holds no reference to MainWindow: it asks for its fight to be shown in
-the list by a signal, and its pages' links are its own tab switches. It
-stores no lambda on a child.
+the list by a signal, and its pages' links are its own tab switches, but
+for a death's Positions and Events links and the This player's actions
+button beside Show in list (issue #214), the ways out of it, which it hands
+on by signals too, with its fight: the positions window and the Events tab
+are the main window's. The button is on for a player row whose casts the
+fight kept while the fight is in the list. It stores no lambda on a child.
 """
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QGuiApplication, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -69,6 +73,7 @@ from PySide6.QtWidgets import (
 )
 
 from ability_icons import esohub_ability_url, esohub_script_url, esohub_set_url
+from action_rows import player_row
 from gui.build_render import (
     BUILD_PART,
     NO_BUILD,
@@ -82,12 +87,15 @@ from gui.damage_render import damage_title, render_damage_html
 from gui.death_render import (
     SKULL,
     death_anchor,
+    death_events_tooltips,
+    death_positions_tooltips,
     deaths_by_unit,
     kind_tooltips,
     render_death_recap_html,
 )
 from gui.fight_render import _join, _theme, anchor_tooltips
 from gui.fight_view import FightView
+from gui.keys import key_text, sequence
 from gui.name_mask import NO_MASK
 from gui.taken_render import HEALING_PART, TAKEN_PART, render_taken_html, taken_title
 from pull_outcome import clock, outcome_text
@@ -115,6 +123,10 @@ BOSS_ONLY_LABEL = "Boss targets &only"
 SHOW_IN_LIST_LABEL = "Show in list"
 SHOW_IN_LIST_TIP = "Select this fight in the fight list"
 NOT_LISTED_TIP = "This fight is not in the list now"
+ACTIONS_LABEL = "This player's actions"
+ACTIONS_TIP = ("This player's casts and the events that touched them, on the main window's "
+               "Events tab")
+NO_ACTIONS_TIP = "The app kept no casts for this player in this fight"
 REPLAYED_NOTE = ("From before Settings replayed the session: this fight is not in the "
                  "replay, so it is shown as it was.")
 NO_COMPANION_DATA = "None logged for companions."
@@ -184,6 +196,16 @@ class PlayerWindow(QDialog):
     # The fight the window shows, which its Show in list button asks the
     # main window to select
     show_in_list_requested = Signal(object)
+    # A death's Positions link on the Deaths tab (issue #214), which the
+    # main window opens the positions window at: the fight, the key of the
+    # unit to select ('' for none) and ms into the fight
+    positions_requested = Signal(object, str, int)
+    # A death's Events link: the window's fight, the player and the moment,
+    # for the main window's Events tab (issue #214)
+    events_requested = Signal(object, str, int)
+    # The player's actions button: the window's fight and the player, for
+    # the main window's Events tab with Who on them (issue #214)
+    actions_requested = Signal(object, str)
 
     def __init__(self, parent=None, icons=None, config=None):
         super().__init__(parent)
@@ -196,6 +218,7 @@ class PlayerWindow(QDialog):
         self._dirty = set(TAB_KEYS)  # the pages to draw again before they show
         self._drawn = {}  # tab -> (entry, unit id) its page was last drawn for
         self._death = None  # the death the Deaths tab opens at, from 1
+        self._listed = True  # whether the fight is in the fight list
 
         layout = QVBoxLayout(self)
         # First header row: the player
@@ -203,7 +226,7 @@ class PlayerWindow(QDialog):
         self.previous_player = QToolButton()
         self.previous_player.setText("◀")
         self.previous_player.setAccessibleName("Previous player")
-        self.previous_player.setToolTip("Previous player (Ctrl+Up)")
+        self.previous_player.setToolTip(f"Previous player ({key_text('Ctrl+Up')})")
         self.previous_player.clicked.connect(self._previous_player)
         self.picker = QComboBox()
         self.picker.setAccessibleName("Player")
@@ -213,7 +236,7 @@ class PlayerWindow(QDialog):
         self.next_player = QToolButton()
         self.next_player.setText("▶")
         self.next_player.setAccessibleName("Next player")
-        self.next_player.setToolTip("Next player (Ctrl+Down)")
+        self.next_player.setToolTip(f"Next player ({key_text('Ctrl+Down')})")
         self.next_player.clicked.connect(self._next_player)
         self.boss_only = QCheckBox(BOSS_ONLY_LABEL)
         self.boss_only.toggled.connect(self._on_boss_only)
@@ -235,8 +258,17 @@ class PlayerWindow(QDialog):
         self.show_in_list.setAutoRaise(True)
         self.show_in_list.setFocusPolicy(Qt.StrongFocus)  # in the Tab chain
         self.show_in_list.clicked.connect(self._on_show_in_list)
+        # The player's casts and the events that touched them, on the main
+        # window's Events tab (issue #214)
+        self.actions_button = QToolButton()
+        self.actions_button.setText(ACTIONS_LABEL)
+        self.actions_button.setAccessibleName(ACTIONS_LABEL)
+        self.actions_button.setAutoRaise(True)
+        self.actions_button.setFocusPolicy(Qt.StrongFocus)  # in the Tab chain
+        self.actions_button.clicked.connect(self._on_actions)
         fight.addWidget(self.fight_label, 1)
         fight.addWidget(self.show_in_list, 0, Qt.AlignTop)
+        fight.addWidget(self.actions_button, 0, Qt.AlignTop)
         layout.addLayout(fight)
         self.replayed_label = QLabel(REPLAYED_NOTE)
         self.replayed_label.setWordWrap(True)
@@ -257,6 +289,10 @@ class PlayerWindow(QDialog):
             view.healing_requested.connect(self._to_healing)
             view.death_recap_requested.connect(self._to_deaths)
             view.recap_requested.connect(self._to_death)
+            # A moment of the fight leaves the window: the main window has
+            # the positions window (issue #214)
+            view.positions_requested.connect(self._to_positions)
+            view.events_requested.connect(self._to_events)
             self._views[key] = view
             self.tabs.addTab(view, label)
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -266,7 +302,7 @@ class PlayerWindow(QDialog):
         # Ctrl+Up for the player (decided keys; not the labels' Alt letters)
         for keys, slot in (("Ctrl+PgDown", self._next_tab), ("Ctrl+PgUp", self._previous_tab),
                            ("Ctrl+Down", self._next_player), ("Ctrl+Up", self._previous_player)):
-            QShortcut(QKeySequence(keys), self, slot)
+            QShortcut(sequence(keys), self, slot)
 
         # A burst of updates to the fight draws once, on the next turn of the
         # event loop, on a timer the window owns (see fight_view's steps)
@@ -373,9 +409,21 @@ class PlayerWindow(QDialog):
 
     def set_listed(self, listed: bool) -> None:
         """Whether the window's fight is in the fight list, for Show in
-        list."""
+        list and the player's actions, which select it there."""
+        self._listed = bool(listed)
         self.show_in_list.setEnabled(bool(listed))
         self.show_in_list.setToolTip(SHOW_IN_LIST_TIP if listed else NOT_LISTED_TIP)
+        self._fill_actions()
+
+    def _fill_actions(self) -> None:
+        """The player's actions button: on for a player row whose casts the
+        fight kept (not a companion's, nor a player the table does not
+        list), while the fight is in the list."""
+        kept = (getattr(self._entry, "casts", None) is not None
+                and player_row(self._entry, self._unit_id) is not None)
+        self.actions_button.setEnabled(kept and self._listed)
+        self.actions_button.setToolTip(ACTIONS_TIP if kept and self._listed
+                                       else NO_ACTIONS_TIP if not kept else NOT_LISTED_TIP)
 
     def redraw_pages(self) -> None:
         """The pen/crit settings changed (decision 10): every page drawn
@@ -424,6 +472,7 @@ class PlayerWindow(QDialog):
         for view in self._views.values():
             view.set_accessible_lead(line)
         self._fill_boss_only()
+        self._fill_actions()
         self._fill_title()
 
     def _fill_boss_only(self) -> None:
@@ -503,7 +552,11 @@ class PlayerWindow(QDialog):
         muted = _theme(dark)["muted"]
         p = player_for(entry, unit_id)
         if tab == DEATHS_TAB:
-            return kind_tooltips(), self._deaths_page(p, view, base_pt, text_color, muted)
+            # The star links, and each death heading's Positions link
+            tooltips = kind_tooltips()
+            tooltips.update(death_positions_tooltips(entry))
+            tooltips.update(death_events_tooltips(entry))
+            return tooltips, self._deaths_page(p, view, base_pt, text_color, muted)
         if p is None:
             # A player the table does not list (Also died): no build reached
             # the log
@@ -610,6 +663,18 @@ class PlayerWindow(QDialog):
             self._drawn.pop(DEATHS_TAB, None)  # open at the death, not at its place
         self._go(DEATHS_TAB, unit_id)
 
+    def _to_positions(self, unit_key, ms):
+        """A death's Positions link: the main window opens the positions
+        window at that moment of the window's fight (issue #214)."""
+        if self._entry is not None:
+            self.positions_requested.emit(self._entry, str(unit_key), int(ms))
+
+    def _to_events(self, unit_key, ms):
+        """A death's Events link: the main window shows the Events tab
+        around that death of the window's fight (issue #214)."""
+        if self._entry is not None:
+            self.events_requested.emit(self._entry, str(unit_key), int(ms))
+
     def _switch_player(self, unit_id: str) -> None:
         self._unit_id = unit_id
         self._dirty = set(TAB_KEYS)
@@ -652,6 +717,12 @@ class PlayerWindow(QDialog):
     def _on_show_in_list(self) -> None:
         if self._entry is not None:
             self.show_in_list_requested.emit(self._entry)
+
+    def _on_actions(self) -> None:
+        """The player's actions button: the main window selects the fight
+        and shows this player's actions on its Events tab (issue #214)."""
+        if self._entry is not None:
+            self.actions_requested.emit(self._entry, self._unit_id)
 
     # ---- size ----
 

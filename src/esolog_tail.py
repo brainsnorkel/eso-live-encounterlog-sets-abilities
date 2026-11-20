@@ -16,8 +16,8 @@ import io
 import json
 import re
 from pathlib import Path
-from collections import defaultdict
-from typing import Dict, FrozenSet, List, Optional, Tuple, Set
+from collections import Counter, defaultdict
+from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime
 from gear_set_database import gear_set_db
 from fight_history import FightHistory, FightHistoryEntry
@@ -26,8 +26,8 @@ from log_freshness import parse_relative_ms, status_from_tracking
 from buff_timeline import BuffTimelineRecorder, extract_effect_fields
 from damage_kinds import CAST_RESULTS, HEALTH_RESULTS, CastIndex, TakenTally, area_of
 from data_staleness import DataCheckTracker
-from death_recap import (DEATH_RESULTS, SUBZONE_DEATH, DeathRecapRecorder, HEAL_RESULTS,
-                         RECAP_RESULTS)
+from death_recap import (DEATH_RESULTS, HEALTH_CAUSE, KILLING_HIT_RESULTS, SUBZONE_DEATH,
+                         DeathRecapRecorder, HEAL_RESULTS, RECAP_RESULTS)
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
@@ -37,20 +37,25 @@ from build_issues import (
     structural_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
-from player_build import build_fields, food_ids, has_restoration_staff, is_mythic_set, is_two_handed, race_name
+from player_build import (build_fields, food_ids, has_restoration_staff, is_mythic_set,
+                          is_two_handed, normal_set_name, race_name)
 from misfortunes import run_misfortunes
 from presence import present_share
 import casts
 import companions
 import fight_blocks
+import fight_casts
+import fight_events
+import fight_locator
 import fight_opener
 import pen_crit
 import pull_outcome
 import resources
+import set_text
 import split_retention
 import trial_result
 import werewolf
-from waiting_hits import GroupHit, WaitingHits
+from waiting_hits import FIGHT_ON_MS, GroupHit, WaitingHits, take_damage_figures
 
 
 class _PlainAnsi:
@@ -94,7 +99,14 @@ LATE_DEATH_GRACE_MS = 1000
 # BEGIN_COMBAT this soon after END_COMBAT continues that fight when an enemy
 # the group hit in the fight's last seconds is still alive; none of the 51
 # pairs between half a second and three seconds apart was the same pull.
+# Later than that, it continues a boss fight when the group has fought on
+# its enemies since and is still hitting one of them (waiting_hits.FIGHT_ON_MS,
+# issue #162).
 COMBAT_RESUME_MS = 1000
+# Units whose id was handed out again, kept for the fights' unit tables
+# (fight_locator); past this many, those no fight could still need go
+# (ESOLogAnalyzer._prune_replaced_units)
+REPLACED_UNITS_KEPT = 256
 # A fight shorter than this, BEGIN_COMBAT to END_COMBAT, is a blip: it takes
 # none of the group's hits from before its line, which wait for the next
 # line (see waiting_hits)
@@ -166,13 +178,9 @@ def has_five_piece_bonus(set_name: str) -> bool:
     """Check if a set has a 5-piece bonus using the gear set database."""
     from gear_set_data import SET_INFO
 
-    # Remove "Perfected " prefix for lookup
-    clean_name = set_name
-    if clean_name.startswith('Perfected '):
-        clean_name = clean_name[10:]
-
-    # Look up set type from the pre-generated database
-    info = SET_INFO.get(clean_name) or SET_INFO.get(set_name)
+    # The set type from the pre-generated database, a perfected set looked
+    # up as its normal version
+    info = SET_INFO.get(normal_set_name(set_name)) or SET_INFO.get(set_name)
     if info:
         return info.get('set_type', '') not in NO_FIVE_PIECE_SET_TYPES
 
@@ -429,6 +437,41 @@ def mark_taunt_slots(slots: List[dict], taunts: List[dict]) -> None:
             slot["taunt"] = True
 
 
+# A ZeroRun (ESOLogAnalyzer._note_zero_state, issue #221): a list of when
+# the player's state first read 0, the unit id it was seen on, the player's
+# record, the fields that name the death (a waiting run's), its state, and
+# whether those fields are the hit that first showed the 0
+ZERO_T0, ZERO_UNIT, ZERO_PLAYER, ZERO_FIELDS, ZERO_STATE, ZERO_HIT = range(6)
+# Its states: waiting to be counted, a corpse from before the fight, named
+# by a death line, counted from the 0
+ZERO_WAIT, ZERO_OFF, ZERO_LINED, ZERO_COUNTED = "wait", "off", "lined", "counted"
+# Lines that show a corpse at 0 as it is raised or released, where no wait
+# for a death starts: a resurrection's combat results (the target), and the
+# effects and casts of Revive (Death Dialog), Recently Revived, Resurrect,
+# Resurrect Trigger and the Night Market's Wayshrine Revival
+REVIVE_RESULTS = frozenset({"SOUL_GEM_RESURRECTION_ACCEPTED", "RESURRECT"})
+REVIVE_ABILITY_IDS = frozenset({"14644", "14646", "26770", "55406", "260073"})
+
+
+def _corpse_pools(magicka: str, stamina: str) -> bool:
+    """Whether a player state's magicka and stamina both read 0 of a pool:
+    what a corpse's own healing ticks write beside health above 0 (issue
+    #221, ESOLogAnalyzer._note_zero_state)."""
+    return (magicka[:2] == "0/" and magicka[2:] not in ("", "0")
+            and stamina[:2] == "0/" and stamina[2:] not in ("", "0"))
+
+
+def _insert_by_time(recaps: List[dict], recap: dict) -> None:
+    """Put a death's recap into *recaps* in time order ('time_ms'), after
+    any of the same time, so the list stays in the order the deaths came
+    (a death read from 0 health is counted after the hold, issue #221)."""
+    at = len(recaps)
+    when = int(recap.get('time_ms') or 0)
+    while at and int(recaps[at - 1].get('time_ms') or 0) > when:
+        at -= 1
+    recaps.insert(at, recap)
+
+
 class EnemyInfo:
     """Stores information about an enemy unit."""
 
@@ -453,6 +496,10 @@ class EnemyInfo:
         # It has had a player owner: a pet released at its end turns HOSTILE
         # with owner 0, and is never a monster (fight_opener)
         self.was_owned: bool = False
+        # The player who owned it last (PlayerInfo), kept after the owner
+        # field drops to 0 and after its UNIT_REMOVED, which the encounter's
+        # pet_ownership forgets: a fight's unit table (fight_locator)
+        self.owner_player = None
 
 
 class CombatEncounter:
@@ -528,6 +575,12 @@ class CombatEncounter:
         # dead, for the pull's verdict (pull_outcome, issues #168, #169)
         self.boss_health = pull_outcome.BossHealth()
         self.time_dead = pull_outcome.TimeDead()
+
+        # Where the fight's lines are (fight_locator): what was known as its
+        # BEGIN_COMBAT line passed (a FightStart, None for combat that had
+        # none), and its END_COMBAT line's offset in the file read
+        self.located: Optional[fight_locator.FightStart] = None
+        self.end_offset: Optional[int] = None
 
         # Taunts: per player the abilities they taunted with (ability id ->
         # times); the debuff's spans are the Taunt rule's (effect_rules)
@@ -684,6 +737,7 @@ class CombatEncounter:
             unit = self.enemies.get(pet_unit_id)
             if unit is not None:
                 unit.was_owned = True
+                unit.owner_player = owner
         else:
             self.pet_ownership.pop(pet_unit_id, None)
             self.companion_units.pop(pet_unit_id, None)
@@ -867,6 +921,20 @@ class CombatEncounter:
                              as_pet, target_id, to_boss, damage_type, area, cast_key, watch)
         return area, (player, companion, as_pet)
 
+    def read_hit(self, unit_id: str, cast_id: str, ability_id: str,
+                 cast_index) -> tuple | None:
+        """A hit by *unit_id* as add_damage_to_player would credit it, with
+        nothing credited: (the kinds' (area?, rule) from *cast_index*, whose
+        it is (player, companion row key or None, a pet's?)), None for a
+        unit whose damage is nobody's. For a hit between fights that waits
+        for the next fight's line (waiting_hits)."""
+        player, companion = self.hitter_of(unit_id)
+        if player is None and companion is None:
+            return None
+        is_area, rule, _targets = area_of(cast_index, unit_id, cast_id, str(ability_id), True)
+        as_pet = False if companion is not None else not player.has_unit_id(unit_id)
+        return (is_area, rule), (player, companion, as_pet)
+
     def hitter_of(self, unit_id: str) -> tuple[PlayerInfo | None, str | None]:
         """Whose a unit's damage is: (the player, or a pet's or companion's
         owner; the companion's row key, or None), (None, None) for a unit
@@ -1020,7 +1088,11 @@ class ESOLogAnalyzer(ListenerMixin):
         self.ability_icons: Dict[str, str] = {}  # ability_id -> icon stem (data/icons/abilities/<stem>.png)
         self.scribing = ScribingTracker()  # each player's scripts for their scribed skills
         self.werewolf = werewolf.WerewolfTracker()  # each player's werewolf form, bar and morph
-        self.casts = casts.CastRecorder()  # each player's casts, for the counts and cpm
+        # Each player's casts, for the counts and cpm, and with their
+        # targets and ends for the Events tab's actions (fight_casts)
+        self.casts = casts.CastRecorder()
+        # The fight's notable events, for the Events tab (fight_events)
+        self.events = fight_events.EventRecorder()
         # Each player's magicka, stamina and ultimate spent and gained
         self.resources = resources.ResourceRecorder()
         # Companions (companions.py): whether their damage and healing are
@@ -1095,6 +1167,10 @@ class ESOLogAnalyzer(ListenerMixin):
         # Whose copy of a group buff set's buff each player had, for the
         # rule on a second copy (build_issues.GroupBuffCredit)
         self.group_buff_credit = GroupBuffCredit()
+        # Who had a set's own id of a Major or Minor buff up, and when:
+        # the set behind a caster's share of the buff's row (set_text,
+        # issue #79)
+        self.set_buff_recorder = set_text.SetBuffRecorder()
         # What the log names that the bundled game data does not know, and
         # the session's game version against the data's (data_staleness,
         # issue #173): sent to the listeners as it changes
@@ -1117,17 +1193,38 @@ class ESOLogAnalyzer(ListenerMixin):
         self.death_recap_recorder = DeathRecapRecorder(
             self._resolve_recap_unit, self._resolve_recap_ability, self.cast_index)
         self.fight_death_recaps: List[dict] = []  # this fight's (reset with fight_deaths)
+        # Each of those recaps with its player, death time and the casts read
+        # as it was counted, for the read again as the entry is built (_refresh_recap_casts)
+        self._recap_deaths: list[tuple[dict, PlayerInfo, int, list]] = []
+        # Deaths the log wrote no line for (issue #221, _note_zero_state).
+        # Each group player at 0 health, keyed by their record (PlayerInfo):
+        # a ZeroRun ([when the 0 came, unit id, record, the fields that name
+        # the death, its state, whether those are the 0 line's own hit]);
+        # the record each unit id was seen at 0 on; the runs still waiting
+        # to be counted; the stale health a corpse's regeneration tick
+        # wrote, by unit id; and whether a fight runs (BEGIN_COMBAT to
+        # END_COMBAT)
+        self._at_zero: Dict[PlayerInfo, list] = {}
+        self._at_zero_units: Dict[str, PlayerInfo] = {}
+        self._waiting: Dict[PlayerInfo, list] = {}
+        self._corpse_health: Dict[str, str] = {}
+        self._fighting = False
         # The fight entry just emitted and its start time, for a death that
         # is logged after END_COMBAT (see LATE_DEATH_GRACE_MS)
         self._last_fight_entry: Optional[FightHistoryEntry] = None
         self._last_fight_start: int = 0
+        # The casts the last fight's entry kept, each player row's, with the
+        # encounter's id and start they were taken for: the build again for
+        # the group fighting on packs these, their ends read since (fight_casts)
+        self._built_casts: tuple | None = None
         # A fight the game cut in two (see COMBAT_RESUME_MS): the entry
         # already emitted for its first part, brought up to date when the
         # fight really ends; when the group last hit each living enemy; and
-        # the ones it was still hitting as END_COMBAT came
+        # the ones it was still hitting as END_COMBAT came, with their
+        # records (a unit id can be handed out again)
         self._resumed_fight_entry: Optional[FightHistoryEntry] = None
         self._enemy_last_hit: Dict[str, int] = {}
-        self._engaged_at_end: FrozenSet[str] = frozenset()
+        self._engaged_at_end: dict[str, EnemyInfo] = {}
         # The group's hits waiting for the next fight's line, and the
         # enemies of the last fight that took hits (waiting_hits, issue
         # #162): told of each fight boundary, as the opener is
@@ -1151,6 +1248,19 @@ class ESOLogAnalyzer(ListenerMixin):
         # The session's stamp, as the splitter names its file, for each
         # fight's entry (session_splits, issue #194): '' until a BEGIN_LOG
         self.session_stamp: str = ""
+        # Where the lines are (fight_locator, issue #214): the first byte of
+        # the line being processed in the file read, which the reader that
+        # feeds it sets (None when it says nothing: a test, a script); the
+        # session's BEGIN_LOG line's offset and Unix ms; the zone's
+        # ZONE_CHANGED line's offset; the zone's MAP_CHANGED lines, (line
+        # time, map); and the zone's units whose id was handed to a new
+        # unit, (record, when), for the fights' unit tables
+        self.line_offset: Optional[int] = None
+        self.session_offset: Optional[int] = None
+        self.session_epoch_ms: Optional[int] = None
+        self._zone_offset: Optional[int] = None
+        self._maps: List[Tuple[int, fight_locator.MapFrame]] = []
+        self._replaced_units: List[Tuple[EnemyInfo, int]] = []
 
         # Initialize the robust log parser
         from eso_log_parser import ESOLogParser
@@ -1243,9 +1353,13 @@ class ESOLogAnalyzer(ListenerMixin):
         if entry is None:
             return
             
-        # Check grace period before processing any events
-        # Grace period logic removed - encounters are finalized immediately on END_COMBAT
-        
+        # The group fighting on the enemies of the fight that ended: once it
+        # has stopped, that fight's entry takes their hits (waiting_hits).
+        # The line's own time, which the parser does not give every event
+        if self.waiting_hits.fighting_on and self.waiting_hits.due(
+                casts.line_time(entry.original_line)):
+            self._settle_fought_on()
+
         if self.diagnostic and entry.event_type in ["ZONE_CHANGED", "UNIT_ADDED", "UNIT_CHANGED", "BEGIN_COMBAT", "END_COMBAT", "PLAYER_INFO", "COMBAT_EVENT", "EFFECT_CHANGED", "HEALTH_REGEN", "ENDLESS_DUNGEON_BEGIN", "ENDLESS_DUNGEON_STAGE_END", "ENDLESS_DUNGEON_BUFF_ADDED", "ENDLESS_DUNGEON_BUFF_REMOVED"]:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: Processing {entry.event_type} at {entry.timestamp}{Style.RESET_ALL}")
@@ -1263,6 +1377,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 self.effect_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.pen_crit_tracker.forget_unit(entry.fields[0], entry.timestamp)
                 self.group_buff_credit.forget_unit(entry.fields[0], entry.timestamp)
+                self.set_buff_recorder.forget_unit(entry.fields[0], entry.timestamp)
+                # A player followed at 0 health who left (issue #221)
+                if entry.fields[0] in self._at_zero_units and self.current_encounter:
+                    self._zero_unit_left(entry.fields[0], entry.timestamp)
                 if self.current_encounter:
                     # A player who left: off the list from the next fight
                     # (presence.py)
@@ -1281,6 +1399,15 @@ class ESOLogAnalyzer(ListenerMixin):
         elif entry.event_type == "BEGIN_CAST":
             if self.current_encounter:
                 self._handle_begin_cast(entry)
+        elif entry.event_type == "END_CAST":
+            # When a cast's track ended, which tells a synergy taken again
+            # or a proc from a later line of the same cast (casts.py)
+            if len(entry.fields) >= 2:
+                self.casts.note_end(entry.fields[1], casts.line_time(entry.original_line),
+                                    entry.fields[0])
+                # A boss's cast someone stopped (fight_events)
+                if self.events.holds_track(entry.fields[1]):
+                    self._note_boss_cast_end(entry)
         elif entry.event_type == "EFFECT_CHANGED":
             self._handle_effect_changed(entry)
         elif entry.event_type == "COMBAT_EVENT":
@@ -1302,6 +1429,8 @@ class ESOLogAnalyzer(ListenerMixin):
             self._handle_end_log_event(entry)
         elif entry.event_type == "HEALTH_REGEN":
             self._handle_health_regen(entry)
+        elif entry.event_type == "MAP_CHANGED":
+            self._handle_map_changed(entry)
         elif entry.event_type == "ENDLESS_DUNGEON_BEGIN":
             self._handle_endless_dungeon_begin(entry)
         elif entry.event_type == "ENDLESS_DUNGEON_STAGE_END":
@@ -1462,6 +1591,14 @@ class ESOLogAnalyzer(ListenerMixin):
                         # its owner is known (name_companions)
                         enemy.name = companions.shown_name(None)
 
+                    # A unit id handed out again: the unit it named stays in
+                    # the unit table of a fight whose range it was in
+                    # (fight_locator)
+                    replaced = self.current_encounter.enemies.get(unit_id)
+                    if replaced is not None:
+                        self._replaced_units.append((replaced, entry.timestamp))
+                        if len(self._replaced_units) > REPLACED_UNITS_KEPT:
+                            self._prune_replaced_units(entry.timestamp)
                     self.current_encounter.enemies[unit_id] = enemy
                     # A departed player's unit id handed to this unit: the
                     # player is gone, and the id is not theirs (presence.py)
@@ -1794,7 +1931,16 @@ class ESOLogAnalyzer(ListenerMixin):
             
             _console(f"\n{Fore.YELLOW}=== ZONE CHANGED ==={Style.RESET_ALL}")
             _console(f"{Fore.YELLOW}Zone: {zone_name} ({difficulty}){Style.RESET_ALL}")
-            
+
+            # A player who waited at 0 health long enough died, in the fight
+            # that runs or just ended (issue #221); the line's own time, the
+            # parser stamping ZONE_CHANGED with the zone id
+            if self._waiting and self.current_encounter:
+                self._settle_zero_health(casts.line_time(entry.original_line))
+
+            # The group fighting on stops here (waiting_hits)
+            self._settle_fought_on()
+
             # If there's an active encounter when zone changes, display it if it ended but wasn't shown
             if (self.current_encounter and self.current_encounter.combat_ended_at and 
                 not self.current_encounter.finalized and self.current_encounter.players):
@@ -1822,6 +1968,14 @@ class ESOLogAnalyzer(ListenerMixin):
             self.zone_deaths = 0
             self.fight_deaths = 0
             self.fight_death_recaps = []
+            self._recap_deaths = []
+            # Unit ids start over: no player is followed at 0 health (#221)
+            self._clear_zero_runs()
+            # A fight's lead-in never reaches back past this line, and the
+            # zone's maps and units are its own (fight_locator)
+            self._zone_offset = self.line_offset
+            self._maps = []
+            self._replaced_units = []
             self._last_fight_entry = None
             self._resumed_fight_entry = None
             self._enemy_met_at = None
@@ -1832,9 +1986,10 @@ class ESOLogAnalyzer(ListenerMixin):
             self.effect_tracker.zone_changed(entry.timestamp)
             self.pen_crit_tracker.zone_changed(entry.timestamp)
             self.group_buff_credit.zone_changed(entry.timestamp)
+            self.set_buff_recorder.zone_changed(entry.timestamp)
             self._dummy_seen = False
             self._enemy_last_hit.clear()
-            self._engaged_at_end = frozenset()
+            self._engaged_at_end = {}
             self.waiting_hits.reset()
             self.death_recap_recorder.reset()
             self.cast_index.reset()
@@ -1866,10 +2021,25 @@ class ESOLogAnalyzer(ListenerMixin):
         if not self.current_zone and self.zone_history:
             self._rewind_to_last_zone()
 
-        # The fight that just ended, cut in two by the game: carry on with it
+        # The fight that just ended, cut in two by the game, or the group
+        # still fighting on it: carry on with it
+        # A player whose state reads 0 from here on may have died in the
+        # fight (issue #221, _note_zero_state)
+        self._fighting = True
         if self._continues_last_fight(entry.timestamp):
+            # The game ended combat and began it again: a phase of the fight
+            # (fight_events)
+            self.events.note_resumed(
+                entry.timestamp, entry.timestamp - self.current_encounter.combat_ended_at)
             self._resume_last_fight()
             return
+        # Players who waited at 0 health long enough with no death line died
+        # in the fight that ended (issue #221)
+        if self._waiting:
+            self._settle_zero_health(entry.timestamp, closing=True)
+        # Else the group fighting on has stopped, and that fight's entry
+        # takes their hits before a new fight begins (waiting_hits)
+        self._settle_fought_on()
 
         # A new encounter for this fight, or the one in hand: the zone's
         # first, which took the hits before the line as they came, or a
@@ -1886,12 +2056,13 @@ class ESOLogAnalyzer(ListenerMixin):
         # fight's casts in the kinds index and the recorder's list of recaps
         self.fight_deaths = 0
         self.fight_death_recaps = []
+        self._recap_deaths = []
         self.cast_index.new_fight()
         self.death_recap_recorder.new_fight()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
-        self._engaged_at_end = frozenset()
+        self._engaged_at_end = {}
         # A combat that met no enemy is gone for good (see _note_enemy_met)
         self._held_fight = None
 
@@ -1945,7 +2116,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 player.reset_resources()
 
         # Players who left are off the new fight's list; one who came back
-        # on a new unit id is keyed by it from here (presence.py)
+        # on a new unit id is keyed by it from here (presence.py). The unit
+        # ids they were known by before, for the fight's unit table, whose
+        # lead-in comes before this line (fight_locator)
+        roster = fight_locator.roster_ids(self.current_encounter.players.values())
         self.current_encounter.start_fight_roster()
         # The zone's first encounter is reused here and has counted every
         # star proc since the zone began: a fight counts its own (a fight
@@ -1962,6 +2136,17 @@ class ESOLogAnalyzer(ListenerMixin):
         # Mark combat as active and set start time to BEGIN_COMBAT timestamp
         self.current_encounter.in_combat = True
         self.current_encounter.start_time = entry.timestamp
+        # Where the fight's lines begin, and the map as its lead-in begins
+        # (fight_locator); a fight the game cut in two returned above and
+        # keeps its first part's
+        lead_ms = entry.timestamp - fight_locator.LEAD_MS
+        if self._replaced_units:
+            self._replaced_units = [(unit, when) for unit, when in self._replaced_units
+                                    if when >= lead_ms]
+        self.current_encounter.located = fight_locator.FightStart(
+            self.line_offset, self.session_offset, self.session_epoch_ms, self.session_stamp,
+            self._zone_offset, fight_locator.map_before(self._maps, lead_ms), roster)
+        self.current_encounter.end_offset = None
         self.current_encounter.time_dead.begin(entry.timestamp, carried)
         # The opener: the memory of the moments before the line becomes
         # the fight's candidates (fight_opener)
@@ -1977,28 +2162,46 @@ class ESOLogAnalyzer(ListenerMixin):
 
     def _continues_last_fight(self, timestamp_ms: int) -> bool:
         """Whether a BEGIN_COMBAT at *timestamp_ms* carries on the fight that
-        just ended instead of starting one (see COMBAT_RESUME_MS): it follows
-        the END_COMBAT closely, and an enemy the group was hitting when the
-        fight ended is still alive."""
+        just ended instead of starting one: it follows the END_COMBAT
+        closely and an enemy the group was hitting when the fight ended is
+        still alive (see COMBAT_RESUME_MS), or, however long after, the
+        fight had boss damage, the group has fought on since and is still
+        hitting one, the same record, its last hit since END_COMBAT and
+        within FIGHT_ON_MS (waiting_hits)."""
         enc = self.current_encounter
         if (self._last_fight_entry is None or enc is None or not enc.finalized
                 or enc.combat_ended_at is None):
             return False
-        if not 0 <= timestamp_ms - enc.combat_ended_at <= COMBAT_RESUME_MS:
+        gap = timestamp_ms - enc.combat_ended_at
+        if gap < 0:
             return False
         # Not any enemy hit since: the group's damage often reaches the next
         # pack between the two lines, and that is a new fight
-        return any(unit_id in self._enemy_last_hit for unit_id in self._engaged_at_end)
+        if gap <= COMBAT_RESUME_MS:
+            return any(unit_id in self._enemy_last_hit for unit_id in self._engaged_at_end)
+        # A boss pull only: trash the group was still finishing as a boss's
+        # combat began would otherwise head the boss fight
+        if not self.waiting_hits.fighting_on or enc.boss_damage <= 0:
+            return False
+        for unit_id, record in self._engaged_at_end.items():
+            hit_at = self._enemy_last_hit.get(unit_id)
+            if (hit_at is not None and enc.combat_ended_at <= hit_at
+                    and timestamp_ms - hit_at <= FIGHT_ON_MS
+                    and enc.enemies.get(unit_id) is record):
+                return True
+        return False
 
     def _resume_last_fight(self):
         """Reopen the encounter END_COMBAT closed. Its damage, deaths and
         players are kept, and the entry frontends already have is brought up
         to date when the fight ends (see _publish_fight)."""
         enc = self.current_encounter
-        # The group's hits between the two lines went on this encounter as
-        # they came; the earlier ones a blip left wait on, and the ended
-        # fight stays (waiting_hits)
-        self.waiting_hits.carried_on(enc.combat_ended_at)
+        # The group's hits between the two lines: on this encounter, the
+        # group fighting on; the others waited, and are its own now. The
+        # earlier ones a blip left wait on, and the ended fight stays
+        # (waiting_hits)
+        for hit in self.waiting_hits.carried_on(enc.combat_ended_at):
+            self._credit_waiting_hit(enc, hit)
         enc.finalized = False
         enc.in_combat = True
         enc.combat_ended_at = None
@@ -2013,6 +2216,33 @@ class ESOLogAnalyzer(ListenerMixin):
         # before it (pull_outcome)
         enc.time_dead.resume()
         self._last_pull = self._prior_pull
+
+    def _count_enemy_hit(self, entry: ESOLogEntry, result: str, value: int, source_id: str,
+                         target_id: str, enemy: EnemyInfo):
+        """A hit of the group's (*source_id*, a player or a player's pet) on
+        the hostile *enemy*, from the COMBAT_EVENT *entry*. In a fight, or
+        in a zone's first encounter before its first line, the encounter
+        counts it. After a listed fight's END_COMBAT its encounter counts
+        the group fighting on its enemies, and every other hit waits for
+        the next fight's line, not on that encounter, whose entry is built
+        again with the hits fought on (waiting_hits). A combat held for want
+        of an enemy has no entry: its encounter counts each hit, and a copy
+        waits."""
+        enc = self.current_encounter
+        fields = entry.fields
+        if not enc.finalized or (self._last_fight_entry is not None
+                                 and self.waiting_hits.fought_on(enemy, entry.timestamp)):
+            self._credit_enemy_hit(enc, entry.timestamp, result, value, source_id, target_id,
+                                   enemy, fields[6], fields[1], fields[5])
+            return
+        if self._last_fight_entry is None:
+            read = self._credit_enemy_hit(enc, entry.timestamp, result, value, source_id,
+                                          target_id, enemy, fields[6], fields[1], fields[5])
+        else:
+            read = enc.read_hit(source_id, fields[5], fields[6], self.cast_index)
+        if read is not None:
+            self.waiting_hits.keep(GroupHit(entry.timestamp, result, value, source_id, target_id,
+                                            enemy, fields[6], fields[1], fields[5], *read))
 
     def _credit_enemy_hit(self, enc: CombatEncounter, timestamp: int, result: str, value: int,
                           source_id: str, target_id: str, enemy: EnemyInfo, ability_id: str,
@@ -2078,22 +2308,66 @@ class ESOLogAnalyzer(ListenerMixin):
         """A listed fight of BLIP_MS or more, at its END_COMBAT or when a
         held combat is listed late, counts the hits it took at its line,
         before its entry is built, and the waiting starts again, a later
-        line leaving the enemy records it hit to it. A blip counts none and
-        changes nothing (waiting_hits)."""
+        line leaving the enemy records it hit to it, and the group may
+        fight on them. A blip counts none and changes nothing
+        (waiting_hits)."""
         if enc.end_time - enc.start_time < BLIP_MS:
             return
         hits, enc.hits_before_line = enc.hits_before_line, []
         for hit in hits:
-            # A hit read single whose cast struck a second unit since the
-            # line is area, as a cast's watcher makes it in a fight
-            area = hit.area
-            if area == (False, 'none') and self.cast_index.targets_of(hit.source_id,
-                                                                       hit.cast_id) >= 2:
-                area = (True, 'cast')
-            self._credit_enemy_hit(enc, hit.timestamp, hit.result, hit.value, hit.source_id,
-                                   hit.target_id, hit.enemy, hit.ability_id, hit.damage_type,
-                                   hit.cast_id, area=area, link=hit.hitter)
-        self.waiting_hits.settled(enc.hit_enemies)
+            self._credit_waiting_hit(enc, hit)
+        self.waiting_hits.settled(enc.hit_enemies, enc.combat_ended_at)
+
+    def _credit_waiting_hit(self, enc: CombatEncounter, hit: GroupHit) -> None:
+        """Count in *enc* a hit that waited between fights (waiting_hits),
+        by the same code as a live hit, its kinds and hitter as read then.
+        A hit read single whose cast struck a second unit since is area, as
+        a cast's watcher makes it in a fight."""
+        area = hit.area
+        if area == (False, 'none') and self.cast_index.targets_of(hit.source_id,
+                                                                   hit.cast_id) >= 2:
+            area = (True, 'cast')
+        self._credit_enemy_hit(enc, hit.timestamp, hit.result, hit.value, hit.source_id,
+                               hit.target_id, hit.enemy, hit.ability_id, hit.damage_type,
+                               hit.cast_id, area=area, link=hit.hitter)
+
+    def _settle_fought_on(self):
+        """The group fighting on the enemies of the fight that ended has
+        stopped (waiting_hits.FIGHT_ON_MS without a hit on one), or combat
+        began again as a new fight, or the zone, the session or the log
+        ended. If the fight took hits since its END_COMBAT, it is built
+        again, and the entry frontends hold takes the figures those hits
+        decide (waiting_hits.take_damage_figures), everything else as
+        END_COMBAT left it; the pull is read again against the one before
+        it, and the frontends are told."""
+        if not self.waiting_hits.stop():
+            return
+        entry, enc = self._last_fight_entry, self.current_encounter
+        if entry is None or enc is None:
+            return
+        # A combat event since END_COMBAT moved the start (see
+        # _handle_combat_event), and the last pull is this fight's own
+        start, enc.start_time = enc.start_time, self._last_fight_start
+        last_pull, self._last_pull = self._last_pull, self._prior_pull
+        try:
+            rebuilt = self._build_fight_entry(entry.zone_name, again=True)
+        finally:
+            enc.start_time = start
+            self._last_pull = last_pull
+        if rebuilt is None:
+            return
+        take_damage_figures(entry, rebuilt)
+        self._last_pull = entry.pull if entry.pull is not None else self._prior_pull
+        changed = pull_outcome.mark_context(self._instance_fights())
+        self._notify('on_fight_updated', entry)
+        for earlier in changed:
+            if earlier is not entry:
+                self._notify('on_fight_updated', earlier)
+
+    def finish(self):
+        """The log has ended (a replay reached its last line): a fight the
+        group was still fighting on takes their hits (waiting_hits)."""
+        self._settle_fought_on()
 
     def _note_enemy_hit(self, entry: ESOLogEntry):
         """Remember when the group last hit each living enemy, which tells a
@@ -2233,14 +2507,25 @@ class ESOLogAnalyzer(ListenerMixin):
         self._enemy_met_at = None
 
         # The living enemies the group hit in the fight's last seconds: if
-        # combat starts again at once, they tell whether it is the same fight
-        self._engaged_at_end = frozenset(
-            unit_id for unit_id, hit in self._enemy_last_hit.items()
-            if entry.timestamp - hit <= ENGAGED_ENEMY_MS)
+        # combat starts again at once, or while the group still hits one,
+        # they tell whether it is the same fight
+        enemies = self.current_encounter.enemies if self.current_encounter else {}
+        self._engaged_at_end = {
+            unit_id: enemies.get(unit_id) for unit_id, hit in self._enemy_last_hit.items()
+            if entry.timestamp - hit <= ENGAGED_ENEMY_MS}
 
         # Immediately finalize encounter if there are any players
+        # A player at 0 health from here on is no death to wait for (issue
+        # #221, _note_zero_state)
+        self._fighting = False
         if self.current_encounter and self.current_encounter.players:
+            # Players at 0 health long enough with no death line died in the
+            # fight (issue #221); one still waiting can yet die in the
+            # late-death grace (_count_zero_death)
+            if self._waiting:
+                self._settle_zero_health(entry.timestamp)
             self.current_encounter.end_time = entry.timestamp
+            self.current_encounter.end_offset = self.line_offset  # fight_locator
             self.current_encounter.combat_ended_at = entry.timestamp
             self.current_encounter.in_combat = False
             # Who was still dead as the fight ended (pull_outcome)
@@ -2288,6 +2573,9 @@ class ESOLogAnalyzer(ListenerMixin):
         # BEGIN_LOG format: timestamp,BEGIN_LOG,unix_timestamp,version,"server","language","build"
         # The Unix timestamp is in the entry.timestamp field (fields[2] from original line)
         # Note: The timestamp in the log is in milliseconds, convert to seconds for Unix timestamp
+        # The group fighting on stops with the session, its fight read with
+        # the session's times (waiting_hits)
+        self._settle_fought_on()
         if entry.timestamp > 0:
             self.log_start_unix_timestamp = entry.timestamp // 1000  # Convert milliseconds to seconds
         # The game version that wrote this session, the line's last field
@@ -2301,19 +2589,31 @@ class ESOLogAnalyzer(ListenerMixin):
             self.session_stamp = split_retention.session_stamp(entry.timestamp)
         except (OverflowError, OSError, ValueError):
             self.session_stamp = ""
+        # Every offset of the session's fights counts from this line, which
+        # its Unix ms name exactly; the zone and its maps come after it
+        # (fight_locator)
+        self.session_offset = self.line_offset
+        self.session_epoch_ms = entry.timestamp if entry.timestamp > 0 else None
+        self._zone_offset = None
+        self._maps = []
+        self._replaced_units = []
         # Relative-ms offsets restart with each BEGIN_LOG session (the
         # entry's timestamp is the Unix time: the line's own is its first
         # field)
         self.opener.reset(casts.line_time(entry.original_line), new_session=True)
         self.buff_timeline_recorder.reset()
+        self.set_buff_recorder.reset()
         self.effect_tracker.reset()
         self.pen_crit_tracker.reset()
         self.death_recap_recorder.reset()
         self.cast_index.reset()
+        # Times and unit ids start over: no player is followed at 0 health
+        # (#221)
+        self._clear_zero_runs()
         self._last_fight_entry = None
         self._resumed_fight_entry = None
         self._enemy_last_hit.clear()
-        self._engaged_at_end = frozenset()
+        self._engaged_at_end = {}
         self.waiting_hits.reset()
         self._enemy_met_at = None
         self._held_fight = None
@@ -2328,6 +2628,8 @@ class ESOLogAnalyzer(ListenerMixin):
         self._scribing_characters.clear()
         self.werewolf.reset()
         self.casts.reset()
+        self._built_casts = None
+        self.events.reset()
         self.resources.reset()
         self.build_issues.reset()
         self.group_buff_credit.reset()
@@ -2399,8 +2701,62 @@ class ESOLogAnalyzer(ListenerMixin):
         elif enc.in_combat:
             enc.trial_result = result
 
+    def _handle_map_changed(self, entry: ESOLogEntry):
+        """MAP_CHANGED: the map the log's coordinates are fractions of from
+        this line on. The zone's are kept, so a fight's locator can name the
+        map in force as its lead-in begins (fight_locator); the entry's
+        timestamp is the map id, the line's own time its first field."""
+        fields = entry.fields
+        if len(fields) >= 3:
+            self._maps.append((casts.line_time(entry.original_line),
+                               fight_locator.MapFrame(fields[0], fields[1], fields[2])))
+            # A phase of the fight (fight_events)
+            self.events.note_map(casts.line_time(entry.original_line), fields[1])
+            if len(self._maps) > fight_locator.MAPS_KEPT:
+                del self._maps[0]
+
+    def _prune_replaced_units(self, now_ms: int) -> None:
+        """Keep of the units whose id was handed out again only those a
+        fight still to be built could need: replaced since LEAD_MS before
+        now (a fight to come), before the fight running, or before the
+        last one while it may yet go on (cut in two, the group fighting
+        on, a held combat listed late). Without it a zone with no fight,
+        a city or a house for hours, would keep every one."""
+        floor = now_ms - fight_locator.LEAD_MS
+        enc = self.current_encounter
+        if enc is not None and enc.in_combat:
+            floor = min(floor, enc.start_time - fight_locator.LEAD_MS)
+        if (self._last_fight_entry is not None and enc is not None
+                and enc.combat_ended_at is not None
+                and (self.waiting_hits.fighting_on
+                     or now_ms - enc.combat_ended_at <= COMBAT_RESUME_MS)):
+            floor = min(floor, self._last_fight_start - fight_locator.LEAD_MS)
+        if self._held_fight is not None:
+            floor = min(floor, self._held_fight[1] - fight_locator.LEAD_MS)
+        self._replaced_units = [(unit, when) for unit, when in self._replaced_units
+                                if when >= floor]
+
+    def _fight_locator(self, enc: CombatEncounter) -> fight_locator.FightLocator:
+        """Where the fight's lines are in the log and who its units are, for
+        a view that re-reads the fight (fight_locator)."""
+        start = enc.located
+        if start is None:
+            # Combat with no BEGIN_COMBAT line (a session that opens mid-fight)
+            start = fight_locator.FightStart(
+                None, self.session_offset, self.session_epoch_ms, self.session_stamp,
+                self._zone_offset,
+                fight_locator.map_before(self._maps, enc.start_time - fight_locator.LEAD_MS), ())
+        # An END_COMBAT in a session begun since is not in the fight's session
+        end_offset = enc.end_offset if start.session_epoch_ms == self.session_epoch_ms else None
+        units = fight_locator.unit_table(enc, enc.start_time, enc.end_time, start.roster,
+                                         self._replaced_units)
+        return fight_locator.locate(start, end_offset, enc.start_time, enc.end_time, units)
+
     def _handle_end_log_event(self, entry: ESOLogEntry):
         """Handle END_LOG events."""
+        # A player who waited at 0 health long enough died (issue #221)
+        if self._waiting and self.current_encounter:
+            self._settle_zero_health(entry.timestamp)
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected{Style.RESET_ALL}")
@@ -2418,6 +2774,16 @@ class ESOLogAnalyzer(ListenerMixin):
 
         # BEGIN_CAST format: durationMS, channeled, castTrackId, abilityId, <sourceUnitState>, <targetUnitState>
         # sourceUnitState: unitId, health/max, magicka/max, stamina/max, ultimate/max, werewolf/max, shield, x, y, heading
+        # The states for the deaths the log writes no line for (issue #221),
+        # laid out as an effect's: the cheap tests here, inlined as in
+        # _handle_effect_changed, and the line's own time read only if
+        # needed (the dispatcher calls this only with an encounter)
+        states = entry.fields
+        units = self._at_zero_units
+        if (self._waiting
+                or (len(states) > 5 and (states[5][:2] == "0/" or states[4] in units))
+                or (len(states) > 15 and (states[15][:2] == "0/" or states[14] in units))):
+            self._note_zero_states(entry, 4, None)
         if len(entry.fields) >= 7:
             ability_id = entry.fields[3]  # abilityId
             caster_unit_id = entry.fields[4]  # sourceUnitState.unitId
@@ -2443,7 +2809,9 @@ class ESOLogAnalyzer(ListenerMixin):
                 self._remember_cast(entry.fields[2], ability_id)
                 # Counted for the build window and the cpm (casts.py)
                 cast_time = casts.line_time(entry.original_line)
-                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time)
+                self.casts.note_cast(caster.unit_id, entry.fields[2], ability_id, cast_time,
+                                     entry.fields[14] if len(entry.fields) > 14 else "",
+                                     caster_unit_id, self._cast_target)
                 # The cast's cost is in the state it carries (resources.py)
                 self.resources.note_cast(caster.unit_id, cast_time, entry.fields[2], ability_id)
                 if len(entry.fields) >= 9:
@@ -2454,6 +2822,11 @@ class ESOLogAnalyzer(ListenerMixin):
                 if ability_id in werewolf.CAST_IDS:
                     self.werewolf.note_cast(self._scribing_player_key(caster_unit_id),
                                             ability_id, entry.timestamp)
+            else:
+                # A boss's cast, with its target and length (fight_events)
+                enemy = self.current_encounter.enemies.get(caster_unit_id)
+                if enemy is not None and enemy.is_boss:
+                    self._note_boss_cast(entry, enemy)
 
             if self.diagnostic and caster_unit_id == "31":
                 _console(f"{Fore.MAGENTA}[DIAGNOSTIC] BEGIN_CAST for unit_id 31: {entry.fields[5:8] if len(entry.fields) >= 8 else 'insufficient fields'}{Style.RESET_ALL}")
@@ -2559,15 +2932,38 @@ class ESOLogAnalyzer(ListenerMixin):
         if source is not None and fields[6] in resources.CHANNEL_TICKS:
             self.resources.note_cast(source.unit_id, entry.timestamp, fields[5],
                                      resources.CHANNEL_TICKS[fields[6]], counted=False)
+        # Players at 0 health long enough with no death line died (issue
+        # #221): counted before this line's states are read, so one seen up
+        # again now is revived
+        if self._waiting:
+            self._settle_zero_health(entry.timestamp)
         # A dead player whose state shows health again was revived
-        # (pull_outcome's time dead)
+        # (pull_outcome's time dead); the stale health of a corpse's
+        # regeneration tick is no revive (_note_zero_state)
         dead = enc.time_dead
         if dead.watching():
-            if source is not None and dead.watches(source.unit_id) and pull_outcome.has_health(fields[8]):
+            if (source is not None and dead.watches(source.unit_id)
+                    and pull_outcome.has_health(fields[8])
+                    and not self._corpse_state(fields[7], fields[8])
+                    and not _corpse_pools(fields[9], fields[10])):
                 dead.alive(source.unit_id, entry.timestamp)
             if (target is not None and target is not source and dead.watches(target.unit_id)
-                    and len(fields) > 18 and pull_outcome.has_health(fields[18])):
+                    and len(fields) > 20 and pull_outcome.has_health(fields[18])
+                    and not self._corpse_state(fields[17], fields[18])
+                    and not _corpse_pools(fields[19], fields[20])):
                 dead.alive(target.unit_id, entry.timestamp)
+        # A player at 0 health, or one of those up again (_note_zero_state):
+        # the cheap test on every state, the rest only for such a state. A
+        # resurrection's line shows its target, the corpse, at 0: no wait
+        units, at_zero = self._at_zero_units, self._at_zero
+        if source is not None and (fields[8][:2] == "0/" or fields[7] in units
+                                   or (at_zero and source in at_zero)):
+            self._note_zero_state(fields, 7, entry, entry.timestamp, source)
+        if (target is not None and target is not source and len(fields) > 18
+                and (fields[18][:2] == "0/" or fields[17] in units
+                     or (at_zero and target in at_zero))):
+            self._note_zero_state(fields, 17, entry, entry.timestamp, target,
+                                  may_wait=fields[0] not in REVIVE_RESULTS)
         # The same player twice is observed once, with the gain
         same = target is source
         if source is not None:
@@ -2591,9 +2987,12 @@ class ESOLogAnalyzer(ListenerMixin):
         enemy = enc.enemies.get(fields[17])
         if enemy is not None and enemy.is_boss:
             enc.boss_health.note(fields[17], fields[18])
+            # Its marks and the stretches it lost no health (fight_events)
+            self.events.note_boss_health(entry.timestamp, enemy.name, fields[17], fields[18])
         enemy = enc.enemies.get(fields[7])
         if enemy is not None and enemy.is_boss:
             enc.boss_health.note(fields[7], fields[8])
+            self.events.note_boss_health(entry.timestamp, enemy.name, fields[7], fields[8])
 
     def _parse_and_update_enemy_health(self, unit_id: str, resource_fields: List[str]):
         """Parse health information and update the corresponding enemy's maximum health."""
@@ -2758,8 +3157,13 @@ class ESOLogAnalyzer(ListenerMixin):
                     self.current_encounter.note_taunt(
                         self.current_encounter.record_id(entry.fields[7]),
                         self._cast_abilities.get(entry.fields[5], ""))
+                    self._note_taunt_event(entry)
                 else:
                     self._remember_cast(entry.fields[5], entry.fields[6])
+
+            # A resurrection, and who gave it (fight_events)
+            if combat_event_type in REVIVE_RESULTS and len(entry.fields) > 17:
+                self._note_resurrect_event(entry)
 
             # Death recap: keep what each player receives (damage, heals,
             # shields, dodges) for the seconds before a death
@@ -2791,7 +3195,8 @@ class ESOLogAnalyzer(ListenerMixin):
                 if combat_event_type != 'DIED_XP' and self.current_encounter:
                     dying_player = self.current_encounter.find_player_by_unit_id(dying_unit_id)
                 if dying_player:
-                    self._record_player_death(dying_player, dying_unit_id, entry)
+                    self._record_player_death(dying_player, dying_unit_id, entry.timestamp,
+                                              entry.fields)
 
                 # If it's a hostile enemy death, mark it as damaged by players
                 elif (combat_event_type not in ('KILLING_BLOW', SUBZONE_DEATH)
@@ -2810,6 +3215,7 @@ class ESOLogAnalyzer(ListenerMixin):
                     # write FADED for a corpse's (see effect_rules)
                     self.effect_tracker.forget_unit(dying_unit_id, entry.timestamp)
                     self.pen_crit_tracker.forget_unit(dying_unit_id, entry.timestamp)
+                    self.set_buff_recorder.forget_unit(dying_unit_id, entry.timestamp)
                     # Only track deaths of hostile monsters, not friendly pets or NPCs
                     if enemy.is_hostile:
                         # Mark this enemy as damaged (even if we didn't track individual damage events)
@@ -2848,21 +3254,8 @@ class ESOLogAnalyzer(ListenerMixin):
                                         self.cast_index.note_hit(
                                             source_unit_id, entry.fields[5], entry.fields[6],
                                             target_unit_id)
-                                    enc = self.current_encounter
-                                    credited = self._credit_enemy_hit(
-                                        enc, entry.timestamp, combat_event_type, hit_value,
-                                        source_unit_id, target_unit_id, enemy,
-                                        entry.fields[6], entry.fields[1], entry.fields[5])
-                                    # Between fights the hit is also kept for
-                                    # the next fight's line, its kinds and
-                                    # hitter as the closed encounter read
-                                    # them (waiting_hits)
-                                    if enc.finalized and credited is not None:
-                                        self.waiting_hits.keep(GroupHit(
-                                            entry.timestamp, combat_event_type, hit_value,
-                                            source_unit_id, target_unit_id, enemy,
-                                            entry.fields[6], entry.fields[1], entry.fields[5],
-                                            *credited))
+                                    self._count_enemy_hit(entry, combat_event_type, hit_value,
+                                                          source_unit_id, target_unit_id, enemy)
                 except (ValueError, IndexError):
                     pass  # Skip invalid damage values
 
@@ -2947,35 +3340,381 @@ class ESOLogAnalyzer(ListenerMixin):
                              self_source=(healer_id == record), pet_owner=pet_owner)
         self.death_recap_recorder.record(entry.timestamp, fields, target_id,
                                          player_source=player_source)
+        # A big hit, its shield's absorb counted in (fight_events); the
+        # names are asked for only for a hit kept
+        if result in fight_events.DAMAGE_RESULTS or result == fight_events.SHIELDED:
+            self.events.note_on_player(
+                entry.timestamp, result, fields, record,
+                lambda: (self._resolve_recap_unit(target_id),
+                         self._resolve_recap_unit(source_id), self._event_key(source_id)))
 
-    def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, entry: ESOLogEntry):
-        """Count a player's death and capture its recap (see death_recap.py)."""
+    def _note_zero_state(self, fields: List[str], at: int, entry: ESOLogEntry,
+                         now_ms: Optional[int], player: Optional[PlayerInfo] = None,
+                         may_wait: bool = True, as_zero: bool = False) -> None:
+        """The unit state at fields[*at*] (unitId, health, magicka, stamina,
+        ...) when it reads 0, or is the state of a player followed at 0
+        (_at_zero_units), on any line that carries one, for the deaths the
+        log writes no line for (issue #221). *now_ms* None: the line's own
+        time (BEGIN_CAST, which the parser stamps 0); *player*: the unit's
+        record when the caller has it; *may_wait* False: a resurrection's or
+        a release's line, which shows the corpse at 0 and starts no wait;
+        *as_zero*: read the state as 0 (a corpse's regeneration tick).
+
+        Design: 7.6% of the deaths in fights in the maintainer's 391 split
+        logs (1,366 of 17,976) have no DIED, KILLING_BLOW or
+        KILLED_BY_SUBZONE. The player's state reads 0 and stays there until
+        a resurrection or a release (see death_recap). So each group player
+        whose state reads 0 is followed from that line (a ZeroRun) until a
+        state shows them up again, on whatever line carries the state: the
+        first 0 is on an effect's or a cast's line in nearly a third of
+        those deaths (players out of the logging player's combat range or
+        in another area: Cloudrest's portal, Sunspire's), and a combat event
+        shows some only on the resurrection's own line. A run that begins
+        while a fight runs is WAITING: a death line names the death
+        (_record_player_death counts it as before, the run LINED), a state
+        with health within pull_outcome.ZERO_HEALTH_HOLD_MS was no death
+        (every 0 a player survived in those logs lasted under 1 s), and a
+        run that lasts that long is a death at the first 0 (COUNTED,
+        _settle_zero_health). A run that begins between fights is a corpse
+        from before the pull (OFF) and never counts. A death line opens a
+        LINED run of its own if no run is open, so a corpse is followed
+        until it is up again whatever line shows that, not only until a
+        combat event does (time dead's revive, which lags a release by 10 s
+        or more for half of all deaths). In a LINED or COUNTED run a state
+        with health in the death's first REVIVE_MIN_MS is the dying lines'
+        own, as for time dead. Only the logging player and those grouped
+        with them are followed (player_of names any player unit, strangers
+        overland included), and not in a form with no stamina pool: the
+        Infinite Archive's tome-hold polymorph is knocked to 0 and restored
+        when its minigame ends, with no death. A log session that begins in
+        the middle of a fight has no BEGIN_COMBAT for it, so nothing tells
+        its deaths from corpses before the pull: those with no death line
+        are not counted (death lines are).
+
+        A state with no health pool, or the 1/1 placeholder the log writes
+        for a unit it has no state for, says nothing. Nor does a corpse's
+        state: health above 0 with magicka and stamina both at 0 (the dead
+        player's own healing ticks, _corpse_pools), or the stale health a
+        corpse's regeneration tick wrote, equal to its own regeneration and
+        repeated by later lines for seconds until a resurrection writes 0
+        again (_handle_health_regen keeps it in _corpse_health)."""
+        unit_id = fields[at]
+        current, _, maximum = fields[at + 1].partition("/")
+        if maximum in ("", "0", "1"):
+            return
+        if as_zero:
+            current = "0"
+        key = self._at_zero_units.get(unit_id)
+        if key is None and player is not None and player in self._at_zero:
+            # The player followed at 0, on a unit id not yet seen: back on a
+            # new unit id with no UNIT_REMOVED for the old one
+            key = player
+            self._at_zero_units[unit_id] = key
+        if current != "0":
+            if (key is None or self._corpse_health.get(unit_id) == current
+                    or (len(fields) > at + 3 and _corpse_pools(fields[at + 2], fields[at + 3]))):
+                return
+            if player is None and (self.current_encounter is None
+                                   or self.current_encounter.player_of(unit_id) is not key):
+                # The unit id is no longer the player's (handed to another
+                # unit): it says nothing of them
+                del self._at_zero_units[unit_id]
+                self._corpse_health.pop(unit_id, None)
+                return
+            run = self._at_zero[key]
+            if now_ms is None:
+                now_ms = casts.line_time(entry.original_line)
+            since = now_ms - run[ZERO_T0]
+            state = run[ZERO_STATE]
+            if state == ZERO_WAIT:
+                if since >= pull_outcome.ZERO_HEALTH_HOLD_MS:
+                    self._count_zero_death(key, run)
+            elif state != ZERO_OFF and since < pull_outcome.REVIVE_MIN_MS:
+                return
+            # Up again: the run ends (a wait shorter than the hold was no death)
+            self._end_zero_run(key, run)
+            return
+        if key is not None:
+            return
+        enc = self.current_encounter
+        if enc is None:
+            return
+        if player is None:
+            player = enc.player_of(unit_id)
+            if player is None:
+                return
+        if not (player.grouped or player.is_local):
+            return
+        if len(fields) > at + 3 and fields[at + 3].partition("/")[2] in ("", "0"):
+            return  # no stamina pool: the tome-hold polymorph
+        # Runs are keyed by the record itself, which a player's return on a
+        # new unit id (CombatEncounter._rekey_player) keeps
+        key = player
+        if key in self._at_zero:
+            # The same player on another unit id: followed on this one too
+            self._at_zero_units[unit_id] = key
+            return
+        if now_ms is None:
+            now_ms = casts.line_time(entry.original_line)
+        run = [now_ms, unit_id, player, None, ZERO_OFF, False]
+        if may_wait and (self._fighting or self._ended_fight_takes(now_ms)):
+            health = fields[at + 1]
+            line = entry.fields
+            if (entry.event_type == "COMBAT_EVENT" and line[0] in KILLING_HIT_RESULTS
+                    and len(line) > 18 and line[17] == unit_id):
+                run[ZERO_FIELDS], run[ZERO_HIT] = list(line), True
+            else:
+                run[ZERO_FIELDS] = self._killing_fields(unit_id, now_ms, health)
+            run[ZERO_STATE] = ZERO_WAIT
+            self._waiting[key] = run
+        self._at_zero[key] = run
+        self._at_zero_units[unit_id] = key
+
+    def _ended_fight_takes(self, now_ms: int) -> bool:
+        """Whether a death at *now_ms*, after the last fight's END_COMBAT,
+        is still that fight's, as a death line then would be: inside
+        LATE_DEATH_GRACE_MS of its END_COMBAT, or while the group fights on
+        after it (waiting_hits), should the fight carry on (issue #221)."""
+        enc = self.current_encounter
+        if enc is None or not enc.finalized or enc.combat_ended_at is None:
+            return False
+        if self._last_fight_entry is None:
+            return (self._held_fight is not None
+                    and 0 <= now_ms - enc.combat_ended_at <= LATE_DEATH_GRACE_MS)
+        return (0 <= now_ms - enc.combat_ended_at <= LATE_DEATH_GRACE_MS
+                or self.waiting_hits.fighting_on)
+
+    def _zero_unit_left(self, unit_id: str, now_ms: int) -> None:
+        """UNIT_REMOVED for a unit a player at 0 health was followed on: a
+        wait that lasted the hold was a death, and the run ends; a player
+        who comes back is followed afresh (issue #221)."""
+        key = self._at_zero_units.get(unit_id)
+        run = self._at_zero.get(key) if key is not None else None
+        if run is None:
+            self._at_zero_units.pop(unit_id, None)
+            return
+        if (run[ZERO_STATE] == ZERO_WAIT
+                and now_ms - run[ZERO_T0] >= pull_outcome.ZERO_HEALTH_HOLD_MS):
+            self._count_zero_death(key, run)
+        self._end_zero_run(key, run)
+
+    def _note_zero_states(self, entry: ESOLogEntry, at: int, now_ms: Optional[int]) -> None:
+        """The source state at fields[*at*] and the target's ten fields on
+        (or '*', the source itself) of an EFFECT_CHANGED or a BEGIN_CAST,
+        for the deaths the log writes no line for (issue #221,
+        _note_zero_state): the cheap test on each, the rest only for a
+        state at 0 or a player followed at 0. *now_ms* None: the line's
+        own time, read only if a wait is to be settled or a state noted."""
+        fields = entry.fields
+        if len(fields) <= at + 1:
+            return
+        if self._waiting:
+            if now_ms is None:
+                now_ms = casts.line_time(entry.original_line)
+            self._settle_zero_health(now_ms)
+        units = self._at_zero_units
+        # A resurrection's or a release's effect or cast shows the corpse at
+        # 0: no wait starts there
+        may_wait = fields[3] not in REVIVE_ABILITY_IDS
+        if fields[at + 1][:2] == "0/" or fields[at] in units:
+            self._note_zero_state(fields, at, entry, now_ms, may_wait=may_wait)
+        target = at + 10
+        if (len(fields) > target + 1 and fields[target] != "*"
+                and (fields[target + 1][:2] == "0/" or fields[target] in units)):
+            self._note_zero_state(fields, target, entry, now_ms, may_wait=may_wait)
+
+    def _clear_zero_runs(self) -> None:
+        """A new zone or log session: unit ids and times start over, so no
+        player is followed at 0 health (issue #221)."""
+        self._at_zero.clear()
+        self._at_zero_units.clear()
+        self._waiting.clear()
+        self._corpse_health.clear()
+        self._fighting = False
+
+    def _end_zero_run(self, key: PlayerInfo, run: list) -> None:
+        """A player followed at 0 health is up again, or left
+        (_note_zero_state): the run ends on every unit id it was seen on."""
+        self._at_zero.pop(key, None)
+        self._waiting.pop(key, None)
+        for unit_id in [u for u, player in self._at_zero_units.items() if player is key]:
+            del self._at_zero_units[unit_id]
+            self._corpse_health.pop(unit_id, None)
+
+    def _corpse_state(self, unit_id: str, health: str) -> bool:
+        """Whether *health* is the stale value a corpse's regeneration tick
+        wrote for unit *unit_id* (see _note_zero_state)."""
+        stale = self._corpse_health.get(unit_id)
+        return stale is not None and health.partition("/")[0] == stale
+
+    def _handle_health_regen(self, entry: ESOLogEntry):
+        """A unit's regeneration tick (effectiveRegen, then the unit's
+        state): its state for the deaths the log writes no line for (issue
+        #221, _note_zero_state). A tick whose current health equals its own
+        regeneration was written on a corpse, health 0 before it: that
+        value is stale until the player is up again, and the tick reads as
+        a 0."""
+        fields = entry.fields
+        if len(fields) < 3 or self.current_encounter is None:
+            return
+        if self._waiting:
+            self._settle_zero_health(entry.timestamp)
+        regen, unit_id, health = fields[0], fields[1], fields[2]
+        if regen not in ("", "0") and health.startswith(regen + "/"):
+            player = self.current_encounter.player_of(unit_id)
+            if player is not None:
+                self._note_zero_state(fields, 1, entry, entry.timestamp, player, as_zero=True)
+                # The stale value only for a unit now followed at 0 (not a
+                # stranger, a placeholder or the polymorph form), so the
+                # follow's end clears it
+                if unit_id in self._at_zero_units:
+                    self._corpse_health[unit_id] = regen
+            return
+        if health[:2] == "0/" or unit_id in self._at_zero_units:
+            self._note_zero_state(fields, 1, entry, entry.timestamp)
+
+    def _killing_fields(self, unit_id: str, now_ms: int, health: str) -> List[str]:
+        """The fields that name the death of the player on unit *unit_id*,
+        whose state (*health*) first read 0 at *now_ms* on a line that is
+        no hit on them, and whom no death line names (issue #221): the last
+        hit on them within death_recap.KILLER_WINDOW_MS, else fields that
+        name no killer but keep the player's maximum health (the recap then
+        reads NO_HIT_DEATH). The killing blow can yet come just after
+        (_count_zero_death)."""
+        last = self.death_recap_recorder.last_hit_fields(unit_id, now_ms)
+        if last is not None:
+            return last
+        empty = [""] * 19
+        empty[7], empty[17], empty[18] = "0", unit_id, health
+        return empty
+
+    def _settle_zero_health(self, now_ms: int, closing: bool = False) -> None:
+        """Count as deaths the players waiting at 0 health
+        (_note_zero_state) for pull_outcome.ZERO_HEALTH_HOLD_MS by *now_ms*,
+        each at their first 0. *closing*: a new fight begins, and every wait
+        left began in, or just after, the fight that ended; each is counted
+        there now, rather than moved into the new fight (the five such
+        waits in the maintainer's logs were all deaths)."""
+        hold = pull_outcome.ZERO_HEALTH_HOLD_MS
+        for key, run in list(self._waiting.items()):
+            if closing or now_ms - run[ZERO_T0] >= hold:
+                self._count_zero_death(key, run)
+
+    def _death_line_on_run(self, player: PlayerInfo, unit_id: str, died_ms: int) -> bool:
+        """A death line for *player* (unit *unit_id*) at *died_ms*: whether
+        it is a death to count. Not when it is the late line of a death
+        already read from 0 health (pull_outcome.ZERO_LINE_SAME_MS, the
+        player not seen up since); else the run that follows them at 0 is
+        named by it, or one is opened for them (issue #221). The run's
+        REVIVE_MIN_MS then counts from the line, as time dead's does."""
+        run = self._at_zero.get(player)
+        if run is None:
+            # Only the logging player and their group are followed: a
+            # stranger's death line counts as it did, with no run
+            if player.grouped or player.is_local:
+                self._at_zero[player] = [died_ms, unit_id, player, None, ZERO_LINED, False]
+                self._at_zero_units[unit_id] = player
+            return True
+        if (run[ZERO_STATE] == ZERO_COUNTED
+                and died_ms - run[ZERO_T0] <= pull_outcome.ZERO_LINE_SAME_MS):
+            run[ZERO_T0] = max(run[ZERO_T0], died_ms)
+            return False
+        if run[ZERO_STATE] == ZERO_WAIT:
+            run[ZERO_T0] = max(run[ZERO_T0], died_ms)
+        else:
+            # A corpse from before the pull, or a death line after the window:
+            # this death starts here
+            run[ZERO_T0] = died_ms
+        run[ZERO_STATE] = ZERO_LINED
+        self._waiting.pop(player, None)
+        return True
+
+    def _count_zero_death(self, key: PlayerInfo, run: list) -> None:
+        """A player waited at 0 health for the hold with no death line: a
+        death at the first 0 (issue #221). One whose fight ended meanwhile,
+        or whose first 0 came after its END_COMBAT (_ended_fight_takes),
+        joins it as a death line at that moment would: inside the
+        late-death grace (LATE_DEATH_GRACE_MS, no shorter than the hold, so
+        a wait from before END_COMBAT always ends inside it), or as a death
+        between the lines while the group fights on."""
+        run[ZERO_STATE] = ZERO_COUNTED
+        self._waiting.pop(key, None)
+        zero_ms = run[ZERO_T0]
+        fields = run[ZERO_FIELDS]
+        if not run[ZERO_HIT]:
+            # The 0 first showed on an effect's or a cast's line: the hit
+            # that left the player at 0, logged just after, names the death
+            blow = self.death_recap_recorder.blow_fields(run[ZERO_UNIT], zero_ms)
+            if blow is not None:
+                fields = blow
+        enc = self.current_encounter
+        route_ms = zero_ms
+        if enc.finalized and enc.combat_ended_at is not None:
+            route_ms = max(zero_ms, enc.combat_ended_at)
+        self._record_player_death(run[ZERO_PLAYER], run[ZERO_UNIT], zero_ms, fields,
+                                  route_ms=route_ms, cause=HEALTH_CAUSE)
+
+    def _record_player_death(self, player: PlayerInfo, dying_unit_id: str, died_ms: int,
+                             fields: List[str], route_ms: Optional[int] = None,
+                             cause: str = ""):
+        """Count a player's death at *died_ms* and capture its recap (see
+        death_recap.py); *fields* are the line that names it. A death the
+        log wrote no line for (issue #221, _settle_zero_health) is counted
+        later than it came: *cause* HEALTH_CAUSE, *fields* the hit that put
+        the player at 0, and *route_ms* the moment that decides which fight
+        it joins (inside the late-death grace when END_COMBAT came between)."""
+        if cause != HEALTH_CAUSE and not self._death_line_on_run(player, dying_unit_id, died_ms):
+            return
+        route_ms = died_ms if route_ms is None else route_ms
         # First the combat that met no enemy, should it have just ended:
         # the death makes it a fight (see _note_enemy_met)
-        self._publish_held_fight(entry.timestamp)
+        self._publish_held_fight(route_ms)
         self.zone_deaths += 1
         self.fight_deaths += 1
 
-        late_entry = self._late_death_fight_entry(entry.timestamp)
-        fight_start = (self._last_fight_start if late_entry is not None
+        late_entry = self._late_death_fight_entry(route_ms)
+        # Later, while the group may still fight on: the fight's should
+        # combat begin again and carry it on (waiting_hits), which keeps its
+        # time dead; else the next fight's line drops it, as before
+        between = (late_entry is None and self.current_encounter.finalized
+                   and self._last_fight_entry is not None and self.waiting_hits.fighting_on)
+        fight_start = (self._last_fight_start if late_entry is not None or between
                        else self.current_encounter.start_time)
-        recap = self.death_recap_recorder.note_death(
-            dying_unit_id, entry.timestamp, entry.fields)
+        recap = self.death_recap_recorder.note_death(dying_unit_id, died_ms, fields, cause=cause)
         recap['unit_id'] = player.unit_id
         recap['name'] = player.get_display_name()
-        recap['time_ms'] = max(0, entry.timestamp - fight_start)
-        self.fight_death_recaps.append(recap)
+        recap['time_ms'] = max(0, died_ms - fight_start)
+        # The player's own casts, read again as the fight's entry is built
+        # (_refresh_recap_casts)
+        times = self._recap_cast_times(player, died_ms, recap['window_ms'])
+        recap['casts'] = self._recap_casts(player, died_ms, times)
+        self._recap_deaths.append((recap, player, died_ms, times))
+        # In time order: a death read from 0 health is counted after deaths
+        # that came while it waited
+        _insert_by_time(self.fight_death_recaps, recap)
 
         if late_entry is not None:
             late_entry.deaths += 1
-            late_entry.death_recaps = late_entry.death_recaps + [recap]
+            recaps = list(late_entry.death_recaps)
+            _insert_by_time(recaps, recap)
+            late_entry.death_recaps = recaps
             # Dead as the fight ended, which can turn its verdict; and still
             # dead should the fight carry on (pull_outcome)
             pull_outcome.note_late_death(late_entry.pull, player.unit_id, bool(player.is_local))
-            self.current_encounter.time_dead.late_death(player.unit_id, entry.timestamp)
+            dead = self.current_encounter.time_dead
+            ended = self.current_encounter.combat_ended_at
+            if ended is not None and died_ms < ended:
+                # A death read from 0 health before END_COMBAT, counted after
+                # it (issue #221): dead from the first 0 to the fight's end
+                span = ended - died_ms
+                dead.ms[player.unit_id] = dead.ms.get(player.unit_id, 0) + span
+                totals = dict(late_entry.time_dead or {})
+                totals[player.unit_id] = totals.get(player.unit_id, 0) + span
+                late_entry.time_dead = totals
+            dead.late_death(player.unit_id, route_ms)
             self._notify('on_fight_updated', late_entry)
-        elif not self.current_encounter.finalized:
-            self.current_encounter.time_dead.died(player.unit_id, entry.timestamp)
+        elif between or not self.current_encounter.finalized:
+            self.current_encounter.time_dead.died(player.unit_id, died_ms)
 
     def _late_death_fight_entry(self, timestamp_ms: int) -> Optional[FightHistoryEntry]:
         """The fight entry just emitted, when a death at *timestamp_ms* still
@@ -3023,6 +3762,19 @@ class ESOLogAnalyzer(ListenerMixin):
             source_unit_id = extracted[2] if extracted else "0"
             target_unit_id = extracted[3] if extracted else source_unit_id
             self_target = target_unit_id == source_unit_id
+
+            # The source's and the target's states for the deaths the log
+            # writes no line for (issue #221): health is [5] and [15]; the
+            # cheap tests here, the rest only when they say so. Inlined here
+            # and in _handle_begin_cast rather than in one helper: a method
+            # call on every effect line cost about 2% of replay time
+            states = entry.fields
+            units = self._at_zero_units
+            if self.current_encounter is not None and (
+                    self._waiting
+                    or (len(states) > 5 and (states[5][:2] == "0/" or states[4] in units))
+                    or (len(states) > 15 and (states[15][:2] == "0/" or states[14] in units))):
+                self._note_zero_states(entry, 4, entry.timestamp)
 
             # The source's pools (resources.py): [6..8] of its unit state
             if extracted is not None and len(entry.fields) > 8 and self.current_encounter:
@@ -3081,6 +3833,12 @@ class ESOLogAnalyzer(ListenerMixin):
                     and extracted is not None and self.current_encounter):
                 self.current_encounter.note_proc(
                     self.current_encounter.record_id(source_unit_id), ability_id)
+
+            # A set's own id of a Major or Minor buff, with its caster: the
+            # set behind their share of the buff's row (set_text)
+            if extracted is not None:
+                self.set_buff_recorder.record(effect_type, ability_id, source_unit_id,
+                                              target_unit_id, entry.timestamp)
 
             # A group buff set's buff, credited to one wearer per player at
             # a time, and a Champion Point star's proc: the build-issue
@@ -3269,11 +4027,154 @@ class ESOLogAnalyzer(ListenerMixin):
             return enemy.name
         return ""
 
+    def _cast_target(self, unit_id: str) -> tuple[str, str] | None:
+        """(name, key) of the unit a player's cast was aimed at
+        (casts.CastRecorder, fight_casts), as fight_events names a unit;
+        None for one the engine does not know by name."""
+        name = self._resolve_recap_unit(unit_id)
+        return (name, self._event_key(unit_id)) if name else None
+
+    def _event_key(self, unit_id: str) -> str:
+        """A unit's key in the fight's events (fight_events): a player's
+        record id, which a return on another unit id keeps; any other
+        unit's id."""
+        enc = self.current_encounter
+        return enc.record_id(unit_id) if enc is not None else str(unit_id)
+
+    def _note_boss_cast(self, entry: ESOLogEntry, enemy) -> None:
+        """A BEGIN_CAST by the boss *enemy*: its target, '*' the boss
+        itself, and its length (fight_events)."""
+        fields = entry.fields
+        caster_id = fields[4]
+        target_id = fields[14] if len(fields) > 14 else ""
+        at_player = False
+        if target_id in ("", "*", "0"):
+            target, target_key = "", ""
+        else:
+            target, target_key = self._resolve_recap_unit(target_id), self._event_key(target_id)
+            at_player = self.current_encounter.player_of(target_id) is not None
+        duration = int(fields[0]) if fields[0].isdigit() else 0
+        self.events.note_boss_cast(casts.line_time(entry.original_line), enemy.name, caster_id,
+                                   fields[2], fields[3], target, target_key, duration, at_player)
+
+    def _note_boss_cast_end(self, entry: ESOLogEntry) -> None:
+        """An END_CAST of a boss's cast (fight_events): the parser keeps its
+        reason, track and ability; who interrupted it is the line's last
+        field."""
+        parts = entry.original_line.rstrip().split(",")
+        by_id = parts[6] if len(parts) > 6 else ""
+        enc = self.current_encounter
+        by_enemy = enc.enemies.get(by_id) if enc is not None else None
+        self.events.note_cast_end(casts.line_time(entry.original_line), entry.fields[1],
+                                  entry.fields[0], self._resolve_recap_unit(by_id),
+                                  self._event_key(by_id),
+                                  bool(by_enemy is not None and by_enemy.is_boss))
+
+    def _note_taunt_event(self, entry: ESOLogEntry) -> None:
+        """A TAUNTED line by a player (fight_events): the taunted unit, and
+        the skill its cast id names."""
+        fields = entry.fields
+        enc = self.current_encounter
+        target_id = fields[17] if fields[17] != "*" else fields[7]
+        enemy = enc.enemies.get(target_id)
+        self.events.note_taunt(entry.timestamp, self._resolve_recap_unit(fields[7]),
+                               enc.record_id(fields[7]),
+                               self._cast_abilities.get(fields[5], "") or fields[6],
+                               self._resolve_recap_unit(target_id), str(target_id),
+                               bool(enemy is not None and enemy.is_boss))
+
+    def _note_resurrect_event(self, entry: ESOLogEntry) -> None:
+        """A resurrection line (fight_events): who was raised, a player, and
+        by whom."""
+        fields = entry.fields
+        enc = self.current_encounter
+        target_id = fields[17] if fields[17] != "*" else fields[7]
+        if enc is None or enc.player_of(target_id) is None:
+            return
+        self.events.note_resurrect(entry.timestamp, self._resolve_recap_unit(target_id),
+                                   enc.record_id(target_id), self._resolve_recap_unit(fields[7]),
+                                   self._event_key(fields[7]), fields[6])
+
+    def _fight_events(self, enc: CombatEncounter) -> fight_events.FightEvents:
+        """The fight's notable events, packed (fight_events), with the
+        players' returns from the dead (pull_outcome.TimeDead) and the
+        bosses' deaths."""
+        names = {player.unit_id: player.get_display_name() for player in enc.players.values()}
+        revived = [(back, names.get(key, ""), key, back - died, carried)
+                   for key, died, back, carried in enc.time_dead.revived]
+        boss_deaths = [(enemy.died_at, enemy.name, unit_id)
+                       for unit_id, enemy in enc.enemies.items()
+                       if enemy.is_boss and enemy.died_at is not None]
+        return self.events.fight_events(enc.start_time, enc.end_time, revived, boss_deaths,
+                                        self._resolve_recap_ability)
+
     def _resolve_recap_ability(self, ability_id: str) -> Tuple[str, str]:
         """(name, icon stem) for a death-recap ability id."""
         ability_id = str(ability_id)
         return (self.ability_cache.get(ability_id) or f"Ability {ability_id}",
                 self.ability_icons.get(ability_id, ''))
+
+    def _recap_cast_times(self, player: PlayerInfo, died_ms: int,
+                          window_ms: int) -> list[tuple[int, str]]:
+        """(time, ability id) of the player's own casts in the *window_ms*
+        before *died_ms*, the death recap's window, procs included (issue
+        #214, _recap_casts leaves them out)."""
+        key = player.unit_id
+        return self.casts.casts_between(key, died_ms - window_ms, died_ms,
+                                        self.casts.procs_of(key))
+
+    def _recap_casts(self, player: PlayerInfo, died_ms: int, times,
+                     werewolf_bar=None) -> list[dict]:
+        """The recap's casts from *times* (_recap_cast_times), oldest first
+        (issue #214): offset_ms (to the death, 0 or less), ability_id,
+        ability, icon and extra (the kind of an extra, casts.kind_of:
+        'light', 'heavy' and the like; '' for a skill). Procs are left out
+        as in the fight's counts, but for those of a skill on the front or
+        back bar or on *werewolf_bar*, the rebuilt werewolf bar's slots
+        (casts.on_bars)."""
+        resolved = {}
+
+        def resolve(ability_id):
+            if ability_id not in resolved:
+                resolved[ability_id] = self._resolve_recap_ability(ability_id)
+            return resolved[ability_id]
+
+        procs = self.casts.procs_of(player.unit_id)
+        procs -= casts.on_bars(procs, (player.front_bar_slots, player.back_bar_slots,
+                                       werewolf_bar), lambda ability_id: resolve(ability_id)[0])
+        rows = []
+        for at, ability_id in times:
+            if ability_id in procs:
+                continue
+            name, icon = resolve(ability_id)
+            rows.append({'offset_ms': at - died_ms, 'ability_id': ability_id, 'ability': name,
+                         'icon': icon, 'extra': casts.kind_of(ability_id) or ''})
+        return rows
+
+    def _refresh_recap_casts(self, enc: CombatEncounter) -> None:
+        """Read the fight's recaps' casts again as its entry is built (issue
+        #214): every line of a death's millisecond is in by now (a cast the
+        log writes just after the death line included), a proc found since
+        a death is known, and the procs kept are the fight's counts' own,
+        the rebuilt werewolf bar's included. The casts read as the death
+        was counted stay: those begun before the pull, in the window of a
+        death soon after it, can be pruned by then. A death that joins the
+        entry after it is built keeps the casts read as it was counted."""
+        for recap, player, died_ms, times in self._recap_deaths:
+            werewolf_bar = self._werewolf_fields(player, enc).get('werewolf_bar_slots')
+            # The casts read now that the first read lacks, in the log's
+            # order; then all by time, the log's order kept within a
+            # millisecond (a stable sort)
+            now = self._recap_cast_times(player, died_ms, recap['window_ms'])
+            missing = Counter(now)
+            missing.subtract(times)
+            added = []
+            for cast in now:
+                if missing[cast] > 0:
+                    added.append(cast)
+                    missing[cast] -= 1
+            recap['casts'] = self._recap_casts(
+                player, died_ms, sorted(times + added, key=lambda cast: cast[0]), werewolf_bar)
 
     def _remember_cast(self, cast_id: str, ability_id: str):
         """Keep which ability a cast tracking id belongs to (see TAUNTED in
@@ -3404,8 +4305,14 @@ class ESOLogAnalyzer(ListenerMixin):
         taunts.sort(key=lambda t: (-t['count'], t['name']))
         return taunts
 
-    def _build_fight_entry(self, zone_name: str = None):
-        """Build a FightHistoryEntry from the current encounter."""
+    def _build_fight_entry(self, zone_name: str = None, again: bool = False):
+        """Build a FightHistoryEntry from the current encounter. *again*: the
+        fight built once more for the group fighting on after it, of which
+        only the damage figures are kept (waiting_hits): nothing is pruned
+        from the trackers, whose casts and spans the fight on now goes on
+        with (a prune also forgets the casts under way), nothing is noted
+        for the session's build findings, and the recaps are left as
+        sent."""
         if not self.current_encounter:
             return None
 
@@ -3434,8 +4341,12 @@ class ESOLogAnalyzer(ListenerMixin):
         entry.deaths = self.fight_deaths  # this fight's player deaths
         # The recaps' rows are classed once more with every cast of the
         # fight known (an area cast's hit on a second target may come late)
-        self.death_recap_recorder.refresh_fight()
+        if not again:
+            self.death_recap_recorder.refresh_fight()
+        self._refresh_recap_casts(enc)
         entry.death_recaps = list(self.fight_death_recaps)
+        # The notable events, for the Events tab (fight_events)
+        entry.events = self._fight_events(enc)
         # Who opened the fight and with what, and the monster's act before
         # it, names resolved now (fight_opener)
         entry.opener, entry.monster_first = fight_opener.opener_records(
@@ -3450,12 +4361,21 @@ class ESOLogAnalyzer(ListenerMixin):
                                'is_local': bool(p.is_local)} for p in enc.players.values()]
 
         # The buff/debuff timeline (None when none of its effects was up)
-        if self.track_buff_timeline:
+        if self.track_buff_timeline and not again:
             entry.buff_timeline = self.buff_timeline_recorder.snapshot_fight(
                 enc.start_time, enc.end_time, self._resolve_timeline_name)
             # Not before the end: this fight's intervals are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.buff_timeline_recorder.prune_before(enc.start_time)
+        # The sets' own buff ids each player had up on anyone in the fight,
+        # under the player's record (set_text); pruned as the timeline is,
+        # and not on the pass that rebuilds a fight the group fought on
+        # after (_settle_fought_on), which takes only its damage figures
+        set_buffs_given: dict[str, set[str]] = defaultdict(set)
+        for unit_id, ids in self.set_buff_recorder.given_in(enc.start_time, enc.end_time).items():
+            set_buffs_given[enc.record_id(unit_id)] |= ids
+        if not again:
+            self.set_buff_recorder.prune_before(enc.start_time)
 
         # Boss name: prefer most damaged hostile, fall back to highest health
         if enc.most_damaged_hostile and enc.most_damaged_hostile.name:
@@ -3493,6 +4413,7 @@ class ESOLogAnalyzer(ListenerMixin):
         def ability_icon(ability_id):
             return self.ability_icons.get(str(ability_id), '')
 
+        fight_cast_lists = []
         for player, player_damage in players_with_damage:
             # Each player's dps over the span of their own hits, the boss
             # figure over the span of their hits on the bosses
@@ -3567,6 +4488,10 @@ class ESOLogAnalyzer(ListenerMixin):
                 'class_lines': player.get_class_skill_lines(),
                 # The Class Mastery passives: listed, or seen firing
                 'masteries': player.masteries(),
+                # The sets' own buff ids the player had up on anyone in the
+                # fight, for the 'from <set>' beside a caster in a strip
+                # row's summary (set_text.sets_behind); [] for most players
+                'set_buffs': sorted(set_buffs_given.get(player.unit_id, ()), key=int),
                 'front_bar': list(player.front_bar_abilities) if player.front_bar_abilities else [],
                 'back_bar': list(player.back_bar_abilities) if player.back_bar_abilities else [],
                 'front_bar_slots': [dict(s) for s in player.front_bar_slots],
@@ -3585,10 +4510,22 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['left'] = True
                 entry.players[-1]['present_pct'] = present_share(
                     enc.start_time, enc.end_time, player.joined_at, player.left_at)
-            # The fight's casts: the total, cpm and extras (casts.py)
-            cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time)
+            # The werewolf bar the log never writes, rebuilt from casts, and
+            # the share of the fight spent in form (werewolf.py)
+            werewolf_fields = self._werewolf_fields(player, enc)
+            # The fight's casts: the total, cpm and extras (casts.py), the
+            # player's procs left out unless of a skill on their bars
+            slotted = casts.on_bars(self.casts.procs_of(player.unit_id),
+                                    (player.front_bar_slots, player.back_bar_slots,
+                                     werewolf_fields.get('werewolf_bar_slots')), ability_name)
+            cast_counts = self.casts.fight_counts(player.unit_id, enc.start_time, enc.end_time,
+                                                  slotted)
             entry.players[-1]['casts'] = casts.cast_summary(
                 cast_counts, duration, entry.players[-1].get('present_pct'))
+            # The same casts one by one, for the Events tab's actions
+            # (fight_casts): the counts' own, so the two agree
+            fight_cast_lists.append((player.unit_id, self.casts.cast_records(
+                player.unit_id, enc.start_time, enc.end_time, slotted)))
             # Magicka, stamina and ultimate spent and gained (resources.py)
             entry.players[-1]['resources'] = self.resources.fight_summary(
                 player.unit_id, enc.start_time, enc.end_time, duration,
@@ -3608,9 +4545,7 @@ class ESOLogAnalyzer(ListenerMixin):
             if gear_rows:
                 key = json.dumps(gear_rows, sort_keys=True, default=str)
                 entry.players[-1]['gear'] = self._shared_gear.setdefault(key, gear_rows)
-            # The werewolf bar the log never writes, rebuilt from casts, and
-            # the share of the fight spent in form (werewolf.py)
-            entry.players[-1].update(self._werewolf_fields(player, enc))
+            entry.players[-1].update(werewolf_fields)
             # Each slot's casts in the fight, under its icon in the build
             # window (casts.py)
             casts.mark_slot_casts(cast_counts, (entry.players[-1]['front_bar_slots'],
@@ -3629,12 +4564,13 @@ class ESOLogAnalyzer(ListenerMixin):
             # taunt this fight, named or not, marks the player a taunter
             # for the session first
             player_key = self._scribing_player_key(player.unit_id)
-            if enc.player_taunts.get(player.unit_id):
-                self.build_issues.note_taunt(player_key)
             worn = worn_proc_sets(player.gear)
-            self.build_issues.note_fight(
-                player_key, enc.start_time, duration, worn,
-                fired_proc_sets(worn, enc.proc_effects.get(player.unit_id, ())))
+            if not again:
+                if enc.player_taunts.get(player.unit_id):
+                    self.build_issues.note_taunt(player_key)
+                self.build_issues.note_fight(
+                    player_key, enc.start_time, duration, worn,
+                    fired_proc_sets(worn, enc.proc_effects.get(player.unit_id, ())))
             # The tank rule reads the player's damage against an equal share
             # of the group's, and whether they healed others for more than
             # they dealt (a healer whose largest pool is health)
@@ -3655,11 +4591,25 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # Every player row's casts, packed (fight_casts, issue #214). Built
+        # again for the group fighting on, the fight keeps the casts its
+        # first build took, as its rows keep their counts (waiting_hits),
+        # an END_CAST read since giving one its end
+        built = self._built_casts
+        if again:
+            if built is not None and built[0] == id(enc) and built[1] == enc.start_time:
+                fight_cast_lists = built[2]
+        else:
+            self._built_casts = (id(enc), enc.start_time, fight_cast_lists)
+        entry.casts = fight_casts.pack(fight_cast_lists, enc.start_time,
+                                       self._resolve_recap_ability)
+
         # A second copy of a group buff set, or a second holder of a
         # Champion Point star, that added next to nothing this session
         # (build_issues, issue #172): judged across the fight's players, so
         # once every row is built
-        self._second_source_findings(entry, enc, duration, players_with_damage)
+        if not again:
+            self._second_source_findings(entry, enc, duration, players_with_damage)
 
         # Each companion that was out during the fight, on a row of its own
         # straight under its owner's (companions.py); one whose owner has
@@ -3673,8 +4623,10 @@ class ESOLogAnalyzer(ListenerMixin):
             entry.players = ordered
         # Not before the end: this fight's casts are needed once more if it
         # turns out to carry on (see COMBAT_RESUME_MS)
-        self.casts.prune_before(enc.start_time)
-        self.resources.prune_before(enc.start_time)
+        if not again:
+            self.casts.prune_before(enc.start_time)
+            self.resources.prune_before(enc.start_time)
+            self.events.prune_before(enc.start_time)
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -3685,17 +4637,19 @@ class ESOLogAnalyzer(ListenerMixin):
         # The copied line: the items shown, seen or expected (issue #13)
         entry.buff_summary = " ".join(item["text"] for item in entry.tracked
                                       if item.get("shown", True))
-        if entry.tracked:
+        if entry.tracked and not again:
             # Not before the end: this fight's spans are needed once more
             # if it turns out to carry on (see COMBAT_RESUME_MS)
             self.effect_tracker.prune_before(enc.start_time)
-        self.group_buff_credit.prune_before(enc.start_time)
+        if not again:
+            self.group_buff_credit.prune_before(enc.start_time)
 
         # Penetration and critical damage (pen_crit): each player's own
         # sources from their build, and the fight's debuffs and buffs
         # weighed by the damage dealt while they were up
         self._pen_crit_fields(entry, enc)
-        self.pen_crit_tracker.prune_before(enc.start_time)
+        if not again:
+            self.pen_crit_tracker.prune_before(enc.start_time)
 
         # A solo dungeon run's Misfortunes, from the logging player's
         # long-term effects (misfortunes.py, issue #70)
@@ -3721,6 +4675,13 @@ class ESOLogAnalyzer(ListenerMixin):
             pull_outcome.carry_dead(entry.pull, [key for key in enc.time_dead.carried_at_end
                                                  if key in present])
         entry.time_dead = enc.time_dead.totals(enc.end_time, carried=carries)
+
+        # Where the fight's lines are and who its units are, with the
+        # fight's own times, which every path that builds an entry has
+        # restored by now (fight_locator); the pass for the group fighting
+        # on keeps only its damage figures
+        if not again:
+            entry.locator = self._fight_locator(enc)
 
         return entry
 
@@ -3844,12 +4805,14 @@ class ESOLogAnalyzer(ListenerMixin):
                 if slot['id'] in companions.ULTIMATES:
                     slot['ultimate'] = True
             # This fight's casts, under each skill of the bar, and the
-            # ultimate's with their times (casts.py)
-            cast_counts = self.casts.fight_counts(key, enc.start_time, enc.end_time)
+            # ultimate's with their times (casts.py); a proc stays counted
+            # when it is of a skill on the bar
+            slotted = casts.on_bars(self.casts.procs_of(key), (slots,), ability_name)
+            cast_counts = self.casts.fight_counts(key, enc.start_time, enc.end_time, slotted)
             casts.mark_slot_casts(cast_counts, (slots,), ability_name)
             ultimates: dict[str, dict] = {}
             for at, ability_id in self.casts.fight_times(key, enc.start_time, enc.end_time,
-                                                         companions.ULTIMATES):
+                                                         companions.ULTIMATES, slotted):
                 ultimate = ultimates.setdefault(ability_id, {
                     'id': ability_id, 'name': ability_name(ability_id), 'at': []})
                 ultimate['at'].append(round((at - enc.start_time) / 1000.0, 1))
@@ -4059,12 +5022,6 @@ class ESOLogAnalyzer(ListenerMixin):
                 if old_unit_id in self.unit_id_to_handle:
                     del self.unit_id_to_handle[old_unit_id]
 
-    def _handle_health_regen(self, entry: ESOLogEntry):
-        """Handle HEALTH_REGEN events."""
-        # For now, just log that we're processing health regen events
-        # In the future, this could track health regeneration patterns
-        pass
-
     def _handle_endless_dungeon_begin(self, entry: ESOLogEntry):
         """Handle ENDLESS_DUNGEON_BEGIN events."""
         # For now, just log that we're processing endless dungeon begin events
@@ -4104,8 +5061,11 @@ def find_session_start_offset(log_file: Path, end: int, lookback_bytes: int) -> 
             chunk = f.read(pos - start) + carry
             idx = chunk.rfind(b',BEGIN_LOG,')
             if idx != -1:
-                line_start = chunk.rfind(b'\n', 0, idx) + 1
-                return start + line_start
+                newline = chunk.rfind(b'\n', 0, idx)
+                if newline != -1 or start == 0:
+                    return start + newline + 1
+                # The line's time field is in the chunk before, which the
+                # carry brings the marker into
             carry = chunk[:64]
             scanned += pos - start
             pos = start
@@ -4839,6 +5799,12 @@ class LogFileMonitor:
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
         self._split_warning = None  # the split failure last reported
+        # Offsets in another file mean nothing in this one (fight_locator),
+        # nor does its session: both are this file's once its BEGIN_LOG is
+        # read, and a fight of a file whose BEGIN_LOG never is names none
+        analyzer.line_offset = None
+        analyzer.session_offset = None
+        analyzer.session_epoch_ms = None
 
         # Initialize log splitter if needed
         self.log_splitter = LogSplitter(log_file, diagnostic=self.diagnostic, split_dir=split_dir) if tail_and_split else None
@@ -4874,7 +5840,7 @@ class LogFileMonitor:
     # replay; markers include the delimiting commas so they only match the
     # event-type field (checked within the line's leading bytes).
     PREAMBLE_EVENT_MARKERS = (
-        b',BEGIN_LOG,', b',ZONE_CHANGED,', b',TRIAL_INIT,',
+        b',BEGIN_LOG,', b',ZONE_CHANGED,', b',MAP_CHANGED,', b',TRIAL_INIT,',
         b',UNIT_ADDED,', b',UNIT_CHANGED,', b',PLAYER_INFO,',
         b',ABILITY_INFO,',
     )
@@ -4939,7 +5905,9 @@ class LogFileMonitor:
             self.analyzer._notify(
                 'on_diagnostic',
                 f"Loading last session ({(end - start) // (1024 * 1024)} MB)…")
-            self._process_range(start, end)
+            # The tail goes on after the last whole line read: one the game
+            # was writing at the size taken above is read once, whole
+            self.last_position = self._process_range(start, end)
             self._report_split_status()
         except Exception as exc:
             _console(f"Latest-session load failed: {exc}")
@@ -4948,42 +5916,51 @@ class LogFileMonitor:
             except Exception:
                 pass
 
-    def _process_range(self, start: int, end: int):
-        """Stream lines in [start, end) through the normal processing path.
-        A range over REPLAY_PROGRESS_BYTES reports its progress (the
-        window's progress bar), about every 1%."""
+    def _process_range(self, start: int, end: int) -> int:
+        """Stream the whole lines that begin in [start, end) through the
+        normal processing path, each with its offset (fight_locator), and
+        return the offset after the last one: a line without its newline,
+        which the game is still writing, is left to the tail. A range over
+        REPLAY_PROGRESS_BYTES reports its progress (the window's progress
+        bar), about every 1%."""
         total = end - start
         report = total > self.REPLAY_PROGRESS_BYTES
         label = "Loading last session"
         step = max(1, total // 100)
-        done = last = 0
+        last = 0
+        position = start
         if report:
             self.analyzer._notify('on_parse_progress', label, 0, total)
         try:
             with open(self.log_file, 'rb') as f:
                 f.seek(start)
-                while f.tell() < end:
+                while position < end:
                     raw = f.readline()
-                    if not raw:
+                    if not raw.endswith(b'\n'):
                         break
-                    done += len(raw)
+                    done = position + len(raw) - start
                     if report and done - last >= step:
                         last = done
                         self.analyzer._notify('on_parse_progress', label, min(done, total), total)
                     line = raw.decode('utf-8', errors='ignore').strip()
                     if line:
-                        self._process_one_line(line)
+                        self._process_one_line(line, position)
+                    position += len(raw)
         finally:
             if self.log_splitter:
                 self.log_splitter.flush()
             if report:
                 self.analyzer._notify('on_parse_progress', label, total, total)
+        return position
 
     def _backfill_session_preamble(self):
         """Process the current session's roster/metadata up to attach point.
 
         Best-effort: any failure leaves the monitor tailing normally, just
-        without pre-attach roster knowledge (the pre-fix behavior).
+        without pre-attach roster knowledge (the pre-fix behavior). The
+        tail goes on from the first line not whole before the attach point:
+        one the game was writing as the log was opened is read once, whole,
+        whatever it is (fight_locator).
         """
         try:
             end = self.last_position
@@ -4997,12 +5974,14 @@ class LogFileMonitor:
             processed = 0
             with open(self.log_file, 'rb') as f:
                 f.seek(start)
+                position = start
                 if start > 0 and not aligned:
-                    f.readline()  # sync to a line boundary
-                while f.tell() < end:
+                    position += len(f.readline())  # sync to a line boundary
+                while position < end:
                     raw = f.readline()
-                    if not raw:
-                        break
+                    if not raw.endswith(b'\n') or position + len(raw) > end:
+                        break  # being written at the attach: the tail's
+                    at, position = position, position + len(raw)
                     head = raw[:40]
                     if not any(marker in head
                                for marker in self.PREAMBLE_EVENT_MARKERS):
@@ -5010,8 +5989,13 @@ class LogFileMonitor:
                     line = raw.decode('utf-8', errors='ignore').strip()
                     entry = self.analyzer.log_parser.parse_line(line)
                     if entry is not None:
+                        # The session's BEGIN_LOG is among these lines
+                        # (fight_locator)
+                        self.analyzer.line_offset = at
                         self.analyzer.process_log_entry(entry)
                         processed += 1
+            self.analyzer.line_offset = None
+            self.last_position = position
             if processed and self.diagnostic:
                 _console(f"{Fore.CYAN}Session preamble: learned roster from "
                          f"{processed} events{Style.RESET_ALL}")
@@ -5132,6 +6116,8 @@ class LogFileMonitor:
                   f"from position {start_position}{Style.RESET_ALL}")
 
         line_count = 0
+        # Read as text, so with no offsets for the fights' locators
+        self.analyzer.line_offset = None
         with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
             if start_position > 0:
                 f.seek(start_position)
@@ -5198,6 +6184,10 @@ class LogFileMonitor:
     def _process_new_lines(self, cancel_check=None):
         """Process new lines added to the log file.
 
+        The lines are read as bytes, each handed over with its offset in the
+        file (fight_locator), and a last line without its newline, which
+        the game is still writing, is left for the next poll to read whole.
+
         Args:
             cancel_check: Optional callable returning True to abort the processing
                 loop early (polled every 500 lines to keep 'q' responsive during
@@ -5217,42 +6207,47 @@ class LogFileMonitor:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Reading new data from {self.log_file.name} (size: {current_size}, pos: {self.last_position}){Style.RESET_ALL}")
 
-        with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(self.log_file, 'rb') as f:
             f.seek(self.last_position)
             new_lines = f.readlines()
-            new_end_position = f.tell()
+        if new_lines and not new_lines[-1].endswith(b'\n'):
+            new_lines.pop()  # still being written: read whole at the next poll
 
         if self.diagnostic:
             timestamp = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.GREEN}[{timestamp}] DIAGNOSTIC: Read {len(new_lines)} lines from {self.log_file.name}{Style.RESET_ALL}")
 
         CANCEL_POLL_INTERVAL = 500
-        for idx, line in enumerate(new_lines):
-            # Periodic cancel check during large catch-up batches
-            if cancel_check is not None and idx % CANCEL_POLL_INTERVAL == 0 and idx > 0:
-                if cancel_check():
-                    # Advance last_position by the bytes consumed so far so resume
-                    # doesn't re-process already-handled lines.
-                    self.last_position += sum(len(l) for l in new_lines[:idx])
-                    if self.log_splitter:
-                        self.log_splitter.flush()
-                    if self.diagnostic:
-                        timestamp = time.strftime("%H:%M:%S", time.localtime())
-                        _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
-                    return
-
-            line = line.strip()
-            if line:
-                self._process_one_line(line)
-
-        if self.log_splitter:
-            self.log_splitter.flush()
-        self.last_position = new_end_position
+        position = self.last_position
+        try:
+            for idx, raw in enumerate(new_lines):
+                # Periodic cancel check during large catch-up batches
+                if cancel_check is not None and idx % CANCEL_POLL_INTERVAL == 0 and idx > 0:
+                    if cancel_check():
+                        if self.diagnostic:
+                            timestamp = time.strftime("%H:%M:%S", time.localtime())
+                            _console(f"{Fore.YELLOW}[{timestamp}] DIAGNOSTIC: Line processing aborted at line {idx}/{len(new_lines)}{Style.RESET_ALL}")
+                        return  # the next poll resumes at this line
+                # Past the line before the engine takes it: a line the engine
+                # raises on is passed once, and the lines before it are not
+                # read again, which would list their fight again and write
+                # them to the split twice
+                at, position = position, position + len(raw)
+                line = raw.decode('utf-8', errors='ignore').strip()
+                if line:
+                    self._process_one_line(line, at)
+        finally:
+            if self.log_splitter:
+                self.log_splitter.flush()
+            self.last_position = position
         if new_lines:
-            self._emit_log_status(new_end_position)
+            self._emit_log_status(position)
 
-    def _process_one_line(self, line: str):
-        """Parse one log line and run it through splitter and analyzer."""
+    def _process_one_line(self, line: str, offset: Optional[int] = None):
+        """Parse one log line and run it through splitter and analyzer.
+        *offset*: the line's first byte in the file, for the fights'
+        locators (fight_locator); None when the caller does not know it."""
+        self.analyzer.line_offset = offset
         entry = self.analyzer.log_parser.parse_line(line)
         offset_ms = parse_relative_ms(line)
         if offset_ms is not None:

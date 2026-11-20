@@ -70,7 +70,6 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 BONUSES_PATH = REPO_ROOT / "data" / "sets" / "bonuses_en.json"
 OUT_PATH = REPO_ROOT / "data" / "sets" / "set_buffs.json"
 BUFF_RE = re.compile(r"\b(?:Major|Minor) [A-Z][a-z]+\b")
-PERFECTED = "Perfected "
 WEARER_SHARE = 0.7  # of the sessions wearing the set that source the buff
 OTHER_SHARE = 0.01  # of the sessions wearing no set that names the buff
 MIN_SESSIONS = 5  # sessions wearing the set, for the shares to mean anything
@@ -80,7 +79,10 @@ METHOD = (f"named in the set's bonus text, sourced in at least {WEARER_SHARE:.0%
 
 
 def base_name(name: str) -> str:
-    return name.removeprefix(PERFECTED)
+    """The family a set belongs to: its normal version, by the rule the
+    app itself pairs the two versions with (player_build.normal_set_name)."""
+    from player_build import normal_set_name
+    return normal_set_name(name)
 
 
 def set_families(bonus_sets: dict):

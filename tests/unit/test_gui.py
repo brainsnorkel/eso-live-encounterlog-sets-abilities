@@ -175,8 +175,16 @@ class TestReviewMatchesGolden(GuiTestCase):
         # Detail view lists ALL equipment: misc pieces below 5 pieces included
         import html as html_mod
         player1 = entry.players[0]
-        for count, set_name in player1.get('all_sets', []):
-            self.assertIn(html_mod.escape(f'{count}x {set_name}'), html_out)
+        # One entry per set: the fixture's three perfected and two normal
+        # pieces of Bahsei's Mania are one (issue #215)
+        from gui.fight_render import set_entries, set_entry_text
+        entries = set_entries(player1)
+        self.assertEqual(len(entries), len(player1['all_sets']) - 1)
+        for item in entries:
+            self.assertIn(set_entry_text(item), render_plain_text(entry))
+            if 'perfected' not in item:
+                self.assertIn(html_mod.escape(set_entry_text(item)), html_out)
+        self.assertIn('5x Bahsei&#x27;s Mania&nbsp;(3&nbsp;perfected)', html_out)
         misc = [s for s in player1.get('all_sets', []) if s[0] < 5]
         self.assertTrue(misc, 'fixture should include sub-5pc pieces')
         text_out = render_plain_text(entry)
@@ -500,6 +508,31 @@ class TestMainWindowStates(GuiTestCase):
                                                archive_path=Path('x.zip'),
                                                done_bytes=100, total_bytes=100))
             self.assertFalse(win.progress_bar.isVisibleTo(win))
+        finally:
+            win.close()
+
+    def test_a_completed_archive_says_what_became_of_the_original(self):
+        """Kept by default: nothing said. Deleted: said. A delete that was
+        asked for and refused (macOS, the log in use or the check failing):
+        said with the reason, so a log left behind is not a surprise."""
+        from engine_events import ArchiveEvent
+        win = self._window()
+        try:
+            def line(**outcome):
+                win._on_archive_event(ArchiveEvent(
+                    kind='completed', archive_path=Path('x.zip'),
+                    done_bytes=100, total_bytes=100, **outcome))
+                return win.statusBar().currentMessage()
+
+            self.assertTrue(line().endswith('x.zip'))
+            self.assertTrue(line(kept_reason='could not check whether the log is in use').endswith(
+                'x.zip — original kept: could not check whether the log is in use'))
+            self.assertTrue(line(kept_reason='the log is in use').endswith(
+                'x.zip — original kept: the log is in use'))
+            # A kept original is not taken for the archive that deleted the log
+            self.assertIsNone(win._archive_that_deleted_log)
+            self.assertTrue(line(original_deleted=True).endswith('x.zip — original deleted'))
+            self.assertEqual(win._archive_that_deleted_log, Path('x.zip'))
         finally:
             win.close()
 

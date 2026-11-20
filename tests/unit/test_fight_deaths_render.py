@@ -258,6 +258,46 @@ class TestFightDeathsPage(unittest.TestCase):
         self.assertEqual(tip.splitlines()[:2], ["@tester: death 2 of 2, at 1:35",
                                                 "Killed by a fall or lava"])
 
+    def test_each_rows_time_links_to_positions_for_a_fight_that_can_be_read_again(self):
+        """Issue #214: with a locator whose session is known, each row's
+        time is its death's Positions link, in the link colour, carrying
+        that death's moment, in time order, and the table keeps its
+        columns: a column of its own crushed From and Killed by at 150-200%
+        text (the review's finding 19). Its hover names the moment and no
+        one. Without one, the time is plain."""
+        from fight_locator import FightLocator
+        from gui.death_render import positions_href
+        from gui.fight_deaths_render import fight_deaths_tooltips
+        from gui.fight_render import link_color
+        entry = _entry()
+        entry.locator = FightLocator(
+            session_stamp="", session_epoch_ms=1_790_000_000_000, session_offset=0,
+            zone_offset=0, begin_offset=0, end_offset=0, start_ms=20_000, end_ms=140_000,
+            map_at_lead=None, units=())
+        page = self._render(entry)
+        rows = _cells(page)
+        header = ["Time", "Role", "Player", "Killed by", "From", "Dead for"]
+        self.assertEqual(rows[0], header)
+        self.assertEqual([row[0] for row in rows[1:]], ["0:54", "1:00", "1:01", "1:35"])
+        self.assertEqual(re.findall(r'href="(esolog:positions/[^"]+)"', page),
+                         [positions_href("1", 54000), positions_href("2", 60500),
+                          positions_href("77", 61000), positions_href("1", 95000)])
+        for time in ("0:54", "1:00", "1:01", "1:35"):
+            self.assertIn(f'color:{link_color(False)}">{time}</a>', page)
+        self.assertNotIn(">Positions<", page)
+        tips = fight_deaths_tooltips(entry)
+        self.assertIn("Positions at 1:35", tips[positions_href("1", 95000)])
+        self.assertFalse(any("@" in tip for href, tip in tips.items()
+                             if href.startswith("esolog:positions/")))
+        entry.locator = entry.locator._replace(session_epoch_ms=None)
+        page = self._render(entry)
+        self.assertEqual(_cells(page)[0], header)
+        self.assertEqual([row[0] for row in _cells(page)[1:]], ["0:54", "1:00", "1:01", "1:35"])
+        self.assertNotIn("esolog:positions", page)
+        self.assertEqual(sorted(fight_deaths_tooltips(entry)),
+                         ["esolog:recap/1/1", "esolog:recap/1/2", "esolog:recap/2/1",
+                          "esolog:recap/77/1"])
+
     def test_the_entry_is_left_as_it_was(self):
         """The engine's thread updates an entry in place: the page and its
         hover only read it."""

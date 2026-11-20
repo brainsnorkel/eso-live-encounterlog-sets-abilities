@@ -5,8 +5,9 @@ bar's corner. The tabs and their Alt letters, each pressed twice; Ctrl+PgDn
 and Ctrl+PgUp from the list; the tab chosen kept as live fights come and
 through a page with no fight; Deaths N in the header; a name on Deaths
 opening that death in its fight; the search on the tab on screen, and
-Ctrl+C on Deaths; the bar never narrower than its labels, and the search's
-own row; nothing to switch while there is no fight."""
+Ctrl+C on Deaths; the bar never narrower than its labels, and the Find
+button standing for the search in a short corner (issue #214, more in
+test_events_tab_gui); nothing to switch while there is no fight."""
 
 import os
 import tempfile
@@ -81,21 +82,23 @@ class FightTabsTestCase(unittest.TestCase):
 class TestTheTabs(FightTabsTestCase):
 
     def test_the_tabs_with_their_alt_letters(self):
-        """Fight, Deaths, DPS graph and Instance, named for a screen
-        reader; Alt+E, Alt+G, Alt+I and Alt+F each land on their tab both
-        times they are pressed."""
+        """Fight, Deaths, Events, DPS graph and Instance, named for a
+        screen reader; Alt+E, Alt+V, Alt+G, Alt+I and Alt+F each land on
+        their tab both times they are pressed."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         win = self._window(_entry_with_deaths())
         tabs = win.fight_tabs
         self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
-                         ["&Fight", "D&eaths", "DPS &graph", "&Instance"])
+                         ["&Fight", "D&eaths", "E&vents", "DPS &graph", "&Instance"])
         self.assertEqual(tabs.accessibleName(), "Fight views")
         self.assertEqual(win.deaths_view.accessibleName(), "Deaths")
+        self.assertEqual(win.events_view.accessibleName(), "Events")
         self.assertEqual(win.instance_view.accessibleName(), "Instance")
         self.assertTrue(tabs.tabBar().isVisible())
-        for letter, page in ((Qt.Key_E, win.deaths_view), (Qt.Key_G, win.dps_panel),
-                             (Qt.Key_I, win.instance_view), (Qt.Key_F, tabs.widget(0))):
+        for letter, page in ((Qt.Key_E, win.deaths_view), (Qt.Key_V, win.events_view),
+                             (Qt.Key_G, win.dps_panel), (Qt.Key_I, win.instance_view),
+                             (Qt.Key_F, tabs.widget(0))):
             for press in (1, 2):
                 QTest.keyClick(win, letter, Qt.AltModifier)
                 self.assertIs(tabs.currentWidget(), page, press)
@@ -111,6 +114,8 @@ class TestTheTabs(FightTabsTestCase):
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
         self.assertIs(win.fight_tabs.currentWidget(), win.deaths_view)
         self.assertIs(QApplication.focusWidget(), win.history_list)
+        self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
+        self.assertIs(win.fight_tabs.currentWidget(), win.events_view)
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
         self.assertIs(win.fight_tabs.currentWidget(), win.dps_panel)
         self._key(win, Qt.Key_PageDown, Qt.ControlModifier)
@@ -331,9 +336,13 @@ class TestTheSearch(FightTabsTestCase):
         """With '128 matches' in the field, at 100% and 200% text, in a wide
         and a narrow right column: the tab bar is never narrower than its
         labels need. The search is in the corner while it has its least
-        room there, and on a row of its own above the tabs at 200% in a
-        narrow column; in the corner again at 100% in a wide one."""
+        room there; at 200% in a narrow column the Find button stands for
+        it there and the field is hidden, taking no row (issue #214); in the
+        corner again at 100% in a wide one. The window is wide enough for
+        the corner at 100% in the test runner's wide font."""
         win = self._window(_entry_with_deaths())
+        win.resize(1600, 720)
+        self._settle()
         views, field = win.fight_views, win.search_field
         bar = win.fight_tabs.tabBar()
         field.set_count("128 matches")
@@ -346,9 +355,14 @@ class TestTheSearch(FightTabsTestCase):
                 self._settle()
                 with self.subTest(pct=pct, right=right):
                     self.assertGreaterEqual(bar.width(), bar.sizeHint().width())
-                    self.assertTrue(field.isVisible())
                     if views.in_corner():
+                        self.assertTrue(field.isVisible())
+                        self.assertFalse(views.find_button.isVisible())
                         self.assertGreaterEqual(field.width(), field.least_width())
+                    else:
+                        self.assertIs(win.fight_tabs.cornerWidget(), views.find_button)
+                        self.assertTrue(views.find_button.isVisible())
+                        self.assertFalse(field.isVisible())
                     seen.add(views.in_corner())
         self.assertEqual(seen, {True, False})  # both places were used
         win.set_text_size(100)
@@ -508,7 +522,8 @@ class TestTheSearch(FightTabsTestCase):
         win._on_fight_completed(_entry_with_deaths())
         self._settle()
         bar = win.fight_tabs.tabBar().sizeHint().height()
-        self.assertTrue(win.fight_views.in_corner())
+        # The search takes no row: in the corner, or the Find button there
+        self.assertTrue(win.fight_views.in_corner() or not win.fight_views.search_open())
         self.assertLessEqual(win.minimumSizeHint().height(), bare + bar)
         self.assertEqual(win.fight_view.minimumHeight(), PANE_LEAST_PX)
         self.assertLess(PANE_LEAST_PX, win.fight_view.minimumSizeHint().height())
@@ -628,14 +643,18 @@ class TestTheSearch(FightTabsTestCase):
         win = self._window(_entry_with_deaths())
         self._settle()
         floor = 360 + text_size.scaled_px(LEGEND_LEAST)
+        # The tab widget's least, its pages' and the bar's with its scroll
+        # arrows: the column's own also keeps the five labels whole, which
+        # in the test runner's wide font are wider than the graph's floor
         self.assertLess(win.fight_tabs.widget(0).minimumSizeHint().width(), floor)
-        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+        self.assertLess(win.fight_tabs.minimumSizeHint().width(), floor)
         win.graph_action.trigger()
         self._settle()
         self.assertGreaterEqual(win.fight_views.minimumSizeHint().width(), floor)
+        self.assertGreaterEqual(win.fight_tabs.minimumSizeHint().width(), floor)
         win.fight_tabs.setCurrentIndex(0)
         self._settle()
-        self.assertLess(win.fight_views.minimumSizeHint().width(), floor)
+        self.assertLess(win.fight_tabs.minimumSizeHint().width(), floor)
 
     def test_with_no_fight_the_bar_and_the_search_hide_and_the_keys_do_nothing(self):
         """No fight: the Fight tab, the bar and the search hidden; Ctrl+F,
@@ -647,17 +666,20 @@ class TestTheSearch(FightTabsTestCase):
         self.assertFalse(win.fight_views.is_shown())
         self.assertFalse(win.fight_tabs.tabBar().isVisible())
         self.assertFalse(win.search_field.isVisible())
+        self.assertFalse(win.fight_views.find_button.isVisible())
         win.history_list.setFocus()
         _app.processEvents()
         for key, modifier in ((Qt.Key_F, Qt.ControlModifier), (Qt.Key_PageDown, Qt.ControlModifier),
                               (Qt.Key_PageUp, Qt.ControlModifier), (Qt.Key_E, Qt.AltModifier),
-                              (Qt.Key_G, Qt.AltModifier), (Qt.Key_I, Qt.AltModifier)):
+                              (Qt.Key_V, Qt.AltModifier), (Qt.Key_G, Qt.AltModifier),
+                              (Qt.Key_I, Qt.AltModifier)):
             self._key(win, key, modifier)
             self.assertEqual(win.fight_tabs.currentIndex(), 0, key)
             self.assertIsNot(QApplication.focusWidget(), win.search_field, key)
         win._on_fight_completed(_entry_with_deaths())
         self.assertTrue(win.fight_tabs.tabBar().isVisible())
-        self.assertTrue(win.search_field.isVisible())
+        # The field, or the Find button standing for it in a short corner
+        self.assertTrue(win.search_field.isVisible() or win.fight_views.find_button.isVisible())
 
 
 if __name__ == "__main__":

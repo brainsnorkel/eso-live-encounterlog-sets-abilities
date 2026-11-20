@@ -160,6 +160,81 @@ class TestPlayerRows(unittest.TestCase):
         self.assertEqual(result["static_pen"], [0, 0])
 
 
+class TestPerfectedAndNormalTogether(unittest.TestCase):
+    """Issue #215: the lines a set's two versions share are read once, at
+    the two counts added; a perfected set's own line keeps its count."""
+
+    # Ansuul's Torment: 702 normal, 707 perfected. Piercing Spray: 366
+    # normal, 360 perfected, whose two-piece penetration is the perfected
+    # set's own line
+    TABLE = {
+        "702": {"name": "Ansuul's Torment", "bonuses": [{"pieces": 4, "pen": 1487}]},
+        "707": {"name": "Perfected Ansuul's Torment", "bonuses": [{"pieces": 4, "pen": 1487}]},
+        "360": {"name": "Perfected Piercing Spray", "bonuses": [{"pieces": 2, "pen": 1190}]},
+    }
+
+    def _set_rows(self, gear):
+        return [(r["name"], r["pen"]) for r in _rows(gear, [], sets=self.TABLE)["rows"]
+                if r["kind"] == "set"]
+
+    def test_two_perfected_and_two_normal_pieces_give_the_four_piece_line_once(self):
+        gear = _armor(pieces=2, set_id="707")
+        gear.update({slot: _item(slot, "102", set_id="702") for slot in ARMOR[2:4]})
+        self.assertEqual(self._set_rows(gear), [("Ansuul's Torment 4 pieces", [1487, 1487])])
+
+    def test_one_version_reads_as_before(self):
+        self.assertEqual(self._set_rows(_armor(pieces=4, set_id="707")),
+                         [("Perfected Ansuul's Torment 4 pieces", [1487, 1487])])
+        self.assertEqual(self._set_rows(_armor(pieces=3, set_id="707")), [])
+
+    def test_the_pair_is_added_bar_by_bar(self):
+        gear = _armor(pieces=2, set_id="702")
+        gear["MAIN_HAND"] = _item("MAIN_HAND", "206", "WEAPON_PRECISE", "707", "FIERY_WEAPON")
+        gear["OFF_HAND"] = _item("OFF_HAND", "206", "WEAPON_PRECISE", "707", "POISONED_WEAPON")
+        gear["BACKUP_MAIN"] = _item("BACKUP_MAIN", "205", "WEAPON_PRECISE", "0", "FIERY_WEAPON")
+        self.assertEqual(self._set_rows(gear), [("Ansuul's Torment 4 pieces", [1487, 0])])
+
+    def test_a_perfected_line_needs_its_count_in_perfected_pieces(self):
+        mixed = {"MAIN_HAND": _item("MAIN_HAND", "206", "WEAPON_PRECISE", "360", "FIERY_WEAPON"),
+                 "OFF_HAND": _item("OFF_HAND", "206", "WEAPON_PRECISE", "366", "POISONED_WEAPON")}
+        self.assertEqual(self._set_rows(mixed), [])
+        mixed["OFF_HAND"][6] = "360"
+        self.assertEqual(self._set_rows(mixed), [("Perfected Piercing Spray 2 pieces", [1190, 1190])])
+
+    def test_a_debuff_set_in_both_versions_is_the_source(self):
+        table = {"232": SETS["232"],
+                 "9232": {"name": "Perfected Roar of Alkosh", "bonuses": SETS["232"]["bonuses"]}}
+        gear = _armor(pieces=3, set_id="232")
+        gear.update({slot: _item(slot, "102", set_id="9232") for slot in ARMOR[3:5]})
+        worn = pen_crit.table_sets_worn(gear, table, pairs={"9232": "232"})
+        self.assertEqual([(set_id, pieces) for set_id, _entry, pieces in worn], [("232", [5, None])])
+
+    def test_the_bundled_table_lists_a_pair_alike_or_the_perfected_line_alone(self):
+        """What table_sets_worn relies on: a perfected set listed with its
+        normal version has the same lines, and one listed alone has only
+        lines the bundled set text marks as the perfected set's own."""
+        from player_build import perfected_pairs
+        sets = REPO_ROOT / "data" / "sets"
+        table = json.loads((sets / "offense.json").read_text(encoding="utf-8"))["sets"]
+        text = json.loads((sets / "bonuses_en.json").read_text(encoding="utf-8"))["sets"]
+        alike = alone = 0
+        for perfected, normal in perfected_pairs().items():
+            if perfected not in table:
+                self.assertNotIn(normal, table, normal)
+                continue
+            if normal in table:
+                alike += 1
+                self.assertEqual(table[perfected]["bonuses"], table[normal]["bonuses"], perfected)
+                continue
+            alone += 1
+            own = {b["pieces"] for b in text[perfected]["bonuses"] if b.get("perfected")}
+            self.assertTrue(own, perfected)
+            for bonus in table[perfected]["bonuses"]:
+                self.assertIn(bonus["pieces"], own, perfected)
+        self.assertGreaterEqual(alike, 8)
+        self.assertGreaterEqual(alone, 7)
+
+
 class TestCasters(unittest.TestCase):
 
     def test_crusher_glyph_values(self):

@@ -93,9 +93,10 @@ rule, player-fights / distinct characters in that survey:
   buff for the whole group that holds only while five pieces are active.
   The rule cannot be general: 38% of all five-piece wearings in the survey
   were one-bar, which is normal for proc sets and front-bar damage sets.
-  Piece counts per bar come from player_build.piece_counts (a two-hander
-  counts as two). A build without a back-bar weapon, or wearing Oakensoul
-  Ring, is not reported.
+  Piece counts per bar come from player_build.family_counts (a two-hander
+  counts as two, and a set's perfected and normal pieces count together,
+  as they do in the Minor Slayer and proc-set checks). A build without a
+  back-bar weapon, or wearing Oakensoul Ring, is not reported.
 - **A tank with no taunt or pull** (95 / 3 with the gates below; added the
   same day at the maintainer's request). The health pool alone is not a
   tank: of 3,154 health-dominant player-fights in the same logs, 762 had
@@ -271,8 +272,10 @@ from player_build import (
     NO_VALUE,
     armor_weight,
     enchant_label,
+    family_counts,
     food_buff,
     food_table,
+    perfected_pairs,
     piece_counts,
     weapon_type,
     weapon_type_label,
@@ -684,8 +687,10 @@ def wears_oakensoul(gear: Dict[str, List[str]]) -> bool:
 
 def slayer_sets(gear: Dict[str, List[str]]) -> Set[str]:
     """The SLAYER_SETS ids this build has at three or more active pieces on
-    either bar: each is a Minor Slayer source, on that bar at least."""
-    return {set_id for set_id, (front, back) in piece_counts(gear or {}).items()
+    either bar: each is a Minor Slayer source, on that bar at least. A set's
+    perfected and normal pieces count together (player_build.family_counts),
+    under the normal version's id when both are worn."""
+    return {set_id for set_id, (front, back) in family_counts(gear or {}).items()
             if set_id in SLAYER_SETS
             and (front >= SLAYER_PIECES or (back or 0) >= SLAYER_PIECES)}
 
@@ -750,10 +755,21 @@ def _has_restoration_staff(gear: Dict[str, List[str]],
                for _bar, main_slot, _off_slot in BARS)
 
 
+def _proc_family(set_id) -> str:
+    """The id a proc set's session record is kept under: the normal
+    version's, whichever version is worn. worn_proc_sets names the set by
+    what is worn (five perfected pieces are the perfected id, four with a
+    normal one the normal id), so a record kept by that id would start
+    again when a player swaps one piece, and a set that fired in the first
+    fight would read as never firing in the second."""
+    return perfected_pairs().get(str(set_id), str(set_id))
+
+
 def worn_proc_sets(gear: Dict[str, List[str]]) -> Set[str]:
     """The proc sets (PROC_SETS ids) this build has active on either bar:
-    five pieces, or a mythic's one."""
-    counts = piece_counts(gear or {})
+    five pieces, or a mythic's one, a set's perfected and normal pieces
+    counted together (player_build.family_counts)."""
+    counts = family_counts(gear or {})
     return {set_id for set_id, (front, back) in counts.items()
             if set_id in PROC_SETS
             and (front >= PROC_SETS[set_id].pieces or (back or 0) >= PROC_SETS[set_id].pieces)}
@@ -1032,7 +1048,9 @@ def structural_findings(gear: Dict[str, List[str]], front_slots: Optional[List[d
                 skill="Elemental Drain"))
 
     if not oakensoul:
-        for set_id, (front, back) in sorted(piece_counts(gear).items()):
+        # Perfected and normal pieces together: two perfected rings do
+        # complete three normal body pieces (player_build.family_counts)
+        for set_id, (front, back) in sorted(family_counts(gear).items()):
             if set_id not in GROUP_SETS or back is None or (front >= 5) == (back >= 5):
                 continue
             name = (set_name_of(set_id) if set_name_of else None) or GROUP_SETS[set_id]
@@ -1274,13 +1292,13 @@ class BuildIssueTracker:
         them that *fired* (the player sourced the set's effect)."""
         fired = set(fired)
         for set_id in worn:
-            records = self._fights.setdefault((player_key, str(set_id)), {})
+            records = self._fights.setdefault((player_key, _proc_family(set_id)), {})
             records[int(fight_start_ms)] = (float(duration_s) >= LONG_FIGHT_S, set_id in fired)
 
     def long_fights(self, player_key: str, set_id: str) -> Tuple[int, bool]:
         """(fights of a minute or more the set was worn in, whether it ever
-        fired) this session."""
-        records = self._fights.get((player_key, str(set_id)), {})
+        fired) this session, in either version of the set (_proc_family)."""
+        records = self._fights.get((player_key, _proc_family(set_id)), {})
         return (sum(1 for long, _fired in records.values() if long),
                 any(fired for _long, fired in records.values()))
 
