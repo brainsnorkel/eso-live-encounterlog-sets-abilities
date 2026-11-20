@@ -1,24 +1,25 @@
 """
-The player window (issue #196): one player's fight on seven tabs, in place
+The player window (issue #196): one player's fight on eight tabs, in place
 of the build, damage, damage taken and death recap windows.
 
 Design: One window for a player. Each player link on the fight pane opens
 this one window at the tab for that link: the name and the lone mastery's
-'?' at Build, the dps figure at Damage done, the 'p:... cd:...' token at
-Pen and crit, the shield at Damage taken, the skull and the Also died chip
-at Deaths. Four windows to place became one, and the build page, which no
+'?' at Build, the dps figure at Damage done, a healer's 'heal ...' token at
+Healing done (issue #242), the 'p:... cd:...' token at Pen and crit, the
+shield at Damage taken, the skull and the Also died chip at Deaths. Four windows to place became one, and the build page, which no
 window fitted (2,352 px at the median), became pages that mostly do.
 
-    Build · Damage done · Pen and crit · Resources · Damage taken ·
-    Healing received · Deaths
+    Build · Damage done · Healing done · Pen and crit · Resources ·
+    Damage taken · Healing received · Deaths
 
-Each tab is a FightView drawing one part of the four pages (build_render,
-damage_render, taken_render and death_render, each with header=False), under
+Each tab is a FightView drawing one part of the five pages (build_render,
+damage_render, healing_render, taken_render and death_render, each with
+header=False), under
 two header rows the window draws itself: the previous player button, the
 player picker, the next player button and Boss targets only (shown on Damage
 done); then the fight line and Show in list. The order is the build window's
-(#143: gear, then what the player did with it, the cap sections and
-Resources), then the damage taken side. The kinds of damage dealt moved from
+(#143: gear, then what the player did with it, damage and then healing,
+the cap sections and Resources), then the damage taken side. The kinds of damage dealt moved from
 the build page to Damage done, beside the damage they sort, and the death
 recap's closing block of the whole fight's damage taken became a link to
 the Damage taken tab, which has all of it (decision 4, reversing that part
@@ -95,6 +96,7 @@ from gui.death_render import (
 )
 from gui.fight_render import _join, _theme, anchor_tooltips
 from gui.fight_view import FightView
+from gui.healing_render import render_healing_done_html
 from gui.keys import key_text, sequence
 from gui.name_mask import NO_MASK
 from gui.taken_render import HEALING_PART, TAKEN_PART, render_taken_html, taken_title
@@ -102,6 +104,7 @@ from pull_outcome import clock, outcome_text
 
 BUILD_TAB = "build"
 DAMAGE_TAB = "damage"
+HEALING_DONE_TAB = "healing_done"
 PEN_CRIT_TAB = "pen_crit"
 RESOURCES_TAB = "resources"
 TAKEN_TAB = "taken"
@@ -112,6 +115,7 @@ DEATHS_TAB = "deaths"
 TABS = (
     (BUILD_TAB, "&Build", "Build"),
     (DAMAGE_TAB, "&Damage done", "Damage"),
+    (HEALING_DONE_TAB, "Hea&ling done", "Healing done"),
     (PEN_CRIT_TAB, "&Pen and crit", "Pen and crit"),
     (RESOURCES_TAB, "&Resources", "Resources"),
     (TAKEN_TAB, "Damage &taken", "Damage taken"),
@@ -287,6 +291,7 @@ class PlayerWindow(QDialog):
             view.pen_crit_requested.connect(self._to_pen_crit)
             view.taken_requested.connect(self._to_taken)
             view.healing_requested.connect(self._to_healing)
+            view.healing_done_requested.connect(self._to_healing_done)
             view.death_recap_requested.connect(self._to_deaths)
             view.recap_requested.connect(self._to_death)
             # A moment of the fight leaves the window: the main window has
@@ -561,7 +566,8 @@ class PlayerWindow(QDialog):
             # A player the table does not list (Also died): no build reached
             # the log
             return {}, f"<p style='color:{muted}'>{NO_BUILD}</p>"
-        if p.get("companion") and tab in (PEN_CRIT_TAB, RESOURCES_TAB, TAKEN_TAB, HEALING_TAB):
+        if p.get("companion") and tab in (HEALING_DONE_TAB, PEN_CRIT_TAB, RESOURCES_TAB,
+                                         TAKEN_TAB, HEALING_TAB):
             return {}, f"<p style='color:{muted}'>{NO_COMPANION_DATA}</p>"
         if tab in (BUILD_TAB, PEN_CRIT_TAB, RESOURCES_TAB):
             # The pages' anchors use the fight view's targets, so its hover
@@ -584,6 +590,10 @@ class PlayerWindow(QDialog):
                 entry, unit_id, boss_only=self.boss_only.isChecked(), dark=dark,
                 icons=view.icons, base_pt=base_pt, names=names, text_color=text_color,
                 header=False, dealt_kinds=True)
+        if tab == HEALING_DONE_TAB:
+            return {}, render_healing_done_html(
+                entry, unit_id, dark=dark, icons=view.icons, base_pt=base_pt, names=names,
+                text_color=text_color)
         return kind_tooltips(), render_taken_html(
             entry, unit_id, dark=dark, icons=view.icons, base_pt=base_pt, names=names,
             text_color=text_color, header=False,
@@ -653,6 +663,9 @@ class PlayerWindow(QDialog):
 
     def _to_healing(self, unit_id):
         self._go(HEALING_TAB, unit_id)
+
+    def _to_healing_done(self, unit_id):
+        self._go(HEALING_DONE_TAB, unit_id)
 
     def _to_deaths(self, unit_id):
         self._go(DEATHS_TAB, unit_id)
@@ -728,7 +741,7 @@ class PlayerWindow(QDialog):
 
     def _default_size(self):
         """900x840, no more than nine tenths of the screen; wider when the
-        tab bar needs it (1,035 px at 200% text)."""
+        tab bar needs it (1,203 px at 200% text)."""
         width = max(DEFAULT_SIZE[0], self.minimumWidth())
         height = DEFAULT_SIZE[1]
         screen = self.screen() or QGuiApplication.primaryScreen()
@@ -741,8 +754,10 @@ class PlayerWindow(QDialog):
     def _fit_width(self) -> None:
         """The narrowest the window goes: the tab bar's width at the text
         size in force, plus the margins, so no tab hides behind Qt's scroll
-        arrows (605, 793 and 1,035 px at 100, 150 and 200%), unless that is
-        wider than nine tenths of the screen."""
+        arrows (700, 919 and 1,203 px at 100, 150 and 200% with the eight
+        tabs of issue #242; 605, 793 and 1,035 with seven), unless that is
+        wider than nine tenths of the screen: at 200% on a screen 1,280 px
+        wide, the bar scrolls."""
         margins = self.layout().contentsMargins()
         width = self.tabs.tabBar().sizeHint().width() + margins.left() + margins.right()
         screen = self.screen() or QGuiApplication.primaryScreen()

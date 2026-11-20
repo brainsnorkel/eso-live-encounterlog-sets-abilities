@@ -2,6 +2,14 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.44.0] - 2026-11-21
+
+### Added
+- **A healer's healing on their row, and a Healing done tab** (#242): a healer's row in the fight pane now reads `heal 4.1k · 46%` under the shares, their healing to others a second of the fight and their share of the group's, on every row marked H and on any other row with a tenth or more of the group's healing to others (an off-healer, or a healer the role guess reads as a tank). Hover it for the total; click it for the player window's new Healing done tab (Alt+L): the healing to others by ability, one row per skill however many ids the game writes it under, with hits, overheal and HoT or direct, then the players healed. **Copy fight** adds the token as `heal 4.1k (46%)`.
+
+### Changed
+- **Borrowed skill lines are named in full** beside the class: `DK +Dawn's Wrath` rather than `DK +Dawn`, `Sorc +Herald of the Tome +Animal Companions` rather than `Sorc +Herald +Animal`. A first word alone, such as `Dark`, `Green` or `Living`, did not say which line was meant. The fight pane, the player window's tabs and the fight list's ⓘ hover all show the full names, and a narrow window wraps between two lines rather than inside a name.
+
 ## [0.43.0] - 2026-11-12
 
 ### Added

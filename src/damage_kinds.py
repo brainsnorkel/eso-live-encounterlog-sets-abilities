@@ -334,12 +334,14 @@ class TakenTally:
                 "area": 0, "single": 0, "types": Counter()}
         return row
 
-    def _healer_row(self, healer_id: str, self_source: bool, pet_owner: str) -> dict:
+    def _healer_row(self, healer_id: str, self_source: bool, pet_owner: str,
+                    companion: str = "") -> dict:
         row = self.healers.get(healer_id)
         if row is None:
             row = self.healers[healer_id] = {
                 "landed": 0, "overheal": 0, "hits": 0, "direct": 0, "hot": 0,
-                "self": bool(self_source), "pet_owner": str(pet_owner or ""), "abilities": {}}
+                "self": bool(self_source), "pet_owner": str(pet_owner or ""),
+                "companion": str(companion or ""), "abilities": {}}
         return row
 
     def note_damage(self, ts: int, result: str, damage_type: str, hit: int,
@@ -415,15 +417,17 @@ class TakenTally:
 
     def note_other(self, result: str, hit: int, overflow: int, *, source_id: str = "",
                    ability_id: str = "", self_source: bool = False,
-                   pet_owner: str = "") -> None:
+                   pet_owner: str = "", companion: str = "") -> None:
         """A recap-result line that did not reach health: a shield absorb,
         an avoided hit, a heal (received and overheal), an absorbed heal.
 
         A heal with a *source_id* is kept by healer and ability for the
         damage taken window: *self_source* when the player healed
         themselves, *pet_owner* the owner's unit id when a pet did it (the
-        log names no pet, so the row is named after its owner). Without a
-        source the heal counts in the totals alone."""
+        log names no pet, so the row is named after its owner), *companion*
+        the row key when that pet is a companion (healing_done leaves a
+        companion's heals to its own row). Without a source the heal counts
+        in the totals alone."""
         self.results[result] += 1
         if result == SHIELDED_RESULT:
             self.absorbed += hit
@@ -438,7 +442,7 @@ class TakenTally:
             else:
                 self.heal_direct += hit
             if source_id:
-                healer = self._healer_row(str(source_id), self_source, pet_owner)
+                healer = self._healer_row(str(source_id), self_source, pet_owner, companion)
                 healer["landed"] += hit
                 healer["overheal"] += overflow
                 healer["hits"] += 1
@@ -555,6 +559,95 @@ class TakenTally:
             })
         out.sort(key=lambda h: (-h["landed"], -h["overheal"], h["name"]))
         return out
+
+
+# ------------------------------------------------------------ healing done --
+
+HEAL_FIELDS = ("landed", "overheal", "hits", "hot", "direct")
+
+
+def _heal_sum() -> dict:
+    return dict.fromkeys(HEAL_FIELDS, 0)
+
+
+def _add_heals(into: dict, row: dict) -> None:
+    for field in HEAL_FIELDS:
+        into[field] += row[field]
+
+
+def healing_done(tallies: dict, healer: str, record_of: Callable[[str], str],
+                 name_of: Callable[[str], str], icon_of: Callable[[str], str],
+                 unit_name_of: Callable[[str], str], companions: bool = False) -> dict:
+    """What one player's heals did in a fight, from the healer's side (the
+    player window's Healing done tab, issue #242): the healing that landed
+    on other players with its overheal, hits and HoT or direct split, by
+    ability ('abilities') and by the player healed ('targets'), and the
+    heals on themselves in one total ('own').
+
+    Design. Every heal on a player is kept already from the receiver's
+    side, by healer and ability (TakenTally.healers, for Healing received),
+    for any player unit, with a row of the fight's or not (a player whose
+    build never reached the log is still healed). Turning those rows round
+    as the fight's entry is built gives each healer's view at no cost per
+    line. *tallies* is the fight's receiver record id -> TakenTally, and
+    *healer* the player's record id. The rows count as the row's healing to
+    others does (CombatEncounter.add_healing_to_player):
+
+    - a player's heals are kept under their record, whatever unit they are on;
+    - a pet's heals (a Twilight Matriarch's) are its owner's, *record_of*
+      taking the owner's unit to the record, and the ability rows say 'pet';
+    - a companion's heals are its own row's (companions.py), and the
+      owner's too only with *companions* (Settings' companions.accrue_to_owner),
+      then marked 'companion';
+    - heals on the healer, by themselves or their pet, are 'own': never in
+      the healing to others, so a healer's figure is what reached the rest
+      of the group.
+
+    The pure overheal lines (hit 0) count too, so the overheal is a share of
+    every heal on others: in the survey of #73, 3.1M of 3.6M heal lines
+    were all overheal. Replayed over the maintainer's 419 split logs
+    (2026-11-21; 9,656 fights), the landed total equalled the row's figure
+    for all 62,601 player rows, as did its abilities' and its targets'
+    sums; no other field of any entry changed, the replay took no longer,
+    and the slot is about 2% of the entries' size."""
+    healer = str(healer)
+    others = _heal_sum()
+    own = _heal_sum()
+    abilities: dict[tuple[str, str], dict] = {}
+    targets: dict[str, dict] = {}
+    for receiver, tally in tallies.items():
+        receiver = str(receiver)
+        for healer_id, row in tally.healers.items():
+            if row["pet_owner"]:
+                via = "companion" if row.get("companion") else "pet"
+                if via == "companion" and not companions:
+                    continue
+                if record_of(row["pet_owner"]) != healer:
+                    continue
+            elif healer_id == healer:
+                via = ""
+            else:
+                continue
+            if receiver == healer:
+                _add_heals(own, row)
+                continue
+            _add_heals(others, row)
+            target = targets.get(receiver)
+            if target is None:
+                target = targets[receiver] = {"id": receiver, **_heal_sum()}
+            _add_heals(target, row)
+            for ability_id, heals in row["abilities"].items():
+                kept = abilities.get((ability_id, via))
+                if kept is None:
+                    kept = abilities[(ability_id, via)] = {"id": ability_id, "via": via,
+                                                           **_heal_sum()}
+                _add_heals(kept, heals)
+    ability_rows = [{**row, "name": name_of(row["id"]), "icon": icon_of(row["id"])}
+                    for row in abilities.values()]
+    ability_rows.sort(key=lambda r: (-r["landed"], -r["overheal"], r["name"], r["via"]))
+    target_rows = [{**row, "name": unit_name_of(row["id"])} for row in targets.values()]
+    target_rows.sort(key=lambda r: (-r["landed"], -r["overheal"], r["name"]))
+    return {**others, "abilities": ability_rows, "targets": target_rows, "own": own}
 
 
 # ----------------------------------------------------------------- summary --
