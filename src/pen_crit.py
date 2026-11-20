@@ -373,6 +373,16 @@ def new_tracker() -> EffectTracker:
     return EffectTracker(tracker_rules())
 
 
+def debuff_sources(tracker: EffectTracker, name: str, start_ms: int, end_ms: int) -> set[str]:
+    """The units that applied the DEBUFFS debuff *name* to any hostile
+    between *start_ms* and *end_ms*: its spans' casters, an unknown caster
+    left out (build_issues.tank_breach_findings reads Major Breach's)."""
+    for index, rule in enumerate(tracker.rules):
+        if rule.name == name:
+            return {str(span[5]) for span in tracker.spans_in(index, start_ms, end_ms) if span[5]}
+    return set()
+
+
 def pen_cap(instanced: bool, setting=None) -> int:
     """The target's resistance: 18,200 in instanced content or at a trial
     dummy, 9,100 overland; a numeric *setting* overrides both."""

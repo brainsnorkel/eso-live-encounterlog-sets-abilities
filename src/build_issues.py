@@ -253,6 +253,34 @@ rule, player-fights / distinct characters in that survey:
   the fight's. A player key that names a unit only until the zone changes
   ('unit:<id>') is retired then (BuildIssueTracker.retire_players), so a
   new player on that unit id inherits none of these records.
+- **No tank applied Major Breach** (issue #243, asked for by the
+  maintainer beside the default Major Breach rule; 28 of 642 tank rows in
+  20 of the fights judged, in the 54-log survey of effect_rules' Major
+  Breach note). Major Breach takes 5,948 off the target's Physical and
+  Spell Resistance, and in a group the tank usually brings it: in boss
+  fights of 20 s or more the one tank of a small group applied it in 243
+  of 249, and of the two tanks of a large group both did in 57 of 91
+  fights and one in 29, so a second tank leaving it to the first is
+  usual and is never flagged. Every tank who applied it had Pierce Armor,
+  Ransack, Razor Caltrops, Elemental Susceptibility or Runic Sunder on a
+  bar; 37 of the 50 who did not had Elemental Susceptibility on a bar all
+  the same. So the rule is the group's tanks: a tank
+  (the role 'T' and a taunt this session, the heavy-armor rule's guard the
+  other way round) is flagged in a group fight (two players or more) of
+  TANK_BREACH_MIN_S or more when no tank of the fight applied Major Breach
+  to any hostile, and every such tank is flagged. A tank with no build in
+  the log counts as a tank who could have applied it, but is not flagged.
+  The floor is when tanks apply it: the group's tanks' first Major Breach
+  of a boss fight came a median 2.5 s in for a small group (22 s at the
+  95th percentile) and 3.0 s for a large one (33 s at the 90th), so a
+  fight of 30 s has given them their chance; at 20 s the rule flagged 16
+  small-group trash pulls, at 30 s 6. Who applied it is the pen/crit
+  tracker's record (pen_crit.debuff_sources: every Major Breach span on a
+  hostile, with its caster), not a tracked-effect rule the reader can
+  edit away. Of the 20 fights, another player covered it in 14 (six are
+  one Halls of Fabrication group's, whose two tanks never applied it and
+  whose healer did in five); the finding says by role who did, not by
+  name, since the (i) popup's text is not under the Hide names mask.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, GROUP_BUFF_SETS, PROC_SETS, SLAYER_SETS,
@@ -261,6 +289,7 @@ the weapon lines table. The checks themselves are code.
 """
 
 import json
+from collections import Counter
 from functools import lru_cache
 from typing import Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
@@ -373,6 +402,7 @@ PULL_SKILL_NAMES = frozenset({
 # A scribed skill taunts or pulls by its focus script, which names it
 TAUNT_FOCUS, TAUNT_PREFIX = "Taunt", "Goading "
 PULL_FOCUS, PULL_PREFIX = "Pull", "Leashing "
+TANK_BREACH_MIN_S = 30.0  # a fight long enough for the tanks to have applied Major Breach
 TANK_HEAVY_PIECES = 5  # heavy pieces that read as a tank's armor
 TANK_DAMAGE_RATIO = 0.5  # of an equal share of the group's damage; real tanks sit near 0.1
 
@@ -524,6 +554,15 @@ TANK_DETAIL = (
     "staff, a scribed skill with the Taunt focus) or a pull (Chains of Flame and its morphs, "
     "Silver Leash, Frozen Gate and its morphs, a scribed skill with the Pull focus), and no "
     "taunt of theirs was logged this session, so nothing holds the boss on them.")
+TANK_BREACH_TITLE = "No tank applied Major Breach"
+TANK_BREACH_DETAIL = (
+    "Major Breach takes 5,948 off the target's Physical and Spell Resistance, for "
+    "everyone's damage, and in a group a tank usually keeps it up, with Pierce Armor, "
+    "Ransack, Razor Caltrops or Elemental Susceptibility on a bar. No tank applied it "
+    "to the enemies in this fight; {cover}.")
+TANK_BREACH_NOBODY = "nobody else did either"
+TANK_BREACH_COVER = "{who} applied it instead"
+_ROLE_WORDS = {"D": ("damage dealer", "damage dealers"), "H": ("healer", "healers")}
 FOOD_TITLE = "No food or drink at combat start"
 FOOD_DETAIL = (
     "No food or drink buff was on this player as the fight began, so they fought without a "
@@ -1112,6 +1151,54 @@ def food_findings(food: Optional[dict], state: Optional[dict], fight_start_ms: i
         return [_finding("food-ran-out", FOOD_RAN_OUT_TITLE.format(food=name, at=at),
                          FOOD_RAN_OUT_DETAIL.format(food=name, at=at))]
     return []
+
+
+class BreachRow(NamedTuple):
+    """One player of a fight, for tank_breach_findings."""
+    key: str  # what the finding is returned under (the row's unit id)
+    role: str  # the app's 'T', 'H' or 'D'
+    tank: bool  # the role 'T' and a taunt this session
+    applied: bool  # applied Major Breach to a hostile this fight
+    judged: bool  # the row can carry a finding (its build is in the log)
+
+
+_COUNT_WORDS = {1: "a", 2: "two", 3: "three"}
+
+
+def _cover_text(roles: Counter) -> str:
+    """Who applied Major Breach when no tank did, by role: 'a healer and
+    two damage dealers'."""
+    if not roles:
+        return TANK_BREACH_NOBODY
+    parts = []
+    for role in ("H", "D"):
+        count = roles.get(role, 0)
+        if count:
+            one, many = _ROLE_WORDS[role]
+            parts.append(f"{_COUNT_WORDS.get(count, str(count))} {one if count == 1 else many}")
+    rest = sum(count for role, count in roles.items() if role not in _ROLE_WORDS)
+    if rest:
+        parts.append("another player" if rest == 1 else f"{_COUNT_WORDS.get(rest, str(rest))} other players")
+    who = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return TANK_BREACH_COVER.format(who=who)
+
+
+def tank_breach_findings(rows: Iterable[BreachRow], duration_s: float,
+                         players: Optional[int]) -> Dict[str, dict]:
+    """The finding on the tanks of a group fight none of whom applied Major
+    Breach (see the module notes), by the key of each tank's row that can
+    carry it; {} when the rule does not apply. *rows* has every player of
+    the fight, *duration_s* is its length and *players* its group size."""
+    rows = list(rows)
+    if float(duration_s) < TANK_BREACH_MIN_S or group_size_class(players or 0) not in ("small", "large"):
+        return {}
+    tanks = [row for row in rows if row.tank]
+    if not tanks or any(row.applied for row in tanks):
+        return {}
+    cover = _cover_text(Counter(row.role for row in rows if row.applied))
+    detail = TANK_BREACH_DETAIL.format(cover=cover)
+    return {row.key: _finding("no-tank-breach", TANK_BREACH_TITLE, detail)
+            for row in tanks if row.judged}
 
 
 class BuildIssueTracker:

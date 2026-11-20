@@ -87,7 +87,8 @@ mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
 trial fight. So five of the six group buffs are ``expected large``, the
 taunt ``expected small large``, and the boss debuffs and Crux nothing:
-they depend on who is in the group, and show when they happened.
+they depend on who is in the group, and show when they happened. Major
+Breach is the exception among the debuffs (below).
 Powerful Assault was expected too until issue #48: the set's buff is
 usual in a trial group, but no role has to bring it, so a fight without
 it is not a mistake worth a red 0% row, and its rule shows when the buff
@@ -112,6 +113,37 @@ rule's uptime, any weakness up, is well above the time the full 15% is in
 effect, one weakness being the usual state. A measure counting the ids up
 at once, and a way to say a group needs one of Echoes and Catalyst, are
 left for when the logs show the set in use.
+
+Major Breach (issue #243): 5,948 off the target's Physical and Spell
+Resistance (pen_crit.DEBUFFS, Combat Metrics' value), more than any debuff
+the app values but Roar of Alkosh's 6,000, and a group brings it about as
+reliably as a taunt, so it is the one boss debuff that is ``expected``,
+``small large`` like the taunt. The rule's ids are pen_crit's, the Trial
+dummy's own 120010 among them (a test keeps the two lists equal). The
+survey (2026-11-21): the newest split log of every veteran trial (13),
+veteran dungeon (36) and arena (4) and an Infinite Archive run, 54 logs of
+January to November 2026 and 1,484 fights, replayed with the rule. Major
+Breach was on the boss in 115 of 117 large-group boss fights and 339 of
+356 small-group ones, on the pack in 198 of 205 large-group trash fights
+and 622 of 751 small-group ones, and almost never solo (3 of 8 boss
+fights, 1 of 47 packs), which the rule leaves out. In boss fights of 20 s
+or more it was missing in 2 of 114 large-group fights (two Halls of
+Fabrication wipes) and 8 of 269 small-group ones; a tank applied most of
+it in 192 of 313 large-group fights and 677 of 961 small-group ones. Being
+expected, it adds a red 0% row to 155 of the 1,429 group fights: 129 of
+them small-group trash, 73 under 10 s, where the taunt was already
+missing in 90; 59 are the Infinite Archive run, two players and no tank.
+The taunt gives 219 such rows over the same fights, the two together 269.
+Minor Breach was on the target in 1,392 of the 1,429 and is an example,
+not a default: nothing measured says a group misses it.
+
+A rules text saved before a default was added keeps only what was saved,
+so a new default reaches a fresh install alone unless an upgrade step
+adds it: the maintainer's own text, saved at version 5, had no Elemental
+Catalyst line two releases after #53 made it a default. Version 6 gives a
+saved text the Major Breach and Elemental Catalyst lines (ADDED_IN_6) when
+it has no rule of that name, a commented-out one included, since a line
+the user switched off stays theirs (upgrade_rules_text).
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -260,10 +292,21 @@ DEFAULT_EXPECTED = {
     "taunt": "small large",
 }
 
+# Two default lines a saved rules text is given at tracking version 6
+# when it has no rule of the name (upgrade_rules_text): Major Breach
+# (issue #243; pen_crit.DEBUFFS's ids, a test keeps them equal) and
+# Elemental Catalyst (issue #53, which reached fresh installs alone)
+MAJOR_BREACH_RULE = ("Major Breach  = 61743 117818 62775 40254 48946 62485 36980 53881 62787 120010"
+                     " on boss expected small large")
+CATALYST_RULE = "Elemental Catalyst = 142610 142652 142653 on boss"
+ADDED_IN_6 = (MAJOR_BREACH_RULE, CATALYST_RULE)
+BOSS_DEBUFFS_COMMENT = "# Boss debuffs; in a fight without a boss they measure the pack instead"
+
 # The rules a fresh install starts with: the uptime line's own items, then
-# the maintainer's boss debuffs (2026-10-09; the Off-Balance ids beyond the
-# first six are his list), then Crux as a commented-out example (issue #80:
-# a row only an Arcanist logging the fight ever gets)
+# the boss debuffs, Major Breach first (issue #243) and then the
+# maintainer's (2026-10-09; the Off-Balance ids beyond the first six are
+# his list), then Crux as a commented-out example (issue #80: a row only an
+# Arcanist logging the fight ever gets)
 DEFAULT_RULES = (
     "# Tracked effects, one per line: Name = ability ids on <scope> [stacks | each | dots]\n"
     "# scope: self | group | pets | boss | enemies. Share these lines as text.\n"
@@ -271,20 +314,21 @@ DEFAULT_RULES = (
     "# A line that starts with $ is a HyperTools tracker export, pasted as is.\n"
     "# The group buffs and the taunt; delete what you do not want (Examples has them)\n"
     + UPTIME_LINE_RULES
-    + "# Boss debuffs; in a fight without a boss they measure the pack instead\n"
+    + BOSS_DEBUFFS_COMMENT + "\n"
+    + MAJOR_BREACH_RULE + "\n"
     "Off-Balance   = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss\n"
     "Touch of Z'en = 126597 on boss dots\n"
     "Morag Tong    = 34384 on boss\n"
     "Minor Brittle = 145975 on boss\n"
     "Major Brittle = 263825 on boss\n"
-    "Elemental Catalyst = 142610 142652 142653 on boss\n"
+    + CATALYST_RULE + "\n"
     "Alkosh        = 76667 on boss\n"
     "# Your own Crux, for an Arcanist: take the # off to track it\n"
     "# Crux          = 184220 on self stacks\n"
 )
 
 # The example library Settings offers to paste from: (title, what it tells
-# you, the rule line). The first fifteen are DEFAULT_RULES (Crux commented
+# you, the rule line). The first sixteen are DEFAULT_RULES (Crux commented
 # out there); the other ids were seen in the 2026 logs.
 EXAMPLE_RULES = [
     ("Major Courage on the group",
@@ -309,6 +353,10 @@ EXAMPLE_RULES = [
      "How long each boss had a taunt on it, averaged over the bosses, a boss "
      "killed early measured to its death; the pack's mobs when there is no boss",
      "Taunt = 38254 on boss each expected small large"),
+    ("Major Breach on the boss",
+     ("Share of the fight Major Breach was on the boss, from any skill or set that applies "
+      "it; in a group of two or more, a 0% row in red when nobody applied it"),
+     " ".join(MAJOR_BREACH_RULE.split())),
     ("Off-Balance on the boss",
      "Share of the fight the boss was off balance, under any of the skills that cause it",
      "Off-Balance = 45902 62988 39077 34733 20806 130139 130145 130129 125750 62968 25256 34737 23808 137257 45834 137312 131562 on boss"),
@@ -335,6 +383,9 @@ EXAMPLE_RULES = [
     ("Roar of Alkosh on the boss",
      "Uptime of the Roar of Alkosh set's debuff",
      "Alkosh = 76667 on boss"),
+    ("Minor Breach on the boss",
+     "Share of the fight Minor Breach was on the boss, from any skill or set that applies it",
+     "Minor Breach = 61742 190180 148803 185910 230694 146908 120019 on boss"),
     ("Off-Balance immunity on the boss",
      "How much of the fight the boss could not be put off balance",
      "OB immunity = 134599 on boss"),
@@ -492,9 +543,14 @@ def upgrade_rules_text(text: str, version: int) -> str:
     version 5: the default Crux line, ``Crux = 184220 on self stacks``
     exactly as shipped (any spacing), is commented out as the default text
     now has it (issue #80); a Crux line with other ids, a scope, measure or
-    ``expected`` of its own is the user's and is kept. The line's own
-    spelling, ids and spacing are kept; any other line is left exactly as
-    written, so the upgrade is safe to repeat."""
+    ``expected`` of its own is the user's and is kept. Before version 6: a
+    text with at least one rule is given each line of ADDED_IN_6 (Major
+    Breach, issue #243, and Elemental Catalyst, issue #53) whose name it
+    has neither as a rule nor commented out, right after the default
+    text's boss-debuff comment when it has that line and at its end
+    otherwise; a text with no rule tracks nothing on purpose and gets none.
+    The line's own spelling, ids and spacing are kept; any other line is
+    left exactly as written, so the upgrade is safe to repeat."""
     out = []
     for raw in (text or "").splitlines():
         line = raw.strip()
@@ -512,7 +568,30 @@ def upgrade_rules_text(text: str, version: int) -> str:
                 if version < 5 and rule == Rule("Crux", frozenset({"184220"}), "self", "stacks"):
                     raw = "# " + raw
         out.append(raw)
+    if version < 6:
+        out = _with_defaults_added_in_6(out)
     return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
+
+
+def _with_defaults_added_in_6(lines: List[str]) -> List[str]:
+    """*lines* with the ADDED_IN_6 rules they lack (upgrade_rules_text)."""
+    live = parse_rules("\n".join(lines))[0]
+    if not live:
+        return lines
+    have = {rule.name.lower() for rule in live}
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("#"):
+            # A rule the user switched off is still theirs
+            rule, _error = _parse_line(line.lstrip("#").strip())
+            if rule is not None:
+                have.add(rule.name.lower())
+    missing = [line for line in ADDED_IN_6 if rule_name(line) not in have]
+    if not missing:
+        return lines
+    at = next((index + 1 for index, raw in enumerate(lines)
+               if raw.strip() == BOSS_DEBUFFS_COMMENT), len(lines))
+    return lines[:at] + missing + lines[at:]
 
 
 # ---- HyperTools export strings ----

@@ -31,10 +31,10 @@ from death_recap import (DEATH_RESULTS, HEALTH_CAUSE, KILLING_HIT_RESULTS, SUBZO
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BreachRow, BuildIssueTracker,
     GroupBuffCredit, PROC_EFFECT_IDS,
     fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
-    structural_findings, worn_proc_sets,
+    structural_findings, tank_breach_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import (build_fields, food_ids, has_restoration_staff, is_mythic_set,
@@ -4590,6 +4590,24 @@ class ESOLogAnalyzer(ListenerMixin):
                 entry.players[-1]['build_issues'] += food_findings(
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
+
+        # No tank applied Major Breach (build_issues.tank_breach_findings,
+        # issue #243): a rule on the group's tanks together, so judged once
+        # every row has its role and this fight's taunts are noted, from
+        # the pen/crit tracker's casters of the debuff (pruned further down)
+        breach_by = {str(enc.record_id(source)) for source in pen_crit.debuff_sources(
+            self.pen_crit_tracker, "Major Breach", enc.start_time, enc.end_time)}
+        tank_findings = tank_breach_findings(
+            [BreachRow(str(row['unit_id']), str(row.get('role') or ''),
+                       row.get('role') == 'T' and self.build_issues.has_taunted(
+                           self._scribing_player_key(row['unit_id'])),
+                       str(row['unit_id']) in breach_by, not row.get('no_build'))
+             for row in entry.players],
+            duration, len(enc.players))
+        for row in entry.players:
+            finding = tank_findings.get(str(row['unit_id']))
+            if finding is not None:
+                row['build_issues'] = list(row.get('build_issues') or []) + [finding]
 
         # Every player row's casts, packed (fight_casts, issue #214). Built
         # again for the group fighting on, the fight keeps the casts its

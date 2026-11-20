@@ -175,8 +175,9 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
     def test_the_default_rules_are_the_whole_uptime_line(self):
         # The group buffs and the taunt are rules like the rest. A group of
         # two is small: the group buffs are expected only in a large group
-        # and the debuffs nowhere, so the line has what was seen, the taunt
-        # being expected here anyway
+        # and the debuffs but Major Breach nowhere, so the line has what was
+        # seen, the taunt and Major Breach (issue #243) being expected here
+        # anyway, Major Breach at 0% as nobody applied it
         analyzer = _run(FIGHT_START + [
             _effect(10000, 'GAINED', COURAGE, _player(1), _player(2)),
             _effect(20000, 'FADED', COURAGE, _player(1), _player(2)),
@@ -184,7 +185,7 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
             _effect(22000, 'FADED', TAUNT, _player(1), _unit(70)),
         ] + FIGHT_END, rules=DEFAULT_RULES)
         self.assertEqual(analyzer.fight_history.fights[0].buff_summary,
-                         "Major Courage:50% Taunt:60%")
+                         "Major Courage:50% Taunt:60% Major Breach:0%")
 
 
 class TestFightsWithoutABoss(unittest.TestCase):

@@ -1,0 +1,6 @@
+### Added
+- **Major Breach on the boss is a default tracked effect** (#243), expected in groups of two or more like the taunt: a fight where nobody applied it shows a dark red `0%` row, and a fight where someone did shows its uptime as usual. Major Breach takes 5,948 off the target's resistances, and in the logs behind the change it was on the boss in 98% of trial boss fights and 95% of dungeon ones. Minor Breach is in the Examples list.
+- **A possible build issue when no tank applied Major Breach** (#243): in a group fight of 30 seconds or more where no tank put Major Breach on an enemy, each tank's `ⓘ` says so, and whether a healer or a damage dealer applied it instead. One tank applying it is enough, so a trial's second tank is not flagged for leaving it to the first.
+
+### Changed
+- **Saved tracked-effect rules gain Major Breach and Elemental Catalyst** (#243) when they have no line of that name, once, at the next start. Elemental Catalyst became a default in 0.13.3 but only reached fresh installs. A line of that name you wrote or commented out is left as it is, and rules with nothing in them stay empty.
