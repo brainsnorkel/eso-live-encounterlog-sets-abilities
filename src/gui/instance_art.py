@@ -54,8 +54,11 @@ world shows the header it always had and no strip, with nothing reserved
 for one: only trials and arenas have a file (the maintainer's choice).
 
 Settings → Display → Instance art turns both off (display.instance_art,
-on for a new install), and so does a system set to high contrast, where a
-picture behind a title's row is what the setting asks to be spared.
+on by default: an install with no such setting saved has the art, a new
+one and one updated from a version before it alike), and so does a system
+set to high contrast, where a picture behind a title's row is what the
+setting asks to be spared; the window follows the system's setting while
+it is open (MainWindow._follow_instance_art).
 """
 
 import math
@@ -90,8 +93,13 @@ STRIP_GAP = 6
 STRIP_SPACE = STRIP_HEIGHT + STRIP_GAP
 STRIP_RADIUS = 4
 # Fitted pictures kept: a header or two per block on screen and the strip,
-# at the sizes of a splitter being dragged
+# at the sizes of a splitter being dragged; and the bytes they may hold
+# together. The count alone let a window being resized with the Instance
+# tab on screen keep 48 strips of its every width, about 100 MB at 1900 px
+# and a pixel ratio of 1.5 (the review of PR #258); a cut and a scale take
+# under a millisecond, so little is lost by keeping few
 FITTED_KEPT = 48
+FITTED_BYTES = 8 * 1024 * 1024
 
 _setting = True  # Settings → Display → Instance art
 _cache = None
@@ -137,13 +145,15 @@ def cover_source(size: QSize, width: float, height: float) -> QRectF:
 
 
 class ArtCache:
-    """The bundled art, each picture read once, and the last FITTED_KEPT
-    cut and scaled to a slot. A zone with no picture is remembered too."""
+    """The bundled art, each picture read once, and the last few cut and
+    scaled to a slot: at most FITTED_KEPT of them and FITTED_BYTES in all,
+    the newest always. A zone with no picture is remembered too."""
 
     def __init__(self, root: Path | None = None):
         self.root = Path(root) if root is not None else art_dir()
         self._images: dict[str, QImage | None] = {}
         self._fitted: OrderedDict = OrderedDict()
+        self._fitted_bytes = 0
 
     def image(self, zone_id) -> QImage | None:
         """The art of *zone_id* as bundled; None when there is none. Only a
@@ -172,8 +182,11 @@ class ArtCache:
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             fitted.setDevicePixelRatio(dpr)
             self._fitted[key] = fitted
-            while len(self._fitted) > FITTED_KEPT:
-                self._fitted.popitem(last=False)
+            self._fitted_bytes += fitted.sizeInBytes()
+            while len(self._fitted) > 1 and (len(self._fitted) > FITTED_KEPT
+                                             or self._fitted_bytes > FITTED_BYTES):
+                _oldest, dropped = self._fitted.popitem(last=False)
+                self._fitted_bytes -= dropped.sizeInBytes()
         else:
             self._fitted.move_to_end(key)
         return fitted

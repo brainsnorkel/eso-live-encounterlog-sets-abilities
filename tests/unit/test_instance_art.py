@@ -63,6 +63,19 @@ class TestTheTable(unittest.TestCase):
               self.assertRaisesRegex(ValueError, "both Old and New")):
             self.script.instances()
 
+    def test_one_painting_wanted_takes_one_probe_for_the_offset(self):
+        """--only with one zone: the first and the last file wanted are the
+        same row, and the two probes of the icons' calibration wrote into
+        one folder and stopped the run."""
+        script = self.script
+        with (patch.object(script, "probe_offset", return_value=706993) as probe,
+              patch.object(script, "calibrate_offset", return_value=-1) as calibrate):
+            self.assertEqual(script.extractor_offset("exe", "mnf", "temp", 709330, 709330), 2337)
+            probe.assert_called_once_with("exe", "mnf", "temp", 709330)
+            calibrate.assert_not_called()
+            self.assertEqual(script.extractor_offset("exe", "mnf", "temp", 709330, 709400), -1)
+            calibrate.assert_called_once_with("exe", "mnf", "temp", 709330, 709400)
+
     def test_only_a_picture_an_earlier_run_wrote_is_ever_removed(self):
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder)
@@ -245,6 +258,23 @@ class TestTheCache(ArtTestCase):
         for width in range(200, 200 + instance_art.FITTED_KEPT + 20):
             cache.fitted(SUNSPIRE, width, 44)
         self.assertEqual(len(cache._fitted), instance_art.FITTED_KEPT)
+
+    def test_the_fitted_pictures_kept_are_bounded_in_bytes(self):
+        """A window resized with the Instance tab on screen asks for a strip
+        at every width it passes through: 48 of those were about 100 MB."""
+        from gui import instance_art
+        cache = instance_art.ArtCache()
+        for width in range(1840, 1900):
+            newest = cache.fitted(SUNSPIRE, width, instance_art.STRIP_HEIGHT, 1.5)
+        held = sum(picture.sizeInBytes() for picture in cache._fitted.values())
+        self.assertEqual(held, cache._fitted_bytes)
+        self.assertLessEqual(held, instance_art.FITTED_BYTES)
+        self.assertIs(next(reversed(cache._fitted.values())), newest)
+        # One picture over the budget by itself is still given, and kept alone
+        with patch.object(instance_art, "FITTED_BYTES", 1000):
+            big = cache.fitted(SUNSPIRE, 900, 120)
+            self.assertEqual(list(cache._fitted.values()), [big])
+            self.assertEqual(cache._fitted_bytes, big.sizeInBytes())
 
 
 class TestTheSwitch(ArtTestCase):
@@ -655,7 +685,7 @@ class TestTheStrip(ArtTestCase):
         base = view.palette().color(QPalette.Active, QPalette.Base)
         self.assertFalse(_differs(QColor(image.pixel(image.width() - 30, 60)), base))
 
-    def test_the_strip_says_nothing_to_a_screen_reader_or_the_search(self):
+    def test_the_strip_says_nothing_to_a_screen_reader(self):
         view = self._view()
         view.set_art(SUNSPIRE)
         view.setHtml(self.PAGE)
@@ -742,10 +772,17 @@ class TestTheWindow(ArtTestCase):
         from tests.unit.test_fight_list_gui import _entry
         return [_entry("Lokkestiiz"), _entry("Iron Atronach", "Craglorn", CRAGLORN, "NONE")]
 
-    def test_it_is_on_for_a_new_install_and_read_at_start(self):
+    def test_it_is_on_by_default_and_read_at_start(self):
         from app_config import AppConfig
         from gui import instance_art
         self.assertIs(AppConfig(path=self.root / "new.json").get("display.instance_art"), True)
+        # An install updated from a version before the setting: its saved
+        # file has no such key, and the art is on there too
+        saved = self.root / "saved.json"
+        saved.write_text(json.dumps({"display": {"text_scale": 110, "reduce_motion": True}}),
+                         encoding="utf-8")
+        self.assertIs(AppConfig(path=saved).get("display.instance_art"), True)
+        self.assertEqual(AppConfig(path=saved).get("display.text_scale"), 110)
         self._window(self._config(instance_art=False))
         self.assertFalse(instance_art.enabled())
         self._window(self._config())

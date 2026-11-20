@@ -36,9 +36,10 @@ Reduce motion is on (set_reduce_motion).
 A page can have an instance's art across its top (set_art, issue #249;
 gui.instance_art has the design): the view paints the strip on its viewport
 before the page, at the page's own place, so it scrolls with the text, is
-as wide as the page at any width, and adds nothing a screen reader or the
-search would meet. The page leaves the room (instance_art.STRIP_SPACE,
-gui.instance_render). The art is asked for before each page that has it:
+as wide as the viewport at any width, and is no part of the page: a
+screen reader meets nothing of it. The page leaves the room
+(instance_art.STRIP_SPACE, gui.instance_render), with a paragraph that
+holds one no-break space, which is in the page's text. The art is asked for before each page that has it:
 a page set without the asking has none, so no later page can be drawn over
 a strip left behind.
 """

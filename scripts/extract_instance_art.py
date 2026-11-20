@@ -68,6 +68,7 @@ from extract_ability_icons import (
     log,
     merge_ranges,
     numbered_outputs,
+    probe_offset,
     run_extractor,
     sha1_of,
 )
@@ -127,6 +128,18 @@ def instances() -> dict:
         table[zone_id] = {"name": name, "art": art, "focus": focus}
         paintings[art] = name
     return table
+
+
+def extractor_offset(extractor: Path, mnf: Path, temp: Path, first: int, last: int) -> int:
+    """What to add to a table Index for the extractor's -s/-e (see
+    extract_ability_icons.calibrate_offset, which probes the first and the
+    last file wanted). With one painting wanted, --only with one zone,
+    those two are the same row, and its second probe wrote into the folder
+    of the first and stopped the run on finding two files there (the
+    review of PR #258): one probe gives the offset then."""
+    if first == last:
+        return first - probe_offset(extractor, mnf, temp, first)
+    return calibrate_offset(extractor, mnf, temp, first, last)
 
 
 def remove_stale(out: Path, previous: dict, table: dict) -> list:
@@ -247,7 +260,7 @@ def main() -> int:
                 failed.append((zone_id, entry["name"], f"no {entry['art']}.dds in eso.mnf"))
         if positions:
             wanted = sorted(positions.values())
-            offset = calibrate_offset(extractor, mnf, temp, rows[wanted[0]][0], rows[wanted[-1]][0])
+            offset = extractor_offset(extractor, mnf, temp, rows[wanted[0]][0], rows[wanted[-1]][0])
             extract_dir = temp / "x"
             for start, end in merge_ranges(rows, wanted, 0):
                 run_extractor(extractor, [str(mnf), str(extract_dir) + "\\",
