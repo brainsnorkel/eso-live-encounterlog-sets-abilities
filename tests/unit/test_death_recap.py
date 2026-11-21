@@ -1196,6 +1196,32 @@ class TestDeathsWithNoDeathLine(unittest.TestCase):
         ])
         self.assertEqual(analyzer.fight_history.fights[0].deaths, 1)
 
+    def test_the_logs_end_counts_a_wait_that_lasted_the_hold(self):
+        """As a zone change does: until issue #225 the parser handed END_LOG
+        over as ENDLOG, and such a death was lost."""
+        from death_recap import HEALTH_CAUSE
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            '16500,END_COMBAT',
+            '17500,END_LOG',
+        ])
+        fight = analyzer.fight_history.fights[0]
+        self.assertEqual((fight.deaths, analyzer.zone_deaths), (1, 1))
+        self.assertEqual([(r['time_ms'], r['cause']) for r in fight.death_recaps],
+                         [(6000, HEALTH_CAUSE)])
+
+    def test_the_logs_end_before_the_hold_counts_nothing(self):
+        analyzer, _ = _run([
+            '10000,BEGIN_COMBAT',
+            _event(12000, 'DAMAGE', 500, BOSS, _player(2, 19500)),
+            _event(16000, 'DAMAGE', 0, BOSS, _player(1, 0), overflow=500),
+            '16500,END_COMBAT',
+            '16800,END_LOG',
+        ])
+        self.assertEqual(analyzer.fight_history.fights[0].deaths, 0)
+
     def test_a_placeholder_state_says_nothing(self):
         """The log's 1/1 placeholder for a unit it has no state for does not
         end a wait at 0 health."""

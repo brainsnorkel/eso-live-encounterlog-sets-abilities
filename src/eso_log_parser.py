@@ -159,14 +159,22 @@ class EffectChangedEntry:
 
 
 
-# The legacy event type of each structured entry class, by class name; a
-# class not listed takes its name less "Entry", upper-cased
+# The legacy event type of each structured entry class, by class name: the
+# line's own event name, which every handler compares against. A class not
+# listed takes its name less "Entry", upper-cased, which is right only for
+# a one-word event: until issue #225 END_LOG, EFFECT_INFO and
+# ENDLESS_DUNGEON_END reached the engine as ENDLOG, EFFECTINFO and
+# ENDLESSDUNGEONEND, so the analyzer's and the splitter's END_LOG branches
+# had never run (test_every_entry_class_keeps_its_event_name holds every
+# class of ESOLogStructureParser.PARSERS to its name)
 _LEGACY_EVENT_TYPES = {
-    'BeginLogEntry': 'BEGIN_LOG', 'ZoneChangedEntry': 'ZONE_CHANGED',
+    'BeginLogEntry': 'BEGIN_LOG', 'EndLogEntry': 'END_LOG',
+    'ZoneChangedEntry': 'ZONE_CHANGED',
     'MapChangedEntry': 'MAP_CHANGED', 'UnitAddedEntry': 'UNIT_ADDED',
     'UnitChangedEntry': 'UNIT_CHANGED', 'UnitRemovedEntry': 'UNIT_REMOVED',
     'AbilityInfoEntry': 'ABILITY_INFO', 'PlayerInfoEntry': 'PLAYER_INFO',
     'BeginCastEntry': 'BEGIN_CAST', 'EndCastEntry': 'END_CAST',
+    'EffectInfoEntry': 'EFFECT_INFO',
     'EffectChangedEntry': 'EFFECT_CHANGED', 'CombatEventEntry': 'COMBAT_EVENT',
     'BeginCombatEntry': 'BEGIN_COMBAT', 'EndCombatEntry': 'END_COMBAT',
     'TrialInitEntry': 'TRIAL_INIT', 'BeginTrialEntry': 'BEGIN_TRIAL',
@@ -175,6 +183,7 @@ _LEGACY_EVENT_TYPES = {
     'EndlessDungeonStageEndEntry': 'ENDLESS_DUNGEON_STAGE_END',
     'EndlessDungeonBuffAddedEntry': 'ENDLESS_DUNGEON_BUFF_ADDED',
     'EndlessDungeonBuffRemovedEntry': 'ENDLESS_DUNGEON_BUFF_REMOVED',
+    'EndlessDungeonEndEntry': 'ENDLESS_DUNGEON_END',
 }
 # Where a legacy entry's timestamp comes from, by class name: these few are
 # not the line number (None is 0, as the log gives them none); every other

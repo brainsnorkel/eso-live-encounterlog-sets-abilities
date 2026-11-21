@@ -175,8 +175,9 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
     def test_the_default_rules_are_the_whole_uptime_line(self):
         # The group buffs and the taunt are rules like the rest. A group of
         # two is small: the group buffs are expected only in a large group
-        # and the debuffs nowhere, so the line has what was seen, the taunt
-        # being expected here anyway
+        # and the debuffs but Major Breach nowhere, so the line has what was
+        # seen, the taunt and Major Breach (issue #243) being expected here
+        # anyway, Major Breach at 0% as nobody applied it
         analyzer = _run(FIGHT_START + [
             _effect(10000, 'GAINED', COURAGE, _player(1), _player(2)),
             _effect(20000, 'FADED', COURAGE, _player(1), _player(2)),
@@ -184,7 +185,34 @@ class TestTrackedEffectsInTheEngine(unittest.TestCase):
             _effect(22000, 'FADED', TAUNT, _player(1), _unit(70)),
         ] + FIGHT_END, rules=DEFAULT_RULES)
         self.assertEqual(analyzer.fight_history.fights[0].buff_summary,
-                         "Major Courage:50% Taunt:60%")
+                         "Major Courage:50% Taunt:60% Major Breach:0%")
+
+
+class TestTrialDummyMajorBreach(unittest.TestCase):
+    """Issue #243: the Trial dummy keeps its own Major Breach (120010) from
+    its spawn, so a session begun later never sees it applied; the
+    expected Major Breach rule reads it up for the whole fight there, as
+    the Armour row does, instead of a red 0%."""
+
+    RULE = "Major Breach = 61743 120010 on boss expected small large\n"
+
+    def _parse(self, name):
+        analyzer = _run([
+            _mob(2600, 75, name, boss="T", health=BOSS_HEALTH),
+            *FIGHT_START,
+            _hit_unit(11000, 1, 75, BOSS_HEALTH), _hit_unit(12000, 2, 75, BOSS_HEALTH),
+            _hit_unit(29000, 1, 75, BOSS_HEALTH),
+            '30000,END_COMBAT',
+        ], rules=self.RULE)
+        return _items(analyzer.fight_history.fights[0])["Major Breach"]
+
+    def test_the_dummys_own_major_breach_is_up_for_the_whole_fight(self):
+        item = self._parse("Target Iron Atronach, Trial")
+        self.assertEqual((item["seen"], item["uptime_pct"]), (True, 100.0))
+
+    def test_any_other_target_without_it_reads_an_expected_zero(self):
+        item = self._parse("Target Iron Atronach")
+        self.assertEqual((item["seen"], item["expected"], item["uptime_pct"]), (False, True, 0.0))
 
 
 class TestFightsWithoutABoss(unittest.TestCase):

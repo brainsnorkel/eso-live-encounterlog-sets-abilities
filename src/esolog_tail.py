@@ -32,10 +32,10 @@ from death_recap import (DEATH_RESULTS, HEALTH_CAUSE, KILLING_HIT_RESULTS, SUBZO
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BreachRow, BuildIssueTracker,
     GroupBuffCredit, PROC_EFFECT_IDS,
     fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
-    structural_findings, worn_proc_sets,
+    structural_findings, tank_breach_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import (build_fields, food_ids, has_restoration_staff, is_mythic_set,
@@ -2754,10 +2754,20 @@ class ESOLogAnalyzer(ListenerMixin):
         return fight_locator.locate(start, end_offset, enc.start_time, enc.end_time, units)
 
     def _handle_end_log_event(self, entry: ESOLogEntry):
-        """Handle END_LOG events."""
+        """Handle END_LOG events. Until issue #225 the parser handed END_LOG
+        over as ENDLOG, so this never ran: a wait at 0 health that had
+        lasted the hold by a log's END_LOG, with no line after it to settle
+        it, was lost, and a fight the group fought on took their hits only
+        at the next session's BEGIN_LOG, or when the app closed. A wait
+        still under the hold at END_LOG is not counted: every 0 a player
+        survived lasted under the hold (#221), so it cannot be told from a
+        blip, and the next BEGIN_LOG clears it."""
         # A player who waited at 0 health long enough died (issue #221)
         if self._waiting and self.current_encounter:
             self._settle_zero_health(entry.timestamp)
+        # The group fighting on stops with the log, as at BEGIN_LOG
+        # (waiting_hits)
+        self._settle_fought_on()
         if self.diagnostic:
             timestamp_str = time.strftime("%H:%M:%S", time.localtime())
             _console(f"{Fore.CYAN}[{timestamp_str}] DIAGNOSTIC: END_LOG detected{Style.RESET_ALL}")
@@ -4600,6 +4610,30 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # No tank applied Major Breach (build_issues.tank_breach_findings,
+        # issue #243): a rule on the group's tanks together, so judged once
+        # every row has its role and this fight's taunts are noted, from
+        # the pen/crit tracker's casters of the debuff (pruned further down).
+        # A tank is the role and a taunt this session or this fight (a row
+        # with no build in the log skips the session's record); the Trial
+        # dummy keeps Major Breach on itself, so a fight against it has
+        # nothing to judge
+        breach_by = {str(enc.record_id(source)) for source in pen_crit.debuff_sources(
+            self.pen_crit_tracker, "Major Breach", enc.start_time, enc.end_time)}
+        tank_findings = tank_breach_findings(
+            [BreachRow(str(row['unit_id']), str(row.get('role') or ''),
+                       row.get('role') == 'T' and (
+                           self.build_issues.has_taunted(self._scribing_player_key(row['unit_id']))
+                           or bool(enc.player_taunts.get(row['unit_id']))),
+                       str(row['unit_id']) in breach_by, not row.get('no_build'))
+             for row in entry.players],
+            duration, len(enc.players),
+            kept_by_target=bool(self._trial_dummies(enc, enc.fight_units())))
+        for row in entry.players:
+            finding = tank_findings.get(str(row['unit_id']))
+            if finding is not None:
+                row['build_issues'] = list(row.get('build_issues') or []) + [finding]
+
         # Every player row's casts, packed (fight_casts, issue #214). Built
         # again for the group fighting on, the fight keeps the casts its
         # first build took, as its rows keep their counts (waiting_hits),
@@ -4636,6 +4670,17 @@ class ESOLogAnalyzer(ListenerMixin):
             self.casts.prune_before(enc.start_time)
             self.resources.prune_before(enc.start_time)
             self.events.prune_before(enc.start_time)
+
+        # The Trial dummy's own Major Breach, which a session begun after
+        # its spawn never sees applied: a span from the fight's start, as
+        # pen_crit credits it, so the expected Major Breach rule (issue
+        # #243) does not read a red 0% at a group parse. A span already
+        # open, the spawn's own, is kept (EffectTracker.seed)
+        if self.effect_tracker:
+            units = enc.fight_units()
+            for uid in self._trial_dummies(enc, units):
+                self.effect_tracker.seed((pen_crit.TRIAL_DUMMY_BREACH_ID,), uid, enc.start_time,
+                                         units[uid][0])
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -4855,6 +4900,14 @@ class ESOLogAnalyzer(ListenerMixin):
             })
         return rows
 
+    @staticmethod
+    def _trial_dummies(enc: 'CombatEncounter', units: dict) -> list[str]:
+        """The fight's units that are the Trial dummy, by name
+        (pen_crit.TRIAL_DUMMY_NAME): it keeps a trial group's debuffs on
+        itself, Major Breach among them, from its spawn."""
+        return [uid for uid in units
+                if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME]
+
     def _pen_crit_fields(self, entry: FightHistoryEntry, enc: 'CombatEncounter') -> None:
         """Set entry.pen_crit and each player's 'pen_crit' (pen_crit.py): the
         player's own rows from their PLAYER_INFO line, the fight's debuffs
@@ -4874,8 +4927,7 @@ class ESOLogAnalyzer(ListenerMixin):
         units = enc.fight_units()
         # The Trial dummy keeps a trial group's debuffs on itself from its
         # spawn; a session begun later never sees them applied (pen_crit)
-        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in units
-                     if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME}
+        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in self._trial_dummies(enc, units)}
 
         def gear_of(unit_id: str):
             player = enc.player_of(unit_id)
@@ -5808,6 +5860,8 @@ class LogFileMonitor:
         self.running = False
         self.last_entry_offset_ms = None  # latest line's relative ms, for freshness
         self._split_warning = None  # the split failure last reported
+        # The last session's split was closed at its END_LOG (issue #225)
+        self._ended_at_end_log = False
         # Offsets in another file mean nothing in this one (fight_locator),
         # nor does its session: both are this file's once its BEGIN_LOG is
         # read, and a fight of a file whose BEGIN_LOG never is names none
@@ -6297,11 +6351,12 @@ class LogFileMonitor:
             
         # Handle BEGIN_LOG - start new encounter
         if entry.event_type == "BEGIN_LOG":
+            self._ended_at_end_log = False
             # Start encounter without zone info - will wait for first zone
             self.log_splitter.start_encounter(entry)
             # Write the BEGIN_LOG line
             self.log_splitter.write_log_line(line)
-        
+
         # Handle ZONE_CHANGED - track current zone
         elif entry.event_type == "ZONE_CHANGED":
             # Extract zone name and difficulty from ZONE_CHANGED
@@ -6329,8 +6384,14 @@ class LogFileMonitor:
             # Write the COMBAT_EVENT line
             self.log_splitter.write_log_line(line)
         
-        # Handle END_LOG - end current encounter
+        # Handle END_LOG - end current encounter. Until issue #225 the parser
+        # handed END_LOG over as ENDLOG, so the line went in by the last
+        # branch and the split stayed open until the next BEGIN_LOG or the
+        # app closed; the game writes nothing between an END_LOG and the
+        # next BEGIN_LOG (all 252 in the maintainer's raw logs), so closing
+        # here loses no line
         elif entry.event_type == "END_LOG":
+            self._ended_at_end_log = True
             # Always write END_LOG to split file if we have an active split file
             if self.log_splitter.file_handle:
                 self.log_splitter.write_log_line(line)
@@ -6355,6 +6416,13 @@ class LogFileMonitor:
         
         # Write all other lines to current split file
         else:
+            if self._ended_at_end_log and self.diagnostic:
+                # The game has never been seen to write a line between an
+                # END_LOG and the next BEGIN_LOG (all 252 in the
+                # maintainer's raw logs, issue #225); should one come, the
+                # closed split does not take it
+                timestamp_str = time.strftime("%H:%M:%S", time.localtime())
+                _console(f"{Fore.RED}[{timestamp_str}] DIAGNOSTIC: {entry.event_type} after END_LOG with no BEGIN_LOG, not written to a split{Style.RESET_ALL}")
             self.log_splitter.write_log_line(line)
 
 def _find_eso_log_file_windows(diagnostic: bool = False) -> Optional[Path]:
@@ -6605,7 +6673,8 @@ def _handle_replay_log_splitting(log_splitter, entry, line: str):
         # Write the COMBAT_EVENT line
         log_splitter.write_log_line(line)
     
-    # Handle END_LOG - end current encounter
+    # Handle END_LOG - end current encounter (as LogFileMonitor.
+    # _handle_log_splitting, which says why this first ran with issue #225)
     elif entry.event_type == "END_LOG":
         # Always write END_LOG to split file if we have an active split file
         if log_splitter.file_handle:
