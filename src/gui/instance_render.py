@@ -396,7 +396,14 @@ def _who_text(player) -> str:
 
 # ------------------------------------------------------------- sections --
 
-def _heading_html(block, theme: dict, e, base_pt: float, opens_list: bool) -> str:
+def _heading_html(block, theme: dict, e, base_pt: float, opens_list: bool,
+                  art_space: int = 0) -> str:
+    """The page's heading. *art_space*: px left above it for the
+    instance's art, which the view paints there (FightView.set_art, issue
+    #249). Qt drops the top margin of a page's first paragraph (probed on
+    PySide6 6.12.0: a heading given 126 px began at the same row as one
+    given none), so the room is the margin of a second paragraph under an
+    all but empty first one."""
     muted = theme["muted"]
     facts = []
     when = session_recap.span(block)
@@ -415,7 +422,12 @@ def _heading_html(block, theme: dict, e, base_pt: float, opens_list: bool) -> st
         facts.append("game " + ", ".join(versions))
     copy = (f'<a href="{INSTANCE_COPY_HREF}" style="color:{theme["link"]}">'
             f"{COPY_TEXT}</a>")
-    parts = [(f"<p style='margin:0'><span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>"
+    if art_space > 0:
+        opening = (f"<p style='margin:0;font-size:1pt'>&nbsp;</p>"
+                   f"<p style='margin-top:{int(art_space)}px;margin-bottom:0'>")
+    else:
+        opening = "<p style='margin:0'>"
+    parts = [(f"{opening}<span style='font-size:{base_pt * 1.3:.2f}pt;font-weight:bold'>"
               f"{e(header_text(block[0]))}</span>&nbsp;&nbsp; "
               f"<span style='color:{muted}'>{e(' · '.join(facts))} · </span>{copy}</p>")]
     if opens_list:
@@ -658,7 +670,7 @@ def _players_html(players, index_of, shown, theme: dict, names, base_pt: float, 
 def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=None,
                          base_pt: float = 9.0, names=None, text_color: str | None = None,
                          opens_list: bool = False, fight_index=None, split_files=None,
-                         hide_paths: bool = False) -> str:
+                         hide_paths: bool = False, art_space: int = 0) -> str:
     """The instance *block* (fight_blocks.blocks: one instance's fights, in
     order) as HTML for the Instance tab (see the module).
 
@@ -674,8 +686,10 @@ def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=
     (fight_index.FightIndex) the best earlier kills come from; None for
     none. split_files: the split logs of the instance's sessions, under its
     result (gui.fight_render.split_lines_html), and hide_paths, Hide names
-    on, so they show by their names alone. The hover texts are
-    instance_tooltips(), with split_tooltips() for the split logs."""
+    on, so they show by their names alone. art_space: px left above the
+    heading for the instance's art (issue #249), 0 for a page without. The
+    hover texts are instance_tooltips(), with split_tooltips() for the
+    split logs."""
     theme = dict(_theme(dark))
     if text_color:
         theme["text"] = text_color
@@ -688,7 +702,7 @@ def render_instance_html(block, index_of, shown=None, dark: bool = False, icons=
     block_runs = runs(block)
     block_pulls = pulls(block)
     return "".join((
-        _heading_html(block, theme, e, base_pt, opens_list),
+        _heading_html(block, theme, e, base_pt, opens_list, art_space),
         _result_html(block, theme, e, split_files, hide_paths),
         _bosses_html(block_runs, index_of, theme, e, fight_index),
         _ended_html(block_pulls, theme, names, base_pt, e),

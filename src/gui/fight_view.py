@@ -32,6 +32,16 @@ glyph what it opens, a hidden name 'hidden name'; an icon beside its own
 name has alt="" and says nothing), rebuilt whenever the page changes
 (issue #77). The taunt ring's pulse stops, at its plain phase, while
 Reduce motion is on (set_reduce_motion).
+
+A page can have an instance's art across its top (set_art, issue #249;
+gui.instance_art has the design): the view paints the strip on its viewport
+before the page, at the page's own place, so it scrolls with the text, is
+as wide as the viewport at any width, and is no part of the page: a
+screen reader meets nothing of it. The page leaves the room
+(instance_art.STRIP_SPACE, gui.instance_render), with a paragraph that
+holds one no-break space, which is in the page's text. The art is asked for before each page that has it:
+a page set without the asking has none, so no later page can be drawn over
+a strip left behind.
 """
 
 import weakref
@@ -41,11 +51,12 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QRect, Qt, QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtGui import (
-    QColor, QCursor, QDesktopServices, QPalette, QTextCharFormat, QTextCursor,
+    QColor, QCursor, QDesktopServices, QPainter, QPalette, QTextCharFormat, QTextCursor,
     QTextDocument, QTextFormat,
 )
 from PySide6.QtWidgets import QTextBrowser, QTextEdit, QToolTip
 
+from gui import instance_art
 from gui.activity_render import activity_action_from_href, review_index_from_href
 from gui.death_render import (
     FIGHT_DEATHS_HREF, FIGHT_POSITIONS_HREF, RECAP_HREF, events_from_href, positions_from_href,
@@ -224,6 +235,10 @@ class FightView(QTextBrowser):
         # The link Tab had the focus on when the focus last left the page,
         # which Qt drops (see focusOutEvent)
         self._left_link = None
+        # The zone whose art is across the top of the page on show, and the
+        # one asked for the next page (set_art; see the module)
+        self._art_zone = ""
+        self._next_art = ""
         _views.add(self)
         # What a screen reader is given in place of the images (see above),
         # after a lead line of the window's (set_accessible_lead)
@@ -272,7 +287,44 @@ class FightView(QTextBrowser):
         self._hold.stop()
         self._key_link = None
         self._left_link = None
+        # The art asked for this page, or none (see the module)
+        self._art_zone, self._next_art = self._next_art, ""
         super().setHtml(text)
+
+    def clear(self) -> None:
+        self._art_zone = self._next_art = ""  # an empty page has no art
+        super().clear()
+
+    def set_art(self, zone) -> None:
+        """The instance whose art goes across the top of the NEXT page set
+        (instance_art.zone_with_art gives *zone*; '' for none). The page
+        must leave instance_art.STRIP_SPACE px above its first line."""
+        self._next_art = str(zone or "")
+
+    def art_rect(self) -> QRect:
+        """Where the page's art is painted, in the viewport: at the page's
+        top, inside its margin, as wide as the viewport, moving with the
+        scroll bars. Empty when the page has none."""
+        if not self._art_zone:
+            return QRect()
+        margin = round(self.document().documentMargin())
+        return QRect(margin - self.horizontalScrollBar().value(),
+                     margin - self.verticalScrollBar().value(),
+                     self.viewport().width() - 2 * margin, instance_art.STRIP_HEIGHT)
+
+    def paintEvent(self, event) -> None:
+        rect = self.art_rect()
+        if rect.width() > 0 and rect.intersects(event.rect()):
+            painter = QPainter(self.viewport())
+            instance_art.paint_strip(painter, self._art_zone, rect)
+            painter.end()
+        super().paintEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._art_zone:
+            # The strip is cut to the page's width
+            self.viewport().update()
 
     def _apply_selections(self) -> None:
         self.setExtraSelections(self._search_selections + self._hover_selections)

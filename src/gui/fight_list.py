@@ -77,6 +77,23 @@ coming in), once the rows have moved, and
 the hover line INSTANCE_CUE, which a run row's hover text ends with; a
 screen reader hears INSTANCE_DESCRIPTION as their description, after a
 run row's own.
+
+The art (issue #249, gui.instance_art has the design and why it is not a
+backdrop behind the rows): the header of a block fought in a trial or an
+arena carries a strip of the instance's art. The row's item is unchanged,
+its text, its click and what a screen reader hears; only its drawing is
+the list's own (HeaderDelegate): the block's ground, the title where the
+style puts a row's text (the style's text rectangle and margin, as for the
+(i) above, so a header with art and one without line up), and the art
+from after the title to the viewport's right edge, whatever the rows'
+own width: a list narrower than its text scrolls sideways, and the art
+is cut to the room in view at each step of that scroll. Every other row, and a
+header whose zone has no art, is drawn by the style as before, at the
+height it always had. The header's zone id is kept on its item
+(ZONE_ROLE), so the row needs no fight to know its art. The art is cut to
+the room there is, so the viewport is painted again when its width
+changes, and the rows are laid out again when the art is turned on or off
+or the font changes (refresh_art).
 """
 
 from PySide6.QtCore import QEvent, QModelIndex, QRect, Qt, QTimer, Signal
@@ -86,12 +103,14 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QStyle,
+    QStyledItemDelegate,
     QStyleOptionViewItem,
     QToolTip,
 )
 
 from fight_blocks import header_text, starts_block
 from fight_index import fmt_dps, run_best_kill
+from gui import instance_art
 from gui.fight_render import (
     ISSUES_LIST_CUE,
     fight_issues_tooltip,
@@ -104,12 +123,13 @@ from pull_outcome import run_details, run_summary, runs
 from trial_result import result_text
 
 # Item data: the fight's FightHistoryEntry (None on a header or result
-# row), the row's kind, the block's number, and on a run row the run
-# (pull_outcome.runs)
+# row), the row's kind, the block's number, on a run row the run
+# (pull_outcome.runs), and on a header row its block's zone id, '' for none
 ENTRY_ROLE = Qt.UserRole
 KIND_ROLE = Qt.UserRole + 1
 BLOCK_ROLE = Qt.UserRole + 2
 RUN_ROLE = Qt.UserRole + 3
+ZONE_ROLE = Qt.UserRole + 4
 
 HEADER, FIGHT, RESULT, RUN = "header", "fight", "result", "run"
 
@@ -166,6 +186,76 @@ def band_color(base: QColor, text: QColor) -> QColor:
                   mix(base.blue(), text.blue()))
 
 
+class HeaderDelegate(QStyledItemDelegate):
+    """Draws a header row with its instance's art (issue #249, see the
+    module and gui.instance_art) and leaves every other row to the style.
+    It keeps no reference to the list: the option names the widget."""
+
+    @staticmethod
+    def art_zone(index) -> str:
+        """The zone whose art the row at *index* carries; '' for a row that
+        is no header, a zone without art, or art turned off."""
+        if index.data(KIND_ROLE) != HEADER:
+            return ""
+        return instance_art.zone_with_art(index.data(ZONE_ROLE))
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        if self.art_zone(index):
+            item = QStyleOptionViewItem(option)
+            self.initStyleOption(item, index)
+            size.setHeight(instance_art.header_height(size.height(), item.fontMetrics.height()))
+        return size
+
+    def paint(self, painter, option, index):
+        zone = self.art_zone(index)
+        if not zone:
+            super().paint(painter, option, index)
+            return
+        item = QStyleOptionViewItem(option)
+        self.initStyleOption(item, index)
+        view = item.widget
+        style = view.style() if view is not None else None
+        # The row, at least out to the viewport's right edge, which is
+        # where the art ends. A list narrower than its text scrolls
+        # sideways, and the row's rectangle is then as wide as the widest
+        # row and moves with the scroll; art drawn to that edge was mostly
+        # off screen, and what showed was the faint start of its fade
+        # (the review of PR #258). So the art is cut to the room in view
+        row = QRect(item.rect)
+        edge = row.right()
+        if isinstance(view, QAbstractItemView):
+            edge = view.viewport().width() - 1
+            row.setRight(max(row.right(), edge))
+        # The block's ground: its band, or the list's base colour. Not the
+        # option's own base: a header row is not enabled, and its palette
+        # answers with the disabled group's, a grey beside the fight rows
+        # (#f0f0f0 against #ffffff in the Windows 11 style's light theme)
+        ground = (item.backgroundBrush.color() if item.backgroundBrush.style() != Qt.NoBrush
+                  else (view.palette() if view is not None else item.palette).color(
+                      QPalette.Active, QPalette.Base))
+        left = row.left()
+        if style is not None:
+            # Where the style starts a row's text (see issues_mark_rect)
+            left = (style.subElementRect(QStyle.SE_ItemViewItemText, item, view).left()
+                    + style.pixelMetric(QStyle.PM_FocusFrameHMargin, None, view) + 1)
+        title = item.fontMetrics.horizontalAdvance(item.text)
+        painter.save()
+        painter.setClipRect(row, Qt.IntersectClip)
+        painter.fillRect(row, ground)
+        # From after the title, or from the viewport's left edge once the
+        # title has scrolled out of it, to the viewport's right edge
+        in_view = QRect(row)
+        in_view.setRight(edge)
+        instance_art.paint_header_art(
+            painter, zone, max(0, left + title + instance_art.ART_GAP), in_view, ground)
+        painter.setFont(item.font)
+        painter.setPen(item.palette.brush(QPalette.Text).color())
+        painter.drawText(QRect(left, row.top(), title + 2, row.height()),
+                         Qt.AlignVCenter | Qt.AlignLeft | Qt.TextSingleLine, item.text)
+        painter.restore()
+
+
 class FightList(QListWidget):
     """The history list: header, fight and result rows (see the module)."""
 
@@ -176,6 +266,12 @@ class FightList(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAccessibleName("Fights")
+        # A header row's art (issue #249); the delegate is the list's child
+        # and holds nothing of it. The art is cut to the room in view, so a
+        # sideways scroll, which Qt does by moving the pixels it has, paints
+        # the viewport again
+        self.setItemDelegate(HeaderDelegate(self))
+        self.horizontalScrollBar().valueChanged.connect(self._repaint_art)
         # The inert row a button last went down on, for the left button's
         # release; and whether the pointer shows the hand over one (see the
         # module), for which the viewport follows the pointer with no button
@@ -241,7 +337,8 @@ class FightList(QListWidget):
         block and its result row when it completed a run; its row."""
         if starts_block(self._last_entry, entry):
             self._block += 1
-            self._add_row(HEADER, header_text(entry))
+            self._add_row(HEADER, header_text(entry),
+                          zone=str(getattr(entry, "zone_id", "") or ""))
         self._last_entry = entry
         item = self._add_row(FIGHT, summary_line(entry, death_cue=True, issue_cue=True,
                                                  zone=False), entry)
@@ -279,11 +376,13 @@ class FightList(QListWidget):
         self._refresh_runs(block)
         return self.row_of(entry)
 
-    def _add_row(self, kind, text, entry=None, at=None, block=None):
+    def _add_row(self, kind, text, entry=None, at=None, block=None, zone=""):
         item = QListWidgetItem(text)
         item.setData(ENTRY_ROLE, entry)
         item.setData(KIND_ROLE, kind)
         item.setData(BLOCK_ROLE, self._block if block is None else block)
+        if kind == HEADER:
+            item.setData(ZONE_ROLE, zone)
         if kind == FIGHT:
             item.setData(Qt.AccessibleDescriptionRole, issues_description(entry))
         else:
@@ -585,7 +684,22 @@ class FightList(QListWidget):
         for row in range(self.count()):
             self._style(self.item(row))
 
+    def refresh_art(self):
+        """The rows laid out and drawn again: the headers' art was turned on
+        or off, or their height follows a new font (issue #249)."""
+        self.scheduleDelayedItemsLayout()
+        self.viewport().update()
+
+    def _repaint_art(self, *_):
+        self.viewport().update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # A header's art is cut to the room after its title
+        self._repaint_art()
+
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() in (QEvent.PaletteChange, QEvent.FontChange):
             self.restyle()
+            self.refresh_art()

@@ -43,6 +43,7 @@ TABLES = (
     ("Set penetration and critical damage (UESP)", "data/sets/offense.json"),
     ("Set buffs (split logs)", "data/sets/set_buffs.json"),
     ("Ability icons (game client)", "data/icons/abilities/manifest.json"),
+    ("Trial and arena art (game client)", "data/art/instances/manifest.json"),
     ("Class passives and masteries (UESP)", "data/skills/class_passives.json"),
     ("Weapon skill lines (UESP)", "data/skills/weapon_skill_lines.json"),
     ("Skill target kinds (UESP)", "data/skills/ability_targets.json"),

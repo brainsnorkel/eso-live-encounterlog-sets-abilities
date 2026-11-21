@@ -14,14 +14,16 @@ a = Analysis(
     # ESO-Hub link maps (scripts/generate_esohub_links.py), poison names,
     # armor weights and weapon types (scripts/generate_poison_names.py,
     # scripts/generate_armor_weights.py, scripts/generate_weapon_types.py)
-    # food and drink buff ids (scripts/generate_food_buffs.py) and the sets'
-    # penetration and crit bonuses (scripts/generate_set_offense.py).
+    # food and drink buff ids (scripts/generate_food_buffs.py), the sets'
+    # penetration and crit bonuses (scripts/generate_set_offense.py) and the
+    # trials' and arenas' art (scripts/extract_instance_art.py).
     # CI has each built bundle read every table (src/self_check.py, issue
     # #237): a table added here needs an entry in its TABLES, which a unit
     # test asks for
     datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
           + [(d, d) for d in ('data/icons/abilities', 'data/esohub', 'data/items',
-                              'data/buffs', 'data/skills', 'data/sets') if os.path.isdir(d)],
+                              'data/buffs', 'data/skills', 'data/sets',
+                              'data/art/instances') if os.path.isdir(d)],
     hiddenimports=[
         'app_config',
         'app_startup',
