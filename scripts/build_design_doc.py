@@ -110,6 +110,10 @@ TOPICS = [
         "scripts/stamp_data_version.py",
         "scripts/check_data_staleness.py",
     ]),
+    ("Bundled data in a frozen build, and the check of every build", [
+        "src/ability_icons.py:bundle_root",
+        "src/self_check.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),
@@ -182,6 +186,7 @@ TOPICS = [
     ]),
     ("The damage taken window: by source and by healer, over the whole fight", [
         "src/gui/taken_render.py",
+        "src/gui/taken_render.py:merged_abilities",
     ]),
     ("Healing done: a healer's heals on the others, by ability and by player", [
         "src/gui/fight_render.py:healing_token_parts",
@@ -240,6 +245,7 @@ TOPICS = [
     ("Positions: a moment held still, and played back", [
         "src/gui/positions_window.py",
         "src/gui/positions_canvas.py",
+        "src/gui/positions_trails.py",
         "src/gui/main_window.py:MainWindow.show_moment",
     ]),
     ("Before the first fight: the archive line and recent activity", [

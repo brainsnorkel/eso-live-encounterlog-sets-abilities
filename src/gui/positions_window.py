@@ -18,6 +18,25 @@ their own (the controls' row had no room left at 200% text). Decided for
 other units each one toggle away in Show, no casts yet; #232 added
 playback (below).
 
+Trails and the view (#246, #241). The trail's length (Off, 10 s, 30 s,
+the whole fight so far) and whose (the selected unit, every player) are a
+part of Show, what the canvas draws, each item naming the trail (a menu
+section's heading is not drawn in Windows' styles): a Trail button of its
+own and the view's three buttons took 464 px the controls' row does not have at 200%
+text (it was within 150 px of a 1280 px screen there, in the tests' wide
+font). Zoom out, Zoom in and Fit sit in the canvas's bottom right corner, as
+a map has them; the wheel and a drag do the same (positions_canvas). The
+trail's choice is kept for the app run, as Show's are; the view is fitted
+again for each fight read and whenever the picture's map frame changes,
+a map change or a unit selected on another map. The view's buttons are
+never turned off (Fit when fitted, + and − at their limits do nothing):
+a focused button turned off hands the focus on, and the next Space
+would press the button after it. The window holds a
+positions_trails.TrailSet and FollowView for the states it holds, built
+when they come. The canvas's description ends with the trail drawn and the
+view ('Trail: 3's last 10 s. View follows the group. Zoomed in 2.0x'), and
+says why there is none when no unit is selected.
+
 What it draws comes from two places. The fight entry gives the numbers,
 the roles and the deaths: a player's number is the place of their row in
 the fight table (companion rows skipped), worked out afresh each time the
@@ -180,6 +199,7 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QActionGroup,
     QFontMetrics,
     QGuiApplication,
     QIcon,
@@ -192,6 +212,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -206,13 +227,17 @@ from PySide6.QtWidgets import (
 
 from companions import ANON
 from fight_locator import LEAD_MS, SELF, TAIL_MS
+from gui import positions_trails as trails
 from gui import text_size
 from gui.fight_render import ROLE_NAMES
 from gui.keys import key_text, on_row_activated, sequence
 from gui.name_mask import NO_MASK, NameMask
 from gui.positions_canvas import (
+    BUTTON_ZOOM,
     DEAD,
+    DRAWN,
     EMPTY_ROSTER,
+    FIT_KINDS,
     LEFT,
     LOST,
     MARK_ADD,
@@ -233,6 +258,7 @@ from gui.positions_canvas import (
     PositionsCanvas,
     ScrubBar,
     age_words,
+    box_of,
     build_scene,
     fit_boxes,
     is_dark,
@@ -266,6 +292,15 @@ SHOW_TIPS = {MARK_ADD: "Hostile units other than the bosses",
              MARK_COMPANION: "Companions",
              MARK_UNKNOWN: "Units the log never announced: anchors, hazards, objects",
              MARK_OTHER: "Units neither hostile nor a player's: NPCs, invisible targets"}
+# Show's trail items (#246): lengths, then whose. Each names the trail:
+# a menu section's heading is drawn by the Fusion style only, not by
+# Windows' (windows11, windowsvista, Windows: probed), where a bare 'Off'
+# under Show would read as everything off
+TRAIL_ITEMS = ((trails.TRAIL_OFF, "No trail"), (10_000, "Trail: last 10 s"),
+               (30_000, "Trail: last 30 s"), (trails.TRAIL_WHOLE, "Trail: whole fight so far"))
+WHOSE_ITEMS = ((trails.WHOSE_SELECTED, "Trail of the selected unit"),
+               (trails.WHOSE_EVERY, "Trails of every player"))
+SHOW_TIP = "What the canvas draws: which units, and the trail ({})"
 # Playback (#232, see the module): the speeds, the frame timer's interval,
 # and how often the table and the descriptions follow while playing
 SPEEDS = (1, 2, 3, 4, 5)
@@ -492,10 +527,81 @@ def boss_bar(unit) -> tuple:
     return (unit.name, unit.state.health, unit.state.health_max, True)
 
 
-def moment_summary(scene, start: int, end: int) -> str:
+def length_words(length: int) -> str:
+    """A trail's length in words: 'last 10 s', 'whole fight so far'."""
+    if length == trails.TRAIL_WHOLE:
+        return "whole fight so far"
+    return f"last {length // 1000} s"
+
+
+def trail_words(scene, length: int, whose: str, moved: bool = True) -> str:
+    """Which trail the canvas draws, in words, never names (#246): 'Trail:
+    3's last 10 s', 'Trails: every player's whole fight so far, 3's
+    strongest', 'No trail: no unit selected', 'No trail: 3 has not moved
+    in the last 10 s' (*moved* False: the selected unit's trail has no
+    line); '' with trails off."""
+    if length == trails.TRAIL_OFF:
+        return ""
+    unit = next((u for u in scene.units if u.key == scene.selected), None) if scene.selected else None
+    if unit is not None and unit.where != DRAWN:
+        # Selected but not on the picture (another map, gone, not yet, left
+        # out by Show): no trail of it is drawn
+        if whose == trails.WHOSE_EVERY:
+            return f"Trails: every player's {length_words(length)}"
+        return "No trail: the selected unit is not drawn"
+    if unit is None:
+        who = None
+    elif unit.mark == MARK_PLAYER:
+        who = f"{unit.number}'s"
+    elif unit.mark == MARK_BOSS and unit.name:
+        who = f"{unit.name}'s"
+    else:
+        who = "the selected unit's"
+    if whose == trails.WHOSE_EVERY:
+        return (f"Trails: every player's {length_words(length)}"
+                + (f", {who} strongest" if who and moved else ""))
+    if who is None:
+        return "No trail: no unit selected"
+    if not moved:
+        mover = who.removesuffix("'s")
+        # A trail is of the picture's map only: over the whole fight the
+        # unit may have moved on another
+        span = "on this map" if length == trails.TRAIL_WHOLE else f"in the {length_words(length)}"
+        return f"No trail: {mover} has not moved {span}"
+    return f"Trail: {who} {length_words(length)}"
+
+
+def trail_words_short(length: int, whose: str) -> str:
+    """Show's trail choice in words, for its hover: 'the selected
+    unit's last 10 s', 'every player's whole fight so far', 'off'."""
+    if length == trails.TRAIL_OFF:
+        return "off"
+    who = "every player's" if whose == trails.WHOSE_EVERY else "the selected unit's"
+    return f"{who} {length_words(length)}"
+
+
+def view_words(follows: bool, zoom: float, fitted: bool) -> str:
+    """The reader's view in words (#241): 'View follows the group',
+    'Zoomed in 2.5x', 'View moved'; '' for the fitted box held still."""
+    parts = []
+    if follows:
+        parts.append("View follows the group")
+    # Within 5% of the fitted scale (a fine-step wheel's way back) it is
+    # not called zoomed: '1.0x' would say nothing
+    if zoom >= 1.05:
+        parts.append(f"Zoomed in {zoom:.1f}x")
+    elif zoom <= 1 / 1.05:
+        parts.append(f"Zoomed out {1 / zoom:.1f}x")
+    elif not fitted:
+        parts.append("View moved")
+    return ". ".join(parts)
+
+
+def moment_summary(scene, start: int, end: int, trail: str = "", view: str = "") -> str:
     """The moment in one line, in numbers, never names: '1:50.0 into the
     fight. Lord Falgravn 80%. 12 players, 11 alive. Lowest: 8 at 42%.'; in
-    the lead-in, '12 players, 3 alive, 9 not in the log yet'."""
+    the lead-in, '12 players, 3 alive, 9 not in the log yet'; then the
+    trail drawn and the view, when given (trail_words, view_words)."""
     parts = [moment_words(scene.t, start, end)]
     for unit in boss_rows(scene.units):
         state = unit.state
@@ -520,6 +626,7 @@ def moment_summary(scene, start: int, end: int) -> str:
             low = min(hurt, key=lambda u: (u.state.health / u.state.health_max, u.number))
             parts.append(f"Lowest: {low.number} at "
                          f"{share_text(low.state.health, low.state.health_max)}")
+    parts += [words for words in (trail, view) if words]
     return ". ".join(parts) + "."
 
 
@@ -724,6 +831,13 @@ class PositionsWindow(QDialog):
         self._play_from = (0, 0.0)   # (moment, wall ms) the moment is reckoned from
         self._described_at = 0.0     # wall ms of the last update of what a reader reads
         self._wall_ms = wall_ms
+        # Trails (#246) and the view that follows the group (#241), of the
+        # states held; the trail's choice is kept for the app run, as Show's
+        self._trails = None
+        self._follow = None
+        self._trail_length = trails.TRAIL_DEFAULT
+        self._trail_whose = trails.WHOSE_SELECTED
+        self._view_frame = None      # the map frame the reader's view was set in
 
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
@@ -754,6 +868,7 @@ class PositionsWindow(QDialog):
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.canvas = PositionsCanvas()
         self.canvas.unit_clicked.connect(self._on_canvas_clicked)
+        self.canvas.view_changed.connect(self._on_view_changed)
         self.elsewhere_label = _WrapLabel()
         self.elsewhere_label.setWordWrap(True)
         self.elsewhere_label.setTextFormat(Qt.PlainText)
@@ -816,7 +931,6 @@ class PositionsWindow(QDialog):
         self.show_button = QToolButton()
         self.show_button.setText("Show")
         self.show_button.setAccessibleName("Show")
-        self.show_button.setToolTip("Which units the canvas draws")
         self.show_button.setPopupMode(QToolButton.InstantPopup)
         self.show_button.setFocusPolicy(Qt.TabFocus)
         self.show_menu = QMenu(self)
@@ -828,7 +942,53 @@ class PositionsWindow(QDialog):
             action.setToolTip(SHOW_TIPS[mark])
             action.toggled.connect(self._on_shown)
             self._show_actions[mark] = action
+        # The trail (#246), items of Show: what the canvas draws (each names
+        # the trail: TRAIL_ITEMS). Each choice's value in its action's data,
+        # read by one bound method per group: no lambda on a child (see the
+        # module)
+        self.show_menu.addSeparator()
+        self._trail_actions, self._whose_actions = {}, {}
+        self._lengths, self._owners = QActionGroup(self), QActionGroup(self)
+        for length, words in TRAIL_ITEMS:
+            action = self.show_menu.addAction(words)
+            action.setCheckable(True)
+            action.setChecked(length == self._trail_length)
+            action.setData(length)
+            self._lengths.addAction(action)
+            self._trail_actions[length] = action
+        self.show_menu.addSeparator()
+        for whose, words in WHOSE_ITEMS:
+            action = self.show_menu.addAction(words)
+            action.setCheckable(True)
+            action.setChecked(whose == self._trail_whose)
+            action.setData(whose)
+            self._owners.addAction(action)
+            self._whose_actions[whose] = action
+        self._lengths.triggered.connect(self._on_length_picked)
+        self._owners.triggered.connect(self._on_whose_picked)
         self.show_button.setMenu(self.show_menu)
+        self._fill_show_tip()
+        # The reader's view (#241): three buttons in the canvas's corner, as
+        # a map has them; the controls' row has no room at 200% text
+        self.view_tools = QFrame()
+        self.view_tools.setFrameShape(QFrame.StyledPanel)
+        self.view_tools.setAutoFillBackground(True)
+        self.view_tools.setBackgroundRole(QPalette.Base)
+        tools = QHBoxLayout(self.view_tools)
+        tools.setContentsMargins(2, 2, 2, 2)
+        tools.setSpacing(0)
+        self.zoom_out_button = self._button("−", "Zoom out", "Zoom out (or the mouse wheel)",
+                                            self.zoom_out)
+        self.zoom_in_button = self._button("+", "Zoom in",
+                                           "Zoom in (or the mouse wheel; drag the picture to move it)",
+                                           self.zoom_in)
+        self.fit_button = self._button("Fit", "Fit view",
+                                       "Back to the fitted view (or double-click the picture)",
+                                       self.fit_view)
+        for button in (self.zoom_out_button, self.zoom_in_button, self.fit_button):
+            button.setAutoRaise(True)
+            tools.addWidget(button)
+        self.canvas.set_overlay(self.view_tools)
         for widget in (self.previous_death, self.back):
             controls.addWidget(widget)
         controls.addWidget(self.clock)
@@ -875,7 +1035,8 @@ class PositionsWindow(QDialog):
 
         QWidget.setTabOrder(self.scrub, self.table)
         order = (self.table, self.play_button, self.speed_box, self.previous_death, self.back,
-                 self.forward, self.next_death, self.show_button, self.show_in_list)
+                 self.forward, self.next_death, self.zoom_out_button, self.zoom_in_button,
+                 self.fit_button, self.show_button, self.show_in_list)
         for first, second in pairwise(order):
             QWidget.setTabOrder(first, second)
         self._fit_table()
@@ -1049,6 +1210,70 @@ class PositionsWindow(QDialog):
         """Turn a mark of the Show menu on or off."""
         self._show_actions[mark].setChecked(bool(on))
 
+    # ---- the trail (#246) and the reader's view (#241) ----
+
+    def trail(self) -> tuple:
+        """(length, whose): Show's trail choice."""
+        return self._trail_length, self._trail_whose
+
+    def set_trail(self, length: int | None = None, whose: str | None = None) -> None:
+        """The trail drawn: *length* one of positions_trails.TRAIL_LENGTHS,
+        *whose* WHOSE_SELECTED or WHOSE_EVERY; None keeps what is set.
+        Playing plays on: no moment moves."""
+        if length is not None and length in self._trail_actions:
+            self._trail_length = length
+            self._trail_actions[length].setChecked(True)
+        if whose is not None and whose in self._whose_actions:
+            self._trail_whose = whose
+            self._whose_actions[whose].setChecked(True)
+        self._fill_show_tip()
+        if self._entry is not None:
+            self._draw(sync_table=False, describe=not self._playing)
+
+    def _on_length_picked(self, action) -> None:
+        self.set_trail(length=action.data())
+
+    def _on_whose_picked(self, action) -> None:
+        self.set_trail(whose=action.data())
+
+    def _fill_show_tip(self) -> None:
+        """Show's hover and description say the trail chosen."""
+        words = trail_words_short(self._trail_length, self._trail_whose)
+        self.show_button.setToolTip(SHOW_TIP.format(words))
+        self.show_button.setAccessibleDescription(f"Trail: {words}")
+
+    def follows(self) -> bool:
+        """Whether the view follows the group at the moment's map frame."""
+        scene = self._scene
+        return (self._follow is not None and scene is not None
+                and self._follow.follows(scene.frame))
+
+    def zoom_in(self) -> None:
+        self.canvas.zoom_by(BUTTON_ZOOM)
+
+    def zoom_out(self) -> None:
+        self.canvas.zoom_by(1 / BUTTON_ZOOM)
+
+    def fit_view(self) -> None:
+        """Back to the fitted view: no zoom, no pan."""
+        self.canvas.reset_view()
+
+    def _on_view_changed(self) -> None:
+        """The reader zoomed or moved the view: the buttons, and, held
+        still, what a reader reads (while playing, the next describing
+        frame says it)."""
+        self._fill_view_buttons()
+        if not self._playing and self._scene is not None:
+            self._describe()
+
+    def _fill_view_buttons(self) -> None:
+        """Off only with no picture; never turned off under the focus (see
+        the module): at a limit, or fitted, a press does nothing."""
+        have = self._scene is not None and self._scene.box is not None
+        for button in (self.zoom_in_button, self.zoom_out_button, self.fit_button):
+            if button.isEnabled() != have:
+                button.setEnabled(have)
+
     # ---- playback (see the module) ----
 
     def is_playing(self) -> bool:
@@ -1184,9 +1409,14 @@ class PositionsWindow(QDialog):
 
     def _take_states(self, states) -> None:
         self._stop_playing()  # new states are a new reading: paused
+        self._scene = None  # the old reading's: the view's reset below describes nothing
         self._states = states
         self._boxes = fit_boxes(states)
         self._maps = map_change_times(states)
+        self._trails = trails.TrailSet(states)
+        self._follow = trails.FollowView(states, self._boxes, box_of, FIT_KINDS)
+        self._view_frame = None
+        self.canvas.reset_view()  # another fight's view
         self._message = ""
 
     def _drop_states(self, message: str) -> None:
@@ -1194,6 +1424,10 @@ class PositionsWindow(QDialog):
         self._states = None
         self._boxes = {}
         self._maps = ()
+        self._trails = None
+        self._follow = None
+        self._view_frame = None
+        self.canvas.set_trails(None, self._trail_length, self._trail_whose, 0)
         self._message = message
 
     def _bind(self) -> None:
@@ -1244,9 +1478,12 @@ class PositionsWindow(QDialog):
             self._t = max(span[0], min(span[3], self._t))
         start, end = (span[1], span[2]) if span is not None else (self._t, self._t)
         self.clock.setText(fight_clock(self._t - start) if span is not None else "")
+        if self._states is not None:
+            self.canvas.set_trails(self._trails, self._trail_length, self._trail_whose, start)
         if not describe:
             if self._states is not None:
                 self._scene = self._build_scene()
+                self._keep_view()
                 self.canvas.set_scene(self._scene, self._names)
                 self.boss_bars.set_bosses([boss_bar(unit) for unit in boss_rows(self._scene.units)],
                                           describe=False)
@@ -1265,13 +1502,15 @@ class PositionsWindow(QDialog):
             summary = self._message
         else:
             self._scene = self._build_scene()
+            self._keep_view()
             self.canvas.set_scene(self._scene, self._names)
             self._fill_table([u for u in self._scene.units if u.mark in _TABLE_MARKS])
             self.boss_bars.set_bosses([boss_bar(unit) for unit in boss_rows(self._scene.units)])
             self.elsewhere_label.setText(self._elsewhere_text())
-            summary = moment_summary(self._scene, start, end)
+            summary = self._summary(start, end)
         self.canvas.setAccessibleDescription(summary)
         self.table.setAccessibleDescription(summary)
+        self._fill_view_buttons()
         # A frame of playback leaves the table where the reader scrolled it
         # (its rows are the same units throughout: only entry_updated's
         # redraw, which syncs, can change them)
@@ -1282,10 +1521,39 @@ class PositionsWindow(QDialog):
         self._fill_play_button()
 
     def _build_scene(self):
-        """The moment's Scene, glided while playing (build_scene)."""
+        """The moment's Scene, glided while playing (build_scene), its box
+        the group's in a frame where the view follows it."""
         self._resolve_selected()
         return build_scene(self._states, self._roster, self._t, self._selected, self._shown,
-                           self._boxes, glide=self._playing)
+                           self._boxes, glide=self._playing, follow=self._follow)
+
+    def _keep_view(self) -> None:
+        """The reader's view is kept from moment to moment, and fitted
+        again when the moment's map frame is another (see the module)."""
+        frame = self._scene.frame if self._scene is not None else None
+        if self._view_frame is not None and frame != self._view_frame:
+            self.canvas.reset_view()
+        self._view_frame = frame
+
+    def _summary(self, start: int, end: int) -> str:
+        """moment_summary with the trail and the view in words; a selected
+        unit's trail with no line (it stood throughout) said so."""
+        selected = self._scene.selected
+        moved = any(stroke.paths for unit, stroke in self.canvas.trail_strokes()
+                    if unit.key == selected)
+        return moment_summary(self._scene, start, end,
+                              trail_words(self._scene, self._trail_length, self._trail_whose, moved),
+                              view_words(self.follows(), self.canvas.zoom(),
+                                         self.canvas.view_is_fitted()))
+
+    def _describe(self) -> None:
+        """What a reader reads of the canvas and the table, again."""
+        span = self._span()
+        if span is None or self._scene is None:
+            return
+        summary = self._summary(span[1], span[2])
+        self.canvas.setAccessibleDescription(summary)
+        self.table.setAccessibleDescription(summary)
 
     def _resolve_selected(self) -> None:
         """A key from open() that names no player: the unit of that key

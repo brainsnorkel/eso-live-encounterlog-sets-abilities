@@ -493,8 +493,12 @@ class TestTheMoment(PositionsTestCase):
                  and u.key != "82@1200"}
         self.assertEqual(where, {MARK_ADD: DRAWN, MARK_PET: HIDDEN, MARK_UNKNOWN: HIDDEN,
                                  MARK_OTHER: HIDDEN})
-        self.assertEqual([a.text() for a in window.show_menu.actions()],
-                         ["Adds", "Pets", "Companions", "Unannounced units", "Other units"])
+        # The units, then the trail's section (#246): its lengths, then whose
+        self.assertEqual([a.text() for a in window.show_menu.actions() if not a.isSeparator()],
+                         ["Adds", "Pets", "Companions", "Unannounced units", "Other units",
+                          "No trail", "Trail: last 10 s", "Trail: last 30 s",
+                          "Trail: whole fight so far", "Trail of the selected unit",
+                          "Trails of every player"])
         for mark in (MARK_PET, MARK_UNKNOWN, MARK_OTHER):
             window.set_shown(mark, True)
         window.set_shown(MARK_ADD, False)
@@ -533,13 +537,15 @@ class TestTheMoment(PositionsTestCase):
         reads as dead; they are counted apart."""
         from gui.positions_window import moment_summary
         window = self._window(t=11_500, unit=None)
+        # With no unit selected, the description says why no trail is drawn (#246)
         self.assertTrue(window.canvas.accessibleDescription().endswith(
-            "3 players, 0 alive, 3 not in the log yet."))
+            "3 players, 0 alive, 3 not in the log yet. No trail: no unit selected."))
         window._go_to(16_000)  # the tank's first state is at 15 s
         self.assertTrue(moment_summary(window.scene(), START, END).endswith(
             "3 players, 1 alive, 2 not in the log yet."))
         window._go_to(DEATH)
-        self.assertTrue(window.canvas.accessibleDescription().endswith("3 players, 2 alive."))
+        self.assertTrue(window.canvas.accessibleDescription().endswith(
+            "3 players, 2 alive. No trail: no unit selected."))
 
     def test_a_selected_bosss_name_is_drawn_once(self):
         """The review's finding 05: every drawn boss's name is beside it
@@ -868,12 +874,15 @@ class TestSelecting(PositionsTestCase):
         self.assertFalse(window.previous_death.isEnabled())
         window.scrub.setFocus()
         seen = [window.focusWidget()]
-        for _ in range(8):
+        for _ in range(11):
             QTest.keyClick(window.focusWidget(), Qt.Key_Tab)
             seen.append(window.focusWidget())
+        # The view's buttons in the canvas's corner (#241) before Show,
+        # never turned off (Fit when fitted does nothing)
         self.assertEqual(seen, [window.scrub, window.table, window.play_button, window.speed_box,
-                                window.back, window.forward, window.next_death, window.show_button,
-                                window.show_in_list])
+                                window.back, window.forward, window.next_death,
+                                window.zoom_out_button, window.zoom_in_button, window.fit_button,
+                                window.show_button, window.show_in_list])
         QTest.keyClick(window.table, Qt.Key_Escape)
         self.assertFalse(window.isVisible())
 
@@ -1181,11 +1190,14 @@ class TestAccessible(PositionsTestCase):
         window = self._window(hide=False)
         iface = QAccessible.queryAccessibleInterface(window.canvas)
         self.assertEqual(iface.text(QAccessible.Name), "Positions")
+        # Then the trail (#246): the selected damage dealer, 1, has one place on this map
         self.assertEqual(iface.text(QAccessible.Description),
-                         "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive.")
+                         "0:06.0 into the fight. Test Boss 95%. 3 players, 2 alive. "
+                         "No trail: 1 has not moved in the last 10 s.")
         window._go_to(TANK_DEATH - 500)
         description = window.canvas.accessibleDescription()
-        self.assertEqual(description, "0:10.5 into the fight. Test Boss 90%. 3 players, 2 alive.")
+        self.assertEqual(description, "0:10.5 into the fight. Test Boss 90%. 3 players, 2 alive. "
+                                      "No trail: 1 has not moved in the last 10 s.")
         self.assertNotIn("@", description)
         from PySide6.QtCore import Qt
         self.assertEqual(window.canvas.focusPolicy(), Qt.NoFocus)
