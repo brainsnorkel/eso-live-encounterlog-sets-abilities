@@ -11,7 +11,7 @@ link under each note is where it lives.
 
 ### ESOLogAnalyzer._handle_effect_changed
 
-*[src/esolog_tail.py:3733](../src/esolog_tail.py#L3733)*
+*[src/esolog_tail.py:3743](../src/esolog_tail.py#L3743)*
 
 A buff or debuff coming, going or refreshing: the tracked effects
 (every item of the uptime line), the timeline strip's built-in rows, and
@@ -383,7 +383,7 @@ the fight". A monster-first opening's player line gets ", 5.8 s later".
 
 ### LogFileMonitor._load_latest_session
 
-*[src/esolog_tail.py:5886](../src/esolog_tail.py#L5886)*
+*[src/esolog_tail.py:5940](../src/esolog_tail.py#L5940)*
 
 Replay the log's most recent session up to the attach point.
 
@@ -1256,7 +1256,7 @@ the bundled set data's by default (perfected_pairs).
 
 ### table_sets_worn
 
-*[src/pen_crit.py:419](../src/pen_crit.py#L419)*
+*[src/pen_crit.py:433](../src/pen_crit.py#L433)*
 
 [(set id, its table entry, [pieces on the front bar, on the back])]
 for the worn sets the offense table lists, in set id order.
@@ -1714,6 +1714,66 @@ copy of each is read, so a truncated split never stands in for its complete
 copy. Zipped splits (``*.log.zip``) are read too. The bars are judged with
 the slots the engine builds (a Rampage shown as its morph), so the coverage
 is the app's own.
+
+## Bundled data in a frozen build, and the check of every build
+
+### bundle_root
+
+*[src/ability_icons.py:29](../src/ability_icons.py#L29)*
+
+Folder that holds data/: the PyInstaller bundle when frozen, else the repo.
+
+Every bundled table is found through this, never from a module's own
+``__file__``, which in a frozen build is the folder above the bundled
+data: the skill target table was looked for there and went unread in
+every release from 0.15.0 to 0.44.0 (issue #237). self_check reads each
+table through the app's loaders in every build CI makes.
+
+### src/self_check.py
+
+*[src/self_check.py:1](../src/self_check.py#L1)*
+
+The bundle's check of its own data (issue #237). With
+``ESOLOG_TAIL_SELF_CHECK=1`` in its environment the app reads every table it
+bundles, prints a line for each and exits: 0 when every one loaded, 1
+naming those that did not. CI runs it on every build.
+
+Why it is needed. The app reads its tables (the ability icons, the ESO-Hub
+links, the item, food, skill and set tables, the data's game version) from
+data/ under ability_icons.bundle_root(): the bundle's own folder,
+sys._MEIPASS, in a PyInstaller build, and the repository when run from
+source. A loader that cannot read its file returns an empty table, so that
+the app still starts and says nothing rather than something wrong, and a
+lost table is silent. damage_kinds found the skill target table from its
+own ``__file__``, which in a build is the folder above the bundled data
+(dist/esolog-gui/data/ for dist/esolog-gui/_internal/data/), so no release
+from 0.15.0, which brought the table, to 0.44.0 read it, and a player's
+area skill counted as single target until a cast struck two units. The
+tests read the repository's data/ and the start-up smoke tests see only
+that the app stays up, so neither could notice.
+
+How it works. The GUI entry (esolog_gui.main) reads the variable before
+anything else, before the crash log, Qt or the config, and returns run()'s
+status. run() reads each table through the function the app itself reads
+it with, never a path of its own: a path rebuilt here would prove this
+module's path, not the app's. It empties those functions' caches first, so
+it reads the files as they are. It prints the folder it read from, one
+line per table with what it found, and a verdict. A probe that raises is a
+failure named with its error, and the entry prints any other error and
+returns 1: a windowed build shows a raised exception in a dialog, which
+would hold the CI step until its timeout. An environment variable rather
+than an argument: the app takes none, and Qt reads its own from the
+command line.
+
+TABLES holds an entry for each JSON table the spec (esolog-tail.spec)
+bundles and one for the folder of icons; a unit test fails when the spec
+bundles a table that has none, so a table added later is checked too. CI
+runs the check on the Windows and Linux bundles right after PyInstaller,
+and in the smoke-macos job on the downloaded app on each macOS
+(.github/workflows/build-installers.yml), each time from a folder outside
+the checkout, so a path relative to the working directory, which would
+find the checkout's data/, cannot pass. The module does not import Qt, so
+the tests drive it with sys._MEIPASS pointed at a scratch folder.
 
 ## Solo dungeons: the run's Misfortunes
 
@@ -2313,6 +2373,42 @@ rule, player-fights / distinct characters in that survey:
   the fight's. A player key that names a unit only until the zone changes
   ('unit:<id>') is retired then (BuildIssueTracker.retire_players), so a
   new player on that unit id inherits none of these records.
+- **No tank applied Major Breach** (issue #243, asked for by the
+  maintainer beside the default Major Breach rule; 28 of 642 tank rows in
+  20 of the fights judged, in the 54-log survey of effect_rules' Major
+  Breach note). Major Breach takes 5,948 off the target's Physical and
+  Spell Resistance, and in a group the tank usually brings it: in boss
+  fights of 20 s or more the one tank of a small group applied it in 243
+  of 249, and of the two tanks of a large group both did in 57 of 91
+  fights and one in 29, so a second tank leaving it to the first is
+  usual and is never flagged. Every tank who applied it had Pierce Armor,
+  Ransack, Razor Caltrops, Elemental Susceptibility or Runic Sunder on a
+  bar; 37 of the 50 who did not had Elemental Susceptibility on a bar all
+  the same. So the rule is the group's tanks: a tank
+  (the role 'T' and a taunt this session, the heavy-armor rule's guard the
+  other way round, or in this fight, which is all a row with no build in
+  the log has) is flagged in a group fight (two players or more) of
+  TANK_BREACH_MIN_S or more when no tank of the fight applied Major Breach
+  to any hostile, and every such tank is flagged. A tank with no build in
+  the log counts as a tank who could have applied it, but is not flagged.
+  A fight against the Trial dummy is not judged: the dummy keeps a trial
+  group's debuffs on itself, Major Breach among them (pen_crit), so there
+  is nothing for a tank to apply. Major Breach on any hostile counts, the
+  adds of a boss fight included, as in the survey: the rule is about what
+  the tanks did. A companion's or pet's Major Breach is not a tank's, and
+  is not named among who covered it; in the survey a unit that was no
+  player row applied it in 3 of the 1,484 fights, never alone.
+  The floor is when tanks apply it: the group's tanks' first Major Breach
+  of a boss fight came a median 2.5 s in for a small group (22 s at the
+  95th percentile) and 3.0 s for a large one (33 s at the 90th), so a
+  fight of 30 s has given them their chance; at 20 s the rule flagged 16
+  small-group trash pulls, at 30 s 6. Who applied it is the pen/crit
+  tracker's record (pen_crit.debuff_sources: every Major Breach span on a
+  hostile, with its caster), not a tracked-effect rule the reader can
+  edit away. Of the 20 fights, another player covered it in 14 (six are
+  one Halls of Fabrication group's, whose two tanks never applied it and
+  whose healer did in five); the finding says by role who did, not by
+  name, since the (i) popup's text is not under the Hide names mask.
 
 The lists a later rules text could lift out (the maintainer's separate
 issue) are module data: GROUP_SETS, GROUP_BUFF_SETS, PROC_SETS, SLAYER_SETS,
@@ -2321,7 +2417,7 @@ the weapon lines table. The checks themselves are code.
 
 ### BuildIssueTracker
 
-*[src/build_issues.py:1117](../src/build_issues.py#L1117)*
+*[src/build_issues.py:1215](../src/build_issues.py#L1215)*
 
 The rules judged over a logging session rather than a fight: the
 proc sets that never fire, a second copy of a group buff set or a
@@ -2333,7 +2429,7 @@ instead of counting twice. reset() at BEGIN_LOG.
 
 ### GroupBuffCredit
 
-*[src/build_issues.py:841](../src/build_issues.py#L841)*
+*[src/build_issues.py:888](../src/build_issues.py#L888)*
 
 Whose copy of a group buff set's buff each player had, over time
 (issue #172): the spans of GROUP_BUFF_EFFECT_IDS per (effect, source,
@@ -2476,7 +2572,8 @@ mostly not (Pearlescent Ward 54%, Major Courage 38%, Major Force 21%, the
 other three never), and the taunt in 70 of 71 four-player fights and every
 trial fight. So five of the six group buffs are ``expected large``, the
 taunt ``expected small large``, and the boss debuffs and Crux nothing:
-they depend on who is in the group, and show when they happened.
+they depend on who is in the group, and show when they happened. Major
+Breach is the exception among the debuffs (below).
 Powerful Assault was expected too until issue #48: the set's buff is
 usual in a trial group, but no role has to bring it, so a fight without
 it is not a mistake worth a red 0% row, and its rule shows when the buff
@@ -2501,6 +2598,46 @@ rule's uptime, any weakness up, is well above the time the full 15% is in
 effect, one weakness being the usual state. A measure counting the ids up
 at once, and a way to say a group needs one of Echoes and Catalyst, are
 left for when the logs show the set in use.
+
+Major Breach (issue #243): 5,948 off the target's Physical and Spell
+Resistance (pen_crit.DEBUFFS, Combat Metrics' value), more than any debuff
+the app values but Roar of Alkosh's 6,000, and a group brings it about as
+reliably as a taunt, so it is the one boss debuff that is ``expected``,
+``small large`` like the taunt. The rule's ids are pen_crit's, the Trial
+dummy's own 120010 among them (a test keeps the two lists equal). The
+survey (2026-11-21): the newest split log of every veteran trial (13),
+veteran dungeon (36) and arena (4) and an Infinite Archive run, 54 logs of
+January to November 2026 and 1,484 fights, replayed with the rule. Major
+Breach was on the boss in 115 of 117 large-group boss fights and 339 of
+356 small-group ones, on the pack in 198 of 205 large-group trash fights
+and 622 of 751 small-group ones, and almost never solo (3 of 8 boss
+fights, 1 of 47 packs), which the rule leaves out. In boss fights of 20 s
+or more it was missing in 2 of 114 large-group fights (two Halls of
+Fabrication wipes) and 8 of 269 small-group ones; a tank applied most of
+it in 192 of 313 large-group fights and 677 of 961 small-group ones. Being
+expected, it adds a red 0% row to 155 of the 1,429 group fights: 129 of
+them small-group trash, 73 under 10 s, where the taunt was already
+missing in 90; 59 are the Infinite Archive run, two players and no tank.
+The taunt gives 219 such rows over the same fights, the two together 269.
+Minor Breach was on the target in 1,392 of the 1,429 and is an example,
+not a default: nothing measured says a group misses it.
+
+A rules text saved before a default was added keeps only what was saved,
+so a new default reaches a fresh install alone unless an upgrade step
+adds it: the maintainer's own text, saved at version 5, had no Elemental
+Catalyst line two releases after #53 made it a default. Version 6 gives a
+saved text the Major Breach and Elemental Catalyst lines (ADDED_IN_6) when
+it has no rule of that name, a commented-out one or one that does not
+parse included, since a line the user switched off or mistyped stays
+theirs (upgrade_rules_text). A Catalyst line the user deleted since 0.13.3
+comes back once: a saved text cannot tell a deleted line from one it never
+had, and the next Save stores version 6, after which a deletion sticks.
+
+The Trial dummy keeps Major Breach on itself from its spawn (its own
+120010, pen_crit's TRIAL_DUMMY_DEBUFFS), and a session begun later never
+sees it applied, so a group parse there would read a red 0% while the
+Armour row credits it in full: the engine opens a span of 120010 on the
+dummy from the fight's start before the snapshot (EffectTracker.seed).
 
 Touch of Z'en (issue #27): the game never writes its stacks. Every
 EFFECT_CHANGED line for 126597 carries a stack count of 1 (3,577 lines in
@@ -2544,7 +2681,7 @@ of 1.5 to 2.9 with a peak of 3 in every fight.
 
 ### EffectTracker
 
-*[src/effect_rules.py:616](../src/effect_rules.py#L616)*
+*[src/effect_rules.py:704](../src/effect_rules.py#L704)*
 
 Open and closed spans of each rule's effect on each unit in scope,
 with the stack count and the unit's kind, in raw log milliseconds;
@@ -2561,7 +2698,7 @@ are pruned once the fight they belong to has been published.
 
 ### EffectTracker.snapshot
 
-*[src/effect_rules.py:812](../src/effect_rules.py#L812)*
+*[src/effect_rules.py:900](../src/effect_rules.py#L900)*
 
 One entry per rule for the fight window: name, scope, kind, what
 it was measured on ('units': the scope, or 'mobs' for a hostile
@@ -2596,7 +2733,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:134](../src/app_config.py#L134)*
+*[src/app_config.py:135](../src/app_config.py#L135)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -2611,7 +2748,10 @@ still shows a missing group buff at 0% after the upgrade. A text
 saved before version 4 has the ``expected large`` that version 3
 put on its Powerful Assault line taken off again (issue #48: the
 one default no longer expected). A text saved before version 5 has
-the default Crux line commented out (issue #80). Nothing is written back; the
+the default Crux line commented out (issue #80). A text saved
+before version 6 is given the Major Breach (issue #243) and
+Elemental Catalyst (issue #53) defaults it has no rule of, since a
+new default otherwise reaches fresh installs alone. Nothing is written back; the
 version is saved with the next Save, and every step is harmless to
 repeat.
 
@@ -2966,7 +3106,7 @@ its owner's as well.
 
 ### LogSplitter
 
-*[src/esolog_tail.py:5084](../src/esolog_tail.py#L5084)*
+*[src/esolog_tail.py:5136](../src/esolog_tail.py#L5136)*
 
 Handles automatic splitting of encounter logs into individual encounter files.
 
@@ -3513,7 +3653,7 @@ unless it is of a skill on the player's bars. They are kept apart from
 
 ### ESOLogAnalyzer._note_zero_state
 
-*[src/esolog_tail.py:3354](../src/esolog_tail.py#L3354)*
+*[src/esolog_tail.py:3364](../src/esolog_tail.py#L3364)*
 
 The unit state at fields[*at*] (unitId, health, magicka, stamina,
 ...) when it reads 0, or is the state of a player followed at 0
@@ -3680,6 +3820,11 @@ player-fights with damage taken; 2026-10-27):
   51-65%, a tank's own heals 23% of what they received, a healer's own
   61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
   after the owner, since the log names no pet.
+- Under a healer, a skill is one row however many ids the game writes it
+  under, its parts added up, as on Healing done (merged_abilities says
+  why; issue #242). An ability whose every heal on this player overflowed
+  is still a row, 0 received at 100% overheal, where Healing done names
+  such abilities on one line under its table.
 - Overheal is a share per row, never an amount: 91-96% of all healing on a
   player overflowed, so the amounts would be ten to twenty times the received
   figures and bury them. Healing received is the headline; the share tells a
@@ -3693,6 +3838,38 @@ player-fights with damage taken; 2026-10-27):
 The kinds bars are the death recap's block (death_render.kinds_block_html)
 so the two windows read alike; the player names go through the Hide names
 mask (gui.name_mask), the sources and healers included.
+
+### merged_abilities
+
+*[src/gui/taken_render.py:325](../src/gui/taken_render.py#L325)*
+
+The ability rows one per (name, pet or companion), their figures
+summed (landed, overheal, hits, hot, direct), the icon and id of the
+part that landed most, largest first. Healing received lists each
+healer's abilities through it, and Healing done (healing_render) a
+player's.
+
+Design. The game writes one skill's effects under several ids:
+Radiating Regeneration under 40079 and 46266, Budding Seeds' heal and
+its HoT under 129434 and 85841, Evolving Runemend under four, Breath of
+Life and Healing Thicket under more than one. Over the maintainer's 419
+split logs (2026-11-21, issue #242; 2,547 healer-fights, the H rows of
+boss fights of 30 s or more), 93% of the healer-fights had two ability
+rows of one name, and those rows carried a quarter of all healing:
+Radiating Regeneration's in 2,048 healer-fights (at the median its
+first id landed all of it, so the second was a row of 0), Budding
+Seeds' in 1,248, Breath of Life's in 165, Healing Thicket's in 61,
+Evolving Runemend's in 57. Kept apart, they read as two skills of one
+name with nothing to tell them apart, as Healing received showed
+Healing Burst and Radiating Regeneration twice. One row per name reads
+as the skills the healer used, with Kind giving the mix ('HoT 70% ·
+direct 30%').
+
+A row's 'via' ('pet' or 'companion'; none for the player's own heals)
+keeps a pet's abilities apart from its owner's on Healing done; on
+Healing received a pet is a healer of its own, so its rows carry none.
+A row with no name is kept apart by its id. The merge is the page's:
+the engine's rows (damage_kinds) stay one per id.
 
 ## Healing done: a healer's heals on the others, by ability and by player
 
@@ -3730,7 +3907,7 @@ twice.
 
 ### healing_done
 
-*[src/damage_kinds.py:578](../src/damage_kinds.py#L578)*
+*[src/damage_kinds.py:596](../src/damage_kinds.py#L596)*
 
 What one player's heals did in a fight, from the healer's side (the
 player window's Healing done tab, issue #242): the healing that landed
@@ -3782,12 +3959,9 @@ more):
 - The headline is the row's healing to others with its rate over the fight
   time and its share of the group's, the token's three figures, then the
   share of the player's heals on others that overflowed.
-- Abilities are one row per name. The game writes one skill's effects under
-  several ids (Radiating Regeneration's two in 2,048 of those healer-fights,
-  Budding Seeds' heal and its HoT in 1,248, Evolving Runemend's four), and
-  93% of the healer-fights had two rows of one name, carrying a quarter of
-  all healing: kept apart they read as two skills of one name with nothing
-  to tell them apart. Kind gives the mix, 'HoT 70% · direct 30%'. A pet's
+- Abilities are one row per name, a skill's ids added up, as on Healing
+  received (taken_render.merged_abilities, which both pages use, says why
+  with the numbers). Kind gives the mix, 'HoT 70% · direct 30%'. A pet's
   abilities (a Twilight Matriarch's) are rows of their own, marked.
 - A healer had a median 8 abilities that landed (at most 17), so every one
   is listed. The abilities whose every heal on another player overflowed
@@ -4441,7 +4615,7 @@ to a fight's [start, end] window and rebases them to fight-relative ms.
 
 ### EffectTracker.record
 
-*[src/effect_rules.py:689](../src/effect_rules.py#L689)*
+*[src/effect_rules.py:777](../src/effect_rules.py#L777)*
 
 An EFFECT_CHANGED line. *target_kind* is what the engine knows
 the target to be: 'self', 'group', 'pet', 'boss', 'enemy' or None.
@@ -5180,6 +5354,25 @@ their own (the controls' row had no room left at 200% text). Decided for
 other units each one toggle away in Show, no casts yet; #232 added
 playback (below).
 
+Trails and the view (#246, #241). The trail's length (Off, 10 s, 30 s,
+the whole fight so far) and whose (the selected unit, every player) are a
+part of Show, what the canvas draws, each item naming the trail (a menu
+section's heading is not drawn in Windows' styles): a Trail button of its
+own and the view's three buttons took 464 px the controls' row does not have at 200%
+text (it was within 150 px of a 1280 px screen there, in the tests' wide
+font). Zoom out, Zoom in and Fit sit in the canvas's bottom right corner, as
+a map has them; the wheel and a drag do the same (positions_canvas). The
+trail's choice is kept for the app run, as Show's are; the view is fitted
+again for each fight read and whenever the picture's map frame changes,
+a map change or a unit selected on another map. The view's buttons are
+never turned off (Fit when fitted, + and − at their limits do nothing):
+a focused button turned off hands the focus on, and the next Space
+would press the button after it. The window holds a
+positions_trails.TrailSet and FollowView for the states it holds, built
+when they come. The canvas's description ends with the trail drawn and the
+view ('Trail: 3's last 10 s. View follows the group. Zoomed in 2.0x'), and
+says why there is none when no unit is selected.
+
 What it draws comes from two places. The fight entry gives the numbers,
 the roles and the deaths: a player's number is the place of their row in
 the fight table (companion rows skipped), worked out afresh each time the
@@ -5363,15 +5556,45 @@ The window's notes say why.
 One box per map frame. The log's coordinates are fractions of the map the
 last MAP_CHANGED line named, so places in two frames are never joined: each
 frame gets its own box, fitted once to the 2nd to 98th percentile of the
-players' and bosses' places in that frame over the whole range, padded by
-12% of its longer side, with one scale for x and y and y down. The study
-found the min-max box 1.2 to 2.6 times larger, empty for most of a fight.
-The moment's frame is the frame of the selected unit's state, else the one
-most drawn players are in. A unit whose last state is of another frame, or
-far off its map (fight_reread.on_map), is not drawn: the line under the
-canvas and the table say "not on this map". A drawn unit outside the
-fitted box is pinned to the canvas's edge, with a small arrow towards where
-it stands. There is no map art, scale or height (#148 stays parked).
+players' and bosses' places in that frame over the fight's time (#241: from
+each unit's state at BEGIN_COMBAT to its last before END_COMBAT, not the
+lead-in or the tail; a unit that left in the lead-in has no place in it),
+padded by 12% of its longer side, with one scale for x and y and y down.
+The study found the min-max box 1.2 to 2.6 times larger, empty for most of
+a fight; over 121 boss fights of nine trials the fight's time alone left
+most boxes within 10% of the whole range's and cut short pulls, where the
+10 s lead-in is a large share, to 19 to 80% of their area (Halls of
+Fabrication's Reducer and Reactor, Spiral Descender). In a fight that
+crosses its room the view follows the group instead (positions_trails,
+FollowView). The moment's frame is the frame of the selected unit's state,
+else the one most drawn players are in. A unit whose last state is of
+another frame, or far off its map (fight_reread.on_map), is not drawn: the
+line under the canvas and the table say "not on this map". A drawn unit
+outside the view is pinned to the canvas's edge, with a small arrow
+towards where it stands, and a unit that would be under the view's
+buttons is pinned just above them the same way. There is no map art, scale or height (#148 stays parked).
+
+The reader's view (#241). The wheel zooms at the pointer, a drag on no
+mark pans (a press that moves under DRAG_SLOP_PX is a click), a
+double-click on no mark fits again, and the window's three buttons in the
+canvas's bottom right corner (−, +, Fit) do the same from the keyboard:
+not the top, where the notes of the deaths near the moment run. The
+view is a zoom and a shift of the box's centre in map units, applied in
+transform, the one place the box becomes pixels, so the marks, the piles,
+the labels, the hit test, the grid and the trails all follow it. Marks
+keep their size: zooming in spreads them and breaks the piles up. It is
+kept while stepping, playing and selecting, and fitted again by Fit, by
+another fight read and whenever the picture's map frame changes (a map
+change, or a unit selected on another map: the picture shows the
+selected unit's map). Under the follow, the shift
+rides along with the group's box.
+
+Trails (#246) are drawn over the grid and under the notes, the badges,
+the labels and the marks: the selected unit's last 10 s by default, from
+positions_trails (whose notes have the rules and the measures), clipped to
+where marks may stand. The badges and the selected unit's label keep off
+the trail's newest TRAIL_HEAD_RADII radii where the canvas has room, as
+they keep off the marks and the notes.
 
 Piles. A group stands close, and a marker's radius grows with the text
 size (it must hold '12') while the canvas does not, so numbered players
@@ -5445,6 +5668,110 @@ interface made in Python, which crashed at exit in the GUI survey, so the
 moment in words is its description. It takes the focus with a mark of its
 own: Qt's focus frame (PE_FrameFocusRect) draws a 6,000 px tint over a
 100x60 rect in the Fusion style.
+
+### src/gui/positions_trails.py
+
+*[src/gui/positions_trails.py:1](../src/gui/positions_trails.py#L1)*
+
+Trails and the following view of the positions canvas (issues #246 and
+#241): a line through the places a unit has been, and, in a fight that
+moves across its map, a view that follows the group. No widget here: the
+canvas (positions_canvas) draws what this module works out, and the window
+(positions_window) holds one TrailSet and one FollowView per fight read.
+
+Design: whose trail, and how it looks. Decided for #246 from prototype
+pictures drawn on the real window over a veteran Lucent Citadel split, a
+UX review of them that had not seen the prototype's intent, and measures.
+One unit's trail at a time, the selected one's, reads clearly in every
+picture: twelve tangle on a short fight and make a hairball over a whole
+one. So the trail is the selected unit's by default, last 10 s, on when
+the window opens (a Deaths link selects the player who died, and the line
+answers where they came from); Every player adds a thinner one for each
+numbered player. Over 121 boss fights of nine trials a 10 s trail left the
+marker's footprint (radius, ring and selection gap at the fitted scale) in
+about 85% of player-seconds, 60 to 99% by fight, and a 30 s one in about
+95%; 5 s drew next to nothing at four of five moments tried, so the
+lengths are 10 s, 30 s and the whole fight so far.
+
+Age is a taper, never a fade. Text ink reaches the canvas's 3:1 floor for
+graphics only at 48% opacity on the light theme (39% on the dark), so a
+trail fading from 55% to 5% left its oldest 86% under the floor, the "where
+from" end among it, and trails crossing each other added up to black
+bundles whatever their age. A trail is drawn opaque, in text ink for the
+selected unit (16.1:1 light, 11.4:1 dark) and in the muted ink for Every
+player's (6.05:1 and 5.22:1), widest at the mark and narrowing to its
+oldest end in TAPER_BANDS steps of its length (the whole fight so far
+tapers over its last TAPER_WHOLE_MS, older parts at the thinnest width).
+Colour never says whose it is: the role hexes are the health, shield and
+damage hexes (positions_canvas).
+
+The log's stairs. The places are fractions of the map with four decimals,
+but over six boss fights 61 to 70% of the logged moves changed one axis
+only, in steps of 0.0005 of the map, for the logging player as much as
+for anyone: drawn raw, a diagonal walk is a staircase (about 6.5 px a step
+at Cavot Agnan's fit). A run of plain moves is drawn through the midpoints
+of its consecutive places, its first and last places kept: the line strays
+at most half a step from where the log put the unit, and the stairs become
+the walk.
+
+Gaps and jumps, never a break. A segment is solid when the unit's next
+place came within GAP_DASHED_MS of the last line that wrote the one before
+(the reader's seen: a unit standing still is written again and again);
+dashed after that, dotted after GAP_DOTTED_MS, the canvas's own stale and
+lost steps (STALE_MS, LOST_MS), so a trail and a mark say a gap the same
+way, and both are straight lines, not the way they went. Over the 121
+fights dashed stretches were under 2% of a trail's length in most, 16 to
+24% in some Dreadsail Reef and Halls of Fabrication pulls, dotted up to
+32% (a Spiral Descender pull). A jump is dotted too: a portal, a teleport
+or a pull moved players 9 to 580 times the fight's 99th-percentile step
+within a second (Lucent Citadel's portals, Shaper of Flesh, Kazpian,
+Chimera, Z'Maja, Falgravn, Nahviintaas), while ordinary movement never
+passed 7.4 times it, so a step over JUMP_FACTOR times the 99th percentile
+of the players' steps in the fight is drawn dotted, straight from where
+they were to where they appeared. A trail breaks only where the log gives
+no line to draw: a new map frame (places of two maps are never joined) and
+a place off the map (fight_reread.on_map). A dead unit lies still, so its
+trail shrinks to its corpse as the moment moves on and grows again after a
+revive; nothing is frozen. Playback's glide (positions_canvas.glide_state)
+is left as #232 made it.
+
+Drawing it fast enough to play. Drawn as one line per logged step, every
+player's whole-fight trail took 490 to 870 ms to paint on Xoryn (712 s,
+82,771 states), against playback's FRAME_MS of 33. So each unit's points
+are worked out once per fight read (Trail, built on first use and kept),
+cut into chunks of at most CHUNK_MS of one map frame, each with its paths
+by style in map coordinates and its bounds; a paint takes the chunks that
+overlap the trail's span and the view, adds each whole chunk's paths to
+the path of its taper band, builds only the two part chunks at the ends
+from their points, and strokes each band once with a cosmetic pen through
+the view's transform. Measured as built, every frame of a fight at 5x
+through the window's own draw and the canvas's paint, offscreen (the
+frame's median, then its 99th percentile): on Xoryn (712 s, the view
+following) at 100% text 6.1 ms (9.5) with no trail, 6.9 (10.1) with the
+default, 9.9 (14.7) for every player's 30 s and 10.7 (16.3) for every
+player's whole fight; at 200% text and device pixel ratio 2, 6.8 (11.4),
+7.6 (12.5), 11.6 (24.1) and 15.7 (48.1); on Lord Falgravn (284 s, Kyne's
+Aegis) there 5.2 (8.2), 5.6 (9.5), 10.1 (23.2) and 16.0 (37.7). So the
+default costs under a millisecond, and only every player's whole fight at
+200% on a ratio-2 screen passes playback's FRAME_MS of 33 in its slowest
+frames, where a frame late only skips (positions_window). A FollowView is
+built in 12 to 32 ms when a fight's states come.
+
+The view that follows (#241). Over the same 121 fights the box fitted to
+the whole fight is already tight in most: a box fitted round the moment
+(the living players' and bosses' places in the FOLLOW_WINDOW_MS either
+side) would zoom 1.0 to 1.3 times at the median. A few fights cross their
+room and are drawn in a corner: Xoryn 9.3 times (5 to 26), Overfiend
+Kazpian 3.7, Archcustodian 3.5, Shaper of Flesh 2.2 to 2.5, Kagouti
+Fabricant 1.9 to 2.2, Yolnahkriin 1.7. Decided: in a map frame where the
+moment's box is at least FOLLOW_GAIN times tighter at the median, the view
+follows the group, its box eased over EASE_MS either side so it glides
+rather than jumps; elsewhere the box holds still as before. Moving the
+view is not motion of its own: it moves only as the moment does, which
+only the reader moves (the guide's Motion note holds), and the faint grid
+moves with it, so a pan is seen as one. A box round the moment is fitted
+as the whole fight's is (positions_canvas.box_of) to the places sampled
+once a second, so a lone unit far off is pinned to the edge, not followed.
 
 ### MainWindow.show_moment
 

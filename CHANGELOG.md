@@ -2,6 +2,24 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.45.0] - 2026-11-21
+
+### Added
+- **Major Breach on the boss is a default tracked effect** (#243), expected in groups of two or more like the taunt: a fight where nobody applied it shows a dark red `0%` row, and a fight where someone did shows its uptime as usual. Major Breach takes 5,948 off the target's resistances, and in the logs behind the change it was on the boss in 98% of trial boss fights and 95% of dungeon ones. Minor Breach is in the Examples list.
+- **A possible build issue when no tank applied Major Breach** (#243): in a group fight of 30 seconds or more where no tank put Major Breach on an enemy, each tank's `ⓘ` says so, and whether a healer or a damage dealer applied it instead. One tank applying it is enough, so a trial's second tank is not flagged for leaving it to the first.
+- **Trails in the positions window** (#246): a line through the places the selected player has been, over the last 10 seconds when the window opens, so a death's Positions link shows where they came from. **Show** picks 10 s, 30 s, the whole fight so far or none, and **Every player** adds a thinner grey line for each numbered player. The line is widest at the mark and narrows towards its oldest end. It is dashed where the log said nothing of the player for over a second, and dotted after five seconds or where a portal or teleport moved them in an instant: straight lines, not the way they went.
+- **Zoom and pan in the positions window** (#241): the mouse wheel zooms at the pointer, a drag on the picture moves it, and **−**, **+** and **Fit** in the picture's corner do the same from the keyboard. Zooming in spreads out players drawn as one box. A double-click on the picture fits it again.
+
+### Changed
+- **Saved tracked-effect rules gain Major Breach and Elemental Catalyst** (#243) when they have no line of that name, once, at the next start. Elemental Catalyst became a default in 0.13.3 but only reached fresh installs. A line of that name you wrote or commented out is left as it is, and rules with nothing in them stay empty. A Catalyst line you deleted comes back this once, since saved rules cannot tell a deleted line from one they never had; delete it again and it stays gone.
+- **The positions window fits the fight, not the run-in** (#241): the picture is fitted to where the group fought, leaving out the ten seconds before the pull, which made short pulls such as Halls of Fabrication's Reducer and Reactor up to five times too wide. In a fight that crosses its room, such as Xoryn's, the picture follows the group instead of drawing the whole route in a corner.
+- **Healing received lists each skill once** (follows #242): a skill the game writes under more than one id, such as Radiating Regeneration or Budding Seeds' heal and its HoT, showed as two rows of the same name under a healer, with nothing to tell them apart. It is now one row, its healing, hits and overheal added up, and **Kind** gives the mix (`HoT 70% · direct 30%`), as on the Healing done tab.
+
+### Fixed
+- **A split log is closed when logging stops** (#225): the app read the line the game writes at the end of a log, `END_LOG`, under the wrong name, so nothing it does when a log ends had ever run. A session's split file is now closed at that line, so it is complete as soon as you stop logging, rather than when the next session began or the app was closed. The game writes nothing between the end of one log and the start of the next, so no line is lost.
+- **A death at the very end of a log is counted** (#225): a player who had been at 0 health for a second when the log ended, with no line after it, now has the death counted, as one earlier in the log does (#221). It is rare: over 419 split logs it happened once, in a fight still under way when the log ended, which the app does not list, so no fight in them changes.
+- **A player's area skills count as area from their first hit** (#237): the released app never found its table of which player skills strike an area, so the player window's Damage done tab counted an area skill as single target until one of its casts had struck two enemies. Every release since 0.15.0 had this; running from source did not.
+
 ## [0.44.0] - 2026-11-21
 
 ### Added
