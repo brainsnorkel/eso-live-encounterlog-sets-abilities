@@ -282,6 +282,58 @@ class TestTakenHtml(TakenWindowTestCase):
         self.assertNotIn('1,400,000', block)
         self.assertNotIn('1,900,000', block)
 
+    def test_a_skill_under_two_ids_is_one_row_under_its_healer(self):
+        """The game writes one skill under several ids: under a healer it is
+        one row, its figures summed, Kind giving the mix and the icon of the
+        part that landed most, as on Healing done (follows issue #242).
+        Another name stays a row of its own, the rows go by the summed
+        figure, and the merge is per healer."""
+        from PySide6.QtGui import QColor, QImage
+
+        from gui import healing_render, taken_render
+        image = QImage(40, 40, QImage.Format_ARGB32)
+        image.fill(QColor('red'))
+        self.assertTrue(image.save(str(self.icons_root / 'taken_window_small.png')))
+        entry = _entry()
+        friend, own = entry.players[0]['taken']['healers'][:2]
+        prayer = friend['abilities'][1]
+        # @friend's 120,000 of Radiating Regeneration as two ids, each under
+        # Combat Prayer's 80,000; the smaller first, so the icon follows the
+        # part that landed most, not the order
+        rr_direct = _heal('14', 'Radiating Regeneration', 50000, 400000, 100,
+                          icon='taken_window_small')
+        rr_hot = _heal('10', 'Radiating Regeneration', 70000, 1000000, 200, hot=70000,
+                       icon='taken_window_test')
+        # A skill whose two ids only overflowed: one row, still a row here
+        burst = [_heal('15', 'Healing Burst', 0, 3000, 6), _heal('16', 'Healing Burst', 0, 2000, 3)]
+        friend['abilities'] = [prayer, rr_direct, rr_hot, *burst]
+        friend.update({'overheal': 1905000, 'hits': 369, 'direct': 130000, 'hot': 70000})
+        # @tester's own Radiating Regeneration stays under @tester
+        own['abilities'] = [_heal('12', 'Echoing Vigor', 105000, 880000, 190, hot=105000),
+                            _heal('10', 'Radiating Regeneration', 5000, 20000, 10, hot=5000)]
+        text = self._text(entry)
+        block = text[text.index('Healing received'):]
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        # 120,000 of the 340,000 received, 300 hits, 1,400,000 overheal of
+        # 1,520,000, and HoT 70,000 against direct 50,000
+        self.assertEqual(_cells_after(lines, 'Radiating Regeneration', 5),
+                         ['120,000', '35%', '300', '92%', 'HoT 58% · direct 42%'])
+        self.assertEqual(_cells_after(lines, 'Combat Prayer', 5), ['80,000', '24%', '60', '86%', 'direct'])
+        self.assertEqual(_cells_after(lines, 'Healing Burst', 4), ['0', '0%', '9', '100%'])
+        named = ('@friend', '@tester own', '@friend pet', 'Radiating Regeneration', 'Combat Prayer',
+                 'Healing Burst', 'Echoing Vigor', 'Twilight Matriarch')
+        self.assertEqual([line for line in lines if line in named],
+                         ['@friend', 'Radiating Regeneration', 'Combat Prayer', 'Healing Burst',
+                          '@tester own', 'Echoing Vigor', 'Radiating Regeneration',
+                          '@friend pet', 'Twilight Matriarch'])
+        html = taken_render.render_taken_html(entry, '1', icons=self._cache())
+        # The icons: Snap's among the sources and the merged row's, the
+        # larger part's; the smaller part's never
+        self.assertEqual(html.count('<img src="icon:taken_window_test"'), 2)
+        self.assertNotIn('icon:taken_window_small', html)
+        # One rule for both pages
+        self.assertIs(healing_render.merged_abilities, taken_render.merged_abilities)
+
     def test_small_print(self):
         text = self._text()
         self.assertIn('Per-second figures divide by the fight time', text)

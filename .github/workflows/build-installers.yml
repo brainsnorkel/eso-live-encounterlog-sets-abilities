@@ -61,6 +61,25 @@ jobs:
     - name: Build GUI executable (onedir, windowed)
       run: python -m PyInstaller esolog-tail.spec --noconfirm
 
+    # The app's own loaders read every bundled table in the built bundle
+    # (src/self_check.py): a table the bundle cannot find reads as empty,
+    # silently, as the skill target table did in every release until issue
+    # #237. Run outside the checkout, whose data/ a path relative to the
+    # working directory would find. The same step is in the Linux job and
+    # the smoke-macos job
+    - name: Check the bundle reads its data
+      shell: bash
+      timeout-minutes: 5
+      run: |
+        app="$PWD/dist/esolog-gui/esolog-gui.exe"
+        cd "$RUNNER_TEMP"
+        status=0
+        ESOLOG_TAIL_SELF_CHECK=1 "$app" || status=$?
+        if [ "$status" -ne 0 ]; then
+          echo "::error::bundle failed its data check with status $status"
+          exit 1
+        fi
+
     - name: Compile installer (Inno Setup)
       run: iscc /DAppVersion=${{ steps.version.outputs.VERSION }} installer\esolog-gui.iss
 
@@ -147,6 +166,20 @@ jobs:
 
     - name: Build GUI executable (onedir)
       run: python -m PyInstaller esolog-tail.spec --noconfirm
+
+    # As in the Windows job: every bundled table, read by the app's own
+    # loaders, from outside the checkout
+    - name: Check the bundle reads its data
+      timeout-minutes: 5
+      run: |
+        app="$PWD/dist/esolog-gui/esolog-gui"
+        cd "$RUNNER_TEMP"
+        status=0
+        ESOLOG_TAIL_SELF_CHECK=1 "$app" || status=$?
+        if [ "$status" -ne 0 ]; then
+          echo "::error::bundle failed its data check with status $status"
+          exit 1
+        fi
 
     # The Linux bundle is not launched by hand before a release, so start it
     # here on an X server: still running when the timeout stops it (exit 124)
@@ -285,6 +318,20 @@ jobs:
 
     - name: Verify the signature
       run: codesign --verify --deep --strict --verbose=2 "app/ESO Log Tail.app"
+
+    # As in the Windows job: every bundled table, read by the app's own
+    # loaders, from outside the checkout
+    - name: Check the app reads its data
+      timeout-minutes: 5
+      run: |
+        app="$PWD/app/ESO Log Tail.app/Contents/MacOS/esolog-gui"
+        cd "$RUNNER_TEMP"
+        status=0
+        ESOLOG_TAIL_SELF_CHECK=1 "$app" || status=$?
+        if [ "$status" -ne 0 ]; then
+          echo "::error::app failed its data check with status $status"
+          exit 1
+        fi
 
     # The app draws with the cocoa platform plugin here, as on a user's Mac
     - name: Smoke test the app

@@ -12,12 +12,9 @@ more):
 - The headline is the row's healing to others with its rate over the fight
   time and its share of the group's, the token's three figures, then the
   share of the player's heals on others that overflowed.
-- Abilities are one row per name. The game writes one skill's effects under
-  several ids (Radiating Regeneration's two in 2,048 of those healer-fights,
-  Budding Seeds' heal and its HoT in 1,248, Evolving Runemend's four), and
-  93% of the healer-fights had two rows of one name, carrying a quarter of
-  all healing: kept apart they read as two skills of one name with nothing
-  to tell them apart. Kind gives the mix, 'HoT 70% · direct 30%'. A pet's
+- Abilities are one row per name, a skill's ids added up, as on Healing
+  received (taken_render.merged_abilities, which both pages use, says why
+  with the numbers). Kind gives the mix, 'HoT 70% · direct 30%'. A pet's
   abilities (a Twilight Matriarch's) are rows of their own, marked.
 - A healer had a median 8 abilities that landed (at most 17), so every one
   is listed. The abilities whose every heal on another player overflowed
@@ -60,6 +57,7 @@ from gui.taken_render import (
     _rate,
     _section_title,
     _table_open,
+    merged_abilities,
 )
 from gui.text_size import scaled_px
 
@@ -92,28 +90,6 @@ def healing_done_title(entry, unit_id, names=None) -> str:
     player = player_for(entry, unit_id)
     name = (names or NO_MASK).text(_join(player.get("name", ""))) if player else ""
     return f"Healing done – {name}" if name else "Healing done"
-
-
-def merged_abilities(rows) -> list[dict]:
-    """The ability rows one per (name, pet or companion), their figures
-    summed, the icon and id of the part that landed most, largest first
-    (see the module notes)."""
-    merged: dict[tuple[str, str], dict] = {}
-    for row in rows or []:
-        key = (str(row.get("name") or row.get("id") or ""), str(row.get("via") or ""))
-        kept = merged.get(key)
-        if kept is None:
-            merged[key] = kept = {"name": key[0], "via": key[1], "id": row.get("id"),
-                                  "icon": row.get("icon"), "best": -1, "landed": 0,
-                                  "overheal": 0, "hits": 0, "hot": 0, "direct": 0}
-        landed = int(row.get("landed") or 0)
-        if landed > kept["best"]:
-            kept["best"], kept["id"], kept["icon"] = landed, row.get("id"), row.get("icon")
-        for field in ("landed", "overheal", "hits", "hot", "direct"):
-            kept[field] += int(row.get(field) or 0)
-    out = list(merged.values())
-    out.sort(key=lambda r: (-r["landed"], -r["overheal"], r["name"], r["via"]))
-    return out
 
 
 def _paragraphs(lines) -> str:

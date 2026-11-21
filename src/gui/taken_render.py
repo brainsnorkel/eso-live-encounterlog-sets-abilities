@@ -35,6 +35,11 @@ player-fights with damage taken; 2026-10-27):
   51-65%, a tank's own heals 23% of what they received, a healer's own
   61%. A pet's heals (a Twilight Matriarch's) are a row of their own named
   after the owner, since the log names no pet.
+- Under a healer, a skill is one row however many ids the game writes it
+  under, its parts added up, as on Healing done (merged_abilities says
+  why; issue #242). An ability whose every heal on this player overflowed
+  is still a row, 0 received at 100% overheal, where Healing done names
+  such abilities on one line under its table.
 - Overheal is a share per row, never an amount: 91-96% of all healing on a
   player overflowed, so the amounts would be ten to twenty times the received
   figures and bury them. Healing received is the headline; the share tells a
@@ -317,9 +322,56 @@ def _heal_kind_words(row: dict) -> str:
     return ""
 
 
+def merged_abilities(rows) -> list[dict]:
+    """The ability rows one per (name, pet or companion), their figures
+    summed (landed, overheal, hits, hot, direct), the icon and id of the
+    part that landed most, largest first. Healing received lists each
+    healer's abilities through it, and Healing done (healing_render) a
+    player's.
+
+    Design. The game writes one skill's effects under several ids:
+    Radiating Regeneration under 40079 and 46266, Budding Seeds' heal and
+    its HoT under 129434 and 85841, Evolving Runemend under four, Breath of
+    Life and Healing Thicket under more than one. Over the maintainer's 419
+    split logs (2026-11-21, issue #242; 2,547 healer-fights, the H rows of
+    boss fights of 30 s or more), 93% of the healer-fights had two ability
+    rows of one name, and those rows carried a quarter of all healing:
+    Radiating Regeneration's in 2,048 healer-fights (at the median its
+    first id landed all of it, so the second was a row of 0), Budding
+    Seeds' in 1,248, Breath of Life's in 165, Healing Thicket's in 61,
+    Evolving Runemend's in 57. Kept apart, they read as two skills of one
+    name with nothing to tell them apart, as Healing received showed
+    Healing Burst and Radiating Regeneration twice. One row per name reads
+    as the skills the healer used, with Kind giving the mix ('HoT 70% ·
+    direct 30%').
+
+    A row's 'via' ('pet' or 'companion'; none for the player's own heals)
+    keeps a pet's abilities apart from its owner's on Healing done; on
+    Healing received a pet is a healer of its own, so its rows carry none.
+    A row with no name is kept apart by its id. The merge is the page's:
+    the engine's rows (damage_kinds) stay one per id."""
+    merged: dict[tuple[str, str], dict] = {}
+    for row in rows or []:
+        key = (str(row.get("name") or row.get("id") or ""), str(row.get("via") or ""))
+        kept = merged.get(key)
+        if kept is None:
+            merged[key] = kept = {"name": key[0], "via": key[1], "id": row.get("id"),
+                                  "icon": row.get("icon"), "best": -1, "landed": 0,
+                                  "overheal": 0, "hits": 0, "hot": 0, "direct": 0}
+        landed = int(row.get("landed") or 0)
+        if landed > kept["best"]:
+            kept["best"], kept["id"], kept["icon"] = landed, row.get("id"), row.get("icon")
+        for field in ("landed", "overheal", "hits", "hot", "direct"):
+            kept[field] += int(row.get(field) or 0)
+    out = list(merged.values())
+    out.sort(key=lambda r: (-r["landed"], -r["overheal"], r["name"], r["via"]))
+    return out
+
+
 def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: float) -> str:
     """The healing by the unit that did it, by amount received, each unit's
-    abilities under it; the overheal as a share of that row's healing."""
+    abilities under it, one row per skill name (merged_abilities); the
+    overheal as a share of that row's healing."""
     muted = theme["muted"]
     parts = [_section_title(HEALERS_TITLE, theme, dark, "healers")]
     healers = taken.get("healers")
@@ -350,7 +402,7 @@ def _healers_html(taken: dict, theme, dark: bool, icons, e, names, base_pt: floa
             (" align='right'", "", overheal_cell(healer)),
             ("", "", f"<span style='color:{muted}'>{e(_heal_kind_words(healer))}</span>"),
         ), pad="padding-top:5px;"))
-        for row in healer.get("abilities") or []:
+        for row in merged_abilities(healer.get("abilities")):
             icon = _icon_html(row, icons)
             pad = "" if icon else "padding-top:4px;padding-bottom:4px;"
             row_landed = int(row.get("landed") or 0)

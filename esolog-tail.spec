@@ -15,7 +15,10 @@ a = Analysis(
     # armor weights and weapon types (scripts/generate_poison_names.py,
     # scripts/generate_armor_weights.py, scripts/generate_weapon_types.py)
     # food and drink buff ids (scripts/generate_food_buffs.py) and the sets'
-    # penetration and crit bonuses (scripts/generate_set_offense.py)
+    # penetration and crit bonuses (scripts/generate_set_offense.py).
+    # CI has each built bundle read every table (src/self_check.py, issue
+    # #237): a table added here needs an entry in its TABLES, which a unit
+    # test asks for
     datas=([('icon.ico', '.')] if os.path.exists('icon.ico') else [])
           + [(d, d) for d in ('data/icons/abilities', 'data/esohub', 'data/items',
                               'data/buffs', 'data/skills', 'data/sets') if os.path.isdir(d)],
@@ -39,6 +42,7 @@ a = Analysis(
         'log_freshness',
         'log_open',
         'recycle_bin',
+        'self_check',
         'split_retention',
         'version',
     ],
