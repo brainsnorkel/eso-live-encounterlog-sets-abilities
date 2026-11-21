@@ -5,7 +5,11 @@ export strings, and the tracker's uptime and stack measurements."""
 import unittest
 
 from effect_rules import (
+    BOSS_DEBUFFS_COMMENT,
+    CATALYST_RULE,
     DEFAULT_RULES,
+    EXAMPLE_RULES,
+    MAJOR_BREACH_RULE,
     UPTIME_LINE_RULES,
     EffectTracker,
     Rule,
@@ -15,6 +19,10 @@ from effect_rules import (
     parse_rules,
     upgrade_rules_text,
 )
+
+# What the version-6 step appends to a saved text that has neither line
+# nor the default boss-debuff comment (issue #243)
+ADDED_IN_6 = MAJOR_BREACH_RULE + "\n" + CATALYST_RULE + "\n"
 
 
 class TestRuleText(unittest.TestCase):
@@ -81,24 +89,29 @@ class TestRuleText(unittest.TestCase):
         # The uptime line's own items first, then the maintainer's debuffs
         self.assertEqual([r.name for r in rules],
                          ["Major Courage", "Major Force", "Major Slayer", "Powerful Assault",
-                          "Lucent Echoes", "Pearlescent Ward", "Taunt",
+                          "Lucent Echoes", "Pearlescent Ward", "Taunt", "Major Breach",
                           "Off-Balance", "Touch of Z'en", "Morag Tong",
                           "Minor Brittle", "Major Brittle", "Elemental Catalyst", "Alkosh"])
         self.assertEqual(rules[0], Rule("Major Courage", frozenset({"109966"}), "group", "uptime",
                                         frozenset({"large"})))
         self.assertEqual(rules[6], Rule("Taunt", frozenset({"38254"}), "boss", "each",
                                         frozenset({"small", "large"})))
-        self.assertEqual(rules[8], Rule("Touch of Z'en", frozenset({"126597"}), "boss", "dots"))
-        # Five group buffs are expected in a large group; Powerful Assault
-        # (issue #48) and the rest nowhere
+        # Major Breach (issue #243): the one boss debuff expected, in a
+        # group of any size, like the taunt
+        self.assertEqual(rules[7], Rule("Major Breach", rules[7].ids, "boss", "uptime",
+                                        frozenset({"small", "large"})))
+        self.assertEqual(rules[9], Rule("Touch of Z'en", frozenset({"126597"}), "boss", "dots"))
+        # Five group buffs are expected in a large group, Major Breach and
+        # the taunt in any group; Powerful Assault (issue #48) and the rest
+        # nowhere
         self.assertEqual([sorted(r.expected) for r in rules],
-                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] + [[]] * 7)
-        self.assertEqual(rules[9], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
+                         [["large"]] * 3 + [[]] + [["large"]] * 2 + [["large", "small"]] * 2 + [[]] * 7)
+        self.assertEqual(rules[10], Rule("Morag Tong", frozenset({"34384"}), "boss", "uptime"))
         # Elemental Catalyst's three weaknesses, one rule
-        self.assertEqual(rules[12], Rule("Elemental Catalyst", frozenset({"142610", "142652", "142653"}),
+        self.assertEqual(rules[13], Rule("Elemental Catalyst", frozenset({"142610", "142652", "142653"}),
                                          "boss", "uptime"))
-        self.assertEqual(rules[13], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
-        self.assertIn("45902", rules[7].ids)
+        self.assertEqual(rules[14], Rule("Alkosh", frozenset({"76667"}), "boss", "uptime"))
+        self.assertIn("45902", rules[8].ids)
         # Crux is a commented-out example (issue #80), and parses once uncommented
         self.assertIn("\n# Crux          = 184220 on self stacks\n", DEFAULT_RULES)
         self.assertEqual(parse_rules(DEFAULT_RULES.replace("# Crux", "Crux"))[0][-1],
@@ -125,10 +138,12 @@ class TestRuleText(unittest.TestCase):
         text is left alone."""
         text = "Powerful Assault = 61771 on group expected large\nMajor Force = 61747 on group\n"
         self.assertEqual(upgrade_rules_text(text, 3),
-                         "Powerful Assault = 61771 on group\nMajor Force = 61747 on group\n")
+                         "Powerful Assault = 61771 on group\nMajor Force = 61747 on group\n" + ADDED_IN_6)
         self.assertEqual(upgrade_rules_text(text, 0),
-                         "Powerful Assault = 61771 on group\nMajor Force = 61747 on group expected large\n")
-        self.assertEqual(upgrade_rules_text(text, 4), text)
+                         "Powerful Assault = 61771 on group\nMajor Force = 61747 on group expected large\n"
+                         + ADDED_IN_6)
+        self.assertEqual(upgrade_rules_text(text, 4), text + ADDED_IN_6)
+        self.assertEqual(upgrade_rules_text(text, 6), text)
 
     def test_upgrade_to_5_comments_out_the_default_crux_line(self):
         """Issue #80: the shipped Crux line, in any spacing, is commented
@@ -139,9 +154,56 @@ class TestRuleText(unittest.TestCase):
                 "My Crux = 184220 on self stacks\n"
                 "# Crux = 184220 on self stacks\n")
         self.assertEqual(upgrade_rules_text(text, 4),
-                         "# Crux          = 184220 on self stacks\n" + text.split("\n", 1)[1])
+                         "# Crux          = 184220 on self stacks\n" + text.split("\n", 1)[1] + ADDED_IN_6)
         self.assertEqual(upgrade_rules_text(text, 0), upgrade_rules_text(text, 4))
-        self.assertEqual(upgrade_rules_text(text, 5), text)
+        self.assertEqual(upgrade_rules_text(text, 6), text)
+
+    def test_the_breach_ids_are_pen_crits(self):
+        """Issue #243: the default Major Breach rule and the Minor Breach
+        example match every id pen_crit counts under those names, the
+        Trial dummy's own included, so the strip and the Armour row agree."""
+        import pen_crit
+        ids = {name: set(debuff_ids) for name, debuff_ids, _pen, _crit in pen_crit.DEBUFFS}
+        major = parse_rules(MAJOR_BREACH_RULE)[0][0]
+        self.assertEqual(set(major.ids), ids["Major Breach"])
+        examples = {line.split("=")[0].strip(): line for _title, _note, line in EXAMPLE_RULES}
+        self.assertEqual(set(parse_rules(examples["Minor Breach"])[0][0].ids), ids["Minor Breach"])
+        self.assertEqual(parse_rules(examples["Major Breach"])[0][0], major)
+        # The examples start with the defaults, Crux commented out there
+        defaults = [rule.name for rule in parse_rules(DEFAULT_RULES.replace("# Crux", "Crux"))[0]]
+        self.assertEqual(sorted(defaults), sorted(list(examples)[:len(defaults)]))
+
+    def test_upgrade_to_6_adds_major_breach_and_catalyst_by_name(self):
+        """Issue #243: a saved text is given the defaults added since it
+        was written, after the default boss-debuff comment when it has it,
+        at its end otherwise; a line of that name stays the user's, a
+        commented-out one too; a text with no rule gets nothing."""
+        old_default = (BOSS_DEBUFFS_COMMENT + "\n"
+                       "Off-Balance   = 45902 on boss\n"
+                       "Alkosh        = 76667 on boss\n")
+        self.assertEqual(upgrade_rules_text(old_default, 5),
+                         BOSS_DEBUFFS_COMMENT + "\n" + MAJOR_BREACH_RULE + "\n" + CATALYST_RULE + "\n"
+                         "Off-Balance   = 45902 on boss\n"
+                         "Alkosh        = 76667 on boss\n")
+        self.assertEqual(upgrade_rules_text("Mine = 1 on boss", 5),
+                         "Mine = 1 on boss\n" + MAJOR_BREACH_RULE + "\n" + CATALYST_RULE)
+        own = ("major breach = 61743 on boss\n"
+               "# Elemental Catalyst = 142610 on boss\n")
+        self.assertEqual(upgrade_rules_text(own, 5), own)
+        # A line of the name that does not parse is the user's too, and is
+        # not given a second one beside it
+        mistyped = ("Mine = 1 on boss\n"
+                    "Major Breach = 61743 on mobs\n"
+                    "#Elemental Catalyst =\n")
+        self.assertEqual(upgrade_rules_text(mistyped, 5), mistyped)
+        self.assertEqual(upgrade_rules_text("# nothing tracked\n", 5), "# nothing tracked\n")
+        self.assertEqual(upgrade_rules_text("", 5), "")
+        # Safe to repeat, and a current text is left alone
+        once = upgrade_rules_text(old_default, 5)
+        self.assertEqual(upgrade_rules_text(once, 5), once)
+        self.assertEqual(upgrade_rules_text(old_default, 6), old_default)
+        # The default text has both, so nothing is added to it
+        self.assertEqual(upgrade_rules_text(DEFAULT_RULES, 5), DEFAULT_RULES)
 
 
 # A HyperTools export, as the addon's Transmission.lua writes it: a table of

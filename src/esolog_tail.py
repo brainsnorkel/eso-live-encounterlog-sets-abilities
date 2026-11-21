@@ -32,10 +32,10 @@ from death_recap import (DEATH_RESULTS, HEALTH_CAUSE, KILLING_HIT_RESULTS, SUBZO
 from effect_rules import EffectTracker
 from boss_units import is_fight_boss
 from build_issues import (
-    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BuildIssueTracker,
+    GROUP_BUFF_EFFECT_IDS, GROUP_BUFF_SET_OF_EFFECT, STAR_PROC_IDS, BreachRow, BuildIssueTracker,
     GroupBuffCredit, PROC_EFFECT_IDS,
     fired_proc_sets, food_findings, group_buff_sets_worn, group_buff_shares, stars_slotted,
-    structural_findings, worn_proc_sets,
+    structural_findings, tank_breach_findings, worn_proc_sets,
 )
 from scribing import ScribingTracker, slot_fields
 from player_build import (build_fields, food_ids, has_restoration_staff, is_mythic_set,
@@ -4610,6 +4610,30 @@ class ESOLogAnalyzer(ListenerMixin):
                     entry.players[-1]['food'], enc.food.get(player.unit_id), enc.start_time,
                     name_of=ability_name)
 
+        # No tank applied Major Breach (build_issues.tank_breach_findings,
+        # issue #243): a rule on the group's tanks together, so judged once
+        # every row has its role and this fight's taunts are noted, from
+        # the pen/crit tracker's casters of the debuff (pruned further down).
+        # A tank is the role and a taunt this session or this fight (a row
+        # with no build in the log skips the session's record); the Trial
+        # dummy keeps Major Breach on itself, so a fight against it has
+        # nothing to judge
+        breach_by = {str(enc.record_id(source)) for source in pen_crit.debuff_sources(
+            self.pen_crit_tracker, "Major Breach", enc.start_time, enc.end_time)}
+        tank_findings = tank_breach_findings(
+            [BreachRow(str(row['unit_id']), str(row.get('role') or ''),
+                       row.get('role') == 'T' and (
+                           self.build_issues.has_taunted(self._scribing_player_key(row['unit_id']))
+                           or bool(enc.player_taunts.get(row['unit_id']))),
+                       str(row['unit_id']) in breach_by, not row.get('no_build'))
+             for row in entry.players],
+            duration, len(enc.players),
+            kept_by_target=bool(self._trial_dummies(enc, enc.fight_units())))
+        for row in entry.players:
+            finding = tank_findings.get(str(row['unit_id']))
+            if finding is not None:
+                row['build_issues'] = list(row.get('build_issues') or []) + [finding]
+
         # Every player row's casts, packed (fight_casts, issue #214). Built
         # again for the group fighting on, the fight keeps the casts its
         # first build took, as its rows keep their counts (waiting_hits),
@@ -4646,6 +4670,17 @@ class ESOLogAnalyzer(ListenerMixin):
             self.casts.prune_before(enc.start_time)
             self.resources.prune_before(enc.start_time)
             self.events.prune_before(enc.start_time)
+
+        # The Trial dummy's own Major Breach, which a session begun after
+        # its spawn never sees applied: a span from the fight's start, as
+        # pen_crit credits it, so the expected Major Breach rule (issue
+        # #243) does not read a red 0% at a group parse. A span already
+        # open, the spawn's own, is kept (EffectTracker.seed)
+        if self.effect_tracker:
+            units = enc.fight_units()
+            for uid in self._trial_dummies(enc, units):
+                self.effect_tracker.seed((pen_crit.TRIAL_DUMMY_BREACH_ID,), uid, enc.start_time,
+                                         units[uid][0])
 
         # The uptime line: every item is a rule (effect_rules), measured on
         # the fight's players and the hostiles the group hit, whatever the
@@ -4865,6 +4900,14 @@ class ESOLogAnalyzer(ListenerMixin):
             })
         return rows
 
+    @staticmethod
+    def _trial_dummies(enc: 'CombatEncounter', units: dict) -> list[str]:
+        """The fight's units that are the Trial dummy, by name
+        (pen_crit.TRIAL_DUMMY_NAME): it keeps a trial group's debuffs on
+        itself, Major Breach among them, from its spawn."""
+        return [uid for uid in units
+                if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME]
+
     def _pen_crit_fields(self, entry: FightHistoryEntry, enc: 'CombatEncounter') -> None:
         """Set entry.pen_crit and each player's 'pen_crit' (pen_crit.py): the
         player's own rows from their PLAYER_INFO line, the fight's debuffs
@@ -4884,8 +4927,7 @@ class ESOLogAnalyzer(ListenerMixin):
         units = enc.fight_units()
         # The Trial dummy keeps a trial group's debuffs on itself from its
         # spawn; a session begun later never sees them applied (pen_crit)
-        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in units
-                     if uid in enc.enemies and enc.enemies[uid].name == pen_crit.TRIAL_DUMMY_NAME}
+        permanent = {uid: list(pen_crit.TRIAL_DUMMY_DEBUFFS) for uid in self._trial_dummies(enc, units)}
 
         def gear_of(unit_id: str):
             player = enc.player_of(unit_id)

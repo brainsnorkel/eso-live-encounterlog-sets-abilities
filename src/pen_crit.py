@@ -351,6 +351,10 @@ TRIAL_DUMMY_NAME = "Target Iron Atronach, Trial"
 TRIAL_DUMMY_DEBUFFS = ("Major Breach", "Minor Breach", "Crusher", "Roar of Alkosh",
                        "Minor Brittle", "Elemental Catalyst")
 TRIAL_DUMMY_VIA = "the dummy's own"
+# Its own Major Breach: the engine opens a span of it on the dummy for the
+# tracked-effect rules too, whose default Major Breach rule is expected in
+# a group (issue #243) and would otherwise read a red 0% there
+TRIAL_DUMMY_BREACH_ID = "120010"
 STATUS_PREFIX = "status:"
 
 PEN_DEBUFFS = tuple(name for name, _ids, pen, _crit in DEBUFFS if pen)
@@ -371,6 +375,16 @@ def tracker_rules() -> list[Rule]:
 
 def new_tracker() -> EffectTracker:
     return EffectTracker(tracker_rules())
+
+
+def debuff_sources(tracker: EffectTracker, name: str, start_ms: int, end_ms: int) -> set[str]:
+    """The units that applied the DEBUFFS debuff *name* to any hostile
+    between *start_ms* and *end_ms*: its spans' casters, an unknown caster
+    left out (build_issues.tank_breach_findings reads Major Breach's)."""
+    for index, rule in enumerate(tracker.rules):
+        if rule.name == name:
+            return {str(span[5]) for span in tracker.spans_in(index, start_ms, end_ms) if span[5]}
+    return set()
 
 
 def pen_cap(instanced: bool, setting=None) -> int:

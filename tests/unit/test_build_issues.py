@@ -542,6 +542,58 @@ class TestTankWithoutTaunt(unittest.TestCase):
                                                         back='inferno')), [])
 
 
+class TestTankBreach(unittest.TestCase):
+    """Issue #243: the tanks of a group fight of 30 s or more none of whom
+    applied Major Breach, each flagged; who covered it said by role."""
+
+    @staticmethod
+    def _row(key, role='T', tank=None, applied=False, judged=True):
+        return build_issues.BreachRow(key, role, role == 'T' if tank is None else tank, applied, judged)
+
+    def test_a_tank_who_applied_none_in_a_small_group(self):
+        found = build_issues.tank_breach_findings(
+            [self._row('t'), self._row('d', 'D')], 45.0, 2)
+        self.assertEqual(list(found), ['t'])
+        self.assertEqual((found['t']['rule'], found['t']['title']),
+                         ('no-tank-breach', 'No tank applied Major Breach'))
+        self.assertIn("5,948 off the target's Physical and Spell Resistance", found['t']['detail'])
+        self.assertTrue(found['t']['detail'].endswith(
+            'No tank applied it to the enemies in this fight; nobody else did either.'))
+
+    def test_one_tank_applying_it_is_enough(self):
+        rows = [self._row('t1'), self._row('t2', applied=True), self._row('d', 'D')]
+        self.assertEqual(build_issues.tank_breach_findings(rows, 90.0, 12), {})
+        self.assertEqual(build_issues.tank_breach_findings([self._row('t', applied=True)], 90.0, 4), {})
+
+    def test_both_tanks_flagged_and_who_covered_it_by_role(self):
+        rows = [self._row('t1'), self._row('t2'), self._row('h', 'H', applied=True),
+                self._row('d1', 'D', applied=True), self._row('d2', 'D')]
+        found = build_issues.tank_breach_findings(rows, 60.0, 12)
+        self.assertEqual(sorted(found), ['t1', 't2'])
+        self.assertIn('; a healer and a damage dealer applied it instead.', found['t1']['detail'])
+        rows = [self._row('t'), self._row('d1', 'D', applied=True), self._row('d2', 'D', applied=True),
+                self._row('x', 'T', tank=False, applied=True)]
+        found = build_issues.tank_breach_findings(rows, 60.0, 4)
+        # A player read as a tank who never taunted is not one of the tanks
+        self.assertIn('; two damage dealers and another player applied it instead.', found['t']['detail'])
+
+    def test_the_gates(self):
+        rows = [self._row('t'), self._row('d', 'D')]
+        rule = build_issues.tank_breach_findings
+        self.assertEqual(rule(rows, build_issues.TANK_BREACH_MIN_S - 0.1, 4), {})  # too short to tell
+        self.assertEqual(list(rule(rows, build_issues.TANK_BREACH_MIN_S, 4)), ['t'])
+        self.assertEqual(rule(rows, 90.0, 1), {})  # solo
+        self.assertEqual(rule(rows, 90.0, None), {})  # group unknown
+        self.assertEqual(rule([self._row('d', 'D')], 90.0, 4), {})  # no tank
+        # A tank whose build is not in the log is not flagged, but counts as
+        # a tank who could have applied it, and does when they did
+        self.assertEqual(rule([self._row('t', judged=False), self._row('d', 'D')], 90.0, 4), {})
+        self.assertEqual(rule([self._row('t'), self._row('u', judged=False, applied=True)], 90.0, 4), {})
+        self.assertEqual(list(rule([self._row('t'), self._row('u', judged=False)], 90.0, 4)), ['t'])
+        # The Trial dummy keeps Major Breach on itself: nothing to judge
+        self.assertEqual(rule(rows, 90.0, 4, kept_by_target=True), {})
+
+
 class TestFood(unittest.TestCase):
     TABLE = {'61257': {'kind': 'food', 'type': 'MAX_HEALTH_MAGICKA'},
              '84731': {'kind': 'drink', 'type': 'MAX_HEALTH_MAGICKA_REGEN_MAGICKA'},
@@ -922,7 +974,9 @@ class TestEngine(unittest.TestCase):
             lines.append(f'{end},END_COMBAT')
             return lines
 
-        entries = _fights(_session(fight(10000, 40000, taunts=False)))
+        # Fights of 29.9 s: under TANK_BREACH_MIN_S, so the no-Major-Breach
+        # rule on a taunting tank (issue #243) stays out of this one
+        entries = _fights(_session(fight(10000, 39900, taunts=False)))
         player = self._players(entries[0])['@alkosh']
         self.assertEqual(player['role'], 'T')
         self.assertEqual([f['rule'] for f in player['build_issues']], ['tank-no-taunt'])
@@ -930,8 +984,50 @@ class TestEngine(unittest.TestCase):
         self.assertIn('they hold a shield, and they dealt 2% of an equal share',
                       player['build_issues'][0]['detail'])
         # A taunt in the first fight clears it for the session
-        entries = _fights(_session(fight(10000, 40000, taunts=True), fight(50000, 80000, taunts=False)))
+        entries = _fights(_session(fight(10000, 39900, taunts=True), fight(50000, 79900, taunts=False)))
         self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in entries], [[], []])
+
+    def test_no_tank_applied_major_breach(self):
+        """Issue #243: a taunting tank in a group fight of 30 s or more
+        whose group's tanks put no Major Breach on an enemy; cleared by the
+        tank's own Major Breach on the boss, and a damage dealer's named by
+        role when only they applied it."""
+        tank = _gear([_item('HEAD', '95044'),
+                      _weapon('MAIN_HAND', '200834', 'WEAPON_DEFENDING', 'REDUCE_ARMOR', '0'),
+                      _item('OFF_HAND', '139', 'ARMOR_STURDY', '0', 'HEALTH')])
+
+        def fight(begin, end, breach_by=None):
+            lines = [f'{begin},BEGIN_COMBAT',
+                     f'{begin + 1},PLAYER_INFO,1,{FED},{NIRN_GEAR},[12345],[12345]',
+                     f'{begin + 1},PLAYER_INFO,2,{FED},{tank},[38250],[12345]',
+                     _cast(begin + 900, 1, stamina=30000),
+                     _hit(begin + 1000, 1, 90000, stamina=30000),
+                     _cast(begin + 1900, 2, health=45000),
+                     _hit(begin + 2000, 2, 1000, health=45000),
+                     _taunt(begin + 2500, 2)]
+            if breach_by is not None:
+                lines.append(_gained(begin + 3000, breach_by, '61743'))
+            lines.append(f'{end},END_COMBAT')
+            return lines
+
+        def rules(*fights):
+            return [{name: [f['rule'] for f in p['build_issues']] for name, p in self._players(e).items()}
+                    for e in _fights(_session(*fights))]
+
+        self.assertEqual(rules(fight(10000, 40000)), [{'@nirn': ['nirnhoned-off-hand'],
+                                                       '@alkosh': ['no-tank-breach']}])
+        self.assertEqual(rules(fight(10000, 40000, breach_by=2)), [{'@nirn': ['nirnhoned-off-hand'],
+                                                                    '@alkosh': []}])
+        entries = _fights(_session(fight(10000, 40000, breach_by=1)))
+        finding = self._players(entries[0])['@alkosh']['build_issues'][0]
+        self.assertEqual(finding['rule'], 'no-tank-breach')
+        self.assertTrue(finding['detail'].endswith('; a damage dealer applied it instead.'))
+        # Under 30 s: not judged
+        self.assertEqual(rules(fight(10000, 39900)), [{'@nirn': ['nirnhoned-off-hand'], '@alkosh': []}])
+        # Nor a fight against the Trial dummy, which keeps Major Breach on itself
+        dummy = [line.replace('"Test Boss"', '"Target Iron Atronach, Trial"')
+                 for line in _session(fight(10000, 40000))]
+        self.assertEqual([self._players(e)['@alkosh']['build_issues'] for e in _fights(dummy)], [[]])
 
     def test_a_warmask_wearer_who_never_marks_is_judged_like_a_proc_set(self):
         # @nirn wears the mythic on the head; the mark's GAINED has the
