@@ -364,7 +364,7 @@ The shield after a player's name, in either view, opens everything that reached 
 
 ### Healing received
 
-The healing line on Damage taken opens this tab, which repeats that line and then lists every unit that healed the player, by the healing the player received from it, with the player's own heals marked `own` and a pet's heals (a Twilight Matriarch's) in a row of their own, named after the owner and marked `pet`. Under each healer, their abilities. **Overheal** is the share of that row's healing that overflowed, not an amount: in a trial about nine tenths of all healing on a player is overheal, so the amounts would bury the healing received; a row near 100% is a HoT ticking on a full bar. **Kind** says `HoT`, `direct`, or the mix.
+The healing line on Damage taken opens this tab, which repeats that line and then lists every unit that healed the player, by the healing the player received from it, with the player's own heals marked `own` and a pet's heals (a Twilight Matriarch's) in a row of their own, named after the owner and marked `pet`. Under each healer, their abilities, largest first: a skill the game writes under more than one id (Radiating Regeneration twice, Budding Seeds' heal and its HoT) is one row, its parts added up, as on [Healing done](#healing-done). **Overheal** is the share of that row's healing that overflowed, not an amount: in a trial about nine tenths of all healing on a player is overheal, so the amounts would bury the healing received; a row near 100% is a HoT ticking on a full bar. **Kind** says `HoT`, `direct`, or the mix.
 
 ![The Healing received tab: healing by healer, each healer's abilities under them](screencaps/healing-received.png)
 
