@@ -1,2 +1,0 @@
-### Changed
-- **Healing received lists each skill once** (follows #242): a skill the game writes under more than one id, such as Radiating Regeneration or Budding Seeds' heal and its HoT, showed as two rows of the same name under a healer, with nothing to tell them apart. It is now one row, its healing, hits and overheal added up, and **Kind** gives the mix (`HoT 70% · direct 30%`), as on the Healing done tab.
