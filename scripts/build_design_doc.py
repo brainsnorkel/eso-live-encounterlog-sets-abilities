@@ -110,6 +110,10 @@ TOPICS = [
         "scripts/stamp_data_version.py",
         "scripts/check_data_staleness.py",
     ]),
+    ("Bundled data in a frozen build, and the check of every build", [
+        "src/ability_icons.py:bundle_root",
+        "src/self_check.py",
+    ]),
     ("Solo dungeons: the run's Misfortunes", [
         "src/misfortunes.py",
     ]),

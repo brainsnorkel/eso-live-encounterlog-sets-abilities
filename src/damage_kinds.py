@@ -74,6 +74,8 @@ from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
+from ability_icons import bundle_root
+
 # ----------------------------------------------------------------- results --
 
 DIRECT_RESULTS = frozenset(("DAMAGE", "CRITICAL_DAMAGE", "BLOCKED_DAMAGE"))
@@ -152,12 +154,28 @@ def classify(result: str, damage_type: str) -> dict:
 
 # ------------------------------------------------- player skills' targets --
 
-TARGET_TABLE_PATH = Path(__file__).resolve().parent.parent / "data" / "skills" / "ability_targets.json"
 _target_table: dict[str, str] | None = None
 
 
-def _load_targets(path: Path = TARGET_TABLE_PATH) -> dict[str, str]:
-    """ability id -> 'area' | 'single' from the bundled table; {} without it."""
+def target_table_path() -> Path:
+    """The bundled table, under ability_icons.bundle_root() as every bundled
+    table is: sys._MEIPASS in a frozen build, the repository from source.
+
+    Until issue #237 the path was built from this module's own ``__file__``,
+    which in a PyInstaller build is the folder above the bundled data
+    (dist/esolog-gui/data/ for dist/esolog-gui/_internal/data/). No release
+    from 0.15.0 to 0.44.0 found the table, so area_rule never reached its
+    'table' rule, and a player's area skill counted as single target until
+    a cast struck two units. self_check reads the table in every build CI
+    makes."""
+    return bundle_root() / "data" / "skills" / "ability_targets.json"
+
+
+def _load_targets(path: Path | None = None) -> dict[str, str]:
+    """ability id -> 'area' | 'single' from the bundled table (or the one
+    at *path*); {} without it."""
+    if path is None:
+        path = target_table_path()
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
