@@ -32,6 +32,7 @@ The engine knows nothing about Qt. It reads log lines, tracks the fight, and rep
 | Module | Role |
 |---|---|
 | `esolog_gui.py` | Entry point: crash log, config, main window. |
+| `self_check.py` | The built app's check of its own data: each bundled table read through the app's loaders, for CI (`ESOLOG_TAIL_SELF_CHECK=1`). |
 | `esolog_tail.py` | The engine. `ESOLogAnalyzer` turns log entries into fights, `LogSplitter` writes the per-encounter split files, `LogFileMonitor` tails the log. |
 | `eso_log_parser.py`, `eso_log_structures.py` | Parsing of log lines into typed entries. |
 | `engine_events.py` | `AnalyzerListener`: the contract between the engine and a frontend. |
@@ -117,7 +118,9 @@ powershell Compress-Archive -Path dist\esolog-gui\* -DestinationPath dist\esolog
 
 `dist\esolog-gui\esolog-gui.exe` should open the main window. The installer is per-user (no administrator rights), registers in Apps & Features, and upgrades in place because its `AppId` never changes. Uninstalling leaves the user's config and archived logs. Nothing is code-signed, so SmartScreen shows "unknown publisher".
 
-A module that PyInstaller cannot find by following imports must be listed under `hiddenimports` in `esolog-tail.spec`, and a new data folder under `datas`.
+Started with `ESOLOG_TAIL_SELF_CHECK=1` in its environment, the built app opens no window: it reads each table it bundles through its own loaders, prints a line per table, and exits with 0 when every one loaded or 1 when one did not (`src/self_check.py`, issue #237). A loader that cannot find its table reads it as empty and says nothing, so this is the only sign of a table the build lost. CI runs it on every build. In Git Bash: `ESOLOG_TAIL_SELF_CHECK=1 dist/esolog-gui/esolog-gui.exe`.
+
+A module that PyInstaller cannot find by following imports must be listed under `hiddenimports` in `esolog-tail.spec`, and a new data folder under `datas`, with an entry for each of its tables in `TABLES` in `src/self_check.py` (a unit test asks for one).
 
 On Linux the same PyInstaller command builds `dist/esolog-gui/`, which CI packs into the release tarball. Build on the oldest distribution you want to support, with Qt's X11 and Wayland libraries installed (the package list is in the workflow file): PyInstaller bundles the ones it finds.
 
@@ -135,12 +138,14 @@ python -m PyInstaller esolog-tail.spec --noconfirm
 
 # The checks CI runs on the bundle
 python scripts/check_macos_stamps.py "dist/ESO Log Tail.app"
+ESOLOG_TAIL_SELF_CHECK=1 "dist/ESO Log Tail.app/Contents/MacOS/esolog-gui"
 python scripts/smoke_macos.py "dist/ESO Log Tail.app/Contents/MacOS/esolog-gui"
 ```
 
 - **A bundle built on your Mac is for your Mac.** It carries the Python that built it, and Homebrew's Python and OpenSSL are made for the macOS they were installed on. `check_macos_stamps.py` lists the oldest macOS each binary was built for and fails such a bundle; that failure is expected locally. CI builds with `setup-python`'s Python, which is made for old systems. PySide6's own binding libraries are stamped macOS 26 whatever builds them; the script prints them and does not fail on them, because the tests and the smoke test on the oldest runner are their check.
 - **It is not for handing out.** Its signature is ad-hoc, so Gatekeeper refuses it on any Mac that downloads it.
 - **The minimum macOS** is `LSMinimumSystemVersion` in the spec. It is the oldest macOS on which CI runs the suite and starts the app (the `build-macos` and `smoke-macos` jobs), and it moves only with them.
+- **The data check** (`ESOLOG_TAIL_SELF_CHECK=1`, see [Building](#building)) runs on the downloaded app on each macOS, before the smoke test.
 - **The smoke test** starts the app for 20 seconds with a scratch `HOME` whose config names the fixture log, so it reads nothing in your `~/Documents` and touches no real settings. It passes when the app is still up, has written its `crash.log`, and that names no crash.
 - **The icon** is the same d12 on a rounded-square plate (`render_mac` in `scripts/create_icon.py`): macOS puts an icon that does not fill the rounded square on a grey plate of its own.
 - **The zip** is made with `ditto -c -k --sequesterRsrc --keepParent`, which keeps the bundle's symlinks and signature; `zip` does not.
@@ -286,7 +291,7 @@ Every release is first a **beta**; a beta that has been used in real fights for 
 
 A fragment that reaches the release branch after the release commit (with a merge of `main`, which the branch needs before it can merge) would ship its change in this release and its note in the next. The *Changelog* check and `--tag` both refuse that; revert the release commit and run step 2 again.
 
-The tag runs `.github/workflows/build-installers.yml`: a Windows job (the tests, then the installer and the portable zip) and a Linux job (the tests, then the tarball, with a start-up smoke test under xvfb) side by side, then the release job, which needs both. The macOS jobs do not run for a tag. A failure in either build stops the release. A tag whose design notes lag the code fails at the start of the Linux build (`scripts/build_design_doc.py --check`). The release job first runs `scripts/release_guard.py`, which refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's `src/version.py`, or is not on `main`; then it publishes the three files as a GitHub **pre-release**, with notes generated from the previous `v*` tag. A pre-release is never GitHub's latest release, so Stable users and the home page's buttons do not move.
+The tag runs `.github/workflows/build-installers.yml`: a Windows job (the tests, then the installer and the portable zip, once the built app has read all its bundled data) and a Linux job (the tests, then the tarball, after the same data check and a start-up smoke test under xvfb) side by side, then the release job, which needs both. The macOS jobs do not run for a tag. A failure in either build stops the release. A tag whose design notes lag the code fails at the start of the Linux build (`scripts/build_design_doc.py --check`). The release job first runs `scripts/release_guard.py`, which refuses a tag that is not `vX.Y.Z`, does not match the tagged commit's `src/version.py`, or is not on `main`; then it publishes the three files as a GitHub **pre-release**, with notes generated from the previous `v*` tag. A pre-release is never GitHub's latest release, so Stable users and the home page's buttons do not move.
 
 To run the workflow without releasing, push a branch and start it by hand (`gh workflow run build-installers.yml --ref <branch>`); the release job only runs for tags. Pull requests to `main` run the builds too.
 

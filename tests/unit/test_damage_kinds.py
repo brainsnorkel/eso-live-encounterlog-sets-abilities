@@ -6,9 +6,11 @@ star table. The figures come from the 87-log survey of 2026-10-27 and the
 Dreadsail Reef death it describes."""
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from damage_kinds import (
     ESOHUB_CP,
@@ -20,13 +22,17 @@ from damage_kinds import (
     area_of,
     area_rule,
     classify,
+    reset_target_table,
     rows_have_kinds,
     stars_for,
     summary_of_rows,
     summary_of_taken,
     table_target,
+    target_table_path,
     type_label,
 )
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 class TestClassify(unittest.TestCase):
@@ -120,6 +126,33 @@ class TestCastIndex(unittest.TestCase):
             self.assertEqual(table_target('46324', path=path), 'single')
             self.assertIsNone(table_target('1', path=path))
             self.assertIsNone(table_target('28800', path=Path(tmp) / 'missing.json'))
+
+
+class TestTargetTableInABuild(unittest.TestCase):
+    """Issue #237 (based on PR #238): a frozen build keeps its data under
+    sys._MEIPASS, and the table is found there, as every bundled table is."""
+
+    def setUp(self):
+        reset_target_table()
+        self.addCleanup(reset_target_table)
+
+    def test_a_frozen_build_reads_the_table_in_its_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skills = Path(tmp) / 'data' / 'skills'
+            skills.mkdir(parents=True)
+            (skills / 'ability_targets.json').write_text(
+                json.dumps({'area': ['999001'], 'single': ['999002']}), encoding='utf-8')
+            with mock.patch.object(sys, '_MEIPASS', tmp, create=True):
+                self.assertEqual(target_table_path(), skills / 'ability_targets.json')
+                self.assertEqual(table_target('999001'), 'area')
+                self.assertEqual(table_target('999002'), 'single')
+                # The repository's table is not the one read
+                self.assertIsNone(table_target('28800'))
+
+    def test_run_from_source_it_is_the_repositorys_table(self):
+        self.assertFalse(hasattr(sys, '_MEIPASS'))
+        self.assertEqual(target_table_path(), REPO / 'data' / 'skills' / 'ability_targets.json')
+        self.assertEqual(table_target('28800'), 'area')
 
 
 class TestTakenTally(unittest.TestCase):

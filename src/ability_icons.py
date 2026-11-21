@@ -27,7 +27,13 @@ ESOHUB_BASE = "https://eso-hub.com"
 
 
 def bundle_root() -> Path:
-    """Folder that holds data/: the PyInstaller bundle when frozen, else the repo."""
+    """Folder that holds data/: the PyInstaller bundle when frozen, else the repo.
+
+    Every bundled table is found through this, never from a module's own
+    ``__file__``, which in a frozen build is the folder above the bundled
+    data: the skill target table was looked for there and went unread in
+    every release from 0.15.0 to 0.44.0 (issue #237). self_check reads each
+    table through the app's loaders in every build CI makes."""
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 
 
