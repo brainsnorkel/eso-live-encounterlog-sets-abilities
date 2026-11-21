@@ -2,6 +2,11 @@
 
 All notable changes to the ESO Live Encounter Log Sets & Abilities Analyzer will be documented in this file.
 
+## [0.46.0] - 2026-11-21
+
+### Added
+- **A trial's or an arena's art on its header and its page** (#249): in the fight list, the header of a group fought in a trial or an arena is a little taller and carries a strip of the game's loading-screen painting for that instance after its name, and the same painting runs across the top of the Instance tab. All fourteen trials and the five arenas have one; a dungeon, the open world, and a trial newer than the app keep the plain header. The art sits beside the name, never under the fights' text, says nothing to a screen reader, and is off while the system asks for high contrast. It is on by default, after an update as on a new install; Settings → Display → *Instance art* turns it off
+
 ## [0.45.0] - 2026-11-21
 
 ### Added
