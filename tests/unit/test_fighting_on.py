@@ -179,6 +179,13 @@ class TestWhenTheGroupStops(unittest.TestCase):
         # Read with the session's own times
         self.assertEqual(entry.timestamp, Engine().feed(TRASH_FIGHT).fights[0].timestamp)
 
+    def test_the_logs_end_log_line(self):
+        """END_LOG, which reached the engine under its own name only with
+        issue #225: the hits do not wait for the next session."""
+        engine = Engine().feed([*TRASH_FIGHT, *FOUGHT_ON, '24000,END_LOG'])
+        self.assertEqual(group_damage(engine.fights[0]), 170000)
+        self.assertEqual(fight_events(engine).count('fight_updated'), 1)
+
     def test_the_logs_end(self):
         engine = Engine().feed([*TRASH_FIGHT, *FOUGHT_ON])
         engine.analyzer.finish()
