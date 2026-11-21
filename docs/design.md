@@ -1559,7 +1559,7 @@ finding's set link, so all three show the same hover (issue #79).
 
 ### FightView._show_key_tip
 
-*[src/gui/fight_view.py:330](../src/gui/fight_view.py#L330)*
+*[src/gui/fight_view.py:382](../src/gui/fight_view.py#L382)*
 
 Design: Hover text from the keyboard. A link's hover text was the
 mouse's alone: Qt reports a hovered link (highlighted) and nothing
@@ -1766,7 +1766,8 @@ than an argument: the app takes none, and Qt reads its own from the
 command line.
 
 TABLES holds an entry for each JSON table the spec (esolog-tail.spec)
-bundles and one for the folder of icons; a unit test fails when the spec
+bundles and one for each folder of pictures, the icons and the trials' and
+arenas' art; a unit test fails when the spec
 bundles a table that has none, so a table added later is checked too. CI
 runs the check on the Windows and Linux bundles right after PyInstaller,
 and in the smoke-macos job on the downloaded app on each macOS
@@ -2733,7 +2734,7 @@ it has to have been hit.
 
 ### AppConfig.reload
 
-*[src/app_config.py:135](../src/app_config.py#L135)*
+*[src/app_config.py:138](../src/app_config.py#L138)*
 
 Read the file over DEFAULTS. A rules text saved before the uptime
 line's group buffs and taunt became rules (tracking.version absent,
@@ -3311,6 +3312,145 @@ coming in), once the rows have moved, and
 the hover line INSTANCE_CUE, which a run row's hover text ends with; a
 screen reader hears INSTANCE_DESCRIPTION as their description, after a
 run row's own.
+
+The art (issue #249, gui.instance_art has the design and why it is not a
+backdrop behind the rows): the header of a block fought in a trial or an
+arena carries a strip of the instance's art. The row's item is unchanged,
+its text, its click and what a screen reader hears; only its drawing is
+the list's own (HeaderDelegate): the block's ground, the title where the
+style puts a row's text (the style's text rectangle and margin, as for the
+(i) above, so a header with art and one without line up), and the art
+from after the title to the viewport's right edge, whatever the rows'
+own width: a list narrower than its text scrolls sideways, and the art
+is cut to the room in view at each step of that scroll. Every other row, and a
+header whose zone has no art, is drawn by the style as before, at the
+height it always had. The header's zone id is kept on its item
+(ZONE_ROLE), so the row needs no fight to know its art. The art is cut to
+the room there is, so the viewport is painted again when its width
+changes, and the rows are laid out again when the art is turned on or off
+or the font changes (refresh_art).
+
+## Instance art: a trial's or an arena's painting on its header and its tab
+
+### src/gui/instance_art.py
+
+*[src/gui/instance_art.py:1](../src/gui/instance_art.py#L1)*
+
+Instance art: a strip of a trial's or an arena's loading-screen painting on
+its block's header in the fight list and above the Instance tab's heading.
+
+Design: instance art in the window (issue #249). The request was for a
+very faint backdrop of the instance's art behind the fight list, to give
+the window some of the game's look. That was drawn in the real window, in
+both themes, over real sessions (2026-11-21) and not built, for what the
+pictures and the measurements showed:
+
+- The list's own cues are faint. The Windows 11 style marks the selected
+  fight with a fill 3.5 L* from the list's background in the light theme
+  and 5.5 L* in the dark, and a 3 px bar; the block band (gui.fight_list)
+  is 6.3 and 6.8 L* from it. A painting needs about 12% opacity to read as
+  a picture at all, and at 12% its own lightness varies by 6 to 8 L* across
+  the list (the 5th to 95th percentile, median of twelve paintings): more
+  than the selection's fill, which it drowned. At 6% it read as a dirty
+  panel. The text was never the problem: its contrast stayed above 13:1
+  in the light theme and 7:1 in the dark at 20%.
+- The list is a portrait slot and the paintings are landscapes: at the
+  default window size it showed 35% of a painting's width, and nobody
+  could have named the instance from that.
+- A session holds several instances, so one backdrop sat behind the rows
+  of the others; and most paintings are dark, which faded towards a white
+  background is grey haze.
+
+So the art has a slot of its own, at full colour, where no fight's text
+is:
+
+- A block's header row in the fight list. The row is header_height tall
+  (44 px at the usual text size, against a row's 30 in the Windows 11
+  style), its title where it always was, on the block's own ground (the
+  band's colour or the list's); the art runs from ART_GAP px after the
+  title to the list's right edge and fades in from that ground over the
+  first ART_FADE of its width. With less than MIN_ART_WIDTH px for it the
+  row keeps its height and shows none. A header can be clicked (it opens
+  the Instance tab), and a picture on it says so better than the pointer
+  alone did.
+- The Instance tab: STRIP_HEIGHT px of the same painting across the page,
+  above its heading, where a landscape has room and the page is about
+  nothing else. It is painted under the page (FightView.set_art) in the
+  room the page leaves for it (STRIP_SPACE), not put in the page as an
+  image: an image as wide as the page made the page scroll sideways when
+  its scroll bar came, and had to be made again at every width.
+
+Both are cut from one bundled picture per instance, a band across the
+whole painting seven times as wide as it is high
+(scripts/extract_instance_art.py, data/art/instances/<zone id>.jpg), by
+covering the slot: scaled until it fills the slot and cut evenly at the
+two sides or at top and bottom (cover_source). The art is found by the
+zone id the log gives (ZONE_CHANGED) and by nothing else. A zone with no
+file has no art, so a trial the game adds, a dungeon, a house or the open
+world shows the header it always had and no strip, with nothing reserved
+for one: only trials and arenas have a file (the maintainer's choice).
+
+Settings → Display → Instance art turns both off (display.instance_art,
+on by default: an install with no such setting saved has the art, a new
+one and one updated from a version before it alike), and so does a system
+set to high contrast, where a picture behind a title's row is what the
+setting asks to be spared; the window follows the system's setting while
+it is open (MainWindow._follow_instance_art).
+
+### scripts/extract_instance_art.py
+
+*[scripts/extract_instance_art.py:1](../scripts/extract_instance_art.py#L1)*
+
+Extract the art of the trials and arenas from the installed game: one wide
+strip of each instance's loading-screen painting, as a JPEG named by the
+instance's zone id.
+
+Design: instance art (issue #249). The fight list draws a strip of the
+instance's art on a block's header row, and the Instance tab draws it above
+its heading (gui.instance_art). The art is the painting the game shows while
+the instance loads, \esoui\art\loadingscreens\loadscreen_<name>_01.dds in
+depot\eso.mnf, 1680 x 1052. The log names a zone by its id (ZONE_CHANGED),
+and nothing the app can read ties a zone id to its painting, so INSTANCES
+below is that table, kept by hand:
+
+- The file names follow no rule. Sanctum Ophidia's is serpenttrial, the
+  Infinite Archive's endless_archive, Dreadsail Reef's dreadsail_reef_trial,
+  and Maw of Lorkhaj's is misspelt and has no number (maw_of_lorkaj). Of the
+  74 zone names in a year of split logs, 57 found a file by their name with
+  the punctuation taken out (measured 2026-11-21).
+- The zone ids are the client's own (en.lang table 162658389, read
+  2026-11-21 from the live client), and all but Maelstrom Arena's were also
+  seen on ZONE_CHANGED lines in the split logs.
+- The plain painting is used, not its _veteran copy, which has the veteran
+  shield drawn into it as a watermark: the header beside the strip says
+  Veteran in words.
+- Trials and arenas only (the maintainer's choice, 2026-11-21): nineteen
+  lines. The dungeons would be about sixty more, with new ones each year.
+
+What is kept of a painting is one band across its whole width, WIDTH x
+HEIGHT px, seven times as wide as it is high: the header strip and the
+Instance tab's strip are both about that shape, and each is cut from the
+band at the size it is drawn (gui.instance_art). Where the band lies is the
+line's focus, from 0 (the painting's top) to 1 (its bottom); FOCUS suits
+most paintings, whose subject sits a little above the middle, and a line
+gives its own when the subject is elsewhere. --sheet writes one picture of
+every strip, to check a focus by eye.
+
+An instance with no line here, or whose file is missing, has no art: the
+app then draws its header as it always did and nothing above the Instance
+tab's heading. So a new trial needs nothing to work, and one line here (its
+zone id, its name, its painting) to get its art, at the next run after a
+game update. The run never removes the art of a line it could not extract;
+it removes a picture only when its line has been taken out of the table,
+and only one an earlier run's manifest lists (remove_stale).
+
+Requirements and the way the files are found in eso.mnf are those of
+extract_ability_icons.py, whose helpers this script uses. The game folder is
+only read.
+
+```
+    python scripts/extract_instance_art.py --sheet build/instance-art.png
+```
 
 ## Kill or wipe, time dead, and a boss's pulls in a row
 
@@ -4103,7 +4243,7 @@ chosen.
 
 ### MainWindow._show_fight
 
-*[src/gui/main_window.py:1685](../src/gui/main_window.py#L1685)*
+*[src/gui/main_window.py:1717](../src/gui/main_window.py#L1717)*
 
 The current fight on the fight's tabs (the list's
 currentRowChanged passes the row, which a header row never is).
@@ -4921,7 +5061,7 @@ thread, which is how Settings crashed in 0.6.x.
 
 ### MainWindow._on_monitoring_restarting
 
-*[src/gui/main_window.py:1303](../src/gui/main_window.py#L1303)*
+*[src/gui/main_window.py:1335](../src/gui/main_window.py#L1335)*
 
 The engine has begun the restart Settings asked for. Everything
 it sent before this belonged to the analyzer being replaced, so the
@@ -4980,13 +5120,13 @@ fight, which no replay builds again, keeps it.
 
 ### Qt objects are freed on the UI thread
 
-*[src/gui/main_window.py:3157](../src/gui/main_window.py#L3157)*
+*[src/gui/main_window.py:3199](../src/gui/main_window.py#L3199)*
 
 Delete the closed dialog here, on the UI thread, rather than leave it to Python's garbage collector, which frees whatever is garbage on whichever thread is allocating at the time. That was the engine thread replaying the log after the restart, and freeing the dialog's Qt objects there aborted the app (settings crash, 0.6.7)
 
 ### MainWindow._fight_changed
 
-*[src/gui/main_window.py:1124](../src/gui/main_window.py#L1124)*
+*[src/gui/main_window.py:1156](../src/gui/main_window.py#L1156)*
 
 A delivered fight changed in place (a fight update from the
 engine, a score banner attached): its history line is rewritten, the
@@ -5031,13 +5171,13 @@ lacks.
 
 ### Steps after the page is laid out
 
-*[src/gui/fight_view.py:179](../src/gui/fight_view.py#L179)*
+*[src/gui/fight_view.py:190](../src/gui/fight_view.py#L190)*
 
 restore_scroll and open_at_anchor put the page where it should be now, and again in a step on the next pass of the event loop. Qt lays a page out in parts, the first in setHtml and the rest on its timer ticks after that step, and until it is done the bar's range is an estimate from the part laid out, short of the page's or past it. A scroll put back stops at the estimate, so a build window redrawn at or near its end landed up to 92 px short of where it was (97 of 940 redraws of real build pages, issue #196). So the place is held for HOLD_MS: each change of the bar's range puts the page there again, until it gets there, and the reader moving the page, with the wheel, a key, the bar, Tab or the in-fight search, ends the hold at once, so the page is never taken back from under them (release_place). The step runs on a single-shot timer the view owns, connected to the view's own method: deleted with the view, the timer never fires at a dead one, and the connection keeps nothing alive. The forms used before, QTimer.singleShot(0, ...) with a bound method (restore_scroll) or with a lambda holding the window (the build window's anchor scroll), raised "Internal C++ object already deleted" when the view was deleted first, and kept the view's Python wrapper, and the lambda the window's too, alive until then; QTimer.singleShot(0, view, method) does not raise but keeps the method, and so the wrapper, alive (all probed on PySide6 6.12.0). A new page drops the step and the hold of the one it replaces. A redraw of the page while the step is to run or the place is held, a second fight update in the same pass say, puts the page where they were to put it, not where its bar is meanwhile (keeping_place).
 
 ### FightView.keeping_place
 
-*[src/gui/fight_view.py:403](../src/gui/fight_view.py#L403)*
+*[src/gui/fight_view.py:455](../src/gui/fight_view.py#L455)*
 
 Redraw the page the reader is looking at inside the with block,
 and put it back where it was: at the bar's position, or, while the
@@ -5775,7 +5915,7 @@ once a second, so a lone unit far off is pinned to the edge, not followed.
 
 ### MainWindow.show_moment
 
-*[src/gui/main_window.py:2573](../src/gui/main_window.py#L2573)*
+*[src/gui/main_window.py:2613](../src/gui/main_window.py#L2613)*
 
 The positions window on the fight *entry* at the moment *t_ms*
 (ms since its session's BEGIN_LOG, the locator's own clock), the
@@ -6252,7 +6392,7 @@ fight view steps through to make a taunt mark pulse (issue #12).
 
 ### FightView._pulse_step
 
-*[src/gui/fight_view.py:789](../src/gui/fight_view.py#L789)*
+*[src/gui/fight_view.py:841](../src/gui/fight_view.py#L841)*
 
 Design: Taunt marks pulse. A QTextBrowser page cannot animate, but
 the document asks for an image's resource each time it paints, and
@@ -6376,9 +6516,19 @@ name has alt="" and says nothing), rebuilt whenever the page changes
 (issue #77). The taunt ring's pulse stops, at its plain phase, while
 Reduce motion is on (set_reduce_motion).
 
+A page can have an instance's art across its top (set_art, issue #249;
+gui.instance_art has the design): the view paints the strip on its viewport
+before the page, at the page's own place, so it scrolls with the text, is
+as wide as the viewport at any width, and is no part of the page: a
+screen reader meets nothing of it. The page leaves the room
+(instance_art.STRIP_SPACE, gui.instance_render), with a paragraph that
+holds one no-break space, which is in the page's text. The art is asked for before each page that has it:
+a page set without the asking has none, so no later page can be drawn over
+a strip left behind.
+
 ### FightView._show_hover_cue
 
-*[src/gui/fight_view.py:652](../src/gui/fight_view.py#L652)*
+*[src/gui/fight_view.py:704](../src/gui/fight_view.py#L704)*
 
 Design: the hover cue. Underline the hovered player name or dps
 figure in the link color; any other target, or none, clears the cue.
