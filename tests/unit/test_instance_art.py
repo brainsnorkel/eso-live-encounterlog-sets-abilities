@@ -180,6 +180,22 @@ class TestThePictures(unittest.TestCase):
         self.assertIn("'data/art/instances'", spec)
         self.assertEqual(instance_art.art_dir(), ART)
 
+    def test_the_window_reads_the_folder_the_bundles_own_check_reads(self):
+        """self_check has every built bundle look for the art (issue #237).
+        It cannot import Qt, so it asks ability_icons for the folder: the
+        window must ask the same function, in a frozen build too."""
+        import sys
+
+        import ability_icons
+        import self_check
+        from gui import instance_art
+        self.assertEqual(instance_art.art_dir(), ability_icons.instance_art_dir())
+        self.assertIn("data/art/instances", [path for path, _probe in self_check.TABLES])
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(sys, "_MEIPASS", folder, create=True):
+            self.assertEqual(instance_art.art_dir(), Path(folder) / "data" / "art" / "instances")
+            self.assertEqual(instance_art.ArtCache().root, instance_art.art_dir())
+
 
 @unittest.skipUnless(HAVE_QT, "PySide6 not installed")
 class ArtTestCase(unittest.TestCase):

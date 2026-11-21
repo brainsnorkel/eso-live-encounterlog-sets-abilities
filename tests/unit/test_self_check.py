@@ -26,15 +26,16 @@ TARGETS = "data/skills/ability_targets.json"
 def _bundle(root: Path, leave_out=()) -> Path:
     """The data of a bundle under *root*, laid out as PyInstaller lays it
     out: a copy of each table the check reads but those in *leave_out*, and
-    one icon for the folder of them."""
+    one picture for each folder of them (an icon, an instance's art)."""
     for path, _probe in self_check.TABLES:
         if path in leave_out:
             continue
         source, target = REPO / path, root / path
         if source.is_dir():
             target.mkdir(parents=True)
-            icon = next(source.glob("*.png"))
-            shutil.copyfile(icon, target / icon.name)
+            picture = next(file for file in sorted(source.iterdir())
+                           if file.suffix in (".png", ".jpg"))
+            shutil.copyfile(picture, target / picture.name)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
@@ -101,6 +102,29 @@ class TestSelfCheck(unittest.TestCase):
         self.assertIn(f"FAILED {TARGETS}: ValueError: Impulse (28800) is not listed as an area "
                       "skill", report)
 
+    def test_the_instances_art_is_found_where_the_app_reads_it(self):
+        """Issue #249: the folder the window's art cache reads, its
+        pictures counted, one that is no JPEG named, a bundle without the
+        folder failed."""
+        art = "data/art/instances"
+        _status, report = self._run()
+        self.assertIn(f"ok     {art}: 19 instances' art", report)
+        _bundle(self.tmp)
+        status, report = self._run(self.tmp)
+        self.assertEqual(status, 0, report)
+        self.assertIn(f"ok     {art}: 1 instances' art", report)
+        (self.tmp / art / "manifest.json").write_text("{}", encoding="utf-8")  # no picture
+        (self.tmp / art / "notes.jpg").write_bytes(b"not named by a zone id")
+        self.assertIn(f"ok     {art}: 1 instances' art", self._run(self.tmp)[1])
+        (self.tmp / art / "1121.jpg").write_bytes(b"<html>not a picture</html>")
+        status, report = self._run(self.tmp)
+        self.assertEqual(status, 1, report)
+        self.assertIn(f"FAILED {art}: ValueError: 1121.jpg is not a JPEG", report)
+        shutil.rmtree(self.tmp / art)
+        status, report = self._run(self.tmp)
+        self.assertEqual(status, 1, report)
+        self.assertIn(f"FAILED {art}: not found, or empty", report)
+
     def test_a_probe_that_raises_is_reported_not_raised(self):
         def broken():
             raise KeyError("sets")
@@ -111,15 +135,15 @@ class TestSelfCheck(unittest.TestCase):
 
     def test_every_table_the_spec_bundles_is_checked(self):
         """A table added to the spec's datas needs an entry in TABLES. The
-        icons are checked as their folder: the app reads no file there but
-        the icons."""
+        icons and the instances' art (issue #249) are each checked as their
+        folder: the app reads no file there but the pictures."""
         spec = (REPO / "esolog-tail.spec").read_text(encoding="utf-8")
         folders = ast.literal_eval(re.search(r"for d in (\([^)]*\))", spec).group(1))
-        icons = "data/icons/abilities"
-        self.assertIn(icons, folders)
-        bundled = {icons} | set(re.findall(r"\('(data/[^']+)', 'data/", spec))
+        pictures = {"data/icons/abilities", "data/art/instances"}
+        self.assertLessEqual(pictures, set(folders))
+        bundled = pictures | set(re.findall(r"\('(data/[^']+)', 'data/", spec))
         for folder in folders:
-            if folder != icons:
+            if folder not in pictures:
                 bundled |= {path.relative_to(REPO).as_posix()
                             for path in (REPO / folder).glob("*.json")}
         self.assertIn("data/version.json", bundled)

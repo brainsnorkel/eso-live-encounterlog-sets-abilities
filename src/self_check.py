@@ -32,7 +32,8 @@ than an argument: the app takes none, and Qt reads its own from the
 command line.
 
 TABLES holds an entry for each JSON table the spec (esolog-tail.spec)
-bundles and one for the folder of icons; a unit test fails when the spec
+bundles and one for each folder of pictures, the icons and the trials' and
+arenas' art; a unit test fails when the spec
 bundles a table that has none, so a table added later is checked too. CI
 runs the check on the Windows and Linux bundles right after PyInstaller,
 and in the smoke-macos job on the downloaded app on each macOS
@@ -73,6 +74,25 @@ def _target_kinds() -> str:
     return _counted(skills, "skills, Impulse (28800) area")
 
 
+def _instance_art() -> str:
+    """The trials' and arenas' art (issue #249): the pictures named by a
+    zone id in the folder gui.instance_art reads them from. That module
+    draws with Qt, which this one must not import, so the folder is asked
+    of the function they share (ability_icons.instance_art_dir) and each
+    picture only for a JPEG's first bytes; that Qt can read it is the
+    tests' to say. The folder's manifest is the extraction script's record
+    and the app never reads it, so the folder is the entry, as the icons'
+    is."""
+    folder = ability_icons.instance_art_dir()
+    pictures = (sorted(path for path in folder.glob("*.jpg") if path.stem.isdigit())
+                if folder.is_dir() else [])
+    for picture in pictures:
+        with open(picture, "rb") as handle:
+            if handle.read(3) != b"\xff\xd8\xff":
+                raise ValueError(f"{picture.name} is not a JPEG")
+    return _counted(pictures, "instances' art")
+
+
 def _data_version() -> str:
     """The game version the bundled data was stamped with."""
     version = data_staleness.bundle_version().get("game_version")
@@ -83,6 +103,7 @@ def _data_version() -> str:
 # loader found, '' when it found nothing
 TABLES = (
     ("data/icons/abilities", lambda: _counted(data_staleness.bundled_icon_stems(), "icons")),
+    ("data/art/instances", _instance_art),
     ("data/esohub/scribing_en.json", lambda: _counted(
         [*ability_icons._bundled_scribed_skill_links(), *ability_icons._bundled_script_links()],
         "scribed skill and script links")),

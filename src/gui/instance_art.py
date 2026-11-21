@@ -75,7 +75,7 @@ from PySide6.QtGui import (
     QPainterPath,
 )
 
-from ability_icons import bundle_root
+from ability_icons import instance_art_dir
 
 # A header row with art: this many lines of its font high, and never less
 # than a row and HEADER_EXTRA px (44 px either way at the usual text size:
@@ -106,7 +106,7 @@ _cache = None
 
 
 def art_dir() -> Path:
-    return bundle_root() / "data" / "art" / "instances"
+    return instance_art_dir()
 
 
 def set_enabled(on: bool) -> bool:

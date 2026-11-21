@@ -45,6 +45,13 @@ def esohub_data_dir() -> Path:
     return bundle_root() / "data" / "esohub"
 
 
+def instance_art_dir() -> Path:
+    """The trials' and arenas' art (gui.instance_art, issue #249). Here,
+    not in that module, so that self_check can ask for the folder the app
+    reads without importing Qt."""
+    return bundle_root() / "data" / "art" / "instances"
+
+
 def icon_stem(icon_path: str) -> str:
     """'/esoui/art/icons/Ability_Arcanist_002_b.dds' -> 'ability_arcanist_002_b'.
 
